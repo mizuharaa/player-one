@@ -1,0 +1,10 @@
+{
+  "name": "@playerone/ingest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@playerone/contracts": "workspace:*",
+    "yaml": "^2.5.1"
+  }
+}
