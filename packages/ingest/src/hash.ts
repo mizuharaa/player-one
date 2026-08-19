@@ -10,9 +10,16 @@ import { join } from 'node:path';
  * must not cost more RAM than a 40 MB one.
  */
 
+/**
+ * 4 MiB reads rather than the 64 KiB default. SHA-256 is far faster than the
+ * syscall churn of small reads, so the default turns a CPU-bound job into a
+ * syscall-bound one. Still constant memory: one buffer, reused.
+ */
+const READ_CHUNK = 4 * 1024 * 1024;
+
 export async function sha256File(path: string): Promise<string> {
   const h = createHash('sha256');
-  await pipeline(createReadStream(path), h);
+  await pipeline(createReadStream(path, { highWaterMark: READ_CHUNK }), h);
   return h.digest('hex');
 }
 

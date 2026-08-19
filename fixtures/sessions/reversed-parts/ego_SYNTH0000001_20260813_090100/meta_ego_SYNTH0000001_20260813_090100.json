@@ -1,0 +1,90 @@
+{
+  "device": {
+    "firmware_version": "1.0.3",
+    "name": "ego",
+    "sdk": "OrbbecSDK",
+    "serial_number": "SYNTH0000001"
+  },
+  "files": {
+    "video_left": "ego_SYNTH0000001_20260813_090100_camera_left.mp4"
+  },
+  "recording": {
+    "duration_sec": 0,
+    "end_time": "",
+    "start_time": "2026-08-13T09:00:00.000",
+    "status": "recording",
+    "video_segment_duration_sec": 3600
+  },
+  "statistics": {
+    "audio_frame_count": 0,
+    "imu_accel_count": 1967,
+    "imu_gyro_count": 1967,
+    "video_left_frame_count": 60,
+    "video_right_frame_count": 60
+  },
+  "streams": {
+    "audio": {
+      "enabled": true
+    },
+    "color_left": {
+      "enabled": true,
+      "file": "ego_SYNTH0000001_20260813_090100_camera_left.mp4",
+      "fps": 30,
+      "segment_duration_sec": 3600,
+      "segments": [
+        {
+          "index": 1,
+          "frame_count": 20,
+          "start_timestamp_us": "0",
+          "end_timestamp_us": "0"
+        },
+        {
+          "index": 2,
+          "frame_count": 20,
+          "start_timestamp_us": "0",
+          "end_timestamp_us": "0"
+        },
+        {
+          "index": 3,
+          "frame_count": 20,
+          "start_timestamp_us": "0",
+          "end_timestamp_us": "0"
+        }
+      ]
+    },
+    "color_right": {
+      "enabled": true,
+      "file": "ego_SYNTH0000001_20260813_090100_camera_left.mp4",
+      "fps": 30,
+      "segment_duration_sec": 3600,
+      "segments": [
+        {
+          "index": 1,
+          "frame_count": 20,
+          "start_timestamp_us": "0",
+          "end_timestamp_us": "0"
+        },
+        {
+          "index": 2,
+          "frame_count": 20,
+          "start_timestamp_us": "0",
+          "end_timestamp_us": "0"
+        },
+        {
+          "index": 3,
+          "frame_count": 20,
+          "start_timestamp_us": "0",
+          "end_timestamp_us": "0"
+        }
+      ]
+    },
+    "imu": {
+      "accel_sample_rate_hz": 1000
+    }
+  },
+  "timebase": {
+    "clock_source": "device_timestamp",
+    "precision": "microsecond",
+    "unit": "seconds"
+  }
+}

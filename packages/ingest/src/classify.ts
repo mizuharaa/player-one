@@ -185,8 +185,11 @@ export function classify(input: ClassifyInput): {
   const cameras = streams.filter((s) => s.role.startsWith('camera_'));
   if (cameras.length === 0) {
     add('MEDIA-MISSING', 'quarantine', 'no camera media found by directory scan');
-  } else if (cameras.every((s) => s.source === 'absent')) {
-    add('MEDIA-UNREADABLE', 'quarantine', 'no camera has a readable sidecar or container');
+  } else if (cameras.some((s) => s.source === 'absent')) {
+    // One unreadable eye is enough. A stereo rig with a dead camera cannot be
+    // reconstructed, which is the same argument that makes calibration mandatory.
+    const broken = cameras.filter((s) => s.source === 'absent').map((s) => s.role);
+    add('MEDIA-UNREADABLE', 'quarantine', `unreadable: ${broken.join(', ')}`);
   }
 
   return { discrepancies: d, state: stateFrom(d) };

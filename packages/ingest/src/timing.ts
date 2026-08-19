@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { FileEntry } from './discover.ts';
-import { reduceImuTimestamps, reduceTimestamps } from './csv.ts';
+import { reduceImuTimestamps, reduceTimestamps, type Reduction } from './csv.ts';
 
 /**
  * ING-06..13. The money path.
@@ -56,6 +56,8 @@ export type Timing = {
   usableStartUs: bigint | null;
   usableEndUs: bigint | null;
   rawDurationS: number;
+  /** Time inside the window with no footage in it, already removed from rawDurationS. */
+  gapS: number;
   maxStreamSkewMs: number;
   /** Not on the episode record. Carried so review and tests can see the answer that was rejected. */
   unionDurationS: number;
@@ -70,22 +72,41 @@ const toS = (us: bigint): number => Number(us) / 1e6;
 
 const run = promisify(execFile);
 
-/** Container duration in microseconds, or null if ffprobe cannot read the file. */
-export async function probeDurationUs(path: string): Promise<bigint | null> {
+export type Probe = { durationUs: bigint; packets: number };
+
+/**
+ * Container timing, or null when the file is damaged.
+ *
+ * `format=duration` alone is not enough: a real MP4 cut to 45% of its bytes
+ * still answers with a duration, and a slightly longer one than the intact
+ * file. Counting packets is what exposes it — the intact sample reports 256
+ * packets and matches its sidecar exactly, the truncated copy reports 121 and
+ * writes NAL errors to stderr.
+ *
+ * ponytail: this is a second full read of the file, so it runs only where the
+ * sidecar is unusable and the container is the only source left. A truncated
+ * file that still has a good sidecar is not caught here; that is a corrupted
+ * delivery, and CHECKSUM-MISMATCH against the sending side is the check for it.
+ */
+export async function probeContainer(path: string): Promise<Probe | null> {
   try {
-    const { stdout } = await run('ffprobe', [
-      '-v',
-      'error',
-      '-select_streams',
-      'v:0',
-      '-show_entries',
-      'format=duration',
-      '-of',
-      'default=nw=1:nk=1',
+    const { stdout, stderr } = await run('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-count_packets',
+      '-show_entries', 'format=duration:stream=nb_read_packets',
+      '-of', 'json',
       path,
     ]);
-    const seconds = Number(stdout.trim());
-    return Number.isFinite(seconds) && seconds > 0 ? BigInt(Math.round(seconds * 1e6)) : null;
+    if (stderr.trim() !== '') return null; // decoder complained: the container is damaged
+    const parsed = JSON.parse(stdout) as {
+      format?: { duration?: string };
+      streams?: { nb_read_packets?: string }[];
+    };
+    const seconds = Number(parsed.format?.duration);
+    const packets = Number(parsed.streams?.[0]?.nb_read_packets ?? 0);
+    if (!Number.isFinite(seconds) || seconds <= 0) return null;
+    return { durationUs: BigInt(Math.round(seconds * 1e6)), packets };
   } catch {
     return null;
   }
@@ -144,10 +165,18 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
 
     // Empty or absent sidecar. The container knows the length, not the position.
     let spanUs: bigint | null = null;
+    let packets = 0;
+    let damaged = false;
     for (const p of parts) {
-      const d = await probeDurationUs(p.path);
-      if (d !== null) spanUs = (spanUs ?? 0n) + d;
+      const probe = await probeContainer(p.path);
+      if (probe === null) {
+        damaged = true;
+        continue;
+      }
+      spanUs = (spanUs ?? 0n) + probe.durationUs;
+      packets += probe.packets;
     }
+    if (damaged) spanUs = null; // one unreadable part makes the whole stream untrustworthy
     out.push({
       role,
       parts,
@@ -156,7 +185,7 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
       firstUs: null,
       lastUs: null,
       spanUs,
-      sampleCount: 0,
+      sampleCount: spanUs === null ? 0 : packets,
       medianDeltaUs: null,
       truncatedTail: false,
       backwardsSteps: 0,
@@ -165,26 +194,35 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
   return out;
 }
 
-/** ING-27: accel and gyro interleave and share timestamps, so they are two streams, counted by type. */
+/**
+ * ING-27: accel and gyro interleave and share timestamps, so they are two
+ * streams counted by type. One pass over the file yields both — a two-hour log
+ * is 14.4M rows and reading it once per type doubles the bill for nothing.
+ */
 async function readImu(parts: FileEntry[]): Promise<StreamTiming[]> {
+  const byType = { accel: [] as Reduction[], gyro: [] as Reduction[] };
+  const timings = { accel: [] as PartTiming[], gyro: [] as PartTiming[] };
+
+  for (const p of parts) {
+    const r = await reduceImuTimestamps(p.path);
+    for (const type of ['accel', 'gyro'] as const) {
+      const t = r[type];
+      if (!t) continue;
+      byType[type].push(t);
+      timings[type].push({ partNumber: p.partNumber, firstUs: t.first, lastUs: t.last });
+    }
+  }
+
   const out: StreamTiming[] = [];
   for (const type of ['accel', 'gyro'] as const) {
-    const reduced = [];
-    const partTimings: PartTiming[] = [];
-    for (const p of parts) {
-      const r = await reduceImuTimestamps(p.path);
-      const t = type === 'accel' ? r.accel : r.gyro;
-      if (!t) continue;
-      reduced.push(t);
-      partTimings.push({ partNumber: p.partNumber, firstUs: t.first, lastUs: t.last });
-    }
+    const reduced = byType[type];
     if (reduced.length === 0) continue;
     const first = minOf(reduced.map((r) => r.first));
     const last = maxOf(reduced.map((r) => r.last));
     out.push({
       role: `imu_${type}`,
       parts,
-      partTimings,
+      partTimings: timings[type],
       source: 'sidecar',
       firstUs: first,
       lastUs: last,
@@ -243,7 +281,7 @@ export function computeTiming(
    * This is what keeps a container-derived camera honest.
    */
   const caps = usable.filter((s) => s.firstUs === null && s.spanUs !== null).map((s) => s.spanUs!);
-  const rawUs =
+  const covered =
     windowUs !== null
       ? caps.length > 0
         ? minOf([windowUs, ...caps])
@@ -251,6 +289,19 @@ export function computeTiming(
       : caps.length > 0
         ? minOf(caps)
         : 0n;
+
+  /**
+   * A hole between two parts is time nobody recorded, so it is not payable.
+   * ponytail: takes the worst stream's total gap rather than the union of gap
+   * intervals across streams. Parts only ever split on the segment boundary, so
+   * the cameras gap together; compute a real interval union if that stops
+   * holding.
+   */
+  const gapUs = usable.reduce((worst, s) => {
+    const g = gapWithin(s);
+    return g > worst ? g : worst;
+  }, 0n);
+  const rawUs = covered > gapUs ? covered - gapUs : 0n;
 
   const cameras = usable.filter((s) => s.role.startsWith('camera_'));
   const camerasTimed = cameras.filter((s) => s.spanUs !== null);
@@ -275,9 +326,24 @@ export function computeTiming(
     usableStartUs: usableStart,
     usableEndUs: usableEnd,
     rawDurationS: toS(rawUs),
+    gapS: toS(gapUs),
     maxStreamSkewMs: Number(maxOf(starts) - minOf(starts)) / 1e3,
     unionDurationS: toS(maxOf(ends) - minOf(starts)),
   };
+}
+
+/** ING-20. Total time between one part ending and the next starting, beyond one sample interval. */
+export function gapWithin(s: StreamTiming): bigint {
+  if (s.partTimings.length < 2 || s.medianDeltaUs === null || s.medianDeltaUs <= 0n) return 0n;
+  const ordered = [...s.partTimings].sort((a, b) =>
+    a.firstUs === b.firstUs ? (a.partNumber ?? 0) - (b.partNumber ?? 0) : a.firstUs < b.firstUs ? -1 : 1,
+  );
+  let total = 0n;
+  for (let i = 1; i < ordered.length; i++) {
+    const gap = ordered[i]!.firstUs - ordered[i - 1]!.lastUs - s.medianDeltaUs;
+    if (gap > 0n) total += gap;
+  }
+  return total;
 }
 
 /**
@@ -297,6 +363,7 @@ function fromWallClock(declared: { start_time: string | null; end_time: string |
     usableStartUs: null,
     usableEndUs: null,
     rawDurationS: seconds,
+    gapS: 0,
     maxStreamSkewMs: 0,
     unionDurationS: seconds,
   };
