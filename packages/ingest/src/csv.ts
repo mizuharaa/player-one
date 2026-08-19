@@ -19,24 +19,37 @@ export type Reduction = {
    * Real: 072538's audio PTS sidecar stops mid-digit at exactly 8192 bytes.
    */
   truncatedTail: boolean;
+  /**
+   * Rows whose timestamp went backwards relative to the previous row. Small
+   * steps are out-of-order delivery and harmless once first/last are min/max;
+   * a huge one means the clock base changed. Real: 072538's audio reorders by
+   * 2-6 sample intervals, 072516's IMU jumps 56 years.
+   */
+  backwardsSteps: number;
 };
 
 class Accumulator {
+  // first/last are min/max, not the first and last rows: audio sidecars deliver
+  // a few buffers out of order, and the row order is not the time order.
   first: bigint | null = null;
   last: bigint | null = null;
   count = 0;
+  private prev: bigint | null = null;
   // ponytail: exact median from a delta histogram. Distinct delta values are in
   // the hundreds for these streams; swap for reservoir sampling if a stream ever
   // shows unbounded jitter.
   private deltas = new Map<bigint, number>();
+  backwardsSteps = 0;
 
   push(ts: bigint): void {
-    if (this.last !== null) {
-      const d = ts - this.last;
+    if (this.prev !== null) {
+      const d = ts - this.prev;
+      if (d < 0n) this.backwardsSteps++;
       this.deltas.set(d, (this.deltas.get(d) ?? 0) + 1);
     }
-    if (this.first === null) this.first = ts;
-    this.last = ts;
+    if (this.first === null || ts < this.first) this.first = ts;
+    if (this.last === null || ts > this.last) this.last = ts;
+    this.prev = ts;
     this.count++;
   }
 
@@ -48,6 +61,7 @@ class Accumulator {
       count: this.count,
       medianDeltaUs: this.median(),
       truncatedTail,
+      backwardsSteps: this.backwardsSteps,
     };
   }
 
