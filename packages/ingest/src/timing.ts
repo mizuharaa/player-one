@@ -15,9 +15,13 @@ import { reduceImuTimestamps, reduceTimestamps } from './csv.ts';
 
 export type PtsSource = 'sidecar' | 'container' | 'absent';
 
+export type PartTiming = { partNumber: number | null; firstUs: bigint; lastUs: bigint };
+
 export type StreamTiming = {
   role: string;
   parts: FileEntry[];
+  /** One entry per part that had readable timestamps, in file-name order. */
+  partTimings: PartTiming[];
   source: PtsSource;
   /**
    * Absolute epoch microseconds. Null when the source gives a length but not a
@@ -111,9 +115,12 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
       .sort((a, b) => (a.partNumber ?? 0) - (b.partNumber ?? 0));
 
     const reduced = [];
+    const partTimings: PartTiming[] = [];
     for (const s of sidecars) {
       const r = await reduceTimestamps(s.path);
-      if (r) reduced.push(r);
+      if (!r) continue;
+      reduced.push(r);
+      partTimings.push({ partNumber: s.partNumber, firstUs: r.first, lastUs: r.last });
     }
 
     if (reduced.length > 0) {
@@ -122,6 +129,7 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
       out.push({
         role,
         parts,
+        partTimings,
         source: 'sidecar',
         firstUs: first,
         lastUs: last,
@@ -143,6 +151,7 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
     out.push({
       role,
       parts,
+      partTimings: [],
       source: spanUs === null ? 'absent' : 'container',
       firstUs: null,
       lastUs: null,
@@ -161,10 +170,13 @@ async function readImu(parts: FileEntry[]): Promise<StreamTiming[]> {
   const out: StreamTiming[] = [];
   for (const type of ['accel', 'gyro'] as const) {
     const reduced = [];
+    const partTimings: PartTiming[] = [];
     for (const p of parts) {
       const r = await reduceImuTimestamps(p.path);
       const t = type === 'accel' ? r.accel : r.gyro;
-      if (t) reduced.push(t);
+      if (!t) continue;
+      reduced.push(t);
+      partTimings.push({ partNumber: p.partNumber, firstUs: t.first, lastUs: t.last });
     }
     if (reduced.length === 0) continue;
     const first = minOf(reduced.map((r) => r.first));
@@ -172,6 +184,7 @@ async function readImu(parts: FileEntry[]): Promise<StreamTiming[]> {
     out.push({
       role: `imu_${type}`,
       parts,
+      partTimings,
       source: 'sidecar',
       firstUs: first,
       lastUs: last,
