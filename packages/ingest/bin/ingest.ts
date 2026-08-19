@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * ingest <dir> [--json] [--out file]
  *
