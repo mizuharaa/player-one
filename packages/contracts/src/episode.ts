@@ -21,6 +21,10 @@ export const DISCREPANCY_CODES = [
   'STATS-ZEROED',
   'PTS-EMPTY',
   'PTS-ABSENT',
+  // Observed while building the timing engine, not in the original taxonomy.
+  'PTS-TRUNCATED', // sidecar cut mid-digit; the final partial line is dropped
+  'STATS-STALE', // statistics block copied verbatim from a previous session
+  'STREAM-CLOCK-FAULT', // stream span cannot be explained by its own sample count
   'TIMING-ESTIMATED',
   'STREAM-SKEW-HIGH',
   'PART-GAP',
