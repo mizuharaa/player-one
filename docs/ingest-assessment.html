@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PlayerOne Ingest Engine — Measurement, Accuracy and Readiness</title>
+<style>
+  :root {
+    --bg: #f4f6f7;
+    --surface: #ffffff;
+    --surface-sunk: #eef1f3;
+    --ink: #11171b;
+    --ink-soft: #3a464e;
+    --muted: #5b6970;
+    --rule: #dce2e5;
+    --rule-strong: #b9c4c9;
+    --accent: #0f5c70;
+    --accent-soft: #e2eef1;
+    --ok: #2c6a4c;
+    --ok-soft: #e3efe8;
+    --warn: #86610f;
+    --warn-soft: #f5eddc;
+    --stop: #93312b;
+    --stop-soft: #f6e4e2;
+
+    --display: ui-serif, Georgia, "Times New Roman", serif;
+    --body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1316;
+      --surface: #141c20;
+      --surface-sunk: #101719;
+      --ink: #e7eef0;
+      --ink-soft: #c2ced3;
+      --muted: #8b989f;
+      --rule: #232f34;
+      --rule-strong: #3a4a51;
+      --accent: #5fb0c4;
+      --accent-soft: #12292f;
+      --ok: #6fbb92;
+      --ok-soft: #14261d;
+      --warn: #cfa64e;
+      --warn-soft: #26200f;
+      --stop: #e0837b;
+      --stop-soft: #2a1615;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0d1316;
+    --surface: #141c20;
+    --surface-sunk: #101719;
+    --ink: #e7eef0;
+    --ink-soft: #c2ced3;
+    --muted: #8b989f;
+    --rule: #232f34;
+    --rule-strong: #3a4a51;
+    --accent: #5fb0c4;
+    --accent-soft: #12292f;
+    --ok: #6fbb92;
+    --ok-soft: #14261d;
+    --warn: #cfa64e;
+    --warn-soft: #26200f;
+    --stop: #e0837b;
+    --stop-soft: #2a1615;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.62;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 24px 96px;
+  }
+
+  /* ---- masthead ---- */
+  .masthead {
+    border-bottom: 2px solid var(--ink);
+    padding: 56px 0 20px;
+    margin-bottom: 40px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 18px;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(30px, 5vw, 44px);
+    line-height: 1.12;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0 0 16px;
+  }
+  .standfirst {
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 62ch;
+    margin: 0;
+  }
+
+  /* ---- the headline measurement ---- */
+  .readout {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin: 36px 0 8px;
+  }
+  .readout div {
+    background: var(--surface);
+    padding: 16px 18px;
+  }
+  .readout dt {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  .readout dd {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 21px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .readout dd small {
+    display: block;
+    font-family: var(--body);
+    font-size: 12.5px;
+    letter-spacing: 0;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* ---- sections ---- */
+  section { margin-top: 60px; }
+  h2 {
+    font-family: var(--display);
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 6px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+  h3 {
+    font-family: var(--body);
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 34px 0 10px;
+  }
+  p { max-width: 68ch; margin: 0 0 16px; }
+  p.lead { color: var(--ink-soft); }
+  ul { max-width: 68ch; padding-left: 20px; margin: 0 0 16px; }
+  li { margin-bottom: 7px; }
+  strong { font-weight: 650; }
+  code {
+    font-family: var(--mono);
+    font-size: 0.875em;
+    background: var(--surface-sunk);
+    padding: 1px 5px;
+    border-radius: 2px;
+  }
+
+  /* ---- declared vs measured comparison ---- */
+  .compare { margin: 26px 0 30px; display: flex; flex-direction: column; gap: 20px; }
+  .compare-row { display: grid; grid-template-columns: 92px 1fr; gap: 14px; align-items: start; }
+  .compare-label {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    padding-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .bars { display: flex; flex-direction: column; gap: 5px; }
+  .bar { display: flex; align-items: center; gap: 10px; }
+  .bar-track { height: 15px; position: relative; flex: 1; background: var(--surface-sunk); }
+  .bar-fill { height: 100%; }
+  .bar-fill.declared { background: var(--rule-strong); }
+  .bar-fill.measured { background: var(--accent); }
+  .bar-value {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-soft);
+    min-width: 118px;
+  }
+  .bar-value em { font-style: normal; color: var(--muted); }
+
+  /* ---- tables ---- */
+  .table-wrap { overflow-x: auto; margin: 20px 0 26px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  caption {
+    text-align: left;
+    font-size: 12.5px;
+    color: var(--muted);
+    padding-bottom: 10px;
+  }
+  th {
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--muted);
+    border-bottom: 1px solid var(--rule-strong);
+    padding: 0 14px 8px 0;
+    white-space: nowrap;
+  }
+  td {
+    padding: 9px 14px 9px 0;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  th.num { padding-right: 14px; }
+  tr:last-child td { border-bottom: none; }
+  .mono { font-family: var(--mono); font-size: 13px; }
+
+  /* ---- state pills ---- */
+  .pill {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    white-space: nowrap;
+    border: 1px solid currentColor;
+  }
+  .pill.ok { color: var(--ok); background: var(--ok-soft); }
+  .pill.flag { color: var(--warn); background: var(--warn-soft); }
+  .pill.stop { color: var(--stop); background: var(--stop-soft); }
+
+  /* ---- callout ---- */
+  .note {
+    border-top: 2px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 18px 20px;
+    margin: 26px 0;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  .note .note-label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 8px;
+  }
+
+  /* ---- code block ---- */
+  pre {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.62;
+    background: var(--surface-sunk);
+    border: 1px solid var(--rule);
+    padding: 16px 18px;
+    overflow-x: auto;
+    margin: 20px 0 26px;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .cm { color: var(--muted); }
+  .hl { color: var(--accent); font-weight: 600; }
+
+  /* ---- checklist ---- */
+  .status-list { list-style: none; padding: 0; margin: 18px 0 26px; max-width: 68ch; }
+  .status-list li {
+    display: grid;
+    grid-template-columns: 74px 1fr;
+    gap: 14px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--rule);
+    margin: 0;
+  }
+  .status-list li:last-child { border-bottom: none; }
+  .tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding-top: 4px;
+  }
+  .tag.yes { color: var(--ok); }
+  .tag.part { color: var(--warn); }
+  .tag.no { color: var(--stop); }
+
+  footer {
+    margin-top: 72px;
+    padding-top: 20px;
+    border-top: 1px solid var(--rule-strong);
+    font-size: 13px;
+    color: var(--muted);
+  }
+  footer p { max-width: 68ch; }
+
+  @media (max-width: 560px) {
+    .compare-row { grid-template-columns: 1fr; gap: 6px; }
+    .status-list li { grid-template-columns: 1fr; gap: 2px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">PlayerOne · Ingest engine · Milestone 0.1 assessment</p>
+    <h1>What the pipeline measures, how accurate it is, and whether it can ingest a video today</h1>
+    <p class="standfirst">The recording device tells you a session was 12.852 seconds long. It was 8.500. This engine is the difference between those two numbers, and this is an account of how far it can be trusted.</p>
+  </header>
+
+  <dl class="readout">
+    <div>
+      <dt>Measured, session 072310</dt>
+      <dd>8.500011 s<small>Intersection of five streams</small></dd>
+    </div>
+    <div>
+      <dt>Device claimed</dt>
+      <dd>12.852 s<small>1.51&times; the real footage</small></dd>
+    </div>
+    <div>
+      <dt>Throughput</dt>
+      <dd>256 MB/s<small>225 MB RAM at 4.2 GB</small></dd>
+    </div>
+    <div>
+      <dt>Test coverage</dt>
+      <dd>68 / 5.0 s<small>23 of 24 defect codes</small></dd>
+    </div>
+  </dl>
+
+  <section>
+    <h2>What the data actually means</h2>
+    <p class="lead">A session is a folder: two video files, an audio file, a motion-sensor log, two calibration files, and a small JSON manifest describing it all. Collectors are paid per minute of usable footage, so one number in that folder decides what someone earns.</p>
+
+    <p>The manifest's <code>duration_sec</code> is the wrong number. It measures from the moment the device powers up to the moment it shuts down — start-up, shut-down and all. On session <code>072310</code> that is 12.852 s against 8.500 s of recorded video.</p>
+
+    <p>The subtler problem is that the streams do not start together. The motion sensor wakes 504 ms before the cameras and keeps running after they stop. So there are two plausible answers, and only one is honest:</p>
+
+    <h3>Union versus intersection</h3>
+    <div class="compare">
+      <div class="compare-row">
+        <span class="compare-label">Declared</span>
+        <div class="bars">
+          <div class="bar">
+            <div class="bar-track"><div class="bar-fill declared" style="width:100%"></div></div>
+            <span class="bar-value">12.852 s <em>manifest</em></span>
+          </div>
+        </div>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">Union</span>
+        <div class="bars">
+          <div class="bar">
+            <div class="bar-track"><div class="bar-fill declared" style="width:72.3%"></div></div>
+            <span class="bar-value">9.286 s <em>rejected</em></span>
+          </div>
+        </div>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">Intersection</span>
+        <div class="bars">
+          <div class="bar">
+            <div class="bar-track"><div class="bar-fill measured" style="width:66.1%"></div></div>
+            <span class="bar-value">8.500 s <em>paid</em></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p>The union — earliest start to latest end — is 9.286 s. It is always set by the motion sensor, because the motion sensor always starts first and ends last. Taking it would overpay by 9% on this session and by 25% on the equivalent glove-format recording we examined. The intersection is the window where <em>every</em> stream is recording, and it is what the engine reports.</p>
+
+    <div class="note">
+      <p class="note-label">Independent corroboration</p>
+      <p>Two unrelated sessions inflate by almost exactly the same factor: <strong>1.51&times;</strong> on <code>072310</code> and <strong>1.52&times;</strong> on <code>072516</code>. That agreement is the strongest evidence the method is right rather than a coincidence of one recording.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Accuracy, honestly stated</h2>
+    <p class="lead">Duration comes from one of four sources. Each is recorded on the episode, so nobody downstream has to guess how good a number is.</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Timing sources, strongest first. Anything below <code>exact</code> raises a flag.</caption>
+        <thead>
+          <tr>
+            <th>Source</th>
+            <th>Confidence</th>
+            <th>Resolution</th>
+            <th>What limits it</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">pts_sidecar</td>
+            <td><span class="pill ok">exact</span></td>
+            <td class="mono">1 &micro;s</td>
+            <td>One timestamp per frame, straight from the device clock. No estimation anywhere.</td>
+          </tr>
+          <tr>
+            <td class="mono">container</td>
+            <td><span class="pill flag">derived</span></td>
+            <td class="mono">~1 frame</td>
+            <td>The video knows its length but not when it started, so it can shorten the window and never move it.</td>
+          </tr>
+          <tr>
+            <td class="mono">imu_span</td>
+            <td><span class="pill flag">estimated</span></td>
+            <td class="mono">~0.5 s</td>
+            <td>The motion sensor brackets the cameras, so it always overstates. Used only when nothing else survives.</td>
+          </tr>
+          <tr>
+            <td class="mono">wall_clock</td>
+            <td><span class="pill stop">estimated</span></td>
+            <td class="mono">~4 s</td>
+            <td>Includes start-up and shut-down. Flagged for manual review rather than taken at face value.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Precision</h3>
+    <p>Timestamps are read as <strong>BigInt</strong>, never floating point. A value like <code>1786605795008991</code> fits in a double today, but this number decides what people get paid and silent precision loss is exactly the bug that survives to production. They are stored in the record as decimal strings for the same reason — JSON has no integer type wide enough to be trusted with them.</p>
+
+    <p>The device clock is epoch microseconds on the same timebase as the manifest's wall clock, which we verified. That means declared and measured are directly comparable: a payment dispute is arithmetic, not interpretation.</p>
+
+    <h3>A known inconsistency worth deciding on</h3>
+    <p>The two strongest sources disagree by exactly one frame, systematically.</p>
+    <ul>
+      <li><strong>Sidecar</strong> reports first-timestamp to last-timestamp. For 256 frames that is 255 intervals.</li>
+      <li><strong>Container</strong> reports the full presentation length. For the same frames that is 256 intervals.</li>
+    </ul>
+    <p>Measured on <code>072538</code>: <code>format=duration</code> gives 20.980044 s while the packet timestamps span 20.946667 s. The difference is <strong>0.033377 s</strong> — one frame at 30 fps.</p>
+    <p>So a session timed from sidecars is reported about 33 ms shorter than the same session timed from its container. On an 8-second clip that is 0.4%; on an hour it is negligible. The specification defines raw duration as the timestamp span, so the engine follows it and reports 8.500 — but the two paths are not measuring quite the same thing, and settlement should know that before the figures reach a ledger.</p>
+  </section>
+
+  <section>
+    <h2>Guardrails</h2>
+    <p class="lead">Every rule below exists because the sample data broke something.</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>How a recording is dispositioned. Nothing is ever deleted.</caption>
+        <thead>
+          <tr><th>State</th><th>Meaning</th><th>Effect</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="pill ok">ok</span></td>
+            <td>Nothing found above informational.</td>
+            <td>Enters review and settlement normally.</td>
+          </tr>
+          <tr>
+            <td><span class="pill flag">flagged</span></td>
+            <td>Something a person should see: an unclosed session, a stream excluded, timing below <code>exact</code>.</td>
+            <td>Still reviewed and still payable. Defects visible to the reviewer.</td>
+          </tr>
+          <tr>
+            <td><span class="pill stop">quarantined</span></td>
+            <td>Cannot be trusted: calibration missing, media unreadable, a part missing from the middle.</td>
+            <td>No review, no settlement, <strong>never deleted</strong>. Waits for a human.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Structural guarantees</h3>
+    <ul>
+      <li><strong>The card is never written to.</strong> Not a lock file, not a marker, not a log. A test snapshots every filename, size and modification time before and after and asserts nothing moved. The TF card is evidence in a payment dispute.</li>
+      <li><strong>Nothing is discarded.</strong> An empty folder, an unreadable video, a session with no manifest — all produce a record. The worst outcome is quarantine.</li>
+      <li><strong>Same input, same output.</strong> Byte-identical apart from the timestamp of the run and the machine name. Re-running produces the same episode identity, so a session delivered twice by different routes resolves to one episode rather than two payments.</li>
+      <li><strong>The manifest is a hint.</strong> It is read for context and recorded beside the measurements, and it decides nothing. A test deliberately corrupts its file list and asserts the output is unchanged.</li>
+      <li><strong>Interrupted runs resume.</strong> Finished files are not re-hashed. The cache lives outside the source directory.</li>
+    </ul>
+
+    <h3>What the guardrails caught in real data</h3>
+    <ul>
+      <li>A motion-sensor log whose first 916 rows carry the epoch twice — 56 years off. Left unhandled it reported <strong>zero seconds</strong> for a session holding 10.4 s of good video. Underpaying, silently.</li>
+      <li>An audio timestamp file cut mid-digit at exactly 8192 bytes. Parsed naively the recording came out as <strong>minus 1.79 billion seconds</strong>.</li>
+      <li>A truncated video that still answers with a duration — and a <em>longer</em> one than the intact file: 8.515 s from a container missing 55% of its bytes. Counting packets exposes it, 121 against 256.</li>
+      <li>A statistics block copied verbatim from a different recording. Plausible numbers, wrong recording.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Can it ingest a video today?</h2>
+    <p class="lead">Yes. It has, repeatedly, against real 17 MB and 44 MB recordings from the device. One command, one folder, one record.</p>
+
+    <pre><code>$ ingest ./ego_AZER76400FE_20260813_072310
+
+  state          <span class="hl">FLAGGED</span>
+  episode        0290b96c-e309-844d-b2af-9634c1440ab8
+  fingerprint    0290b96ce309d44d...
+  device         AZER76400FE   firmware 1.0.3
+  calibration    2 files, serial CH5LB5400J5
+  duration       <span class="hl">8.500 s</span>   (declared 12.852)
+  timing         pts_sidecar, exact, skew 504.2 ms
+
+  streams
+    audio             207 samples      8.793 s  sidecar
+    camera_left       256 samples      8.500 s  sidecar
+    camera_right      256 samples      8.500 s  sidecar
+    imu_accel        9240 samples      9.252 s  sidecar
+    imu_gyro         9240 samples      9.252 s  sidecar
+
+  discrepancies
+    [info] DUR-MANIFEST-INFLATED: declared 12.852 s vs measured 8.500 s (1.51x)
+    [info] FRAMECOUNT-MISMATCH: camera_left: declared 260, measured 256
+    [info] AUDIO-STATS-ZERO: audio_frame_count is 0 with audio present
+    [flag] CAMERA-NAMING-CONFLICT: manifest says color_left/color_right,
+           calibration says IR_L/IR_R</code></pre>
+
+    <p><code>--json</code> emits the full <code>EpisodeRecord</code> instead: the schema every downstream component reads, carrying the declared values beside the measured ones, a SHA-256 for every file, both calibration files, and the itemised defect list. That document is the deliverable — the summary above is just a human view of it.</p>
+
+    <h3>Readiness</h3>
+    <ul class="status-list">
+      <li><span class="tag yes">Ready</span><span>Reads a real session folder end to end and emits a schema-validated record.</span></li>
+      <li><span class="tag yes">Ready</span><span>Runs offline. No network and no database in the core path, so it works at an upload centre with the link down.</span></li>
+      <li><span class="tag yes">Ready</span><span>256 MB/s sustained, 225 MB of RAM on a 4.2 GB session. Faster than the upload it feeds.</span></li>
+      <li><span class="tag yes">Ready</span><span>Multi-part recordings, ordered by timestamp with the file numbering only as a tiebreak.</span></li>
+      <li><span class="tag part">Partial</span><span>Three of five sample sessions verified. The other two never survived the archive download and quarantine correctly as a result.</span></li>
+      <li><span class="tag part">Partial</span><span>Every session with a manifest is <span class="pill flag">flagged</span>, because the camera-naming conflict fires on all of them. Until PaXini answers, that flag is noise a reviewer learns to ignore.</span></li>
+      <li><span class="tag no">Not built</span><span>Storing episodes. The engine emits a record; something else has to keep it, and that is what would detect a checksum changing between deliveries.</span></li>
+      <li><span class="tag no">Not built</span><span>Upload, proxy generation, review, settlement. All downstream consumers of this record, all out of scope.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Where the numbers stand</h2>
+
+    <div class="table-wrap">
+      <table>
+        <caption>All five sample sessions. None discarded.</caption>
+        <thead>
+          <tr>
+            <th>Session</th>
+            <th>State</th>
+            <th class="num">Declared</th>
+            <th class="num">Measured</th>
+            <th>Timing</th>
+            <th>Why</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">072310</td>
+            <td><span class="pill flag">flagged</span></td>
+            <td class="num">12.852</td>
+            <td class="num">8.500</td>
+            <td class="mono">exact</td>
+            <td>Clean. Only the camera-naming conflict.</td>
+          </tr>
+          <tr>
+            <td class="mono">072516</td>
+            <td><span class="pill flag">flagged</span></td>
+            <td class="num">15.792</td>
+            <td class="num">10.400</td>
+            <td class="mono">exact</td>
+            <td>Motion sensor excluded — broken clock base.</td>
+          </tr>
+          <tr>
+            <td class="mono">072538</td>
+            <td><span class="pill flag">flagged</span></td>
+            <td class="num">&mdash;</td>
+            <td class="num">20.980</td>
+            <td class="mono">derived</td>
+            <td>Never closed. Empty sidecars, read from the container.</td>
+          </tr>
+          <tr>
+            <td class="mono">072415</td>
+            <td><span class="pill stop">quarantined</span></td>
+            <td class="num">&mdash;</td>
+            <td class="num">0.000</td>
+            <td class="mono">estimated</td>
+            <td>No files. Lost in the archive download.</td>
+          </tr>
+          <tr>
+            <td class="mono">073055</td>
+            <td><span class="pill stop">quarantined</span></td>
+            <td class="num">&mdash;</td>
+            <td class="num">0.000</td>
+            <td class="mono">estimated</td>
+            <td>Partial. No video, one calibration file. Same cause.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Twenty synthetic sessions cover the failures the real data never produced: multi-part recordings, reversed part numbers, a hole in the middle of a sequence, a corrupt container, deleted calibration, a duplicate delivery, an absent manifest, unknown firmware. They are text-only and commit to the repository, so <strong>23 of the 24 defect codes are provable in CI in five seconds with no sample data at all</strong>. The twenty-fourth needs a stored episode to compare against, which is the piece that has not been built.</p>
+  </section>
+
+  <section>
+    <h2>What still needs a decision</h2>
+    <ul>
+      <li><strong>Are the cameras colour or infrared?</strong> The manifest says <code>color_left</code>, the calibration says <code>IR_L</code>, and the calibration file contradicts itself internally — its ROS topic mentions <code>color_left</code>. This determines what the dataset is worth, and it currently flags every episode in the programme.</li>
+      <li><strong>What stream skew is abnormal?</strong> 504 ms is observed and apparently normal, so the threshold is set at 1000 ms as a placeholder and has never fired.</li>
+      <li><strong>Which firmware versions are in scope?</strong> Every sample is 1.0.3. Anything else flags, which is the safe default until the fleet is known.</li>
+      <li><strong>The one-frame difference</strong> between the sidecar and container methods, described above. Small, systematic, and it should be a decision rather than an accident.</li>
+      <li><strong>Re-download the sample archive.</strong> Two sessions are missing, including the 458 MB unclosed recording that is the best test of the "ingest it anyway" rule.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <p>Ingest engine v0.3.1 · TypeScript on Node 22 · 68 tests · Assessed 19 August 2026 against firmware 1.0.3 sample data. Session 072310 measures 8.500011 s; that figure has not moved across any revision of this pipeline.</p>
+  </footer>
+
+</div>
+
+</body>
+</html>
