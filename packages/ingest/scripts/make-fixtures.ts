@@ -38,15 +38,41 @@ type Opts = {
   firmware?: string;
   /** Unreadable bytes and no sidecar, so ffprobe must fail without crashing. */
   corruptMedia?: boolean;
+  /** Header-only sidecars beside zero-byte video: the device wrote nothing. */
+  emptyStreams?: boolean;
+  /** No camera files at all. */
+  noMedia?: boolean;
+  /** Cut the audio sidecar mid-number, as 072538's is at exactly 8192 bytes. */
+  truncateSidecar?: boolean;
+  /** Open with N IMU rows carrying the epoch twice, as 072516's first 916 do. */
+  clockFaultRows?: number;
+  /** Real IMU interval, when it should disagree with the declared 1 kHz. */
+  imuStepUs?: bigint;
+  /** Start audio this far before the cameras, to drive the skew past its threshold. */
+  audioLeadUs?: bigint;
+  /** A closed manifest that overstates duration and frame counts, as every real one does. */
+  closed?: boolean;
+  /** Statistics written as all zero. */
+  zeroStats?: boolean;
+  /** Plausible counts left over from an earlier recording, on a session that never closed. */
+  staleStats?: boolean;
+  /** Segment count the manifest declares, when more parts are claimed than exist. */
+  declaredSegments?: number;
 };
+
+/** A sidecar the device opened and never wrote a row into. */
+const HEADER_ONLY = 'timestamp_us' + String.fromCharCode(10);
 
 const ptsCsv = (start: bigint, n: number, step: bigint) =>
   ['timestamp_us', ...Array.from({ length: n }, (_, i) => String(start + BigInt(i) * step))].join('\n') + '\n';
 
-const imuCsv = (start: bigint, samples: number) => {
+/** 2026-01-01 in microseconds. Adding it to an already absolute timestamp is the fault 072516 shows. */
+const EPOCH_2026_US = 1_767_225_583_000_000n;
+
+const imuCsv = (start: bigint, samples: number, faultRows = 0, step = IMU_US) => {
   const rows = ['timestamp_us\t,x\t,y\t,z\t,type'];
   for (let i = 0; i < samples; i++) {
-    const t = start + BigInt(i) * IMU_US;
+    const t = start + BigInt(i) * step + (i < faultRows ? EPOCH_2026_US : 0n);
     rows.push(`${t},0.100000,-9.800000,0.200000,accel`);
     rows.push(`${t},0.001000,0.002000,0.003000,gyro`);
   }
@@ -79,15 +105,22 @@ imu0:
 gravity: [0., 0., 9.81]
 `;
 
-function manifestJson(o: Opts, stem: string, frames: number, imuSamples: number): string {
+function manifestJson(
+  o: Opts,
+  stem: string,
+  frames: number,
+  imuSamples: number,
+  first: bigint,
+  last: bigint,
+): string {
   const camera = {
     enabled: true,
     file: `${stem}_camera_left.mp4`, // deliberately unresolvable, as on the real device
     fps: 30,
     segment_duration_sec: 3600,
-    segments: o.parts.map((p) => ({
-      index: p.part,
-      frame_count: p.frames,
+    segments: Array.from({ length: o.declaredSegments ?? o.parts.length }, (_, i) => ({
+      index: i + 1,
+      frame_count: FRAMES,
       start_timestamp_us: '0',
       end_timestamp_us: '0',
     })),
@@ -101,20 +134,39 @@ function manifestJson(o: Opts, stem: string, frames: number, imuSamples: number)
         serial_number: SERIAL,
       },
       files: { video_left: `${stem}_camera_left.mp4` },
-      recording: {
-        duration_sec: 0,
-        end_time: '',
-        start_time: '2026-08-13T09:00:00.000',
-        status: 'recording',
-        video_segment_duration_sec: 3600,
-      },
-      statistics: {
-        audio_frame_count: 0,
-        imu_accel_count: imuSamples,
-        imu_gyro_count: imuSamples,
-        video_left_frame_count: frames,
-        video_right_frame_count: frames,
-      },
+      recording: o.closed
+        ? {
+            // Wall clock, which is what the device writes: start-up and shut-down included.
+            duration_sec: Number((last - first) / 1000n) / 1000 * 1.51,
+            end_time: '2026-08-13T09:00:12.000',
+            start_time: '2026-08-13T09:00:00.000',
+            status: 'completed',
+            video_segment_duration_sec: 3600,
+          }
+        : {
+            duration_sec: 0,
+            end_time: '',
+            start_time: '2026-08-13T09:00:00.000',
+            status: 'recording',
+            video_segment_duration_sec: 3600,
+          },
+      statistics: o.zeroStats
+        ? {
+            audio_frame_count: 0,
+            imu_accel_count: 0,
+            imu_gyro_count: 0,
+            video_left_frame_count: 0,
+            video_right_frame_count: 0,
+          }
+        : {
+            audio_frame_count: 0,
+            // A closed session declares more than it holds, as all five real ones do.
+            // A stale block belongs to a different recording entirely.
+            imu_accel_count: o.staleStats ? 12_640 : o.closed ? imuSamples + 900 : imuSamples,
+            imu_gyro_count: o.staleStats ? 12_640 : o.closed ? imuSamples + 900 : imuSamples,
+            video_left_frame_count: o.staleStats ? 316 : o.closed ? frames + 4 : frames,
+            video_right_frame_count: o.staleStats ? 318 : o.closed ? frames + 7 : frames,
+          },
       streams: {
         audio: { enabled: true },
         color_left: camera,
@@ -141,23 +193,33 @@ async function build(o: Opts): Promise<string> {
   }, 0n);
   const imuSamples = Number((last - first) / IMU_US) + 1;
 
-  for (const p of o.parts) {
-    const tag = `part${String(p.part).padStart(4, '0')}`;
-    for (const role of ['camera_left', 'camera_right']) {
-      if (o.corruptMedia) {
-        await writeFile(join(dir, `${stem}_${role}_${tag}.mp4`), Buffer.from('not an mp4 at all'));
-        continue;
+  if (!o.noMedia) {
+    for (const p of o.parts) {
+      const tag = `part${String(p.part).padStart(4, '0')}`;
+      for (const role of ['camera_left', 'camera_right']) {
+        if (o.corruptMedia) {
+          await writeFile(join(dir, `${stem}_${role}_${tag}.mp4`), Buffer.from('not an mp4 at all'));
+          continue;
+        }
+        await writeFile(join(dir, `${stem}_${role}_${tag}.mp4`), '');
+        await writeFile(
+          join(dir, `${stem}_${role}_${tag}_pts.csv`),
+          o.emptyStreams ? HEADER_ONLY : ptsCsv(p.start, p.frames, FPS_US),
+        );
       }
-      await writeFile(join(dir, `${stem}_${role}_${tag}.mp4`), '');
-      await writeFile(join(dir, `${stem}_${role}_${tag}_pts.csv`), ptsCsv(p.start, p.frames, FPS_US));
     }
   }
 
-  await writeFile(join(dir, `${stem}_imu_part0001.csv`), imuCsv(first, imuSamples));
+  await writeFile(
+    join(dir, `${stem}_imu_part0001.csv`),
+    imuCsv(first, imuSamples, o.clockFaultRows ?? 0, o.imuStepUs ?? IMU_US),
+  );
   await writeFile(join(dir, `${stem}_audio.wav`), '');
+  const audioStart = first - (o.audioLeadUs ?? 0n);
+  const audio = ptsCsv(audioStart, Math.max(2, Number((last - audioStart) / AUDIO_US) + 1), AUDIO_US);
   await writeFile(
     join(dir, `${stem}_audio_pts.csv`),
-    ptsCsv(first, Math.max(2, Number((last - first) / AUDIO_US) + 1), AUDIO_US),
+    o.truncateSidecar ? audio.slice(0, audio.length - 9) : audio,
   );
 
   if (o.calibration !== false) {
@@ -165,7 +227,10 @@ async function build(o: Opts): Promise<string> {
     await writeFile(join(dir, `${stem}_calibration_imu.yaml`), CALIB_IMU);
   }
   if (o.manifest !== false) {
-    await writeFile(join(dir, `meta_${stem}.json`), manifestJson(o, stem, frames, imuSamples));
+    await writeFile(
+      join(dir, `meta_${stem}.json`),
+      manifestJson(o, stem, frames, imuSamples, first, last),
+    );
   }
   return dir;
 }
@@ -215,6 +280,38 @@ const fixtures: Opts[] = [
   // The same session delivered twice, by two different paths.
   { label: 'delivery-a', time: '090800', parts: contiguous(1) },
   { label: 'delivery-b', time: '090800', parts: contiguous(1) },
+
+  // Sidecars opened and never written into, beside zero-byte video.
+  { label: 'empty-streams', time: '090900', parts: contiguous(1), emptyStreams: true },
+
+  // Calibration and a manifest, but the camera never wrote a file.
+  { label: 'no-media', time: '091000', parts: contiguous(1), noMedia: true },
+
+  // The audio sidecar stops mid-number, as 072538's does at exactly 8192 bytes.
+  { label: 'truncated-sidecar', time: '091100', parts: contiguous(1), truncateSidecar: true },
+
+  // The IMU opens with rows carrying the epoch twice, as 072516's first 916 do.
+  // Without the clock check this session reports a duration of zero.
+  { label: 'clock-fault', time: '091200', parts: contiguous(1), clockFaultRows: 300 },
+
+  // A closed session, which is where the manifest overstates everything.
+  { label: 'inflated-manifest', time: '091300', parts: contiguous(1), closed: true },
+
+  // Closed, with a statistics block that was never written.
+  { label: 'zeroed-stats', time: '091400', parts: contiguous(1), closed: true, zeroStats: true },
+
+  // Three segments declared, one part on disk: the recording stopped early.
+  { label: 'missing-tail-part', time: '091500', parts: contiguous(1), declaredSegments: 3 },
+
+  // Audio running two seconds ahead of the cameras.
+  { label: 'high-skew', time: '091600', parts: contiguous(1), audioLeadUs: 2_000_000n },
+
+  // An IMU sampling at 500 Hz while the manifest declares 1 kHz.
+  { label: 'imu-rate-anomaly', time: '091700', parts: contiguous(1), imuStepUs: 2_000n },
+
+  // Never closed, carrying another recording's counts. They look credible and
+  // are wrong, which is exactly what 072538 does with 072516's numbers.
+  { label: 'stale-stats', time: '091800', parts: contiguous(1), staleStats: true },
 ];
 
 console.log('writing fixtures:');

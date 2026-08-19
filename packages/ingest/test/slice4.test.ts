@@ -229,3 +229,55 @@ describe.skipIf(!hasSession('072538'))('B16 a genuinely truncated MP4', () => {
     expect(probe?.packets).toBe(256);
   });
 });
+
+/**
+ * Every finding this project made came from the real sample sessions, which are
+ * not committed. Without a fixture for each, CI proves none of them.
+ */
+describe('the defect taxonomy is reachable from committed fixtures alone', () => {
+  const expected: [string, string, string][] = [
+    ['empty-streams', 'PTS-EMPTY', 'quarantined'],
+    ['no-media', 'MEDIA-MISSING', 'quarantined'],
+    ['truncated-sidecar', 'PTS-TRUNCATED', 'flagged'],
+    ['clock-fault', 'STREAM-CLOCK-FAULT', 'flagged'],
+    ['inflated-manifest', 'DUR-MANIFEST-INFLATED', 'flagged'],
+    ['inflated-manifest', 'FRAMECOUNT-MISMATCH', 'flagged'],
+    ['zeroed-stats', 'STATS-ZEROED', 'flagged'],
+    ['stale-stats', 'STATS-STALE', 'flagged'],
+    ['missing-tail-part', 'PART-MISSING-TAIL', 'flagged'],
+    ['high-skew', 'STREAM-SKEW-HIGH', 'flagged'],
+    ['imu-rate-anomaly', 'IMU-RATE-ANOMALY', 'flagged'],
+  ];
+
+  for (const [label, code, state] of expected) {
+    it(`${label} raises ${code}`, async () => {
+      const r = await withCache(async () => ingest(await fixture(label)));
+      expect(codes(r)).toContain(code);
+      expect(r.state).toBe(state);
+    });
+  }
+
+  it('a stream with a broken clock costs the episode a flag, not its duration', async () => {
+    const r = await withCache(async () => ingest(await fixture('clock-fault')));
+    // Before the clock check, the bogus IMU start became the usable start and
+    // this read 0.000 s for a session holding real video.
+    expect(r.timing.raw_duration_s).toBeGreaterThan(0.5);
+    expect(r.streams.find((s) => s.role === 'imu_accel')?.span_s).toBeGreaterThan(1e6);
+  });
+
+  it('a cut sidecar stops setting the end, so the cameras decide', async () => {
+    const cut = await withCache(async () => ingest(await fixture('truncated-sidecar')));
+    const whole = await withCache(async () => ingest(await fixture('delivery-a')));
+    expect(cut.timing.raw_duration_s).toBeGreaterThan(whole.timing.raw_duration_s);
+    expect(cut.timing.raw_duration_s).toBeCloseTo(0.633, 3);
+  });
+
+  it('an empty sidecar and an absent one are told apart', async () => {
+    const empty = await withCache(async () => ingest(await fixture('empty-streams')));
+    const absent = await withCache(async () => ingest(await fixture('corrupt-container')));
+    expect(codes(empty)).toContain('PTS-EMPTY');
+    expect(codes(empty)).not.toContain('PTS-ABSENT');
+    expect(codes(absent)).toContain('PTS-ABSENT');
+    expect(codes(absent)).not.toContain('PTS-EMPTY');
+  });
+});

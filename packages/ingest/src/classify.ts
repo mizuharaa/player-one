@@ -124,7 +124,11 @@ export function classify(input: ClassifyInput): {
       );
     }
     if (s.source === 'absent') {
-      add('PTS-ABSENT', 'flag', `${s.role}: no sidecar and no readable container`);
+      add(
+        sidecarOnDisk ? 'PTS-EMPTY' : 'PTS-ABSENT',
+        'flag',
+        `${s.role}: ${sidecarOnDisk ? 'the sidecar holds no rows' : 'there is no sidecar'}, and the container is unreadable`,
+      );
     }
     if (s.truncatedTail) {
       add('PTS-TRUNCATED', 'flag', `${s.role}: the sidecar stops mid-line and the partial row was dropped`);
