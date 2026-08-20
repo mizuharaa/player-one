@@ -73,7 +73,8 @@ export function classify(input: ClassifyInput): {
   }
 
   // -- flag ----------------------------------------------------------------
-  if (m.parsed && (m.declared.status !== 'completed' || m.declared.end_time === null)) {
+  const unclosed = m.parsed && (m.declared.status !== 'completed' || m.declared.end_time === null);
+  if (unclosed) {
     add(
       'SESSION-UNCLOSED',
       'flag',
@@ -184,6 +185,31 @@ export function classify(input: ClassifyInput): {
       'quarantine',
       `camera ${calibration.camera ? 'present' : 'MISSING'}, imu ${calibration.imu ? 'present' : 'MISSING'}`,
     );
+  }
+
+  /**
+   * A container whose boxes do not tile the file. What that means depends on
+   * whether the recording finished.
+   *
+   * A session that never closed is *expected* to end mid-box: 072538's last
+   * mdat still carries the placeholder length of 8 the device writes before it
+   * knows the payload size, with 336 KB of media after it. The device died
+   * holding the pen. Everything before that point is real footage, and ING-14
+   * is explicit that those sessions are flagged and never discarded.
+   *
+   * A session that closed cleanly should own a finished file. If its boxes run
+   * past the end, something damaged it after the device was done — a half-copied
+   * card or an interrupted transfer — and the footage it claims is not there.
+   */
+  for (const s of streams) {
+    for (const part of s.incompleteParts) {
+      add(
+        'MEDIA-TRUNCATED',
+        unclosed ? 'flag' : 'quarantine',
+        `${part.file}: ${part.detail}` +
+          (unclosed ? ' (the recording was interrupted, so the file ends mid-box)' : ''),
+      );
+    }
   }
 
   const cameras = streams.filter((s) => s.role.startsWith('camera_'));

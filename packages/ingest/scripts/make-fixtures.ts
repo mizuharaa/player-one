@@ -40,6 +40,8 @@ type Opts = {
   corruptMedia?: boolean;
   /** Header-only sidecars beside zero-byte video: the device wrote nothing. */
   emptyStreams?: boolean;
+  /** Video cut short mid-transfer, with the sidecars left intact. */
+  truncatedContainer?: boolean;
   /** No camera files at all. */
   noMedia?: boolean;
   /** Cut the audio sidecar mid-number, as 072538's is at exactly 8192 bytes. */
@@ -78,6 +80,31 @@ const imuCsv = (start: bigint, samples: number, faultRows = 0, step = IMU_US) =>
   }
   return rows.join('\n') + '\n';
 };
+
+/**
+ * The smallest MP4 whose boxes tile the file exactly: an `ftyp` and an empty
+ * `free`. Enough to satisfy the structural check without carrying any video.
+ */
+function minimalMp4(): Buffer {
+  const ftyp = Buffer.alloc(24);
+  ftyp.writeUInt32BE(24, 0);
+  ftyp.write('ftypisom', 4, 'latin1');
+  ftyp.writeUInt32BE(512, 12);
+  ftyp.write('isomiso2', 16, 'latin1');
+  const free = Buffer.alloc(8);
+  free.writeUInt32BE(8, 0);
+  free.write('free', 4, 'latin1');
+  return Buffer.concat([ftyp, free]);
+}
+
+/** An `mdat` that promises far more than the file delivers: a transfer cut short. */
+function truncatedMp4(): Buffer {
+  const head = minimalMp4();
+  const mdat = Buffer.alloc(8);
+  mdat.writeUInt32BE(4_000_000, 0);
+  mdat.write('mdat', 4, 'latin1');
+  return Buffer.concat([head, mdat, Buffer.alloc(64, 0x11)]);
+}
 
 const CALIB_CAMERA = `calibration_info:
   format_version: 1.0
@@ -201,7 +228,10 @@ async function build(o: Opts): Promise<string> {
           await writeFile(join(dir, `${stem}_${role}_${tag}.mp4`), Buffer.from('not an mp4 at all'));
           continue;
         }
-        await writeFile(join(dir, `${stem}_${role}_${tag}.mp4`), '');
+        await writeFile(
+          join(dir, `${stem}_${role}_${tag}.mp4`),
+          o.truncatedContainer ? truncatedMp4() : minimalMp4(),
+        );
         await writeFile(
           join(dir, `${stem}_${role}_${tag}_pts.csv`),
           o.emptyStreams ? HEADER_ONLY : ptsCsv(p.start, p.frames, FPS_US),
@@ -308,6 +338,25 @@ const fixtures: Opts[] = [
 
   // An IMU sampling at 500 Hz while the manifest declares 1 kHz.
   { label: 'imu-rate-anomaly', time: '091700', parts: contiguous(1), imuStepUs: 2_000n },
+
+  // Finished recording, damaged afterwards. The sidecars are intact so timing
+  // looks healthy, and only the container's own box lengths give it away.
+  {
+    label: 'truncated-container',
+    time: '091900',
+    parts: contiguous(1),
+    truncatedContainer: true,
+    closed: true,
+  },
+
+  // The same broken container on a recording that never closed. The device died
+  // mid-write, so this is footage to review, not footage to hold.
+  {
+    label: 'interrupted-recording',
+    time: '092000',
+    parts: contiguous(1),
+    truncatedContainer: true,
+  },
 
   // Never closed, carrying another recording's counts. They look credible and
   // are wrong, which is exactly what 072538 does with 072516's numbers.

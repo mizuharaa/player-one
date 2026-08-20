@@ -281,3 +281,74 @@ describe('the defect taxonomy is reachable from committed fixtures alone', () =>
     expect(codes(absent)).not.toContain('PTS-EMPTY');
   });
 });
+
+/**
+ * The gap left open in slice 4: a container cut short but carrying an intact
+ * sidecar. Timing looks healthy because the sidecar is healthy, so nothing
+ * upstream of this check notices the footage is not there.
+ */
+describe('a container cut short is caught even when the sidecar is fine', () => {
+  it('the fixture quarantines with the box that overruns', async () => {
+    const r = await withCache(async () => ingest(await fixture('truncated-container')));
+    expect(codes(r)).toContain('MEDIA-TRUNCATED');
+    expect(r.state).toBe('quarantined');
+    const why = r.discrepancies.find((x) => x.code === 'MEDIA-TRUNCATED')!;
+    expect(why.detail).toContain('mdat');
+    expect(why.detail).toMatch(/declares \d+ bytes but only \d+ remain/);
+  });
+
+  it('a whole container reports nothing', async () => {
+    const { checkMp4Complete } = await import('../src/timing.ts');
+    const whole = await fixture('multipart');
+    const file = join(whole, 'ego_SYNTH0000001_20260813_090000_camera_left_part0001.mp4');
+    expect(await checkMp4Complete(file)).toBeNull();
+  });
+
+  it.skipIf(!hasSession('072310'))('a real video cut to 45% is caught, sidecar untouched', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'px-trunc-'));
+    const copy = join(root, 'ego_AZER76400FE_20260813_072310');
+    await cp(session('072310'), copy, { recursive: true });
+
+    const video = join(copy, 'ego_AZER76400FE_20260813_072310_camera_left_part0001.mp4');
+    const whole = await readFile(video);
+    await writeFile(video, whole.subarray(0, Math.floor(whole.length * 0.45)));
+
+    const r = await withCache(() => ingest(copy));
+    expect(codes(r)).toContain('MEDIA-TRUNCATED');
+    expect(r.state).toBe('quarantined');
+    // The sidecar still reads 8.500 s. Only the box lengths give the file away.
+    expect(r.timing.raw_duration_s).toBeCloseTo(8.5, 2);
+    expect(r.timing.confidence).toBe('exact');
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it.skipIf(!hasSession('072310'))('the intact session is not accused of being short', async () => {
+    const r = await withCache(() => ingest(session('072310')));
+    expect(codes(r)).not.toContain('MEDIA-TRUNCATED');
+    expect(r.state).toBe('flagged');
+  });
+});
+
+describe('a broken container means different things on a closed and an unclosed session', () => {
+  it('an interrupted recording flags, because the footage before the cut is real', async () => {
+    const r = await withCache(async () => ingest(await fixture('interrupted-recording')));
+    const why = r.discrepancies.find((x) => x.code === 'MEDIA-TRUNCATED')!;
+    expect(why.severity).toBe('flag');
+    expect(why.detail).toContain('interrupted');
+    expect(r.state).toBe('flagged');
+  });
+
+  it('the same damage on a closed session quarantines', async () => {
+    const r = await withCache(async () => ingest(await fixture('truncated-container')));
+    expect(r.discrepancies.find((x) => x.code === 'MEDIA-TRUNCATED')?.severity).toBe('quarantine');
+    expect(r.state).toBe('quarantined');
+  });
+
+  it.skipIf(!hasSession('072538'))('072538 keeps its 20.980 s and is flagged, never held (ING-14)', async () => {
+    const r = await withCache(() => ingest(session('072538')));
+    expect(r.state).toBe('flagged');
+    expect(r.timing.raw_duration_s).toBeCloseTo(20.98, 2);
+    expect(r.discrepancies.find((x) => x.code === 'MEDIA-TRUNCATED')?.severity).toBe('flag');
+  });
+});

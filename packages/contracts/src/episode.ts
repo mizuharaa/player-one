@@ -36,6 +36,7 @@ export const DISCREPANCY_CODES = [
   'CALIB-MISSING',
   'MEDIA-MISSING',
   'MEDIA-UNREADABLE',
+  'MEDIA-TRUNCATED', // the container is structurally short: the transfer did not finish
   'PART-MISSING-INTERIOR',
   'CHECKSUM-MISMATCH',
 ] as const;

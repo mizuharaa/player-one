@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { open } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import type { FileEntry } from './discover.ts';
 import { reduceImuTimestamps, reduceTimestamps, type Reduction } from './csv.ts';
@@ -35,6 +36,8 @@ export type StreamTiming = {
   truncatedTail: boolean;
   /** Rows delivered out of order. Harmless: first/last are min/max. */
   backwardsSteps: number;
+  /** Parts whose container is structurally short, with the reason. Empty when every part is whole. */
+  incompleteParts: { file: string; detail: string }[];
 };
 
 /**
@@ -71,6 +74,55 @@ const toS = (us: bigint): number => Number(us) / 1e6;
 // Reading the streams
 
 const run = promisify(execFile);
+
+/**
+ * Is the MP4 all there?
+ *
+ * An ISO base media file is a tree of boxes, each declaring its own length, and
+ * the top-level ones must tile the file exactly. A file cut short still carries
+ * an intact `moov`, so it answers ffprobe with a full duration and looks
+ * healthy: the 072310 sample cut to 45% of its bytes reports 8.515 s, longer
+ * than the intact original. What it cannot hide is an `mdat` that claims more
+ * bytes than the file has left.
+ *
+ * This reads box headers only — a few hundred bytes of seeks, not a pass over
+ * the media — so it can run on every video rather than only on the ones whose
+ * sidecar failed.
+ */
+export async function checkMp4Complete(path: string): Promise<string | null> {
+  const fh = await open(path, 'r');
+  try {
+    const { size } = await fh.stat();
+    if (size === 0) return 'the file is empty';
+
+    const head = Buffer.alloc(16);
+    let off = 0;
+    while (off < size) {
+      const { bytesRead } = await fh.read(head, 0, 16, off);
+      if (bytesRead < 8) return `a box header at ${off} runs past the end of the file`;
+
+      let len = head.readUInt32BE(0);
+      // Past a bad box the walk is reading media as headers, so the "type" is
+      // whatever bytes happened to be there. Show it, but readably.
+      const type = head.toString('latin1', 4, 8).replace(/[^ -~]/g, '.');
+      if (len === 1) {
+        if (bytesRead < 16) return `a 64-bit box header at ${off} runs past the end of the file`;
+        len = Number(head.readBigUInt64BE(8));
+      } else if (len === 0) {
+        len = size - off; // the last box may run to the end
+      }
+
+      if (len < 8) return `the box at ${off} declares an impossible length of ${len}`;
+      if (off + len > size) {
+        return `${type} at ${off} declares ${len} bytes but only ${size - off} remain`;
+      }
+      off += len;
+    }
+    return null;
+  } finally {
+    await fh.close();
+  }
+}
 
 export type Probe = { durationUs: bigint; packets: number };
 
@@ -116,6 +168,17 @@ export async function probeContainer(path: string): Promise<Probe | null> {
  * ING-11 fallback chain, per stream: PTS sidecar, then the container. The IMU
  * and wall-clock rungs are episode-wide decisions and live in computeTiming.
  */
+/** Every .mp4 part that does not tile its own file length. */
+async function incompleteIn(parts: FileEntry[]): Promise<{ file: string; detail: string }[]> {
+  const out = [];
+  for (const p of parts) {
+    if (!p.file.toLowerCase().endsWith('.mp4')) continue;
+    const detail = await checkMp4Complete(p.path);
+    if (detail !== null) out.push({ file: p.file, detail });
+  }
+  return out;
+}
+
 export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]> {
   const media = entries.filter((e) => e.kind === 'media');
   const roles = [...new Set(media.map((e) => e.role).filter((r): r is string => r !== null))].sort();
@@ -130,6 +193,8 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
       out.push(...(await readImu(parts)));
       continue;
     }
+
+    const incompleteParts = await incompleteIn(parts);
 
     const sidecars = entries
       .filter((e) => e.kind === 'pts' && e.role === role)
@@ -159,6 +224,7 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
         medianDeltaUs: reduced[0]!.medianDeltaUs,
         truncatedTail: reduced.some((r) => r.truncatedTail),
         backwardsSteps: reduced.reduce((n, r) => n + r.backwardsSteps, 0),
+        incompleteParts,
       });
       continue;
     }
@@ -189,6 +255,7 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
       medianDeltaUs: null,
       truncatedTail: false,
       backwardsSteps: 0,
+      incompleteParts,
     });
   }
   return out;
@@ -231,6 +298,7 @@ async function readImu(parts: FileEntry[]): Promise<StreamTiming[]> {
       medianDeltaUs: reduced[0]!.medianDeltaUs,
       truncatedTail: reduced.some((r) => r.truncatedTail),
       backwardsSteps: reduced.reduce((n, r) => n + r.backwardsSteps, 0),
+      incompleteParts: [],
     });
   }
   return out;
