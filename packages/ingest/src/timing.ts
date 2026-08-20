@@ -287,6 +287,30 @@ async function readImu(parts: FileEntry[]): Promise<StreamTiming[]> {
   }
 
   const out: StreamTiming[] = [];
+
+  // Rows arrived but none carried a type we know, so there is no accel or gyro
+  // stream to hang the complaint on. Emit the file itself so it is not silent.
+  if (byType.accel.length === 0 && byType.gyro.length === 0) {
+    if (malformedRows === 0) return out;
+    return [
+      {
+        role: 'imu',
+        parts,
+        partTimings: [],
+        source: 'absent',
+        firstUs: null,
+        lastUs: null,
+        spanUs: null,
+        sampleCount: 0,
+        medianDeltaUs: null,
+        truncatedTail: false,
+        backwardsSteps: 0,
+        incompleteParts: [],
+        malformedRows,
+      },
+    ];
+  }
+
   for (const type of ['accel', 'gyro'] as const) {
     const reduced = byType[type];
     if (reduced.length === 0) continue;

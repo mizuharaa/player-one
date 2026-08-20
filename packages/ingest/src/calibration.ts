@@ -62,7 +62,10 @@ export async function readCalibration(entries: FileEntry[]): Promise<Calibration
 async function parseYaml(path: string): Promise<Record<string, any> | null> {
   try {
     const y = parse(await readFile(path, 'utf8'));
-    return y !== null && typeof y === 'object' ? (y as Record<string, any>) : null;
+    // typeof [] is 'object', and a YAML list is not a calibration.
+    return y !== null && typeof y === 'object' && !Array.isArray(y)
+      ? (y as Record<string, any>)
+      : null;
   } catch {
     return null;
   }
