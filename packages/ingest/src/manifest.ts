@@ -15,6 +15,10 @@ export type ManifestInfo = {
   declared: Declared;
   /** Camera keys as the manifest names them: `color_left`, `color_right`. Compared with calibration, never resolved (ING-25). */
   cameraNames: string[];
+  /** Declared IMU sample rate, compared against the measured one (ING-28). */
+  imuRateHz: number | null;
+  /** Declared segment count per camera key. Used to spot a missing tail part, never for duration. */
+  segmentCounts: Record<string, number>;
   /** ING-01 evidence. Names the manifest lists that are not on disk. */
   unresolvedFiles: string[];
 };
@@ -46,6 +50,8 @@ export async function readManifest(
     firmwareVersion: null,
     declared: EMPTY,
     cameraNames: [],
+    imuRateHz: null,
+    segmentCounts: {},
     unresolvedFiles: [],
   };
   if (path === null) return absent;
@@ -82,6 +88,12 @@ export async function readManifest(
       audio_frame_count: num(stats['audio_frame_count']),
     },
     cameraNames: Object.keys(streams).filter((k) => k !== 'audio' && k !== 'imu'),
+    imuRateHz: num(streams['imu']?.['accel_sample_rate_hz']),
+    segmentCounts: Object.fromEntries(
+      Object.entries(streams)
+        .filter(([k]) => k !== 'audio' && k !== 'imu')
+        .map(([k, v]) => [k, Array.isArray((v as any)?.segments) ? (v as any).segments.length : 0]),
+    ),
     unresolvedFiles:
       files && typeof files === 'object'
         ? Object.values(files as Record<string, unknown>)

@@ -6,5 +6,8 @@
   "dependencies": {
     "@playerone/contracts": "workspace:*",
     "yaml": "^2.5.1"
+  },
+  "bin": {
+    "ingest": "./bin/ingest.ts"
   }
 }
