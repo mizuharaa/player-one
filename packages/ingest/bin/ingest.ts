@@ -26,6 +26,20 @@ try {
     console.error(`${err.message}\nThis tool reads ego session directories.`);
     process.exit(2);
   }
+  // A path the operator mistyped is not a crash, and a stack trace tells them nothing.
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === 'ENOENT') {
+    console.error(`${dir}: no such directory`);
+    process.exit(2);
+  }
+  if (code === 'ENOTDIR') {
+    console.error(`${dir}: not a directory`);
+    process.exit(2);
+  }
+  if (code === 'EACCES' || code === 'EPERM') {
+    console.error(`${dir}: permission denied`);
+    process.exit(2);
+  }
   throw err;
 }
 

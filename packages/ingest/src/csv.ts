@@ -26,7 +26,23 @@ export type Reduction = {
    * 2-6 sample intervals, 072516's IMU jumps 56 years.
    */
   backwardsSteps: number;
+  /**
+   * Rows that were not a timestamp at all and were skipped. A device that
+   * writes a half-line or a decimal must not take the whole ingest down with
+   * it, but it must not do so quietly either.
+   */
+  malformedRows: number;
 };
+
+/**
+ * A microsecond timestamp is a non-negative integer, nothing else. Anything
+ * with a sign, a decimal point or a letter is not a timestamp, and BigInt()
+ * throws on all three. Nineteen digits is past the year 300,000.
+ */
+const TIMESTAMP = /^[0-9]{1,19}$/;
+
+export const parseTimestamp = (field: string): bigint | null =>
+  TIMESTAMP.test(field) ? BigInt(field) : null;
 
 class Accumulator {
   // first/last are min/max, not the first and last rows: audio sidecars deliver
@@ -53,6 +69,8 @@ class Accumulator {
     this.count++;
   }
 
+  malformedRows = 0;
+
   result(truncatedTail: boolean): Reduction | null {
     if (this.first === null || this.last === null) return null;
     return {
@@ -62,6 +80,7 @@ class Accumulator {
       medianDeltaUs: this.median(),
       truncatedTail,
       backwardsSteps: this.backwardsSteps,
+      malformedRows: this.malformedRows,
     };
   }
 
@@ -118,7 +137,12 @@ export async function reduceTimestamps(path: string): Promise<Reduction | null> 
       header = false;
       if (s === 'timestamp_us') continue;
     }
-    acc.push(BigInt(s));
+    const ts = parseTimestamp(s);
+    if (ts === null) {
+      acc.malformedRows++;
+      continue;
+    }
+    acc.push(ts);
   }
   return acc.result(truncated);
 }
@@ -127,6 +151,8 @@ export type ImuReduction = {
   rows: number;
   accel: Reduction | null;
   gyro: Reduction | null;
+  /** Rows with no usable timestamp, too few columns, or a type that is neither accel nor gyro. */
+  malformedRows: number;
 };
 
 /**
@@ -142,6 +168,7 @@ export async function reduceImuTimestamps(path: string): Promise<ImuReduction> {
   let tsCol = 0;
   let typeCol = 4;
   let rows = 0;
+  let malformed = 0;
   let header = true;
 
   for await (const line of lines(path, !truncated)) {
@@ -157,13 +184,22 @@ export async function reduceImuTimestamps(path: string): Promise<ImuReduction> {
       }
     }
     rows++;
-    const ts = BigInt(fields[tsCol]!.trim());
+    const ts = parseTimestamp(fields[tsCol]?.trim() ?? '');
     const type = fields[typeCol]?.trim();
+    if (ts === null || (type !== 'accel' && type !== 'gyro')) {
+      malformed++;
+      continue;
+    }
     if (type === 'accel') accel.push(ts);
-    else if (type === 'gyro') gyro.push(ts);
+    else gyro.push(ts);
   }
 
-  return { rows, accel: accel.result(truncated), gyro: gyro.result(truncated) };
+  return {
+    rows,
+    accel: accel.result(truncated),
+    gyro: gyro.result(truncated),
+    malformedRows: malformed,
+  };
 }
 
 export const spanUs = (r: Reduction): bigint => r.last - r.first;

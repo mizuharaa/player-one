@@ -242,7 +242,7 @@ describe('multi-part assembly (ING-18..21)', () => {
     );
     const missing = out.find((x) => x.code === 'PART-MISSING-INTERIOR');
     expect(missing?.severity).toBe('quarantine');
-    expect(missing?.detail).toContain('part 2 absent');
+    expect(missing?.detail).toContain('1 part absent between 1 and 3');
   });
 
   it('a part missing off the tail only flags', () => {

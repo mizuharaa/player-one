@@ -131,6 +131,13 @@ export function classify(input: ClassifyInput): {
         `${s.role}: ${sidecarOnDisk ? 'the sidecar holds no rows' : 'there is no sidecar'}, and the container is unreadable`,
       );
     }
+    if (s.malformedRows > 0) {
+      add(
+        'ROWS-MALFORMED',
+        'flag',
+        `${s.role}: ${s.malformedRows} row${s.malformedRows === 1 ? '' : 's'} were not timestamps and were skipped`,
+      );
+    }
     if (s.truncatedTail) {
       add('PTS-TRUNCATED', 'flag', `${s.role}: the sidecar stops mid-line and the partial row was dropped`);
     }
@@ -179,12 +186,23 @@ export function classify(input: ClassifyInput): {
   d.push(...partDiscrepancies(streams, m));
 
   // -- quarantine ----------------------------------------------------------
-  if (!calibration.present) {
+  if (calibration.unreadable.length > 0) {
+    add('CALIB-UNREADABLE', 'quarantine', `will not parse: ${calibration.unreadable.join(', ')}`);
+  } else if (!calibration.present) {
     add(
       'CALIB-MISSING',
       'quarantine',
       `camera ${calibration.camera ? 'present' : 'MISSING'}, imu ${calibration.imu ? 'present' : 'MISSING'}`,
     );
+  }
+
+  /**
+   * A manifest that will not parse must not make an episode look cleaner than a
+   * good one. Everything the manifest would have contradicted goes unchecked,
+   * so the reviewer has to be told the comparison never happened.
+   */
+  if (m.present && !m.parsed) {
+    add('MANIFEST-UNREADABLE', 'flag', 'the manifest is on disk but will not parse; nothing was compared against it');
   }
 
   /**
@@ -242,10 +260,13 @@ export function partDiscrepancies(streams: StreamTiming[], m: ManifestInfo): Dis
         if (!sorted.includes(n)) missing.push(n);
       }
       if (missing.length > 0) {
+        // One stray high part number can imply thousands of gaps. Name a few.
+        const shown = missing.slice(0, 8).join(', ');
+        const rest = missing.length > 8 ? ` and ${missing.length - 8} more` : '';
         out.push({
           code: 'PART-MISSING-INTERIOR',
           severity: 'quarantine',
-          detail: `${s.role}: part ${missing.join(', ')} absent between ${sorted[0]} and ${sorted[sorted.length - 1]}`,
+          detail: `${s.role}: ${missing.length} part${missing.length === 1 ? '' : 's'} absent between ${sorted[0]} and ${sorted[sorted.length - 1]} (${shown}${rest})`,
         });
       }
     }
