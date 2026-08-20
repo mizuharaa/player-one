@@ -1,3 +1,4 @@
+export * from './identity.ts';
 import { z } from 'zod';
 
 /**
@@ -42,6 +43,10 @@ export const DISCREPANCY_CODES = [
   'MANIFEST-UNREADABLE', // the manifest is on disk but will not parse
   'PART-MISSING-INTERIOR',
   'CHECKSUM-MISMATCH',
+  // Identity, from milestone 0.3. Both are cross-checks on the session
+  // directory name, which is what the episode id is derived from.
+  'EPISODE-ID-FALLBACK', // the basename does not parse; the id falls back to the raw name
+  'SERIAL-CONFLICT', // basename, manifest and calibration disagree on the device serial
 ] as const;
 
 export const Discrepancy = z.object({
@@ -128,3 +133,14 @@ export type EpisodeRecord = z.infer<typeof EpisodeRecord>;
 export type Discrepancy = z.infer<typeof Discrepancy>;
 export type Stream = z.infer<typeof Stream>;
 export type Declared = z.infer<typeof Declared>;
+
+/**
+ * The state a set of discrepancies implies. Lives here rather than in the
+ * engine because the store applies the same rule when a store-time discovery
+ * (CHECKSUM-MISMATCH) is attached to an already-measured record.
+ */
+export function stateFrom(discrepancies: readonly Discrepancy[]): EpisodeRecord['state'] {
+  if (discrepancies.some((x) => x.severity === 'quarantine')) return 'quarantined';
+  if (discrepancies.some((x) => x.severity === 'flag')) return 'flagged';
+  return 'ok';
+}

@@ -1,26 +1,47 @@
 #!/usr/bin/env node
 /**
- * ingest <dir> [--json] [--out file]
+ * ingest <dir> [--json] [--out file] [--store]
+ * ingest --list [--state <state>] [--limit N]
+ * ingest --show <episode-id> [--json]
  *
  * Human-readable summary by default. --json emits the EpisodeRecord.
+ *
+ * The store is opt-in and nothing else changes when it is off: without --store
+ * (and with no DATABASE_URL) this is byte-identical to v0.3.1. The engine runs
+ * at upload centres with the link down, so the measurement path never needs a
+ * database and never opens a connection.
  */
 import { writeFile } from 'node:fs/promises';
-import { ingest, UnsupportedLayoutError } from '../src/ingest.ts';
+import { ingestSession, UnsupportedLayoutError } from '../src/ingest.ts';
+import type { EpisodeRecord } from '@playerone/contracts';
 
 const args = process.argv.slice(2);
-const dir = args.find((a) => !a.startsWith('--'));
+const flag = (name: string): string | undefined => {
+  const at = args.indexOf(name);
+  return at >= 0 ? args[at + 1] : undefined;
+};
 const json = args.includes('--json');
-const outAt = args.indexOf('--out');
-const out = outAt >= 0 ? args[outAt + 1] : undefined;
+
+if (args.includes('--list')) process.exit(await list());
+if (args.includes('--show')) process.exit(await show());
+
+const dir = args.find((a) => !a.startsWith('--') && a !== flag('--out'));
+const store = args.includes('--store');
+const out = flag('--out');
 
 if (!dir) {
-  console.error('usage: ingest <dir> [--json] [--out file]');
+  console.error(
+    'usage: ingest <dir> [--json] [--out file] [--store]\n' +
+      '       ingest --list [--state <state>] [--limit N]\n' +
+      '       ingest --show <episode-id> [--json]',
+  );
   process.exit(2);
 }
 
-let record;
+let record: EpisodeRecord;
+let files;
 try {
-  record = await ingest(dir);
+  ({ record, files } = await ingestSession(dir));
 } catch (err) {
   if (err instanceof UnsupportedLayoutError) {
     console.error(`${err.message}\nThis tool reads ego session directories.`);
@@ -43,12 +64,59 @@ try {
   throw err;
 }
 
+/**
+ * The measurement is the expensive part of this run and must not be lost
+ * because Postgres was down, so a store failure is reported *after* the record
+ * has been printed — and never silently swallowed.
+ */
+let storeLine: string | null = null;
+let storeError: Error | null = null;
+if (store) {
+  try {
+    const { open, storeEpisode } = await import('@playerone/store');
+    const db = await open();
+    try {
+      const result = await storeEpisode(db, record, files);
+      record = result.record; // may now carry CHECKSUM-MISMATCH
+      storeLine =
+        result.outcome === 'duplicate'
+          ? 'stored: duplicate (no-op)'
+          : result.outcome === 'new'
+            ? 'stored: new'
+            : `stored: mismatch\n` +
+              [
+                ...result.mismatch!.changed.map((c) => `    changed  ${c.relative_path}`),
+                ...result.mismatch!.added.map((a) => `    added    ${a.relative_path}`),
+                ...result.mismatch!.removed.map((r) => `    removed  ${r.relative_path}`),
+              ].join('\n');
+    } finally {
+      await db.close();
+    }
+  } catch (err) {
+    storeError = err as Error;
+  }
+}
+
 const text = JSON.stringify(record, null, 2);
 if (out) await writeFile(out, text);
 
 if (json) {
   if (!out) console.log(text);
 } else {
+  printRecord(record);
+  if (out) console.log(`  written to     ${out}\n`);
+}
+if (storeLine) console.log(storeLine);
+if (storeError) {
+  console.error(`store failed: ${storeError.message}`);
+  process.exit(3);
+}
+
+process.exit(record.state === 'quarantined' ? 1 : 0);
+
+// ---------------------------------------------------------------------------
+
+function printRecord(record: EpisodeRecord): void {
   const t = record.timing;
   const badge = { ok: 'OK', flagged: 'FLAGGED', quarantined: 'QUARANTINED' }[record.state];
   console.log(`\n${record.source.path}`);
@@ -77,8 +145,82 @@ if (json) {
   if (record.unclassified_files.length > 0) {
     console.log(`\n  unclassified   ${record.unclassified_files.join(', ')}`);
   }
-  if (out) console.log(`\n  written to     ${out}`);
   console.log();
 }
 
-process.exit(record.state === 'quarantined' ? 1 : 0);
+async function list(): Promise<number> {
+  const { open, listEpisodes } = await import('@playerone/store');
+  const limit = flag('--limit');
+  let db;
+  try {
+    db = await open();
+  } catch (err) {
+    console.error((err as Error).message);
+    return 3;
+  }
+  try {
+    const rows = await listEpisodes(db, {
+      state: flag('--state'),
+      limit: limit === undefined ? undefined : Number(limit),
+    });
+    if (rows.length === 0) {
+      console.log('no episodes stored');
+      return 0;
+    }
+    console.log(
+      'episode                              state        measured    declared  n  last seen',
+    );
+    for (const r of rows) {
+      console.log(
+        `${r.episodeId}  ${(r.state ?? '-').padEnd(11)}  ` +
+          `${(r.measuredDurationS ?? '-').padStart(10)}  ${(r.declaredDurationS ?? '-').padStart(9)}  ` +
+          `${String(r.ingestCount).padStart(1)}  ${r.lastSeenAt.toISOString()}`,
+      );
+    }
+    return 0;
+  } finally {
+    await db.close();
+  }
+}
+
+async function show(): Promise<number> {
+  const id = flag('--show');
+  if (!id) {
+    console.error('usage: ingest --show <episode-id> [--json]');
+    return 2;
+  }
+  const { open, showEpisode } = await import('@playerone/store');
+  let db;
+  try {
+    db = await open();
+  } catch (err) {
+    console.error((err as Error).message);
+    return 3;
+  }
+  try {
+    const detail = await showEpisode(db, id);
+    if (detail.latest === null) {
+      console.error(`${detail.episodeId} has no ingests`);
+      return 1;
+    }
+    if (json) {
+      // The stored record_json, verbatim. This is the source of truth.
+      console.log(JSON.stringify(detail.latest.record, null, 2));
+      return detail.latest.record.state === 'quarantined' ? 1 : 0;
+    }
+    printRecord(detail.latest.record);
+    console.log(`  ingests        ${detail.ingestCount}, first seen ${detail.firstSeenAt.toISOString()}`);
+    for (const p of detail.prior) {
+      console.log(
+        `    prior        ${p.fingerprint.slice(0, 16)}...  ${p.ingestedAt.toISOString()}  engine ${p.engineVersion}`,
+      );
+    }
+    console.log();
+    return detail.latest.record.state === 'quarantined' ? 1 : 0;
+  } catch (err) {
+    console.error((err as Error).message);
+    return 2;
+  } finally {
+    await db.close();
+  }
+}

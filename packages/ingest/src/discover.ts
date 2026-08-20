@@ -28,6 +28,8 @@ export type FileEntry = {
    */
   role: string | null;
   partNumber: number | null;
+  /** Device serial as this filename spells it. Cross-checked against the directory name (SERIAL-CONFLICT). */
+  serial: string | null;
 };
 
 /**
@@ -63,7 +65,9 @@ const PAXINI_EPISODE = /^episode_\d+_\d{6}_\d+_\d+(_[a-z0-9]+)?\.hdf5$/;
 
 function classify(name: string): Omit<FileEntry, 'path' | 'bytes' | 'mtimeMs'> | null {
   const meta = MANIFEST.exec(name);
-  if (meta) return { file: name, kind: 'manifest', role: null, partNumber: null };
+  if (meta) {
+    return { file: name, kind: 'manifest', role: null, partNumber: null, serial: meta.groups!['serial']! };
+  }
 
   const m = SESSION_FILE.exec(name);
   if (!m?.groups) return null;
@@ -79,6 +83,7 @@ function classify(name: string): Omit<FileEntry, 'path' | 'bytes' | 'mtimeMs'> |
       kind: 'calibration',
       role: role === 'calibration_camera' ? 'camera' : 'imu',
       partNumber,
+      serial: m.groups['serial']!,
     };
   }
   return {
@@ -86,6 +91,7 @@ function classify(name: string): Omit<FileEntry, 'path' | 'bytes' | 'mtimeMs'> |
     kind: r.groups['pts'] ? 'pts' : 'media',
     role,
     partNumber,
+    serial: m.groups['serial']!,
   };
 }
 

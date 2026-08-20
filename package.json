@@ -10,10 +10,13 @@
     "test": "vitest run",
     "ingest": "node packages/ingest/bin/ingest.ts",
     "fixtures": "node packages/ingest/scripts/make-fixtures.ts",
-    "bench": "node packages/ingest/scripts/bench.ts"
+    "bench": "node packages/ingest/scripts/bench.ts",
+    "db:generate": "drizzle-kit generate --config packages/store/drizzle.config.ts",
+    "db:migrate": "drizzle-kit migrate --config packages/store/drizzle.config.ts"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "drizzle-kit": "^0.31.10",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }

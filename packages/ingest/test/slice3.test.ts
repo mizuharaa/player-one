@@ -5,7 +5,8 @@ import { cp, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { EpisodeRecord } from '@playerone/contracts';
 import { ingest } from '../src/ingest.ts';
 import { partDiscrepancies } from '../src/classify.ts';
-import { contentFingerprint, episodeIdFrom, openHashCache } from '../src/hash.ts';
+import { openHashCache } from '../src/hash.ts';
+import { deriveEpisodeId } from '@playerone/contracts';
 import { hasSession, session } from './sessions.ts';
 
 const SESSIONS = ['072310', '072516', '072538'] as const;
@@ -98,11 +99,21 @@ describe.skipIf(!hasSession('072310'))('identity (ING-30, ING-32, ING-N2)', () =
     expect(b.content_fingerprint).not.toBe(a.content_fingerprint);
   });
 
-  it('the episode id is a well-formed uuid derived from the fingerprint', async () => {
-    const fp = contentFingerprint('AZER76400FE', '20260813_072310', ['a'.repeat(64)]);
-    const id = episodeIdFrom(fp);
+  /**
+   * Superseded 0.3: the id used to be derived from the content fingerprint,
+   * which meant a file changing between deliveries minted a second episode
+   * instead of raising CHECKSUM-MISMATCH. It now comes from the basename alone.
+   * See docs/episode-identity.md; the derivation itself is unit-tested in
+   * test/identity.test.ts.
+   */
+  it('the episode id is a well-formed uuid derived from the basename, not the content', async () => {
+    const id = deriveEpisodeId('ego_AZER76400FE_20260813_072310');
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-    expect(episodeIdFrom(fp)).toBe(id);
+    expect(deriveEpisodeId('ego_AZER76400FE_20260813_072310')).toBe(id);
+
+    const record = await withCache(() => ingest(session('072310')));
+    expect(record.episode_id).toBe(id);
+    expect(record.episode_id).not.toBe(deriveEpisodeId(record.content_fingerprint));
   });
 });
 
