@@ -38,6 +38,8 @@ export type StreamTiming = {
   backwardsSteps: number;
   /** Parts whose container is structurally short, with the reason. Empty when every part is whole. */
   incompleteParts: { file: string; detail: string }[];
+  /** Rows in this stream's timestamp files that were not timestamps and were skipped. */
+  malformedRows: number;
 };
 
 /**
@@ -225,6 +227,7 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
         truncatedTail: reduced.some((r) => r.truncatedTail),
         backwardsSteps: reduced.reduce((n, r) => n + r.backwardsSteps, 0),
         incompleteParts,
+        malformedRows: reduced.reduce((n, r) => n + r.malformedRows, 0),
       });
       continue;
     }
@@ -256,6 +259,7 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
       truncatedTail: false,
       backwardsSteps: 0,
       incompleteParts,
+      malformedRows: 0,
     });
   }
   return out;
@@ -269,9 +273,11 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
 async function readImu(parts: FileEntry[]): Promise<StreamTiming[]> {
   const byType = { accel: [] as Reduction[], gyro: [] as Reduction[] };
   const timings = { accel: [] as PartTiming[], gyro: [] as PartTiming[] };
+  let malformedRows = 0;
 
   for (const p of parts) {
     const r = await reduceImuTimestamps(p.path);
+    malformedRows += r.malformedRows;
     for (const type of ['accel', 'gyro'] as const) {
       const t = r[type];
       if (!t) continue;
@@ -281,6 +287,30 @@ async function readImu(parts: FileEntry[]): Promise<StreamTiming[]> {
   }
 
   const out: StreamTiming[] = [];
+
+  // Rows arrived but none carried a type we know, so there is no accel or gyro
+  // stream to hang the complaint on. Emit the file itself so it is not silent.
+  if (byType.accel.length === 0 && byType.gyro.length === 0) {
+    if (malformedRows === 0) return out;
+    return [
+      {
+        role: 'imu',
+        parts,
+        partTimings: [],
+        source: 'absent',
+        firstUs: null,
+        lastUs: null,
+        spanUs: null,
+        sampleCount: 0,
+        medianDeltaUs: null,
+        truncatedTail: false,
+        backwardsSteps: 0,
+        incompleteParts: [],
+        malformedRows,
+      },
+    ];
+  }
+
   for (const type of ['accel', 'gyro'] as const) {
     const reduced = byType[type];
     if (reduced.length === 0) continue;
@@ -299,6 +329,7 @@ async function readImu(parts: FileEntry[]): Promise<StreamTiming[]> {
       truncatedTail: reduced.some((r) => r.truncatedTail),
       backwardsSteps: reduced.reduce((n, r) => n + r.backwardsSteps, 0),
       incompleteParts: [],
+      malformedRows,
     });
   }
   return out;
