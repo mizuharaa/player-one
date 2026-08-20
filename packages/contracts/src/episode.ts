@@ -25,6 +25,7 @@ export const DISCREPANCY_CODES = [
   'PTS-TRUNCATED', // sidecar cut mid-digit; the final partial line is dropped
   'STATS-STALE', // statistics block copied verbatim from a previous session
   'STREAM-CLOCK-FAULT', // stream span cannot be explained by its own sample count
+  'PART-MISSING-TAIL', // the spec requires this behaviour but names no code for it
   'TIMING-ESTIMATED',
   'STREAM-SKEW-HIGH',
   'PART-GAP',
@@ -35,6 +36,7 @@ export const DISCREPANCY_CODES = [
   'CALIB-MISSING',
   'MEDIA-MISSING',
   'MEDIA-UNREADABLE',
+  'MEDIA-TRUNCATED', // the container is structurally short: the transfer did not finish
   'PART-MISSING-INTERIOR',
   'CHECKSUM-MISMATCH',
 ] as const;

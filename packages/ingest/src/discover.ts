@@ -18,6 +18,7 @@ export type FileEntry = {
   file: string;
   path: string;
   bytes: number;
+  mtimeMs: number;
   kind: Kind;
   /**
    * `camera_left`, `camera_right`, `camera_*`, `imu` or `audio` for streams;
@@ -60,7 +61,7 @@ const REST =
 const DIR_NAME = /^(?<device>[A-Za-z0-9]+)_(?<serial>[^_]+)_(?<date>\d{8})_(?<time>\d{6})$/;
 const PAXINI_EPISODE = /^episode_\d+_\d{6}_\d+_\d+(_[a-z0-9]+)?\.hdf5$/;
 
-function classify(name: string): Omit<FileEntry, 'path' | 'bytes'> | null {
+function classify(name: string): Omit<FileEntry, 'path' | 'bytes' | 'mtimeMs'> | null {
   const meta = MANIFEST.exec(name);
   if (meta) return { file: name, kind: 'manifest', role: null, partNumber: null };
 
@@ -103,7 +104,8 @@ export async function discover(dir: string): Promise<Discovery> {
       continue;
     }
     const path = join(dir, name);
-    entries.push({ ...c, path, bytes: (await stat(path)).size });
+    const st = await stat(path);
+    entries.push({ ...c, path, bytes: st.size, mtimeMs: st.mtimeMs });
   }
 
   // Identity from the directory name, falling back to any classified filename (ING-03).

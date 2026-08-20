@@ -1,0 +1,2 @@
+# Fixture bytes are the test subject. No line-ending translation, ever.
+fixtures/** -text
