@@ -37,6 +37,9 @@ export const DISCREPANCY_CODES = [
   'MEDIA-MISSING',
   'MEDIA-UNREADABLE',
   'MEDIA-TRUNCATED', // the container is structurally short: the transfer did not finish
+  'ROWS-MALFORMED', // a timestamp file held rows that were not timestamps
+  'CALIB-UNREADABLE', // the calibration is on disk but will not parse
+  'MANIFEST-UNREADABLE', // the manifest is on disk but will not parse
   'PART-MISSING-INTERIOR',
   'CHECKSUM-MISMATCH',
 ] as const;
