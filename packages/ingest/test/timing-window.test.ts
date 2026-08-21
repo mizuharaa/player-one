@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { computeTiming, type StreamTiming } from '../src/timing.ts';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { computeTiming, wavDurationUs, type StreamTiming } from '../src/timing.ts';
 
 /**
  * The payable window, as interval arithmetic.
@@ -78,6 +81,57 @@ function unpositioned(role: string, seconds: number): StreamTiming {
 
 const NO_MANIFEST = { start_time: null, end_time: null };
 
+describe('a WAV is measured from its bytes, not from what its header claims', () => {
+  let dir = '';
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'px-wav-'));
+  });
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /** 1 ch, 48 kHz, 16-bit — 072538's format. `sizes` written as the device does. */
+  function wav(seconds: number, sizes: 'patched' | 'unpatched'): Buffer {
+    const byteRate = 48000 * 2;
+    const payload = Buffer.alloc(Math.round(seconds * byteRate), 1);
+    const h = Buffer.alloc(44);
+    h.write('RIFF', 0, 'latin1');
+    h.writeUInt32LE(sizes === 'patched' ? 36 + payload.length : 36, 4);
+    h.write('WAVEfmt ', 8, 'latin1');
+    h.writeUInt32LE(16, 16);
+    h.writeUInt16LE(1, 20); // PCM
+    h.writeUInt16LE(1, 22); // mono
+    h.writeUInt32LE(48000, 24);
+    h.writeUInt32LE(byteRate, 28);
+    h.writeUInt16LE(2, 32);
+    h.writeUInt16LE(16, 34);
+    h.write('data', 36, 'latin1');
+    h.writeUInt32LE(sizes === 'patched' ? payload.length : 0, 40);
+    return Buffer.concat([h, payload]);
+  }
+
+  const measure = async (name: string, buf: Buffer) => {
+    const p = join(dir, name);
+    await writeFile(p, buf);
+    const us = await wavDurationUs(p, buf.length);
+    return us === null ? null : Number(us) / 1e6;
+  };
+
+  it('reads a properly closed file', async () => {
+    expect(await measure('ok.wav', wav(2.5, 'patched'))).toBeCloseTo(2.5, 4);
+  });
+
+  it('reads a file the device never closed, where both sizes are still placeholders', async () => {
+    // Exactly 072538: RIFF size 36, data size 0, and 21 s of real sound after it.
+    expect(await measure('open.wav', wav(2.5, 'unpatched'))).toBeCloseTo(2.5, 4);
+  });
+
+  it('refuses a file that is not a WAV, and an empty one', async () => {
+    expect(await measure('no.wav', Buffer.from('not a riff file at all, really'))).toBeNull();
+    expect(await measure('empty.wav', Buffer.alloc(0))).toBeNull();
+  });
+});
+
 describe('gaps are unioned as intervals, not maxed as scalars', () => {
   it('two cameras with separate one-second holes lose both seconds, not the worse one', () => {
     // left  covers [0,2] and [3,10]; right covers [0,5] and [6,10].
@@ -123,14 +177,15 @@ describe('an unpositioned container caps the window, it never creates one', () =
 });
 
 describe('a cut sidecar is a file that stopped, and the record says how much is inferred', () => {
-  it('does not shorten the window when an untruncated stream still defines it', () => {
-    // The repo's deliberate rule, and 072538 depends on it: the audio sidecar
-    // stops early, the video holds the real end.
+  it('stands at its own floor rather than borrowing a longer stream', () => {
+    // These fixtures carry no media, so nothing can measure the cut stream's
+    // real end. It may not reach past its own last timestamp on the strength of
+    // another stream: a stream is never paid past its own evidence.
     const t = computeTiming(
       [stream('camera_left', 0, 5, { truncatedTail: true }), stream('imu_accel', 0, 10)],
       NO_MANIFEST,
     );
-    expect(t.rawDurationS).toBeCloseTo(10, 3);
+    expect(t.rawDurationS).toBeCloseTo(5, 3);
   });
 
   it('but never calls the inferred part exact', () => {
@@ -249,31 +304,20 @@ describe('the two properties, not just the examples', () => {
   });
 
   /**
-   * KNOWN EXCEPTION, and the one place monotonicity does not hold numerically.
-   *
-   * With every positioned stream cut, no positioned stream can say where the
-   * window ends. The engine then reports the container length, per the ING-11 /
-   * ING-12 rule that 072538 is built on ("every sidecar is cut, so the
-   * container length is the answer"). With no container either, it reports the
-   * floor the cut streams proved, because returning nothing would make real
-   * footage unpayable.
-   *
-   * Those two answers are not comparable — a floor is not a measurement — so
-   * adding a container moves 3 s to 20 s. Making it strictly monotone means
-   * bounding by the floor always, which re-prices 072538 from 20.980 s to
-   * 20.480 s. That is a pricing decision, not a coding one, so the behaviour is
-   * pinned here rather than changed quietly. Both results are `estimated`.
+   * This was the one case that stayed non-monotone: a cut stream alone paid
+   * 3 s, and adding a container raised it to 20 s. Measuring a cut stream's end
+   * from its own media removed the branch that did it — a container can only
+   * bound now, and the cut stream's floor bounds it first.
    */
-  it('open window: the container answers, and the floor stands in when there is none', () => {
+  it('adding a container to a cut stream cannot raise the payout', () => {
     const cut = [stream('camera_left', 0, 3, { truncatedTail: true })];
     const alone = computeTiming(cut, NO_MANIFEST);
     const withContainer = computeTiming([...cut, unpositioned('audio', 20)], NO_MANIFEST);
 
     expect(alone.rawDurationS).toBeCloseTo(3, 3);
-    expect(withContainer.rawDurationS).toBeCloseTo(20, 3);
-    // The saving grace: neither is ever presented as measured.
+    expect(withContainer.rawDurationS).toBeLessThanOrEqual(alone.rawDurationS + 1e-9);
+    expect(withContainer.rawDurationS).toBeCloseTo(3, 3);
     expect(alone.confidence).toBe('estimated');
-    expect(withContainer.confidence).toBe('estimated');
   });
 
   it('a container never overrides a positioned end, it only bounds it', () => {
@@ -292,9 +336,9 @@ describe('the two properties, not just the examples', () => {
       ],
       NO_MANIFEST,
     );
-    // imu closes the window at 4. The cut camera cannot reach past it by
-    // borrowing camera_right's 20.
-    expect(t.rawDurationS).toBeCloseTo(4, 3);
+    // The cut camera proves 3 s and no media exists to measure more, so 3 s is
+    // the answer. It cannot reach 4 s or 20 s on another stream's evidence.
+    expect(t.rawDurationS).toBeCloseTo(3, 3);
   });
 });
 
