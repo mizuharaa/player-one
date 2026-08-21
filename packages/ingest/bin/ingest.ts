@@ -13,6 +13,7 @@
  */
 import { writeFile } from 'node:fs/promises';
 import { ingestSession, UnsupportedLayoutError } from '../src/ingest.ts';
+import { FfprobeMissingError } from '../src/timing.ts';
 import type { EpisodeRecord } from '@playerone/contracts';
 
 const args = process.argv.slice(2);
@@ -45,6 +46,13 @@ try {
 } catch (err) {
   if (err instanceof UnsupportedLayoutError) {
     console.error(`${err.message}\nThis tool reads ego session directories.`);
+    process.exit(2);
+  }
+  // Before the ENOENT branch below: a missing ffprobe also raises ENOENT, and
+  // reporting it as "no such directory" would send the operator hunting a path
+  // that is perfectly correct.
+  if (err instanceof FfprobeMissingError) {
+    console.error(err.message);
     process.exit(2);
   }
   // A path the operator mistyped is not a crash, and a stack trace tells them nothing.
