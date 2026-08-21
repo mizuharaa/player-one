@@ -15,7 +15,10 @@ import {
   type MismatchPayload,
 } from '../src/index.ts';
 import { episodeIngests, episodes } from '../src/schema.ts';
-import { closeDb, db, hasDb, truncate } from './db.ts';
+import { closeDb, db, hasDb, truncate, useDatabase } from './db.ts';
+
+// One database per test file: vitest runs them in parallel and each truncates.
+useDatabase('store');
 
 /**
  * The store, against a real Postgres. Everything here is about two failures
@@ -61,7 +64,7 @@ describe.skipIf(!hasDb())('the episode store', () => {
 
   it('a session never seen before is inserted whole', async () => {
     const { record, files } = await withCache(async () => ingestSession(await fixture('delivery-a')));
-    const r = await storeEpisode(await db(), record, files);
+    const r = await storeEpisode(await db(), record);
 
     expect(r.outcome).toBe('new');
     const [ep] = await (await db()).select().from(episodes).where(eq(episodes.episodeId, r.episodeId));
@@ -81,8 +84,8 @@ describe.skipIf(!hasDb())('the episode store', () => {
     const b = await withCache(async () => ingestSession(await fixture('delivery-b')));
     expect(b.record.content_fingerprint).toBe(a.record.content_fingerprint);
 
-    const first = await storeEpisode(await db(), a.record, a.files, new Date('2026-08-20T10:00:00Z'));
-    const second = await storeEpisode(await db(), b.record, b.files, new Date('2026-08-20T11:00:00Z'));
+    const first = await storeEpisode(await db(), a.record, new Date('2026-08-20T10:00:00Z'));
+    const second = await storeEpisode(await db(), b.record, new Date('2026-08-20T11:00:00Z'));
 
     expect(second.outcome).toBe('duplicate');
     expect(second.episodeId).toBe(first.episodeId);
@@ -97,7 +100,7 @@ describe.skipIf(!hasDb())('the episode store', () => {
   it('one byte changed in one file raises CHECKSUM-MISMATCH and names the file', async () => {
     const c = await copyOf('delivery-a');
     const before = await withCache(() => ingestSession(c.dir));
-    await storeEpisode(await db(), before.record, before.files);
+    await storeEpisode(await db(), before.record);
 
     const victim = `${STEM}_camera_left_part0001.mp4`;
     const bytes = await readFile(join(c.dir, victim));
@@ -105,7 +108,7 @@ describe.skipIf(!hasDb())('the episode store', () => {
     await writeFile(join(c.dir, victim), bytes);
 
     const after = await withCache(() => ingestSession(c.dir));
-    const r = await storeEpisode(await db(), after.record, after.files);
+    const r = await storeEpisode(await db(), after.record);
 
     expect(r.outcome).toBe('mismatch');
     expect(await ingestsOf(await db(), r.episodeId)).toHaveLength(2);
@@ -142,13 +145,13 @@ describe.skipIf(!hasDb())('the episode store', () => {
   it('a file added and a file removed are reported as such, not as changes', async () => {
     const c = await copyOf('delivery-a');
     const before = await withCache(() => ingestSession(c.dir));
-    await storeEpisode(await db(), before.record, before.files);
+    await storeEpisode(await db(), before.record);
 
     await writeFile(join(c.dir, `${STEM}_audio_pts.csv.bak`), 'stray\n');
     await rm(join(c.dir, `${STEM}_audio.wav`));
 
     const after = await withCache(() => ingestSession(c.dir));
-    const r = await storeEpisode(await db(), after.record, after.files);
+    const r = await storeEpisode(await db(), after.record);
 
     expect(r.outcome).toBe('mismatch');
     expect(r.mismatch!.added.map((a) => a.relative_path)).toContain(`${STEM}_audio_pts.csv.bak`);
@@ -168,7 +171,7 @@ describe.skipIf(!hasDb())('the episode store', () => {
         i === 0 ? { ...s, first_pts_us: '1786605795008991', last_pts_us: '1786605795008991' } : s,
       ),
     };
-    const r = await storeEpisode(await db(), doctored, files);
+    const r = await storeEpisode(await db(), doctored);
     const stored = await streamsOf(await db(), r.ingestId!);
     const audio = stored.find((s) => s.streamName === doctored.streams[0]!.role)!;
 
@@ -181,7 +184,7 @@ describe.skipIf(!hasDb())('the episode store', () => {
   it('a duration round-trips to the microsecond, asserted as a string', async () => {
     const { record, files } = await withCache(async () => ingestSession(await fixture('delivery-a')));
     const doctored = { ...record, timing: { ...record.timing, raw_duration_s: 8.500011 } };
-    const r = await storeEpisode(await db(), doctored, files);
+    const r = await storeEpisode(await db(), doctored);
 
     const [row] = await (await db())
       .select()
@@ -192,7 +195,7 @@ describe.skipIf(!hasDb())('the episode store', () => {
 
   it('a stream with a broken clock stores its real span, and says it was excluded', async () => {
     const { record, files } = await withCache(async () => ingestSession(await fixture('clock-fault')));
-    const r = await storeEpisode(await db(), record, files);
+    const r = await storeEpisode(await db(), record);
     const stored = await streamsOf(await db(), r.ingestId!);
     const imu = stored.find((s) => s.streamName === 'imu_accel')!;
 
@@ -206,7 +209,7 @@ describe.skipIf(!hasDb())('the episode store', () => {
   it('a quarantined session is stored in full, with its defects', async () => {
     const { record, files } = await withCache(async () => ingestSession(await fixture('no-calibration')));
     expect(record.state).toBe('quarantined');
-    const r = await storeEpisode(await db(), record, files);
+    const r = await storeEpisode(await db(), record);
 
     const [row] = await (await db())
       .select()
@@ -220,7 +223,7 @@ describe.skipIf(!hasDb())('the episode store', () => {
 
   it('a session with no manifest stores in full', async () => {
     const { record, files } = await withCache(async () => ingestSession(await fixture('no-manifest')));
-    const r = await storeEpisode(await db(), record, files);
+    const r = await storeEpisode(await db(), record);
 
     const [row] = await (await db())
       .select()
@@ -234,7 +237,7 @@ describe.skipIf(!hasDb())('the episode store', () => {
   it('record_json comes back byte-identical to the record that was printed', async () => {
     const { record, files } = await withCache(async () => ingestSession(await fixture('delivery-a')));
     const printed = JSON.stringify(record, null, 2);
-    const r = await storeEpisode(await db(), record, files);
+    const r = await storeEpisode(await db(), record);
 
     const detail = await showEpisode(await db(), r.episodeId);
     expect(JSON.stringify(detail.latest!.record, null, 2)).toBe(printed);
@@ -243,7 +246,7 @@ describe.skipIf(!hasDb())('the episode store', () => {
   it('the stored file list still recomputes the stored fingerprint', async () => {
     const { contentFingerprint } = await import('@playerone/contracts');
     const { record, files } = await withCache(async () => ingestSession(await fixture('delivery-a')));
-    const r = await storeEpisode(await db(), record, files);
+    const r = await storeEpisode(await db(), record);
     expect(contentFingerprint(await filesOf(await db(), r.ingestId!))).toBe(
       record.content_fingerprint,
     );
@@ -252,12 +255,15 @@ describe.skipIf(!hasDb())('the episode store', () => {
   // -- transactionality -----------------------------------------------------
 
   it('a failure part-way through leaves no rows at all, never a half record', async () => {
-    const { record, files } = await withCache(async () => ingestSession(await fixture('delivery-a')));
+    const { record } = await withCache(async () => ingestSession(await fixture('delivery-a')));
     // Two rows for one path violates UNIQUE (ingest_id, relative_path), and it
     // does so *after* the ingest row has been inserted.
-    const poisoned = [...files, files[0]!];
+    const poisoned = {
+      ...record,
+      source_files: [...record.source_files, record.source_files[0]!],
+    };
 
-    await expect(storeEpisode(await db(), record, poisoned)).rejects.toThrow();
+    await expect(storeEpisode(await db(), poisoned)).rejects.toThrow();
 
     expect(await (await db()).select().from(episodes)).toHaveLength(0);
     expect(await (await db()).select().from(episodeIngests)).toHaveLength(0);
@@ -268,8 +274,8 @@ describe.skipIf(!hasDb())('the episode store', () => {
   it('--list shows one line per episode, newest first, filterable by state', async () => {
     const a = await withCache(async () => ingestSession(await fixture('delivery-a')));
     const b = await withCache(async () => ingestSession(await fixture('no-calibration')));
-    await storeEpisode(await db(), a.record, a.files, new Date('2026-08-20T10:00:00Z'));
-    await storeEpisode(await db(), b.record, b.files, new Date('2026-08-20T12:00:00Z'));
+    await storeEpisode(await db(), a.record, new Date('2026-08-20T10:00:00Z'));
+    await storeEpisode(await db(), b.record, new Date('2026-08-20T12:00:00Z'));
 
     const all = await listEpisodes(await db());
     expect(all).toHaveLength(2);
@@ -283,7 +289,7 @@ describe.skipIf(!hasDb())('the episode store', () => {
 
   it('--show accepts an unambiguous prefix and refuses an ambiguous one', async () => {
     const { record, files } = await withCache(async () => ingestSession(await fixture('delivery-a')));
-    const r = await storeEpisode(await db(), record, files);
+    const r = await storeEpisode(await db(), record);
 
     const byPrefix = await showEpisode(await db(), r.episodeId.slice(0, 8));
     expect(byPrefix.episodeId).toBe(r.episodeId);
@@ -295,14 +301,14 @@ describe.skipIf(!hasDb())('the episode store', () => {
   it('--show lists every prior ingest, because history is append-only', async () => {
     const c = await copyOf('delivery-a');
     const before = await withCache(() => ingestSession(c.dir));
-    await storeEpisode(await db(), before.record, before.files, new Date('2026-08-20T10:00:00Z'));
+    await storeEpisode(await db(), before.record, new Date('2026-08-20T10:00:00Z'));
 
     const victim = `${STEM}_camera_left_part0001.mp4`;
     const bytes = await readFile(join(c.dir, victim));
     bytes[0] = bytes[0]! ^ 0xff;
     await writeFile(join(c.dir, victim), bytes);
     const after = await withCache(() => ingestSession(c.dir));
-    const r = await storeEpisode(await db(), after.record, after.files, new Date('2026-08-20T12:00:00Z'));
+    const r = await storeEpisode(await db(), after.record, new Date('2026-08-20T12:00:00Z'));
 
     const detail = await showEpisode(await db(), r.episodeId);
     expect(detail.ingestCount).toBe(2);
@@ -327,7 +333,7 @@ describe.skipIf(!hasDb())('the episode store', () => {
 
     const before = await snapshot();
     const { record, files } = await withCache(() => ingestSession(c.dir));
-    await storeEpisode(await db(), record, files);
+    await storeEpisode(await db(), record);
     expect(await snapshot()).toEqual(before);
 
     await c.cleanup();

@@ -46,7 +46,7 @@ describe('with no --store and no DATABASE_URL, nothing has changed', () => {
     const r = await ingestCli([c.dir, '--json']);
     expect(r.code).toBe(0);
     const record = JSON.parse(r.stdout);
-    expect(record.schema_version).toBe('1.0.0');
+    expect(record.schema_version).toBe('1.1.0');
     expect(record.state).toBe('flagged');
     expect(r.stderr).toBe('');
     await c.cleanup();

@@ -12,6 +12,7 @@ import { episodeDefects, episodeFiles, episodeIngests, episodes, episodeStreams 
 
 export { DATABASE_URL, migrateTo, open, redact, StoreUnreachableError, type Db } from './db.ts';
 export * as schema from './schema.ts';
+export { seedCatalogues, DEFECT_CATALOGUE, REVIEW_REASON_CATALOGUE } from './catalogue.ts';
 
 /** One source file of one delivery. Matches `SourceInventory` in the engine. */
 export type SourceFile = { relative_path: string; bytes: number; sha256: string };
@@ -69,10 +70,17 @@ const dec = (n: number, scale: number): string => n.toFixed(scale);
 export async function storeEpisode(
   db: Db,
   input: EpisodeRecord,
-  files: readonly SourceFile[],
   now: Date = new Date(),
 ): Promise<StoreResult> {
   const episodeId = input.episode_id;
+  /**
+   * The record carries its own inventory as of schema 1.1.0, so the store no
+   * longer takes one alongside. Passing it separately meant `episode_files`
+   * could disagree with `content_fingerprint` — and made the fingerprint
+   * checkable only by a caller holding both, which is exactly the property the
+   * record is supposed to have on its own.
+   */
+  const files = input.source_files;
 
   return db.transaction(async (tx) => {
     const [existing] = await tx.select().from(episodes).where(eq(episodes.episodeId, episodeId));

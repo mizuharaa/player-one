@@ -34,6 +34,13 @@ export type StreamTiming = {
   sampleCount: number;
   medianDeltaUs: bigint | null;
   truncatedTail: boolean;
+  /**
+   * `lastUs` came from measuring the media, because the sidecar's index was cut
+   * short. The stream's end is known; it just was not the sidecar that knew it.
+   * Absent or false with `truncatedTail` set means the end is a floor: real, but
+   * short by an unknown amount.
+   */
+  endFromMedia?: boolean;
   /** Rows delivered out of order. Harmless: first/last are min/max. */
   backwardsSteps: number;
   /** Parts whose container is structurally short, with the reason. Empty when every part is whole. */
@@ -188,6 +195,71 @@ export async function probeContainer(path: string): Promise<Probe | null> {
 }
 
 /**
+ * Uncompressed PCM, so the duration is arithmetic on the file size — no decoder
+ * and no ffprobe. The declared sizes are not used and must not be: 072538's
+ * header still says `RIFF size 36` and `data size 0` because the device never
+ * went back to patch them, exactly as it never set `end_time`. The bytes on
+ * disk are the recording; the header is a claim about it.
+ */
+export async function wavDurationUs(path: string, bytes: number): Promise<bigint | null> {
+  const fh = await open(path, 'r');
+  try {
+    const head = Buffer.alloc(4096);
+    const { bytesRead } = await fh.read(head, 0, head.length, 0);
+    if (bytesRead < 44) return null;
+    if (head.toString('latin1', 0, 4) !== 'RIFF' || head.toString('latin1', 8, 12) !== 'WAVE') {
+      return null;
+    }
+
+    // Walk the chunk list rather than assuming the canonical 44-byte layout:
+    // some writers put LIST/fact chunks before the data.
+    let byteRate = 0;
+    let at = 12;
+    while (at + 8 <= bytesRead) {
+      const id = head.toString('latin1', at, at + 4);
+      const size = head.readUInt32LE(at + 4);
+      // fmt payload: format(2) channels(2) sampleRate(4) byteRate(4) ...
+      if (id === 'fmt ' && at + 20 <= bytesRead) byteRate = head.readUInt32LE(at + 16);
+      if (id === 'data') {
+        const payload = bytes - (at + 8);
+        if (byteRate <= 0 || payload <= 0) return null;
+        return BigInt(Math.round((payload / byteRate) * 1e6));
+      }
+      if (size === 0) break; // unpatched placeholder: nothing after this is trustworthy
+      at += 8 + size + (size % 2);
+    }
+    return null;
+  } finally {
+    await fh.close();
+  }
+}
+
+/**
+ * How much recording the media itself holds, summed over the parts. This is the
+ * evidence a cut sidecar cannot give: the frames and the samples exist whether
+ * or not anything got round to indexing them.
+ *
+ * Null when any part cannot be measured — a partial answer over a multi-part
+ * stream would understate it, and understating is still getting it wrong.
+ */
+async function mediaSpanUs(parts: FileEntry[]): Promise<bigint | null> {
+  let total = 0n;
+  for (const p of parts) {
+    const wav = p.file.toLowerCase().endsWith('.wav')
+      ? await wavDurationUs(p.path, p.bytes)
+      : null;
+    if (wav !== null) {
+      total += wav;
+      continue;
+    }
+    const probe = await probeContainer(p.path);
+    if (probe === null) return null;
+    total += probe.durationUs;
+  }
+  return parts.length > 0 ? total : null;
+}
+
+/**
  * ING-11 fallback chain, per stream: PTS sidecar, then the container. The IMU
  * and wall-clock rungs are episode-wide decisions and live in computeTiming.
  */
@@ -234,7 +306,32 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
 
     if (reduced.length > 0) {
       const first = minOf(reduced.map((r) => r.first));
-      const last = maxOf(reduced.map((r) => r.last));
+      let last = maxOf(reduced.map((r) => r.last));
+      const truncatedTail = reduced.some((r) => r.truncatedTail);
+
+      /**
+       * A cut sidecar is an incomplete INDEX, not a stream that stopped.
+       * 072538's audio sidecar ends at 8192 bytes exactly — an unflushed write
+       * buffer — while the WAV beside it holds 21.16 s of real sound that the
+       * index never named. The media is the recording, so the media measures
+       * the end. UPL-08 and 5.3.7 already say this about the manifest; a
+       * sidecar is metadata too.
+       *
+       * When the media cannot be measured the sidecar's end stands as a floor:
+       * short, possibly, but never longer than what was recorded.
+       */
+      let endFromMedia = false;
+      if (truncatedTail) {
+        const mediaUs = await mediaSpanUs(parts);
+        if (mediaUs !== null && first + mediaUs > last) {
+          last = first + mediaUs;
+          endFromMedia = true;
+          // coverageOf reads partTimings, so the measured end goes there too.
+          const tail = partTimings.reduce((a, b) => (b.lastUs > a.lastUs ? b : a));
+          tail.lastUs = last;
+        }
+      }
+
       out.push({
         role,
         parts,
@@ -242,10 +339,11 @@ export async function readStreams(entries: FileEntry[]): Promise<StreamTiming[]>
         source: 'sidecar',
         firstUs: first,
         lastUs: last,
+        endFromMedia,
         spanUs: last - first,
         sampleCount: reduced.reduce((n, r) => n + r.count, 0),
         medianDeltaUs: reduced[0]!.medianDeltaUs,
-        truncatedTail: reduced.some((r) => r.truncatedTail),
+        truncatedTail,
         backwardsSteps: reduced.reduce((n, r) => n + r.backwardsSteps, 0),
         incompleteParts,
         malformedRows: reduced.reduce((n, r) => n + r.malformedRows, 0),
@@ -381,47 +479,41 @@ export function computeTiming(
   const starts = positioned.map((s) => s.firstUs);
   const ends = positioned.map((s) => s.lastUs);
 
-  // intersection, NOT union
-  const usableStart = maxOf(starts);
-
   /**
-   * A cut sidecar ends early because the file stops, not because the stream
-   * did, so it must not be allowed to shorten the window. If every sidecar is
-   * cut there is no trustworthy end left, and the container length becomes the
-   * answer. 072538: the audio sidecar stops at 20.48 s, the video holds 20.98 s.
+   * The instants every stream covered, as intervals. A scalar window cannot
+   * express this: two cameras with holes in different places lose both holes,
+   * and a hole outside the shared window costs nobody anything. Both of those
+   * are money, so the arithmetic is done on intervals and the scalars are read
+   * back off the result.
+   *
+   * Every stream carries a real end by the time it gets here: a cut sidecar had
+   * its end measured from its own media in readStreams, so there is no unknown
+   * left to special-case. That is the whole of the truncation handling now.
    */
-  const enders = positioned.filter((s) => !s.truncatedTail);
-  const usableEnd = enders.length > 0 ? minOf(enders.map((s) => s.lastUs)) : null;
-  const windowUs =
-    usableEnd !== null && usableEnd > usableStart ? usableEnd - usableStart : null;
+  const common = positioned.map(coverageOf).reduce((a, b) => intersect(a, b));
+
+  const usableStart = maxOf(starts); // intersection, NOT union
+  const usableEnd = common.length > 0 ? common[common.length - 1]!.end : null;
+  const commonUs = measure(common);
 
   /**
-   * A stream with a length but no position cannot move the window, but it can
-   * shorten it: an overlap cannot outlast the shortest stream taking part in it.
-   * This is what keeps a container-derived camera honest.
+   * A stream with a length but no position cannot move the window, and it
+   * cannot create one either: a duration is not evidence that anything was
+   * recorded at the same moment as anything else. It only ever bounds, which is
+   * what keeps a container-derived camera honest.
+   *
+   * Monotone and sound by construction: the result is one `min` over every
+   * constraint in play, so adding a stream can only lower it, and it can never
+   * exceed what any single stream covered. There is no branch left that lets a
+   * lower rung override a higher one.
    */
   const caps = usable.filter((s) => s.firstUs === null && s.spanUs !== null).map((s) => s.spanUs!);
-  const covered =
-    windowUs !== null
-      ? caps.length > 0
-        ? minOf([windowUs, ...caps])
-        : windowUs
-      : caps.length > 0
-        ? minOf(caps)
-        : 0n;
+  const covered = caps.length > 0 ? minOf([commonUs, ...caps]) : commonUs;
 
-  /**
-   * A hole between two parts is time nobody recorded, so it is not payable.
-   * ponytail: takes the worst stream's total gap rather than the union of gap
-   * intervals across streams. Parts only ever split on the segment boundary, so
-   * the cameras gap together; compute a real interval union if that stops
-   * holding.
-   */
-  const gapUs = usable.reduce((worst, s) => {
-    const g = gapWithin(s);
-    return g > worst ? g : worst;
-  }, 0n);
-  const rawUs = covered > gapUs ? covered - gapUs : 0n;
+  // Holes are already absent from `common`, so the gap is what the window lost.
+  const windowUs = usableEnd !== null && usableEnd > usableStart ? usableEnd - usableStart : 0n;
+  const gapUs = windowUs > commonUs ? windowUs - commonUs : 0n;
+  const rawUs = covered;
 
   const cameras = usable.filter((s) => s.role.startsWith('camera_'));
   const camerasTimed = cameras.filter((s) => s.spanUs !== null);
@@ -440,6 +532,21 @@ export function computeTiming(
     confidence = 'exact';
   }
 
+  /**
+   * Time that rests on a file which was cut is inferred, whatever the source
+   * was. With nothing intact left to bound the inference, the whole window is
+   * inference. Neither may be reported as exact: `exact` is what tells a
+   * reviewer the number needs no second look.
+   */
+  const cut = positioned.filter((s) => s.truncatedTail);
+  if (cut.length > 0 && cut.every((s) => s.endFromMedia !== true)) {
+    // Nothing could confirm where those streams ended, so the answer is a floor.
+    confidence = 'estimated';
+  } else if (confidence === 'exact' && cut.length > 0) {
+    // Measured, but from the media rather than from the timestamps.
+    confidence = 'derived';
+  }
+
   return {
     method,
     confidence,
@@ -451,6 +558,71 @@ export function computeTiming(
     unionDurationS: toS(maxOf(ends) - minOf(starts)),
   };
 }
+
+/** A half-open span of stream time. `end` is always greater than `start`. */
+type Interval = { start: bigint; end: bigint };
+
+
+/**
+ * The instants one stream demonstrably covered. Parts are the unit: a hole
+ * between two parts is time nobody recorded and is simply absent from the
+ * result, which is what makes the intersection below do the right thing without
+ * a separate gap subtraction. Two parts are contiguous when the join is no
+ * wider than one sample interval — a normal segment boundary is not a hole.
+ *
+ * `lastUs` is already the stream's real end — measured from its media when the
+ * sidecar was cut — so there is nothing to extend or borrow here.
+ */
+function coverageOf(s: StreamTiming & { firstUs: bigint; lastUs: bigint }): Interval[] {
+  const step = s.medianDeltaUs !== null && s.medianDeltaUs > 0n ? s.medianDeltaUs : 0n;
+  const sorted =
+    s.partTimings.length > 0
+      ? [...s.partTimings].sort((a, b) =>
+          a.firstUs < b.firstUs ? -1 : a.firstUs > b.firstUs ? 1 : 0,
+        )
+      : [{ partNumber: null, firstUs: s.firstUs, lastUs: s.lastUs }];
+
+  /**
+   * The join between two consecutive parts is one normal sample period, not a
+   * hole, so every part but the last is credited with it (ING-20 measures a gap
+   * as the excess beyond one interval). The last part is not, which keeps a
+   * whole stream's length at `last - first` — the span convention the rest of
+   * the engine and the sample expectations are written against.
+   */
+  const parts = sorted.map((p, i) => ({
+    start: p.firstUs,
+    end: i < sorted.length - 1 ? p.lastUs + step : p.lastUs,
+  }));
+
+  const merged: Interval[] = [];
+  for (const p of parts) {
+    const prev = merged[merged.length - 1];
+    if (prev !== undefined && p.start <= prev.end) {
+      if (p.end > prev.end) prev.end = p.end;
+    } else {
+      merged.push({ ...p });
+    }
+  }
+
+  return merged;
+}
+
+/** Both lists are sorted and disjoint, so one pass suffices. */
+function intersect(a: Interval[], b: Interval[]): Interval[] {
+  const out: Interval[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const start = a[i]!.start > b[j]!.start ? a[i]!.start : b[j]!.start;
+    const end = a[i]!.end < b[j]!.end ? a[i]!.end : b[j]!.end;
+    if (end > start) out.push({ start, end });
+    if (a[i]!.end < b[j]!.end) i++;
+    else j++;
+  }
+  return out;
+}
+
+const measure = (xs: Interval[]): bigint => xs.reduce((n, x) => n + (x.end - x.start), 0n);
 
 /** ING-20. Total time between one part ending and the next starting, beyond one sample interval. */
 export function gapWithin(s: StreamTiming): bigint {

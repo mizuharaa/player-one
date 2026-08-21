@@ -66,7 +66,7 @@ describe('a timestamp that is not a timestamp', () => {
 
   it('an entirely negative sidecar leaves no stream timing and still emits a record', async () => {
     const r = await damaged('camera_left_part0001_pts.csv', 'timestamp_us\n-500\n-100\n');
-    expect(r.schema_version).toBe('1.0.0');
+    expect(r.schema_version).toBe('1.1.0');
     expect(r.timing.raw_duration_s).toBeGreaterThanOrEqual(0);
   });
 });
