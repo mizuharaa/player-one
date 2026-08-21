@@ -35,6 +35,9 @@ importers:
       fastify:
         specifier: ^5.2.0
         version: 5.12.1
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
 
   packages/contracts:
     dependencies:

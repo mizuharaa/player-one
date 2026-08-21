@@ -42,15 +42,22 @@ type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
  * The actor is not a parameter of the event on purpose: it comes from the
  * verified tokens, never from the request body, so an endpoint cannot attribute
  * a change to somebody else.
+ *
+ * `write` returning `undefined` means nothing changed, and then no audit row is
+ * written. That is what makes a replayed offline request cheap: an
+ * `onConflictDoNothing().returning()` yields `[]` on a row that already exists,
+ * so re-posting the queue neither duplicates the row nor duplicates its audit
+ * entry. audit_events is a table §10.6 counts.
  */
 export async function mutate<T>(
   db: Db,
   actor: Actor,
   event: AuditEvent,
-  write: (tx: Tx) => Promise<T>,
-): Promise<T> {
+  write: (tx: Tx) => Promise<T | undefined>,
+): Promise<T | undefined> {
   return db.transaction(async (tx) => {
     const result = await write(tx);
+    if (result === undefined) return undefined;
     await tx.insert(schema.auditEvents).values({
       action: event.action,
       targetTable: event.targetTable,
