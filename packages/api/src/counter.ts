@@ -180,6 +180,7 @@ export function registerCounter(
           .insert(schema.collectionSessions)
           .values({
             id: b.id,
+            handoverId,
             taskId: b.task_id,
             // The collector comes from the handover, not the body: one card, one
             // collector, already verified at the counter (PRD §11.3.1 rule 1).

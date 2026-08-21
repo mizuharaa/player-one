@@ -624,19 +624,6 @@ function intersect(a: Interval[], b: Interval[]): Interval[] {
 
 const measure = (xs: Interval[]): bigint => xs.reduce((n, x) => n + (x.end - x.start), 0n);
 
-/** ING-20. Total time between one part ending and the next starting, beyond one sample interval. */
-export function gapWithin(s: StreamTiming): bigint {
-  if (s.partTimings.length < 2 || s.medianDeltaUs === null || s.medianDeltaUs <= 0n) return 0n;
-  const ordered = [...s.partTimings].sort((a, b) =>
-    a.firstUs === b.firstUs ? (a.partNumber ?? 0) - (b.partNumber ?? 0) : a.firstUs < b.firstUs ? -1 : 1,
-  );
-  let total = 0n;
-  for (let i = 1; i < ordered.length; i++) {
-    const gap = ordered[i]!.firstUs - ordered[i - 1]!.lastUs - s.medianDeltaUs;
-    if (gap > 0n) total += gap;
-  }
-  return total;
-}
 
 /**
  * ING-13. Last resort. Wall clock includes start-up and shut-down, so it

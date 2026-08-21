@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
-import { schema, type Db } from '@playerone/store';
+import { schema, seedCatalogues, type Db } from '@playerone/store';
 import { auditLogin } from './audit.ts';
 import { registerCounter } from './counter.ts';
 import { registerEpisodes } from './episodes.ts';
@@ -75,13 +75,6 @@ export function buildApi({ db, tokenSecret, toleranceMs = DEFAULT_TOLERANCE_MS }
     req.actor = { machine, operator };
   };
 
-  /**
-   * BO-11 / SEC-02. The centre comes from the token, never from the request, so
-   * an operator at centre A cannot address centre B by asking nicely.
-   */
-  const sameCentre = (req: FastifyRequest, centreId: string): boolean =>
-    req.actor?.operator.uploadCentreId === centreId;
-
   app.post('/auth/machine', async (req, reply) => {
     const { machine_identifier, secret } = (req.body ?? {}) as Record<string, string>;
     if (!machine_identifier || !secret) return reply.code(400).send({ error: 'missing credentials' });
@@ -143,8 +136,10 @@ export function buildApi({ db, tokenSecret, toleranceMs = DEFAULT_TOLERANCE_MS }
    * the query parameter is checked against it, not trusted.
    */
   app.get('/reference/sync', { preHandler: requireActor }, async (req, reply) => {
+    // BO-11 / SEC-02: the centre comes from the token, never from the request,
+    // so an operator at centre A cannot address centre B by asking nicely.
     const centreId = (req.query as Record<string, string>)['centre_id'];
-    if (centreId && !sameCentre(req, centreId)) {
+    if (centreId && centreId !== req.actor!.operator.uploadCentreId) {
       return reply.code(403).send({ error: 'not your centre' });
     }
     const [collectors, devices, tasks, scenarios] = await Promise.all([
@@ -162,6 +157,15 @@ export function buildApi({ db, tokenSecret, toleranceMs = DEFAULT_TOLERANCE_MS }
       scenarios,
     };
   });
+
+  /**
+   * The catalogues are reference data the deployed code is the authority on, so
+   * they are seeded on boot rather than by a step somebody has to remember.
+   * `seedCatalogues` upserts, so this is idempotent and re-tunes routing to
+   * match whatever version is running. Nothing read them before this: they were
+   * exported, tested, and never called outside the test suite.
+   */
+  app.addHook('onReady', () => seedCatalogues(db));
 
   registerCounter(app, db, requireActor);
   registerEpisodes(app, db, requireActor, toleranceMs);
