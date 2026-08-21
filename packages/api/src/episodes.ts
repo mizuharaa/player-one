@@ -1,0 +1,369 @@
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
+import { EpisodeRecord } from '@playerone/contracts';
+import { schema, storeEpisode, type Db } from '@playerone/store';
+import { mutate } from './audit.ts';
+import type { Actor } from './actor.ts';
+import { resolveEpisode, resolverDefects, type Resolution } from './resolve.ts';
+
+/**
+ * Episode submission and resolution: the point at which a measurement acquires
+ * an owner.
+ *
+ * The console has already run the engine locally, so what arrives here is a
+ * finished EpisodeRecord. Nothing re-measures it — PLT-09's durations and the
+ * content fingerprint are final at import, so a payment dispute stays answerable
+ * from Postgres without the card.
+ */
+
+type Reply = { code: (n: number) => { send: (b: unknown) => unknown } };
+
+const SubmitBody = z.object({ episodes: z.array(EpisodeRecord).min(1) });
+const ResolveBody = z.object({
+  collection_session_id: z.string().uuid(),
+  reason: z.string().min(1),
+});
+
+export function registerEpisodes(
+  app: FastifyInstance,
+  db: Db,
+  requireActor: (req: FastifyRequest, reply: Reply) => Promise<unknown>,
+  toleranceMs: number,
+): void {
+  const opts = { preHandler: requireActor };
+
+  /** The batch, its handover, and the sessions declared against that handover. */
+  const context = async (batchId: string, actor: Actor) => {
+    const [batch] = await db
+      .select()
+      .from(schema.uploadBatches)
+      .where(
+        and(
+          eq(schema.uploadBatches.id, batchId),
+          eq(schema.uploadBatches.uploadDeviceId, actor.machine.uploadDeviceId),
+        ),
+      );
+    if (batch === undefined) return null;
+
+    const [handover] = await db
+      .select({
+        id: schema.handovers.id,
+        deviceId: schema.handovers.deviceId,
+        deviceSerial: schema.devices.hardwareSerial,
+      })
+      .from(schema.handovers)
+      .innerJoin(schema.devices, eq(schema.devices.id, schema.handovers.deviceId))
+      .where(eq(schema.handovers.id, batch.handoverId));
+    if (handover === undefined) return null;
+
+    const sessions = await db
+      .select({
+        id: schema.collectionSessions.id,
+        prepareTime: schema.collectionSessions.prepareTime,
+        sessionOrigin: schema.collectionSessions.sessionOrigin,
+      })
+      .from(schema.collectionSessions)
+      .where(eq(schema.collectionSessions.collectorId, sql`(
+        select collector_id from handovers where id = ${batch.handoverId}
+      )`));
+
+    return { batch, handover, sessions };
+  };
+
+  app.post('/upload-batches/:id/episodes', opts, async (req, reply) => {
+    const body = SubmitBody.safeParse(req.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: 'invalid body', detail: body.error.issues.slice(0, 5) });
+    }
+    const actor = req.actor!;
+    const batchId = (req.params as { id: string }).id;
+    const ctx = await context(batchId, actor);
+    if (ctx === null) return reply.code(404).send({ error: 'no such batch on this machine' });
+
+    const results = [];
+    for (const record of body.data.episodes) {
+      /**
+       * The measurement is stored first, by the code that already owns that job.
+       * `storeEpisode` runs its own transaction and handles the re-delivery cases
+       * (new / duplicate / mismatch), which is also what makes submission
+       * idempotent on the episode id.
+       *
+       * Resolution is a second transaction. A crash between the two leaves the
+       * episode at its column default — quarantined, with no session — which is
+       * a legal state that asks for a human. The alternative, folding resolution
+       * into storeEpisode, would mean editing code that is done and tested to
+       * buy atomicity between a safe state and a safer one.
+       */
+      const stored = await storeEpisode(db, record);
+      const resolution = resolveEpisode(record, ctx.sessions, toleranceMs);
+      const defects = resolverDefects(record, ctx.handover, resolution.sessionId);
+
+      await mutate(
+        db,
+        actor,
+        {
+          action: 'episode.submit',
+          targetTable: 'episodes',
+          targetId: stored.episodeId,
+          before: { outcome: stored.outcome },
+          after: {
+            collection_session_id: resolution.sessionId,
+            resolution_state: resolution.state,
+            resolution_method: resolution.method,
+            reason: resolution.reason,
+            proposed_session_id: resolution.proposedSessionId,
+            defects: defects.map((d) => d.code),
+          },
+        },
+        async (tx) => {
+          const [row] = await tx
+            .update(schema.episodes)
+            .set({
+              collectionSessionId: resolution.sessionId,
+              resolutionState: resolution.state,
+              resolutionMethod: resolution.method,
+              uploadBatchId: batchId,
+              // Path C: this arrived on a card at a counter, by definition.
+              uploadPath: 'C',
+            })
+            .where(eq(schema.episodes.episodeId, stored.episodeId))
+            .returning();
+
+          // Store-time defects hang off the ingest, exactly as CHECKSUM-MISMATCH
+          // does. A duplicate delivery has no new ingest, so there is nothing to
+          // attach them to and nothing new to say.
+          if (defects.length > 0 && stored.ingestId !== null && stored.outcome !== 'duplicate') {
+            await tx
+              .insert(schema.episodeDefects)
+              .values(
+                defects.map((d) => ({
+                  ingestId: stored.ingestId!,
+                  code: d.code,
+                  severity: 'flag',
+                  payload: { detail: d.detail },
+                })),
+              );
+          }
+          return row;
+        },
+      );
+
+      results.push({
+        episode_id: stored.episodeId,
+        outcome: stored.outcome,
+        resolution_state: resolution.state,
+        resolution_method: resolution.method,
+        reason: resolution.reason,
+        proposed_session_id: resolution.proposedSessionId,
+        needs_confirmation: resolution.needsConfirmation,
+        defects: defects.map((d) => d.code),
+      });
+    }
+
+    return reply.send({ batch_id: batchId, episodes: results });
+  });
+
+  /**
+   * What still needs a human before the batch can close. The summary is the
+   * counter's own sanity check: seven episodes against one declared session is
+   * not an error, but an operator should see it rather than discover it in a
+   * settlement report.
+   */
+  app.get('/upload-batches/:id/exceptions', opts, async (req, reply) => {
+    const actor = req.actor!;
+    const batchId = (req.params as { id: string }).id;
+    const ctx = await context(batchId, actor);
+    if (ctx === null) return reply.code(404).send({ error: 'no such batch on this machine' });
+
+    const episodes = await db
+      .select({
+        episodeId: schema.episodes.episodeId,
+        resolutionState: schema.episodes.resolutionState,
+        resolutionMethod: schema.episodes.resolutionMethod,
+        confirmedAt: schema.episodes.resolutionConfirmedAt,
+        collectionSessionId: schema.episodes.collectionSessionId,
+        sessionStartedAt: schema.episodes.sessionStartedAt,
+      })
+      .from(schema.episodes)
+      .where(eq(schema.episodes.uploadBatchId, batchId));
+
+    const quarantined = episodes.filter((e) => e.resolutionState === 'quarantined');
+    const unconfirmed = episodes.filter(
+      (e) => e.resolutionMethod === 'automatic_time_window' && e.confirmedAt === null,
+    );
+
+    return reply.send({
+      batch_id: batchId,
+      summary: {
+        episodes: episodes.length,
+        sessions: ctx.sessions.length,
+        quarantined: quarantined.length,
+        awaiting_confirmation: unconfirmed.length,
+        // The one an operator should look at even when nothing is wrong.
+        episodes_per_session:
+          ctx.sessions.length === 0 ? null : +(episodes.length / ctx.sessions.length).toFixed(2),
+      },
+      /** Batch close is blocked while this is non-empty, or deferred with a reason. */
+      blocking: [...quarantined, ...unconfirmed].map((e) => ({
+        episode_id: e.episodeId,
+        session_started_at: e.sessionStartedAt,
+        resolution_state: e.resolutionState,
+        needs: e.resolutionState === 'quarantined' ? 'assignment' : 'confirmation',
+      })),
+      sessions: ctx.sessions,
+    });
+  });
+
+  /** PLT-05's human resolution path. The reason is not optional — the database refuses without it. */
+  app.post('/episodes/:id/resolve', opts, async (req, reply) => {
+    const body = ResolveBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
+    const actor = req.actor!;
+    const episodeId = (req.params as { id: string }).id;
+
+    const [episode] = await db
+      .select()
+      .from(schema.episodes)
+      .where(eq(schema.episodes.episodeId, episodeId));
+    if (episode === undefined) return reply.code(404).send({ error: 'no such episode' });
+
+    // The session must belong to the same collector this card came from.
+    const [session] = await db
+      .select({ id: schema.collectionSessions.id })
+      .from(schema.collectionSessions)
+      .innerJoin(schema.handovers, eq(schema.handovers.collectorId, schema.collectionSessions.collectorId))
+      .innerJoin(schema.uploadBatches, eq(schema.uploadBatches.handoverId, schema.handovers.id))
+      .where(
+        and(
+          eq(schema.collectionSessions.id, body.data.collection_session_id),
+          eq(schema.uploadBatches.id, episode.uploadBatchId ?? ''),
+          eq(schema.handovers.uploadCentreId, actor.operator.uploadCentreId),
+        ),
+      );
+    if (session === undefined) {
+      return reply.code(409).send({ error: 'that session does not belong to this delivery' });
+    }
+
+    await mutate(
+      db,
+      actor,
+      {
+        action: 'episode.resolve_manual',
+        targetTable: 'episodes',
+        targetId: episodeId,
+        // What the machine suggested and what the human picked, so a dispute can
+        // see the difference without another column on episodes.
+        before: {
+          resolution_state: episode.resolutionState,
+          proposed_session_id: episode.collectionSessionId,
+        },
+        after: { collection_session_id: body.data.collection_session_id },
+        reason: body.data.reason,
+      },
+      async (tx) => {
+        const [row] = await tx
+          .update(schema.episodes)
+          .set({
+            collectionSessionId: body.data.collection_session_id,
+            resolutionState: 'resolved',
+            resolutionMethod: 'manual',
+          })
+          .where(eq(schema.episodes.episodeId, episodeId))
+          .returning();
+        return row;
+      },
+    );
+    return reply.send({ episode_id: episodeId, resolution_state: 'resolved', resolution_method: 'manual' });
+  });
+
+  /**
+   * A human agreeing with the machine, which is a different fact from a human
+   * choosing — a settlement dispute will ask which happened, so it is a
+   * different endpoint and a different audit action.
+   */
+  app.post('/episodes/:id/confirm', opts, async (req, reply) => {
+    const actor = req.actor!;
+    const episodeId = (req.params as { id: string }).id;
+
+    const [episode] = await db
+      .select()
+      .from(schema.episodes)
+      .where(eq(schema.episodes.episodeId, episodeId));
+    if (episode === undefined) return reply.code(404).send({ error: 'no such episode' });
+    if (episode.resolutionMethod === null || episode.resolutionState !== 'resolved') {
+      return reply.code(409).send({ error: 'nothing to confirm: this episode has no machine proposal' });
+    }
+    if (episode.resolutionConfirmedAt !== null) {
+      return reply.send({ episode_id: episodeId, already_confirmed: true });
+    }
+
+    await mutate(
+      db,
+      actor,
+      {
+        action: 'episode.resolve_confirm',
+        targetTable: 'episodes',
+        targetId: episodeId,
+        after: {
+          collection_session_id: episode.collectionSessionId,
+          resolution_method: episode.resolutionMethod,
+        },
+      },
+      async (tx) => {
+        const [row] = await tx
+          .update(schema.episodes)
+          .set({ resolutionConfirmedAt: new Date() })
+          .where(eq(schema.episodes.episodeId, episodeId))
+          .returning();
+        return row;
+      },
+    );
+    return reply.send({ episode_id: episodeId, already_confirmed: false });
+  });
+
+  /** The status view: batches on this machine, newest first. */
+  app.get('/upload-batches', opts, async (req, reply) => {
+    const actor = req.actor!;
+    const status = (req.query as Record<string, string>)['status'];
+    const rows = await db
+      .select({
+        id: schema.uploadBatches.id,
+        handoverId: schema.uploadBatches.handoverId,
+        batchStatus: schema.uploadBatches.batchStatus,
+        importStartedAt: schema.uploadBatches.importStartedAt,
+        importCompletedAt: schema.uploadBatches.importCompletedAt,
+      })
+      .from(schema.uploadBatches)
+      .where(
+        status
+          ? and(
+              eq(schema.uploadBatches.uploadDeviceId, actor.machine.uploadDeviceId),
+              eq(schema.uploadBatches.batchStatus, status),
+            )
+          : eq(schema.uploadBatches.uploadDeviceId, actor.machine.uploadDeviceId),
+      );
+
+    const ids = rows.map((r) => r.id);
+    const counts =
+      ids.length === 0
+        ? []
+        : await db
+            .select({
+              uploadBatchId: schema.episodes.uploadBatchId,
+              state: schema.episodes.resolutionState,
+              n: sql<number>`count(*)::int`,
+            })
+            .from(schema.episodes)
+            .where(inArray(schema.episodes.uploadBatchId, ids))
+            .groupBy(schema.episodes.uploadBatchId, schema.episodes.resolutionState);
+
+    return reply.send({
+      batches: rows.map((r) => ({
+        ...r,
+        resolved: counts.find((c) => c.uploadBatchId === r.id && c.state === 'resolved')?.n ?? 0,
+        quarantined: counts.find((c) => c.uploadBatchId === r.id && c.state === 'quarantined')?.n ?? 0,
+      })),
+    });
+  });
+}
