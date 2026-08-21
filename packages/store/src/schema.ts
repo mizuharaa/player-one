@@ -410,30 +410,6 @@ export const collectionPoints = pgTable(
   ],
 );
 
-/** §6.15 lists alternatives as well as a default, and both need to resolve. */
-export const collectionPointAltCentres = pgTable(
-  'collection_point_alt_centres',
-  {
-    collectionPointId: uuid('collection_point_id').notNull(),
-    uploadCentreId: uuid('upload_centre_id').notNull(),
-  },
-  // Named explicitly: drizzle's generated names for this table run past
-  // Postgres's 63-byte identifier limit and get silently truncated, which turns
-  // two distinct constraints into a collision.
-  (t) => [
-    primaryKey({ columns: [t.collectionPointId, t.uploadCentreId], name: 'cp_alt_centres_pk' }),
-    foreignKey({
-      columns: [t.collectionPointId],
-      foreignColumns: [collectionPoints.id],
-      name: 'cp_alt_centres_point_fk',
-    }),
-    foreignKey({
-      columns: [t.uploadCentreId],
-      foreignColumns: [uploadCentres.id],
-      name: 'cp_alt_centres_centre_fk',
-    }),
-  ],
-);
 
 /**
  * The anchor. Everything downstream hangs off a session id.
@@ -460,6 +436,22 @@ export const collectionSessions = pgTable(
       .references(() => scenarios.id),
     collectionPointId: uuid('collection_point_id').references(() => collectionPoints.id),
     /**
+     * The card this session was declared against.
+     *
+     * Nullable, and deliberately so: APP-16 has the collector app create a
+     * session *before* recording, when no card has been handed in yet, so an
+     * app-origin session has no handover to point at. A handover-origin session
+     * always does, which the CHECK below enforces.
+     *
+     * Without this the resolver had to scope candidate sessions by collector,
+     * which meant every session that collector had ever declared was a
+     * candidate for every later card. One card per collector hides it; the
+     * second card quarantines the whole batch, and under time-window matching
+     * it could attach this week's footage to last week's task at last week's
+     * unit price.
+     */
+    handoverId: uuid('handover_id').references((): AnyPgColumn => handovers.id),
+    /**
      * APP-17b. NOT NULL on purpose: these drive QR-07 review routing and PRV-07
      * authorisation checks, and "we did not ask" is not one of the answers.
      */
@@ -475,9 +467,15 @@ export const collectionSessions = pgTable(
   (t) => [
     index('collection_sessions_collector_idx').on(t.collectorId),
     index('collection_sessions_task_idx').on(t.taskId),
+    index('collection_sessions_handover_idx').on(t.handoverId),
     check(
       'collection_sessions_origin_check',
       sql`${t.sessionOrigin} in ('handover', 'app', 'backoffice')`,
+    ),
+    /** A session reconstructed at the counter belongs to the card on the counter. */
+    check(
+      'collection_sessions_handover_required_check',
+      sql`${t.sessionOrigin} <> 'handover' or ${t.handoverId} is not null`,
     ),
   ],
 );
