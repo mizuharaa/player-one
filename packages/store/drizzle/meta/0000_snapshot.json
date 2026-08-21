@@ -1,0 +1,544 @@
+{
+  "id": "44855341-46ab-428c-8000-c8cf2fe2c14d",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.episode_defects": {
+      "name": "episode_defects",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ingest_id": {
+          "name": "ingest_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "severity": {
+          "name": "severity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "episode_defects_ingest_idx": {
+          "name": "episode_defects_ingest_idx",
+          "columns": [
+            {
+              "expression": "ingest_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "episode_defects_ingest_id_episode_ingests_ingest_id_fk": {
+          "name": "episode_defects_ingest_id_episode_ingests_ingest_id_fk",
+          "tableFrom": "episode_defects",
+          "tableTo": "episode_ingests",
+          "columnsFrom": [
+            "ingest_id"
+          ],
+          "columnsTo": [
+            "ingest_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "episode_defects_severity_check": {
+          "name": "episode_defects_severity_check",
+          "value": "\"episode_defects\".\"severity\" in ('info', 'flag', 'quarantine')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.episode_files": {
+      "name": "episode_files",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ingest_id": {
+          "name": "ingest_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "relative_path": {
+          "name": "relative_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size_bytes": {
+          "name": "size_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "episode_files_ingest_idx": {
+          "name": "episode_files_ingest_idx",
+          "columns": [
+            {
+              "expression": "ingest_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "episode_files_ingest_path_key": {
+          "name": "episode_files_ingest_path_key",
+          "columns": [
+            {
+              "expression": "ingest_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "relative_path",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "episode_files_ingest_id_episode_ingests_ingest_id_fk": {
+          "name": "episode_files_ingest_id_episode_ingests_ingest_id_fk",
+          "tableFrom": "episode_files",
+          "tableTo": "episode_ingests",
+          "columnsFrom": [
+            "ingest_id"
+          ],
+          "columnsTo": [
+            "ingest_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.episode_ingests": {
+      "name": "episode_ingests",
+      "schema": "",
+      "columns": {
+        "ingest_id": {
+          "name": "ingest_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "episode_id": {
+          "name": "episode_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_fingerprint": {
+          "name": "content_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_basename": {
+          "name": "source_basename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "declared_duration_s": {
+          "name": "declared_duration_s",
+          "type": "numeric(20, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "measured_duration_s": {
+          "name": "measured_duration_s",
+          "type": "numeric(20, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timing_source": {
+          "name": "timing_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timing_confidence": {
+          "name": "timing_confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stream_skew_ms": {
+          "name": "stream_skew_ms",
+          "type": "numeric(20, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "device_firmware": {
+          "name": "device_firmware",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "calibration_serial": {
+          "name": "calibration_serial",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "manifest_present": {
+          "name": "manifest_present",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "engine_version": {
+          "name": "engine_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "host": {
+          "name": "host",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ingested_at": {
+          "name": "ingested_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "record_json": {
+          "name": "record_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "episode_ingests_episode_idx": {
+          "name": "episode_ingests_episode_idx",
+          "columns": [
+            {
+              "expression": "episode_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "ingested_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "episode_ingests_fingerprint_idx": {
+          "name": "episode_ingests_fingerprint_idx",
+          "columns": [
+            {
+              "expression": "content_fingerprint",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "episode_ingests_episode_id_episodes_episode_id_fk": {
+          "name": "episode_ingests_episode_id_episodes_episode_id_fk",
+          "tableFrom": "episode_ingests",
+          "tableTo": "episodes",
+          "columnsFrom": [
+            "episode_id"
+          ],
+          "columnsTo": [
+            "episode_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "episode_ingests_state_check": {
+          "name": "episode_ingests_state_check",
+          "value": "\"episode_ingests\".\"state\" in ('ok', 'flagged', 'quarantined')"
+        },
+        "episode_ingests_timing_source_check": {
+          "name": "episode_ingests_timing_source_check",
+          "value": "\"episode_ingests\".\"timing_source\" in ('pts_sidecar', 'container', 'imu_span', 'wall_clock')"
+        },
+        "episode_ingests_timing_confidence_check": {
+          "name": "episode_ingests_timing_confidence_check",
+          "value": "\"episode_ingests\".\"timing_confidence\" in ('exact', 'derived', 'estimated')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.episode_streams": {
+      "name": "episode_streams",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ingest_id": {
+          "name": "ingest_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stream_name": {
+          "name": "stream_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sample_count": {
+          "name": "sample_count",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "duration_s": {
+          "name": "duration_s",
+          "type": "numeric(20, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timing_source": {
+          "name": "timing_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_timestamp_us": {
+          "name": "first_timestamp_us",
+          "type": "numeric(20, 0)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_timestamp_us": {
+          "name": "last_timestamp_us",
+          "type": "numeric(20, 0)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "excluded": {
+          "name": "excluded",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "exclusion_reason": {
+          "name": "exclusion_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "episode_streams_ingest_idx": {
+          "name": "episode_streams_ingest_idx",
+          "columns": [
+            {
+              "expression": "ingest_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "episode_streams_ingest_id_episode_ingests_ingest_id_fk": {
+          "name": "episode_streams_ingest_id_episode_ingests_ingest_id_fk",
+          "tableFrom": "episode_streams",
+          "tableTo": "episode_ingests",
+          "columnsFrom": [
+            "ingest_id"
+          ],
+          "columnsTo": [
+            "ingest_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.episodes": {
+      "name": "episodes",
+      "schema": "",
+      "columns": {
+        "episode_id": {
+          "name": "episode_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "device_serial": {
+          "name": "device_serial",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "session_started_at": {
+          "name": "session_started_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "latest_ingest_id": {
+          "name": "latest_ingest_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ingest_count": {
+          "name": "ingest_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "episodes_latest_ingest_id_episode_ingests_ingest_id_fk": {
+          "name": "episodes_latest_ingest_id_episode_ingests_ingest_id_fk",
+          "tableFrom": "episodes",
+          "tableTo": "episode_ingests",
+          "columnsFrom": [
+            "latest_ingest_id"
+          ],
+          "columnsTo": [
+            "ingest_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
