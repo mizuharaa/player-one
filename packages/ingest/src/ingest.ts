@@ -142,7 +142,7 @@ export async function ingestSession(
   return {
     files,
     record: EpisodeRecordSchema.parse({
-      schema_version: '1.0.0',
+      schema_version: '1.1.0',
       episode_id: deriveEpisodeId(name),
       content_fingerprint: contentFingerprint(files),
       state: stateFrom(discrepancies),
@@ -171,6 +171,9 @@ export async function ingestSession(
         present: calibration.present,
         files: calibrationFiles,
       },
+      // Already sorted by path in byte order above, which is the order the
+      // fingerprint is computed in. Emitted verbatim so the two cannot drift.
+      source_files: files,
       discrepancies,
       unclassified_files: discovery.unclassified,
     }),

@@ -12,7 +12,7 @@
  * database and never opens a connection.
  */
 import { writeFile } from 'node:fs/promises';
-import { ingestSession, UnsupportedLayoutError } from '../src/ingest.ts';
+import { ingest, UnsupportedLayoutError } from '../src/ingest.ts';
 import { FfprobeMissingError } from '../src/timing.ts';
 import type { EpisodeRecord } from '@playerone/contracts';
 
@@ -40,9 +40,8 @@ if (!dir) {
 }
 
 let record: EpisodeRecord;
-let files;
 try {
-  ({ record, files } = await ingestSession(dir));
+  record = await ingest(dir);
 } catch (err) {
   if (err instanceof UnsupportedLayoutError) {
     console.error(`${err.message}\nThis tool reads ego session directories.`);
@@ -84,7 +83,7 @@ if (store) {
     const { open, storeEpisode } = await import('@playerone/store');
     const db = await open();
     try {
-      const result = await storeEpisode(db, record, files);
+      const result = await storeEpisode(db, record);
       record = result.record; // may now carry CHECKSUM-MISMATCH
       storeLine =
         result.outcome === 'duplicate'
