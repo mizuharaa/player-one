@@ -61,6 +61,18 @@ const FileRef = z.object({
   sha256: Sha256,
 });
 
+/**
+ * One source file of the delivery. `relative_path` rather than `file` so the
+ * array is the exact input type `contentFingerprint` takes: a consumer can call
+ * `contentFingerprint(record.source_files)` and compare, with no reshaping and
+ * no chance of reshaping it wrong.
+ */
+const SourceFileRef = z.object({
+  relative_path: z.string(),
+  bytes: z.number().int().nonnegative(),
+  sha256: Sha256,
+});
+
 /** Open list, per P2-02: phase 2 adds glove encoder and tactile roles with no migration. */
 export const Stream = z.object({
   role: z.string(),
@@ -90,7 +102,10 @@ export const Declared = z.object({
 });
 
 export const EpisodeRecord = z.object({
-  schema_version: z.literal('1.0.0'),
+  // 1.1.0 adds source_files. Additive, but the version moves because the
+  // fingerprint became verifiable from the document, which is a contract
+  // consumers may now rely on.
+  schema_version: z.literal('1.1.0'),
   episode_id: z.string().regex(/^[0-9a-f-]{36}$/),
   content_fingerprint: Sha256,
   state: z.enum(['ok', 'flagged', 'quarantined']),
@@ -124,6 +139,27 @@ export const EpisodeRecord = z.object({
     present: z.boolean(),
     files: z.array(FileRef),
   }),
+
+  /**
+   * Every file `content_fingerprint` is computed over, sorted by path in byte
+   * order — the same set, the same order, so the digest recomputes from the
+   * record alone:
+   *
+   *     contentFingerprint(record.source_files) === record.content_fingerprint
+   *
+   * Without this the record named digests for media and calibration only, and a
+   * session's PTS sidecars, its manifest-excluded remainder and any
+   * unclassified file had no digest anywhere in the document. The fingerprint
+   * was then verifiable only by a consumer who also held the store's
+   * `episode_files` rows — which is not a property of the record, and the
+   * record is what every downstream component reads.
+   *
+   * The manifest is absent by the same argument that keeps it out of the
+   * digest (ING-02, docs/episode-identity.md): a device rewriting its own
+   * metadata is not a corrupted delivery. `unclassified_files` stays as a
+   * names-only index into this array.
+   */
+  source_files: z.array(SourceFileRef),
 
   discrepancies: z.array(Discrepancy),
   unclassified_files: z.array(z.string()),
