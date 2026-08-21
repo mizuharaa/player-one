@@ -381,47 +381,60 @@ export function computeTiming(
   const starts = positioned.map((s) => s.firstUs);
   const ends = positioned.map((s) => s.lastUs);
 
-  // intersection, NOT union
-  const usableStart = maxOf(starts);
-
   /**
    * A cut sidecar ends early because the file stops, not because the stream
-   * did, so it must not be allowed to shorten the window. If every sidecar is
-   * cut there is no trustworthy end left, and the container length becomes the
-   * answer. 072538: the audio sidecar stops at 20.48 s, the video holds 20.98 s.
+   * did, so it must not be allowed to shorten the window while an intact stream
+   * still defines the end. 072538: the audio sidecar stops at 20.48 s, the
+   * video holds 20.98 s.
+   *
+   * With nothing intact left, the cut ends are the only evidence there is. The
+   * window then closes at the shortest of them — payable time is an
+   * intersection — and the confidence drops to estimated below. Returning
+   * nothing instead would make real footage unpayable, which is the one outcome
+   * worse than a flag.
    */
-  const enders = positioned.filter((s) => !s.truncatedTail);
-  const usableEnd = enders.length > 0 ? minOf(enders.map((s) => s.lastUs)) : null;
-  const windowUs =
-    usableEnd !== null && usableEnd > usableStart ? usableEnd - usableStart : null;
+  const intact = positioned.filter((s) => !s.truncatedTail);
+  const extendTailTo = intact.length > 0 ? maxOf(intact.map((s) => s.lastUs)) : null;
 
   /**
-   * A stream with a length but no position cannot move the window, but it can
-   * shorten it: an overlap cannot outlast the shortest stream taking part in it.
-   * This is what keeps a container-derived camera honest.
+   * The instants every stream covered, as intervals. A scalar window cannot
+   * express this: two cameras with holes in different places lose both holes,
+   * and a hole outside the shared window costs nobody anything. Both of those
+   * are money, so the arithmetic is done on intervals and the scalars are read
+   * back off the result.
+   */
+  const common = positioned
+    .map((s) => coverageOf(s, extendTailTo))
+    .reduce((a, b) => intersect(a, b));
+
+  const usableStart = maxOf(starts); // intersection, NOT union
+  const usableEnd = common.length > 0 ? common[common.length - 1]!.end : null;
+  const commonUs = measure(common);
+
+  /**
+   * A stream with a length but no position cannot move the window, and it
+   * cannot create one either: a duration is not evidence that anything was
+   * recorded at the same moment as anything else. It only ever caps, which is
+   * what keeps a container-derived camera honest.
    */
   const caps = usable.filter((s) => s.firstUs === null && s.spanUs !== null).map((s) => s.spanUs!);
   const covered =
-    windowUs !== null
-      ? caps.length > 0
-        ? minOf([windowUs, ...caps])
-        : windowUs
-      : caps.length > 0
-        ? minOf(caps)
-        : 0n;
+    caps.length === 0
+      ? commonUs
+      : commonUs === 0n
+        ? // No shared instant. A length cannot manufacture one.
+          0n
+        : intact.length === 0
+          ? // Every sidecar stops early, so the intersection of cut ends is a
+            // floor, not a measurement. The container knows the real length.
+            // 072538: sidecars cut at 20.48 s, containers hold 20.98 s.
+            minOf(caps)
+          : minOf([commonUs, ...caps]);
 
-  /**
-   * A hole between two parts is time nobody recorded, so it is not payable.
-   * ponytail: takes the worst stream's total gap rather than the union of gap
-   * intervals across streams. Parts only ever split on the segment boundary, so
-   * the cameras gap together; compute a real interval union if that stops
-   * holding.
-   */
-  const gapUs = usable.reduce((worst, s) => {
-    const g = gapWithin(s);
-    return g > worst ? g : worst;
-  }, 0n);
-  const rawUs = covered > gapUs ? covered - gapUs : 0n;
+  // Holes are already absent from `common`, so the gap is what the window lost.
+  const windowUs = usableEnd !== null && usableEnd > usableStart ? usableEnd - usableStart : 0n;
+  const gapUs = windowUs > commonUs ? windowUs - commonUs : 0n;
+  const rawUs = covered;
 
   const cameras = usable.filter((s) => s.role.startsWith('camera_'));
   const camerasTimed = cameras.filter((s) => s.spanUs !== null);
@@ -440,6 +453,17 @@ export function computeTiming(
     confidence = 'exact';
   }
 
+  /**
+   * Time that rests on a file which was cut is inferred, whatever the source
+   * was. With nothing intact left to bound the inference, the whole window is
+   * inference. Neither may be reported as exact: `exact` is what tells a
+   * reviewer the number needs no second look.
+   */
+  if (intact.length === 0) confidence = 'estimated';
+  else if (confidence === 'exact' && positioned.some((s) => s.truncatedTail && s.lastUs < extendTailTo!)) {
+    confidence = 'derived';
+  }
+
   return {
     method,
     confidence,
@@ -451,6 +475,78 @@ export function computeTiming(
     unionDurationS: toS(maxOf(ends) - minOf(starts)),
   };
 }
+
+/** A half-open span of stream time. `end` is always greater than `start`. */
+type Interval = { start: bigint; end: bigint };
+
+/**
+ * The instants one stream demonstrably covered. Parts are the unit: a hole
+ * between two parts is time nobody recorded and is simply absent from the
+ * result, which is what makes the intersection below do the right thing without
+ * a separate gap subtraction. Two parts are contiguous when the join is no
+ * wider than one sample interval — a normal segment boundary is not a hole.
+ *
+ * `extendTailTo` carries the truncation rule: a cut file's last interval runs
+ * to the end that intact streams still vouch for. Null means nothing is intact
+ * and the cut end stands as the only evidence.
+ */
+function coverageOf(
+  s: StreamTiming & { firstUs: bigint; lastUs: bigint },
+  extendTailTo: bigint | null,
+): Interval[] {
+  const step = s.medianDeltaUs !== null && s.medianDeltaUs > 0n ? s.medianDeltaUs : 0n;
+  const sorted =
+    s.partTimings.length > 0
+      ? [...s.partTimings].sort((a, b) =>
+          a.firstUs < b.firstUs ? -1 : a.firstUs > b.firstUs ? 1 : 0,
+        )
+      : [{ partNumber: null, firstUs: s.firstUs, lastUs: s.lastUs }];
+
+  /**
+   * The join between two consecutive parts is one normal sample period, not a
+   * hole, so every part but the last is credited with it (ING-20 measures a gap
+   * as the excess beyond one interval). The last part is not, which keeps a
+   * whole stream's length at `last - first` — the span convention the rest of
+   * the engine and the sample expectations are written against.
+   */
+  const parts = sorted.map((p, i) => ({
+    start: p.firstUs,
+    end: i < sorted.length - 1 ? p.lastUs + step : p.lastUs,
+  }));
+
+  const merged: Interval[] = [];
+  for (const p of parts) {
+    const prev = merged[merged.length - 1];
+    if (prev !== undefined && p.start <= prev.end) {
+      if (p.end > prev.end) prev.end = p.end;
+    } else {
+      merged.push({ ...p });
+    }
+  }
+
+  if (s.truncatedTail && extendTailTo !== null && merged.length > 0) {
+    const last = merged[merged.length - 1]!;
+    if (extendTailTo > last.end) last.end = extendTailTo;
+  }
+  return merged;
+}
+
+/** Both lists are sorted and disjoint, so one pass suffices. */
+function intersect(a: Interval[], b: Interval[]): Interval[] {
+  const out: Interval[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const start = a[i]!.start > b[j]!.start ? a[i]!.start : b[j]!.start;
+    const end = a[i]!.end < b[j]!.end ? a[i]!.end : b[j]!.end;
+    if (end > start) out.push({ start, end });
+    if (a[i]!.end < b[j]!.end) i++;
+    else j++;
+  }
+  return out;
+}
+
+const measure = (xs: Interval[]): bigint => xs.reduce((n, x) => n + (x.end - x.start), 0n);
 
 /** ING-20. Total time between one part ending and the next starting, beyond one sample interval. */
 export function gapWithin(s: StreamTiming): bigint {
