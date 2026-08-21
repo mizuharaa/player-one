@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { schema, type Db } from '@playerone/store';
 import { auditLogin } from './audit.ts';
+import { registerCounter } from './counter.ts';
 import type { Actor } from './actor.ts';
 import {
   signToken,
@@ -152,7 +153,9 @@ export function buildApi({ db, tokenSecret }: ApiOptions): FastifyInstance {
     };
   });
 
-  /** Proves both-tokens and centre scope without needing the counter endpoints yet. */
+  registerCounter(app, db, requireActor);
+
+  /** Proves both-tokens and centre scope on its own, with no counter state needed. */
   app.get('/whoami', { preHandler: requireActor }, async (req) => ({
     operator_id: req.actor!.operator.operatorId,
     upload_device_id: req.actor!.machine.uploadDeviceId,
