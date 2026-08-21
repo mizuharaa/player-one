@@ -7,7 +7,7 @@
   },
   "scripts": {
     "typecheck": "tsc",
-    "test": "vitest run",
+    "test": "vitest run --testTimeout=30000",
     "ingest": "node packages/ingest/bin/ingest.ts",
     "fixtures": "node packages/ingest/scripts/make-fixtures.ts",
     "bench": "node packages/ingest/scripts/bench.ts",

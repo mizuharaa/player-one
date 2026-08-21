@@ -129,6 +129,13 @@ export async function checkMp4Complete(path: string): Promise<string | null> {
 export type Probe = { durationUs: bigint; packets: number };
 
 /**
+ * ffprobe is absent from the machine, which is an install fault and not a
+ * property of the delivery. It gets its own type because the CLI already treats
+ * a bare ENOENT as "the operator mistyped the directory".
+ */
+export class FfprobeMissingError extends Error {}
+
+/**
  * Container timing, or null when the file is damaged.
  *
  * `format=duration` alone is not enough: a real MP4 cut to 45% of its bytes
@@ -161,7 +168,21 @@ export async function probeContainer(path: string): Promise<Probe | null> {
     const packets = Number(parsed.streams?.[0]?.nb_read_packets ?? 0);
     if (!Number.isFinite(seconds) || seconds <= 0) return null;
     return { durationUs: BigInt(Math.round(seconds * 1e6)), packets };
-  } catch {
+  } catch (err) {
+    /**
+     * A spawn ENOENT is ffprobe missing from PATH, never the media file: this
+     * path is only reached for a file discovery already found on disk. Returning
+     * null for it would be indistinguishable from "the container is damaged",
+     * so every session at an upload centre without ffmpeg would quietly fall
+     * through to a weaker timing rung and be measured — and paid — wrong. An
+     * install fault must not present as a data defect.
+     */
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new FfprobeMissingError(
+        'ffprobe was not found on PATH. Install ffmpeg: the container is the ' +
+          'timing fallback when a PTS sidecar is unusable, and without it durations are wrong.',
+      );
+    }
     return null;
   }
 }
