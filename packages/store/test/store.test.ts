@@ -15,7 +15,10 @@ import {
   type MismatchPayload,
 } from '../src/index.ts';
 import { episodeIngests, episodes } from '../src/schema.ts';
-import { closeDb, db, hasDb, truncate } from './db.ts';
+import { closeDb, db, hasDb, truncate, useDatabase } from './db.ts';
+
+// One database per test file: vitest runs them in parallel and each truncates.
+useDatabase('store');
 
 /**
  * The store, against a real Postgres. Everything here is about two failures

@@ -67,6 +67,13 @@ export const episodes = pgTable(
     resolutionState: text('resolution_state').notNull().default('quarantined'),
     uploadPath: text('upload_path'),
     verificationState: text('verification_state').notNull().default('pending'),
+    /**
+     * How this episode got its session, and whether a human has endorsed it.
+     * Settlement rests on the answer, so "why is this episode on this session?"
+     * has to be answerable from Postgres alone.
+     */
+    resolutionMethod: text('resolution_method'),
+    resolutionConfirmedAt: timestamp('resolution_confirmed_at', { withTimezone: true }),
   },
   (t) => [
     index('episodes_session_idx').on(t.collectionSessionId),
@@ -90,6 +97,22 @@ export const episodes = pgTable(
     check(
       'episodes_verification_check',
       sql`${t.verificationState} in ('pending', 'verified', 'failed')`,
+    ),
+    check(
+      'episodes_resolution_method_check',
+      sql`${t.resolutionMethod} is null
+          or ${t.resolutionMethod} in ('automatic_single', 'automatic_time_window', 'manual')`,
+    ),
+    /** A method implies an owner. Complements episodes_resolution_check, not a duplicate. */
+    check(
+      'episodes_method_requires_resolved_check',
+      sql`${t.resolutionMethod} is null or ${t.resolutionState} = 'resolved'`,
+    ),
+    /** Only a machine proposal needs endorsing; a manual attachment is already human. */
+    check(
+      'episodes_confirm_only_automatic_check',
+      sql`${t.resolutionConfirmedAt} is null
+          or ${t.resolutionMethod} in ('automatic_single', 'automatic_time_window')`,
     ),
   ],
 );
@@ -503,6 +526,8 @@ export const uploadDevices = pgTable(
       .references(() => uploadCentres.id),
     machineIdentifier: text('machine_identifier').notNull(),
     status: text('status').notNull(),
+    /** PRD §11.3.2 rule 4: device credentials, scoped to controlled upload paths. */
+    credentialHash: text('credential_hash'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -521,6 +546,8 @@ export const operators = pgTable(
       .references(() => uploadCentres.id),
     externalRef: text('external_ref').notNull(),
     role: text('role').notNull(),
+    /** scrypt, `N$salt$hash`. Never a secret at rest, never logged. */
+    credentialHash: text('credential_hash'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -795,3 +822,60 @@ export const settlements = pgTable(
     check('settlements_amount_nonneg_check', sql`${t.amount} >= 0`),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Auth, audit and machine status (PLT-06/07/08, SEC-01/02/04/05)
+
+/**
+ * PRD §8.3.2 rule 1: "Upload center operators must log in to fixed upload
+ * devices before importing data." So both identities are credentialed — the
+ * machine proves where, the operator proves who — and both land on every audit
+ * row. scrypt, so no native dependency.
+ */
+export const auditEvents = pgTable(
+  'audit_events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    /** No CHECK: the action list grows every slice. */
+    action: text('action').notNull(),
+    targetTable: text('target_table').notNull(),
+    /** text, not uuid: not every target is uuid-keyed. */
+    targetId: text('target_id').notNull(),
+    operatorId: uuid('operator_id').references(() => operators.id),
+    uploadDeviceId: uuid('upload_device_id').references(() => uploadDevices.id),
+    uploadCentreId: uuid('upload_centre_id').references(() => uploadCentres.id),
+    before: jsonb('before'),
+    after: jsonb('after'),
+    reason: text('reason'),
+  },
+  (t) => [
+    index('audit_events_target_idx').on(t.targetTable, t.targetId, t.occurredAt.desc()),
+    index('audit_events_operator_idx').on(t.operatorId, t.occurredAt.desc()),
+    /** An unattributed audit row defeats the table. Logins are the one case with no actor yet. */
+    check(
+      'audit_events_attributed_check',
+      sql`${t.action} like '%.login'
+          or (${t.operatorId} is not null and ${t.uploadDeviceId} is not null)`,
+    ),
+    /** Manual resolution overrides the machine on a money path. It says why. */
+    check(
+      'audit_events_manual_reason_check',
+      sql`${t.action} <> 'episode.resolve_manual' or ${t.reason} is not null`,
+    ),
+  ],
+);
+
+/** PRD §11.3.2 rule 8, verbatim. Current state per machine, upserted — not a time series. */
+export const uploadDeviceStatus = pgTable('upload_device_status', {
+  uploadDeviceId: uuid('upload_device_id')
+    .primaryKey()
+    .references(() => uploadDevices.id),
+  networkState: text('network_state'),
+  diskFreeBytes: bigint('disk_free_bytes', { mode: 'number' }),
+  cardReaderState: text('card_reader_state'),
+  queueDepth: integer('queue_depth'),
+  clientVersion: text('client_version'),
+  lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});

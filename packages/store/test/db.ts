@@ -1,4 +1,6 @@
+import postgres from 'postgres';
 import { sql } from 'drizzle-orm';
+import { expect } from 'vitest';
 import { migrateTo, open, type Db } from '../src/index.ts';
 
 /**
@@ -13,28 +15,56 @@ export const DB_URL = process.env['DATABASE_URL'] ?? '';
 export const hasDb = (): boolean => DB_URL !== '';
 
 /**
- * Vitest runs test files in parallel, and every database file truncates between
- * tests, so two of them sharing one database delete each other's rows. That
- * surfaces as a second delivery reported `new` instead of `duplicate` — a
- * failure that reads exactly like a bug in the code under test.
+ * One database per test file, created on demand from `DATABASE_URL`'s server.
  *
- * A session-level advisory lock, taken before the migration and held until the
- * file closes its connection, serialises database files against each other
- * while leaving every other file parallel. Separate schemas would be tidier but
- * drizzle writes `REFERENCES "public"."…"` into the generated SQL, so the
- * migration does not relocate.
+ * Vitest runs files in parallel and every database file truncates between tests,
+ * so sharing one database means they delete each other's rows — which surfaces
+ * as a second delivery reported `new` instead of `duplicate`, a failure that
+ * reads exactly like a bug in the code under test.
+ *
+ * Separate schemas do not work: drizzle writes `REFERENCES "public"."…"` into
+ * the generated SQL, so the migration does not relocate. A shared advisory lock
+ * does work but holds for the whole file, so the third file waits out the first
+ * two and blows the hook timeout. A database each has neither problem and needs
+ * no coordination.
+ *
+ * Call `useDatabase` at module scope, before any `db()`.
  */
-const FILE_LOCK = 918_273_645;
+let suffix = '';
+export function useDatabase(name: string): void {
+  if (!/^[a-z0-9_]+$/.test(name)) throw new Error(`unsafe database suffix: ${name}`);
+  suffix = name;
+}
+
+const urlFor = (name: string): string => {
+  const u = new URL(DB_URL);
+  u.pathname = `/${name}`;
+  return u.toString();
+};
+
+const dbName = (): string => {
+  const base = new URL(DB_URL).pathname.replace(/^\//, '') || 'postgres';
+  return suffix === '' ? base : `${base}_${suffix}`;
+};
 
 /** One connection for the whole file, migrated once, truncated per test. */
 let shared: Promise<Db> | null = null;
 
 export function db(): Promise<Db> {
   shared ??= (async () => {
-    const d = await open(DB_URL);
-    // Before migrateTo: two files migrating the same database at once race on
-    // CREATE TABLE as readily as they race on rows.
-    await d.execute(sql`select pg_advisory_lock(${FILE_LOCK})`);
+    const target = dbName();
+    if (suffix !== '') {
+      // CREATE DATABASE cannot run inside a transaction, so it goes through a
+      // throwaway connection to the server's default database.
+      const admin = postgres(DB_URL, { max: 1, onnotice: () => {} });
+      try {
+        const [row] = await admin`select 1 from pg_database where datname = ${target}`;
+        if (row === undefined) await admin.unsafe(`create database "${target}"`);
+      } finally {
+        await admin.end({ timeout: 5 });
+      }
+    }
+    const d = await open(urlFor(target));
     await migrateTo(d);
     return d;
   })();
@@ -63,12 +93,32 @@ export async function truncate(): Promise<void> {
 }
 
 export async function closeDb(): Promise<void> {
-  if (shared) {
-    const d = await shared;
-    // Closing would drop the lock anyway; releasing first keeps the intent
-    // visible and hands over promptly.
-    await d.execute(sql`select pg_advisory_unlock(${FILE_LOCK})`);
-    await d.close();
-  }
+  if (shared) await (await shared).close();
   shared = null;
+}
+
+/**
+ * Asserts a specific constraint rejected the statement.
+ *
+ * Drizzle wraps the driver error as "Failed query: ..." and keeps the useful
+ * part — postgres.js's `constraint_name` — on the cause. Matching the wrapper's
+ * message would pass for ANY failure, including a typo in the test's own SQL,
+ * so the chain is walked and the constraint named.
+ */
+export async function violates(constraint: string, run: Promise<unknown>): Promise<void> {
+  let caught: unknown;
+  try {
+    await run;
+  } catch (err) {
+    caught = err;
+  }
+  expect(caught, `expected ${constraint} to reject the statement`).toBeDefined();
+
+  const seen: string[] = [];
+  for (let e: unknown = caught; e !== undefined && e !== null; e = (e as { cause?: unknown }).cause) {
+    const x = e as { message?: string; constraint_name?: string };
+    if (x.constraint_name) seen.push(x.constraint_name);
+    if (x.message) seen.push(x.message);
+  }
+  expect(seen.join(' | '), `rejected, but not by ${constraint}`).toContain(constraint);
 }
