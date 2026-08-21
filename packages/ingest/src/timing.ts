@@ -382,54 +382,69 @@ export function computeTiming(
   const ends = positioned.map((s) => s.lastUs);
 
   /**
-   * A cut sidecar ends early because the file stops, not because the stream
-   * did, so it must not be allowed to shorten the window while an intact stream
-   * still defines the end. 072538: the audio sidecar stops at 20.48 s, the
-   * video holds 20.98 s.
-   *
-   * With nothing intact left, the cut ends are the only evidence there is. The
-   * window then closes at the shortest of them — payable time is an
-   * intersection — and the confidence drops to estimated below. Returning
-   * nothing instead would make real footage unpayable, which is the one outcome
-   * worse than a flag.
-   */
-  const intact = positioned.filter((s) => !s.truncatedTail);
-  const extendTailTo = intact.length > 0 ? maxOf(intact.map((s) => s.lastUs)) : null;
-
-  /**
    * The instants every stream covered, as intervals. A scalar window cannot
    * express this: two cameras with holes in different places lose both holes,
    * and a hole outside the shared window costs nobody anything. Both of those
    * are money, so the arithmetic is done on intervals and the scalars are read
    * back off the result.
+   *
+   * A cut sidecar ends early because the file stopped, not because the stream
+   * did, so its end is UNKNOWN — modelled as OPEN, never borrowed from another
+   * stream. Borrowing would put a `max` inside an intersection and let adding a
+   * stream raise the payout, which is the one thing an intersection may not do.
+   * An intact stream closes the window on its own by being the smaller end;
+   * that is how 072538's video still bounds its cut audio.
    */
-  const common = positioned
-    .map((s) => coverageOf(s, extendTailTo))
-    .reduce((a, b) => intersect(a, b));
+  const common = positioned.map(coverageOf).reduce((a, b) => intersect(a, b));
+
+  /**
+   * Open only when EVERY positioned stream was cut — any intact end is smaller
+   * than OPEN and closes the intersection by itself. Nothing positioned can
+   * answer where the window ends, so the next rung down is consulted: not
+   * because it is larger, but because this rung returned nothing.
+   */
+  const openEnd = common.length > 0 && common[common.length - 1]!.end === OPEN;
+  /** The most any cut stream proved on its own. A floor, never a measurement. */
+  const floorEnd = minOf(ends);
+  const closed = openEnd ? closeAt(common, floorEnd) : common;
 
   const usableStart = maxOf(starts); // intersection, NOT union
-  const usableEnd = common.length > 0 ? common[common.length - 1]!.end : null;
-  const commonUs = measure(common);
+  const commonUs = measure(closed);
 
   /**
    * A stream with a length but no position cannot move the window, and it
    * cannot create one either: a duration is not evidence that anything was
-   * recorded at the same moment as anything else. It only ever caps, which is
+   * recorded at the same moment as anything else. It only ever bounds, which is
    * what keeps a container-derived camera honest.
    */
   const caps = usable.filter((s) => s.firstUs === null && s.spanUs !== null).map((s) => s.spanUs!);
+
+  /**
+   * Monotone by construction: every branch is a `min` over the constraints in
+   * play, so adding a stream can only lower the result. When the window is open
+   * the positioned streams impose no upper bound at all, so the caps stand
+   * alone — that is min over {no bound, caps}, not the caps overriding anything.
+   */
   const covered =
-    caps.length === 0
-      ? commonUs
-      : commonUs === 0n
-        ? // No shared instant. A length cannot manufacture one.
-          0n
-        : intact.length === 0
-          ? // Every sidecar stops early, so the intersection of cut ends is a
-            // floor, not a measurement. The container knows the real length.
-            // 072538: sidecars cut at 20.48 s, containers hold 20.98 s.
-            minOf(caps)
+    commonUs === 0n && !openEnd
+      ? 0n // No shared instant. A length cannot manufacture one.
+      : caps.length === 0
+        ? commonUs // 072538 with no container left: the floor is all there is.
+        : openEnd
+          ? minOf(caps)
           : minOf([commonUs, ...caps]);
+
+  /**
+   * With an open window there is a duration but no end position: a container
+   * knows it holds 20.98 s, not when that began. Null rather than a guess.
+   */
+  const usableEnd = openEnd
+    ? caps.length > 0
+      ? null
+      : floorEnd
+    : common.length > 0
+      ? common[common.length - 1]!.end
+      : null;
 
   // Holes are already absent from `common`, so the gap is what the window lost.
   const windowUs = usableEnd !== null && usableEnd > usableStart ? usableEnd - usableStart : 0n;
@@ -459,8 +474,12 @@ export function computeTiming(
    * inference. Neither may be reported as exact: `exact` is what tells a
    * reviewer the number needs no second look.
    */
-  if (intact.length === 0) confidence = 'estimated';
-  else if (confidence === 'exact' && positioned.some((s) => s.truncatedTail && s.lastUs < extendTailTo!)) {
+  if (openEnd) confidence = 'estimated';
+  else if (
+    confidence === 'exact' &&
+    usableEnd !== null &&
+    positioned.some((s) => s.truncatedTail && s.lastUs < usableEnd)
+  ) {
     confidence = 'derived';
   }
 
@@ -480,6 +499,17 @@ export function computeTiming(
 type Interval = { start: bigint; end: bigint };
 
 /**
+ * "This stream's end is unknown." Larger than any real microsecond timestamp,
+ * so `min` closes an intersection onto any stream that does know its end,
+ * without a special case in `intersect`.
+ */
+const OPEN = 1n << 62n;
+
+/** Replaces an unknown end with the floor that was actually proved. */
+const closeAt = (xs: Interval[], at: bigint): Interval[] =>
+  xs.map((x) => (x.end === OPEN ? { start: x.start, end: at > x.start ? at : x.start } : x));
+
+/**
  * The instants one stream demonstrably covered. Parts are the unit: a hole
  * between two parts is time nobody recorded and is simply absent from the
  * result, which is what makes the intersection below do the right thing without
@@ -490,10 +520,7 @@ type Interval = { start: bigint; end: bigint };
  * to the end that intact streams still vouch for. Null means nothing is intact
  * and the cut end stands as the only evidence.
  */
-function coverageOf(
-  s: StreamTiming & { firstUs: bigint; lastUs: bigint },
-  extendTailTo: bigint | null,
-): Interval[] {
+function coverageOf(s: StreamTiming & { firstUs: bigint; lastUs: bigint }): Interval[] {
   const step = s.medianDeltaUs !== null && s.medianDeltaUs > 0n ? s.medianDeltaUs : 0n;
   const sorted =
     s.partTimings.length > 0
@@ -524,10 +551,9 @@ function coverageOf(
     }
   }
 
-  if (s.truncatedTail && extendTailTo !== null && merged.length > 0) {
-    const last = merged[merged.length - 1]!;
-    if (extendTailTo > last.end) last.end = extendTailTo;
-  }
+  // The file stopped; the stream did not. Where it really ended is unknown, and
+  // no other stream may be borrowed to answer that.
+  if (s.truncatedTail && merged.length > 0) merged[merged.length - 1]!.end = OPEN;
   return merged;
 }
 
