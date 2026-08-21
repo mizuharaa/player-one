@@ -1,0 +1,134 @@
+import { sql } from 'drizzle-orm';
+import { DISCREPANCY_CODES } from '@playerone/contracts';
+import type { Db } from './db.ts';
+import { defectCodes, reviewReasonCodes } from './schema.ts';
+
+/**
+ * The two catalogues, as data.
+ *
+ * Neither is a CHECK and neither is an enum, for the reason PaXini gave on
+ * 13 Aug: the in-the-wild review standard does not exist yet and will be
+ * rewritten during the pilot. Re-tuning routing has to be an UPDATE an operator
+ * runs, not a migration a developer ships.
+ */
+
+/** `excluded.x` is the value the conflicting insert tried to write. */
+const sqlExcluded = (column: string) => sql.raw(`excluded.${column}`);
+
+/**
+ * Whether a defect stops a human judging the episode, and whether it stops the
+ * episode being payable. Two questions, two columns — one boolean cannot answer
+ * both without forcing a choice between an unusable dataset and an unpaid
+ * collector who did nothing wrong.
+ *
+ * Blocking is reserved for "a reviewer cannot judge this": the media is gone,
+ * unreadable, or short. Everything else reaches review with a banner, because
+ * UPL-10 and UPL-12 are explicit that an unclosed session, zeroed statistics or
+ * a zero-byte PTS file is flagged and kept — and 073055 is 458 MB of good video
+ * behind exactly that kind of defect.
+ */
+const BLOCKING = new Set([
+  'MEDIA-MISSING',
+  'MEDIA-UNREADABLE',
+  'MEDIA-TRUNCATED',
+  'PART-MISSING-INTERIOR',
+]);
+
+/**
+ * CALIB-MISSING is deliberately absent from BLOCKING and from this set.
+ *
+ * Acceptance 10.3.8 wants calibration on every episode, but the collector did
+ * not cause its absence: 073055 shipped a camera calibration and no IMU one,
+ * which is the device's doing. Whether a blocking defect should also suppress
+ * settlement — and who absorbs the cost — is the product owner's call, not
+ * this file's. Seeded permissive so nothing is withheld by default; flipping it
+ * is one UPDATE per code.
+ */
+const SUPPRESSES_SETTLEMENT = new Set<string>([]);
+
+const DESCRIPTIONS: Partial<Record<string, string>> = {
+  'MEDIA-MISSING': 'A stream the session declares has no media on disk.',
+  'MEDIA-UNREADABLE': 'A container exists but cannot be decoded.',
+  'MEDIA-TRUNCATED': 'A container is structurally short: the transfer did not finish.',
+  'PART-MISSING-INTERIOR': 'A part is missing from the middle of a multi-part stream.',
+  'CALIB-MISSING': 'Calibration did not travel with the episode.',
+  'CHECKSUM-MISMATCH': 'The bytes changed between two deliveries of one session.',
+  'SESSION-UNCLOSED': 'The device never wrote an end time; the recording is still fine.',
+  'EPISODE-ID-FALLBACK': 'The directory name does not parse; the id falls back to the raw name.',
+  'SERIAL-CONFLICT': 'Basename, manifest and calibration disagree on the device serial.',
+  'SESSION-CONFLICT': 'The declared session id disagrees with the handover record.',
+};
+
+/**
+ * Every code the engine can emit, plus SESSION-CONFLICT which the resolver
+ * raises. Seeding from the TypeScript union is what keeps the two in step: a
+ * new code with no routing decision fails the catalogue test rather than
+ * silently defaulting to "reaches review".
+ */
+export const DEFECT_CATALOGUE = [...DISCREPANCY_CODES, 'SESSION-CONFLICT'].map((code) => ({
+  code,
+  blocksReview: BLOCKING.has(code),
+  suppressesSettlement: SUPPRESSES_SETTLEMENT.has(code),
+  description: DESCRIPTIONS[code] ?? code,
+  active: true,
+}));
+
+/**
+ * §6.9's failure reasons. Vietnamese for the collector (LOC-04, QR-04) and
+ * Chinese for PaXini's reviewers (LOC-02); English is the back-office default.
+ * Vietnamese strings are placeholders pending VNG localisation review — the
+ * column exists so the pilot cannot ship without someone noticing they are.
+ */
+export const REVIEW_REASON_CATALOGUE = [
+  ['VQ-OCCLUSION', 'visual_quality', 'Lens occluded', 'Ống kính bị che', '镜头遮挡'],
+  ['VQ-BLURRY', 'visual_quality', 'Image blurry', 'Hình ảnh bị mờ', '图像模糊'],
+  ['VQ-DARK', 'visual_quality', 'Too dark', 'Quá tối', '过暗'],
+  ['VQ-OVEREXPOSED', 'visual_quality', 'Overexposed', 'Quá sáng', '过曝'],
+  ['VQ-JITTER', 'visual_quality', 'Severe jitter', 'Rung lắc mạnh', '严重抖动'],
+  ['TQ-MISMATCH', 'task_quality', 'Does not match the task', 'Không khớp với nhiệm vụ', '与任务不符'],
+  ['TQ-MEANINGLESS', 'task_quality', 'Meaningless behaviour', 'Hành vi không có ý nghĩa', '无意义行为'],
+  ['TQ-REPETITIVE', 'task_quality', 'Highly repetitive scenario', 'Bối cảnh lặp lại nhiều', '场景高度重复'],
+  ['DI-INCOMPLETE', 'data_integrity', 'Incomplete upload', 'Tải lên chưa hoàn tất', '上传不完整'],
+  ['DI-NO-VIDEO', 'data_integrity', 'Missing video', 'Thiếu video', '缺少视频'],
+  ['DI-NO-IMU', 'data_integrity', 'Missing IMU', 'Thiếu dữ liệu IMU', '缺少IMU'],
+  ['DI-BAD-TIMESTAMPS', 'data_integrity', 'Abnormal timestamps', 'Dấu thời gian bất thường', '时间戳异常'],
+  ['CO-PRIVACY', 'compliance', 'Privacy risk present', 'Có rủi ro về quyền riêng tư', '存在隐私风险'],
+].map(([code, category, labelEn, labelVi, labelZh]) => ({
+  code: code!,
+  category: category!,
+  labelEn: labelEn!,
+  labelVi: labelVi!,
+  labelZh: labelZh!,
+  active: true,
+}));
+
+/**
+ * Idempotent: re-running updates the routing flags and leaves everything else.
+ * Codes are never deleted — an episode already carrying one still has to render.
+ */
+export async function seedCatalogues(db: Db): Promise<void> {
+  await db
+    .insert(defectCodes)
+    .values(DEFECT_CATALOGUE)
+    .onConflictDoUpdate({
+      target: defectCodes.code,
+      set: {
+        blocksReview: sqlExcluded('blocks_review'),
+        suppressesSettlement: sqlExcluded('suppresses_settlement'),
+        description: sqlExcluded('description'),
+      },
+    });
+
+  await db
+    .insert(reviewReasonCodes)
+    .values(REVIEW_REASON_CATALOGUE)
+    .onConflictDoUpdate({
+      target: reviewReasonCodes.code,
+      set: {
+        category: sqlExcluded('category'),
+        labelEn: sqlExcluded('label_en'),
+        labelVi: sqlExcluded('label_vi'),
+        labelZh: sqlExcluded('label_zh'),
+      },
+    });
+}
