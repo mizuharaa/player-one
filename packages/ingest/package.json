@@ -5,7 +5,8 @@
   "type": "module",
   "dependencies": {
     "@playerone/contracts": "workspace:*",
-    "yaml": "^2.5.1"
+    "yaml": "^2.5.1",
+    "@playerone/store": "workspace:*"
   },
   "bin": {
     "ingest": "./bin/ingest.ts"

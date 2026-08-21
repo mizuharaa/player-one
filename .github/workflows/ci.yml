@@ -3,8 +3,24 @@ on: [push, pull_request]
 jobs:
   check:
     runs-on: ubuntu-22.04
+    # The store tests skip without DATABASE_URL, which would make them decoration.
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: playerone }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:playerone@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
+      # ffprobe is the container-timing fallback for sessions whose PTS sidecars
+      # are unusable. The runner image does not ship it, and probeContainer
+      # cannot tell a missing binary from a damaged file, so without this six
+      # tests fail and the money path is measured wrong.
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - uses: pnpm/action-setup@v4
         with: { version: 9 }
       - uses: actions/setup-node@v4

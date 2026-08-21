@@ -1,4 +1,5 @@
 import type { Discrepancy, EpisodeRecord } from '@playerone/contracts';
+import { stateFrom } from '@playerone/contracts';
 import type { Discovery } from './discover.ts';
 import type { CalibrationInfo } from './calibration.ts';
 import type { ManifestInfo } from './manifest.ts';
@@ -312,8 +313,5 @@ export function partDiscrepancies(streams: StreamTiming[], m: ManifestInfo): Dis
   return out;
 }
 
-export function stateFrom(discrepancies: Discrepancy[]): State {
-  if (discrepancies.some((x) => x.severity === 'quarantine')) return 'quarantined';
-  if (discrepancies.some((x) => x.severity === 'flag')) return 'flagged';
-  return 'ok';
-}
+/** Re-exported so callers in this package keep one import. Defined in @playerone/contracts. */
+export { stateFrom };
