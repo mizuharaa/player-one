@@ -1,6 +1,8 @@
 import { eq } from 'drizzle-orm';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { schema, type Db } from '@playerone/store';
+import { auditLogin } from './audit.ts';
+import type { Actor } from './actor.ts';
 import {
   signToken,
   verifyCredential,
@@ -10,6 +12,8 @@ import {
 } from './credentials.ts';
 
 export * from './credentials.ts';
+export * from './audit.ts';
+export type { Actor } from './actor.ts';
 
 /**
  * The operator API. The upload-centre console never touches Postgres — PRD
@@ -17,8 +21,6 @@ export * from './credentials.ts';
  * regional machine holding database credentials would make the PLT-08 audit
  * trail unenforceable. Console → here → DB, including for reads.
  */
-
-export type Actor = { machine: MachineClaims; operator: OperatorClaims };
 
 /** Both tokens on every mutation: the machine proves where, the operator proves who. */
 declare module 'fastify' {
@@ -93,7 +95,7 @@ export function buildApi({ db, tokenSecret }: ApiOptions): FastifyInstance {
       uploadDeviceId: device.id,
       uploadCentreId: device.uploadCentreId,
     };
-    await audit(db, 'machine.login', 'upload_devices', device.id, {
+    await auditLogin(db, 'machine.login', 'upload_devices', device.id, {
       uploadDeviceId: device.id,
       uploadCentreId: device.uploadCentreId,
     });
@@ -118,7 +120,7 @@ export function buildApi({ db, tokenSecret }: ApiOptions): FastifyInstance {
       operatorId: operator.id,
       uploadCentreId: operator.uploadCentreId,
     };
-    await audit(db, 'operator.login', 'operators', operator.id, {
+    await auditLogin(db, 'operator.login', 'operators', operator.id, {
       operatorId: operator.id,
       uploadCentreId: operator.uploadCentreId,
     });
@@ -160,19 +162,3 @@ export function buildApi({ db, tokenSecret }: ApiOptions): FastifyInstance {
   return app;
 }
 
-/**
- * One audit row. Logins are the only action with no actor yet, which is why the
- * `audit_events_attributed_check` CHECK exempts `%.login` and nothing else.
- *
- * Step 2 wraps this at the repository layer so no endpoint author can forget
- * it; these two calls are the exception because a login has no repository write.
- */
-async function audit(
-  db: Db,
-  action: string,
-  targetTable: string,
-  targetId: string,
-  after: Record<string, unknown>,
-): Promise<void> {
-  await db.insert(schema.auditEvents).values({ action, targetTable, targetId, after });
-}
