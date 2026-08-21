@@ -265,11 +265,26 @@ describe('the defect taxonomy is reachable from committed fixtures alone', () =>
     expect(r.streams.find((s) => s.role === 'imu_accel')?.span_s).toBeGreaterThan(1e6);
   });
 
-  it('a cut sidecar stops setting the end, so the cameras decide', async () => {
+  /**
+   * Was: "a cut sidecar stops setting the end, so the cameras decide", asserting
+   * 0.633 — the cameras' end.
+   *
+   * A cut sidecar is an incomplete index, so the stream's end is now measured
+   * from its own media (072538's audio: 21.16 s of WAV behind a sidecar that
+   * indexed 20.48 s). This fixture's `audio.wav` is 0 bytes, so there is no
+   * media to measure and the last indexed timestamp stands as a floor instead:
+   * possibly short, never longer than what was recorded.
+   *
+   * The old rule let the stream borrow the cameras' end, which is how a stream
+   * could be paid past its own evidence, and why adding a stream could raise
+   * the payout. Borrowing is gone, so this number moved down.
+   */
+  it('a cut sidecar with no media to measure stands at its own floor', async () => {
     const cut = await withCache(async () => ingest(await fixture('truncated-sidecar')));
-    const whole = await withCache(async () => ingest(await fixture('delivery-a')));
-    expect(cut.timing.raw_duration_s).toBeGreaterThan(whole.timing.raw_duration_s);
-    expect(cut.timing.raw_duration_s).toBeCloseTo(0.633, 3);
+    expect(cut.timing.raw_duration_s).toBeCloseTo(0.5547, 3);
+    // Nothing could confirm where the cut stream ended, so the number is a floor.
+    expect(cut.timing.confidence).toBe('estimated');
+    expect(codes(cut)).toContain('PTS-TRUNCATED');
   });
 
   it('an empty sidecar and an absent one are told apart', async () => {
