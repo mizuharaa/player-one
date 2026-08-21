@@ -3,6 +3,8 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { schema, type Db } from '@playerone/store';
 import { auditLogin } from './audit.ts';
 import { registerCounter } from './counter.ts';
+import { registerEpisodes } from './episodes.ts';
+import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
 import type { Actor } from './actor.ts';
 import {
   signToken,
@@ -15,6 +17,7 @@ import {
 export * from './credentials.ts';
 export * from './audit.ts';
 export type { Actor } from './actor.ts';
+export * from './resolve.ts';
 
 /**
  * The operator API. The upload-centre console never touches Postgres — PRD
@@ -34,9 +37,16 @@ export type ApiOptions = {
   db: Db;
   /** Token signing key. Fails closed at construction rather than defaulting. */
   tokenSecret: string;
+  /**
+   * How close two app-origin sessions may start before an episode between them
+   * is called ambiguous. Config because the pilot should tune it from observed
+   * quarantine rates, not from a number chosen on paper — and it only ever bites
+   * on app-origin sessions, which do not exist yet.
+   */
+  toleranceMs?: number;
 };
 
-export function buildApi({ db, tokenSecret }: ApiOptions): FastifyInstance {
+export function buildApi({ db, tokenSecret, toleranceMs = DEFAULT_TOLERANCE_MS }: ApiOptions): FastifyInstance {
   if (!tokenSecret) throw new Error('tokenSecret is required');
   const app = Fastify({ logger: false });
 
@@ -154,6 +164,7 @@ export function buildApi({ db, tokenSecret }: ApiOptions): FastifyInstance {
   });
 
   registerCounter(app, db, requireActor);
+  registerEpisodes(app, db, requireActor, toleranceMs);
 
   /** Proves both-tokens and centre scope on its own, with no counter state needed. */
   app.get('/whoami', { preHandler: requireActor }, async (req) => ({

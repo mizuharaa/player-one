@@ -60,12 +60,13 @@ const DESCRIPTIONS: Partial<Record<string, string>> = {
 };
 
 /**
- * Every code the engine can emit, plus SESSION-CONFLICT which the resolver
- * raises. Seeding from the TypeScript union is what keeps the two in step: a
- * new code with no routing decision fails the catalogue test rather than
- * silently defaulting to "reaches review".
+ * Every code in the union, including the ones only the platform raises
+ * (CHECKSUM-MISMATCH at store time, SESSION-CONFLICT at resolution). Seeding
+ * from the union is what keeps the two in step: a new code with no routing
+ * decision fails the catalogue test rather than silently defaulting to
+ * "reaches review".
  */
-export const DEFECT_CATALOGUE = [...DISCREPANCY_CODES, 'SESSION-CONFLICT'].map((code) => ({
+export const DEFECT_CATALOGUE = DISCREPANCY_CODES.map((code) => ({
   code,
   blocksReview: BLOCKING.has(code),
   suppressesSettlement: SUPPRESSES_SETTLEMENT.has(code),

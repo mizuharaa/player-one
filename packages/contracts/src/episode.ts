@@ -47,6 +47,13 @@ export const DISCREPANCY_CODES = [
   // directory name, which is what the episode id is derived from.
   'EPISODE-ID-FALLBACK', // the basename does not parse; the id falls back to the raw name
   'SERIAL-CONFLICT', // basename, manifest and calibration disagree on the device serial
+  /**
+   * Raised at store time, not by the engine, exactly like CHECKSUM-MISMATCH: the
+   * manifest's own session id disagrees with the handover the card arrived on.
+   * Advisory — the manifest is a hint about the device, and UPL-08 applies to
+   * its session id as much as to its duration.
+   */
+  'SESSION-CONFLICT',
 ] as const;
 
 export const Discrepancy = z.object({
