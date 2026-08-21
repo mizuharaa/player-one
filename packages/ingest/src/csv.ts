@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { open } from 'node:fs/promises';
-import { createInterface } from 'node:readline';
+import { StringDecoder } from 'node:string_decoder';
 
 /**
  * Streaming timestamp reduce. These files are append-only timestamp streams,
@@ -54,13 +54,20 @@ class Accumulator {
   // ponytail: exact median from a delta histogram. Distinct delta values are in
   // the hundreds for these streams; swap for reservoir sampling if a stream ever
   // shows unbounded jitter.
-  private deltas = new Map<bigint, number>();
+  //
+  // Keyed by Number, not BigInt: a BigInt map key is boxed and hashed on every
+  // one of 14.4M rows, and that showed up as real time in the profile. A delta
+  // is exact as a double below 2^53 microseconds — 285 years — and the widest
+  // real fault in the corpus is 072516's 56-year clock jump. First and last stay
+  // BigInt, because those are the money path; this histogram only feeds
+  // nominal_rate_hz.
+  private deltas = new Map<number, number>();
   backwardsSteps = 0;
 
   push(ts: bigint): void {
     if (this.prev !== null) {
-      const d = ts - this.prev;
-      if (d < 0n) this.backwardsSteps++;
+      const d = Number(ts - this.prev);
+      if (d < 0) this.backwardsSteps++;
       this.deltas.set(d, (this.deltas.get(d) ?? 0) + 1);
     }
     if (this.first === null || ts < this.first) this.first = ts;
@@ -86,30 +93,76 @@ class Accumulator {
 
   private median(): bigint | null {
     if (this.deltas.size === 0) return null;
-    const sorted = [...this.deltas.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    const sorted = [...this.deltas.entries()].sort((a, b) => a[0] - b[0]);
     const total = this.count - 1;
     let seen = 0;
     for (const [delta, n] of sorted) {
       seen += n;
-      if (seen * 2 > total) return delta;
+      if (seen * 2 > total) return BigInt(delta);
     }
-    return sorted[sorted.length - 1]![0];
+    return BigInt(sorted[sorted.length - 1]![0]);
   }
 }
 
 /**
- * Yields only newline-terminated lines. A file whose last line is not
- * terminated was cut off mid-write; that partial line is not data and parsing
- * it yields a plausible-looking small integer, which is worse than dropping it.
+ * Calls `onLine` for every newline-terminated line. A file whose last line is
+ * not terminated was cut off mid-write; that partial line is not data and
+ * parsing it yields a plausible-looking small integer, which is worse than
+ * dropping it — so the final line is held back and only delivered when the file
+ * ended cleanly.
+ *
+ * A callback rather than an async generator, and chunk-at-a-time rather than
+ * `readline`. Both are throughput, not taste: a two-hour IMU capture is 14.4M
+ * rows, and yielding each one across an async generator costs a microtask per
+ * row. This awaits once per megabyte instead of once per row, which is where
+ * most of the parser's time was going.
  */
-async function* lines(path: string, complete: boolean): AsyncGenerator<string> {
-  const rl = createInterface({ input: createReadStream(path), crlfDelay: Infinity });
+async function forEachLine(
+  path: string,
+  complete: boolean,
+  onLine: (line: string) => void,
+): Promise<void> {
+  const decoder = new StringDecoder('utf8');
+  let carry = '';
   let pending: string | null = null;
-  for await (const line of rl) {
-    if (pending !== null) yield pending;
-    pending = line;
+
+  // Decoded per chunk, so a multi-byte character split across a read boundary is
+  // reassembled by StringDecoder rather than becoming two replacement chars.
+  for await (const chunk of createReadStream(path, { highWaterMark: 1 << 20 })) {
+    carry += decoder.write(chunk as Buffer);
+    let start = 0;
+    for (;;) {
+      const nl = carry.indexOf('\n', start);
+      if (nl === -1) break;
+      const end = nl > start && carry.charCodeAt(nl - 1) === 13 ? nl - 1 : nl; // \r\n
+      if (pending !== null) onLine(pending);
+      pending = carry.slice(start, end);
+      start = nl + 1;
+    }
+    if (start > 0) carry = carry.slice(start);
   }
-  if (pending !== null && complete) yield pending;
+
+  carry += decoder.end();
+  if (carry !== '') {
+    if (pending !== null) onLine(pending);
+    pending = carry;
+  }
+  if (pending !== null && complete) onLine(pending);
+}
+
+/**
+ * The nth comma-separated field, without materialising the others. `split(',')`
+ * on an IMU row allocates five strings per row and we need two of them.
+ */
+function field(line: string, n: number): string {
+  let start = 0;
+  for (let i = 0; i < n; i++) {
+    const comma = line.indexOf(',', start);
+    if (comma === -1) return '';
+    start = comma + 1;
+  }
+  const end = line.indexOf(',', start);
+  return end === -1 ? line.slice(start) : line.slice(start, end);
 }
 
 async function endsWithNewline(path: string): Promise<boolean> {
@@ -130,20 +183,20 @@ export async function reduceTimestamps(path: string): Promise<Reduction | null> 
   const acc = new Accumulator();
   const truncated = !(await endsWithNewline(path));
   let header = true;
-  for await (const line of lines(path, !truncated)) {
+  await forEachLine(path, !truncated, (line) => {
     const s = line.trim();
-    if (!s) continue;
+    if (!s) return;
     if (header) {
       header = false;
-      if (s === 'timestamp_us') continue;
+      if (s === 'timestamp_us') return;
     }
     const ts = parseTimestamp(s);
     if (ts === null) {
       acc.malformedRows++;
-      continue;
+      return;
     }
     acc.push(ts);
-  }
+  });
   return acc.result(truncated);
 }
 
@@ -171,28 +224,29 @@ export async function reduceImuTimestamps(path: string): Promise<ImuReduction> {
   let malformed = 0;
   let header = true;
 
-  for await (const line of lines(path, !truncated)) {
-    if (!line.trim()) continue;
-    const fields = line.split(',');
+  await forEachLine(path, !truncated, (line) => {
+    if (!line.trim()) return;
     if (header) {
       header = false;
-      const names = fields.map((f) => f.trim());
+      // Only the header is split: it is one row, and the column names have to be
+      // looked up by name (ING-26 — each carries a trailing tab).
+      const names = line.split(',').map((f) => f.trim());
       if (names.includes('timestamp_us')) {
         tsCol = names.indexOf('timestamp_us');
         typeCol = names.indexOf('type');
-        continue;
+        return;
       }
     }
     rows++;
-    const ts = parseTimestamp(fields[tsCol]?.trim() ?? '');
-    const type = fields[typeCol]?.trim();
+    const ts = parseTimestamp(field(line, tsCol).trim());
+    const type = field(line, typeCol).trim();
     if (ts === null || (type !== 'accel' && type !== 'gyro')) {
       malformed++;
-      continue;
+      return;
     }
     if (type === 'accel') accel.push(ts);
     else gyro.push(ts);
-  }
+  });
 
   return {
     rows,
