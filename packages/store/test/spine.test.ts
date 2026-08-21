@@ -3,7 +3,10 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { DISCREPANCY_CODES } from '@playerone/contracts';
 import { DEFECT_CATALOGUE, REVIEW_REASON_CATALOGUE, seedCatalogues } from '../src/catalogue.ts';
-import { closeDb, db, hasDb, truncate } from './db.ts';
+import { closeDb, db, hasDb, truncate, violates, useDatabase } from './db.ts';
+
+// One database per test file: vitest runs them in parallel and each truncates.
+useDatabase('spine');
 
 /**
  * The spine, tested the way the invariants are written: in SQL, against the
@@ -16,34 +19,6 @@ import { closeDb, db, hasDb, truncate } from './db.ts';
  */
 
 const uid = () => randomUUID();
-
-/**
- * Asserts a specific constraint rejected the statement.
- *
- * Drizzle wraps the driver error as "Failed query: ..." and keeps the useful
- * part — postgres.js's `constraint_name` — on the cause. Matching the wrapper's
- * message would pass for ANY failure, including a typo in the test's own SQL,
- * so the chain is walked and the constraint named.
- */
-async function violates(constraint: string, run: Promise<unknown>): Promise<void> {
-  let caught: unknown;
-  try {
-    await run;
-  } catch (err) {
-    caught = err;
-  }
-  expect(caught, `expected ${constraint} to reject the statement`).toBeDefined();
-
-  const seen: string[] = [];
-  for (let e: unknown = caught; e !== undefined && e !== null; e = (e as { cause?: unknown }).cause) {
-    const x = e as { message?: string; constraint_name?: string };
-    if (x.constraint_name) seen.push(x.constraint_name);
-    if (x.message) seen.push(x.message);
-  }
-  expect(seen.join(' | '), `rejected, but not by ${constraint}`).toContain(constraint);
-}
-
-
 
 /** Minimal rows to hang an episode off. Returns the ids a test needs. */
 async function seedSpine() {
