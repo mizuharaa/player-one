@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { EpisodeRecord } from '@playerone/contracts';
-import { resolveEpisode, resolverDefects, type SessionRow } from '../src/resolve.ts';
+import {
+  DEFAULT_EARLIEST_PLAUSIBLE_START_MS,
+  DEFAULT_RESOLVER_CONFIG,
+  resolveEpisode,
+  resolverDefects,
+  type SessionRow,
+} from '../src/resolve.ts';
 
 /**
  * The decision table, with no database in the way.
@@ -14,8 +20,28 @@ import { resolveEpisode, resolverDefects, type SessionRow } from '../src/resolve
 const T = Date.parse('2026-08-21T09:00:00.000Z');
 const min = (n: number) => n * 60_000;
 
+/** A stream carrying nothing but its role and its first absolute timestamp. */
+const stream = (role: string, firstPtsUs: string | null) => ({
+  role,
+  parts: [],
+  pts_source: 'sidecar' as const,
+  first_pts_us: firstPtsUs,
+  last_pts_us: null,
+  sample_count: 0,
+  span_s: 0,
+  nominal_rate_hz: null,
+});
+
+/** Microseconds, as the record spells them. */
+const us = (ms: number) => String(ms * 1000);
+
 /** Only the fields the resolver reads. */
-function episode(opts: { startMs?: number | null; serial?: string; declaredSession?: string | null }): EpisodeRecord {
+function episode(opts: {
+  startMs?: number | null;
+  serial?: string;
+  declaredSession?: string | null;
+  streams?: ReturnType<typeof stream>[];
+}): EpisodeRecord {
   const start = opts.startMs === undefined ? T : opts.startMs;
   return {
     schema_version: '1.1.0',
@@ -39,7 +65,7 @@ function episode(opts: { startMs?: number | null; serial?: string; declaredSessi
             imu_gyro_count: null,
             audio_frame_count: null,
           },
-    streams: [],
+    streams: opts.streams ?? [],
     timing: {
       method: 'pts_sidecar',
       confidence: 'exact',
