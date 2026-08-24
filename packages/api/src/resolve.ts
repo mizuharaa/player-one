@@ -11,12 +11,47 @@ import type { EpisodeRecord } from '@playerone/contracts';
  * becomes a payment is worse than an explicit gap a human closes. So every
  * uncertain case quarantines, and quarantine is not a failure — it is the
  * human resolution path PLT-05 requires.
+ *
+ * ## Why the candidate set is a handover, and not a device or a time window
+ *
+ * The caller supplies the sessions declared against ONE handover — one physical
+ * card, handed across one counter, once. That scope is load-bearing and it was
+ * bought with a bug: candidates were once scoped by collector, so every session
+ * a collector had ever declared was a candidate for every later card. One card
+ * per collector hides it completely; the second card quarantines the whole
+ * batch, and under time matching it could attach this week's footage to last
+ * week's task at last week's unit price (SET-08). Time is a filter INSIDE the
+ * handover's set, never the outer bound.
+ *
+ * Which upload path each case belongs to, because the next reader will ask why
+ * a resolver needs a handover at all:
+ *
+ *   Path A  device -> phone -> cloud.   The app already holds the collection
+ *                                       session (APP-16). Nothing to resolve.
+ *   Path C  TF card -> upload centre.   The resolution problem, and the reason
+ *                                       this file exists. The handover is the
+ *                                       physical event that bounds which
+ *                                       sessions could possibly be on the card.
+ *   Path B  device -> cloud direct.     No handover and no app, so no scoping
+ *                                       mechanism exists. Out of scope. UPL-02
+ *                                       is P1 and blocked on D2 anyway.
  */
 
 export type SessionRow = {
   id: string;
   prepareTime: Date | null;
   sessionOrigin: string;
+  /**
+   * Eligibility inputs. Optional because NO COLUMN CARRIES THEM YET —
+   * `collection_sessions` has no claim status and `tasks` has no expiry. The
+   * filter below is built and tested against the shapes the spec describes, so
+   * that wiring it up later is a query change and not a design change. An
+   * undefined field means "not supplied", which can never drop a candidate:
+   * inventing an ineligibility out of missing data is the same class of mistake
+   * as inventing a match.
+   */
+  claimStatus?: string | null;
+  claimExpiresAt?: Date | null;
 };
 
 export type HandoverRow = {
@@ -33,7 +68,72 @@ export type ResolutionReason =
   | 'no_episode_start'
   | 'episode_precedes_all_sessions'
   | 'ambiguous_within_tolerance'
-  | 'session_missing_prepare_time';
+  | 'session_missing_prepare_time'
+  | 'all_candidates_ineligible';
+
+/** Why a candidate was dropped before any strategy ran. */
+export type RejectionReason = 'claim_status_ineligible' | 'claim_expired' | 'already_taken';
+
+/** Which pass a candidate was looked at in. */
+export type ResolverStrategy =
+  | 'eligibility'
+  | 'single_session'
+  | 'time_window'
+  | 'operator_confirmation';
+
+/**
+ * Every candidate considered, with why it survived or was dropped.
+ *
+ * Audit output, not debug output: populated on every outcome, successful ones
+ * included. One proposal and one reason is not enough for an operator to
+ * overturn a decision, and not enough to defend one in a payment dispute six
+ * months later.
+ */
+export type EvaluatedCandidate = {
+  collectionSessionId: string;
+  strategy: ResolverStrategy;
+  /**
+   * Signed, microseconds, decimal string — the engine's own unit, so nothing is
+   * lost crossing into this file. Computed as `episode start - prepare_time`, so
+   * a negative value means the collector began recording before the registered
+   * start. That is legitimate, and it must keep its direction.
+   */
+  timeDeltaUs: string | null;
+  survived: boolean;
+  rejectionReason: RejectionReason | null;
+};
+
+/** Where the episode's start instant came from. See `pickStart`. */
+export type StartSource = 'camera_pts' | 'audio_pts' | 'imu';
+
+export type StartFlag = 'START-FROM-AUDIO-PTS' | 'START-FROM-IMU';
+
+export type ResolverConfig = {
+  /** Only ever consulted for app-origin sessions — see below. */
+  toleranceMs: number;
+  /**
+   * Claim statuses a candidate may hold and still be matched. Empty disables
+   * the check, which is today's state: nothing writes a claim status yet.
+   */
+  eligibleClaimStatuses: readonly string[];
+  /**
+   * The plausibility gate for `pickStart`. An instant outside this window is a
+   * clock fault, not a recording. 072516's IMU carries the epoch twice and
+   * reads as 1970; without a floor the fallback chain would resolve confidently
+   * into the wrong decade, which is worse than the `no_episode_start` it
+   * replaced.
+   *
+   * 2026-01-01T00:00:00Z. The Ego fleet did not exist before this — the first
+   * samples are firmware 1.0.3, dated 13 August 2026.
+   */
+  earliestPlausibleStartMs: number;
+  /**
+   * A recording cannot come from the future. The default is deliberately far
+   * out (2100-01-01T00:00:00Z) because this function may not read a clock. The
+   * adapter narrows it to `now + slack`, which is where a clock is allowed.
+   */
+  latestPlausibleStartMs: number;
+};
 
 export type Resolution = {
   state: 'resolved' | 'quarantined';
@@ -48,6 +148,27 @@ export type Resolution = {
    */
   proposedSessionId: string | null;
   reason: ResolutionReason;
+
+  /** Every candidate supplied, in the order supplied. Never shorter. */
+  evaluated: EvaluatedCandidate[];
+  /** Survivors of the eligibility filter, not the number considered. */
+  candidateCount: number;
+  /**
+   * What the decision was made under. A match at a 2-minute tolerance and one
+   * at 15 minutes are different claims about the world, and the tolerance WILL
+   * move once device clock discipline is known (D4). Persist this alongside the
+   * decision, or a re-run silently produces a different answer with no record
+   * of why.
+   */
+  configSnapshot: ResolverConfig;
+  /**
+   * Which clock the episode's start was read from, and how far to trust it. A
+   * resolution anchored on the IMU is weaker evidence than one anchored on
+   * camera PTS, and settlement should be able to see the difference.
+   */
+  startSource: StartSource | null;
+  startConfidence: 'exact' | 'derived' | null;
+  startFlag: StartFlag | null;
 };
 
 /** Advisory cross-checks. Neither changes the resolution; both are recorded. */
@@ -56,19 +177,211 @@ export type ResolverDefect = { code: 'SERIAL-CONFLICT' | 'SESSION-CONFLICT'; det
 /** 5 minutes. Only ever consulted for app-origin sessions — see below. */
 export const DEFAULT_TOLERANCE_MS = 5 * 60 * 1000;
 
-const startMs = (record: EpisodeRecord): number | null =>
-  record.timing.usable_start_us === null ? null : Number(record.timing.usable_start_us) / 1000;
+/** 2026-01-01T00:00:00Z, as epoch milliseconds. */
+export const DEFAULT_EARLIEST_PLAUSIBLE_START_MS = 1_767_225_600_000;
+/** 2100-01-01T00:00:00Z. The adapter should narrow this to `now + slack`. */
+export const DEFAULT_LATEST_PLAUSIBLE_START_MS = 4_102_444_800_000;
+
+export const DEFAULT_RESOLVER_CONFIG: ResolverConfig = {
+  toleranceMs: DEFAULT_TOLERANCE_MS,
+  eligibleClaimStatuses: [],
+  earliestPlausibleStartMs: DEFAULT_EARLIEST_PLAUSIBLE_START_MS,
+  latestPlausibleStartMs: DEFAULT_LATEST_PLAUSIBLE_START_MS,
+};
+
+const US_PER_MS = 1000n;
+
+type StartPick = {
+  us: bigint;
+  source: StartSource;
+  confidence: 'exact' | 'derived';
+  flag: StartFlag | null;
+};
+
+/**
+ * The episode's start instant, tried in order of how far the clock behind it
+ * can be trusted. Stops at the first rung that yields a plausible instant.
+ *
+ *   1  camera PTS   the engine's usable window start. exact, no flag
+ *   2  audio PTS    exact, flagged — 072538 has zero-byte camera sidecars
+ *   3  IMU          derived, flagged
+ *   4  nothing      the human queue, and nothing is invented
+ *
+ * Container duration is deliberately absent from this chain: it yields a
+ * length, not an absolute instant, so it cannot anchor anything.
+ *
+ * Every rung passes the same plausibility gate, and a source that fails it
+ * falls through rather than winning. That gate is the whole reason the chain is
+ * an improvement: 072516's IMU would otherwise anchor a payment in 1970.
+ */
+function pickStart(record: EpisodeRecord, cfg: ResolverConfig): StartPick | null {
+  const floor = BigInt(cfg.earliestPlausibleStartMs) * US_PER_MS;
+  const ceiling = BigInt(cfg.latestPlausibleStartMs) * US_PER_MS;
+  const plausible = (us: bigint) => us >= floor && us <= ceiling;
+
+  const fromStream = (role: string): bigint | null => {
+    const s = record.streams.find((x) => x.role === role);
+    if (s === undefined || s.first_pts_us === null) return null;
+    return BigInt(s.first_pts_us);
+  };
+
+  if (record.timing.usable_start_us !== null) {
+    const us = BigInt(record.timing.usable_start_us);
+    if (plausible(us)) return { us, source: 'camera_pts', confidence: 'exact', flag: null };
+  }
+
+  const audio = fromStream('audio');
+  if (audio !== null && plausible(audio)) {
+    return { us: audio, source: 'audio_pts', confidence: 'exact', flag: 'START-FROM-AUDIO-PTS' };
+  }
+
+  // Accelerometer first, gyroscope second. They share a clock, so this order is
+  // only about which file survived, never about which is more accurate.
+  for (const role of ['imu_accel', 'imu_gyro']) {
+    const imu = fromStream(role);
+    if (imu !== null && plausible(imu)) {
+      return { us: imu, source: 'imu', confidence: 'derived', flag: 'START-FROM-IMU' };
+    }
+  }
+  return null;
+}
+
+/**
+ * Eligibility. Runs before any strategy, and records every drop.
+ *
+ * The expiry comparison uses the EPISODE'S START, never `now`. A collector who
+ * began inside a valid claim and recorded past its expiry recorded
+ * legitimately. Comparing against `now` would retroactively invalidate every
+ * past episode as claims age — a bug that surfaces weeks later, in bulk, on the
+ * money path.
+ */
+function eligible(
+  sessions: readonly SessionRow[],
+  startUs: bigint | null,
+  taken: ReadonlySet<string>,
+  cfg: ResolverConfig,
+): { survivors: SessionRow[]; evaluated: EvaluatedCandidate[] } {
+  const survivors: SessionRow[] = [];
+  const evaluated: EvaluatedCandidate[] = [];
+
+  for (const s of sessions) {
+    const drop = (rejectionReason: RejectionReason) =>
+      evaluated.push({
+        collectionSessionId: s.id,
+        strategy: 'eligibility',
+        timeDeltaUs: null,
+        survived: false,
+        rejectionReason,
+      });
+
+    if (taken.has(s.id)) {
+      drop('already_taken');
+      continue;
+    }
+    if (
+      cfg.eligibleClaimStatuses.length > 0 &&
+      s.claimStatus !== undefined &&
+      s.claimStatus !== null &&
+      !cfg.eligibleClaimStatuses.includes(s.claimStatus)
+    ) {
+      drop('claim_status_ineligible');
+      continue;
+    }
+    if (
+      s.claimExpiresAt !== undefined &&
+      s.claimExpiresAt !== null &&
+      startUs !== null &&
+      BigInt(s.claimExpiresAt.getTime()) * US_PER_MS < startUs
+    ) {
+      drop('claim_expired');
+      continue;
+    }
+    survivors.push(s);
+  }
+  return { survivors, evaluated };
+}
+
+/** Signed, microseconds, as a decimal string. Null when either side is missing. */
+function delta(startUs: bigint | null, s: SessionRow): string | null {
+  if (startUs === null || s.prepareTime === null) return null;
+  return String(startUs - BigInt(s.prepareTime.getTime()) * US_PER_MS);
+}
+
+/** A bare number still means the tolerance, so no existing call site changes. */
+const normalise = (config: number | Partial<ResolverConfig>): ResolverConfig =>
+  typeof config === 'number'
+    ? { ...DEFAULT_RESOLVER_CONFIG, toleranceMs: config }
+    : { ...DEFAULT_RESOLVER_CONFIG, ...config };
 
 export function resolveEpisode(
   record: EpisodeRecord,
   sessions: readonly SessionRow[],
-  toleranceMs: number = DEFAULT_TOLERANCE_MS,
+  config: number | Partial<ResolverConfig> = DEFAULT_RESOLVER_CONFIG,
+  takenSessionIds: readonly string[] = [],
 ): Resolution {
+  const cfg = normalise(config);
+  const start = pickStart(record, cfg);
+  const startUs = start?.us ?? null;
+
+  const { survivors, evaluated } = eligible(sessions, startUs, new Set(takenSessionIds), cfg);
+
+  /**
+   * Closes over everything the caller cannot see, so that no branch below can
+   * return a Resolution with an audit field missing.
+   */
+  const decide = (
+    outcome: Pick<
+      Resolution,
+      'state' | 'sessionId' | 'method' | 'needsConfirmation' | 'proposedSessionId' | 'reason'
+    >,
+    strategy: ResolverStrategy,
+  ): Resolution => ({
+    ...outcome,
+    evaluated: [
+      ...evaluated,
+      ...survivors.map((s) => ({
+        collectionSessionId: s.id,
+        strategy,
+        timeDeltaUs: delta(startUs, s),
+        survived: true,
+        rejectionReason: null,
+      })),
+    ],
+    candidateCount: survivors.length,
+    configSnapshot: cfg,
+    startSource: start?.source ?? null,
+    startConfidence: start?.confidence ?? null,
+    startFlag: start?.flag ?? null,
+  });
+
+  const quarantine = (
+    reason: ResolutionReason,
+    proposedSessionId: string | null,
+    strategy: ResolverStrategy,
+  ) =>
+    decide(
+      {
+        state: 'quarantined',
+        sessionId: null,
+        method: null,
+        needsConfirmation: false,
+        proposedSessionId,
+        reason,
+      },
+      strategy,
+    );
+
   if (sessions.length === 0) {
-    return quarantine('no_sessions', null);
+    return quarantine('no_sessions', null, 'eligibility');
+  }
+  if (survivors.length === 0) {
+    // Candidates arrived and every one was dropped. That is a different fact
+    // from "no sessions on the handover", and the reasons are already in
+    // `evaluated` for the operator to read.
+    return quarantine('all_candidates_ineligible', null, 'eligibility');
   }
 
-  if (sessions.length === 1) {
+  if (survivors.length === 1) {
     // One declared task on the card, and the operator verified the card against
     // that task face to face (PRD §11.3.1 rule 1). Nothing to choose between.
     //
@@ -76,13 +389,24 @@ export function resolveEpisode(
     // batch close: one declared task holding seven episodes is not wrong, but it
     // is worth an operator's glance, because footage recorded outside the
     // declared task would otherwise be paid at the declared task's rate (SET-08).
-    return { state: 'resolved', sessionId: sessions[0]!.id, method: 'automatic_single', needsConfirmation: false, proposedSessionId: null, reason: 'single_session' };
+    return decide(
+      {
+        state: 'resolved',
+        sessionId: survivors[0]!.id,
+        method: 'automatic_single',
+        needsConfirmation: false,
+        proposedSessionId: null,
+        reason: 'single_session',
+      },
+      'single_session',
+    );
   }
 
-  const ordered = [...sessions].sort(
+  const ordered = [...survivors].sort(
     (a, b) => (a.prepareTime?.getTime() ?? Infinity) - (b.prepareTime?.getTime() ?? Infinity),
   );
-  const proposal = propose(ordered, startMs(record), toleranceMs);
+  const startMs = startUs === null ? null : Number(startUs) / 1000;
+  const proposal = propose(ordered, startMs, cfg.toleranceMs);
 
   /**
    * Time matching applies to app-origin sessions only.
@@ -101,40 +425,47 @@ export function resolveEpisode(
     const reason = ordered.some((s) => s.sessionOrigin === 'app')
       ? 'mixed_session_origin'
       : 'operator_confirmation_required';
-    return quarantine(reason, proposal.sessionId);
+    return quarantine(reason, proposal.sessionId, 'operator_confirmation');
   }
 
-  const start = startMs(record);
-  if (start === null) {
-    // No positioned stream, so nothing to match against. Defensive: across the
-    // whole committed corpus this only happens on the wall-clock rung, which in
-    // practice means MEDIA-MISSING.
-    return quarantine('no_episode_start', null);
+  if (startUs === null) {
+    // Nothing positioned on any rung of pickStart, so there is nothing to match
+    // against. Across the committed corpus this means no usable media at all.
+    return quarantine('no_episode_start', null, 'time_window');
   }
   if (ordered.some((s) => s.prepareTime === null)) {
-    return quarantine('session_missing_prepare_time', proposal.sessionId);
+    return quarantine('session_missing_prepare_time', proposal.sessionId, 'time_window');
   }
   if (proposal.withinTolerance >= 2) {
     // Two sessions start close enough together that the episode could belong to
     // either. Guessing here is exactly what settlement cannot absorb.
-    return quarantine('ambiguous_within_tolerance', proposal.sessionId);
+    return quarantine('ambiguous_within_tolerance', proposal.sessionId, 'time_window');
   }
   if (proposal.sessionId === null) {
-    return quarantine('episode_precedes_all_sessions', null);
+    return quarantine('episode_precedes_all_sessions', null, 'time_window');
   }
-  return {
-    state: 'resolved',
-    sessionId: proposal.sessionId,
-    method: 'automatic_time_window',
-    needsConfirmation: true,
-    proposedSessionId: proposal.sessionId,
-    reason: 'time_window',
-  };
+  return decide(
+    {
+      state: 'resolved',
+      sessionId: proposal.sessionId,
+      method: 'automatic_time_window',
+      needsConfirmation: true,
+      proposedSessionId: proposal.sessionId,
+      reason: 'time_window',
+    },
+    'time_window',
+  );
 }
 
 /**
  * The latest session that began at or before the episode, plus how many sessions
  * began close enough to the episode to be indistinguishable.
+ *
+ * This is NOT a tie-break. It never reduces a genuinely ambiguous set to one:
+ * `withinTolerance >= 2` refuses above, and the single path that acts on this
+ * ordering returns `needsConfirmation: true`, so a human endorses it before the
+ * batch closes. Ordering a queue for an operator is a different act from
+ * choosing who gets paid.
  *
  * No session end is involved. An operator cannot supply a truthful end, and a
  * retroactively typed end that decides payment attribution is the failure this
@@ -156,15 +487,6 @@ function propose(
   }
   return { sessionId: chosen, withinTolerance };
 }
-
-const quarantine = (reason: ResolutionReason, proposedSessionId: string | null): Resolution => ({
-  state: 'quarantined',
-  sessionId: null,
-  method: null,
-  needsConfirmation: false,
-  proposedSessionId,
-  reason,
-});
 
 /**
  * Step 1 and step 2 of the resolver: cross-checks that are recorded and never

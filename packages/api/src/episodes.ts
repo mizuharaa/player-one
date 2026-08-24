@@ -8,6 +8,18 @@ import type { Actor } from './actor.ts';
 import { resolveEpisode, resolverDefects, type Resolution } from './resolve.ts';
 
 /**
+ * How far past the machine's own clock an episode may claim to have started
+ * before the resolver treats the instant as a fault rather than a recording.
+ *
+ * The resolver may not read a clock — it is pure, and a payment decision has to
+ * replay identically six months later — so its default ceiling is the year
+ * 2100. Narrowing it is the adapter's job, and this is the adapter. The slack
+ * absorbs ordinary device drift and the upload machine's own skew; anything
+ * beyond it is a clock that cannot be trusted to attribute a payment.
+ */
+const FUTURE_START_SLACK_MS = 24 * 60 * 60 * 1000;
+
+/**
  * Episode submission and resolution: the point at which a measurement acquires
  * an owner.
  *
@@ -108,7 +120,10 @@ export function registerEpisodes(
        * buy atomicity between a safe state and a safer one.
        */
       const stored = await storeEpisode(db, record);
-      const resolution = resolveEpisode(record, ctx.sessions, toleranceMs);
+      const resolution = resolveEpisode(record, ctx.sessions, {
+        toleranceMs,
+        latestPlausibleStartMs: Date.now() + FUTURE_START_SLACK_MS,
+      });
       const defects = resolverDefects(record, ctx.handover, resolution.sessionId);
 
       await mutate(
@@ -126,6 +141,23 @@ export function registerEpisodes(
             reason: resolution.reason,
             proposed_session_id: resolution.proposedSessionId,
             defects: defects.map((d) => d.code),
+            /**
+             * The audit trail proper. `audit_events.after` is jsonb, so this
+             * needs no migration and no new table: every candidate the resolver
+             * considered, the config it decided under, and which clock the
+             * episode's start came from.
+             *
+             * An operator overturning a decision, or finance defending one in a
+             * dispute, reads these three. Without the snapshot in particular, a
+             * re-run under a later tolerance answers differently with nothing on
+             * record to explain the change.
+             */
+            evaluated: resolution.evaluated,
+            candidate_count: resolution.candidateCount,
+            config_snapshot: resolution.configSnapshot,
+            start_source: resolution.startSource,
+            start_confidence: resolution.startConfidence,
+            start_flag: resolution.startFlag,
           },
         },
         async (tx) => {
@@ -170,6 +202,13 @@ export function registerEpisodes(
         proposed_session_id: resolution.proposedSessionId,
         needs_confirmation: resolution.needsConfirmation,
         defects: defects.map((d) => d.code),
+        /**
+         * Additive. The console shows the operator which clock the start came
+         * from, because a resolution anchored on the IMU is weaker evidence
+         * than one anchored on camera PTS and it should not look identical.
+         */
+        start_source: resolution.startSource,
+        start_flag: resolution.startFlag,
       });
     }
 
