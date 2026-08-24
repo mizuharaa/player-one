@@ -1,0 +1,429 @@
+/*
+ * The review screen.
+ *
+ * Every colour and every step comes from the tokens in `shell.ts`; there are no
+ * literal hex values below except inside `color-mix`, where the token is the
+ * input. A screen that invents its own near-miss grey is how a design system
+ * stops being one.
+ *
+ * The layout is a fixed three-row frame — bar, stage, verdict — with the stage
+ * split into viewer and panel. It never scrolls as a whole: a reviewer working
+ * from the keyboard should never have the commit button move, and a page that
+ * reflows between episodes costs a glance every time.
+ */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------------ sign-in */
+
+.login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--s5);
+}
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  width: min(420px, 100%);
+  padding: var(--s6);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+.login-card h1 { font-size: var(--text-lg); }
+.login-intro { color: var(--ink-dim); }
+.login-card hr { width: 100%; height: 1px; margin: var(--s1) 0; border: 0; background: var(--line); }
+.login-error {
+  padding: var(--s2) var(--s3);
+  background: var(--reject-dim);
+  border: 1px solid var(--reject);
+  border-radius: var(--radius);
+}
+.field { display: flex; flex-direction: column; gap: var(--s1); }
+.field input {
+  padding: var(--s2) var(--s3);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+.login-submit { justify-content: center; margin-top: var(--s2); }
+.login-langs { display: flex; gap: var(--s4); justify-content: center; }
+.login-langs a { color: var(--ink-faint); }
+
+/* -------------------------------------------------------------------- stage */
+
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
+
+.viewer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+  min-height: 0;
+  padding: var(--s3);
+}
+
+.video-frame {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/*
+ * Both video elements are always in the document. The hidden one is buffering
+ * the next episode; swapping which is visible is what makes an advance instant.
+ * `visibility` rather than `display: none`, because a display-none media element
+ * may have its buffering deprioritised by the browser — which is the one thing
+ * this arrangement exists to avoid.
+ */
+.video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--surface-sunken);
+  visibility: hidden;
+}
+.video.is-live { visibility: visible; }
+
+.video-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-faint);
+}
+
+/* ---------------------------------------------------------------- transport */
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex: none;
+}
+.transport .spacer { flex: 1; }
+.transport-play { min-width: 92px; justify-content: center; }
+.transport .time { color: var(--ink); font-size: var(--text-md); }
+.transport .rate { color: var(--ink-dim); }
+.part-indicator { color: var(--ink-faint); }
+
+/* --------------------------------------------------------------- scrub bar */
+
+.scrub {
+  flex: none;
+  padding: var(--s3) 0;
+  cursor: pointer;
+  touch-action: none;
+}
+.scrub-track {
+  position: relative;
+  height: 16px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.scrub-track > * { position: absolute; inset: 0; }
+
+.scrub-buffered i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--line);
+}
+
+/* Marked footage is the pass colour, because that is what it is: the part of
+   the recording the reviewer is saying should be paid for. */
+.scrub-spans i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--pass);
+  background: color-mix(in srgb, var(--pass) 70%, transparent);
+  border-left: 1px solid var(--pass);
+  border-right: 1px solid var(--pass);
+}
+
+/* An open in-point with no out yet. Striped so it cannot be mistaken for a
+   finished span at a glance. */
+.scrub-pending {
+  background: var(--accent-dim);
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 40%, transparent) 0 6px,
+    transparent 6px 12px
+  );
+  border-left: 2px solid var(--accent);
+}
+
+/* Part boundaries. A multi-part episode is one timeline to the reviewer and
+   several files underneath; the ticks say where a seek crosses a file. */
+.scrub-parts i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line-strong);
+}
+
+/*
+ * Everything past the payable window. Measured duration is the intersection of
+ * stream coverage, so a container can legitimately run longer than what a
+ * collector is paid for; a span marked out here is clamped by the server, and
+ * showing the edge is better than surprising the reviewer with the clamp.
+ */
+.scrub-parts i.beyond {
+  right: 0;
+  width: auto;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--line) 0 4px,
+    transparent 4px 8px
+  );
+  border-left: 1px solid var(--line-strong);
+}
+
+.scrub-head {
+  width: 2px;
+  inset: -4px auto;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--surface-sunken);
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------- marking */
+
+.marking {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  flex: none;
+  flex-wrap: wrap;
+}
+.marking-actions { display: flex; align-items: center; gap: var(--s2); }
+.marking-hint { color: var(--accent); min-height: 1.5em; }
+.marking-total {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin-left: auto;
+}
+.marking-total b { font-size: var(--text-md); }
+.marking-total .marking-caveat { color: var(--ink-faint); font-size: var(--text-xs); }
+
+.spans {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  max-height: 66px;
+  overflow-y: auto;
+  list-style: none;
+}
+.spans li {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 2px var(--s2);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+}
+.spans li.is-current { border-color: var(--accent); }
+.spans-empty { color: var(--ink-faint); border-style: dashed !important; font-family: var(--font-ui) !important; }
+.spans button {
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.spans button:hover { color: var(--reject); }
+
+/* ------------------------------------------------------------------- panel */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  min-height: 0;
+  padding: var(--s3);
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.meta { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s1) var(--s3); margin: 0; }
+.meta dt { color: var(--ink-faint); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; align-self: center; }
+.meta dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.meta .row-strong dd { font-size: var(--text-md); }
+.meta .hint { display: block; color: var(--ink-faint); font-size: var(--text-xs); }
+
+/* The gap between what the device claimed and what was measured. Amber when it
+   is large, because that is a fact about the device worth a reviewer's glance —
+   not an error, and not something to hide. */
+.delta { color: var(--ink-dim); }
+.delta.is-wide { color: var(--warn); }
+
+.flags { display: flex; flex-direction: column; gap: var(--s2); }
+.flag {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s2);
+  background: var(--surface-raised);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.flag.is-flag { border-left-color: var(--warn); }
+.flag.is-quarantine { border-left-color: var(--danger); }
+.flag code { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-dim); }
+.flag span { color: var(--ink-dim); font-size: var(--text-sm); }
+
+.recent ol { display: flex; flex-direction: column; gap: var(--s1); margin: var(--s2) 0 0; padding: 0; list-style: none; }
+.recent li { display: flex; align-items: center; gap: var(--s2); font-size: var(--text-sm); }
+.recent .mono { color: var(--ink-dim); margin-left: auto; }
+
+/* ----------------------------------------------------------------- verdict */
+
+.verdict {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex: none;
+  padding: var(--s3) var(--s4);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.verdict-choices { display: flex; gap: var(--s2); }
+.verdict-choices .btn { min-width: 118px; justify-content: center; }
+.verdict-good[aria-checked='true']    { background: var(--pass-dim);    border-color: var(--pass); }
+.verdict-partial[aria-checked='true'] { background: var(--partial-dim); border-color: var(--partial); }
+.verdict-bad[aria-checked='true']     { background: var(--reject-dim);  border-color: var(--reject); }
+
+.verdict-reasons { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.reasons { display: flex; gap: var(--s1); flex-wrap: wrap; }
+.reason {
+  padding: 2px var(--s2);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.reason[aria-pressed='true'] { background: var(--reject-dim); border-color: var(--reject); color: var(--ink); }
+
+.verdict-note {
+  flex: 1;
+  min-width: 160px;
+  padding: var(--s2) var(--s3);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+.verdict-error { color: var(--reject); }
+.verdict-commit { min-width: 200px; justify-content: center; }
+
+/* ------------------------------------------------------------------ states */
+
+.screen {
+  position: absolute;
+  inset: 44px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s3);
+  padding: var(--s6);
+  background: var(--ground);
+  text-align: center;
+  z-index: 5;
+}
+.screen h2 { font-size: var(--text-lg); }
+.screen p { max-width: 52ch; color: var(--ink-dim); }
+
+/*
+ * The blocker is modal on purpose. A lost verdict is a lost payment, and a
+ * toast that fades after four seconds is exactly how one goes unnoticed until
+ * settlement. Working past this is not possible without deciding what to do.
+ */
+.blocker {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s5);
+  background: var(--scrim);
+  z-index: 20;
+}
+.blocker-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  width: min(480px, 100%);
+  padding: var(--s5);
+  background: var(--surface);
+  border: 1px solid var(--reject);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+.blocker-card h2 { font-size: var(--text-md); color: var(--reject); }
+.blocker-card p { color: var(--ink-dim); }
+.blocker-actions { display: flex; gap: var(--s2); }
+
+.shortcuts {
+  position: fixed;
+  right: var(--s4);
+  bottom: 84px;
+  width: 320px;
+  padding: var(--s4);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  z-index: 15;
+}
+.shortcuts h2 { margin-bottom: var(--s3); font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); }
+.shortcuts dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s2) var(--s3); margin: 0; }
+.shortcuts dt { display: flex; gap: 2px; }
+.shortcuts dd { margin: 0; color: var(--ink-dim); }
+
+/*
+ * Below roughly a laptop's width the panel stops being a column and becomes a
+ * strip under the video. Reviewing on a narrow screen is not the target — the
+ * work is done at a desk — but a layout that breaks outright on a smaller one
+ * is a support call rather than a compromise.
+ */
+@media (max-width: 1080px) {
+  .stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .panel { border-left: 0; border-top: 1px solid var(--line); max-height: 34vh; }
+  .shortcuts { display: none; }
+}

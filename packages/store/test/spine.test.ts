@@ -165,6 +165,14 @@ describe.skipIf(!hasDb())('the identity spine', () => {
 
   // -- QR-03: effective duration cannot exceed measured ---------------------
 
+  /**
+   * Every insert below carries a `verdict_id` it does not otherwise care about.
+   * `episode_reviews_verdict_id_check` requires one on any row that is not
+   * pending: a decided review has to name the request that decided it, because
+   * that id is what makes a retried commit return the first answer rather than
+   * write a second review and a second payment. These tests are about other
+   * constraints; the column is here so they reach them.
+   */
   describe('QR-03: effective duration cannot exceed what was measured', () => {
     it('rejects an over-long effective duration in raw SQL, with no application in the path', async () => {
       const ids = await seedSpine();
@@ -175,8 +183,8 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const d = await db();
       await violates('episode_reviews_effective_le_measured_check', d.execute(sql`
           insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
-                                       effective_duration_s, review_state, reviewed_at)
-            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', '8.500001', 'partial_pass', now());
+                                       effective_duration_s, review_state, reviewed_at, verdict_id)
+            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', '8.500001', 'partial_pass', now(), ${uid()});
         `));
     });
 
@@ -189,8 +197,8 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const d = await db();
       await d.execute(sql`
         insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
-                                     effective_duration_s, review_state, reviewed_at)
-          values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now());
+                                     effective_duration_s, review_state, reviewed_at, verdict_id)
+          values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now(), ${uid()});
       `);
       const rows = await d.execute(sql`select count(*)::int as n from episode_reviews`);
       expect((rows as unknown as { n: number }[])[0]!.n).toBe(1);
@@ -207,8 +215,8 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const d = await db();
       await violates('episode_reviews_ingest_fk', d.execute(sql`
           insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
-                                       effective_duration_s, review_state, reviewed_at)
-            values (${uid()}, ${episodeId}, ${ingestId}, '9999.000000', '9000.000000', 'pass', now());
+                                       effective_duration_s, review_state, reviewed_at, verdict_id)
+            values (${uid()}, ${episodeId}, ${ingestId}, '9999.000000', '9000.000000', 'pass', now(), ${uid()});
         `));
     });
 
@@ -219,8 +227,8 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const d = await db();
       await violates('episode_reviews_ingest_fk', d.execute(sql`
           insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
-                                       effective_duration_s, review_state, reviewed_at)
-            values (${uid()}, ${a.episodeId}, ${b.ingestId}, '20.980044', '1.000000', 'pass', now());
+                                       effective_duration_s, review_state, reviewed_at, verdict_id)
+            values (${uid()}, ${a.episodeId}, ${b.ingestId}, '20.980044', '1.000000', 'pass', now(), ${uid()});
         `));
     });
 
@@ -233,8 +241,8 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const d = await db();
       await violates('episode_reviews_fail_is_zero_check', d.execute(sql`
           insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
-                                       effective_duration_s, review_state, reviewed_at)
-            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', '4.000000', 'fail', now());
+                                       effective_duration_s, review_state, reviewed_at, verdict_id)
+            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', '4.000000', 'fail', now(), ${uid()});
         `));
     });
   });
@@ -271,8 +279,8 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const reviewId = uid();
       await d.execute(sql`
         insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
-                                     effective_duration_s, review_state, reviewed_at)
-          values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now());
+                                     effective_duration_s, review_state, reviewed_at, verdict_id)
+          values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now(), ${uid()});
       `);
       const bill = (id: string) => sql`
         insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,

@@ -34,38 +34,43 @@ Branch per feature, all on the remote: `feat/operator-auth`,
 `fix/session-handover-scope`. Daniel wants a branch per feature with a
 descriptive name, and no commit until the feature actually works.
 
-Built and tested: the ingest engine, the episode store, the identity spine
-(19 tables), both-token auth, the audit trail, the counter workflow, the session
-resolver. Migrations `0000`–`0003`.
+Built and tested: the ingest engine, the episode store, the identity spine,
+both-token auth, the audit trail, the counter workflow, the session resolver,
+**the review lane and its console** (QR-*, the screen at `/review`, and the
+settlement row a verdict writes). Migrations `0000`–`0004`.
 
-**237 tests. 235 pass, 2 skip** (they need `PAXINI_SAMPLE`, a HuggingFace
-checkout nobody has). With no `DATABASE_URL`: 148 pass, 89 skip — that property
-is load-bearing, see below.
+**342 tests, 2 skip** (they need `PAXINI_SAMPLE`, a HuggingFace checkout nobody
+has). With no `DATABASE_URL`: 182 pass, 160 skip — that property is load-bearing,
+see below.
 
-Not built: cloud upload and verification (UPL-04/05/06 runtime), the operator
-console (BO-09/BO-10), the review lane (QR-*), settlement logic (SET-*), the
-collector app (all `APP-*`, blocked on PaXini owing D1 and D5).
+Not built: cloud upload and verification (UPL-04/05/06 runtime), the rest of the
+operator console (BO-09/BO-10), settlement beyond the row a verdict writes
+(SET-05 onward, bill generation, payout), the collector app (all `APP-*`, blocked
+on PaXini owing D1 and D5), dispute and second review (P2).
 
-## The next slice, already decided
+## The review slice, now built
 
-**Thin review + settlement**, not cloud upload. Reasoning Daniel endorsed: the
-in-the-wild review standard does not exist yet — PaXini said on 13 Aug it must
-be rewritten during the pilot — and a tool is how it gets written. Reviewer
-throughput is the bottleneck at 40,000 hours, so it needs the most time in front
-of actual PaXini reviewers.
+**Thin review + settlement** landed before cloud upload. Reasoning Daniel
+endorsed: the in-the-wild review standard does not exist yet — PaXini said on
+13 Aug it must be rewritten during the pilot — and a tool is how it gets written.
+Reviewer throughput is the bottleneck at 40,000 hours, so it needs the most time
+in front of actual PaXini reviewers.
 
-Two deviations come with it and both need an ADR, not a footnote:
-**QR-02** ("no episode enters review before cloud checksum verification") and
-**PRD §11.3.1 rule 6**. Rule 6's other half is *not* deviable — **no TF card is
-cleared** under this deviation. The review gate reads local verification until
-the upload slice lands, and that is a hard gate at acceptance.
+`docs/review.md` is the design record. Read it before touching
+`packages/api/src/review.ts` or `money.ts`.
+
+The **QR-02 deviation now has its ADR**:
+`docs/adr/0001-review-reads-local-verification.md`, including the condition that
+retires it. Rule 6's other half is *not* deviable and nothing in the lane bends
+it — **no TF card is cleared**, and no code path deletes source media. That is
+still a hard gate at acceptance.
+
+The **BO-09 cut** ADR is still owed (centres, machines and operators stay
+CLI/fixtures) with its trigger condition — second upload centre, or 500
+collectors, whichever first.
 
 Daniel was sending the storage target, so the upload slice may no longer be
 blocked. **Ask.** It was meant to run in parallel, not after.
-
-Also owed, from an ADR that was specified and never written: the BO-09 cut
-(centres, machines and operators stay CLI/fixtures) with its trigger condition —
-second upload centre, or 500 collectors, whichever first.
 
 ## Decisions taken. Do not re-litigate these.
 
@@ -91,7 +96,20 @@ second upload centre, or 500 collectors, whichever first.
   real samples. Same argument applies to anything else it claims.
 - **Invariants belong in the schema, not TypeScript.** PLT-05, QR-03, SET-02,
   UPL-06 and the APP-17b declarations are CHECKs and FK shapes, tested in raw
-  SQL with no application in the path.
+  SQL with no application in the path. The review lane added three more:
+  `episode_reviews_verdict_key` (one review per client verdict id, which is what
+  stops a retry becoming a second payment), `episode_reviews_delivery_key` (one
+  review per delivery) and `episode_reviews_verdict_id_check` (a decided review
+  must name the request that decided it).
+- **The amount on a bill comes from the *rounded* minutes, not the exact
+  seconds.** 16 s at 1200/min stores `0.266667` and `320.0004`, where the exact
+  product is `320.0000`. Deliberate and pinned by a test: `unit_price ×
+  effective_minutes` must reproduce `amount`, because that is the first thing
+  checked when an invoice is disputed. Do not "fix" it.
+- **Rounding lives in exactly one function**, `quantise` in `packages/api/src/money.ts`,
+  and the rule is half away from zero. Everything feeding it converts exactly —
+  including a float64 span boundary, which becomes the rational it actually is.
+  A second rounding site anywhere in that file voids the guarantee.
 - **Auto session matching by time applies only to `session_origin = 'app'`.**
   A handover-origin `prepare_time` is what an operator typed from what a
   collector remembered; matching a microsecond PTS start against it and paying

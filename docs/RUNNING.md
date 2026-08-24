@@ -23,8 +23,11 @@ pnpm test
 tests that need either skip themselves. That is deliberate: the ingest engine
 runs at upload centres with the link down, so it must never need a database.
 
-Expect roughly `148 passed, 85 skipped`. With a database and the sample corpus,
-`237 passed, 2 skipped`.
+Expect roughly `182 passed, 160 skipped`. With a database and the sample corpus,
+`342 passed, 2 skipped`.
+
+Some ingest tests shell out to `ffprobe` over real media and are slow on Windows;
+`--testTimeout=90000` if the default trips them.
 
 ## Adding a database
 
@@ -52,9 +55,10 @@ pnpm test
 **A password with `@` or `:` in it must be percent-encoded** — `@` is `%40`.
 An unencoded one parses as part of the host and fails to connect.
 
-The suite creates `<database>_store`, `_spine`, `_api`, `_audit`, `_counter`
-and `_episodes` beside whatever `DATABASE_URL` names, one per test file, because
-vitest runs files in parallel and each truncates. Nothing else uses them.
+The suite creates `<database>_store`, `_spine`, `_api`, `_audit`, `_counter`,
+`_episodes` and `_review` beside whatever `DATABASE_URL` names, one per test
+file, because vitest runs files in parallel and each truncates. Nothing else uses
+them.
 
 ## Adding the sample sessions
 
@@ -109,14 +113,53 @@ bad argument, `3` measured fine but the store could not be written.
 
 ## The operator API
 
-`packages/api` is a Fastify app, built by `buildApi({ db, tokenSecret })`. There
-is no server entrypoint yet — the console slice adds it. Until then the tests
-and `packages/api/scripts/verify-e2e.mjs` are how it runs.
+`packages/api` is a Fastify app, built by `buildApi({ db, tokenSecret })`.
 
 Two credentials are required on every mutation: a machine token and an operator
 token. Seed a centre, a machine and an operator with `credential_hash` set from
 `hashCredential()`, then `POST /auth/machine` and `POST /auth/operator`.
 `packages/api/test/counter.test.ts` is the shortest worked example.
+
+## Running it
+
+```
+DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
+```
+
+| Variable | | |
+|---|---|---|
+| `DATABASE_URL` | required | |
+| `PLAYERONE_TOKEN_SECRET` | required | Fails closed. A secret invented at boot would sign tokens that stop verifying on the next restart, which shows up as reviewers being randomly signed out. |
+| `PLAYERONE_MEDIA_ROOT` | | The directory holding the imported `ego_*` folders. Without it the console runs and the stream route answers 503 saying so. |
+| `PLAYERONE_CURRENCY` | `VND` | What `tasks.unit_price` is denominated in. Configuration because there is no currency column — see the gaps in `docs/review.md`. |
+| `PLAYERONE_SECURE_COOKIES` | off | Turn on wherever there is TLS. Off by default because a `Secure` cookie is never sent over plain HTTP and the symptom is a sign-in that silently does nothing. |
+| `PLAYERONE_DB_POOL` | `10` | A single connection serialises the claim queue: `for update skip locked` has nothing to skip. |
+| `HOST` / `PORT` | `127.0.0.1` / `8080` | |
+
+Then `http://127.0.0.1:8080/review`, which redirects to a sign-in form taking the
+same machine and operator credentials.
+
+## The review console
+
+`docs/review.md` is the design record. Two scripts go with it:
+
+```
+DATABASE_URL=... node packages/api/scripts/verify-review.mjs
+```
+
+Drives the whole lane over a real socket — sign-in, cookies, byte ranges, a
+verdict, a replayed verdict — and makes its own footage with ffmpeg, so it needs
+no sample corpus. Truncates every table, so point it at a throwaway database.
+
+```
+pnpm moov docs/sample_data/**/*.mp4
+```
+
+Says whether each MP4 has its `moov` atom at the front. Seeking is one small
+range request when it is, and needs the tail of the file first when it is not —
+which is a remux in the import path (`ffmpeg -c copy -movflags +faststart`), never
+a UI fix. Exits non-zero if any file has it at the back. **The committed fixtures
+are 32-byte stubs and cannot answer this**; run it over the real corpus.
 
 ## Migrations
 
@@ -141,9 +184,13 @@ drizzle gets wrong here and that a generated file may need fixing for by hand:
 | `packages/contracts` | `EpisodeRecord` (zod), episode id and content fingerprint |
 | `packages/ingest` | the measurement engine and the CLI |
 | `packages/store` | Postgres schema, migrations, episode store, catalogues |
-| `packages/api` | operator API: auth, counter workflow, session resolver |
+| `packages/api` | operator API: auth, counter workflow, session resolver, review console |
+| `packages/api/assets` | the review screen's ES module and stylesheet, served as written |
 | `fixtures/sessions` | 22 synthetic sessions, one per failure mode, committed |
 | `docs/episode-identity.md` | why the episode id is derived the way it is |
+| `docs/matching.md` | how an episode is attributed to a collection session |
+| `docs/review.md` | the review lane: the queue, the money, the screen |
+| `docs/adr/` | decisions that deviate from the brief, with their expiry conditions |
 | `docs/playerone-ingest-engine-spec.md` | the engine specification |
 
 The authoritative requirements document is `Player One — Engineering Brief

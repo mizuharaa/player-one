@@ -9,6 +9,8 @@
     "typecheck": "tsc",
     "test": "vitest run --testTimeout=30000",
     "ingest": "node packages/ingest/bin/ingest.ts",
+    "serve": "node packages/api/bin/serve.ts",
+    "moov": "node packages/api/scripts/moov.ts",
     "fixtures": "node packages/ingest/scripts/make-fixtures.ts",
     "bench": "node packages/ingest/scripts/bench.ts",
     "db:generate": "drizzle-kit generate --config packages/store/drizzle.config.ts",

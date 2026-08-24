@@ -2,22 +2,25 @@ import { eq } from 'drizzle-orm';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { schema, seedCatalogues, type Db } from '@playerone/store';
 import { auditLogin } from './audit.ts';
+import { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
+import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';
 import { registerEpisodes } from './episodes.ts';
+import { registerMedia } from './media.ts';
 import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
+import { registerReview } from './review.ts';
+import { authenticateMachine, authenticateOperator } from './session.ts';
 import type { Actor } from './actor.ts';
-import {
-  signToken,
-  verifyCredential,
-  verifyToken,
-  type MachineClaims,
-  type OperatorClaims,
-} from './credentials.ts';
+import { signToken, verifyToken } from './credentials.ts';
 
 export * from './credentials.ts';
 export * from './audit.ts';
 export type { Actor } from './actor.ts';
 export * from './resolve.ts';
+export * from './money.ts';
+export { LEASE_MS } from './review.ts';
+export { parseRange, safeJoin } from './media.ts';
+export { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 
 /**
  * The operator API. The upload-centre console never touches Postgres — PRD
@@ -44,16 +47,50 @@ export type ApiOptions = {
    * on app-origin sessions, which do not exist yet.
    */
   toleranceMs?: number;
+  /**
+   * Where the imported `ego_*` session folders live on this machine. The review
+   * console streams footage from here; without it the metadata routes still
+   * work and the stream route says so.
+   */
+  mediaRoot?: string;
+  /**
+   * What `tasks.unit_price` is denominated in. Configuration, because there is
+   * no currency column on `tasks` — see `ReviewOptions`.
+   */
+  currency?: string;
+  /**
+   * Whether session cookies are marked `Secure`. Off by default: the pilot's
+   * upload centres are a LAN over plain HTTP, where a `Secure` cookie is never
+   * sent and the symptom is a login that appears to do nothing.
+   */
+  secureCookies?: boolean;
 };
 
-export function buildApi({ db, tokenSecret, toleranceMs = DEFAULT_TOLERANCE_MS }: ApiOptions): FastifyInstance {
+export function buildApi({
+  db,
+  tokenSecret,
+  toleranceMs = DEFAULT_TOLERANCE_MS,
+  mediaRoot,
+  currency,
+  secureCookies = false,
+}: ApiOptions): FastifyInstance {
   if (!tokenSecret) throw new Error('tokenSecret is required');
   const app = Fastify({ logger: false });
 
-  const bearer = (req: FastifyRequest, header: string): string | undefined => {
+  /**
+   * The token from a header, or failing that from the session cookie.
+   *
+   * The header is checked first so a machine client's explicit credential
+   * always wins over a stale cookie left in the same browser. The cookie exists
+   * because the console's `<video>` element and its unload beacon cannot set
+   * headers at all — see `cookies.ts`.
+   */
+  const bearer = (req: FastifyRequest, header: string, cookie: string): string | undefined => {
     const raw = req.headers[header];
     const value = Array.isArray(raw) ? raw[0] : raw;
-    return value?.startsWith('Bearer ') ? value.slice(7) : value;
+    const fromHeader = value?.startsWith('Bearer ') ? value.slice(7) : value;
+    if (fromHeader !== undefined && fromHeader !== '') return fromHeader;
+    return parseCookies(req.headers.cookie)[cookie];
   };
 
   /**
@@ -65,8 +102,8 @@ export function buildApi({ db, tokenSecret, toleranceMs = DEFAULT_TOLERANCE_MS }
    * either way it is not a write we can attribute.
    */
   const requireActor = async (req: FastifyRequest, reply: { code: (n: number) => { send: (b: unknown) => unknown } }) => {
-    const machine = verifyToken(tokenSecret, bearer(req, 'x-machine-token'));
-    const operator = verifyToken(tokenSecret, bearer(req, 'authorization'));
+    const machine = verifyToken(tokenSecret, bearer(req, 'x-machine-token', MACHINE_COOKIE));
+    const operator = verifyToken(tokenSecret, bearer(req, 'authorization', OPERATOR_COOKIE));
     if (machine?.kind !== 'machine') return reply.code(401).send({ error: 'machine token required' });
     if (operator?.kind !== 'operator') return reply.code(401).send({ error: 'operator token required' });
     if (machine.uploadCentreId !== operator.uploadCentreId) {
@@ -79,56 +116,18 @@ export function buildApi({ db, tokenSecret, toleranceMs = DEFAULT_TOLERANCE_MS }
     const { machine_identifier, secret } = (req.body ?? {}) as Record<string, string>;
     if (!machine_identifier || !secret) return reply.code(400).send({ error: 'missing credentials' });
 
-    const [device] = await db
-      .select()
-      .from(schema.uploadDevices)
-      .where(eq(schema.uploadDevices.machineIdentifier, machine_identifier));
-
-    // One message for "no such machine", "wrong secret" and "retired machine":
-    // an unauthenticated caller learns nothing about the fleet.
-    if (
-      device === undefined ||
-      device.status !== 'active' ||
-      !(await verifyCredential(secret, device.credentialHash))
-    ) {
-      return reply.code(401).send({ error: 'invalid credentials' });
-    }
-
-    const claims: MachineClaims = {
-      kind: 'machine',
-      uploadDeviceId: device.id,
-      uploadCentreId: device.uploadCentreId,
-    };
-    await auditLogin(db, 'machine.login', 'upload_devices', device.id, {
-      uploadDeviceId: device.id,
-      uploadCentreId: device.uploadCentreId,
-    });
-    return { token: signToken(tokenSecret, claims), upload_centre_id: device.uploadCentreId };
+    const claims = await authenticateMachine(db, machine_identifier, secret);
+    if (claims === null) return reply.code(401).send({ error: 'invalid credentials' });
+    return { token: signToken(tokenSecret, claims), upload_centre_id: claims.uploadCentreId };
   });
 
   app.post('/auth/operator', async (req, reply) => {
     const { external_ref, secret } = (req.body ?? {}) as Record<string, string>;
     if (!external_ref || !secret) return reply.code(400).send({ error: 'missing credentials' });
 
-    const [operator] = await db
-      .select()
-      .from(schema.operators)
-      .where(eq(schema.operators.externalRef, external_ref));
-
-    if (operator === undefined || !(await verifyCredential(secret, operator.credentialHash))) {
-      return reply.code(401).send({ error: 'invalid credentials' });
-    }
-
-    const claims: OperatorClaims = {
-      kind: 'operator',
-      operatorId: operator.id,
-      uploadCentreId: operator.uploadCentreId,
-    };
-    await auditLogin(db, 'operator.login', 'operators', operator.id, {
-      operatorId: operator.id,
-      uploadCentreId: operator.uploadCentreId,
-    });
-    return { token: signToken(tokenSecret, claims), upload_centre_id: operator.uploadCentreId };
+    const claims = await authenticateOperator(db, external_ref, secret);
+    if (claims === null) return reply.code(401).send({ error: 'invalid credentials' });
+    return { token: signToken(tokenSecret, claims), upload_centre_id: claims.uploadCentreId };
   });
 
   /**
@@ -169,6 +168,9 @@ export function buildApi({ db, tokenSecret, toleranceMs = DEFAULT_TOLERANCE_MS }
 
   registerCounter(app, db, requireActor);
   registerEpisodes(app, db, requireActor, toleranceMs);
+  registerReview(app, db, requireActor, { mediaRoot, currency });
+  registerMedia(app, db, requireActor, mediaRoot);
+  registerConsole(app, db, { tokenSecret, secureCookies });
 
   /** Proves both-tokens and centre scope on its own, with no counter state needed. */
   app.get('/whoami', { preHandler: requireActor }, async (req) => ({

@@ -720,8 +720,44 @@ export const episodeReviews = pgTable(
       mode: 'string',
     }),
     reviewState: text('review_state').notNull(),
+    /**
+     * Who holds this review. On a pending row that is the current leaseholder;
+     * on a decided row it is who decided. One column and not two, because a
+     * lease that expires and is re-claimed transfers both facts at once — the
+     * new claimant is the one who will decide — and two columns would raise a
+     * "which is authoritative" question that has no useful answer.
+     */
     reviewerRef: text('reviewer_ref'),
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    /**
+     * The client's own id for one verdict attempt, and the whole of the
+     * idempotency guarantee. A reviewer double-taps commit, or the write times
+     * out and the browser retries: the second request carries the same id, the
+     * unique index below refuses the second insert, and the endpoint returns
+     * what the first one decided. Without it a retry is a second review row and
+     * — through `settlements_review_key` being per-review — a second payment.
+     *
+     * Nullable because a pending row has no verdict yet, and Postgres allows
+     * many nulls in a unique index. `episode_reviews_verdict_id_check` makes it
+     * mandatory the moment the row is decided.
+     */
+    verdictId: uuid('verdict_id'),
+    /** QR-04: free text the collector may be shown alongside the reason codes. */
+    reviewerNote: text('reviewer_note'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    /**
+     * When this claim stops being exclusive. A reviewer who closes the tab must
+     * not strand an episode, so the queue reclaims anything past its lease
+     * rather than waiting for a release that may never come.
+     */
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    /**
+     * Load to verdict, in seconds. Instrumentation, never money: reviewer
+     * throughput is the programme's capacity ceiling at 40,000 hours and this
+     * is the baseline to optimise against. Deliberately not `numeric(20,6)` —
+     * it is a stopwatch, not a measurement anything is paid on.
+     */
+    timeToVerdictS: numeric('time_to_verdict_s', { precision: 12, scale: 3, mode: 'string' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -736,9 +772,49 @@ export const episodeReviews = pgTable(
       name: 'episode_reviews_ingest_fk',
     }),
     index('episode_reviews_episode_idx').on(t.episodeId),
+    /**
+     * One review per delivery, and the reason the queue needs no separate lock
+     * table: claiming is an insert, and a second reviewer racing for the same
+     * never-seen episode loses on this index rather than on application logic.
+     *
+     * A second delivery of the same session is a different `ingest_id` and so
+     * gets its own review — which is the point of binding a verdict to the
+     * exact bytes it judged. Re-reviewing one delivery is the dispute flow,
+     * which is P2 and deliberately not built; when it lands it needs a
+     * supersedes column here rather than a second row, or this index moves.
+     */
+    uniqueIndex('episode_reviews_delivery_key').on(t.episodeId, t.ingestId),
+    /**
+     * The idempotency guarantee, at the database. Two concurrent requests
+     * carrying the same `verdict_id` — a double-tap, or a retry racing the
+     * original — cannot both write: one commits and the other is rejected here,
+     * and the endpoint answers the loser with what the winner decided.
+     */
+    uniqueIndex('episode_reviews_verdict_key').on(t.verdictId),
+    /**
+     * The queue read, in one index: pending rows ordered by how long they have
+     * waited, with the lease column alongside so reclaiming an expired lease is
+     * the same scan and not a second one.
+     */
+    index('episode_reviews_queue_idx').on(t.reviewState, t.leaseExpiresAt, t.createdAt),
     check(
       'episode_reviews_state_check',
       sql`${t.reviewState} in ('pending', 'pass', 'partial_pass', 'fail')`,
+    ),
+    /**
+     * A decided review names the request that decided it. This is what makes
+     * the idempotency key load-bearing rather than advisory: a verdict written
+     * by a path that forgot to carry one cannot be inserted at all.
+     */
+    check(
+      'episode_reviews_verdict_id_check',
+      sql`${t.reviewState} = 'pending' or ${t.verdictId} is not null`,
+    ),
+    /** A claim is always a claim *until* a moment. An open-ended one strands the episode. */
+    check(
+      'episode_reviews_lease_check',
+      sql`${t.reviewerRef} is null
+          or (${t.claimedAt} is not null and ${t.leaseExpiresAt} is not null)`,
     ),
     /** QR-03, at the database, bypassable by nothing that speaks SQL. */
     check(
@@ -774,6 +850,46 @@ export const episodeReviewReasons = pgTable(
       .references(() => reviewReasonCodes.code),
   },
   (t) => [primaryKey({ columns: [t.reviewId, t.code] })],
+);
+
+/**
+ * The segments a reviewer marked as useful, in episode-relative seconds.
+ *
+ * `effective_duration_s` on the review is their sum, and storing only the sum
+ * was the first design. It does not survive a dispute: a collector who is paid
+ * for 4 of 11 minutes will ask *which* 4, and "the reviewer typed 4" is not an
+ * answer anyone can check. These rows are what makes the number re-derivable
+ * from evidence rather than asserted.
+ *
+ * Always normalised before insert — clamped to the measured duration, sorted,
+ * overlaps merged — so the sum of these rows equals `effective_duration_s` by
+ * construction. That equality cannot be a CHECK because a CHECK cannot reach
+ * across rows, so it is a property of the one function that writes them and is
+ * tested there.
+ *
+ * `ordinal` rather than a surrogate key: the spans of a review are an ordered
+ * list, and the order is the reviewer's own reading of the footage.
+ */
+export const episodeReviewSpans = pgTable(
+  'episode_review_spans',
+  {
+    reviewId: uuid('review_id')
+      .notNull()
+      .references(() => episodeReviews.id),
+    ordinal: integer('ordinal').notNull(),
+    startS: numeric('start_s', { precision: 20, scale: 6, mode: 'string' }).notNull(),
+    endS: numeric('end_s', { precision: 20, scale: 6, mode: 'string' }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.reviewId, t.ordinal] }),
+    check('episode_review_spans_start_nonneg_check', sql`${t.startS} >= 0`),
+    /**
+     * Strictly greater: a zero-length span is not a shorter piece of footage,
+     * it is a marking mistake, and normalisation drops it before it reaches
+     * here. If one arrives, the write is wrong and should fail loudly.
+     */
+    check('episode_review_spans_ordered_check', sql`${t.endS} > ${t.startS}`),
+  ],
 );
 
 /**
