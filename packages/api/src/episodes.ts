@@ -57,6 +57,20 @@ export function registerEpisodes(
       .where(eq(schema.handovers.id, batch.handoverId));
     if (handover === undefined) return null;
 
+    /**
+     * The sessions declared against THIS card, and nothing else.
+     *
+     * Scoping by collector instead — which this did — makes every session a
+     * collector ever declared a candidate for every later card, so the second
+     * card quarantines wholesale and time-window matching could pay this week's
+     * footage against last week's task.
+     *
+     * ponytail: app-origin sessions carry no handover (APP-16 creates them
+     * before the card exists), so they are not candidates here and their
+     * episodes quarantine as `no_sessions`. Safe, and the right default until
+     * the app path is built — linking them is the upload slice's problem, and
+     * D1/D5 block the app anyway.
+     */
     const sessions = await db
       .select({
         id: schema.collectionSessions.id,
@@ -64,9 +78,7 @@ export function registerEpisodes(
         sessionOrigin: schema.collectionSessions.sessionOrigin,
       })
       .from(schema.collectionSessions)
-      .where(eq(schema.collectionSessions.collectorId, sql`(
-        select collector_id from handovers where id = ${batch.handoverId}
-      )`));
+      .where(eq(schema.collectionSessions.handoverId, batch.handoverId));
 
     return { batch, handover, sessions };
   };
@@ -227,8 +239,14 @@ export function registerEpisodes(
       .from(schema.episodes)
       .where(eq(schema.episodes.episodeId, episodeId));
     if (episode === undefined) return reply.code(404).send({ error: 'no such episode' });
+    if (episode.uploadBatchId === null) {
+      // Stored by the CLI rather than submitted through a batch, so there is no
+      // delivery to check a session against. `?? ''` here used to reach Postgres
+      // as an empty uuid and answer with a 500.
+      return reply.code(409).send({ error: 'this episode did not arrive through a batch' });
+    }
 
-    // The session must belong to the same collector this card came from.
+    // The session must belong to this delivery.
     const [session] = await db
       .select({ id: schema.collectionSessions.id })
       .from(schema.collectionSessions)
@@ -237,7 +255,7 @@ export function registerEpisodes(
       .where(
         and(
           eq(schema.collectionSessions.id, body.data.collection_session_id),
-          eq(schema.uploadBatches.id, episode.uploadBatchId ?? ''),
+          eq(schema.uploadBatches.id, episode.uploadBatchId),
           eq(schema.handovers.uploadCentreId, actor.operator.uploadCentreId),
         ),
       );

@@ -4,7 +4,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
+import { closeDb, db, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('episodes');
@@ -137,7 +137,43 @@ describe.skipIf(!hasDb())('episode submission and resolution', () => {
     const submit = (episodes: EpisodeRecord[]) =>
       send('POST', `/upload-batches/${batch}/episodes`, { episodes });
 
-    return { d, ids, handover, batch, send, addSession, submit };
+    /** A second card from the same collector, days later. */
+    const newHandover = async (card: string) => {
+      const h2 = uid();
+      const b2 = uid();
+      await send('POST', '/handovers', {
+        id: h2,
+        collector_id: ids.collector,
+        device_id: ids.device,
+        tf_card_id: card,
+        handover_time: new Date(T + min(60 * 24 * 7)).toISOString(),
+      });
+      await send('POST', '/upload-batches', {
+        id: b2,
+        handover_id: h2,
+        import_started_at: new Date(T + min(60 * 24 * 7)).toISOString(),
+      });
+      return { handover: h2, batch: b2 };
+    };
+
+    const addSessionOn = async (h2: { handover: string }, offsetMin: number) => {
+      const id = uid();
+      const res = await send('POST', `/handovers/${h2.handover}/sessions`, {
+        id,
+        task_id: ids.task,
+        scenario_id: ids.scenario,
+        others_in_frame: false,
+        sensitive_info_present: false,
+        prepare_time: new Date(T + min(60 * 24 * 7 + offsetMin)).toISOString(),
+      });
+      expect(res.statusCode, res.body).toBeLessThan(300);
+      return id;
+    };
+
+    const submitTo = (b: string, episodes: EpisodeRecord[]) =>
+      send('POST', `/upload-batches/${b}/episodes`, { episodes });
+
+    return { d, ids, handover, batch, send, addSession, submit, newHandover, addSessionOn, submitTo };
   }
 
   /** §10.2, as a property of the table rather than of a response. */
@@ -288,6 +324,72 @@ describe.skipIf(!hasDb())('episode submission and resolution', () => {
     expect(rows[0]!['machine']).toBe(h.ids.machine);
     expect(rows[0]!['handover']).toBe(h.handover);
     expect(rows[0]!['collector']).toBe(h.ids.collector);
+  });
+
+  /**
+   * The bug the audit found. Candidate sessions were scoped by collector, so
+   * every session a collector had ever declared was a candidate for every later
+   * card. One card per collector hides it completely; the second card
+   * quarantined wholesale, and under time-window matching it could have paid
+   * this week's footage against last week's task at last week's unit price.
+   */
+  it('only considers sessions declared against THIS card', async () => {
+    const h = await harness();
+    await h.addSession(-60);
+    await h.submit([record({})]);
+
+    // The same collector, a week later, a different card, again one declared task.
+    const second = await h.newHandover('CARD-2');
+    const later = await h.addSessionOn(second, -60);
+    const res = await h.submitTo(second.batch, [record({})]);
+
+    const e = res.json().episodes[0];
+    expect(e.resolution_state, 'a second card with one task must still auto-resolve').toBe(
+      'resolved',
+    );
+    expect(e.resolution_method).toBe('automatic_single');
+
+    const rows = (await h.d.execute(sql`
+      select collection_session_id from episodes where upload_batch_id = ${second.batch}
+    `)) as unknown as Record<string, string>[];
+    expect(rows[0]!['collection_session_id']).toBe(later);
+    await assertNoThirdState();
+  });
+
+  it('refuses a handover-origin session with no handover, at the database', async () => {
+    const h = await harness();
+    await violates(
+      'collection_sessions_handover_required_check',
+      h.d.execute(sql`
+        insert into collection_sessions (id, task_id, collector_id, scenario_id,
+          others_in_frame, sensitive_info_present, session_origin)
+        values (${uid()}, ${h.ids.task}, ${h.ids.collector}, ${h.ids.scenario}, false, false, 'handover')`),
+    );
+  });
+
+  it('answers 409 rather than crashing for an episode that never came through a batch', async () => {
+    // Stored by the CLI, so upload_batch_id is null. This used to reach Postgres
+    // as an empty uuid and answer 500.
+    const h = await harness();
+    const session = await h.addSession(-60);
+    const orphan = uid();
+    await h.d.execute(sql`
+      insert into episodes (episode_id, device_serial, session_started_at, first_seen_at,
+                            last_seen_at, ingest_count, resolution_state)
+      values (${orphan}, 'AZER76400FE', '20260813_072310', now(), now(), 1, 'quarantined')`);
+    const res = await h.send('POST', `/episodes/${orphan}/resolve`, {
+      collection_session_id: session,
+      reason: 'trying to attach a CLI-stored episode',
+    });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('seeds the defect catalogue on boot, so routing is never empty', async () => {
+    const h = await harness();
+    const rows = (await h.d.execute(
+      sql`select count(*)::int n from defect_codes`,
+    )) as unknown as { n: number }[];
+    expect(rows[0]!.n).toBeGreaterThan(25);
   });
 
   // -- idempotency ---------------------------------------------------------

@@ -78,8 +78,10 @@ async function seedSpine() {
   `);
   await d.execute(sql`
     insert into collection_sessions
-      (id, task_id, collector_id, scenario_id, others_in_frame, sensitive_info_present, session_origin)
-      values (${ids.session}, ${ids.task}, ${ids.collector}, ${ids.scenario}, false, false, 'handover');
+      (id, handover_id, task_id, collector_id, scenario_id, others_in_frame,
+       sensitive_info_present, session_origin)
+      values (${ids.session}, ${ids.handover}, ${ids.task}, ${ids.collector}, ${ids.scenario},
+              false, false, 'handover');
   `);
   await d.execute(sql`
     insert into collection_session_devices (collection_session_id, device_id, role)
@@ -292,9 +294,10 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       await violates(
         'others_in_frame',
         d.execute(sql`
-          insert into collection_sessions (id, task_id, collector_id, scenario_id,
+          insert into collection_sessions (id, handover_id, task_id, collector_id, scenario_id,
                                            others_in_frame, sensitive_info_present, session_origin)
-            values (${uid()}, ${ids.task}, ${ids.collector}, ${ids.scenario}, null, false, 'handover');
+            values (${uid()}, ${ids.handover}, ${ids.task}, ${ids.collector}, ${ids.scenario},
+                    null, false, 'handover');
         `),
       );
     });

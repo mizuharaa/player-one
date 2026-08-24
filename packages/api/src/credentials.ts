@@ -56,7 +56,7 @@ export type Claims = MachineClaims | OperatorClaims;
  * request. That is what makes BO-11 / SEC-02 server-side rather than advisory:
  * a caller cannot name a centre it was not issued for.
  */
-export const TOKEN_TTL_S = 12 * 60 * 60; // one shift
+const TOKEN_TTL_S = 12 * 60 * 60; // one shift
 
 export function signToken(secret: string, claims: Claims, nowS = Math.floor(Date.now() / 1e3)): string {
   const body = Buffer.from(JSON.stringify({ ...claims, exp: nowS + TOKEN_TTL_S })).toString(
