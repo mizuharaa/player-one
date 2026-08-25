@@ -84,33 +84,37 @@ export function ReviewScreen() {
     setClaimedAt(Date.now());
   }, []);
 
+  /**
+   * Take the next episode — after giving back the one we are holding.
+   *
+   * The release is not optional and its failure is not swallowed. A lease we
+   * still hold on footage that will not play stays held for the full lease
+   * window, so claiming another one without releasing this one walks the queue
+   * and locks every episode the reviewer touches. If the release itself fails —
+   * the network, the server — the claim does not happen either: the mutation
+   * ends in its error state, the screen keeps the action that got here, and
+   * pressing it again tries the whole thing again. Claiming anyway would turn
+   * one stuck lease into two.
+   *
+   * Releasing something already gone is not an error: the server answers
+   * `released: false` and logs nothing, which is what the lease-expired path
+   * wants.
+   */
+  /**
+   * What the claim releases before it claims. A ref, not the state, so the
+   * mutation is built once instead of on every episode.
+   */
+  const episodeRef = useRef<string | null>(null);
+  episodeRef.current = episode?.episode_id ?? null;
+
   const claim = useMutation({
-    mutationFn: () => api.claimNext(),
+    mutationFn: async () => {
+      const held = episodeRef.current;
+      if (held !== null) await api.release(held);
+      return api.claimNext();
+    },
     onSuccess: (next) => adopt(next),
   });
-
-  /**
-   * Give this episode back, then take the next one.
-   *
-   * The plain `claim.mutate()` is right when the lease is already gone. It is
-   * wrong after a playback failure: that lease is still live and still ours, so
-   * claiming again leaves it held for the full lease window on footage nobody
-   * is looking at. A reviewer hitting retry on a bad mount would walk the queue
-   * and lock every episode they touched. The release is awaited rather than
-   * fired off, because the row has to be free before the claim looks for it,
-   * and it is logged server-side like every other release.
-   */
-  const skip = useCallback(() => {
-    const held = episodeRef.current;
-    if (held === null) {
-      claim.mutate();
-      return;
-    }
-    void api
-      .release(held)
-      .catch(() => undefined)
-      .finally(() => claim.mutate());
-  }, [claim]);
 
   /** Claim the first episode when the screen opens. */
   const claimMutate = claim.mutate;
@@ -123,9 +127,6 @@ export function ReviewScreen() {
      ------------------------------------------------------------------ */
 
   const episodeId = episode?.episode_id ?? null;
-  /** Read by `skip`, which must not be rebuilt every time the episode changes. */
-  const episodeRef = useRef<string | null>(null);
-  episodeRef.current = episodeId;
 
   useEffect(() => {
     if (episodeId === null || lost !== null) return;
@@ -417,7 +418,7 @@ export function ReviewScreen() {
                   title={t('state.mediaFailed.title')}
                   body={t('state.mediaFailed.body')}
                   action={
-                    <Button variant="stage" onClick={skip}>
+                    <Button variant="stage" onClick={() => claim.mutate()}>
                       {t('state.mediaFailed.action')}
                     </Button>
                   }

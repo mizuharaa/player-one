@@ -165,6 +165,17 @@ export function registerSessionRoutes(
      * machine client that never sent one is unaffected.
      */
     const wanted = str('role');
+    /**
+     * A role this service does not know is a refusal, not a shrug. Falling
+     * through as if it were absent means a typo, an older client or a probe
+     * silently gets whichever path happens to match — the opposite of what an
+     * explicit choice is for. `str` answers `''` for a field that is not there,
+     * and that stays the "no preference" value: a machine client which never
+     * sent a role is entitled to the original behaviour.
+     */
+    if (wanted !== '' && wanted !== 'operator' && wanted !== 'reviewer') {
+      return reply.code(400).send({ error: 'unknown role' });
+    }
     const reviewer =
       wanted === 'operator'
         ? null

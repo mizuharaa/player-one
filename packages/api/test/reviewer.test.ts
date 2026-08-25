@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { execFile } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -105,6 +104,9 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
       tokenSecret: SECRET,
       mediaRoot: options.mediaRoot,
       reviewerMediaEnabled: options.reviewerMediaEnabled,
+      // `buildApi` refuses reviewer media with the session cookie in clear, so
+      // the flag brings TLS with it here exactly as it must in a deployment.
+      secureCookies: options.reviewerMediaEnabled === true,
     });
     await app.ready();
 
@@ -605,6 +607,17 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
         select reviewer_ref from episode_reviews where episode_id = ${onEpisode}
       `)) as unknown as { reviewer_ref: string }[];
       expect(held!.reviewer_ref).toBe(on.ids.reviewer);
+
+      // Nor can the page keep that lease alive. Refused, it lapses and the
+      // episode returns to the queue, which is what withdrawal should mean; a
+      // heartbeat that still worked would hold unwatchable footage for as long
+      // as the tab stayed open.
+      const beat = await withdrawn.inject({
+        method: 'POST',
+        url: `/api/review/heartbeat/${onEpisode}`,
+        headers: on.reviewerHeaders,
+      });
+      expect(beat.statusCode, beat.body).toBe(451);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -873,41 +886,48 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
       },
     });
     expect(noFallthrough.statusCode, noFallthrough.body).toBe(401);
+
+    // A role this service does not know is refused, not treated as absent. A
+    // typo or an older client silently getting whichever path matches is the
+    // opposite of what an explicit choice is for.
+    const nonsense = await h.app.inject({
+      method: 'POST',
+      url: '/api/session',
+      payload: { role: 'admin', external_ref: 'pax-01', operator_secret: 'pw' },
+    });
+    expect(nonsense.statusCode, nonsense.body).toBe(400);
+
+    // And a client that sends no role at all still works, unchanged.
+    const legacy = await h.app.inject({
+      method: 'POST',
+      url: '/api/session',
+      payload: { external_ref: 'pax-01', operator_secret: 'pw' },
+    });
+    expect(legacy.statusCode, legacy.body).toBe(200);
+    expect(legacy.json().role).toBe('reviewer');
   });
 
-  it('refuses to start with remote playback on and the session cookie in clear', async () => {
+  it('refuses to build a service with remote playback on and the cookie in clear', async () => {
     /**
-     * `PLAYERONE_SECURE_COOKIES` is off by default and that default is right
-     * for a pilot upload centre: the LAN is plain HTTP and a `Secure` cookie is
-     * simply never sent, which shows up as a sign-in that appears to do
-     * nothing. It is not right for a process streaming raw footage to Shenzhen
-     * over the public internet on a twelve-hour bearer cookie, so the two flags
-     * are checked against each other at boot rather than discovered in
-     * production.
+     * `secureCookies` is off by default and that default is right for a pilot
+     * upload centre: the LAN is plain HTTP and a `Secure` cookie is never sent
+     * at all, which reads as a sign-in that does nothing. It is not right for a
+     * service streaming raw footage to Shenzhen on a twelve-hour bearer cookie.
      *
-     * The guard runs before the database is opened, so this needs no server.
+     * The rule is in `buildApi` and not in `bin/serve.ts`, so an embedded
+     * caller cannot assemble the insecure combination either — which is the
+     * whole reason this asserts on the constructor rather than on a process.
      */
-    const exitCode = await new Promise<number>((resolve) => {
-      execFile(
-        process.execPath,
-        ['packages/api/bin/serve.ts'],
-        {
-          cwd: join(import.meta.dirname, '..', '..', '..'),
-          env: {
-            ...process.env,
-            DATABASE_URL: 'postgres://nobody@127.0.0.1:1/none',
-            PLAYERONE_TOKEN_SECRET: 'k',
-            PLAYERONE_REVIEWER_MEDIA: '1',
-            PLAYERONE_SECURE_COOKIES: '',
-          },
-        },
-        (err, _stdout, stderr) => {
-          expect(stderr).toContain('PLAYERONE_SECURE_COOKIES=1');
-          resolve((err as { code?: number } | null)?.code ?? 0);
-        },
-      );
-    });
-    expect(exitCode).toBe(2);
+    const d = await db();
+    expect(() => buildApi({ db: d, tokenSecret: SECRET, reviewerMediaEnabled: true })).toThrow(
+      /secureCookies/,
+    );
+    // Both halves of the pair are fine on their own: an upload centre on plain
+    // HTTP with no reviewer media, and a TLS deployment with it.
+    expect(() => buildApi({ db: d, tokenSecret: SECRET })).not.toThrow();
+    expect(() =>
+      buildApi({ db: d, tokenSecret: SECRET, reviewerMediaEnabled: true, secureCookies: true }),
+    ).not.toThrow();
   });
 
   // -------------------------------------------------------------------------

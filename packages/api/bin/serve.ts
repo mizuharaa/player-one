@@ -33,6 +33,14 @@ const host = env['HOST'] ?? '127.0.0.1';
 const port = Number(env['PORT'] ?? 8080);
 
 /**
+ * `buildApi` refuses the two together — reviewer media on with the session
+ * cookie in clear — so the rule lives in the service and this file only reads
+ * the environment. See `ApiOptions.reviewerMediaEnabled`.
+ */
+const secureCookies = env['PLAYERONE_SECURE_COOKIES'] === '1';
+const reviewerMediaEnabled = env['PLAYERONE_REVIEWER_MEDIA'] === '1';
+
+/**
  * A pool, not a single connection.
  *
  * `open` defaults to one because it was written for the ingest CLI, where one
@@ -41,30 +49,6 @@ const port = Number(env['PORT'] ?? 8080);
  * behind each other — `for update skip locked` has nothing to skip when there is
  * no second transaction holding a row.
  */
-const secureCookies = env['PLAYERONE_SECURE_COOKIES'] === '1';
-const reviewerMediaEnabled = env['PLAYERONE_REVIEWER_MEDIA'] === '1';
-
-/**
- * The two flags are independent everywhere except here.
- *
- * `secureCookies` defaults off because a pilot upload centre is a LAN over
- * plain HTTP, where a `Secure` cookie is never sent at all. That default is
- * justified by the LAN and by nothing else. The moment
- * `PLAYERONE_REVIEWER_MEDIA` is set, this process is streaming raw
- * Vietnamese-collected footage to Shenzhen — over the public internet, to a
- * session carried by a twelve-hour bearer cookie. Sending that cookie in clear
- * is not a configuration mistake to discover later, so the process refuses to
- * start instead.
- */
-if (reviewerMediaEnabled && !secureCookies) {
-  console.error(
-    'PLAYERONE_REVIEWER_MEDIA=1 streams raw footage to remote reviewers, so the session',
-    'cookie must not travel in clear. Set PLAYERONE_SECURE_COOKIES=1 and terminate TLS',
-    'in front of this process, or leave reviewer media off.',
-  );
-  exit(2);
-}
-
 const db = await open(databaseUrl, { max: Number(env['PLAYERONE_DB_POOL'] ?? 10) });
 
 const app = buildApi({

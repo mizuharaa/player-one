@@ -668,6 +668,15 @@ export function registerReview(
    * rather than logging each beat.
    */
   app.post('/api/review/heartbeat/:id', opts, async (req, reply) => {
+    /**
+     * The same gate as the claim and the verdict, because a lease outlives the
+     * policy that granted it. A reviewer holding an episode when the process
+     * restarts with playback withdrawn could otherwise extend it forever from a
+     * page they left open, keeping footage they cannot watch off everybody
+     * else's queue. Refused here, the lease simply lapses and the episode goes
+     * back — which is what withdrawal should mean.
+     */
+    if (!mayWatch(req)) return withheld(reply);
     const reviewer = reviewerOf(req.actor!);
     const episodeId = (req.params as { id: string }).id;
     const rows = (await db.execute(sql`

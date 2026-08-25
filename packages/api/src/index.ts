@@ -116,6 +116,26 @@ export function buildApi({
   reviewerMediaEnabled = false,
 }: ApiOptions): FastifyInstance {
   if (!tokenSecret) throw new Error('tokenSecret is required');
+  /**
+   * A service invariant, not an entrypoint check.
+   *
+   * `secureCookies` defaults off and that default is right for a pilot upload
+   * centre: the LAN is plain HTTP and a `Secure` cookie is never sent at all,
+   * which reads as a sign-in that silently does nothing. It is not right for a
+   * service streaming raw Vietnamese-collected footage to Shenzhen on a
+   * twelve-hour bearer cookie. Enforcing it here rather than in `bin/serve.ts`
+   * means an embedded caller cannot assemble the insecure combination either.
+   *
+   * The message names the environment variable although this is a library,
+   * because the only thing anybody will do with the error is set it.
+   */
+  if (reviewerMediaEnabled && !secureCookies) {
+    throw new Error(
+      'reviewerMediaEnabled requires secureCookies: streaming raw footage to a remote ' +
+        'reviewer must not carry the session cookie in clear (PLAYERONE_SECURE_COOKIES=1, ' +
+        'with TLS terminated in front of this process)',
+    );
+  }
   const app = Fastify({ logger: false });
 
   /**
