@@ -104,12 +104,16 @@ export class MockCollectorApi implements CollectorApi {
     ];
     this.incomeRows = [
       // Confirmed: a verdict exists, the server wrote the settlement row.
+      // `pending_settlement` and not `pending_review`: both are legal values
+      // of `settlements.settlement_state`, but the verdict path writes this
+      // one (`packages/api/src/review.ts:777`), and a settlement that reached
+      // the collector's income screen is by definition past review.
       {
         episodeId: 'ego1-20260819-1120',
         effectiveMinutes: '41.5',
         amountVnd: '49800',
         kind: 'confirmed',
-        settlementState: 'pending_review',
+        settlementState: 'pending_settlement',
       },
       { episodeId: 'ego1-20260819-0640', effectiveMinutes: '0', amountVnd: '0', kind: 'confirmed', settlementState: null },
       // Estimated: uploaded but not yet decided. Server's estimate, not ours.

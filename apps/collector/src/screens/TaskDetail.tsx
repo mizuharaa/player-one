@@ -48,15 +48,29 @@ export function TaskDetail() {
   // A failed query used to fall into the same branch as a pending one, so a
   // dead network read "Đang tải…" for ever with no way out. Error and loading
   // are different screens, and the error one has a button.
-  if (task.isError) {
+  //
+  // All three queries, not just the task: `profile` decides whether the exam
+  // gate is shown and `claims` decides whether this task is already claimed,
+  // so a failed read of either used to become a business answer — "you have
+  // not passed the exam", "you have not claimed this" — when the truth was
+  // "we do not know". Unknown state offers no action; it offers a retry.
+  const failed = [task, profile, claims].find((q) => q.isError);
+  if (failed !== undefined) {
     return (
       <Screen title={tt('detail.title')}>
         <Note text={tt('common.loadFailed')} />
-        <Button label={tt('common.retry')} onPress={() => void task.refetch()} />
+        <Button
+          label={tt('common.retry')}
+          onPress={() => {
+            void task.refetch();
+            void profile.refetch();
+            void claims.refetch();
+          }}
+        />
       </Screen>
     );
   }
-  if (task.data === undefined) {
+  if (task.data === undefined || profile.data === undefined || claims.data === undefined) {
     return (
       <Screen title={tt('detail.title')}>
         <Body muted>{tt('common.loading')}</Body>
@@ -64,8 +78,8 @@ export function TaskDetail() {
     );
   }
 
-  const examPassed = profile.data?.examPassed === true;
-  const alreadyClaimed = (claims.data ?? []).some((c) => c.taskId === taskId);
+  const examPassed = profile.data !== null && profile.data.examPassed;
+  const alreadyClaimed = claims.data.some((c) => c.taskId === taskId);
   const full = task.data.claimants >= task.data.maxClaimants;
 
   return (

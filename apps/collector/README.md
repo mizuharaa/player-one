@@ -98,3 +98,15 @@ Every one of these is marked `ponytail:` at the place it bites:
   in this app without forking, so it was: it now measures 7.19:1.
 - One-column phone layout only. No tablet or foldable adaptation — none is
   specified, and the pilot is phones.
+- Safe area is the top inset only. Bottom, side, cutout and IME insets, and
+  predictive back, need `react-native-safe-area-context` and platform
+  navigation — both native modules (`src/ui.tsx`, `src/nav.tsx`).
+- The six agreement identifiers are pinned by a literal on each side of a
+  repository boundary. A rename in this app fails a test here; a rename in the
+  platform's `collector_agreements_name_check` cannot be seen from this repo at
+  all. A published contract artifact or a cross-repo CI check is owed. Nothing
+  can be written against the constraint today in any case — `collector_agreements`
+  exists only in an unpushed working branch of the platform repo.
+- No test renders a screen or drives navigation, so labels, focus and error
+  announcements are asserted by reading the code, not the accessibility tree.
+  That needs a React Native test renderer this project does not have.

@@ -248,7 +248,12 @@ export function Button({
         borderRadius: theme.radius.sm,
         paddingVertical: theme.space[3],
         paddingHorizontal: theme.space[4],
+        // Android's minimum touch target is 48dp and padding alone did not
+        // reach it. space[12] is 48. Same on `Choice`, whose chips were the
+        // smallest targets in the app.
+        minHeight: theme.space[12],
         alignItems: 'center',
+        justifyContent: 'center',
         opacity: pressed ? 0.85 : 1,
       })}
     >
@@ -313,6 +318,8 @@ export function Choice({
         borderRadius: theme.radius.pill,
         paddingVertical: theme.space[2],
         paddingHorizontal: theme.space[4],
+        minHeight: theme.space[12],
+        justifyContent: 'center',
       }}
     >
       <Text style={{ color: theme.color.foreground, fontSize: theme.fontSize.sm }}>
