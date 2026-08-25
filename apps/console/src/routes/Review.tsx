@@ -89,6 +89,29 @@ export function ReviewScreen() {
     onSuccess: (next) => adopt(next),
   });
 
+  /**
+   * Give this episode back, then take the next one.
+   *
+   * The plain `claim.mutate()` is right when the lease is already gone. It is
+   * wrong after a playback failure: that lease is still live and still ours, so
+   * claiming again leaves it held for the full lease window on footage nobody
+   * is looking at. A reviewer hitting retry on a bad mount would walk the queue
+   * and lock every episode they touched. The release is awaited rather than
+   * fired off, because the row has to be free before the claim looks for it,
+   * and it is logged server-side like every other release.
+   */
+  const skip = useCallback(() => {
+    const held = episodeRef.current;
+    if (held === null) {
+      claim.mutate();
+      return;
+    }
+    void api
+      .release(held)
+      .catch(() => undefined)
+      .finally(() => claim.mutate());
+  }, [claim]);
+
   /** Claim the first episode when the screen opens. */
   const claimMutate = claim.mutate;
   useEffect(() => {
@@ -100,6 +123,9 @@ export function ReviewScreen() {
      ------------------------------------------------------------------ */
 
   const episodeId = episode?.episode_id ?? null;
+  /** Read by `skip`, which must not be rebuilt every time the episode changes. */
+  const episodeRef = useRef<string | null>(null);
+  episodeRef.current = episodeId;
 
   useEffect(() => {
     if (episodeId === null || lost !== null) return;
@@ -391,7 +417,7 @@ export function ReviewScreen() {
                   title={t('state.mediaFailed.title')}
                   body={t('state.mediaFailed.body')}
                   action={
-                    <Button variant="stage" onClick={() => claim.mutate()}>
+                    <Button variant="stage" onClick={skip}>
                       {t('state.mediaFailed.action')}
                     </Button>
                   }

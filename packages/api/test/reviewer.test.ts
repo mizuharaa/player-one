@@ -573,6 +573,38 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
         on.reviewerHeaders,
       );
       expect(notTheirs.statusCode, notTheirs.body).toBe(403);
+
+      /**
+       * And the policy can be withdrawn under a live lease.
+       *
+       * A reviewer holding a claimed episode when the flag is turned off is the
+       * case that matters at acceptance: whatever they had open, no verdict, no
+       * settlement and no payment audit row may commit after the withdrawal.
+       * Same database, same token, a process started with the flag off — which
+       * is what a restart after Legal changes its mind actually looks like.
+       */
+      const withdrawn = buildApi({ db: on.d, tokenSecret: SECRET, mediaRoot: root });
+      await withdrawn.ready();
+      const afterWithdrawal = await withdrawn.inject({
+        method: 'POST',
+        url: '/api/review/verdict',
+        payload: { verdict_id: uid(), episode_id: onEpisode, decision: 'good' },
+        headers: on.reviewerHeaders,
+      });
+      expect(afterWithdrawal.statusCode, afterWithdrawal.body).toBe(451);
+      const [after] = (await on.d.execute(sql`
+        select
+          (select count(*) from settlements) as settlements,
+          (select count(*) from episode_reviews where review_state <> 'pending') as decided,
+          (select count(*) from audit_events where action = 'episode.review') as audited
+      `)) as unknown as Record<string, string>[];
+      expect(after).toEqual({ settlements: '0', decided: '0', audited: '0' });
+      // The lease itself is untouched: withdrawing the policy is not a release,
+      // and the row still names the reviewer who was holding it.
+      const [held] = (await on.d.execute(sql`
+        select reviewer_ref from episode_reviews where episode_id = ${onEpisode}
+      `)) as unknown as { reviewer_ref: string }[];
+      expect(held!.reviewer_ref).toBe(on.ids.reviewer);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
