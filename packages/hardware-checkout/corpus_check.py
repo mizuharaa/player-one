@@ -78,9 +78,9 @@ def first_pts(path):
 
 
 def media_for(pts_path):
-    """The MP4 a camera sidecar indexes, by name. None for audio."""
-    mp4 = pts_path.with_name(pts_path.name[: -len("_pts.csv")] + ".mp4")
-    return mp4 if mp4.exists() else None
+    """The MP4 a camera sidecar indexes, by name. Returned whether or not it is
+    on disk - a camera part with no MP4 is a finding, not an absence."""
+    return pts_path.with_name(pts_path.name[: -len("_pts.csv")] + ".mp4")
 
 
 def packet_count(mp4):
@@ -165,7 +165,7 @@ def gap_sec(first_us, start_dt):
     return round((naive - start_dt).total_seconds(), 3)
 
 
-def verdict(rows, partial, packets, manifest):
+def verdict(rows, partial, packets, manifest, media="n/a"):
     """Which of the engine's defect codes this stream earns.
 
     The distinction matters and is easy to get backwards. A sidecar shorter than
@@ -173,7 +173,16 @@ def verdict(rows, partial, packets, manifest):
     disagrees with the MANIFEST is only the manifest being advisory
     (`FRAMECOUNT-MISMATCH`) - the manifest overstates on every closed session in
     the corpus while the sidecar matches the media exactly. Codes are the ones
-    in packages/contracts/src/episode.ts, deliberately."""
+    in packages/contracts/src/episode.ts, deliberately.
+
+    `media` says what the packet reference is worth. A camera part whose MP4 is
+    absent or unreadable is its OWN failure and must never fall through to the
+    audio tail-only path: with no packets to compare against, a half-length
+    sidecar reads as healthy, which is exactly backwards."""
+    if media in ("missing", "unreadable"):
+        return "MEDIA-" + media.upper()
+    if media == "unmeasured":
+        return "UNMEASURED"  # re-run with --packets
     if packets is None:
         # Audio: the WAV gives no packet reference the sidecar can be measured
         # against, so only the tail is evidence. TAIL-OK is not OK.
@@ -214,10 +223,18 @@ def analyse_session(d, with_packets=False):
         size = sum(sizes)
         f0 = first_pts(files[0])
         m = claimed.get(name)
+        # One packet result per camera part, or the whole stream is a failure.
+        # Dropping the missing ones and summing the rest hid both a camera with
+        # no MP4 at all and a two-part camera missing its second file.
         packets = None
-        if with_packets:
-            got = [packet_count(x) for x in (media_for(p) for p in files) if x]
-            packets = sum(got) if got and None not in got else None
+        media = "n/a" if name == "audio" else "unmeasured"
+        if with_packets and name != "audio":
+            mp4s = [media_for(p) for p in files]
+            got = [packet_count(m) if m.exists() else None for m in mp4s]
+            packets = sum(got) if None not in got else None
+            media = ("ok" if packets is not None
+                     else "missing" if not all(m.exists() for m in mp4s)
+                     else "unreadable")
         out["streams"][name] = {
             "pts_files": [p.name for p in files],
             "pts_rows": rows,
@@ -225,7 +242,8 @@ def analyse_session(d, with_packets=False):
             "pts_bytes": size,
             "manifest_frames": m,
             "media_packets": packets,
-            "verdict": verdict(rows, partial, packets, m),
+            "media": media,
+            "verdict": verdict(rows, partial, packets, m, media),
             "buffer_suspect": [
                 {"file": f.name, "bytes": b, "units": b // BUFFER_UNIT}
                 for f, b in zip(files, sizes) if b % BUFFER_UNIT == 0
@@ -279,6 +297,9 @@ def render(report):
                 "-" if pk is None else pk, "-" if m is None else m,
                 st["verdict"]))
     print("  TAIL-OK: audio, which has no packet reference; only its tail is checked.")
+    print("  UNMEASURED: camera, no packet count taken - re-run with --packets.")
+    print("  MEDIA-MISSING / MEDIA-UNREADABLE: a camera part has no usable MP4,")
+    print("  so its sidecar cannot be checked for truncation at all.")
 
     print("\n== buffer: PTS files whose size is an exact multiple of %d"
           % BUFFER_UNIT)
@@ -428,6 +449,40 @@ def check(report):
     return failed == 0
 
 
+def selftest():
+    """The one runnable check for the cases the real corpus cannot show, because
+    every session in it happens to have all its MP4s. Builds a session in a temp
+    dir and asserts a camera sidecar with no media is its own failure rather
+    than quietly inheriting the audio tail-only verdict."""
+    import tempfile
+    assert verdict(10, False, None, None, "missing") == "MEDIA-MISSING"
+    assert verdict(10, False, None, None, "unreadable") == "MEDIA-UNREADABLE"
+    assert verdict(10, False, None, None, "unmeasured") == "UNMEASURED"
+    assert verdict(10, False, None, None, "n/a") == "TAIL-OK"      # audio
+    assert verdict(0, False, None, None, "n/a") == "PTS-TRUNCATED"  # empty audio
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / "ego_TEST00000000_20260825_000000"
+        d.mkdir()
+        (d / "meta_x.json").write_text(json.dumps(
+            {"recording": {"status": "completed",
+                           "start_time": "2026-08-25T00:00:00"},
+             "statistics": {"video_left_frame_count": 3}}), encoding="utf-8")
+        # A row per line, terminated: a healthy-looking sidecar with no media.
+        (d / "x_camera_left_part0_pts.csv").write_text(
+            "1787616000000000\n1787616000033000\n", encoding="utf-8")
+        (d / "x_audio_part0_pts.csv").write_text(
+            "1787616000000000\n", encoding="utf-8")
+        got = analyse(d.parent, with_packets=True)[0]["streams"]
+        assert got["camera_left"]["verdict"] == "MEDIA-MISSING", got
+        assert got["camera_left"]["media_packets"] is None, got
+        assert got["audio"]["verdict"] == "TAIL-OK", got
+        # Without --packets a camera is not silently blessed either.
+        un = analyse(d.parent, with_packets=False)[0]["streams"]
+        assert un["camera_left"]["verdict"] == "UNMEASURED", un
+    print("selftest: PASS")
+    return True
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -436,9 +491,14 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true", help="machine-readable report")
     ap.add_argument("--packets", action="store_true",
                     help="count MP4 packets with ffprobe (a second full read)")
+    ap.add_argument("--selftest", action="store_true",
+                    help="run the built-in assertions; needs no corpus")
     ap.add_argument("--check", action="store_true",
                     help="assert known corpus numbers; implies --packets")
     a = ap.parse_args(argv)
+    if a.selftest:
+        selftest()
+        return 0
 
     root = a.sessions_dir or find_corpus()
     if root is None or not root.is_dir():

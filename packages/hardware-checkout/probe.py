@@ -48,7 +48,10 @@ class Sdk:
         dll = bin_dir / "OrbbecSDK.dll"
         if not dll.exists():
             raise FileNotFoundError(dll)
-        os.add_dll_directory(str(bin_dir))
+        # Keep the cookie: it is what holds the search-path entry open. Dropping
+        # it lets CPython close the directory immediately, and the SDK's sibling
+        # DLLs then only resolve if they happen to be on PATH.
+        self._dll_dir = os.add_dll_directory(str(bin_dir))
         self.lib = ctypes.CDLL(str(dll))
         L = self.lib
         for fn, res, args in [
@@ -87,41 +90,52 @@ class Sdk:
 
 
 def probe(bin_dir: Path):
+    """Every acquisition is paired with its release in a finally, including the
+    ones between: an SDK error partway down used to leak the context and the
+    device list, which on a re-probe of the same unit shows up as a device that
+    is already claimed."""
     sdk = Sdk(bin_dir)
-    ctx = sdk.call("ob_create_context")
-    lst = sdk.call("ob_query_device_list", ctx)
     devices = []
+    ctx = sdk.call("ob_create_context")
     try:
-        for i in range(sdk.call("ob_device_list_get_count", lst)):
-            dev = sdk.call("ob_device_list_get_device", lst, i)
-            try:
-                info = sdk.call("ob_device_get_device_info", dev)
-                d = {}
-                for key, fn in STR_GETTERS.items():
-                    v = sdk.call(fn, info)
-                    d[key] = v.decode(errors="replace") if v else None
-                sl = sdk.call("ob_device_get_sensor_list", dev)
+        lst = sdk.call("ob_query_device_list", ctx)
+        try:
+            for i in range(sdk.call("ob_device_list_get_count", lst)):
+                dev = sdk.call("ob_device_list_get_device", lst, i)
                 try:
-                    ids = [
-                        sdk.call("ob_sensor_list_get_sensor_type", sl, j)
-                        for j in range(sdk.call("ob_sensor_list_get_count", sl))
-                    ]
-                    # Raw values are kept alongside the names so a stale table
-                    # cannot launder itself into the record: an off-by-one map
-                    # turns [4,5,11,12,13] into GYRO/IR_LEFT/IR_RIGHT/COLOR_LEFT
-                    # and reads perfectly plausible.
-                    d["sensor_ids"] = ids
-                    d["sensors"] = [SENSOR_TYPES.get(t, str(t)) for t in ids]
+                    devices.append(read_device(sdk, dev))
                 finally:
-                    sdk.call("ob_delete_sensor_list", sl)
-                sdk.call("ob_delete_device_info", info)
-                devices.append(d)
-            finally:
-                sdk.call("ob_delete_device", dev)
+                    sdk.call("ob_delete_device", dev)
+        finally:
+            sdk.call("ob_delete_device_list", lst)
     finally:
-        sdk.call("ob_delete_device_list", lst)
         sdk.call("ob_delete_context", ctx)
     return devices
+
+
+def read_device(sdk, dev):
+    info = sdk.call("ob_device_get_device_info", dev)
+    try:
+        d = {}
+        for key, fn in STR_GETTERS.items():
+            v = sdk.call(fn, info)
+            d[key] = v.decode(errors="replace") if v else None
+    finally:
+        sdk.call("ob_delete_device_info", info)
+    sl = sdk.call("ob_device_get_sensor_list", dev)
+    try:
+        ids = [
+            sdk.call("ob_sensor_list_get_sensor_type", sl, j)
+            for j in range(sdk.call("ob_sensor_list_get_count", sl))
+        ]
+    finally:
+        sdk.call("ob_delete_sensor_list", sl)
+    # Raw values are kept alongside the names so a stale table cannot launder
+    # itself into the record: an off-by-one map turns [4,5,11,12,13] into
+    # GYRO/IR_LEFT/IR_RIGHT/COLOR_LEFT and reads perfectly plausible.
+    d["sensor_ids"] = ids
+    d["sensors"] = [SENSOR_TYPES.get(t, str(t)) for t in ids]
+    return d
 
 
 def main(argv=None):

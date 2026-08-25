@@ -1,12 +1,15 @@
 /**
  * Where is the `moov` atom?
  *
- * The review screen's seeking rests entirely on this. An MP4 with `moov` before
- * `mdat` can be seeked after one small range request: the index is at the front,
- * so the browser reads it and then asks for exactly the bytes it needs. An MP4
- * with `moov` at the end has its index behind the media, so a browser must
- * fetch the tail before it can seek anywhere — and with some servers or some
- * players, effectively the whole file.
+ * The review screen's seeking rests entirely on this. `moov` before `mdat` puts
+ * the index at the front, so a player can read it before it has the media —
+ * a NECESSARY condition for cheap seeking, not a measurement of it. What a seek
+ * actually costs on these files is UNVERIFIED: nobody has issued a byte-range
+ * request against the served clips, and a fragmented MP4 without a useful `sidx`
+ * can make a player walk fragments regardless. An MP4 with `moov` at the end has
+ * its index behind the media, so a browser must fetch the tail before it can seek
+ * anywhere — and with some servers or some players, effectively the whole file.
+ * That direction is the one this gate is confident about.
  *
  * That is not something the console can fix. If PaXini's encoder writes the
  * index last, the fix is a remux at ingest — `ffmpeg -c copy -movflags
@@ -99,7 +102,7 @@ for (const path of paths) {
           : moov > mdat
             ? 'BACK — seeking needs the tail first; remux at ingest'
             : tiled
-              ? 'FRONT — seeking is one small range request'
+              ? 'FRONT — index ahead of the media; seek cost unverified'
               : 'DAMAGED — moov is at the front, but the boxes do not tile the file';
     if (!verdict.startsWith('FRONT')) failures += 1;
     console.log(

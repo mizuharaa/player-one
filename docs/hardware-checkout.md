@@ -43,7 +43,9 @@ directory in the working directory — gitignored, delete it freely.
 `corpus_check.py` takes a sessions directory, `--json` for a machine-readable
 report, `--packets` to count MP4 packets with `ffprobe` (a second full read of
 every video, so it is opt-in), and `--check` to assert the reference numbers and
-print PASS/FAIL. `--check` implies `--packets`.
+print PASS/FAIL. `--check` implies `--packets`. `--selftest` runs the built-in
+assertions and needs no corpus and no device — it covers the cases the reference
+corpus cannot show, chiefly a camera sidecar whose MP4 is absent.
 
 Exit codes, `probe.py`: 0 ok, 1 the DLL would not load, 2 an SDK call failed,
 3 the SDK loaded and found no device. `corpus_check.py`: 0 ok, 1 no corpus or a
@@ -244,7 +246,7 @@ head-steadiness number only.
 **Result (reference corpus, re-run 2026-08-25).** ✅ mean |a| 9.870–9.998
 m/s² on all five sessions, −Y−Z on all five. Per unit: ____________
 
-### 10. Abrupt stop leaves an unflushed PTS sidecar
+### 10. Abrupt stop leaves a *recognisably truncated* PTS sidecar
 
 **Purpose.** This is how the fleet will fail in the field — a flat battery or a
 yanked strap — and the resulting session must be *recognisable* as truncated
@@ -261,9 +263,17 @@ python packages/hardware-checkout/corpus_check.py /path/to/sessions
 
 Read the `== buffer` section.
 
-**Expected.** The interrupted session's PTS sidecars have sizes that are exact
-multiples of 4096, and `status` stays `recording`. A cleanly closed session has
-no entry in that section at all.
+**Expected — this is what pass/fail turns on.** Read the `== truncation`
+section first: the interrupted session's streams must come back
+`PTS-TRUNCATED`, i.e. **measured** loss — an unterminated final row, or fewer
+PTS rows than the media has packets — and `status` stays `recording`. A cleanly
+closed session must show no `PTS-TRUNCATED` stream.
+
+The `== buffer` 4096-byte table is **corroborating telemetry, not the test**. A
+4 KiB-multiple size on an interrupted sidecar supports the buffering story; its
+absence does not clear the unit, and its presence on a clean session does not
+condemn one. Do not fail a unit on a boundary hit alone, and do not pass one
+that shows measured truncation without a boundary hit.
 
 **The boundary hit is a signal, not a proof, and it is not proof of firmware
 buffering specifically.** Any 4096-byte file trips it. The analyser therefore
@@ -289,8 +299,12 @@ interrupted sessions:
 The three closed sessions have sizes 3532, 3872, 4365, 4705, 4790, 4807, 5334 —
 none of them a multiple, and none of them corroborated by anything else.
 
-**Result (reference corpus, re-run 2026-08-25).** ✅ six corroborated hits,
-all in the two interrupted sessions; zero hits on the three closed ones.
+**Result (reference corpus, re-run 2026-08-25).** ✅ Measured: every stream of
+both interrupted sessions is `PTS-TRUNCATED`, no stream of the three closed
+sessions is. Corroborating: six 4096-boundary hits, all six in the two
+interrupted sessions and all six carrying other evidence; zero on the closed
+ones — on this corpus the boundary signal happens to agree with the measurement
+exactly, which is why it is easy to mistake for the test itself.
 Per unit: ____________
 
 ---
@@ -549,6 +563,13 @@ and the manifest may still disagree. Verdicts use the engine's own codes from
   index loss.
 - `TAIL-OK` — audio only. A WAV gives no packet count, so only the tail is
   evidence. It is not a clean bill of health.
+- `UNMEASURED` — a camera stream with no packet count taken. Re-run with
+  `--packets`. A camera is never given a verdict it did not earn.
+- `MEDIA-MISSING` / `MEDIA-UNREADABLE` — a camera part has no usable MP4, so
+  its sidecar cannot be checked for truncation at all. This is a **failure in
+  its own right**: with no packet reference, a half-length sidecar would
+  otherwise read as healthy, which is exactly backwards. Every camera part must
+  produce its own packet count; a multi-part stream missing one file fails.
 
 Reference corpus, measured 2026-08-25:
 
@@ -626,7 +647,9 @@ the gate had to stop exiting 0. `072538_camera_left` tiles and reads `FRONT`.
 seeking, not a proof of it. Nobody has yet issued a byte-range request against
 one of these files through the review lane and measured how many round trips a
 seek costs — the fragmented layout means a player without `sidx` walks
-fragments. Treat "one small range request" as the expected case, unverified,
+fragments. The gate prints `FRONT — index ahead of the media; seek cost
+unverified` for exactly this reason. Treat "one small range request" as the
+expected case, unverified,
 and measure it when the review lane serves real footage.
 
 **Result.** ✅ moov front on 10/10, fragmented, no remux needed.
