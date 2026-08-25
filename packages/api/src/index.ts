@@ -4,7 +4,7 @@ import { schema, seedCatalogues, type Db } from '@playerone/store';
 import { auditLogin } from './audit.ts';
 import { registerBackOffice } from './backoffice.ts';
 
-export { REFUSALS } from './backoffice.ts';
+export { API_REFUSALS, REFUSALS } from './backoffice.ts';
 import { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';

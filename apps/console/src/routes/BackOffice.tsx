@@ -23,6 +23,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { MESSAGES } from '@playerone/api/i18n';
 import { AppShell } from '../components/shell/AppShell.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { EmptyState, Panel, Problem, Skeleton } from '../components/ui/primitives.tsx';
@@ -31,6 +32,7 @@ import { cn } from '../lib/cn.ts';
 import {
   ApiError,
   backOffice,
+  type BoAgreement,
   type BoCollector,
   type BoDevice,
   type BoTask,
@@ -39,29 +41,18 @@ import {
 type Tab = 'tasks' | 'collectors' | 'devices';
 const TABS: Tab[] = ['tasks', 'collectors', 'devices'];
 
-/** The one place a server refusal becomes a sentence in the reader's language. */
-const REFUSAL_KEYS = new Set([
-  'task_claims_capacity',
-  'task_claims_exam_gate',
-  'task_claims_qualified_gate',
-  'task_claims_consent_gate',
-  'task_claims_published_gate',
-  'task_claims_live_key',
-  'task_claims_id_reused',
-  'tasks_status_transition',
-  'tasks_price_frozen',
-  'collector_agreements_append_only',
-  'devices_retired_unbound_check',
-  'collectors_external_ref_key',
-  'devices_hardware_serial_key',
-  'device_already_bound',
-]);
-
+/**
+ * The one place a server refusal becomes a sentence in the reader's language.
+ *
+ * The catalogue itself is the list of refusals it can name — a hand-kept copy
+ * of the server's set is a third place to add a constraint to, and the one
+ * nobody remembers. A 409 whose constraint has no sentence falls through to the
+ * generic line, which is exactly what an unknown refusal should look like.
+ */
 const refusalKey = (error: unknown): string => {
   const detail = error instanceof ApiError ? error.detail : undefined;
-  return typeof detail === 'string' && REFUSAL_KEYS.has(detail)
-    ? `bo.refused.${detail}`
-    : 'bo.refused.unknown';
+  const key = `bo.refused.${String(detail)}`;
+  return typeof detail === 'string' && key in MESSAGES.en ? key : 'bo.refused.unknown';
 };
 
 export function BackOfficeScreen() {
@@ -111,7 +102,7 @@ export function BackOfficeScreen() {
             body={t(refused)}
             action={
               <Button variant="outline" size="sm" onClick={() => setRefused(null)}>
-                {t('bo.task.cancel')}
+                {t('bo.cancel')}
               </Button>
             }
           />
@@ -135,6 +126,7 @@ function Tasks({ onRefused }: { onRefused: (key: string | null) => void }) {
   const { t } = useTranslation();
   const client = useQueryClient();
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
   /**
    * The id this form will submit under, minted once and kept until a create
    * actually lands. See the comment at the `id:` below for why a retry has to
@@ -147,27 +139,54 @@ function Tasks({ onRefused }: { onRefused: (key: string | null) => void }) {
     queryFn: backOffice.tasks,
   });
 
+  const done = () => {
+    onRefused(null);
+    void client.invalidateQueries({ queryKey: ['bo', 'tasks'] });
+  };
+  const failed = (err: unknown) => onRefused(refusalKey(err));
+
   const publish = useMutation({
     mutationFn: ({ id, status }: { id: string; status: BoTask['status'] }) =>
       backOffice.setTaskStatus(id, status),
+    onSuccess: done,
+    onError: failed,
+  });
+
+  const edit = useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & Parameters<typeof backOffice.setTask>[1]) =>
+      backOffice.setTask(id, body),
     onSuccess: () => {
-      onRefused(null);
-      void client.invalidateQueries({ queryKey: ['bo', 'tasks'] });
+      setEditing(null);
+      done();
     },
-    onError: (err) => onRefused(refusalKey(err)),
+    onError: failed,
   });
 
   const create = useMutation({
     mutationFn: backOffice.createTask,
     onSuccess: () => {
-      onRefused(null);
       setCreating(false);
       // Landed, so the next form is a new request rather than a replay of this one.
       setRequestId(crypto.randomUUID());
-      void client.invalidateQueries({ queryKey: ['bo', 'tasks'] });
+      done();
     },
-    onError: (err) => onRefused(refusalKey(err)),
+    onError: failed,
   });
+
+  /**
+   * Closing the form ends this request; opening it starts a new one.
+   *
+   * The id is minted once and kept while the form is open, because a retry of
+   * a submit that may already have landed has to carry the same one. It was
+   * only rotated on success, so an id that came back `*_id_reused` stayed in
+   * the form: cancel, reopen, and the operator resubmits the same poisoned id
+   * for ever, with a page reload as the only way out. Cancelling is the
+   * explicit "not this request" the rotation was missing.
+   */
+  const cancelOrOpen = () => {
+    if (creating) setRequestId(crypto.randomUUID());
+    setCreating(!creating);
+  };
 
   if (error) return <LoadFailed />;
   if (isPending) return <TableSkeleton />;
@@ -177,8 +196,8 @@ function Tasks({ onRefused }: { onRefused: (key: string | null) => void }) {
   return (
     <>
       <div className="mb-4 flex justify-end">
-        <Button variant={creating ? 'ghost' : 'primary'} onClick={() => setCreating(!creating)}>
-          {creating ? t('bo.task.cancel') : t('bo.task.new')}
+        <Button variant={creating ? 'ghost' : 'primary'} onClick={cancelOrOpen}>
+          {creating ? t('bo.cancel') : t('bo.task.new')}
         </Button>
       </div>
 
@@ -222,6 +241,7 @@ function Tasks({ onRefused }: { onRefused: (key: string | null) => void }) {
               name="claimants"
               type="number"
               min={1}
+              max={2147483647}
               defaultValue={1}
               required
             />
@@ -249,43 +269,119 @@ function Tasks({ onRefused }: { onRefused: (key: string | null) => void }) {
           ]}
         >
           {tasks.map((task) => (
-            <tr key={task.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]">
-              <Td className="font-semibold">{task.name}</Td>
-              <Td className="text-[var(--muted-foreground)]">{task.type ?? '—'}</Td>
-              {/* As stored. Not through Intl: this number multiplies into a payment. */}
-              <Td className="num text-[var(--tech-600)]">{task.unit_price}</Td>
-              <Td className="num">{durationShort(task.target_effective_duration_s)}</Td>
-              <Td className="num">
-                {task.claimants} / {task.max_concurrent_claimants}
-              </Td>
-              <Td>
-                <Pill tone={task.status === 'published' ? 'pass' : task.status === 'draft' ? 'partial' : 'reject'}>
-                  {t(`bo.task.state.${task.status}`)}
-                </Pill>
-              </Td>
-              <Td className="text-right">
-                {task.status === 'draft' ? (
+            <Rows key={task.id}>
+              <tr className="border-b border-[var(--border)] hover:bg-[var(--muted)]">
+                <Td className="font-semibold">{task.name}</Td>
+                <Td className="text-[var(--muted-foreground)]">{task.type ?? '—'}</Td>
+                {/* As stored. Not through Intl: this number multiplies into a payment. */}
+                <Td className="num text-[var(--tech-600)]">{task.unit_price}</Td>
+                <Td className="num">{durationShort(task.target_effective_duration_s)}</Td>
+                <Td className="num">
+                  {task.claimants} / {task.max_concurrent_claimants}
+                </Td>
+                <Td>
+                  <Pill tone={task.status === 'published' ? 'pass' : task.status === 'draft' ? 'partial' : 'reject'}>
+                    {t(`bo.task.state.${task.status}`)}
+                  </Pill>
+                </Td>
+                <Td className="space-x-2 whitespace-nowrap text-right">
                   <Button
                     size="sm"
-                    variant="secondary"
-                    disabled={publish.isPending}
-                    onClick={() => publish.mutate({ id: task.id, status: 'published' })}
+                    variant="ghost"
+                    onClick={() => setEditing(editing === task.id ? null : task.id)}
                   >
-                    {t('bo.task.publish')}
+                    {editing === task.id ? t('bo.cancel') : t('bo.edit')}
                   </Button>
-                ) : null}
-                {task.status === 'published' ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={publish.isPending}
-                    onClick={() => publish.mutate({ id: task.id, status: 'taken_down' })}
+                  {task.status === 'draft' ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={publish.isPending}
+                      onClick={() => publish.mutate({ id: task.id, status: 'published' })}
+                    >
+                      {t('bo.task.publish')}
+                    </Button>
+                  ) : null}
+                  {task.status === 'published' ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={publish.isPending}
+                      onClick={() => publish.mutate({ id: task.id, status: 'taken_down' })}
+                    >
+                      {t('bo.task.takeDown')}
+                    </Button>
+                  ) : null}
+                </Td>
+              </tr>
+
+              {editing === task.id ? (
+                <EditRow span={7}>
+                  <form
+                    className="grid gap-4 sm:grid-cols-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const form = new FormData(e.currentTarget);
+                      const target = String(form.get('target') ?? '').trim();
+                      edit.mutate({
+                        id: task.id,
+                        name: String(form.get('name')),
+                        type: String(form.get('type')),
+                        target_effective_duration_s: target === '' ? null : target,
+                        max_concurrent_claimants: Number(form.get('claimants')),
+                        /**
+                         * Only a draft carries a price field. Once the task is
+                         * published the figure is what its claimants agreed to
+                         * and `tasks_price_frozen` refuses the change; sending
+                         * it unchanged would still be sending it, and the first
+                         * person to edit the number would meet a 409 they could
+                         * have been told about by the form not being there.
+                         */
+                        ...(task.status === 'draft' ? { unit_price: String(form.get('price')) } : {}),
+                      });
+                    }}
                   >
-                    {t('bo.task.takeDown')}
-                  </Button>
-                ) : null}
-              </Td>
-            </tr>
+                    <Field label={t('bo.task.name')} name="name" defaultValue={task.name} required />
+                    <Field label={t('bo.task.type')} name="type" defaultValue={task.type ?? ''} required />
+                    {task.status === 'draft' ? (
+                      <Field
+                        label={t('bo.task.rate')}
+                        name="price"
+                        defaultValue={task.unit_price}
+                        required
+                        inputMode="decimal"
+                        pattern="\d{1,8}(\.\d{1,4})?"
+                      />
+                    ) : (
+                      <p className="self-end text-[0.8125rem] leading-snug text-[var(--muted-foreground)]">
+                        {t('bo.task.priceFrozen')}
+                      </p>
+                    )}
+                    <Field
+                      label={t('bo.task.target')}
+                      name="target"
+                      defaultValue={task.target_effective_duration_s ?? ''}
+                      inputMode="decimal"
+                      pattern="\d{1,12}(\.\d{1,6})?"
+                    />
+                    <Field
+                      label={t('bo.task.maxClaimants')}
+                      name="claimants"
+                      type="number"
+                      min={1}
+                      max={2147483647}
+                      defaultValue={task.max_concurrent_claimants}
+                      required
+                    />
+                    <div className="flex items-end">
+                      <Button type="submit" variant="primary" disabled={edit.isPending}>
+                        {edit.isPending ? t('bo.working') : t('bo.save')}
+                      </Button>
+                    </div>
+                  </form>
+                </EditRow>
+              ) : null}
+            </Rows>
           ))}
         </Table>
       )}
@@ -300,21 +396,55 @@ function Tasks({ onRefused }: { onRefused: (key: string | null) => void }) {
 function Collectors({ onRefused }: { onRefused: (key: string | null) => void }) {
   const { t } = useTranslation();
   const client = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const [consenting, setConsenting] = useState<string | null>(null);
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
 
   const { data, isPending, error } = useQuery({
     queryKey: ['bo', 'collectors'],
     queryFn: backOffice.collectors,
   });
 
+  const done = () => {
+    onRefused(null);
+    void client.invalidateQueries({ queryKey: ['bo', 'collectors'] });
+  };
+  const failed = (err: unknown) => onRefused(refusalKey(err));
+
   const update = useMutation({
     mutationFn: ({ id, ...body }: { id: string } & Parameters<typeof backOffice.setCollector>[1]) =>
       backOffice.setCollector(id, body),
     onSuccess: () => {
-      onRefused(null);
-      void client.invalidateQueries({ queryKey: ['bo', 'collectors'] });
+      setConsenting(null);
+      done();
     },
-    onError: (err) => onRefused(refusalKey(err)),
+    onError: failed,
   });
+
+  const create = useMutation({
+    mutationFn: backOffice.createCollector,
+    onSuccess: () => {
+      setCreating(false);
+      setRequestId(crypto.randomUUID());
+      done();
+    },
+    onError: failed,
+  });
+
+  /**
+   * Closing the form ends this request; opening it starts a new one.
+   *
+   * The id is minted once and kept while the form is open, because a retry of
+   * a submit that may already have landed has to carry the same one. It was
+   * only rotated on success, so an id that came back `*_id_reused` stayed in
+   * the form: cancel, reopen, and the operator resubmits the same poisoned id
+   * for ever, with a page reload as the only way out. Cancelling is the
+   * explicit "not this request" the rotation was missing.
+   */
+  const cancelOrOpen = () => {
+    if (creating) setRequestId(crypto.randomUUID());
+    setCreating(!creating);
+  };
 
   if (error) return <LoadFailed />;
   if (isPending) return <TableSkeleton />;
@@ -322,80 +452,216 @@ function Collectors({ onRefused }: { onRefused: (key: string | null) => void }) 
   const collectors = data?.collectors ?? [];
   const names = data?.required_agreements ?? [];
   const required = names.length;
-  const accepted = (c: BoCollector) =>
-    new Set(c.agreements.map((a) => a.agreement).filter((a) => names.includes(a))).size;
+  const held = (c: BoCollector) =>
+    new Set(c.agreements.map((a) => a.agreement).filter((a) => names.includes(a)));
   const exam = (result: BoCollector['exam_result']) =>
     result === null ? t('bo.collector.exam.none') : t(`bo.collector.exam.${result}`);
 
-  if (collectors.length === 0) return <EmptyState title={t('bo.empty')} body={t('bo.collector.gate')} />;
-
   return (
     <>
-      <Table
-        head={[
-          t('bo.collector.ref'),
-          t('bo.collector.status'),
-          t('bo.collector.exam'),
-          t('bo.collector.agreements'),
-          '',
-        ]}
-      >
-        {collectors.map((c) => (
-          <tr key={c.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]">
-            <Td className="num font-semibold">{c.external_ref}</Td>
-            <Td>
-              <Pill tone={c.status === 'qualified' ? 'pass' : c.status === 'pending' ? 'partial' : 'reject'}>
-                {t(`bo.collector.status.${c.status}`)}
-              </Pill>
-            </Td>
-            <Td>
-              <Pill tone={c.exam_result === 'pass' ? 'pass' : c.exam_result === 'fail' ? 'reject' : 'partial'}>
-                {exam(c.exam_result)}
-              </Pill>
-            </Td>
-            {/*
-              PRV-01 wants all six, and the count has to be of distinct
-              agreements rather than of rows. Acceptances are append-only, so a
-              collector who accepted two versions of the privacy policy has two
-              rows for one agreement — and `agreements.length` then reads 6 / 6
-              while one of the six has never been accepted at all.
-            */}
-            <Td className="num">
-              {accepted(c)} / {required}
-            </Td>
-            <Td className="space-x-2 text-right">
-              {c.exam_result === 'pass' ? null : (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={update.isPending}
-                  onClick={() =>
-                    update.mutate({
-                      id: c.id,
-                      exam: { result: 'pass', decided_at: new Date().toISOString() },
-                    })
-                  }
-                >
-                  {t('bo.collector.markPass')}
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={update.isPending}
-                onClick={() =>
-                  update.mutate({
-                    id: c.id,
-                    status: c.status === 'suspended' ? 'qualified' : 'suspended',
-                  })
-                }
-              >
-                {c.status === 'suspended' ? t('bo.collector.qualify') : t('bo.collector.suspend')}
+      <div className="mb-4 flex justify-end">
+        <Button variant={creating ? 'ghost' : 'primary'} onClick={cancelOrOpen}>
+          {creating ? t('bo.cancel') : t('bo.collector.new')}
+        </Button>
+      </div>
+
+      {creating ? (
+        <Panel className="mb-6 p-5">
+          <form
+            className="grid gap-4 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const form = new FormData(e.currentTarget);
+              create.mutate({
+                id: requestId,
+                external_ref: String(form.get('ref')),
+                status: String(form.get('status')) as BoCollector['status'],
+              });
+            }}
+          >
+            <Field label={t('bo.collector.ref')} name="ref" required />
+            <Select
+              label={t('bo.collector.status')}
+              name="status"
+              defaultValue="pending"
+              options={(['pending', 'qualified', 'suspended'] as const).map((s) => ({
+                value: s,
+                label: t(`bo.collector.status.${s}`),
+              }))}
+            />
+            <div className="flex items-end">
+              <Button type="submit" variant="primary" disabled={create.isPending}>
+                {create.isPending ? t('bo.working') : t('bo.collector.create')}
               </Button>
-            </Td>
-          </tr>
-        ))}
-      </Table>
+            </div>
+          </form>
+        </Panel>
+      ) : null}
+
+      {collectors.length === 0 ? (
+        <EmptyState title={t('bo.empty')} body={t('bo.collector.gate')} />
+      ) : (
+        <Table
+          head={[
+            t('bo.collector.ref'),
+            t('bo.collector.status'),
+            t('bo.collector.exam'),
+            t('bo.collector.agreements'),
+            '',
+          ]}
+        >
+          {collectors.map((c) => {
+            const accepted = held(c);
+            const missing = names.filter((n) => !accepted.has(n));
+            return (
+              <Rows key={c.id}>
+                <tr className="border-b border-[var(--border)] hover:bg-[var(--muted)]">
+                  <Td className="num font-semibold">{c.external_ref}</Td>
+                  <Td>
+                    <select
+                      className="h-8 rounded-[var(--radius-sm)] border border-[var(--border-strong)] bg-[var(--card)] px-2 text-[0.8125rem]"
+                      aria-label={t('bo.collector.status')}
+                      value={c.status}
+                      disabled={update.isPending}
+                      onChange={(e) =>
+                        update.mutate({ id: c.id, status: e.target.value as BoCollector['status'] })
+                      }
+                    >
+                      {(['pending', 'qualified', 'suspended'] as const).map((s) => (
+                        <option key={s} value={s}>
+                          {t(`bo.collector.status.${s}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </Td>
+                  <Td>
+                    <Pill tone={c.exam_result === 'pass' ? 'pass' : c.exam_result === 'fail' ? 'reject' : 'partial'}>
+                      {exam(c.exam_result)}
+                    </Pill>
+                  </Td>
+                  {/*
+                    PRV-01 wants all six, and the count has to be of distinct
+                    agreements rather than of rows. Acceptances are append-only, so a
+                    collector who accepted two versions of the privacy policy has two
+                    rows for one agreement — and `agreements.length` then reads 6 / 6
+                    while one of the six has never been accepted at all.
+                  */}
+                  <Td>
+                    <span className="num">
+                      {accepted.size} / {required}
+                    </span>
+                    {missing.length > 0 ? (
+                      <span className="ml-2 text-[0.8125rem] text-[var(--muted-foreground)]">
+                        {t('bo.collector.missing')}:{' '}
+                        {missing.map((m) => t(`bo.collector.agreement.${m}`)).join(', ')}
+                      </span>
+                    ) : null}
+                  </Td>
+                  <Td className="space-x-2 whitespace-nowrap text-right">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setConsenting(consenting === c.id ? null : c.id)}
+                    >
+                      {consenting === c.id ? t('bo.cancel') : t('bo.collector.recordAgreement')}
+                    </Button>
+                    {c.exam_result === 'pass' ? null : (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={update.isPending}
+                        onClick={() =>
+                          update.mutate({
+                            id: c.id,
+                            exam: { result: 'pass', decided_at: new Date().toISOString() },
+                          })
+                        }
+                      >
+                        {t('bo.collector.markPass')}
+                      </Button>
+                    )}
+                    {c.exam_result === 'fail' ? null : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={update.isPending}
+                        onClick={() =>
+                          update.mutate({
+                            id: c.id,
+                            exam: { result: 'fail', decided_at: new Date().toISOString() },
+                          })
+                        }
+                      >
+                        {t('bo.collector.markFail')}
+                      </Button>
+                    )}
+                    {c.exam_result === null ? null : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={update.isPending}
+                        onClick={() => update.mutate({ id: c.id, exam: null })}
+                      >
+                        {t('bo.collector.clearExam')}
+                      </Button>
+                    )}
+                  </Td>
+                </tr>
+
+                {consenting === c.id ? (
+                  <EditRow span={5}>
+                    <form
+                      className="grid gap-4 sm:grid-cols-3"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const form = new FormData(e.currentTarget);
+                        update.mutate({
+                          id: c.id,
+                          agreements: [
+                            {
+                              agreement: String(form.get('agreement')),
+                              version: String(form.get('version')),
+                              /**
+                               * A `datetime-local` value has no zone, and the
+                               * server wants one. It is read as the operator's
+                               * own time, which is where the person signing was.
+                               */
+                              accepted_at: new Date(String(form.get('at'))).toISOString(),
+                            } as BoAgreement,
+                          ],
+                        });
+                      }}
+                    >
+                      <Select
+                        label={t('bo.collector.agreement')}
+                        name="agreement"
+                        defaultValue={missing[0] ?? names[0] ?? ''}
+                        options={names.map((n) => ({
+                          value: n,
+                          label: t(`bo.collector.agreement.${n}`),
+                        }))}
+                      />
+                      <Field label={t('bo.collector.version')} name="version" required />
+                      <Field
+                        label={t('bo.collector.acceptedAt')}
+                        name="at"
+                        type="datetime-local"
+                        defaultValue={localNow()}
+                        required
+                      />
+                      <div className="flex items-end sm:col-span-3">
+                        <Button type="submit" variant="primary" disabled={update.isPending}>
+                          {update.isPending ? t('bo.working') : t('bo.save')}
+                        </Button>
+                      </div>
+                    </form>
+                  </EditRow>
+                ) : null}
+              </Rows>
+            );
+          })}
+        </Table>
+      )}
       <p className="mt-4 max-w-[70ch] text-[0.8125rem] leading-relaxed text-[var(--muted-foreground)]">
         {t('bo.collector.gate')}
       </p>
@@ -410,6 +676,9 @@ function Collectors({ onRefused }: { onRefused: (key: string | null) => void }) 
 function Devices({ onRefused }: { onRefused: (key: string | null) => void }) {
   const { t } = useTranslation();
   const client = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
 
   const devices = useQuery({ queryKey: ['bo', 'devices'], queryFn: backOffice.devices });
   /** Binding needs the roll of collectors; the same list the other tab reads. */
@@ -428,97 +697,235 @@ function Devices({ onRefused }: { onRefused: (key: string | null) => void }) {
     onError: failed,
   });
   const unbind = useMutation({ mutationFn: backOffice.unbindDevice, onSuccess: done, onError: failed });
-  const setState = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: BoDevice['status'] }) =>
-      backOffice.setDevice(id, { status }),
-    onSuccess: done,
+  const update = useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & Parameters<typeof backOffice.setDevice>[1]) =>
+      backOffice.setDevice(id, body),
+    onSuccess: () => {
+      setEditing(null);
+      done();
+    },
     onError: failed,
   });
+  const create = useMutation({
+    mutationFn: backOffice.createDevice,
+    onSuccess: () => {
+      setCreating(false);
+      setRequestId(crypto.randomUUID());
+      done();
+    },
+    onError: failed,
+  });
+
+  /**
+   * Closing the form ends this request; opening it starts a new one.
+   *
+   * The id is minted once and kept while the form is open, because a retry of
+   * a submit that may already have landed has to carry the same one. It was
+   * only rotated on success, so an id that came back `*_id_reused` stayed in
+   * the form: cancel, reopen, and the operator resubmits the same poisoned id
+   * for ever, with a page reload as the only way out. Cancelling is the
+   * explicit "not this request" the rotation was missing.
+   */
+  const cancelOrOpen = () => {
+    if (creating) setRequestId(crypto.randomUUID());
+    setCreating(!creating);
+  };
 
   if (devices.error) return <LoadFailed />;
   if (devices.isPending) return <TableSkeleton />;
 
   const rows = devices.data?.devices ?? [];
+  const types = devices.data?.device_types ?? [];
   const roll = collectors.data?.collectors ?? [];
-  if (rows.length === 0) return <EmptyState title={t('bo.empty')} body={t('bo.intro')} />;
 
   return (
-    <Table
-      head={[
-        t('bo.device.serial'),
-        t('bo.device.type'),
-        t('bo.device.firmware'),
-        t('bo.device.state'),
-        t('bo.device.holder'),
-        '',
-      ]}
-    >
-      {rows.map((d) => (
-        <tr key={d.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]">
-          <Td className="num font-semibold">{d.hardware_serial}</Td>
-          <Td className="text-[var(--muted-foreground)]">{d.device_type_code ?? '—'}</Td>
-          <Td className="num">{d.firmware_version ?? '—'}</Td>
-          <Td>
-            <Pill tone={d.status === 'active' ? 'pass' : d.status === 'faulty' ? 'reject' : 'partial'}>
-              {t(`bo.device.state.${d.status}`)}
-            </Pill>
-            {d.fault_note ? (
-              <span className="ml-2 text-[0.8125rem] text-[var(--muted-foreground)]">{d.fault_note}</span>
-            ) : null}
-          </Td>
-          <Td className="num">
-            {d.bound_collector_ref ?? (
-              <span className="font-sans text-[var(--faint-foreground)]">{t('bo.device.unbound')}</span>
-            )}
-          </Td>
-          <Td className="space-x-2 whitespace-nowrap text-right">
-            {d.bound_collector_id === null ? (
-              <select
-                className="h-8 rounded-[var(--radius-sm)] border border-[var(--border-strong)] bg-[var(--card)] px-2 text-[0.8125rem]"
-                aria-label={t('bo.device.bind')}
-                value=""
-                disabled={bind.isPending || roll.length === 0}
-                onChange={(e) => bind.mutate({ id: d.id, collectorId: e.target.value })}
-              >
-                <option value="" disabled>
-                  {t('bo.device.bind')}
-                </option>
-                {roll.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.external_ref}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={unbind.isPending}
-                onClick={() => unbind.mutate(d.id)}
-              >
-                {t('bo.device.unbind')}
+    <>
+      <div className="mb-4 flex justify-end">
+        <Button
+          variant={creating ? 'ghost' : 'primary'}
+          disabled={types.length === 0}
+          onClick={cancelOrOpen}
+        >
+          {creating ? t('bo.cancel') : t('bo.device.new')}
+        </Button>
+      </div>
+
+      {/*
+        The roll is a second query, and a failed one used to show as a bind
+        control that was simply disabled — indistinguishable from "there is
+        nobody to bind to". Saying which of the two it is costs one line.
+      */}
+      {collectors.error ? (
+        <div className="mb-4">
+          <Problem title={t('bo.loadFailed')} body={t('bo.device.rollFailed')} />
+        </div>
+      ) : null}
+
+      {creating ? (
+        <Panel className="mb-6 p-5">
+          <form
+            className="grid gap-4 sm:grid-cols-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const form = new FormData(e.currentTarget);
+              const firmware = String(form.get('firmware') ?? '').trim();
+              create.mutate({
+                id: requestId,
+                device_type_id: String(form.get('type')),
+                hardware_serial: String(form.get('serial')),
+                ...(firmware === '' ? {} : { firmware_version: firmware }),
+              });
+            }}
+          >
+            <Select
+              label={t('bo.device.type')}
+              name="type"
+              defaultValue={types[0]?.id ?? ''}
+              options={types.map((ty) => ({ value: ty.id, label: ty.code }))}
+            />
+            <Field label={t('bo.device.serial')} name="serial" required />
+            <Field label={t('bo.device.firmware')} name="firmware" />
+            <div className="flex items-end sm:col-span-3">
+              <Button type="submit" variant="primary" disabled={create.isPending}>
+                {create.isPending ? t('bo.working') : t('bo.device.create')}
               </Button>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={setState.isPending}
-              onClick={() =>
-                setState.mutate({ id: d.id, status: d.status === 'faulty' ? 'active' : 'faulty' })
-              }
-            >
-              {d.status === 'faulty' ? t('bo.device.markActive') : t('bo.device.markFaulty')}
-            </Button>
-          </Td>
-        </tr>
-      ))}
-    </Table>
+            </div>
+          </form>
+        </Panel>
+      ) : null}
+
+      {rows.length === 0 ? (
+        <EmptyState title={t('bo.empty')} body={t('bo.intro')} />
+      ) : (
+        <Table
+          head={[
+            t('bo.device.serial'),
+            t('bo.device.type'),
+            t('bo.device.firmware'),
+            t('bo.device.state'),
+            t('bo.device.holder'),
+            '',
+          ]}
+        >
+          {rows.map((d) => (
+            <Rows key={d.id}>
+              <tr className="border-b border-[var(--border)] hover:bg-[var(--muted)]">
+                <Td className="num font-semibold">{d.hardware_serial}</Td>
+                <Td className="text-[var(--muted-foreground)]">{d.device_type_code ?? '—'}</Td>
+                <Td className="num">{d.firmware_version ?? '—'}</Td>
+                <Td>
+                  <Pill tone={d.status === 'active' ? 'pass' : d.status === 'faulty' ? 'reject' : 'partial'}>
+                    {t(`bo.device.state.${d.status}`)}
+                  </Pill>
+                  {d.fault_note ? (
+                    <span className="ml-2 text-[0.8125rem] text-[var(--muted-foreground)]">{d.fault_note}</span>
+                  ) : null}
+                </Td>
+                <Td className="num">
+                  {d.bound_collector_ref ?? (
+                    <span className="font-sans text-[var(--faint-foreground)]">{t('bo.device.unbound')}</span>
+                  )}
+                </Td>
+                <Td className="space-x-2 whitespace-nowrap text-right">
+                  {d.bound_collector_id === null ? (
+                    <select
+                      className="h-8 rounded-[var(--radius-sm)] border border-[var(--border-strong)] bg-[var(--card)] px-2 text-[0.8125rem]"
+                      aria-label={t('bo.device.bind')}
+                      value=""
+                      disabled={bind.isPending || roll.length === 0}
+                      onChange={(e) => bind.mutate({ id: d.id, collectorId: e.target.value })}
+                    >
+                      <option value="" disabled>
+                        {t('bo.device.bind')}
+                      </option>
+                      {roll.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.external_ref}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={unbind.isPending}
+                      onClick={() => unbind.mutate(d.id)}
+                    >
+                      {t('bo.device.unbind')}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setEditing(editing === d.id ? null : d.id)}
+                  >
+                    {editing === d.id ? t('bo.cancel') : t('bo.edit')}
+                  </Button>
+                </Td>
+              </tr>
+
+              {editing === d.id ? (
+                <EditRow span={6}>
+                  <form
+                    className="grid gap-4 sm:grid-cols-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const form = new FormData(e.currentTarget);
+                      const firmware = String(form.get('firmware') ?? '').trim();
+                      const note = String(form.get('note') ?? '').trim();
+                      update.mutate({
+                        id: d.id,
+                        firmware_version: firmware === '' ? null : firmware,
+                        fault_note: note === '' ? null : note,
+                        status: String(form.get('state')) as BoDevice['status'],
+                      });
+                    }}
+                  >
+                    <Field
+                      label={t('bo.device.firmware')}
+                      name="firmware"
+                      defaultValue={d.firmware_version ?? ''}
+                    />
+                    <Select
+                      label={t('bo.device.state')}
+                      name="state"
+                      defaultValue={d.status}
+                      options={(['active', 'faulty', 'retired'] as const).map((s) => ({
+                        value: s,
+                        label: t(`bo.device.state.${s}`),
+                      }))}
+                    />
+                    <Field
+                      label={t('bo.device.faultNote')}
+                      name="note"
+                      defaultValue={d.fault_note ?? ''}
+                      hint={t('bo.device.retireNote')}
+                    />
+                    <div className="flex items-end sm:col-span-3">
+                      <Button type="submit" variant="primary" disabled={update.isPending}>
+                        {update.isPending ? t('bo.working') : t('bo.save')}
+                      </Button>
+                    </div>
+                  </form>
+                </EditRow>
+              ) : null}
+            </Rows>
+          ))}
+        </Table>
+      )}
+    </>
   );
 }
 
 /* -------------------------------------------------------------------------
    The small shared pieces of this screen.
    ---------------------------------------------------------------------- */
+
+/** `<input type="datetime-local">` wants local wall-clock, with no zone on it. */
+function localNow(): string {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
 
 function Table({ head, children }: { head: string[]; children: React.ReactNode }) {
   return (
@@ -544,6 +951,21 @@ function Table({ head, children }: { head: string[]; children: React.ReactNode }
   );
 }
 
+/** A row and the editor that opens under it, which `<tbody>` needs as siblings. */
+function Rows({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
+}
+
+function EditRow({ span, children }: { span: number; children: React.ReactNode }) {
+  return (
+    <tr className="border-b border-[var(--border)] bg-[var(--muted)]">
+      <td colSpan={span} className="px-4 py-4">
+        {children}
+      </td>
+    </tr>
+  );
+}
+
 function Td({ className, children }: { className?: string; children: React.ReactNode }) {
   return <td className={cn('px-4 py-3 text-[0.875rem]', className)}>{children}</td>;
 }
@@ -559,6 +981,11 @@ function Pill({ tone, children }: { tone: 'pass' | 'partial' | 'reject'; childre
   );
 }
 
+const FIELD_LABEL =
+  'text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]';
+const FIELD_INPUT =
+  'mt-1 h-10 w-full rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 text-[0.9375rem]';
+
 function Field({
   label,
   hint,
@@ -566,18 +993,32 @@ function Field({
 }: { label: string; hint?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <label className="block">
-      <span className="text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]">
-        {label}
-      </span>
-      <input
-        {...rest}
-        className="mt-1 h-10 w-full rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 text-[0.9375rem]"
-      />
+      <span className={FIELD_LABEL}>{label}</span>
+      <input {...rest} className={FIELD_INPUT} />
       {hint ? (
         <span className="mt-1 block text-[0.75rem] leading-snug text-[var(--muted-foreground)]">
           {hint}
         </span>
       ) : null}
+    </label>
+  );
+}
+
+function Select({
+  label,
+  options,
+  ...rest
+}: { label: string; options: { value: string; label: string }[] } & React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <label className="block">
+      <span className={FIELD_LABEL}>{label}</span>
+      <select {...rest} className={FIELD_INPUT}>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }

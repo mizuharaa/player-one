@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LightMyRequestResponse } from 'fastify';
 import { open, schema } from '@playerone/store';
-import { REFUSALS, buildApi, hashCredential } from '../src/index.ts';
+import { API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
 import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
@@ -188,16 +190,63 @@ describe.skipIf(!hasDb())('the back office', () => {
     // 1350.5 and lose the scale the settlement re-derives an amount from.
     expect(typeof task!['unit_price']).toBe('string');
 
-    const replay = await c.post('/api/tasks', {
+    const same = {
+      id,
+      name: 'kitchen work',
+      type: 'home',
+      unit_price: '1350.5000',
+      target_effective_duration_s: '7200.000000',
+      max_concurrent_claimants: 3,
+    };
+    const replay = await c.post('/api/tasks', same);
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json().replayed).toBe(true);
+    expect(await count('tasks')).toBe(3);
+
+    // The figure is compared by the column, not by the string: the same price
+    // written with a shorter scale is the same price, and a replay of a form
+    // that spelled it `1350.5` must not read as different terms.
+    const shorter = await c.post('/api/tasks', { ...same, unit_price: '1350.5' });
+    expect(shorter.statusCode, shorter.body).toBe(200);
+    expect(shorter.json().replayed).toBe(true);
+  });
+
+  it('will not report a create as replayed when that id already names other terms', async () => {
+    /**
+     * The dangerous half of an idempotent create. `onConflictDoNothing` writes
+     * nothing whether the row is identical or completely different, so a form
+     * re-submitted with a corrected price used to answer 200 `replayed: true`
+     * having changed nothing — the operator is told the new figure is what the
+     * table holds, on the number every payment is multiplied by.
+     */
+    await seed();
+    const c = await client();
+    const id = uid();
+    const body = {
       id,
       name: 'kitchen work',
       type: 'home',
       unit_price: '1350.5000',
       max_concurrent_claimants: 3,
-    });
-    expect(replay.statusCode).toBe(200);
-    expect(replay.json().replayed).toBe(true);
-    expect(await count('tasks')).toBe(3);
+    };
+    expect((await c.post('/api/tasks', body)).statusCode).toBe(201);
+
+    const changed = await c.post('/api/tasks', { ...body, unit_price: '1.0000' });
+    expect(changed.statusCode).toBe(409);
+    expect(changed.json().constraint).toBe('tasks_id_reused');
+
+    const [task] = await rows<{ unit_price: string }>(
+      sql`select unit_price from tasks where id = ${id}`,
+    );
+    expect(task!.unit_price, 'the refused create must not have changed the price').toBe('1350.5000');
+
+    // The same shape for the other two tables, because the same route pattern
+    // wrote all three.
+    const collector = uid();
+    expect((await c.post('/api/collectors', { id: collector, external_ref: 'c-new' })).statusCode).toBe(201);
+    const reused = await c.post('/api/collectors', { id: collector, external_ref: 'c-other' });
+    expect(reused.statusCode).toBe(409);
+    expect(reused.json().constraint).toBe('collectors_id_reused');
   });
 
   it('refuses a unit price the column cannot hold, before Postgres has to', async () => {
@@ -608,6 +657,309 @@ describe.skipIf(!hasDb())('the back office', () => {
       );
       expect(live!.n).toBe(1);
     });
+
+    it('will not lower the cap under the collectors already holding the task', async () => {
+      /**
+       * The insert path is not the only way past a cap. Editing the task down
+       * to one, with two collectors already holding it, leaves a row reading
+       * `2 / 1` — a state `task_claims_guard` says cannot exist, and one every
+       * later reader of `max_concurrent_claimants` has to be taught to
+       * distrust.
+       */
+      const ids = await seed();
+      await examined(ids.collector1, 'pass');
+      await examined(ids.collector2, 'pass');
+      const c = await client();
+      const first = uid();
+      await c.post(`/api/tasks/${ids.taskA}/claims`, { id: first, collector_id: ids.collector1 });
+      await c.post(`/api/tasks/${ids.taskA}/claims`, { id: uid(), collector_id: ids.collector2 });
+
+      const refused = await c.patch(`/api/tasks/${ids.taskA}`, { max_concurrent_claimants: 1 });
+      expect(refused.statusCode).toBe(409);
+      expect(refused.json().constraint).toBe('tasks_capacity_below_live');
+
+      // Raising is never in question, and neither is lowering to what is held.
+      expect(
+        (await c.patch(`/api/tasks/${ids.taskA}`, { max_concurrent_claimants: 5 })).statusCode,
+      ).toBe(200);
+      expect(
+        (await c.patch(`/api/tasks/${ids.taskA}`, { max_concurrent_claimants: 2 })).statusCode,
+      ).toBe(200);
+
+      // And the wind-down that keeps the invariant true: release, then lower.
+      await c.post(`/api/task-claims/${first}/release`);
+      expect(
+        (await c.patch(`/api/tasks/${ids.taskA}`, { max_concurrent_claimants: 1 })).statusCode,
+      ).toBe(200);
+    });
+
+    /**
+     * The cap edit and the claim insert take the same lock, which is the only
+     * reason the pair is safe in either order.
+     *
+     * A trigger that merely counted would read its own snapshot, see one live
+     * claim, allow the drop to one, and only then block on the row — and
+     * Postgres does not re-run a BEFORE trigger after it re-fetches a row
+     * another transaction updated, so the count would never be taken again.
+     * The task ends up capped at one with two collectors on it.
+     */
+    it('will not lower the cap under a claim that is committing at the same moment', async () => {
+      const ids = await seed();
+      await examined(ids.collector1, 'pass');
+      await examined(ids.collector2, 'pass');
+      const c = await client();
+      await c.post(`/api/tasks/${ids.taskA}/claims`, { id: uid(), collector_id: ids.collector1 });
+
+      const a = await open(dbUrl(), { max: 1 });
+      const b = await open(dbUrl(), { max: 1 });
+      try {
+        let inserted: () => void = () => {};
+        let commit: () => void = () => {};
+        const claimInserted = new Promise<void>((resolve) => (inserted = resolve));
+        const held = new Promise<void>((resolve) => (commit = resolve));
+
+        // A second claim, in flight and uncommitted, holding the task row.
+        const claiming = a.transaction(async (tx) => {
+          await tx
+            .insert(schema.taskClaims)
+            .values({ id: uid(), taskId: ids.taskA, collectorId: ids.collector2 });
+          inserted();
+          await held;
+        });
+        await claimInserted;
+
+        // Wrapped, so exactly one statement runs however many observers it has.
+        let settled = false;
+        const lowering = (async () =>
+          b.execute(sql`update tasks set max_concurrent_claimants = 1 where id = ${ids.taskA}`))();
+        lowering.then(
+          () => (settled = true),
+          () => (settled = true),
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        expect(settled, 'the cap edit did not wait for the claim in flight').toBe(false);
+
+        commit();
+        await claiming;
+        await violates('tasks_capacity_below_live', lowering);
+      } finally {
+        await a.close();
+        await b.close();
+      }
+
+      const [task] = await rows<{ cap: number }>(
+        sql`select max_concurrent_claimants as cap from tasks where id = ${ids.taskA}`,
+      );
+      expect(task!.cap, 'the cap must still be the one both claimants fit under').toBe(2);
+    });
+  });
+
+  describe('a claim is a record, not a row', () => {
+    it('refuses to delete a claim, to move its start, or to rewrite its release', async () => {
+      /**
+       * `released_at` rather than a delete is what makes a claim the evidence
+       * behind a disputed payment. Until these triggers existed that was a
+       * description of what the API happened to do: one DELETE erased the
+       * claim, and one UPDATE moved the window it covered.
+       */
+      const ids = await seed();
+      await examined(ids.collector1, 'pass');
+      const c = await client();
+      const claim = uid();
+      await c.post(`/api/tasks/${ids.taskA}/claims`, { id: claim, collector_id: ids.collector1 });
+      const d = await db();
+
+      await violates(
+        'task_claims_history_immutable',
+        d.execute(sql`delete from task_claims where id = ${claim}`),
+      );
+      await violates(
+        'task_claims_history_immutable',
+        d.execute(
+          sql`update task_claims set claimed_at = now() - interval '1 day' where id = ${claim}`,
+        ),
+      );
+      await violates(
+        'task_claims_identity_immutable',
+        d.execute(sql`update task_claims set task_id = ${ids.taskB} where id = ${claim}`),
+      );
+      await violates(
+        'task_claims_identity_immutable',
+        d.execute(sql`update task_claims set collector_id = ${ids.collector2} where id = ${claim}`),
+      );
+
+      // Releasing is the one legal change, and it happens once.
+      expect((await c.post(`/api/task-claims/${claim}/release`)).statusCode).toBe(200);
+      await violates(
+        'task_claims_history_immutable',
+        d.execute(
+          sql`update task_claims set released_at = now() - interval '1 day' where id = ${claim}`,
+        ),
+      );
+
+      /**
+       * And un-releasing it, with the slot standing empty so that nothing else
+       * can be what refuses. `task_claims_guard_reclaim` passes here — the cap
+       * has room and the collector still qualifies — so the only thing left to
+       * say no is the history trigger. Clearing `released_at` cannot reopen the
+       * claim, because `claimed_at` is frozen: it would leave a row that reads
+       * as held continuously since the original claim, which is the interval a
+       * disputed payment is argued from.
+       */
+      await violates(
+        'task_claims_history_immutable',
+        d.execute(sql`update task_claims set released_at = null where id = ${claim}`),
+      );
+
+      const [row] = await rows<{ task_id: string; released_at: string | null }>(
+        sql`select task_id, released_at from task_claims where id = ${claim}`,
+      );
+      expect(row!.task_id).toBe(ids.taskA);
+      expect(row!.released_at).not.toBeNull();
+    });
+
+    it('will not report a released claim as one the collector still holds', async () => {
+      /**
+       * A replay is "you already have this". After a release the collector does
+       * not: the slot went back to the task and somebody else may be in it. The
+       * route used to answer 200 on the id and the pairing alone, which is the
+       * one answer that decides who is allowed to record and be paid.
+       */
+      const ids = await seed();
+      await examined(ids.collector1, 'pass');
+      const c = await client();
+      const claim = uid();
+      const body = { id: claim, collector_id: ids.collector1 };
+      expect((await c.post(`/api/tasks/${ids.taskA}/claims`, body)).statusCode).toBe(201);
+
+      const replay = await c.post(`/api/tasks/${ids.taskA}/claims`, body);
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json().replayed).toBe(true);
+
+      await c.post(`/api/task-claims/${claim}/release`);
+      const afterRelease = await c.post(`/api/tasks/${ids.taskA}/claims`, body);
+      expect(afterRelease.statusCode).toBe(409);
+      expect(afterRelease.json().constraint).toBe('task_claims_released');
+
+      const [live] = await rows<{ n: number }>(
+        sql`select count(*)::int as n from task_claims where id = ${claim} and released_at is null`,
+      );
+      expect(live!.n).toBe(0);
+    });
+
+    it('answers a repeated release with the moment it was released', async () => {
+      // The second click of a release that already landed is the same request
+      // arriving twice. A 404 there tells an operator whose first click worked
+      // that the claim is gone, and the next thing they do is go looking for it.
+      const ids = await seed();
+      await examined(ids.collector1, 'pass');
+      const c = await client();
+      const claim = uid();
+      await c.post(`/api/tasks/${ids.taskA}/claims`, { id: claim, collector_id: ids.collector1 });
+
+      const first = await c.post(`/api/task-claims/${claim}/release`);
+      expect(first.statusCode).toBe(200);
+      expect(first.json().replayed).toBe(false);
+
+      const again = await c.post(`/api/task-claims/${claim}/release`);
+      expect(again.statusCode).toBe(200);
+      expect(again.json().replayed).toBe(true);
+      expect(again.json().released_at).toBe(first.json().released_at);
+
+      // A claim id that never existed is still a 404.
+      expect((await c.post(`/api/task-claims/${uid()}/release`)).statusCode).toBe(404);
+
+      // One release, one audit row: the replay must not write a second.
+      const [events] = await rows<{ n: number }>(
+        sql`select count(*)::int as n from audit_events
+             where action = 'task.release' and target_id = ${claim}`,
+      );
+      expect(events!.n).toBe(1);
+    });
+  });
+
+  describe('the answer to a request that was simply malformed', () => {
+    it('is 400 for an id that is not one, rather than a cast error from Postgres', async () => {
+      const ids = await seed();
+      const c = await client();
+      for (const [method, url] of [
+        ['PATCH', '/api/tasks/not-a-uuid'],
+        ['PATCH', '/api/collectors/not-a-uuid'],
+        ['PATCH', '/api/devices/not-a-uuid'],
+        ['POST', '/api/tasks/not-a-uuid/claims'],
+        ['POST', '/api/task-claims/not-a-uuid/release'],
+        ['POST', '/api/devices/not-a-uuid/bind'],
+        ['POST', '/api/devices/not-a-uuid/unbind'],
+      ] as const) {
+        const res =
+          method === 'PATCH'
+            ? await c.patch(url, { status: 'draft' })
+            : await c.post(url, { id: uid(), collector_id: ids.collector1 });
+        expect(res.statusCode, url).toBe(400);
+      }
+    });
+
+    it('is 400 for an agreement version that is only whitespace', async () => {
+      // `min(1)` accepts a space; `collector_agreements_version_check` does not,
+      // and it fires below the route, where nothing turns it into a sentence.
+      const ids = await seed();
+      const c = await client();
+      const res = await c.patch(`/api/collectors/${ids.collector3}`, {
+        agreements: [{ agreement: 'user', version: '   ', accepted_at: new Date().toISOString() }],
+      });
+      expect(res.statusCode, res.body).toBe(400);
+    });
+
+    it('is 400 for a claimant cap the column cannot hold', async () => {
+      // 2^31 is a positive whole number and an integer overflow.
+      await seed();
+      const c = await client();
+      const res = await c.post('/api/tasks', {
+        id: uid(),
+        name: 'kitchen work',
+        type: 'home',
+        unit_price: '1200.0000',
+        max_concurrent_claimants: 2147483648,
+      });
+      expect(res.statusCode, res.body).toBe(400);
+    });
+
+    it('names the row that vanished, rather than 500ing on its foreign key', async () => {
+      /**
+       * Every id here came off a list the operator was shown, and a list goes
+       * stale. Claiming a task another operator has just removed is a person
+       * asking for something that is not there any more — a sentence on the
+       * screen, not a 500 with a constraint name in the server log.
+       */
+      const ids = await seed();
+      const c = await client();
+      const gone = await c.post(`/api/tasks/${uid()}/claims`, {
+        id: uid(),
+        collector_id: ids.collector1,
+      });
+      expect(gone.statusCode, gone.body).toBe(409);
+      expect(gone.json().constraint).toBe('task_claims_task_id_tasks_id_fk');
+
+      const noSuchCollector = await c.post(`/api/tasks/${ids.taskA}/claims`, {
+        id: uid(),
+        collector_id: uid(),
+      });
+      expect(noSuchCollector.statusCode).toBe(409);
+      expect(noSuchCollector.json().constraint).toBe('task_claims_collector_id_collectors_id_fk');
+
+      const bind = await c.post(`/api/devices/${ids.device1}/bind`, { collector_id: uid() });
+      expect(bind.statusCode).toBe(409);
+      expect(bind.json().constraint).toBe('devices_bound_collector_id_collectors_id_fk');
+
+      const device = await c.post('/api/devices', {
+        id: uid(),
+        device_type_id: uid(),
+        hardware_serial: 'AZER00000AA',
+      });
+      expect(device.statusCode).toBe(409);
+      expect(device.json().constraint).toBe('devices_device_type_id_device_types_id_fk');
+    });
   });
 
   // -- BO-03 / APP-02 / PRV-01: collectors ----------------------------------
@@ -688,6 +1040,88 @@ describe.skipIf(!hasDb())('the back office', () => {
     expect(kept.map((r) => new Date(r.accepted_at).toISOString())).toEqual([
       '2026-08-20T03:00:00.000Z',
       '2026-08-21T03:00:00.000Z',
+    ]);
+  });
+
+  it('will not call a create a replay when its acceptances are not on record', async () => {
+    /**
+     * A create that conflicts on the id returns before the acceptances are
+     * written, so `replayed: true` on the id and the reference alone reports
+     * six consents as landed while the table holds none. The status is
+     * deliberately NOT part of this comparison — it is what has happened to
+     * the collector since, and comparing it would refuse the honest retry this
+     * id exists to allow — but consent is evidence, and evidence has to exist.
+     */
+    await seed();
+    const c = await client();
+    const id = uid();
+    expect((await c.post('/api/collectors', { id, external_ref: 'c-5' })).statusCode).toBe(201);
+
+    const withConsent = await c.post('/api/collectors', {
+      id,
+      external_ref: 'c-5',
+      agreements: [{ agreement: 'privacy', version: 'v1', accepted_at: '2026-08-20T03:00:00.000Z' }],
+    });
+    expect(withConsent.statusCode, withConsent.body).toBe(409);
+    expect(withConsent.json().constraint).toBe('collectors_id_reused');
+    expect(await count('collector_agreements')).toBe(12); // the fixture's two, unchanged
+
+    // The same request once the acceptance really is on record replays cleanly,
+    // and a status that moved underneath it does not make it a different one.
+    await c.patch(`/api/collectors/${id}`, {
+      agreements: [{ agreement: 'privacy', version: 'v1', accepted_at: '2026-08-20T03:00:00.000Z' }],
+      status: 'qualified',
+    });
+    const again = await c.post('/api/collectors', {
+      id,
+      external_ref: 'c-5',
+      status: 'pending',
+      agreements: [{ agreement: 'privacy', version: 'v1', accepted_at: '2026-08-20T03:00:00.000Z' }],
+    });
+    expect(again.statusCode, again.body).toBe(200);
+    expect(again.json().replayed).toBe(true);
+  });
+
+  it('audits the acceptance that landed, not the one the form asked for', async () => {
+    /**
+     * `(collector, agreement, version)` is the key and the table is append-only,
+     * so reposting a version already on record writes nothing and keeps the
+     * original moment. The route used to audit the request body, which recorded
+     * an `accepted_at` the consent table never held — and consent evidence that
+     * disagrees with the consent table is the one kind of audit row worth less
+     * than no row at all.
+     */
+    await seed();
+    const c = await client();
+    const id = uid();
+    const at = (t: string) => ({
+      agreements: [{ agreement: 'privacy', version: 'v1', accepted_at: t }],
+    });
+    await c.post('/api/collectors', { id, external_ref: 'c-4', ...at('2026-08-20T03:00:00.000Z') });
+    // The same version again, claiming a different day.
+    expect(
+      (await c.patch(`/api/collectors/${id}`, at('2026-08-22T03:00:00.000Z'))).statusCode,
+    ).toBe(200);
+
+    const [stored] = await rows<{ accepted_at: Date }>(
+      sql`select accepted_at from collector_agreements
+           where collector_id = ${id} and agreement = 'privacy'`,
+    );
+    expect(new Date(stored!.accepted_at).toISOString()).toBe('2026-08-20T03:00:00.000Z');
+
+    const [update] = await rows<{ after: { agreements: unknown[] } }>(
+      sql`select after from audit_events
+           where action = 'collector.update' and target_id = ${id}`,
+    );
+    // Nothing landed, so the trail claims nothing.
+    expect(update!.after.agreements).toEqual([]);
+
+    const [create] = await rows<{ after: { agreements: { accepted_at: string }[] } }>(
+      sql`select after from audit_events
+           where action = 'collector.create' and target_id = ${id}`,
+    );
+    expect(create!.after.agreements.map((a) => a.accepted_at)).toEqual([
+      '2026-08-20T03:00:00.000Z',
     ]);
   });
 
@@ -938,23 +1372,103 @@ describe.skipIf(!hasDb())('the back office', () => {
     expect((await c.patch(`/api/tasks/${draft}`, { unit_price: '950.0000' })).statusCode).toBe(200);
   });
 
-  it('the console is told why every deliberate refusal happened', async () => {
-    /**
-     * A constraint added to migration 0006 and not added to `REFUSALS` still
-     * refuses, but it arrives as a 500 and the screen shows the generic
-     * failure. And one in `REFUSALS` with no message shows a blank. Both are
-     * one-line omissions that no other test notices, so this walks the set.
-     */
-    for (const constraint of REFUSALS) {
+  it('says in both languages why every refusal it can raise happened', async () => {
+    // A name in either set with no sentence behind it shows the reader a blank.
+    for (const constraint of [...REFUSALS, ...API_REFUSALS]) {
       const key = `bo.refused.${constraint}` as keyof typeof MESSAGES.en;
       expect(MESSAGES.en[key], `no English sentence for ${constraint}`).toBeTruthy();
       expect(MESSAGES.zh[key], `no Chinese sentence for ${constraint}`).toBeTruthy();
     }
-    // The two the API raises itself, which are not database constraints.
-    for (const constraint of ['device_already_bound', 'task_claims_id_reused']) {
-      const key = `bo.refused.${constraint}` as keyof typeof MESSAGES.en;
-      expect(MESSAGES.en[key], `no English sentence for ${constraint}`).toBeTruthy();
-      expect(MESSAGES.zh[key], `no Chinese sentence for ${constraint}`).toBeTruthy();
+  });
+
+  it('classifies every constraint the schema carries, discovered rather than listed', async () => {
+    /**
+     * The test this replaces walked `REFUSALS` and asked whether each name had
+     * a sentence. That can only find a missing sentence — it cannot find the
+     * mistake that actually happens, which is a constraint added to migration
+     * 0006 and to nothing else: it still refuses, but it arrives as a 500 and
+     * the console shows the generic failure.
+     *
+     * So the names come from the schema, in the two places a refusal can live:
+     * the catalogue of the running database (CHECKs, foreign keys, primary
+     * keys, unique indexes — Postgres reports whichever one rejected the
+     * statement) and the `CONSTRAINT = '...'` literals the migration's own
+     * triggers raise. Every one of them must be classified, and there are only
+     * two boxes: something a person can trip by asking for what the rules
+     * refuse, or something that means this code is wrong.
+     */
+    const TABLES = ['tasks', 'task_claims', 'collectors', 'collector_agreements', 'devices'];
+    const list = TABLES.map((t) => `'${t}'`).join(', ');
+
+    const declared = await rows<{ name: string }>(sql`
+      select conname as name
+        from pg_constraint
+       where conrelid::regclass::text in (${sql.raw(list)})
+         and contype in ('c', 'f', 'p', 'u')
+      union
+      select ci.relname as name
+        from pg_index i
+        join pg_class ci on ci.oid = i.indexrelid
+        join pg_class ct on ct.oid = i.indrelid
+       where ct.relname in (${sql.raw(list)}) and i.indisunique
+    `);
+    expect(declared.length, 'the five back-office tables should carry constraints').toBeGreaterThan(15);
+
+    /**
+     * Every migration, not the one this slice happens to have written. The
+     * back-office guards live in two files now — 0006 could not absorb them,
+     * because it is already applied wherever 4f1ef2e ran — and naming a file
+     * here is how the next split silently drops half the coverage.
+     */
+    const drizzle = join(import.meta.dirname, '..', '..', 'store', 'drizzle');
+    const migrations = readdirSync(drizzle)
+      .filter((f) => f.endsWith('.sql'))
+      .map((f) => readFileSync(join(drizzle, f), 'utf8'))
+      .join(' ');
+    const raised = [...migrations.matchAll(/CONSTRAINT = '([a-z0-9_]+)'/g)].map((m) => m[1]!);
+    expect(raised.length, 'the migrations raise named refusals').toBeGreaterThan(8);
+
+    /**
+     * The other box: a statement that trips one of these was built by this
+     * file, not asked for by a person, so it should read like the bug it is.
+     * Each of them is unreachable from a route for a stated reason.
+     */
+    const INTERNAL = new Set([
+      // Guarded by zod before the column ever sees the value.
+      'tasks_status_check',
+      'tasks_claimants_check',
+      'collectors_status_check',
+      'collectors_exam_result_check',
+      'devices_status_check',
+      'collector_agreements_name_check',
+      'collector_agreements_version_check',
+      // Written as a pair by the route, or not at all.
+      'collectors_exam_decided_check',
+      'devices_bound_at_check',
+      'task_claims_released_after_check',
+      // Every create is `onConflictDoNothing` on the primary key, so a repeat
+      // is a replay rather than an error.
+      'tasks_pkey',
+      'collectors_pkey',
+      'devices_pkey',
+      'task_claims_pkey',
+      'collector_agreements_collector_id_agreement_version_pk',
+      // The collector is written in the same transaction as its acceptances.
+      'collector_agreements_collector_id_collectors_id_fk',
+    ]);
+
+    for (const name of [...declared.map((d) => d.name), ...raised]) {
+      expect(
+        REFUSALS.has(name) || INTERNAL.has(name),
+        `${name} is neither a mapped refusal nor declared unreachable — a 500 with no sentence`,
+      ).toBe(true);
+    }
+
+    // And nothing in the map that the schema does not actually carry, which is
+    // how a renamed constraint leaves a dead entry behind.
+    const real = new Set([...declared.map((d) => d.name), ...raised]);
+    for (const name of REFUSALS) {
+      expect(real.has(name), `${name} is mapped but no constraint by that name exists`).toBe(true);
     }
   });
 

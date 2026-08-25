@@ -239,6 +239,16 @@ const send = (path: string, body?: unknown) =>
 const patch = (path: string, body: unknown) =>
   call<unknown>(path, { method: 'PATCH', body: JSON.stringify(body) });
 
+/** What BO-01 lets an operator change about a task after it exists. */
+export interface BoTaskEdit {
+  name?: string;
+  type?: string;
+  unit_price?: string;
+  target_effective_duration_s?: string | null;
+  max_concurrent_claimants?: number;
+  status?: BoTask['status'];
+}
+
 export const backOffice = {
   tasks: () => call<{ tasks: BoTask[] }>('/api/tasks'),
   createTask: (body: {
@@ -249,19 +259,42 @@ export const backOffice = {
     target_effective_duration_s?: string;
     max_concurrent_claimants: number;
   }) => send('/api/tasks', body),
+  setTask: (id: string, body: BoTaskEdit) => patch(`/api/tasks/${id}`, body),
   setTaskStatus: (id: string, status: BoTask['status']) => patch(`/api/tasks/${id}`, { status }),
 
   collectors: () =>
     call<{ required_agreements: string[]; collectors: BoCollector[] }>('/api/collectors'),
+  createCollector: (body: {
+    id: string;
+    external_ref: string;
+    status?: BoCollector['status'];
+  }) => send('/api/collectors', body),
   setCollector: (
     id: string,
-    body: { status?: BoCollector['status']; exam?: { result: 'pass' | 'fail'; decided_at: string } },
+    body: {
+      status?: BoCollector['status'];
+      /** `null` clears a result recorded against the wrong person. */
+      exam?: { result: 'pass' | 'fail'; decided_at: string } | null;
+      agreements?: BoAgreement[];
+    },
   ) => patch(`/api/collectors/${id}`, body),
 
   devices: () =>
     call<{ devices: BoDevice[]; device_types: { id: string; code: string }[] }>('/api/devices'),
-  setDevice: (id: string, body: { status?: BoDevice['status']; fault_note?: string | null }) =>
-    patch(`/api/devices/${id}`, body),
+  createDevice: (body: {
+    id: string;
+    device_type_id: string;
+    hardware_serial: string;
+    firmware_version?: string;
+  }) => send('/api/devices', body),
+  setDevice: (
+    id: string,
+    body: {
+      status?: BoDevice['status'];
+      firmware_version?: string | null;
+      fault_note?: string | null;
+    },
+  ) => patch(`/api/devices/${id}`, body),
   bindDevice: (id: string, collectorId: string) =>
     send(`/api/devices/${id}/bind`, { collector_id: collectorId }),
   unbindDevice: (id: string) => send(`/api/devices/${id}/unbind`),

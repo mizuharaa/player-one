@@ -43,6 +43,13 @@
       "when": 1787648340226,
       "tag": "0006_back_office_crud",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787734740226,
+      "tag": "0007_back_office_guards",
+      "breakpoints": true
     }
   ]
 }

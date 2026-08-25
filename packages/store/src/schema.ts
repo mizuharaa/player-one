@@ -302,6 +302,12 @@ export const tasks = pgTable(
      * second writer must not be able to un-take-down a task by knowing SQL.
      */
     check('tasks_status_check', sql`${t.status} in ('draft', 'published', 'taken_down')`),
+    /**
+     * Positive is all a CHECK can say. `tasks_capacity_below_live` (migration
+     * 0007) is the other half: a cap cannot be lowered under the claims already
+     * live on the task, which needs the count of other rows and the same task
+     * lock `task_claims_guard` takes.
+     */
     check('tasks_claimants_check', sql`${t.maxConcurrentClaimants} > 0`),
   ],
 );
@@ -415,7 +421,11 @@ export const collectorAgreements = pgTable(
  * fourth and is missing because nothing here records it yet.
  *
  * `released_at` rather than a delete: who held what, and until when, is the
- * evidence behind a settlement dispute.
+ * evidence behind a settlement dispute. `task_claims_history_immutable`
+ * (migration 0007) is what makes that true rather than customary — a claim row
+ * cannot be deleted, `claimed_at` cannot move, and a `released_at` already set
+ * cannot be rewritten. Releasing and re-claiming are still allowed, and the
+ * re-claim clears the gates again.
  */
 export const taskClaims = pgTable(
   'task_claims',
