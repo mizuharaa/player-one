@@ -762,6 +762,19 @@ export function registerReview(
         },
         async (tx) => {
           /**
+           * The episode row is locked before the eligibility clause below reads
+           * it. Under READ COMMITTED an `exists` subquery answers from a
+           * statement snapshot, so a read-back verdict or a redelivery
+           * committing microseconds later would slip past it and this
+           * transaction would still write a settlement. The upload leg's own
+           * verdict write updates this row, so taking the lock here is what
+           * makes the two serialise: whichever arrives second waits and then
+           * sees the other's decision.
+           */
+          await tx.execute(
+            sql`select 1 from episodes where episode_id = ${body.episode_id} for update`,
+          );
+          /**
            * `review_state = 'pending'` in the WHERE is not belt and braces. It
            * is what makes the transaction the arbiter rather than the check
            * twenty lines above: another request may have decided this review

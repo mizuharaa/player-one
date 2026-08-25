@@ -334,7 +334,7 @@ describe.skipIf(!hasDb())('the identity spine', () => {
     const ids = await seedSpine();
     const d = await db();
 
-    // Migration 0007 extends the gate: neither timestamp is a status an
+    // Migrations 0007 and 0009 extend the gate: neither timestamp is a status an
     // operator can assert, both are consequences of every episode on the batch
     // passing byte read-back. An empty batch has nothing the cloud verified...
     await violates('upload_batches_verify_needs_episodes', d.execute(sql`

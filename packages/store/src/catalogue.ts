@@ -43,7 +43,7 @@ const BLOCKING = new Set([
    * paid to judge.
    *
    * It became reachable when the cloud leg landed: a changed redelivery is
-   * unverified again (migration 0007), re-uploads, verifies against its own new
+   * unverified again (migration 0009), re-uploads, verifies against its own new
    * digest, and was then reviewable with the cross-delivery conflict still
    * unresolved.
    *

@@ -92,7 +92,7 @@ something other than a human. At that point:
 
 ## The exit, as built (2026-08-25)
 
-The cloud leg landed (`packages/api/src/upload.ts`, migration 0007): multipart
+The cloud leg landed (`packages/api/src/upload.ts`, migrations 0007 and 0009): multipart
 upload to an S3-compatible endpoint configured by `STORAGE_*` environment
 variables, verification by byte read-back against the per-file sha256 the
 engine recorded at import — never an ETag, which GreenNode does not make a
@@ -118,7 +118,7 @@ conditions above:
 One correction to what "verified" means, made after the leg landed:
 `verification_state` is a verdict about **one delivery's** bytes, not about the
 episode for all time. A changed redelivery writes a new ingest, and migration
-0007 resets the column to `'pending'` when `latest_ingest_id` moves — otherwise
+0009 resets the column to `'pending'` when `latest_ingest_id` moves — otherwise
 the cloud gate would admit a delivery nobody has uploaded on the strength of the
 previous one's read-back. Cache cleanup re-reads the same column for the same
 reason: `cloud_verified_at` records that a verification passed once, which stays

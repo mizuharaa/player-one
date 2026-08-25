@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
@@ -19,8 +19,9 @@ import { uploadEpisode, type ObjectStore, type UploadProgress } from './upload-w
  *
  *   - **The cache-cleanup gate is schema state.** `upload_batches` already
  *     carries `cloud_verified_at`, `local_cache_cleaned_at` and
- *     `upload_batches_cache_after_verify_check`; migration 0007 extends that
- *     gate with a trigger, so neither timestamp can be set while any episode on
+ *     `upload_batches_cache_after_verify_check`; migrations 0007 and 0009
+ *     extend that gate with a trigger, so neither timestamp can be set while
+ *     any episode on
  *     the batch is unverified *at that moment*. This file only tries the update
  *     and reports; it cannot bypass either.
  *   - **No code path here deletes anything.** Not TF-card source media (PRD
@@ -46,10 +47,33 @@ export type UploadOptions = {
  * gate reads this twice — once before the batch may be called verified, once
  * before its local cache may be called cleaned — because "verified once" and
  * "verified now" stop being the same sentence as soon as a delivery is
- * redelivered or a re-verification fails. Migration 0007's trigger is the
+ * redelivered or a re-verification fails. Migration 0009's trigger is the
  * guarantee; these clauses only turn the refusal into an answer rather than a
  * 500.
  */
+/**
+ * Takes a row lock on every episode of the batch, before either gate reads
+ * their verification state.
+ *
+ * The trigger and the WHERE clauses both ask a question about rows in another
+ * table, and under READ COMMITTED each of them answers from a snapshot. Locking
+ * the batch row alone does not help: a redelivery, or the verdict write of a
+ * concurrent upload run, touches an EPISODE row. Both transactions could
+ * therefore pass their own snapshot and both commit, leaving a batch recorded
+ * cache-cleaned with a pending or failed episode on it — which is the one
+ * outcome UPL-06 exists to make unrepresentable. Locking the episodes first
+ * serialises the two: whichever gets there second waits and then re-reads.
+ *
+ * ponytail: a whole-batch lock, held for the length of one small transaction.
+ * A card load is tens of episodes, so there is nothing to gain from finer
+ * grain, and the alternative — SERIALIZABLE plus retry — is a bigger promise
+ * to keep everywhere else in this file.
+ */
+const lockEpisodes = (tx: { execute: (q: SQL) => Promise<unknown> }, batchId: string) =>
+  tx.execute(
+    sql`select 1 from episodes where upload_batch_id = ${batchId} order by episode_id for update`,
+  );
+
 const noneUnverified = (batchId: string) =>
   sql`not exists (select 1 from episodes
                     where episodes.upload_batch_id = ${batchId}
@@ -215,7 +239,7 @@ export function registerUpload(
 
     /**
      * The batch flips only when every episode on it is verified, and the WHERE
-     * clause is not the guarantee — the migration-0007 trigger is. Returning no
+     * clause is not the guarantee — the migration-0009 trigger is. Returning no
      * row means no flip and no audit entry, which is what `mutate` wants.
      */
     const flipped = await mutate(
@@ -229,6 +253,7 @@ export function registerUpload(
         after: { batch_status: 'verified' },
       },
       async (tx) => {
+        await lockEpisodes(tx, batchId);
         const [updated] = await tx
           .update(schema.uploadBatches)
           .set({ cloudVerifiedAt: new Date(), batchStatus: 'verified', updatedAt: new Date() })
@@ -245,23 +270,32 @@ export function registerUpload(
       },
     );
 
+    /**
+     * What this run found, not what some earlier run found. Reading
+     * `batch.cloudVerifiedAt` here made the response say `cloud_verified: true`
+     * for a batch whose episode had since been redelivered and was sitting at
+     * `pending` — the timestamp is a fact about the past and the caller is
+     * asking about the present. Every episode on the batch is in `results`,
+     * so the current answer is already in hand and costs no query.
+     */
     return reply.send({
       batch_id: batchId,
       episodes: results,
-      cloud_verified: flipped !== undefined || batch.cloudVerifiedAt !== null,
+      cloud_verified:
+        results.length > 0 && results.every((r) => r['verification_state'] === 'verified'),
     });
   });
 
   /**
    * UPL-06: records that the operator cleaned this machine's local cache for a
    * batch. Recording is all it does — nothing is deleted here, and the schema
-   * (CHECK + trigger, migration 0007) is what makes "cleaned before the cloud
+   * (CHECK + trigger, migrations 0007 and 0009) is what makes "cleaned before the cloud
    * verified" unrepresentable rather than merely unimplemented. TF-card source
    * media is not touched by any code path; the card is never cleared.
    *
    * `cloud_verified_at` alone is not the question. It records that a full
    * verification passed once, and deleting the only local copy is a decision
-   * about now: a redelivered episode is back to `pending` (migration 0007's
+   * about now: a redelivered episode is back to `pending` (migration 0009's
    * other trigger) and a re-verification can fail, either of which leaves that
    * historical timestamp standing over bytes the cloud no longer holds intact.
    * So the current state of every episode is re-read here.
@@ -286,6 +320,7 @@ export function registerUpload(
         after: { batch_status: 'closed' },
       },
       async (tx) => {
+        await lockEpisodes(tx, batchId);
         const [updated] = await tx
           .update(schema.uploadBatches)
           .set({ localCacheCleanedAt: new Date(), batchStatus: 'closed', updatedAt: new Date() })

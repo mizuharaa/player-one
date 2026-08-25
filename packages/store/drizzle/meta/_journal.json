@@ -43,6 +43,13 @@
       "when": 1787981000000,
       "tag": "0007_cloud_leg",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787995000000,
+      "tag": "0009_cloud_leg_gate",
+      "breakpoints": true
     }
   ]
 }
