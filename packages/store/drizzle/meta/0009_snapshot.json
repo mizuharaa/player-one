@@ -1,5 +1,5 @@
 {
-  "id": "ce81e01e-c679-4d99-afce-71e29a5e6414",
+  "id": "5e5e39a5-af0d-40f1-9c3d-d388538e1d2f",
   "prevId": "0dbe538a-87e2-4289-85fb-111d2f2f7cce",
   "version": "7",
   "dialect": "postgresql",
@@ -184,7 +184,7 @@
         },
         "audit_events_attributed_check": {
           "name": "audit_events_attributed_check",
-          "value": "\"audit_events\".\"action\" like '%.login'\n          or (\"audit_events\".\"actor_role\" = 'reviewer' and \"audit_events\".\"operator_id\" is not null)\n          or (\"audit_events\".\"operator_id\" is not null and \"audit_events\".\"upload_device_id\" is not null)"
+          "value": "\"audit_events\".\"action\" like '%.login'\n          or (\"audit_events\".\"actor_role\" = 'reviewer'\n              and \"audit_events\".\"operator_id\" is not null\n              and \"audit_events\".\"upload_device_id\" is null\n              and \"audit_events\".\"upload_centre_id\" is null)\n          or (\"audit_events\".\"actor_role\" = 'operator'\n              and \"audit_events\".\"operator_id\" is not null\n              and \"audit_events\".\"upload_device_id\" is not null\n              and \"audit_events\".\"upload_centre_id\" is not null)"
         },
         "audit_events_manual_reason_check": {
           "name": "audit_events_manual_reason_check",

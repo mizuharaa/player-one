@@ -8,6 +8,12 @@ ALTER TABLE "episode_reviews" ADD CONSTRAINT "episode_reviews_reviewer_ref_opera
 CREATE UNIQUE INDEX "operators_reviewer_ref_key" ON "operators" USING btree ("external_ref") WHERE role = 'reviewer';--> statement-breakpoint
 ALTER TABLE "audit_events" ADD CONSTRAINT "audit_events_actor_role_check" CHECK ("audit_events"."actor_role" in ('operator', 'reviewer'));--> statement-breakpoint
 ALTER TABLE "audit_events" ADD CONSTRAINT "audit_events_attributed_check" CHECK ("audit_events"."action" like '%.login'
-          or ("audit_events"."actor_role" = 'reviewer' and "audit_events"."operator_id" is not null)
-          or ("audit_events"."operator_id" is not null and "audit_events"."upload_device_id" is not null));--> statement-breakpoint
+          or ("audit_events"."actor_role" = 'reviewer'
+              and "audit_events"."operator_id" is not null
+              and "audit_events"."upload_device_id" is null
+              and "audit_events"."upload_centre_id" is null)
+          or ("audit_events"."actor_role" = 'operator'
+              and "audit_events"."operator_id" is not null
+              and "audit_events"."upload_device_id" is not null
+              and "audit_events"."upload_centre_id" is not null));--> statement-breakpoint
 ALTER TABLE "operators" ADD CONSTRAINT "operators_centre_check" CHECK ("operators"."upload_centre_id" is not null or "operators"."role" = 'reviewer');

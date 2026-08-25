@@ -155,8 +155,20 @@ export function registerSessionRoutes(
      * A reviewer whose secret is wrong falls through to the counter path and is
      * refused there, with the same opaque `credentials` answer as everybody
      * else: the form does not confirm which references exist.
+     *
+     * `role` is the form's own choice and it is honoured where it *narrows*,
+     * never where it would widen. Reviewer references are globally unique
+     * (`operators_reviewer_ref_key`) but a counter operator at some centre may
+     * still share one, and somebody who picked "Upload centre" should not be
+     * handed a reviewer session — with their machine cookie cleared — because
+     * the reference collided. An absent `role` keeps the old behaviour, so a
+     * machine client that never sent one is unaffected.
      */
-    const reviewer = await authenticateReviewer(db, str('external_ref'), str('operator_secret'));
+    const wanted = str('role');
+    const reviewer =
+      wanted === 'operator'
+        ? null
+        : await authenticateReviewer(db, str('external_ref'), str('operator_secret'));
     if (reviewer !== null) {
       return reply
         .headers({
@@ -170,6 +182,10 @@ export function registerSessionRoutes(
           ],
         })
         .send({ role: 'reviewer', reviewer_id: reviewer.reviewerId });
+    }
+
+    if (wanted === 'reviewer') {
+      return reply.code(401).send({ error: 'credentials', reason: 'credentials' });
     }
 
     const machine = await authenticateMachine(db, str('machine_identifier'), str('machine_secret'));

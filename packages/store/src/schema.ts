@@ -1025,12 +1025,24 @@ export const auditEvents = pgTable(
     /**
      * An unattributed audit row defeats the table. Logins are the one case with
      * no actor yet; a reviewer is the one case with a person and no machine.
+     *
+     * Two complete shapes and no overlap between them, rather than two "at
+     * least this much" predicates. A half-filled row — a reviewer carrying an
+     * upload device, an operator with no centre — would satisfy a loose check
+     * and still be evidence of something that did not happen, which is the one
+     * failure this table exists to prevent.
      */
     check(
       'audit_events_attributed_check',
       sql`${t.action} like '%.login'
-          or (${t.actorRole} = 'reviewer' and ${t.operatorId} is not null)
-          or (${t.operatorId} is not null and ${t.uploadDeviceId} is not null)`,
+          or (${t.actorRole} = 'reviewer'
+              and ${t.operatorId} is not null
+              and ${t.uploadDeviceId} is null
+              and ${t.uploadCentreId} is null)
+          or (${t.actorRole} = 'operator'
+              and ${t.operatorId} is not null
+              and ${t.uploadDeviceId} is not null
+              and ${t.uploadCentreId} is not null)`,
     ),
     /** Manual resolution overrides the machine on a money path. It says why. */
     check(

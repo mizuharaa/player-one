@@ -52,12 +52,23 @@ type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 export async function mutate<T>(
   db: Db,
   actor: Actor,
-  event: AuditEvent,
+  /**
+   * Either the event, or a function of what `write` returned.
+   *
+   * The function form exists because the review queue picks its own target: a
+   * claim is "whatever is next", so the row being audited is not known until
+   * the statement that takes it has run. Building the event afterwards is the
+   * only way that write can stay inside `mutate` — and a claim that logged an
+   * episode id chosen before the claim would name the wrong row on every lost
+   * race, which is worse than not logging it.
+   */
+  event: AuditEvent | ((result: T) => AuditEvent),
   write: (tx: Tx) => Promise<T | undefined>,
 ): Promise<T | undefined> {
   return db.transaction(async (tx) => {
     const result = await write(tx);
     if (result === undefined) return undefined;
+    const recorded = typeof event === 'function' ? event(result) : event;
     /**
      * A reviewer is recorded as a reviewer. PLT-10 asks for remote review that
      * is *fully logged*, and a row that named a PaXini reviewer in the same
@@ -68,9 +79,9 @@ export async function mutate<T>(
      * neither is invented here.
      */
     await tx.insert(schema.auditEvents).values({
-      action: event.action,
-      targetTable: event.targetTable,
-      targetId: event.targetId,
+      action: recorded.action,
+      targetTable: recorded.targetTable,
+      targetId: recorded.targetId,
       ...(actor.reviewer === undefined
         ? {
             actorRole: 'operator',
@@ -84,9 +95,9 @@ export async function mutate<T>(
             uploadDeviceId: null,
             uploadCentreId: null,
           }),
-      before: event.before ?? null,
-      after: event.after ?? null,
-      reason: event.reason ?? null,
+      before: recorded.before ?? null,
+      after: recorded.after ?? null,
+      reason: recorded.reason ?? null,
     });
     return result;
   });

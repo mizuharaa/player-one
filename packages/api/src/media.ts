@@ -1,10 +1,11 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { extname, join, relative, resolve, sep } from 'node:path';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
+import { holdsReview } from './review.ts';
 
 /**
  * Serving the footage a reviewer is about to judge.
@@ -117,21 +118,18 @@ export function registerMedia(
      * reviewer reaches no media at all with the flag off. A prefetch that
      * survives this needs a short-lived per-episode grant, which is part of the
      * same decision that flips the flag.
+     *
+     * ponytail: the *access log* is the `review.claim` audit row, not a row per
+     * range request. Holding a review row is the only way to reach this route,
+     * and a review row is only obtained through the audited claim — so "which
+     * footage did this reviewer open" is answerable, while a byte-range log
+     * would be thousands of rows per episode and would still not say more. If
+     * an auditor ever needs per-part or per-range evidence, that is a
+     * requirement to write down when the flag is flipped, not before.
      */
     const reviewer = req.actor?.reviewer;
-    if (reviewer !== undefined) {
-      const [held] = await db
-        .select({ id: schema.episodeReviews.id })
-        .from(schema.episodeReviews)
-        .where(
-          and(
-            eq(schema.episodeReviews.episodeId, id),
-            eq(schema.episodeReviews.reviewerRef, reviewer.reviewerId),
-          ),
-        );
-      if (held === undefined) {
-        return reply.code(403).send({ error: 'not an episode you hold' });
-      }
+    if (reviewer !== undefined && !(await holdsReview(db, reviewer.reviewerId, id))) {
+      return reply.code(403).send({ error: 'not an episode you hold' });
     }
 
     const [row] = await db

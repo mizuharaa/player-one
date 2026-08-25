@@ -76,6 +76,16 @@ export type ReviewOptions = {
    * here. Until then one currency per deployment is honest and visible.
    */
   currency?: string;
+  /**
+   * Whether a reviewer session may fetch raw footage. Mirrors the API option of
+   * the same name and defaults to off — see `index.ts` for D11 and Part 7.3.
+   *
+   * It reaches this file so the queue does not *advertise* media it will then
+   * refuse. A payload carrying urls that 403 puts the console's `<video>` into
+   * its error state, whose only action re-claims — draining the queue one
+   * unwatched lease at a time.
+   */
+  reviewerMediaEnabled?: boolean;
 };
 
 const VerdictBody = z.object({
@@ -92,6 +102,31 @@ const VerdictBody = z.object({
   time_to_verdict_seconds: z.number().nonnegative().finite().nullish(),
 });
 
+/**
+ * Does this reviewer hold — or did they decide — a review of this episode?
+ *
+ * One definition, used by the metadata route here and by the media route in
+ * `media.ts`. Two copies of an authorization rule is two rules as soon as one
+ * of them is edited, and this is the rule that decides what a person outside
+ * Vietnam can see.
+ *
+ * Not restricted to a live lease on purpose: a reviewer looking back at their
+ * own recent verdicts is reading their own work, and a lease that lapsed
+ * mid-review must not make the screen they are looking at go blank.
+ */
+export async function holdsReview(db: Db, reviewerId: string, episodeId: string): Promise<boolean> {
+  const [held] = await db
+    .select({ id: schema.episodeReviews.id })
+    .from(schema.episodeReviews)
+    .where(
+      and(
+        eq(schema.episodeReviews.episodeId, episodeId),
+        eq(schema.episodeReviews.reviewerRef, reviewerId),
+      ),
+    );
+  return held !== undefined;
+}
+
 export function registerReview(
   app: FastifyInstance,
   db: Db,
@@ -100,6 +135,38 @@ export function registerReview(
 ): void {
   const opts = { preHandler: requireActor };
   const currency = options.currency ?? 'VND';
+  /**
+   * Whether this caller is allowed to watch the footage — and therefore whether
+   * they are allowed to work at all.
+   *
+   * One predicate, three uses: it decides whether the payload carries media
+   * urls, whether a reviewer may claim, and whether a reviewer may decide. That
+   * is deliberate. A reviewer who cannot watch an episode can still measure
+   * nothing about it, so letting them claim it takes it off somebody else's
+   * queue for the lease window, and letting them submit `good` pays a collector
+   * on a judgement nobody made. Withholding the video while leaving the verdict
+   * button live is worse than either denying or allowing outright, because the
+   * money looks ordinary afterwards.
+   *
+   * A VNG counter operator is never affected: `req.actor.reviewer` is undefined
+   * for the both-token session, and they are inside Vietnam at the machine
+   * holding the files.
+   */
+  const mayWatch = (req: FastifyRequest): boolean =>
+    req.actor?.reviewer === undefined || options.reviewerMediaEnabled === true;
+
+  /**
+   * 451, not 403.
+   *
+   * 403 on this service means "your session does not reach this route", and the
+   * console treats it as a session problem. This is not one: the credential is
+   * good, the route is in scope, and the refusal is D11 and Part 7.3 — remote
+   * playback of raw video is not authorised yet, so there is nothing here a
+   * reviewer could honestly do. RFC 7725 is exactly that answer, and it flips
+   * with `reviewerMediaEnabled` the day Legal signs the playback architecture.
+   */
+  const withheld = (reply: { code: (n: number) => { send: (b: unknown) => unknown } }): unknown =>
+    reply.code(451).send({ error: 'playback_unauthorised', detail: 'D11 / Part 7.3' });
 
   /**
    * Who is reviewing.
@@ -170,9 +237,18 @@ export function registerReview(
    * `episode_reviews_delivery_key` decides it: the loser's insert does nothing
    * and it tries again.
    */
-  async function claimNext(reviewer: string): Promise<{ reviewId: string; episodeId: string } | null> {
+  async function claimNext(
+    reviewer: string,
+    /**
+     * The claim's own transaction, so the row it takes and the audit row that
+     * says who took it commit together. `for update skip locked` now holds to
+     * the end of that transaction instead of to the end of each statement,
+     * which is what a claim wanted in the first place.
+     */
+    tx: Pick<Db, 'execute'>,
+  ): Promise<{ reviewId: string; episodeId: string } | null> {
     for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
-      const takeover = (await db.execute(sql`
+      const takeover = (await tx.execute(sql`
         update episode_reviews
            set reviewer_ref = ${reviewer},
                claimed_at = now(),
@@ -192,7 +268,7 @@ export function registerReview(
       const resumed = takeover[0];
       if (resumed !== undefined) return { reviewId: resumed.id, episodeId: resumed.episode_id };
 
-      const created = (await db.execute(sql`
+      const created = (await tx.execute(sql`
         insert into episode_reviews
           (id, episode_id, ingest_id, measured_duration_s, review_state,
            reviewer_ref, claimed_at, lease_expires_at)
@@ -216,7 +292,7 @@ export function registerReview(
       // Nothing to take over and nothing new. Either the queue is genuinely
       // empty or another reviewer won the insert; one more pass tells them
       // apart, because a lost race leaves a pending row the takeover will find.
-      const remaining = (await db.execute(sql`
+      const remaining = (await tx.execute(sql`
         select 1 as n
           from episodes
           join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
@@ -294,7 +370,11 @@ export function registerReview(
    * particular device is lying, and hiding it would make a fleet-wide fault
    * invisible until settlement.
    */
-  async function payload(episodeId: string): Promise<Record<string, unknown> | null> {
+  async function payload(
+    episodeId: string,
+    /** False for a reviewer while `reviewerMediaEnabled` is off. */
+    withMedia = true,
+  ): Promise<Record<string, unknown> | null> {
     const [row] = await db
       .select({
         episodeId: schema.episodes.episodeId,
@@ -451,13 +531,15 @@ export function registerReview(
         candidate_count: after['candidate_count'] ?? null,
       },
       media: {
-        role: video?.role ?? null,
-        parts: (video?.parts ?? []).map((p, index) => ({
-          index,
-          url: `/media/episode/${row.episodeId}/part/${index}`,
-          bytes: p.bytes,
-          file: p.file,
-        })),
+        role: withMedia ? (video?.role ?? null) : null,
+        parts: withMedia
+          ? (video?.parts ?? []).map((p, index) => ({
+              index,
+              url: `/media/episode/${row.episodeId}/part/${index}`,
+              bytes: p.bytes,
+              file: p.file,
+            }))
+          : [],
       },
     };
   }
@@ -480,14 +562,38 @@ export function registerReview(
   // -------------------------------------------------------------------------
   // Routes
 
-  /** Claims and returns the next episode. 204 when there is nothing to review. */
+  /**
+   * Claims and returns the next episode. 204 when there is nothing to review.
+   *
+   * Through `mutate`, so taking an episode is a logged act and not just a
+   * column that quietly changed owner. PLT-10 asks for remote reviewer access
+   * that is *fully logged*, and until now only the login and the verdict were:
+   * `reviewer_ref` is overwritten by the next claimant and cleared by a
+   * release, so a reviewer who claimed an episode, watched it and gave it back
+   * left the store in exactly the state it was in before they saw it. For a
+   * China-based reviewer under Part 7 that is the question that has to be
+   * answerable — which footage did they open — and only an append-only row can
+   * answer it.
+   */
   app.post('/api/review/claim', opts, async (req, reply) => {
+    if (!mayWatch(req)) return withheld(reply);
     const reviewer = reviewerOf(req.actor!);
-    const claim = await claimNext(reviewer);
-    if (claim === null) {
+    const claim = await mutate(
+      db,
+      req.actor!,
+      // The target is discovered by the write: a claim is "whatever is next".
+      (c: { reviewId: string; episodeId: string }) => ({
+        action: 'review.claim',
+        targetTable: 'episode_reviews',
+        targetId: c.reviewId,
+        after: { episode_id: c.episodeId, reviewer_ref: reviewer },
+      }),
+      async (tx) => (await claimNext(reviewer, tx)) ?? undefined,
+    );
+    if (claim === undefined) {
       return reply.code(204).send();
     }
-    const body = await payload(claim.episodeId);
+    const body = await payload(claim.episodeId, mayWatch(req));
     if (body === null) return reply.code(500).send({ error: 'claimed an episode that has no ingest' });
     const lease = await withLease(claim.episodeId);
     return reply.send({
@@ -503,10 +609,25 @@ export function registerReview(
    * Metadata for one episode, without claiming it. This is what the client
    * prefetches: knowing the next episode's media urls is what lets it warm a
    * hidden video element while the current one is still being watched.
+   *
+   * A reviewer reaches only episodes they hold a review row for. Unrestricted,
+   * this route hands any signed-in reviewer the collector, the task, the device
+   * serial, the APP-17b privacy declarations and the resolver's working for any
+   * episode id they can name — the whole corpus, one id at a time. `/next`
+   * deliberately reveals one unclaimed episode because that is the queue; this
+   * one revealed all of them. Same 404 as an id that does not exist, so it is
+   * not an oracle for which ones do.
+   *
+   * A VNG counter operator is unrestricted, as before: they are inside Vietnam
+   * on the machine holding the files and BO-09 has no episode browser yet.
    */
   app.get('/api/review/episode/:id', opts, async (req, reply) => {
     const episodeId = (req.params as { id: string }).id;
-    const body = await payload(episodeId);
+    const reviewer = req.actor!.reviewer;
+    if (reviewer !== undefined && !(await holdsReview(db, reviewer.reviewerId, episodeId))) {
+      return reply.code(404).send({ error: 'no such episode' });
+    }
+    const body = await payload(episodeId, mayWatch(req));
     if (body === null) return reply.code(404).send({ error: 'no such episode' });
     return reply.send(body);
   });
@@ -531,12 +652,21 @@ export function registerReview(
     `)) as unknown as { episode_id: string }[];
     const next = rows[0];
     if (next === undefined) return reply.code(204).send();
-    const body = await payload(next.episode_id);
+    const body = await payload(next.episode_id, mayWatch(req));
     if (body === null) return reply.code(204).send();
     return reply.send(body);
   });
 
-  /** Extends a lease while the tab is open. A reviewer who leaves stops sending these. */
+  /**
+   * Extends a lease while the tab is open. A reviewer who leaves stops sending these.
+   *
+   * ponytail: deliberately not audited, where the claim and the release are.
+   * A heartbeat says nothing a claim did not already say and arrives every few
+   * seconds, so auditing it would add hundreds of rows per episode and bury the
+   * two events that carry information. If lease *duration* ever has to be
+   * proven rather than inferred from claim-to-verdict, extend the claim row
+   * rather than logging each beat.
+   */
   app.post('/api/review/heartbeat/:id', opts, async (req, reply) => {
     const reviewer = reviewerOf(req.actor!);
     const episodeId = (req.params as { id: string }).id;
@@ -567,17 +697,37 @@ export function registerReview(
   app.post('/api/review/release/:id', opts, async (req, reply) => {
     const reviewer = reviewerOf(req.actor!);
     const episodeId = (req.params as { id: string }).id;
-    const rows = (await db.execute(sql`
-      update episode_reviews
-         set reviewer_ref = null, claimed_at = null, lease_expires_at = null, updated_at = now()
-       where episode_id = ${episodeId}
-         and review_state = 'pending'
-         and reviewer_ref = ${reviewer}
-      returning id
-    `)) as unknown as { id: string }[];
-    // Releasing something already gone is not a failure worth reporting to a
-    // page that is in the middle of closing.
-    return reply.send({ released: rows.length > 0 });
+    /**
+     * Audited for the same reason the claim is: this statement erases the only
+     * column that said who was holding the episode. `before` carries the name
+     * it is erasing, so claim and release read as a pair and the time between
+     * them is how long that reviewer had the footage open.
+     */
+    const released = await mutate(
+      db,
+      req.actor!,
+      (r: { id: string }) => ({
+        action: 'review.release',
+        targetTable: 'episode_reviews',
+        targetId: r.id,
+        before: { episode_id: episodeId, reviewer_ref: reviewer },
+      }),
+      async (tx) => {
+        const rows = (await tx.execute(sql`
+          update episode_reviews
+             set reviewer_ref = null, claimed_at = null, lease_expires_at = null, updated_at = now()
+           where episode_id = ${episodeId}
+             and review_state = 'pending'
+             and reviewer_ref = ${reviewer}
+          returning id
+        `)) as unknown as { id: string }[];
+        // Releasing something already gone is not a failure worth reporting to
+        // a page that is in the middle of closing — and it writes no audit row,
+        // because nothing was released.
+        return rows[0];
+      },
+    );
+    return reply.send({ released: released !== undefined });
   });
 
   /**
@@ -588,6 +738,7 @@ export function registerReview(
     if (!parsed.success) {
       return reply.code(400).send({ error: 'invalid body', detail: parsed.error.issues.slice(0, 5) });
     }
+    if (!mayWatch(req)) return withheld(reply);
     const body = parsed.data;
     const actor = req.actor!;
     const reviewer = reviewerOf(actor);
@@ -598,7 +749,8 @@ export function registerReview(
      * usually succeeded and only the response was lost — so it is answered
      * before anything is locked.
      */
-    const replayed = await resultOf(db, body.verdict_id);
+    const scope = { reviewer, episodeId: body.episode_id };
+    const replayed = await resultOf(db, body.verdict_id, scope);
     if (replayed !== null) return reply.send({ ...replayed, replayed: true });
 
     const [review] = await db
@@ -724,12 +876,18 @@ export function registerReview(
         },
         async (tx) => {
           /**
-           * `review_state = 'pending'` in the WHERE is not belt and braces. It
-           * is what makes the transaction the arbiter rather than the check
-           * twenty lines above: another request may have decided this review
-           * between that read and this write, and then this update matches
-           * nothing and the whole transaction — audit row included — does not
-           * happen.
+           * The WHERE, not the checks twenty lines above, is the arbiter.
+           *
+           * All three predicates carry weight and each covers a different race
+           * between that read and this write. `review_state = 'pending'`:
+           * somebody else decided it. `reviewer_ref`: the lease ran out and was
+           * re-claimed, so this row is now somebody else's — without it, A can
+           * pass the pre-check a moment before expiry, B can take over, and A
+           * then writes a verdict, a settlement and an audit row over a row
+           * that names B. `lease_expires_at >= now()`: the lease simply lapsed,
+           * on the database's clock rather than on this process's. When none
+           * match, the update touches nothing and the whole transaction — audit
+           * row included — does not happen.
            */
           const [row] = await tx
             .update(schema.episodeReviews)
@@ -746,6 +904,8 @@ export function registerReview(
               and(
                 eq(schema.episodeReviews.id, review.id),
                 eq(schema.episodeReviews.reviewState, 'pending'),
+                eq(schema.episodeReviews.reviewerRef, reviewer),
+                sql`${schema.episodeReviews.leaseExpiresAt} >= now()`,
               ),
             )
             .returning({ id: schema.episodeReviews.id });
@@ -793,8 +953,11 @@ export function registerReview(
        * verdict was recorded exactly once, which is what was promised.
        */
       if (isUniqueViolation(err, 'episode_reviews_verdict_key')) {
-        const settled = await resultOf(db, body.verdict_id);
+        const settled = await resultOf(db, body.verdict_id, scope);
         if (settled !== null) return reply.send({ ...settled, replayed: true });
+        // The id is taken, but not by this reviewer on this episode. Say that
+        // rather than returning a stranger's result or a 500.
+        return reply.code(409).send({ error: 'that verdict id belongs to another review' });
       }
       throw err;
     }
@@ -808,7 +971,7 @@ export function registerReview(
        * exactly once and the honest answer is the one that won. Only a
        * different verdict id means the episode really was reassigned.
        */
-      const raced = await resultOf(db, body.verdict_id);
+      const raced = await resultOf(db, body.verdict_id, scope);
       if (raced !== null) return reply.send({ ...raced, replayed: true });
       return reply.code(409).send({ error: 'reassigned', detail: 'this review was decided elsewhere' });
     }
@@ -973,7 +1136,11 @@ export function registerReview(
  * original did rather than a thinner one — a client that lost the first
  * response must not have to tell the two apart.
  */
-async function resultOf(db: Db, verdictId: string): Promise<Record<string, unknown> | null> {
+async function resultOf(
+  db: Db,
+  verdictId: string,
+  scope: { reviewer: string; episodeId: string },
+): Promise<Record<string, unknown> | null> {
   const [row] = await db
     .select({
       reviewId: schema.episodeReviews.id,
@@ -987,7 +1154,22 @@ async function resultOf(db: Db, verdictId: string): Promise<Record<string, unkno
     })
     .from(schema.episodeReviews)
     .leftJoin(schema.settlements, eq(schema.settlements.episodeReviewId, schema.episodeReviews.id))
-    .where(eq(schema.episodeReviews.verdictId, verdictId));
+    .where(
+      and(
+        eq(schema.episodeReviews.verdictId, verdictId),
+        /**
+         * Scoped, and this is not tidiness. A verdict id is the *client's* own
+         * idempotency key and nothing stops a second reviewer sending one they
+         * were told about; unscoped, this route hands back somebody else's
+         * episode id, durations, marked spans, unit price and amount for any
+         * verdict uuid that is guessed or leaked. A genuine retry carries the
+         * same three values it sent the first time, so narrowing costs the
+         * replay path nothing.
+         */
+        eq(schema.episodeReviews.reviewerRef, scope.reviewer),
+        eq(schema.episodeReviews.episodeId, scope.episodeId),
+      ),
+    );
   if (row === undefined) return null;
 
   const spans = await db

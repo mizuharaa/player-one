@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApi, hashCredential } from '../src/index.ts';
 import { closeDb, db, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 import { episodeRecord, FIXTURE_T as T } from './fixtures.ts';
@@ -53,6 +54,7 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
       operatorA: uid(),
       operatorB: uid(),
       reviewer: uid(),
+      reviewerB: uid(),
       collectorA: uid(),
       collectorB: uid(),
       deviceType: uid(),
@@ -78,8 +80,9 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
     // The reviewer: no centre at all. `operators_centre_check` allows the null
     // only because the role says reviewer.
     await d.execute(sql`
-      insert into operators (id, upload_centre_id, external_ref, role, credential_hash)
-        values (${ids.reviewer}, null, 'pax-01', 'reviewer', ${hash})`);
+      insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values
+        (${ids.reviewer}, null, 'pax-01', 'reviewer', ${hash}),
+        (${ids.reviewerB}, null, 'pax-02', 'reviewer', ${hash})`);
     await d.execute(sql`
       insert into collectors (id, external_ref, status) values
         (${ids.collectorA}, 'c1', 'qualified'), (${ids.collectorB}, 'c2', 'qualified')`);
@@ -139,13 +142,15 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
         payload: { external_ref: ref, operator_secret: secret },
       });
 
-    const session = await signIn('pax-01', 'pw');
-    expect(session.statusCode, session.body).toBe(200);
-    const setCookie = [session.headers['set-cookie'] ?? []].flat().join(' | ');
-    const token = /po_operator=([^;]+)/.exec(setCookie)?.[1] ?? '';
-    const reviewerHeaders: Record<string, string> = {
-      authorization: `Bearer ${decodeURIComponent(token)}`,
+    const asReviewer = async (ref: string): Promise<Record<string, string>> => {
+      const session = await signIn(ref, 'pw');
+      expect(session.statusCode, session.body).toBe(200);
+      const setCookie = [session.headers['set-cookie'] ?? []].flat().join(' | ');
+      const token = /po_operator=([^;]+)/.exec(setCookie)?.[1] ?? '';
+      return { authorization: `Bearer ${decodeURIComponent(token)}` };
     };
+    const reviewerHeaders = await asReviewer('pax-01');
+    const reviewerHeadersB = await asReviewer('pax-02');
 
     const send = async (
       method: 'POST' | 'GET' | 'PATCH',
@@ -222,8 +227,27 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
       cards.push({ handover, batch, session: collectionSession });
     }
 
-    return { d, app, ids, headersA, headersB, reviewerHeaders, send, signIn, cards };
+    return {
+      d,
+      app,
+      ids,
+      headersA,
+      headersB,
+      reviewerHeaders,
+      reviewerHeadersB,
+      send,
+      signIn,
+      cards,
+    };
   }
+
+  /**
+   * The world in which Legal has signed: a reviewer can watch, and therefore
+   * can work. Everything about the lane itself is tested here, because with the
+   * flag off there is no lane for a reviewer to run — see the D11 tests below,
+   * which are the ones that assert the default.
+   */
+  const lane = () => harness({ reviewerMediaEnabled: true });
 
   // -------------------------------------------------------------------------
   // A reviewer is an actor
@@ -246,7 +270,7 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
   });
 
   it('runs the whole review lane on a reviewer session: claim, heartbeat, verdict', async () => {
-    const h = await harness();
+    const h = await lane();
     const who = h.reviewerHeaders;
 
     const claim = await h.send('POST', '/api/review/claim', undefined, who);
@@ -281,7 +305,7 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
   });
 
   it('records a reviewer verdict as a reviewer, with no invented machine or centre', async () => {
-    const h = await harness();
+    const h = await lane();
     const who = h.reviewerHeaders;
     const episodeId = (await h.send('POST', '/api/review/claim', undefined, who)).json()
       .episode_id as string;
@@ -312,10 +336,11 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
     expect(row!['upload_device_id']).toBeNull();
     expect(row!['upload_centre_id']).toBeNull();
 
-    // And the sign-in itself is a distinct action, not `operator.login`.
+    // And the sign-in itself is a distinct action, not `operator.login`. The
+    // fixture signs two reviewers in, so this is the first one: `pax-01`.
     const [login] = (await h.d.execute(sql`
       select action, actor_role, operator_id, upload_centre_id
-        from audit_events where action = 'reviewer.login' order by id desc limit 1
+        from audit_events where action = 'reviewer.login' order by id limit 1
     `)) as unknown as Record<string, string | null>[];
     expect(login!['actor_role']).toBe('reviewer');
     expect(login!['operator_id']).toBe(h.ids.reviewer);
@@ -440,7 +465,7 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
   // -------------------------------------------------------------------------
   // D11 and Part 7: raw video is default-denied
 
-  it('refuses a reviewer the raw footage by default and serves it only behind the flag', async () => {
+  it('refuses a reviewer the footage, the claim and the verdict until the flag is set', async () => {
     /**
      * Brief D11 records "whether background review requires online playback of
      * raw video" as unresolved and marked "Escalate — this is not a minor
@@ -449,8 +474,11 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
      * 1 arrangement is "remote access, not data transfer", and that distinction
      * "must hold in the implementation, not just in the description".
      *
-     * So this asserts a refusal, not a feature: a reviewer in Shenzhen gets the
-     * metadata and no bytes until the flag is deliberately set.
+     * So this asserts a refusal, not a feature — and the refusal covers the
+     * whole act of reviewing, not only the bytes. Withholding the video while
+     * leaving the claim and the verdict live would let a reviewer in Shenzhen
+     * take an episode off the queue and pay a collector `good` for footage
+     * nobody watched, which reads as an ordinary payment afterwards.
      */
     const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
     const root = await mkdtemp(join(tmpdir(), 'playerone-reviewer-media-'));
@@ -460,30 +488,35 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
 
     try {
       const off = await harness({ mediaRoot: root, basenameA: basename });
-      const episodeId = (
-        await off.send('POST', '/api/review/claim', undefined, off.reviewerHeaders)
-      ).json().episode_id as string;
 
-      // Metadata is fine: it carries no footage.
-      const meta = await off.send(
-        'GET',
-        `/api/review/episode/${episodeId}`,
-        undefined,
+      // 451, not 403: the credential is good and the route is in scope. This is
+      // a legal refusal and it flips with the flag.
+      const claim = await off.send('POST', '/api/review/claim', undefined, off.reviewerHeaders);
+      expect(claim.statusCode, claim.body).toBe(451);
+      expect(claim.json().error).toBe('playback_unauthorised');
+
+      // Nothing was taken off the queue by the attempt.
+      const [pending] = (await off.d.execute(
+        sql`select count(*)::int as n from episode_reviews`,
+      )) as unknown as { n: number }[];
+      expect(pending!.n).toBe(0);
+
+      // The verdict route refuses the same way, so a reviewer holding a lease
+      // from before the flag was turned off cannot decide on it either.
+      const decided = await off.send(
+        'POST',
+        '/api/review/verdict',
+        { verdict_id: uid(), episode_id: uid(), decision: 'good' },
         off.reviewerHeaders,
       );
-      expect(meta.statusCode, meta.body).toBe(200);
-      expect(meta.json().media.parts[0].url).toBe(`/media/episode/${episodeId}/part/0`);
+      expect(decided.statusCode, decided.body).toBe(451);
 
-      // The bytes are not.
-      const denied = await off.send(
-        'GET',
-        `/media/episode/${episodeId}/part/0`,
-        undefined,
-        off.reviewerHeaders,
-      );
-      expect(denied.statusCode, denied.body).toBe(403);
-
-      // The VNG operator at the machine holding the file is unaffected.
+      // The VNG operator at the machine holding the file is unaffected: they
+      // claim, they read the metadata, and they get the bytes.
+      const operatorClaim = await off.send('POST', '/api/review/claim', undefined, off.headersA);
+      expect(operatorClaim.statusCode, operatorClaim.body).toBe(200);
+      const episodeId = operatorClaim.json().episode_id as string;
+      expect(operatorClaim.json().media.parts[0].url).toBe(`/media/episode/${episodeId}/part/0`);
       const allowed = await off.send(
         'GET',
         `/media/episode/${episodeId}/part/0`,
@@ -492,8 +525,18 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
       );
       expect(allowed.statusCode, allowed.body).toBe(200);
 
+      // And a reviewer who composes the media url by hand is still refused.
+      const denied = await off.send(
+        'GET',
+        `/media/episode/${episodeId}/part/0`,
+        undefined,
+        off.reviewerHeaders,
+      );
+      expect(denied.statusCode, denied.body).toBe(403);
+
       await truncate();
 
+      // With the flag on the whole lane opens, and only then.
       const on = await harness({ mediaRoot: root, basenameA: basename, reviewerMediaEnabled: true });
       const onEpisode = (
         await on.send('POST', '/api/review/claim', undefined, on.reviewerHeaders)
@@ -506,6 +549,14 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
       );
       expect(served.statusCode, served.body).toBe(200);
       expect(Buffer.from(served.rawPayload).equals(bytes)).toBe(true);
+
+      const onMeta = await on.send(
+        'GET',
+        `/api/review/episode/${onEpisode}`,
+        undefined,
+        on.reviewerHeaders,
+      );
+      expect(onMeta.json().media.parts[0].url).toBe(`/media/episode/${onEpisode}/part/0`);
 
       /**
        * And only that episode. With the flag on, the route guard alone would
@@ -528,6 +579,306 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Fully logged, and only what is theirs
+
+  it('logs a reviewer taking an episode and giving it back, and an operator differently', async () => {
+    /**
+     * PLT-10 says remote reviewer access is *fully logged*, and until this test
+     * existed it was not. `reviewer_ref` is a mutable column: the next claimant
+     * overwrites it and a release sets it to null, so a reviewer who claimed an
+     * episode, watched it and handed it back left the store in exactly the
+     * state it was in before they saw it. Part 7 makes "which footage did
+     * somebody outside Vietnam open" a question that has to have an answer, and
+     * only an append-only row is one.
+     */
+    const h = await lane();
+    const who = h.reviewerHeaders;
+    const episodeId = (await h.send('POST', '/api/review/claim', undefined, who)).json()
+      .episode_id as string;
+    const released = await h.send('POST', `/api/review/release/${episodeId}`, undefined, who);
+    expect(released.json()).toEqual({ released: true });
+
+    const rows = (await h.d.execute(sql`
+      select action, actor_role, operator_id, upload_device_id, upload_centre_id,
+             target_table, target_id, before, after
+        from audit_events
+       where action in ('review.claim', 'review.release')
+       order by id
+    `)) as unknown as Record<string, unknown>[];
+    expect(rows.map((r) => r['action'])).toEqual(['review.claim', 'review.release']);
+    for (const r of rows) {
+      expect(r['actor_role']).toBe('reviewer');
+      expect(r['operator_id']).toBe(h.ids.reviewer);
+      // No invented machine and no invented centre: PaXini staff sit at neither.
+      expect(r['upload_device_id']).toBeNull();
+      expect(r['upload_centre_id']).toBeNull();
+      expect(r['target_table']).toBe('episode_reviews');
+    }
+    // The pair names the same episode and the same review row, so the interval
+    // between them is how long that reviewer had the footage open.
+    expect((rows[0]!['after'] as { episode_id: string }).episode_id).toBe(episodeId);
+    expect((rows[1]!['before'] as { episode_id: string }).episode_id).toBe(episodeId);
+    expect(rows[0]!['target_id']).toBe(rows[1]!['target_id']);
+
+    // Releasing something already released changes nothing, so it logs nothing.
+    const again = await h.send('POST', `/api/review/release/${episodeId}`, undefined, who);
+    expect(again.json()).toEqual({ released: false });
+
+    // The counter operator's own claim is logged too, and as an operator — with
+    // the machine and the centre the reviewer's row cannot carry.
+    const operatorClaim = await h.send('POST', '/api/review/claim', undefined, h.headersA);
+    expect(operatorClaim.statusCode, operatorClaim.body).toBe(200);
+    const [op] = (await h.d.execute(sql`
+      select actor_role, operator_id, upload_device_id, upload_centre_id
+        from audit_events where action = 'review.claim' order by id desc limit 1
+    `)) as unknown as Record<string, unknown>[];
+    expect(op!['actor_role']).toBe('operator');
+    expect(op!['operator_id']).toBe(h.ids.operatorA);
+    expect(op!['upload_device_id']).toBe(h.ids.machineA);
+    expect(op!['upload_centre_id']).toBe(h.ids.centreA);
+
+    // Exactly two releases were attempted and one happened.
+    const [count] = (await h.d.execute(sql`
+      select count(*)::int as n from audit_events where action = 'review.release'
+    `)) as unknown as { n: number }[];
+    expect(count!.n).toBe(1);
+  });
+
+  it('shows a reviewer metadata only for the episodes they hold', async () => {
+    /**
+     * Unrestricted, `/api/review/episode/:id` hands any signed-in reviewer the
+     * collector, the task, the device serial, the APP-17b declarations and the
+     * resolver's working for any episode id they can name — the whole corpus,
+     * one id at a time, to a session that Part 7 says should reach a queue.
+     * `/next` reveals one unclaimed episode on purpose, because that is the
+     * queue; this route revealed all of them.
+     */
+    const h = await lane();
+    const mine = (await h.send('POST', '/api/review/claim', undefined, h.reviewerHeaders)).json()
+      .episode_id as string;
+    const [other] = (await h.d.execute(sql`
+      select episode_id from episodes where episode_id <> ${mine} limit 1
+    `)) as unknown as { episode_id: string }[];
+
+    const own = await h.send('GET', `/api/review/episode/${mine}`, undefined, h.reviewerHeaders);
+    expect(own.statusCode, own.body).toBe(200);
+
+    const theirs = await h.send(
+      'GET',
+      `/api/review/episode/${other!.episode_id}`,
+      undefined,
+      h.reviewerHeaders,
+    );
+    // The same 404 an unknown id gets, so it is not an oracle for which exist.
+    expect(theirs.statusCode, theirs.body).toBe(404);
+    expect(theirs.body).not.toContain('BZER76400FF');
+
+    // A second reviewer holds nothing at all and sees nothing at all.
+    const stranger = await h.send(
+      'GET',
+      `/api/review/episode/${mine}`,
+      undefined,
+      h.reviewerHeadersB,
+    );
+    expect(stranger.statusCode, stranger.body).toBe(404);
+
+    // The VNG counter operator is unaffected: inside Vietnam, on the machine
+    // holding the files.
+    const operator = await h.send(
+      'GET',
+      `/api/review/episode/${other!.episode_id}`,
+      undefined,
+      h.headersA,
+    );
+    expect(operator.statusCode, operator.body).toBe(200);
+  });
+
+  it('does not replay a verdict to a reviewer who merely quotes its id', async () => {
+    /**
+     * `verdict_id` is the *client's* idempotency key, not a secret. Unscoped,
+     * the replay path answered any reviewer who presented a verdict id that
+     * exists — handing back somebody else's episode id, durations, marked
+     * spans, unit price and amount. A genuine retry carries the same reviewer
+     * and the same episode it sent the first time, so scoping the lookup costs
+     * the retry nothing.
+     */
+    const h = await lane();
+    const first = (await h.send('POST', '/api/review/claim', undefined, h.reviewerHeaders)).json()
+      .episode_id as string;
+    const verdictId = uid();
+    const decided = await h.send(
+      'POST',
+      '/api/review/verdict',
+      { verdict_id: verdictId, episode_id: first, decision: 'good' },
+      h.reviewerHeaders,
+    );
+    expect(decided.statusCode, decided.body).toBe(200);
+
+    const second = (await h.send('POST', '/api/review/claim', undefined, h.reviewerHeadersB)).json()
+      .episode_id as string;
+    expect(second).not.toBe(first);
+
+    const stolen = await h.send(
+      'POST',
+      '/api/review/verdict',
+      { verdict_id: verdictId, episode_id: second, decision: 'good' },
+      h.reviewerHeadersB,
+    );
+    expect(stolen.statusCode, stolen.body).toBe(409);
+    expect(stolen.body).not.toContain(first);
+    expect(stolen.body).not.toContain('1200.0000');
+
+    // And the first reviewer's own retry still replays, which is the whole
+    // point of the key.
+    const retry = await h.send(
+      'POST',
+      '/api/review/verdict',
+      { verdict_id: verdictId, episode_id: first, decision: 'good' },
+      h.reviewerHeaders,
+    );
+    expect(retry.statusCode, retry.body).toBe(200);
+    expect(retry.json().replayed).toBe(true);
+
+    // One settlement, not two.
+    const [n] = (await h.d.execute(
+      sql`select count(*)::int as n from settlements`,
+    )) as unknown as { n: number }[];
+    expect(n!.n).toBe(1);
+  });
+
+  it('refuses a verdict on a lease the database considers expired, whatever this process thinks', async () => {
+    /**
+     * The pre-check compares the stored lease against `Date.now()` in this
+     * process; the deciding UPDATE compares it against the database's `now()`.
+     * When the two clocks disagree — and an API server and a database server do
+     * disagree — only the second one is the arbiter. This drives them apart on
+     * purpose rather than waiting for a real skew: the lease is expired to
+     * Postgres and still live to Node, so the pre-check waves the verdict
+     * through and only the WHERE stops it.
+     *
+     * Without `lease_expires_at >= now()` in that WHERE, this writes a verdict,
+     * a settlement and an audit row against a lease that had lapsed.
+     */
+    const h = await lane();
+    const episodeId = (await h.send('POST', '/api/review/claim', undefined, h.reviewerHeaders))
+      .json().episode_id as string;
+    await h.d.execute(sql`
+      update episode_reviews set lease_expires_at = now() - interval '1 minute'
+       where episode_id = ${episodeId}`);
+
+    const skew = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 10 * 60_000);
+    try {
+      const late = await h.send(
+        'POST',
+        '/api/review/verdict',
+        { verdict_id: uid(), episode_id: episodeId, decision: 'good' },
+        h.reviewerHeaders,
+      );
+      expect(late.statusCode, late.body).toBe(409);
+    } finally {
+      skew.mockRestore();
+    }
+
+    const [row] = (await h.d.execute(sql`
+      select review_state, verdict_id from episode_reviews where episode_id = ${episodeId}
+    `)) as unknown as { review_state: string; verdict_id: string | null }[];
+    expect(row!.review_state).toBe('pending');
+    expect(row!.verdict_id).toBeNull();
+    const [n] = (await h.d.execute(
+      sql`select count(*)::int as n from settlements`,
+    )) as unknown as { n: number }[];
+    expect(n!.n).toBe(0);
+  });
+
+  it('honours the role the sign-in form chose when one reference names two people', async () => {
+    /**
+     * Reviewer references are globally unique and centre references are unique
+     * per centre, but nothing stops the two namespaces colliding. Trying the
+     * reviewer path first and falling through meant somebody who picked
+     * "Upload centre" could be handed a reviewer session — with their machine
+     * cookie cleared — because a PaXini reviewer happened to share their
+     * reference.
+     */
+    const h = await harness();
+    await h.d.execute(sql`
+      insert into operators (id, upload_centre_id, external_ref, role, credential_hash)
+        values (${uid()}, null, 'op-a', 'reviewer', ${await hashCredential('pw')})`);
+
+    const counter = await h.app.inject({
+      method: 'POST',
+      url: '/api/session',
+      payload: {
+        role: 'operator',
+        machine_identifier: 'HCM-IMPORT-01',
+        machine_secret: 'pw',
+        external_ref: 'op-a',
+        operator_secret: 'pw',
+      },
+    });
+    expect(counter.statusCode, counter.body).toBe(200);
+    expect(counter.json().role).toBe('operator');
+    expect(counter.json().operator_id).toBe(h.ids.operatorA);
+
+    const reviewer = await h.app.inject({
+      method: 'POST',
+      url: '/api/session',
+      payload: { role: 'reviewer', external_ref: 'op-a', operator_secret: 'pw' },
+    });
+    expect(reviewer.statusCode, reviewer.body).toBe(200);
+    expect(reviewer.json().role).toBe('reviewer');
+
+    // And picking Reviewer never falls through to the counter: a counter-only
+    // reference gets the same opaque refusal as a wrong secret.
+    const noFallthrough = await h.app.inject({
+      method: 'POST',
+      url: '/api/session',
+      payload: {
+        role: 'reviewer',
+        machine_identifier: 'HAN-IMPORT-01',
+        machine_secret: 'pw',
+        external_ref: 'op-b',
+        operator_secret: 'pw',
+      },
+    });
+    expect(noFallthrough.statusCode, noFallthrough.body).toBe(401);
+  });
+
+  it('refuses to start with remote playback on and the session cookie in clear', async () => {
+    /**
+     * `PLAYERONE_SECURE_COOKIES` is off by default and that default is right
+     * for a pilot upload centre: the LAN is plain HTTP and a `Secure` cookie is
+     * simply never sent, which shows up as a sign-in that appears to do
+     * nothing. It is not right for a process streaming raw footage to Shenzhen
+     * over the public internet on a twelve-hour bearer cookie, so the two flags
+     * are checked against each other at boot rather than discovered in
+     * production.
+     *
+     * The guard runs before the database is opened, so this needs no server.
+     */
+    const exitCode = await new Promise<number>((resolve) => {
+      execFile(
+        process.execPath,
+        ['packages/api/bin/serve.ts'],
+        {
+          cwd: join(import.meta.dirname, '..', '..', '..'),
+          env: {
+            ...process.env,
+            DATABASE_URL: 'postgres://nobody@127.0.0.1:1/none',
+            PLAYERONE_TOKEN_SECRET: 'k',
+            PLAYERONE_REVIEWER_MEDIA: '1',
+            PLAYERONE_SECURE_COOKIES: '',
+          },
+        },
+        (err, _stdout, stderr) => {
+          expect(stderr).toContain('PLAYERONE_SECURE_COOKIES=1');
+          resolve((err as { code?: number } | null)?.code ?? 0);
+        },
+      );
+    });
+    expect(exitCode).toBe(2);
+  });
+
+  // -------------------------------------------------------------------------
   // The invariants, in the schema — raw SQL, no application in the path
 
   it('refuses a verdict attributed to somebody who is not in the operators table', async () => {
@@ -536,7 +887,7 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
      * unconstrained text. It is now a real foreign key: a review cannot name a
      * reviewer that does not exist.
      */
-    const h = await harness();
+    const h = await lane();
     const episodeId = (
       await h.send('POST', '/api/review/claim', undefined, h.reviewerHeaders)
     ).json().episode_id as string;
@@ -591,6 +942,34 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
       d.execute(sql`
         insert into audit_events (action, target_table, target_id, actor_role, operator_id, upload_centre_id)
           values ('task.create', 'tasks', ${uid()}, 'operator', ${operator}, ${centre})`),
+    );
+  });
+
+  it('refuses a reviewer audit row that carries a machine', async () => {
+    /**
+     * The other half of the exact-shape check. A reviewer row that also names
+     * an upload device is evidence of somebody standing at a VNG counter who
+     * was not there, and a loose "reviewer needs an operator_id" predicate
+     * would have accepted it.
+     */
+    const d = await db();
+    const centre = uid();
+    const device = uid();
+    const reviewer = uid();
+    await d.execute(
+      sql`insert into upload_centres (id, region, name, status) values (${centre}, 'HCM', 'c', 'active')`,
+    );
+    await d.execute(sql`
+      insert into upload_devices (id, upload_centre_id, machine_identifier, status)
+        values (${device}, ${centre}, 'HCM-IMPORT-09', 'active')`);
+    await d.execute(sql`
+      insert into operators (id, upload_centre_id, external_ref, role)
+        values (${reviewer}, null, 'pax-09', 'reviewer')`);
+    await violates(
+      'audit_events_attributed_check',
+      d.execute(sql`
+        insert into audit_events (action, target_table, target_id, actor_role, operator_id, upload_device_id)
+          values ('episode.review', 'episode_reviews', ${uid()}, 'reviewer', ${reviewer}, ${device})`),
     );
   });
 

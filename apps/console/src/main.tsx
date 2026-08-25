@@ -36,7 +36,10 @@ const queryClient = new QueryClient({
          * happened. Everything else gets two attempts, because an upload centre
          * LAN drops packets.
          */
-        if (error instanceof ApiError && (error.isUnauthenticated || error.isReassigned)) {
+        if (
+          error instanceof ApiError &&
+          (error.isUnauthenticated || error.isReassigned || error.isWithheld)
+        ) {
           return false;
         }
         return failureCount < 2;

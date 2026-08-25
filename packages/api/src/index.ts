@@ -235,7 +235,7 @@ export function buildApi({
 
   registerCounter(app, db, requireActor);
   registerEpisodes(app, db, requireActor, toleranceMs);
-  registerReview(app, db, requireActor, { mediaRoot, currency });
+  registerReview(app, db, requireActor, { mediaRoot, currency, reviewerMediaEnabled });
   registerMedia(app, db, requireActor, mediaRoot);
   registerConsole(app, db, { tokenSecret, secureCookies });
   /** The JSON sign-in the React console uses. Same credentials, same cookies. */

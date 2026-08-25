@@ -339,6 +339,25 @@ export function ReviewScreen() {
     averageSeconds: episode?.session_average_seconds,
   };
 
+  /**
+   * Playback is not authorised for this session, so there is no review to do.
+   *
+   * A whole screen rather than a banner over a live verdict panel: the server
+   * refuses the claim as well as the footage, so nothing has been taken off the
+   * queue and there is nothing here to decide. Offering the controls anyway
+   * would invite a verdict on footage nobody watched, which is a payment.
+   */
+  if (claim.error instanceof ApiError && claim.error.isWithheld) {
+    return (
+      <AppShell {...shellProps}>
+        <EmptyState
+          title={t('state.playbackWithheld.title')}
+          body={t('state.playbackWithheld.body')}
+        />
+      </AppShell>
+    );
+  }
+
   /** The queue is empty. A state, and the only one Cú is allowed on. */
   if (!claim.isPending && episode === null && !claim.isError) {
     return (

@@ -41,6 +41,30 @@ const port = Number(env['PORT'] ?? 8080);
  * behind each other — `for update skip locked` has nothing to skip when there is
  * no second transaction holding a row.
  */
+const secureCookies = env['PLAYERONE_SECURE_COOKIES'] === '1';
+const reviewerMediaEnabled = env['PLAYERONE_REVIEWER_MEDIA'] === '1';
+
+/**
+ * The two flags are independent everywhere except here.
+ *
+ * `secureCookies` defaults off because a pilot upload centre is a LAN over
+ * plain HTTP, where a `Secure` cookie is never sent at all. That default is
+ * justified by the LAN and by nothing else. The moment
+ * `PLAYERONE_REVIEWER_MEDIA` is set, this process is streaming raw
+ * Vietnamese-collected footage to Shenzhen — over the public internet, to a
+ * session carried by a twelve-hour bearer cookie. Sending that cookie in clear
+ * is not a configuration mistake to discover later, so the process refuses to
+ * start instead.
+ */
+if (reviewerMediaEnabled && !secureCookies) {
+  console.error(
+    'PLAYERONE_REVIEWER_MEDIA=1 streams raw footage to remote reviewers, so the session',
+    'cookie must not travel in clear. Set PLAYERONE_SECURE_COOKIES=1 and terminate TLS',
+    'in front of this process, or leave reviewer media off.',
+  );
+  exit(2);
+}
+
 const db = await open(databaseUrl, { max: Number(env['PLAYERONE_DB_POOL'] ?? 10) });
 
 const app = buildApi({
@@ -58,7 +82,7 @@ const app = buildApi({
    * a `Secure` cookie is simply never sent and the symptom is a sign-in that
    * appears to succeed and does nothing. Turn it on wherever there is TLS.
    */
-  secureCookies: env['PLAYERONE_SECURE_COOKIES'] === '1',
+  secureCookies,
   /**
    * Off unless Legal has signed the playback architecture. D11 — whether
    * background review needs online playback of raw video — is unresolved and
@@ -67,7 +91,7 @@ const app = buildApi({
    * gets review metadata and no footage; setting this to `1` streams raw
    * Vietnamese-collected video across the border, so it is a deliberate act.
    */
-  reviewerMediaEnabled: env['PLAYERONE_REVIEWER_MEDIA'] === '1',
+  reviewerMediaEnabled,
 });
 
 const shutdown = async (signal: string) => {
