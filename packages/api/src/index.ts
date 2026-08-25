@@ -9,6 +9,7 @@ import { registerEpisodes } from './episodes.ts';
 import { registerMedia } from './media.ts';
 import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
 import { registerReview } from './review.ts';
+import { registerSessionRoutes } from './session.ts';
 import { authenticateMachine, authenticateOperator } from './session.ts';
 import type { Actor } from './actor.ts';
 import { signToken, verifyToken } from './credentials.ts';
@@ -171,6 +172,8 @@ export function buildApi({
   registerReview(app, db, requireActor, { mediaRoot, currency });
   registerMedia(app, db, requireActor, mediaRoot);
   registerConsole(app, db, { tokenSecret, secureCookies });
+  /** The JSON sign-in the React console uses. Same credentials, same cookies. */
+  registerSessionRoutes(app, db, { tokenSecret, secureCookies });
 
   /** Proves both-tokens and centre scope on its own, with no counter state needed. */
   app.get('/whoami', { preHandler: requireActor }, async (req) => ({

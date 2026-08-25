@@ -1,0 +1,1198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PlayerOne — Product Design Draft</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+/* ═══════════════════════════════════════════════════════════════════
+   PLAYERONE — PRODUCT DESIGN DRAFT  ·  v2
+   Two surfaces: web back-office (operator) + Android app (collector).
+   Token names mirror shadcn/ui so the RN theme file maps 1:1.
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  --sun-50:#FFF4EC; --sun-100:#FFE4D1; --sun-200:#FFC9A5; --sun-300:#FFAD78;
+  --sun-400:#FF9450; --sun-500:#FF7A1A; --sun-600:#E8620A; --sun-700:#B94A05;
+  --tech-50:#EBF2FF; --tech-100:#D6E4FF; --tech-200:#A9C6FF; --tech-300:#7BA6FD;
+  --tech-400:#4A85F8; --tech-500:#1B6EF3; --tech-600:#0F55CC; --tech-700:#0B3F99;
+  --pass:#12A150; --pass-bg:#E8F8EE;
+  --partial:#7C5CFC; --partial-bg:#F0EDFF;
+  --reject:#E5484D; --reject-bg:#FDECEC;
+  --background:#FFFFFF; --surface:#FBFAF9; --card:#FFFFFF; --muted:#F4F3F1;
+  --border:#E7E4E0; --border-str:#D5D1CC;
+  --foreground:#17150F; --muted-fg:#6E6A62; --faint-fg:#9C978E;
+  --stage:#101215; --stage-panel:#191C21; --stage-line:#2A2F36;
+  --stage-fg:#ECEEF1; --stage-mid:#9AA1AC;
+  --radius:12px; --radius-lg:18px; --radius-xl:26px;
+  --shadow-sm:0 1px 2px rgba(23,21,15,.06);
+  --shadow:0 4px 16px rgba(23,21,15,.07),0 1px 3px rgba(23,21,15,.05);
+  --shadow-lg:0 18px 48px rgba(23,21,15,.13),0 4px 12px rgba(23,21,15,.06);
+  --shadow-sun:0 8px 24px rgba(255,122,26,.32);
+  --scrim:rgba(0,0,0,.72);
+  --font:"Plus Jakarta Sans",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","Microsoft YaHei",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --ease:cubic-bezier(.22,.61,.36,1);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --background:#0E1013;--surface:#131619;--card:#181B1F;--muted:#1F2328;
+  --border:#2A2F35;--border-str:#3A4048;
+  --foreground:#ECEEF1;--muted-fg:#9BA2AB;--faint-fg:#6C737C;
+  --sun-50:#2A1608;--sun-100:#3D2009;--tech-50:#0C1A33;--tech-100:#123061;
+  --pass-bg:#0D2A1A;--partial-bg:#1E1840;--reject-bg:#331416;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+  --shadow:0 4px 16px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);
+  --shadow-lg:0 18px 48px rgba(0,0,0,.6);
+}}
+:root[data-theme="dark"]{
+  --background:#0E1013;--surface:#131619;--card:#181B1F;--muted:#1F2328;
+  --border:#2A2F35;--border-str:#3A4048;
+  --foreground:#ECEEF1;--muted-fg:#9BA2AB;--faint-fg:#6C737C;
+  --sun-50:#2A1608;--sun-100:#3D2009;--tech-50:#0C1A33;--tech-100:#123061;
+  --pass-bg:#0D2A1A;--partial-bg:#1E1840;--reject-bg:#331416;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+  --shadow:0 4px 16px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);
+  --shadow-lg:0 18px 48px rgba(0,0,0,.6);
+}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--surface);color:var(--foreground);font-family:var(--font);
+  font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{margin:0;font-weight:800;letter-spacing:-.02em;text-wrap:balance}
+p{margin:0}
+code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+
+/* ── scroll-trigger reveal ─────────────────────────────────────── */
+.rise{opacity:0;transform:translateY(22px);transition:opacity .62s var(--ease),transform .62s var(--ease)}
+.rise.in{opacity:1;transform:none}
+.rise.d1{transition-delay:.07s}.rise.d2{transition-delay:.14s}.rise.d3{transition-delay:.21s}
+@media (prefers-reduced-motion:reduce){.rise{opacity:1;transform:none;transition:none}}
+
+/* ── furniture ─────────────────────────────────────────────────── */
+.topline{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:16px;
+  padding:11px 28px;background:color-mix(in srgb,var(--background) 88%,transparent);
+  backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}
+.topline nav{display:flex;gap:2px;margin-left:auto;flex-wrap:wrap}
+.topline a{padding:5px 11px;border-radius:8px;font-size:13px;font-weight:600;
+  color:var(--muted-fg);text-decoration:none;transition:background .18s,color .18s}
+.topline a:hover{background:var(--muted);color:var(--foreground)}
+
+.logo{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:-.025em}
+.hero{padding:74px 0 40px}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;padding:5px 13px;border-radius:999px;
+  background:var(--sun-50);color:var(--sun-700);border:1px solid var(--sun-100);
+  font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.hero h1{font-size:clamp(38px,6vw,62px);line-height:1.03;margin:20px 0 18px}
+.hero .lede{font-size:19px;color:var(--muted-fg);max-width:64ch}
+
+section{padding:52px 0;border-top:1px solid var(--border)}
+section>.wrap>header{margin-bottom:30px}
+.sec-no{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--sun-600);letter-spacing:.1em}
+section h2{font-size:clamp(25px,3.4vw,34px);margin:8px 0 12px}
+section .sub{color:var(--muted-fg);max-width:70ch}
+
+.grid{display:grid;gap:18px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(232px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(176px,1fr))}
+
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:20px;box-shadow:var(--shadow-sm);transition:transform .26s var(--ease),box-shadow .26s var(--ease),border-color .26s}
+.card:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:var(--border-str)}
+.card h3{font-size:16px;margin-bottom:7px}
+.card p{font-size:14px;color:var(--muted-fg)}
+
+.note{border-left:3px solid var(--sun-500);background:var(--sun-50);padding:15px 18px;
+  border-radius:0 var(--radius) var(--radius) 0;font-size:14.5px}
+.note.blue{border-left-color:var(--tech-500);background:var(--tech-50)}
+.note.red{border-left-color:var(--reject);background:var(--reject-bg)}
+
+/* ── swatches / type ───────────────────────────────────────────── */
+.ramp{display:flex;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)}
+.ramp i{flex:1;height:60px;display:block;transition:flex .3s var(--ease)}
+.ramp:hover i:hover{flex:2.2}
+.ramp-label{display:flex;justify-content:space-between;font-size:11.5px;color:var(--faint-fg);margin-top:7px;gap:12px}
+.ramp-label b{color:var(--foreground);font-size:13px}
+.chipset{display:flex;flex-wrap:wrap;gap:9px}
+.vchip{display:inline-flex;align-items:center;gap:7px;padding:6px 13px 6px 9px;border-radius:999px;
+  font-size:13.5px;font-weight:700;border:1px solid transparent;transition:transform .2s var(--ease)}
+.vchip:hover{transform:translateY(-2px)}
+.vchip svg{width:15px;height:15px}
+.v-pass{background:var(--pass-bg);color:var(--pass);border-color:color-mix(in srgb,var(--pass) 30%,transparent)}
+.v-partial{background:var(--partial-bg);color:var(--partial);border-color:color-mix(in srgb,var(--partial) 30%,transparent)}
+.v-reject{background:var(--reject-bg);color:var(--reject);border-color:color-mix(in srgb,var(--reject) 30%,transparent)}
+.type-row{display:flex;align-items:baseline;gap:20px;padding:11px 0;border-bottom:1px dashed var(--border)}
+.type-row .tag{font-family:var(--mono);font-size:11px;color:var(--faint-fg);width:126px;flex:none}
+
+/* ── buttons ───────────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 18px;
+  border-radius:11px;font-family:inherit;font-size:14px;font-weight:700;border:1px solid var(--border-str);
+  background:var(--card);color:var(--foreground);cursor:pointer;
+  transition:transform .18s var(--ease),box-shadow .18s var(--ease),background .18s}
+.btn:hover{transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.btn:active{transform:translateY(0)}
+.btn-primary{background:linear-gradient(140deg,var(--sun-400),var(--sun-500));border-color:transparent;
+  color:#fff;box-shadow:var(--shadow-sun)}
+.btn-primary:hover{box-shadow:0 12px 30px rgba(255,122,26,.42)}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--muted-fg)}
+.btn-pill{border-radius:999px;height:46px;padding:0 26px;font-size:15px}
+.kbd{display:inline-block;min-width:19px;padding:1px 6px;border-radius:6px;background:rgba(0,0,0,.14);
+  font-family:var(--mono);font-size:11px;font-weight:700;text-align:center}
+.btn:not(.btn-primary) .kbd{background:var(--muted);color:var(--muted-fg)}
+
+/* ── the hot switch ────────────────────────────────────────────── */
+.hotswitch{display:inline-flex;padding:4px;border-radius:999px;background:var(--muted);
+  border:1px solid var(--border);position:relative}
+.hotswitch button{position:relative;z-index:2;border:0;background:transparent;cursor:pointer;
+  font-family:inherit;font-size:13.5px;font-weight:700;color:var(--muted-fg);
+  padding:8px 18px;border-radius:999px;display:inline-flex;align-items:center;gap:7px;
+  transition:color .26s var(--ease)}
+.hotswitch button svg{width:15px;height:15px}
+.hotswitch button[aria-selected="true"]{color:#fff}
+.hotswitch .slider{position:absolute;z-index:1;top:4px;bottom:4px;border-radius:999px;
+  background:linear-gradient(140deg,var(--sun-400),var(--sun-600));box-shadow:var(--shadow-sun);
+  transition:left .34s var(--ease),width .34s var(--ease)}
+.pane{display:none}
+.pane.on{display:block;animation:fadein .4s var(--ease)}
+@keyframes fadein{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.pane.on{animation:none}}
+
+/* ═══════════ MOCK FRAMES ═══════════ */
+.frame{border:1px solid var(--border-str);border-radius:var(--radius-xl);overflow:hidden;
+  box-shadow:var(--shadow-lg);background:var(--background)}
+.frame-bar{display:flex;align-items:center;gap:8px;padding:11px 16px;background:var(--muted);
+  border-bottom:1px solid var(--border)}
+.frame-bar i{width:10px;height:10px;border-radius:50%;background:var(--border-str)}
+.frame-bar span{margin-left:10px;font-family:var(--mono);font-size:11.5px;color:var(--faint-fg)}
+.app{background:var(--surface);position:relative}
+.appbar{display:flex;align-items:center;gap:10px;padding:12px 20px;background:var(--background);
+  border-bottom:1px solid var(--border);flex-wrap:wrap}
+.spacer{flex:1}
+.statpill{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px 0 9px;
+  border-radius:999px;background:var(--muted);border:1px solid var(--border);font-size:13px;font-weight:700;
+  transition:background .2s}
+.statpill:hover{background:var(--border)}
+.statpill .ico{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:10px}
+.statpill.sun .ico{background:var(--sun-100);color:var(--sun-700)}
+.statpill.blue .ico{background:var(--tech-100);color:var(--tech-700)}
+.avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(140deg,var(--tech-300),var(--tech-600));
+  display:grid;place-items:center;color:#fff;font-size:12px;font-weight:800}
+
+.pillnav{position:absolute;left:50%;transform:translateX(-50%);bottom:18px;display:flex;align-items:center;
+  gap:4px;padding:8px;border-radius:999px;background:#16191E;box-shadow:0 14px 36px rgba(0,0,0,.34);
+  border:1px solid rgba(255,255,255,.07);z-index:5}
+.pillnav a{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:66px;
+  padding:7px 10px 6px;border-radius:999px;color:#8D949F;text-decoration:none;font-size:10.5px;font-weight:700;
+  transition:color .2s,background .2s,transform .2s var(--ease)}
+.pillnav a:hover{color:#fff;transform:translateY(-2px)}
+.pillnav a svg{width:19px;height:19px}
+.pillnav a.on{color:#fff;background:rgba(255,255,255,.09)}
+.pillnav a.hot{background:linear-gradient(140deg,var(--sun-400),var(--sun-600));color:#fff;
+  min-width:78px;box-shadow:0 6px 18px rgba(255,122,26,.45)}
+
+/* ── circular hub ──────────────────────────────────────────────── */
+.hub{padding:28px 24px 96px;display:grid;place-items:center;gap:4px}
+.gauge{position:relative;width:300px;height:264px}
+.gauge svg.dial{position:absolute;inset:0;width:100%;height:100%}
+.gauge .pet{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:100px}
+.gauge-val{position:absolute;left:50%;bottom:4px;transform:translateX(-50%);text-align:center;width:100%}
+.gauge-val b{display:block;font-size:42px;font-weight:800;letter-spacing:-.04em;line-height:1}
+.gauge-val span{font-size:12.5px;color:var(--muted-fg);font-weight:600}
+.milestone{position:absolute;display:flex;align-items:center;gap:4px;padding:3px 8px 3px 4px;
+  border-radius:999px;background:var(--card);border:1px solid var(--border);font-size:11px;font-weight:700;
+  box-shadow:var(--shadow-sm);white-space:nowrap;transition:transform .2s var(--ease)}
+.milestone:hover{transform:scale(1.08)}
+.milestone i{width:14px;height:14px;border-radius:50%;background:var(--muted);display:block}
+.milestone.done i{background:var(--sun-500)}
+.milestone.now{background:var(--sun-500);color:#fff;border-color:transparent;box-shadow:var(--shadow-sun)}
+.milestone.now i{background:rgba(255,255,255,.85)}
+.statrow{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;width:100%;max-width:460px;margin-top:4px}
+.statcard{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:11px 13px;box-shadow:var(--shadow-sm);transition:transform .22s var(--ease),box-shadow .22s}
+.statcard:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.statcard .k{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint-fg)}
+.statcard .v{font-size:19px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;margin-top:1px}
+.bar{height:5px;border-radius:999px;background:var(--muted);overflow:hidden;margin-top:7px}
+.bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--sun-400),var(--sun-600))}
+.cta-row{display:flex;align-items:center;gap:11px;margin:16px 0 4px}
+.icon-btn{width:46px;height:46px;border-radius:50%;border:1.5px solid var(--sun-300);background:transparent;
+  color:var(--sun-600);display:grid;place-items:center;cursor:pointer;transition:background .2s,transform .2s var(--ease)}
+.icon-btn:hover{background:var(--sun-50);transform:rotate(-8deg)}
+.banner{display:flex;align-items:center;gap:13px;width:100%;max-width:460px;padding:13px 15px;
+  border-radius:var(--radius);background:var(--tech-50);border:1px solid var(--tech-100)}
+.banner .txt{flex:1}
+.banner b{font-size:13.5px;display:block}
+.banner p{font-size:12px;color:var(--muted-fg)}
+
+/* ── review theatre ────────────────────────────────────────────── */
+.review{display:grid;grid-template-columns:minmax(0,1fr) 268px;min-height:440px}
+.theatre{background:var(--stage);padding:14px;display:flex;flex-direction:column;gap:11px}
+.screenbox{flex:1;min-height:200px;border-radius:14px;position:relative;overflow:hidden;
+  background:radial-gradient(120% 100% at 50% 0%,#24303C 0%,#151A20 55%,#0D1116 100%);display:grid;place-items:center}
+.screenbox .ghost{text-align:center;color:#4C5763;font-size:12px;font-weight:600}
+.screenbox .ghost svg{width:40px;height:40px;opacity:.5;display:block;margin:0 auto 6px}
+.tbar{display:flex;align-items:center;gap:12px;color:var(--stage-mid);font-size:12px;flex-wrap:wrap}
+.tbar .play{width:34px;height:34px;border-radius:50%;border:0;cursor:pointer;background:var(--sun-500);
+  color:#fff;display:grid;place-items:center;transition:transform .2s var(--ease)}
+.tbar .play:hover{transform:scale(1.09)}
+.tbar .tc{font-family:var(--mono);color:var(--stage-fg);font-size:13px;font-weight:500}
+.scrub{position:relative;height:15px;border-radius:5px;background:#0A0D11;border:1px solid var(--stage-line);overflow:hidden}
+.scrub .buf{position:absolute;inset:0 34% 0 0;background:#262C34}
+.scrub .mark{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--pass) 58%,transparent);
+  border-inline:1px solid var(--pass)}
+.scrub .beyond{position:absolute;top:0;bottom:0;right:0;left:86%;
+  background:repeating-linear-gradient(135deg,#262C34 0 4px,transparent 4px 8px);border-left:1px solid var(--stage-line)}
+.scrub .head{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--sun-400);box-shadow:0 0 0 1px #0A0D11}
+.markrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mini{height:30px;padding:0 11px;border-radius:9px;cursor:pointer;background:#21262D;
+  border:1px solid var(--stage-line);color:var(--stage-fg);font-family:inherit;font-size:12.5px;font-weight:700;
+  display:inline-flex;align-items:center;gap:6px;transition:background .18s}
+.mini:hover{background:#2B323A}
+.mini .kbd{background:rgba(255,255,255,.1);color:var(--stage-mid)}
+.est{margin-left:auto;text-align:right}
+.est b{font-family:var(--mono);color:var(--pass);font-size:15px;font-weight:700}
+.est span{display:block;font-size:10.5px;color:#616B77}
+.verdictbar{display:flex;align-items:center;gap:9px;padding:12px 14px;background:var(--stage-panel);
+  border-top:1px solid var(--stage-line);flex-wrap:wrap}
+.vbtn{height:38px;padding:0 16px;border-radius:10px;cursor:pointer;background:#22272E;
+  border:1px solid var(--stage-line);color:var(--stage-fg);font-family:inherit;font-size:13px;font-weight:700;
+  display:inline-flex;align-items:center;gap:7px;transition:background .18s,transform .18s var(--ease)}
+.vbtn:hover{transform:translateY(-1px)}
+.vbtn.sel-pass{background:color-mix(in srgb,var(--pass) 22%,#22272E);border-color:var(--pass)}
+.vbtn.sel-partial{background:color-mix(in srgb,var(--partial) 26%,#22272E);border-color:var(--partial)}
+.vbtn .kbd{background:rgba(255,255,255,.12);color:var(--stage-mid)}
+.commit{margin-left:auto;height:38px;padding:0 20px;border-radius:10px;border:0;cursor:pointer;
+  background:linear-gradient(140deg,var(--sun-400),var(--sun-600));color:#fff;font-family:inherit;
+  font-size:13px;font-weight:800;display:inline-flex;align-items:center;gap:8px;box-shadow:var(--shadow-sun);
+  transition:box-shadow .2s,transform .2s var(--ease)}
+.commit:hover{transform:translateY(-1px);box-shadow:0 12px 30px rgba(255,122,26,.42)}
+.inspector{background:var(--card);border-left:1px solid var(--border);padding:15px;overflow:hidden}
+.insp-h{font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--faint-fg);margin-bottom:9px}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:13px;border-bottom:1px dashed var(--border)}
+.kv dt{color:var(--muted-fg)}
+.kv dd{margin:0;font-weight:700;text-align:right}
+.kv dd small{display:block;font-weight:500;font-size:11px;color:var(--faint-fg)}
+.delta{color:var(--sun-600);font-family:var(--mono);font-size:12px;font-weight:700}
+.flagrow{display:flex;gap:8px;align-items:flex-start;padding:9px 11px;margin-top:9px;background:var(--muted);
+  border-left:3px solid var(--sun-500);border-radius:0 9px 9px 0}
+.flagrow code{font-size:10.5px;color:var(--foreground);font-weight:700}
+.flagrow p{font-size:11.5px;color:var(--muted-fg)}
+
+/* ── android phone frame ───────────────────────────────────────── */
+.phones{display:flex;gap:20px;flex-wrap:wrap;justify-content:center}
+.phone{width:264px;flex:none;border-radius:32px;padding:9px;background:#1A1D22;
+  box-shadow:var(--shadow-lg);transition:transform .32s var(--ease)}
+.phone:hover{transform:translateY(-8px)}
+.phone-in{border-radius:25px;overflow:hidden;background:var(--background);position:relative;height:520px;
+  display:flex;flex-direction:column}
+.sysbar{display:flex;align-items:center;padding:7px 14px 3px;font-size:10.5px;font-weight:700;color:var(--muted-fg)}
+.sysbar .spacer{flex:1}
+.phone-cap{text-align:center;font-size:12.5px;font-weight:700;color:var(--muted-fg);margin-top:11px}
+.mhead{display:flex;align-items:center;gap:8px;padding:8px 14px}
+.mhead .who{font-size:15px;font-weight:800;letter-spacing:-.02em;line-height:1.15}
+.mhead .who small{display:block;font-size:11px;font-weight:600;color:var(--muted-fg);letter-spacing:0}
+.mbody{flex:1;overflow:hidden;padding:0 14px 66px;display:flex;flex-direction:column;gap:11px}
+.mgauge{position:relative;width:100%;height:168px;display:grid;place-items:center;margin-top:2px}
+.mgauge svg.dial{position:absolute;inset:0;width:100%;height:100%}
+.mgauge .pet{width:72px;position:relative;top:-6px}
+.mgauge .val{position:absolute;bottom:2px;text-align:center;width:100%}
+.mgauge .val b{display:block;font-size:27px;font-weight:800;letter-spacing:-.03em;line-height:1}
+.mgauge .val span{font-size:10.5px;color:var(--muted-fg);font-weight:600}
+.mrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mcard{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:9px 10px}
+.mcard .k{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint-fg)}
+.mcard .v{font-size:15px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.mcta{height:44px;border-radius:999px;border:0;cursor:pointer;width:100%;
+  background:linear-gradient(140deg,var(--sun-400),var(--sun-600));color:#fff;
+  font-family:inherit;font-size:14.5px;font-weight:800;box-shadow:var(--shadow-sun)}
+.tasklet{display:flex;gap:9px;align-items:center;padding:10px;border-radius:12px;background:var(--card);
+  border:1px solid var(--border)}
+.tasklet .th{width:38px;height:38px;border-radius:10px;background:var(--sun-50);display:grid;place-items:center;flex:none}
+.tasklet b{font-size:12.5px;display:block;line-height:1.3}
+.tasklet span{font-size:10.5px;color:var(--muted-fg)}
+.tasklet .price{margin-left:auto;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--sun-600);white-space:nowrap}
+.mnav{position:absolute;left:10px;right:10px;bottom:10px;display:flex;justify-content:space-around;
+  padding:7px 6px;border-radius:999px;background:#16191E;box-shadow:0 10px 26px rgba(0,0,0,.3)}
+.mnav a{display:flex;flex-direction:column;align-items:center;gap:2px;color:#8D949F;text-decoration:none;
+  font-size:8.5px;font-weight:700;padding:3px 6px;border-radius:999px}
+.mnav a svg{width:16px;height:16px}
+.mnav a.on{color:#fff}
+.mnav a.hot{background:linear-gradient(140deg,var(--sun-400),var(--sun-600));color:#fff;padding:5px 11px}
+.declist{display:flex;flex-direction:column;gap:8px}
+.decrow{display:flex;align-items:center;gap:9px;padding:11px;border-radius:12px;background:var(--card);
+  border:1px solid var(--border);font-size:12.5px;font-weight:600}
+.toggle{margin-left:auto;width:36px;height:21px;border-radius:999px;background:var(--muted);
+  border:1px solid var(--border-str);position:relative;flex:none}
+.toggle i{position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:var(--card);
+  box-shadow:var(--shadow-sm);transition:left .24s var(--ease)}
+.toggle.on{background:var(--sun-500);border-color:transparent}
+.toggle.on i{left:18px}
+
+/* ── moods ─────────────────────────────────────────────────────── */
+.moods{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:14px}
+.mood{border-radius:var(--radius-lg);padding:18px 14px;text-align:center;border:1px solid var(--border);
+  transition:transform .3s var(--ease)}
+.mood:hover{transform:translateY(-5px) rotate(-1.4deg)}
+.mood svg.owl{width:88px;height:auto}
+.mood b{display:block;margin-top:8px;font-size:14px}
+.mood span{font-size:11.5px;color:var(--muted-fg)}
+.mood.dawn{background:linear-gradient(170deg,#FFF4EC,#FFE9DA)}
+.mood.day{background:linear-gradient(170deg,#EBF2FF,#DCE9FF)}
+.mood.dusk{background:linear-gradient(170deg,#FFEEDF,#FFD9BC)}
+.mood.night{background:linear-gradient(170deg,#1B2030,#111624)}
+.mood.night b{color:#ECEEF1}
+.mood.night span{color:#9AA1AC}
+
+/* ── pipeline / tables ─────────────────────────────────────────── */
+.pipe{padding:22px 22px 92px;display:grid;gap:14px}
+.pipe-track{display:flex;gap:9px;overflow-x:auto;padding-bottom:4px}
+.pipe-step{flex:1;min-width:130px;padding:13px;border-radius:var(--radius);border:1px solid var(--border);
+  background:var(--card);box-shadow:var(--shadow-sm);transition:transform .22s var(--ease)}
+.pipe-step:hover{transform:translateY(-3px)}
+.pipe-step .n{font-family:var(--mono);font-size:10.5px;color:var(--faint-fg);font-weight:700}
+.pipe-step h4{font-size:13.5px;margin:3px 0 6px}
+.pipe-step.blocked{border-style:dashed;opacity:.82}
+.tag{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:800}
+.t-done{background:var(--pass-bg);color:var(--pass)}
+.t-now{background:var(--sun-50);color:var(--sun-700)}
+.t-block{background:var(--reject-bg);color:var(--reject)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+thead th{text-align:left;padding:9px 12px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint-fg);border-bottom:1px solid var(--border-str)}
+tbody td{padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+tbody tr{transition:background .16s}
+tbody tr:hover{background:var(--muted)}
+td .req{font-family:var(--mono);font-size:11.5px;color:var(--tech-600)}
+.scroller{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border);background:var(--card)}
+.scroller table{min-width:660px}
+
+/* ── commands ──────────────────────────────────────────────────── */
+.cmd{display:block;font-family:var(--mono);font-size:13.5px;background:var(--stage);color:#E8EAED;
+  padding:12px 15px;border-radius:10px;border:1px solid var(--stage-line);overflow-x:auto;white-space:pre}
+.cmd .c{color:#FFB57A}
+.cmd .k{color:#7BA6FD}
+.cmd .m{color:#7A8390}
+ol.steps{counter-reset:s;list-style:none;padding:0;margin:0;display:grid;gap:11px}
+ol.steps li{counter-increment:s;position:relative;padding:14px 18px 14px 54px;background:var(--card);
+  border:1px solid var(--border);border-radius:var(--radius);font-size:14px;
+  transition:transform .22s var(--ease),box-shadow .22s}
+ol.steps li:hover{transform:translateX(4px);box-shadow:var(--shadow-sm)}
+ol.steps li::before{content:counter(s);position:absolute;left:16px;top:13px;width:25px;height:25px;
+  border-radius:8px;display:grid;place-items:center;background:var(--foreground);color:var(--background);
+  font-family:var(--mono);font-size:12px;font-weight:700}
+ol.steps li b{display:block;font-size:14.5px}
+ol.steps li span{color:var(--muted-fg);font-size:13px}
+footer{padding:46px 0 70px;color:var(--faint-fg);font-size:13px;border-top:1px solid var(--border)}
+
+@media (max-width:900px){
+  .review{grid-template-columns:1fr}
+  .inspector{border-left:0;border-top:1px solid var(--border)}
+  .statrow{grid-template-columns:1fr}
+  .hero{padding:48px 0 28px}
+}
+</style>
+</head>
+<body>
+
+<div class="topline">
+  <span class="logo">
+    <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="11" cy="16" r="9" fill="#FF7A1A"/>
+      <circle cx="21" cy="16" r="9" fill="#1B6EF3" fill-opacity=".82"/>
+    </svg>
+    PlayerOne
+  </span>
+  <nav>
+    <a href="#split">Two surfaces</a>
+    <a href="#identity">Identity</a>
+    <a href="#cu">Cú</a>
+    <a href="#screens">Screens</a>
+    <a href="#map">Nav map</a>
+    <a href="#run">Commands</a>
+  </nav>
+</div>
+
+<div class="wrap hero">
+  <span class="eyebrow rise">Design draft v2 · signed off D1a D2a D3a D4a D5b D6a</span>
+  <h1 class="rise d1">One design system.<br>Two very different surfaces.</h1>
+  <p class="lede rise d2">A web back-office where operators judge footage on a fixed workstation, and an
+  Android app where collectors record it. Same palette, same mascot, same tokens — different jobs, different
+  codebases. Below: the confirmed platform split, the new identity, Cú, and every command to start.</p>
+</div>
+
+<!-- ═════ 01 THE SPLIT ═════ -->
+<section id="split">
+  <div class="wrap">
+    <header class="rise">
+      <span class="sec-no">01 — CONFIRMED</span>
+      <h2>Yes. Operator is web, collector is Android.</h2>
+      <p class="sub">You asked me to confirm before we go. I checked it against the brief rather than
+      assuming — §3.4 and the architecture diagram both say it outright.</p>
+    </header>
+
+    <div class="grid g2">
+      <div class="card rise">
+        <h3>🖥️ Operator — web back-office</h3>
+        <p><b>Brief §3.4 item 2:</b> "Web back-office — task, collector, device, upload-centre, batch, episode,
+        review and settlement management." Runs on fixed upload-centre machines, needs a machine token
+        <em>and</em> an operator token on every write (PRD §8.3.2 rule 1). Stays on the current stack:
+        TypeScript, Fastify, server-rendered, no build step, works with the link down.</p>
+      </div>
+      <div class="card rise d1">
+        <h3>📱 Collector — Android app</h3>
+        <p><b>Brief §3.4 item 1:</b> "Collector mobile app — <b>Android first, iOS secondary</b>." Decision C10,
+        taken by Alois on 14 Aug. The architecture diagram literally labels the box
+        <code>MOBILE APP (Android)</code>. React Native is a sound choice for it.</p>
+      </div>
+    </div>
+
+    <div class="note red rise" style="margin-top:18px">
+      <b>The part you need to hear before we start on the app.</b> Most of the collector app is blocked, and
+      not by us. <b>D5</b> — the device SDK and manual — is listed against "<em>Everything</em>" and was
+      promised on 13 Aug. <b>D1</b> — the Wi-Fi protocol between device and phone — blocks "<em>the entire Path A
+      upload flow</em>". Without them we cannot build device binding (APP-14/15), pre-collection checks
+      (APP-19/22), or any upload.
+    </div>
+
+    <div class="grid g2 rise" style="margin-top:16px">
+      <div class="card">
+        <h3>Buildable today — about 60% of the app</h3>
+        <p>Account and agreements (APP-01/02) · training and exam (APP-03/04/05) · task hall, task detail,
+        claiming, my tasks (APP-08→13) · session declarations (APP-17b) · upload-record <em>screens</em>
+        (APP-23/24) · review results in the collector's language (APP-27) · earnings.</p>
+      </div>
+      <div class="card">
+        <h3>Blocked until PaXini delivers</h3>
+        <p>Device binding · pre-collection battery and storage checks · the recording handoff · Path A upload
+        · firmware display. We can design and stub every one of these, and they stay stubs until D1 and D5 land.</p>
+      </div>
+    </div>
+
+    <div class="note blue rise" style="margin-top:16px">
+      <b>One flag on React Native.</b> Earlier you told me "we can't use React", and I removed a React scaffold
+      from this repo. I read that as a rule for the <em>console</em> — which has no bundler and must run on a
+      LAN with the link down — and not for a native Android app. So: console stays vanilla, the Android app
+      is a separate React&nbsp;Native codebase in its own repo. Say the word if you meant it more broadly.
+    </div>
+  </div>
+</section>
+
+<!-- ═════ 02 IDENTITY ═════ -->
+<section id="identity">
+  <div class="wrap">
+    <header class="rise">
+      <span class="sec-no">02 — IDENTITY</span>
+      <h2>A mark that means something, and no gradient blobs</h2>
+      <p class="sub">The old mark was a rounded square with a swoosh in it — the thing every generated logo
+      looks like. This one is two circles.</p>
+    </header>
+
+    <div class="grid g2" style="align-items:center;margin-bottom:26px">
+      <div class="card rise" style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
+        <svg width="104" height="104" viewBox="0 0 32 32" aria-label="PlayerOne mark">
+          <circle cx="11" cy="16" r="9" fill="#FF7A1A"/>
+          <circle cx="21" cy="16" r="9" fill="#1B6EF3" fill-opacity=".82"/>
+        </svg>
+        <div style="flex:1;min-width:190px">
+          <h3>The stereo pair</h3>
+          <p>The Ego headset has two camera lenses side by side. So does the mark. VNG's sun on the left,
+          PaXini's blue on the right, overlapping where the data is. It is also, deliberately, a pair of
+          eyes — which is where Cú comes from.</p>
+        </div>
+      </div>
+      <div class="rise d1">
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <svg width="40" height="40" viewBox="0 0 32 32"><circle cx="11" cy="16" r="9" fill="#FF7A1A"/><circle cx="21" cy="16" r="9" fill="#1B6EF3" fill-opacity=".82"/></svg>
+          <svg width="28" height="28" viewBox="0 0 32 32"><circle cx="11" cy="16" r="9" fill="#FF7A1A"/><circle cx="21" cy="16" r="9" fill="#1B6EF3" fill-opacity=".82"/></svg>
+          <svg width="20" height="20" viewBox="0 0 32 32"><circle cx="11" cy="16" r="9" fill="#FF7A1A"/><circle cx="21" cy="16" r="9" fill="#1B6EF3" fill-opacity=".82"/></svg>
+          <svg width="16" height="16" viewBox="0 0 32 32"><circle cx="11" cy="16" r="9" fill="#FF7A1A"/><circle cx="21" cy="16" r="9" fill="#1B6EF3" fill-opacity=".82"/></svg>
+          <span style="width:1px;height:34px;background:var(--border)"></span>
+          <svg width="30" height="30" viewBox="0 0 32 32"><circle cx="11" cy="16" r="9" fill="currentColor"/><circle cx="21" cy="16" r="9" fill="currentColor" fill-opacity=".45"/></svg>
+          <span style="background:var(--stage);padding:7px;border-radius:9px;display:inline-flex">
+            <svg width="30" height="30" viewBox="0 0 32 32"><circle cx="11" cy="16" r="9" fill="#FF9450"/><circle cx="21" cy="16" r="9" fill="#4A85F8" fill-opacity=".85"/></svg>
+          </span>
+        </div>
+        <p style="font-size:13.5px;color:var(--muted-fg)">Holds at 16&nbsp;px, works in one colour, works on
+        the dark theatre, and survives being an Android launcher icon. No gradient, no bevel, nothing to
+        date it.</p>
+      </div>
+    </div>
+
+    <div class="grid g2 rise" style="margin-bottom:22px">
+      <div>
+        <div class="ramp">
+          <i style="background:var(--sun-50)"></i><i style="background:var(--sun-100)"></i>
+          <i style="background:var(--sun-200)"></i><i style="background:var(--sun-300)"></i>
+          <i style="background:var(--sun-400)"></i><i style="background:var(--sun-500)"></i>
+          <i style="background:var(--sun-600)"></i><i style="background:var(--sun-700)"></i>
+        </div>
+        <div class="ramp-label"><b>VNG Sun</b><span class="mono">#FF7A1A · actions, brand, progress</span></div>
+      </div>
+      <div>
+        <div class="ramp">
+          <i style="background:var(--tech-50)"></i><i style="background:var(--tech-100)"></i>
+          <i style="background:var(--tech-200)"></i><i style="background:var(--tech-300)"></i>
+          <i style="background:var(--tech-400)"></i><i style="background:var(--tech-500)"></i>
+          <i style="background:var(--tech-600)"></i><i style="background:var(--tech-700)"></i>
+        </div>
+        <div class="ramp-label"><b>PaXini Tech</b><span class="mono">#1B6EF3 · data, links, system</span></div>
+      </div>
+    </div>
+
+    <div class="grid g2">
+      <div class="card rise">
+        <h3>The three verdicts <span style="font-weight:600;color:var(--muted-fg);font-size:13px">— D2a</span></h3>
+        <p style="margin-bottom:13px">Never orange, and each carries a shape as well as a colour.</p>
+        <div class="chipset">
+          <span class="vchip v-pass"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5l4 4 8-9"/></svg> Good</span>
+          <span class="vchip v-partial"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="10" cy="10" r="7"/><path d="M10 3a7 7 0 010 14z" fill="currentColor" stroke="none"/></svg> Partial</span>
+          <span class="vchip v-reject"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/></svg> Reject</span>
+        </div>
+      </div>
+      <div class="card rise d1">
+        <h3>Type <span style="font-weight:600;color:var(--muted-fg);font-size:13px">— D3a, shipped in-repo</span></h3>
+        <div class="type-row"><span class="tag">display / 800</span><span style="font-size:32px;font-weight:800;letter-spacing:-.04em">128</span></div>
+        <div class="type-row"><span class="tag">title / 700</span><span style="font-size:20px;font-weight:700">Review queue</span></div>
+        <div class="type-row"><span class="tag">body / 500</span><span style="font-size:15px">Payable footage this shift</span></div>
+        <div class="type-row" style="border:0"><span class="tag">mono / 500</span><span class="mono" style="font-size:13px">2:12.961 · 1 200 ₫/min</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════ 03 CÚ ═════ -->
+<section id="cu">
+  <div class="wrap">
+    <header class="rise">
+      <span class="sec-no">03 — MASCOT · D5b</span>
+      <h2>Meet Cú, and the shift she's on</h2>
+      <p class="sub">The robot is gone. <b>Cú</b> is Vietnamese for owl — and <em>cú đêm</em>, "night owl", is
+      a real Vietnamese idiom for someone who stays up late. Chinese has the same idiom, <em>夜猫子</em>. Both
+      partners already have a word for her.</p>
+    </header>
+
+    <div class="grid g2 rise" style="margin-bottom:22px">
+      <div class="card">
+        <h3>Why an owl, and not a dog or a hedgehog</h3>
+        <p>An owl has two big round forward-facing eyes. So does the Ego headset. The mark, her eyes and the
+        hardware are the same two circles — the identity closes on itself instead of being decoration bolted
+        on. She also does the job: an owl <em>watches</em>, and watching footage is literally the work.</p>
+      </div>
+      <div class="card">
+        <h3>She's driven by the clock, not by a mood picker</h3>
+        <p>Upload centres run shifts and reviewers work nights. Cú reads <code>getHours()</code> and changes
+        with it — four states, no setting, no surprise. An owl forced onto the 6&nbsp;a.m. shift is funny once
+        a day and never in the way.</p>
+      </div>
+    </div>
+
+    <div class="moods">
+      <!-- DAWN -->
+      <div class="mood dawn rise">
+        <svg class="owl" viewBox="0 0 120 118">
+          <ellipse cx="60" cy="110" rx="27" ry="4.5" fill="rgba(23,21,15,.09)"/>
+          <path d="M60 14c22 0 34 18 34 44 0 28-15 44-34 44s-34-16-34-44c0-26 12-44 34-44z" fill="#E9E3DA"/>
+          <path d="M60 46c14 0 22 13 22 30 0 18-10 26-22 26s-22-8-22-26c0-17 8-30 22-30z" fill="#FAF6F0"/>
+          <path d="M28 26l12 12-16 4z" fill="#E9E3DA"/><path d="M92 26L80 38l16 4z" fill="#E9E3DA"/>
+          <circle cx="45" cy="50" r="14" fill="#FAF6F0"/><circle cx="75" cy="50" r="14" fill="#FAF6F0"/>
+          <circle cx="45" cy="50" r="8.5" fill="#1B6EF3"/><circle cx="75" cy="50" r="8.5" fill="#1B6EF3"/>
+          <circle cx="45" cy="50" r="4" fill="#0E1013"/><circle cx="75" cy="50" r="4" fill="#0E1013"/>
+          <path d="M31 44a14 14 0 0128 0z" fill="#E9E3DA"/><path d="M61 44a14 14 0 0128 0z" fill="#E9E3DA"/>
+          <path d="M60 60l-7 8h14z" fill="#FF7A1A"/>
+          <path d="M50 96l-4 7h8zM70 96l4 7h-8z" fill="#FF9450"/>
+          <g><rect x="86" y="64" width="17" height="15" rx="3" fill="#fff" stroke="#E8620A" stroke-width="2"/>
+            <path d="M103 68h4a3 3 0 010 6h-4" fill="none" stroke="#E8620A" stroke-width="2"/>
+            <path d="M90 60c0-3 3-3 3-6M96 60c0-3 3-3 3-6" stroke="#E8620A" stroke-width="2" fill="none" stroke-linecap="round" opacity=".7"/></g>
+        </svg>
+        <b>Early bird</b><span>05:00 – 09:00</span>
+      </div>
+      <!-- DAY -->
+      <div class="mood day rise d1">
+        <svg class="owl" viewBox="0 0 120 118">
+          <ellipse cx="60" cy="110" rx="27" ry="4.5" fill="rgba(23,21,15,.09)"/>
+          <path d="M60 14c22 0 34 18 34 44 0 28-15 44-34 44s-34-16-34-44c0-26 12-44 34-44z" fill="#E9E3DA"/>
+          <path d="M60 46c14 0 22 13 22 30 0 18-10 26-22 26s-22-8-22-26c0-17 8-30 22-30z" fill="#FAF6F0"/>
+          <path d="M28 26l12 12-16 4z" fill="#E9E3DA"/><path d="M92 26L80 38l16 4z" fill="#E9E3DA"/>
+          <circle cx="45" cy="50" r="14" fill="#FAF6F0"/><circle cx="75" cy="50" r="14" fill="#FAF6F0"/>
+          <circle cx="45" cy="50" r="9" fill="#1B6EF3"/><circle cx="75" cy="50" r="9" fill="#1B6EF3"/>
+          <circle cx="45" cy="50" r="4.4" fill="#0E1013"/><circle cx="75" cy="50" r="4.4" fill="#0E1013"/>
+          <circle cx="47.6" cy="47" r="2.1" fill="#fff"/><circle cx="77.6" cy="47" r="2.1" fill="#fff"/>
+          <path d="M60 60l-7 8h14z" fill="#FF7A1A"/>
+          <path d="M50 96l-4 7h8zM70 96l4 7h-8z" fill="#FF9450"/>
+          <path d="M26 62q-8 6 -2 14" stroke="#E9E3DA" stroke-width="6" fill="none" stroke-linecap="round"/>
+        </svg>
+        <b>Day shift</b><span>09:00 – 17:00</span>
+      </div>
+      <!-- DUSK -->
+      <div class="mood dusk rise d2">
+        <svg class="owl" viewBox="0 0 120 118">
+          <ellipse cx="60" cy="110" rx="27" ry="4.5" fill="rgba(23,21,15,.09)"/>
+          <path d="M60 14c22 0 34 18 34 44 0 28-15 44-34 44s-34-16-34-44c0-26 12-44 34-44z" fill="#E4DCD2"/>
+          <path d="M60 46c14 0 22 13 22 30 0 18-10 26-22 26s-22-8-22-26c0-17 8-30 22-30z" fill="#FAF6F0"/>
+          <path d="M28 26l12 12-16 4z" fill="#E4DCD2"/><path d="M92 26L80 38l16 4z" fill="#E4DCD2"/>
+          <circle cx="45" cy="50" r="14" fill="#FAF6F0"/><circle cx="75" cy="50" r="14" fill="#FAF6F0"/>
+          <circle cx="45" cy="50" r="9" fill="#0F55CC"/><circle cx="75" cy="50" r="9" fill="#0F55CC"/>
+          <circle cx="45" cy="51" r="4.4" fill="#0E1013"/><circle cx="75" cy="51" r="4.4" fill="#0E1013"/>
+          <path d="M34 46a12 12 0 0122 0z" fill="#E4DCD2"/><path d="M64 46a12 12 0 0122 0z" fill="#E4DCD2"/>
+          <path d="M60 60l-7 8h14z" fill="#FF7A1A"/>
+          <path d="M50 96l-4 7h8zM70 96l4 7h-8z" fill="#FF9450"/>
+          <circle cx="99" cy="30" r="9" fill="#FFC9A5"/>
+        </svg>
+        <b>Golden hour</b><span>17:00 – 22:00</span>
+      </div>
+      <!-- NIGHT -->
+      <div class="mood night rise d3">
+        <svg class="owl" viewBox="0 0 120 118">
+          <path d="M100 22a11 11 0 11-9-11 9 9 0 009 11z" fill="#FFC9A5"/>
+          <circle cx="20" cy="18" r="1.7" fill="#fff" opacity=".8"/>
+          <circle cx="34" cy="10" r="1.2" fill="#fff" opacity=".6"/>
+          <circle cx="108" cy="52" r="1.4" fill="#fff" opacity=".55"/>
+          <ellipse cx="60" cy="110" rx="27" ry="4.5" fill="rgba(0,0,0,.34)"/>
+          <path d="M60 14c22 0 34 18 34 44 0 28-15 44-34 44s-34-16-34-44c0-26 12-44 34-44z" fill="#3B4152"/>
+          <path d="M60 46c14 0 22 13 22 30 0 18-10 26-22 26s-22-8-22-26c0-17 8-30 22-30z" fill="#4C5468"/>
+          <path d="M28 26l12 12-16 4z" fill="#3B4152"/><path d="M92 26L80 38l16 4z" fill="#3B4152"/>
+          <circle cx="45" cy="50" r="15" fill="#EFF3F8"/><circle cx="75" cy="50" r="15" fill="#EFF3F8"/>
+          <circle cx="45" cy="50" r="10" fill="#4A85F8"/><circle cx="75" cy="50" r="10" fill="#4A85F8"/>
+          <circle cx="45" cy="50" r="5" fill="#0E1013"/><circle cx="75" cy="50" r="5" fill="#0E1013"/>
+          <circle cx="48" cy="46.6" r="2.4" fill="#fff"/><circle cx="78" cy="46.6" r="2.4" fill="#fff"/>
+          <path d="M60 61l-7 8h14z" fill="#FF7A1A"/>
+          <path d="M50 96l-4 7h8zM70 96l4 7h-8z" fill="#E8620A"/>
+        </svg>
+        <b>Cú đêm · Night owl</b><span>22:00 – 05:00</span>
+      </div>
+    </div>
+
+    <div class="grid g3 rise" style="margin-top:20px">
+      <div class="card"><h3>Where she appears</h3><p>Inside the gauge on both apps, as the empty state, as the
+      loading state, and once when the queue hits zero. Never on the review screen itself — nothing cartoon
+      goes next to footage someone is paid on.</p></div>
+      <div class="card"><h3>How she's built</h3><p>Flat SVG, five fills, no gradients on the character. Under
+      3&nbsp;KB per state, inline in the console and an <code>react-native-svg</code> component in the app. Same
+      artwork both sides.</p></div>
+      <div class="card"><h3>What she's worth</h3><p>She's the thing PaXini remembers after the meeting, and
+      the thing a collector sees every day. That's the entire argument — she does no other work.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════ 04 SCREENS + HOT SWITCH ═════ -->
+<section id="screens">
+  <div class="wrap">
+    <header class="rise">
+      <span class="sec-no">04 — SCREENS</span>
+      <h2>The hot switch</h2>
+      <p class="sub">Flip between the two surfaces. In this document it swaps the mock. In the real console it
+      ships as a preview toggle for operators and demos — a collector never sees the back-office, and an
+      operator's "collector view" is read-only and clearly labelled.</p>
+    </header>
+
+    <div class="rise" style="display:flex;justify-content:center;margin-bottom:26px">
+      <div class="hotswitch" id="hs" role="tablist" aria-label="Surface">
+        <span class="slider" id="hsSlide"></span>
+        <button role="tab" aria-selected="true" data-pane="op">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="2" y="4" width="16" height="11" rx="2"/><path d="M7 18h6"/></svg>
+          Operator · web
+        </button>
+        <button role="tab" aria-selected="false" data-pane="co">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="6" y="2" width="8" height="16" rx="2"/><path d="M9 15.4h2"/></svg>
+          Collector · Android
+        </button>
+      </div>
+    </div>
+
+    <!-- ── OPERATOR PANE ── -->
+    <div class="pane on" id="pane-op">
+
+      <h3 style="font-size:19px;margin-bottom:12px">Home — the shift</h3>
+      <div class="frame rise" style="margin-bottom:34px">
+        <div class="frame-bar"><i></i><i></i><i></i><span>playerone.vng.local / home</span></div>
+        <div class="app">
+          <div class="appbar">
+            <span class="logo" style="font-size:15px">
+              <svg width="22" height="22" viewBox="0 0 32 32"><circle cx="11" cy="16" r="9" fill="#FF7A1A"/><circle cx="21" cy="16" r="9" fill="#1B6EF3" fill-opacity=".82"/></svg>
+              PlayerOne
+            </span>
+            <span class="statpill blue"><span class="ico">◷</span> 42 in queue</span>
+            <span class="statpill sun"><span class="ico">↯</span> 31.4s avg</span>
+            <span class="spacer"></span>
+            <span class="statpill" style="font-weight:600;color:var(--muted-fg)">HCM · D7</span>
+            <span class="avatar">OP</span>
+          </div>
+
+          <div class="hub">
+            <div class="gauge">
+              <svg class="dial" viewBox="0 0 300 264" aria-hidden="true">
+                <defs><linearGradient id="ag" x1="0" y1="1" x2="1" y2="0">
+                  <stop offset="0%" stop-color="#FFB57A"/><stop offset="55%" stop-color="#FF7A1A"/><stop offset="100%" stop-color="#E8620A"/>
+                </linearGradient></defs>
+                <path d="M 68.8 227.2 A 115 115 0 1 1 231.2 227.2" fill="none" stroke="var(--muted)" stroke-width="15" stroke-linecap="round"/>
+                <path d="M 68.8 227.2 A 115 115 0 1 1 231.2 227.2" fill="none" stroke="url(#ag)" stroke-width="15" stroke-linecap="round" stroke-dasharray="368 542"/>
+                <g stroke="var(--border-str)" stroke-width="1.6" stroke-linecap="round">
+                  <line x1="150" y1="28" x2="150" y2="38"/><line x1="86" y1="52" x2="93" y2="60"/>
+                  <line x1="214" y1="52" x2="207" y2="60"/><line x1="47" y1="110" x2="57" y2="113"/>
+                  <line x1="253" y1="110" x2="243" y2="113"/></g>
+                <text x="150" y="58" text-anchor="middle" font-size="12" font-weight="700" fill="var(--faint-fg)" font-family="JetBrains Mono, monospace">180 min</text>
+                <text x="72" y="122" text-anchor="middle" font-size="11" fill="var(--faint-fg)" font-family="JetBrains Mono, monospace">60</text>
+                <text x="228" y="122" text-anchor="middle" font-size="11" fill="var(--faint-fg)" font-family="JetBrains Mono, monospace">300</text>
+              </svg>
+              <svg class="pet" viewBox="0 0 120 118" aria-label="Cú, night owl">
+                <path d="M60 14c22 0 34 18 34 44 0 28-15 44-34 44s-34-16-34-44c0-26 12-44 34-44z" fill="#E9E3DA"/>
+                <path d="M60 46c14 0 22 13 22 30 0 18-10 26-22 26s-22-8-22-26c0-17 8-30 22-30z" fill="#FAF6F0"/>
+                <path d="M28 26l12 12-16 4z" fill="#E9E3DA"/><path d="M92 26L80 38l16 4z" fill="#E9E3DA"/>
+                <circle cx="45" cy="50" r="14" fill="#FAF6F0"/><circle cx="75" cy="50" r="14" fill="#FAF6F0"/>
+                <circle cx="45" cy="50" r="9" fill="#1B6EF3"/><circle cx="75" cy="50" r="9" fill="#1B6EF3"/>
+                <circle cx="45" cy="50" r="4.4" fill="#0E1013"/><circle cx="75" cy="50" r="4.4" fill="#0E1013"/>
+                <circle cx="47.6" cy="47" r="2.1" fill="#fff"/><circle cx="77.6" cy="47" r="2.1" fill="#fff"/>
+                <path d="M60 60l-7 8h14z" fill="#FF7A1A"/>
+                <path d="M50 96l-4 7h8zM70 96l4 7h-8z" fill="#FF9450"/>
+              </svg>
+              <span class="milestone done" style="left:-6px;top:132px"><i></i> 60</span>
+              <span class="milestone done" style="left:6px;top:176px"><i></i> 120</span>
+              <span class="milestone now" style="left:2px;top:96px"><i></i> 122 min</span>
+              <span class="milestone" style="right:-6px;top:132px"><i></i> 240</span>
+              <span class="milestone" style="right:4px;top:176px"><i></i> 300</span>
+              <span class="gauge-val"><b>38</b><span>episodes reviewed · target 60</span></span>
+            </div>
+
+            <div class="cta-row">
+              <button class="btn btn-primary btn-pill">Start reviewing <span class="kbd">R</span></button>
+              <button class="icon-btn" aria-label="Hand off shift"><svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14V3M6.5 6.5L10 3l3.5 3.5M4 13v3h12v-3"/></svg></button>
+            </div>
+
+            <div class="statrow">
+              <div class="statcard"><div class="k">Payable today</div><div class="v mono">122:04</div><div class="bar"><i style="width:68%"></i></div></div>
+              <div class="statcard"><div class="k">Approval rate</div><div class="v" style="color:var(--pass)">87%</div><div class="bar"><i style="width:87%;background:var(--pass)"></i></div></div>
+              <div class="statcard"><div class="k">Settled value</div><div class="v mono">146 480 ₫</div><div class="bar"><i style="width:52%;background:var(--tech-500)"></i></div></div>
+            </div>
+
+            <div class="banner" style="margin-top:12px">
+              <span class="ico" style="width:30px;height:30px;border-radius:50%;background:var(--tech-100);color:var(--tech-700);display:grid;place-items:center">◧</span>
+              <span class="txt"><b>7 episodes need a human</b><p>The resolver refused to guess who recorded them.</p></span>
+              <button class="btn" style="height:32px;font-size:12.5px">Open</button>
+            </div>
+          </div>
+
+          <nav class="pillnav">
+            <a href="#" class="on"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 8.5L10 3l7 5.5V16a1 1 0 01-1 1h-3v-5H7v5H4a1 1 0 01-1-1z"/></svg>Home</a>
+            <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="2.5" y="5" width="15" height="11" rx="2"/><path d="M2.5 9h15M7 5V3M13 5V3"/></svg>Counter</a>
+            <a href="#" class="hot"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M2.5 5.5A2 2 0 014.5 3.5h7a2 2 0 012 2v9a2 2 0 01-2 2h-7a2 2 0 01-2-2z"/><path d="M13.5 8.5l4-2.5v8l-4-2.5z"/></svg>Review</a>
+            <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 5h14M3 10h14M3 15h9"/></svg>Episodes</a>
+            <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M10 2.5v15M13.5 6H8.2a2.2 2.2 0 000 4.4h3.6a2.2 2.2 0 010 4.4H6"/></svg>Settle</a>
+          </nav>
+        </div>
+      </div>
+
+      <h3 style="font-size:19px;margin-bottom:12px">Review — the theatre <span style="font-weight:600;font-size:13.5px;color:var(--muted-fg)">· behaviour already built and tested</span></h3>
+      <div class="frame rise" style="margin-bottom:34px">
+        <div class="frame-bar"><i></i><i></i><i></i><span>playerone.vng.local / review</span></div>
+        <div class="app">
+          <div class="appbar">
+            <span class="logo" style="font-size:15px">
+              <svg width="22" height="22" viewBox="0 0 32 32"><circle cx="11" cy="16" r="9" fill="#FF7A1A"/><circle cx="21" cy="16" r="9" fill="#1B6EF3" fill-opacity=".82"/></svg>
+              PlayerOne
+            </span>
+            <span class="statpill blue"><span class="ico">◷</span> 41 left</span>
+            <span class="statpill sun"><span class="ico">↯</span> 28.9s avg</span>
+            <span class="spacer"></span>
+            <button class="btn btn-ghost" style="height:32px;font-size:12.5px">中文</button>
+            <button class="btn" style="height:32px;font-size:12.5px">Shortcuts <span class="kbd">?</span></button>
+            <span class="avatar">OP</span>
+          </div>
+          <div class="review">
+            <div class="theatre">
+              <div class="screenbox"><div class="ghost">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="14" height="14" rx="2"/><path d="M16 10l6-3.5v11L16 14z"/></svg>
+                ego_AZER76400FE_20260813_073055</div></div>
+              <div class="tbar">
+                <button class="play" aria-label="Pause"><svg width="13" height="13" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="1.5" width="3" height="9" rx="1"/><rect x="7" y="1.5" width="3" height="9" rx="1"/></svg></button>
+                <span class="tc">1:04.32 / 2:12.96</span>
+                <span class="mono" style="color:var(--stage-mid)">2.00×</span>
+                <span style="margin-left:auto;font-size:11px;letter-spacing:.05em;text-transform:uppercase">Part 1 of 1</span>
+              </div>
+              <div class="scrub">
+                <div class="buf"></div><div class="mark" style="left:8%;width:19%"></div>
+                <div class="mark" style="left:38%;width:26%"></div><div class="beyond"></div>
+                <div class="head" style="left:48%"></div>
+              </div>
+              <div class="markrow">
+                <button class="mini">Mark in <span class="kbd">I</span></button>
+                <button class="mini">Mark out <span class="kbd">O</span></button>
+                <button class="mini">Clear <span class="kbd">X</span></button>
+                <span class="est"><b>0:59.60</b><span>estimated payable · server decides</span></span>
+              </div>
+            </div>
+            <aside class="inspector">
+              <div class="insp-h">This delivery</div>
+              <dl style="margin:0">
+                <div class="kv"><dt>Task</dt><dd>Housework<small>1 200 ₫ / min</small></dd></div>
+                <div class="kv"><dt>Collector</dt><dd>c-1</dd></div>
+                <div class="kv"><dt>Measured</dt><dd class="mono">2:12.961</dd></div>
+                <div class="kv"><dt>Device claim</dt><dd class="mono" style="color:var(--muted-fg);font-weight:500">2:58.000</dd></div>
+                <div class="kv" style="border:0"><dt>Difference</dt><dd><span class="delta">+45.0s · +34%</span></dd></div>
+              </dl>
+              <div class="flagrow"><div><code>SESSION-UNCLOSED</code>
+                <p>The device never wrote a closing record. Measured from stream timestamps.</p></div></div>
+            </aside>
+          </div>
+          <div class="verdictbar">
+            <button class="vbtn"><span class="kbd">1</span> Good</button>
+            <button class="vbtn sel-partial"><span class="kbd">2</span> Partial</button>
+            <button class="vbtn"><span class="kbd">3</span> Reject</button>
+            <button class="commit">Commit and advance <span class="kbd">↵</span></button>
+          </div>
+        </div>
+      </div>
+
+      <h3 style="font-size:19px;margin-bottom:12px">Pipeline — what's actually built</h3>
+      <div class="frame rise">
+        <div class="frame-bar"><i></i><i></i><i></i><span>playerone.vng.local / pipeline</span></div>
+        <div class="app">
+          <div class="appbar">
+            <span class="logo" style="font-size:15px">
+              <svg width="22" height="22" viewBox="0 0 32 32"><circle cx="11" cy="16" r="9" fill="#FF7A1A"/><circle cx="21" cy="16" r="9" fill="#1B6EF3" fill-opacity=".82"/></svg>
+              PlayerOne
+            </span>
+            <span class="spacer"></span>
+            <span class="tag t-done">7 built</span><span class="tag t-now">4 next</span><span class="tag t-block">5 blocked</span>
+            <span class="avatar">OP</span>
+          </div>
+          <div class="pipe">
+            <div class="pipe-track">
+              <div class="pipe-step"><div class="n">01</div><h4>Record</h4><span class="tag t-done">✓ Verified</span></div>
+              <div class="pipe-step"><div class="n">02</div><h4>Hand in card</h4><span class="tag t-done">✓ Built</span></div>
+              <div class="pipe-step"><div class="n">03</div><h4>Measure</h4><span class="tag t-done">✓ Built</span></div>
+              <div class="pipe-step"><div class="n">04</div><h4>Attribute</h4><span class="tag t-done">✓ Built</span></div>
+              <div class="pipe-step"><div class="n">05</div><h4>Review</h4><span class="tag t-done">✓ Built</span></div>
+              <div class="pipe-step"><div class="n">06</div><h4>Settle</h4><span class="tag t-now">◐ Row written</span></div>
+              <div class="pipe-step blocked"><div class="n">07</div><h4>Cloud upload</h4><span class="tag t-block">✕ D2</span></div>
+            </div>
+            <div class="scroller">
+              <table>
+                <thead><tr><th>Capability</th><th>Requirement</th><th>State</th><th>Surface</th></tr></thead>
+                <tbody>
+                  <tr><td><b>Duration measurement</b></td><td class="req">UPL-14 · §5.3.3</td><td><span class="tag t-done">Built</span></td><td style="color:var(--muted-fg)">Engine — no screen</td></tr>
+                  <tr><td><b>Session attribution</b></td><td class="req">PLT-05 · SET-08</td><td><span class="tag t-done">Built</span></td><td style="color:var(--muted-fg)">Counter</td></tr>
+                  <tr><td><b>Review verdicts</b></td><td class="req">QR-01 · QR-03</td><td><span class="tag t-done">Built</span></td><td style="color:var(--muted-fg)">Review</td></tr>
+                  <tr><td><b>Settlement row</b></td><td class="req">SET-02 · SET-04</td><td><span class="tag t-now">Partial</span></td><td style="color:var(--muted-fg)">Settle</td></tr>
+                  <tr><td><b>Training &amp; exam</b></td><td class="req">APP-03→05</td><td><span class="tag t-now">Buildable</span></td><td style="color:var(--muted-fg)">Android app</td></tr>
+                  <tr><td><b>Device binding</b></td><td class="req">APP-14/15</td><td><span class="tag t-block">Blocked · D5</span></td><td style="color:var(--muted-fg)">Android app</td></tr>
+                  <tr><td><b>Path A upload</b></td><td class="req">UPL-02 · APP-26</td><td><span class="tag t-block">Blocked · D1</span></td><td style="color:var(--muted-fg)">Android app</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <nav class="pillnav">
+            <a href="#" class="on"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 8.5L10 3l7 5.5V16a1 1 0 01-1 1h-3v-5H7v5H4a1 1 0 01-1-1z"/></svg>Home</a>
+            <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="2.5" y="5" width="15" height="11" rx="2"/><path d="M2.5 9h15M7 5V3M13 5V3"/></svg>Counter</a>
+            <a href="#" class="hot"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M2.5 5.5A2 2 0 014.5 3.5h7a2 2 0 012 2v9a2 2 0 01-2 2h-7a2 2 0 01-2-2z"/><path d="M13.5 8.5l4-2.5v8l-4-2.5z"/></svg>Review</a>
+            <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 5h14M3 10h14M3 15h9"/></svg>Episodes</a>
+            <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M10 2.5v15M13.5 6H8.2a2.2 2.2 0 000 4.4h3.6a2.2 2.2 0 010 4.4H6"/></svg>Settle</a>
+          </nav>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── COLLECTOR PANE ── -->
+    <div class="pane" id="pane-co">
+      <div class="note blue rise" style="margin-bottom:24px">
+        <b>This is where the crowdsourcing look actually belongs.</b> Your three references are all consumer
+        apps — the gauge, the mascot and the pill nav are native here. The operator console borrows the
+        language for family resemblance; the collector app <em>is</em> the language.
+      </div>
+
+      <div class="phones">
+        <div class="rise">
+          <div class="phone"><div class="phone-in">
+            <div class="sysbar"><span>19:31</span><span class="spacer"></span><span>▮▮▮ 5G 59%</span></div>
+            <div class="mhead">
+              <svg width="24" height="24" viewBox="0 0 32 32"><circle cx="11" cy="16" r="9" fill="#FF7A1A"/><circle cx="21" cy="16" r="9" fill="#1B6EF3" fill-opacity=".82"/></svg>
+              <span class="who">Chào Minh<small>Cú đêm · night shift</small></span>
+              <span class="spacer"></span>
+              <span class="statpill sun" style="height:26px;font-size:11px"><span class="ico" style="width:15px;height:15px">₫</span>184k</span>
+            </div>
+            <div class="mbody">
+              <div class="mgauge">
+                <svg class="dial" viewBox="0 0 240 172" aria-hidden="true">
+                  <defs><linearGradient id="mg" x1="0" y1="1" x2="1" y2="0">
+                    <stop offset="0%" stop-color="#FFB57A"/><stop offset="100%" stop-color="#E8620A"/></linearGradient></defs>
+                  <path d="M 44 148 A 80 80 0 1 1 196 148" fill="none" stroke="var(--muted)" stroke-width="12" stroke-linecap="round"/>
+                  <path d="M 44 148 A 80 80 0 1 1 196 148" fill="none" stroke="url(#mg)" stroke-width="12" stroke-linecap="round" stroke-dasharray="228 377"/>
+                </svg>
+                <svg class="pet" viewBox="0 0 120 118" aria-label="Cú">
+                  <path d="M60 14c22 0 34 18 34 44 0 28-15 44-34 44s-34-16-34-44c0-26 12-44 34-44z" fill="#3B4152"/>
+                  <path d="M60 46c14 0 22 13 22 30 0 18-10 26-22 26s-22-8-22-26c0-17 8-30 22-30z" fill="#4C5468"/>
+                  <path d="M28 26l12 12-16 4z" fill="#3B4152"/><path d="M92 26L80 38l16 4z" fill="#3B4152"/>
+                  <circle cx="45" cy="50" r="15" fill="#EFF3F8"/><circle cx="75" cy="50" r="15" fill="#EFF3F8"/>
+                  <circle cx="45" cy="50" r="10" fill="#4A85F8"/><circle cx="75" cy="50" r="10" fill="#4A85F8"/>
+                  <circle cx="45" cy="50" r="5" fill="#0E1013"/><circle cx="75" cy="50" r="5" fill="#0E1013"/>
+                  <circle cx="48" cy="46.6" r="2.4" fill="#fff"/><circle cx="78" cy="46.6" r="2.4" fill="#fff"/>
+                  <path d="M60 61l-7 8h14z" fill="#FF7A1A"/>
+                  <path d="M50 96l-4 7h8zM70 96l4 7h-8z" fill="#E8620A"/>
+                </svg>
+                <span class="val"><b>47:12</b><span>payable this week · goal 90:00</span></span>
+              </div>
+              <div class="mrow">
+                <div class="mcard"><div class="k">Approved</div><div class="v" style="color:var(--pass)">92%</div></div>
+                <div class="mcard"><div class="k">Pending review</div><div class="v mono">6</div></div>
+              </div>
+              <button class="mcta">Start a session</button>
+              <div class="tasklet">
+                <span class="th">🍳</span>
+                <span><b>Home kitchen · morning</b><span>3 of 5 claimed</span></span>
+                <span class="price">1 200 ₫</span>
+              </div>
+              <div class="tasklet">
+                <span class="th" style="background:var(--tech-50)">🛒</span>
+                <span><b>Supermarket shelf</b><span>Needs site approval</span></span>
+                <span class="price">1 800 ₫</span>
+              </div>
+            </div>
+            <nav class="mnav">
+              <a href="#" class="on"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 8.5L10 3l7 5.5V16a1 1 0 01-1 1h-3v-5H7v5H4a1 1 0 01-1-1z"/></svg>Home</a>
+              <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 5h14M3 10h14M3 15h9"/></svg>Tasks</a>
+              <a href="#" class="hot"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="10" cy="10" r="4.5"/><rect x="2" y="4.5" width="16" height="12" rx="3"/></svg>Record</a>
+              <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M10 13V3M6.5 6.5L10 3l3.5 3.5M4 13v3h12v-3"/></svg>Upload</a>
+              <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><circle cx="10" cy="7" r="3.2"/><path d="M4 17a6 6 0 0112 0"/></svg>Me</a>
+            </nav>
+          </div></div>
+          <p class="phone-cap">Home · the week, and Cú on nights</p>
+        </div>
+
+        <div class="rise d1">
+          <div class="phone"><div class="phone-in">
+            <div class="sysbar"><span>19:32</span><span class="spacer"></span><span>▮▮▮ 5G 58%</span></div>
+            <div class="mhead"><span class="who">Before you record<small>Step 3 of 3</small></span></div>
+            <div class="mbody">
+              <div class="tasklet" style="background:var(--sun-50);border-color:var(--sun-200)">
+                <span class="th" style="background:#fff">🍳</span>
+                <span><b>Home kitchen · morning</b><span>Ego AZER76400FE · bound</span></span>
+              </div>
+              <p style="font-size:11.5px;color:var(--muted-fg);margin-top:2px">
+                Two questions, every session. They decide how your footage is reviewed and whether we need a
+                site approval.</p>
+              <div class="declist">
+                <div class="decrow">Others may appear in frame<span class="toggle on"><i></i></span></div>
+                <div class="decrow">Sensitive info may appear<span class="toggle"><i></i></span></div>
+              </div>
+              <div class="mcard" style="border-color:var(--tech-200);background:var(--tech-50)">
+                <div class="k" style="color:var(--tech-700)">Privacy reminder · PRV-02</div>
+                <p style="font-size:11px;color:var(--muted-fg);margin-top:3px">Tell anyone in frame that you
+                are recording. Do not record children, screens showing personal data, or documents.</p>
+              </div>
+              <div class="mrow">
+                <div class="mcard"><div class="k">Device battery</div><div class="v" style="color:var(--pass)">84%</div></div>
+                <div class="mcard"><div class="k">Card free</div><div class="v mono">41 GB</div></div>
+              </div>
+              <button class="mcta" style="margin-top:auto">Begin recording</button>
+            </div>
+            <nav class="mnav">
+              <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 8.5L10 3l7 5.5V16a1 1 0 01-1 1h-3v-5H7v5H4a1 1 0 01-1-1z"/></svg>Home</a>
+              <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 5h14M3 10h14M3 15h9"/></svg>Tasks</a>
+              <a href="#" class="hot"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="10" cy="10" r="4.5"/><rect x="2" y="4.5" width="16" height="12" rx="3"/></svg>Record</a>
+              <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M10 13V3M6.5 6.5L10 3l3.5 3.5M4 13v3h12v-3"/></svg>Upload</a>
+              <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><circle cx="10" cy="7" r="3.2"/><path d="M4 17a6 6 0 0112 0"/></svg>Me</a>
+            </nav>
+          </div></div>
+          <p class="phone-cap">Session setup · APP-17b, PRV-02, APP-19</p>
+        </div>
+
+        <div class="rise d2">
+          <div class="phone"><div class="phone-in">
+            <div class="sysbar"><span>19:34</span><span class="spacer"></span><span>▮▮▮ 5G 57%</span></div>
+            <div class="mhead"><span class="who">My episodes<small>6 pending · 2 need attention</small></span></div>
+            <div class="mbody">
+              <div class="tasklet"><span class="th" style="background:var(--pass-bg)">
+                <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="#12A150" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5l4 4 8-9"/></svg></span>
+                <span><b>Approved · 2:12</b><span>13 Aug · housework</span></span>
+                <span class="price" style="color:var(--pass)">+2 659 ₫</span></div>
+              <div class="tasklet"><span class="th" style="background:var(--partial-bg)">
+                <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="#7C5CFC" stroke-width="2.4"><circle cx="10" cy="10" r="7"/><path d="M10 3a7 7 0 010 14z" fill="#7C5CFC" stroke="none"/></svg></span>
+                <span><b>Partly approved · 0:47 of 3:20</b><span>Lens occluded from 1:10</span></span>
+                <span class="price" style="color:var(--partial)">+940 ₫</span></div>
+              <div class="tasklet"><span class="th" style="background:var(--reject-bg)">
+                <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="#E5484D" stroke-width="2.6" stroke-linecap="round"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/></svg></span>
+                <span><b>Không đạt · Too dark</b><span>Try again with a light on</span></span>
+                <span class="price" style="color:var(--faint-fg)">0 ₫</span></div>
+              <div class="tasklet"><span class="th" style="background:var(--muted)">◷</span>
+                <span><b>Under review</b><span>Handed in 14 Aug · card CARD-2</span></span></div>
+              <div class="tasklet" style="border-style:dashed;opacity:.75"><span class="th" style="background:var(--muted)">↑</span>
+                <span><b>Waiting to upload</b><span>Blocked — Wi-Fi protocol pending (D1)</span></span></div>
+            </div>
+            <nav class="mnav">
+              <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 8.5L10 3l7 5.5V16a1 1 0 01-1 1h-3v-5H7v5H4a1 1 0 01-1-1z"/></svg>Home</a>
+              <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 5h14M3 10h14M3 15h9"/></svg>Tasks</a>
+              <a href="#" class="hot"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="10" cy="10" r="4.5"/><rect x="2" y="4.5" width="16" height="12" rx="3"/></svg>Record</a>
+              <a href="#" class="on"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M10 13V3M6.5 6.5L10 3l3.5 3.5M4 13v3h12v-3"/></svg>Upload</a>
+              <a href="#"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><circle cx="10" cy="7" r="3.2"/><path d="M4 17a6 6 0 0112 0"/></svg>Me</a>
+            </nav>
+          </div></div>
+          <p class="phone-cap">Results · APP-23/24/27, reasons in Vietnamese</p>
+        </div>
+      </div>
+
+      <div class="grid g3 rise" style="margin-top:26px">
+        <div class="card"><h3>The reject reason is already localised</h3><p>Every code in
+        <code>review_reason_codes</code> carries an English, Vietnamese and Chinese label. The operator picks
+        <code>VQ-DARK</code>; the collector reads "Quá tối". That table already exists in the database.</p></div>
+        <div class="card"><h3>Blocked things stay visibly blocked</h3><p>The greyed upload row is honest, not
+        broken. It names D1. When the protocol arrives the row lights up and nothing else changes.</p></div>
+        <div class="card"><h3>Tokens map straight to RN</h3><p>Every value is a flat token, so
+        <code>theme.ts</code> in the app and <code>shell.ts</code> in the console are generated from the same
+        source. One palette, two runtimes, no drift.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════ 05 NAV MAP ═════ -->
+<section id="map">
+  <div class="wrap">
+    <header class="rise">
+      <span class="sec-no">05 — DELEGATION</span>
+      <h2>Every feature has exactly one home</h2>
+    </header>
+    <div class="scroller rise">
+      <table>
+        <thead><tr><th style="width:120px">Slot</th><th>Operator · web</th><th>Collector · Android</th></tr></thead>
+        <tbody>
+          <tr><td><b>1</b></td><td><b>Home</b> — shift gauge, Cú, stats, exceptions, link to Pipeline</td><td><b>Home</b> — week gauge, Cú, earnings, suggested tasks</td></tr>
+          <tr><td><b>2</b></td><td><b>Counter</b> — handovers, sessions, batches, quarantine queue</td><td><b>Tasks</b> — task hall, detail, claim, my tasks <span class="req">APP-08→13</span></td></tr>
+          <tr><td><b>3</b> <span style="color:var(--sun-600)">centre</span></td><td><b>Review</b> — the theatre <span class="tag t-done">built</span></td><td><b>Record</b> — bind, checks, declarations, start <span class="tag t-block">part-blocked</span></td></tr>
+          <tr><td><b>4</b></td><td><b>Episodes</b> — browse, ingest history, defects, audit trail</td><td><b>Upload</b> — queue, states, results, reasons <span class="req">APP-23→27</span></td></tr>
+          <tr><td><b>5</b></td><td><b>Settle</b> — settlement rows, read-only</td><td><b>Me</b> — profile, training, exam, earnings, agreements</td></tr>
+          <tr><td><b>Top</b></td><td>Queue depth, avg, centre, language, account, <b>hot switch</b></td><td>Greeting, balance, notifications</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note rise" style="margin-top:18px">
+      <b>Pipeline</b> is reachable from operator Home rather than taking a nav slot — it is a story you open
+      deliberately, not somewhere you work. It is also the one screen I would leave on the projector.
+    </div>
+  </div>
+</section>
+
+<!-- ═════ 06 COMMANDS ═════ -->
+<section id="run">
+  <div class="wrap">
+    <header class="rise">
+      <span class="sec-no">06 — WHAT TO RUN</span>
+      <h2>The commands, in order</h2>
+      <p class="sub">You asked which skills to invoke. These are slash commands you type in Claude Code — I
+      can run all of them myself except where noted, so mostly this is you deciding when.</p>
+    </header>
+
+    <div class="grid g2">
+      <div class="card rise">
+        <h3>You run these once — they write durable context</h3>
+        <p style="margin-bottom:11px">Both create files that every later session reads, so they're worth
+        doing deliberately rather than mid-task.</p>
+        <span class="cmd"><span class="c">/impeccable init</span>
+<span class="m">→ writes PRODUCT.md: what PlayerOne is, who uses it,
+  platform = adaptive (web + android). Ask me to draft it
+  and you approve — it's the file everything inherits.</span></span>
+        <span class="cmd" style="margin-top:9px"><span class="c">/impeccable hooks on</span>
+<span class="m">→ runs the design detector after every UI edit and
+  surfaces problems while I'm still in the file.</span></span>
+      </div>
+
+      <div class="card rise d1">
+        <h3>I run these as I build — no action from you</h3>
+        <span class="cmd"><span class="c">/impeccable shape</span> <span class="k">&lt;screen&gt;</span>   <span class="m">plan before code</span>
+<span class="c">/impeccable animate</span>       <span class="m">scroll + hover motion</span>
+<span class="c">/impeccable adapt</span>         <span class="m">responsive · native variant</span>
+<span class="c">/impeccable audit</span>         <span class="m">a11y, perf, targets</span>
+<span class="c">/impeccable polish</span>        <span class="m">final pass</span>
+<span class="c">/apple-design</span>            <span class="m">HIG review, both surfaces</span></span>
+        <p style="margin-top:11px">Impeccable ships <code>audit.native.md</code> and
+        <code>adapt.native.md</code> — real React&nbsp;Native guidance, plus an <code>android.md</code>
+        reference. It knows the platform.</p>
+      </div>
+    </div>
+
+    <div class="note blue rise" style="margin-top:18px">
+      <b>One you may want yourself:</b> <code>/impeccable live</code> opens a browser variant mode where you
+      click an element and get alternatives generated on the spot. That is the fastest way for you to steer
+      the look without describing it in words. Best used once the console is running locally.
+    </div>
+  </div>
+</section>
+
+<!-- ═════ 07 ORDER ═════ -->
+<section>
+  <div class="wrap">
+    <header class="rise">
+      <span class="sec-no">07 — BUILD ORDER · D6a</span>
+      <h2>Home + Review + Pipeline, then the app</h2>
+      <p class="sub">Each step leaves the console working and all 342 tests green.</p>
+    </header>
+    <ol class="steps">
+      <li class="rise"><b>Tokens and identity into the shell</b><span>Two-brand light system, shadcn naming, the stereo-pair mark, self-hosted fonts, Cú as an SVG module with her four states. Everything downstream inherits it.</span></li>
+      <li class="rise"><b>App frame — top bar, pill nav, hot switch, routing</b><span>Plus honest "next" states for Counter, Episodes and Settle so nothing is a dead link.</span></li>
+      <li class="rise"><b>Review, reskinned</b><span>Highest risk, so it goes early. Behaviour untouched; the existing tests are the net.</span></li>
+      <li class="rise"><b>Home with the gauge</b><span>One new endpoint for shift statistics. Everything else is already in Postgres.</span></li>
+      <li class="rise"><b>Pipeline</b><span>Static structure plus live counts. Cheap, and it is what makes the demo tell a story.</span></li>
+      <li class="rise"><b>Audit pass, then hand you the findings</b><span>Contrast, hit targets, focus order, keyboard reachability, both themes, EN and ZH.</span></li>
+      <li class="rise"><b>Then the Android app — separate repo</b><span>React Native, same tokens. Start with the 60% that isn't blocked: account, training, exam, task hall, results. Device and upload paths stubbed behind D1/D5.</span></li>
+    </ol>
+    <div class="note rise" style="margin-top:20px">
+      <b>Chase D1 and D5 now.</b> They gate the collector app's whole reason to exist, one was promised on
+      13 Aug, and the headset arriving for testing is the natural moment to ask. Everything else here can
+      proceed without them.
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    Draft — nothing here is built yet; <code>/review</code> still shows the old dark build. Platform split
+    verified against <em>Engineering Brief v1.0</em> §3.4 and the §3.2 architecture diagram. Grounded in
+    Apple HIG via the <code>apple-design</code> skill and impeccable's Operate mode.
+  </div>
+</footer>
+
+<script>
+// Scroll-triggered reveals. Cheap, one observer, and it respects the OS setting.
+(function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var items = document.querySelectorAll('.rise');
+  if (reduce || !('IntersectionObserver' in window)) {
+    items.forEach(function (n) { n.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+    });
+  }, { rootMargin: '0px 0px -8% 0px', threshold: 0.06 });
+  items.forEach(function (n) { io.observe(n); });
+})();
+
+// The hot switch. The slider is measured rather than hard-coded so it survives
+// translation — the Chinese labels are a different width.
+(function () {
+  var host = document.getElementById('hs');
+  var slide = document.getElementById('hsSlide');
+  var tabs = host.querySelectorAll('button');
+  function move(btn) {
+    slide.style.left = (btn.offsetLeft) + 'px';
+    slide.style.width = (btn.offsetWidth) + 'px';
+  }
+  tabs.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      tabs.forEach(function (b) { b.setAttribute('aria-selected', String(b === btn)); });
+      document.querySelectorAll('.pane').forEach(function (p) { p.classList.remove('on'); });
+      document.getElementById('pane-' + btn.dataset.pane).classList.add('on');
+      move(btn);
+      document.querySelectorAll('#pane-' + btn.dataset.pane + ' .rise').forEach(function (n) { n.classList.add('in'); });
+    });
+  });
+  move(tabs[0]);
+  window.addEventListener('resize', function () {
+    move(host.querySelector('[aria-selected="true"]'));
+  });
+})();
+</script>
+</body>
+</html>

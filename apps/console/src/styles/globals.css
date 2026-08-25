@@ -1,0 +1,254 @@
+/**
+ * The console's one stylesheet.
+ *
+ * Order matters: the faces load first, then the generated tokens, then
+ * Tailwind, then the handful of things Tailwind has no opinion about. The
+ * tokens are generated from `packages/design/src/tokens.ts` and are never
+ * edited here — a colour that exists only in this file is a colour the
+ * collector app cannot have.
+ */
+
+/* Self-hosted, bundled, never fetched at runtime. An upload centre on a LAN
+   with the link down must render in the right typeface. */
+@import '@fontsource-variable/plus-jakarta-sans';
+@import '@fontsource-variable/jetbrains-mono';
+
+@import '@playerone/design/tokens.css';
+
+@import 'tailwindcss';
+
+/**
+ * Tailwind v4 reads its scale from CSS variables, so the design tokens become
+ * utility classes without a second source of truth: `bg-sun-500`, `text-pass`,
+ * `rounded-lg` and `font-mono` all resolve to the values in tokens.css.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-faint-foreground: var(--faint-foreground);
+
+  --color-sun-50: var(--sun-50);
+  --color-sun-100: var(--sun-100);
+  --color-sun-200: var(--sun-200);
+  --color-sun-300: var(--sun-300);
+  --color-sun-400: var(--sun-400);
+  --color-sun-500: var(--sun-500);
+  --color-sun-600: var(--sun-600);
+  --color-sun-700: var(--sun-700);
+
+  --color-tech-50: var(--tech-50);
+  --color-tech-100: var(--tech-100);
+  --color-tech-200: var(--tech-200);
+  --color-tech-300: var(--tech-300);
+  --color-tech-400: var(--tech-400);
+  --color-tech-500: var(--tech-500);
+  --color-tech-600: var(--tech-600);
+  --color-tech-700: var(--tech-700);
+
+  --color-pass: var(--pass);
+  --color-pass-bg: var(--pass-bg);
+  --color-partial: var(--partial);
+  --color-partial-bg: var(--partial-bg);
+  --color-reject: var(--reject);
+  --color-reject-bg: var(--reject-bg);
+
+  --color-stage: var(--stage);
+  --color-stage-panel: var(--stage-panel);
+  --color-stage-line: var(--stage-line);
+  --color-stage-fg: var(--stage-fg);
+  --color-stage-mid: var(--stage-mid);
+
+  --radius-sm: var(--radius-sm);
+  --radius-DEFAULT: var(--radius-base);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --ease-out-quint: var(--ease);
+}
+
+@layer base {
+  html {
+    /* The console is a fixed-DPI tool on a fixed machine; no fluid root size. */
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background: var(--surface);
+    color: var(--foreground);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+  }
+
+  /**
+   * Every measured quantity is tabular and mono.
+   *
+   * A duration that shifts its digits as it ticks is the single most common way
+   * a player looks amateur, and here it is worse than cosmetic: the number next
+   * to the playhead is the number a collector is paid on, and a reviewer scans
+   * a column of them for the one that is wrong. Proportional digits make that
+   * scan fail.
+   */
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+    letter-spacing: -0.01em;
+  }
+
+  /**
+   * The surfaces nobody draws.
+   *
+   * Selection, caret, focus ring, scrollbar and the autofill wash all ship with
+   * browser defaults that belong to no design system. Left alone they are the
+   * cheapest tell that a page was assembled rather than built.
+   */
+  ::selection {
+    background: var(--sun-200);
+    color: var(--foreground);
+  }
+
+  :root[data-theme='dark'] ::selection,
+  .on-stage ::selection {
+    background: var(--sun-700);
+    color: #fff;
+  }
+
+  html {
+    caret-color: var(--sun-500);
+    scrollbar-color: var(--border-strong) transparent;
+    scrollbar-width: thin;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--faint-foreground);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
+  /**
+   * One focus ring, everywhere, and it is the sun.
+   *
+   * A complete review must be possible with no pointer at all — that is a
+   * throughput requirement before it is an accessibility one — so the ring has
+   * to be visible against the light shell, the dark theatre and arbitrary
+   * video. Two rings: a sun halo and a ground-coloured inner line, so it holds
+   * on both.
+   */
+  :focus-visible {
+    outline: 2px solid var(--sun-500);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  .on-stage :focus-visible {
+    outline-color: var(--sun-400);
+  }
+
+  /* Links are tech blue: they lead to data. */
+  a {
+    color: var(--tech-600);
+    text-decoration-color: color-mix(in srgb, var(--tech-600) 35%, transparent);
+    text-underline-offset: 0.2em;
+    text-decoration-thickness: 1px;
+  }
+
+  a:hover {
+    text-decoration-color: currentColor;
+  }
+
+  :root[data-theme='dark'] a {
+    color: var(--tech-300);
+  }
+
+  input:-webkit-autofill,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--foreground);
+    box-shadow: 0 0 0 1000px var(--muted) inset;
+  }
+
+  /**
+   * The stage. Applied to any region that borders footage, in either theme.
+   * `color-scheme` is set so form controls and scrollbars inside it stop
+   * rendering light chrome against near-black.
+   */
+  .on-stage {
+    background: var(--stage);
+    color: var(--stage-fg);
+    color-scheme: dark;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /**
+   * The gauge's fill, and the console's one authored motion.
+   *
+   * Everything else here is a state transition of 150–200ms. This is the single
+   * moment allowed to be a performance, and only on Home, because it is the one
+   * number a reviewer wants to watch move.
+   */
+  @keyframes sweep {
+    from {
+      stroke-dashoffset: var(--sweep-from);
+    }
+    to {
+      stroke-dashoffset: var(--sweep-to);
+    }
+  }
+
+  .gauge-fill {
+    animation: sweep 900ms var(--ease) both;
+  }
+
+  /* A lease that is running out. Slow, so it reads as a warning, not an alarm. */
+  @keyframes lease-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  .lease-expiring {
+    animation: lease-pulse 1.6s ease-in-out infinite;
+  }
+}

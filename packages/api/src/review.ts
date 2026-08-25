@@ -854,6 +854,93 @@ export function registerReview(
     return reply.send({ currency, reviews: rows });
   });
 
+  /**
+   * What this shift has done, and what it still owes.
+   *
+   * The one endpoint Home needed that did not already exist. Everything it
+   * reports is already in Postgres; nothing here is stored, cached or
+   * incremented, because a counter that is written on every verdict is a
+   * counter that can disagree with the rows it counts — and the figures on this
+   * screen are the ones a reviewer judges their own pace against.
+   *
+   * "Today" is the server's local day, not a rolling 24 hours. An upload centre
+   * runs shifts against a wall clock and a reviewer asking what they have done
+   * today means since they came in, not since this time yesterday.
+   *
+   * Three deliberate limits:
+   *
+   * - **Payable seconds are summed from decided reviews only.** A pending row
+   *   has no effective duration and must never be counted toward a figure a
+   *   person reads as money.
+   * - **Approval rate counts `pass` and `partial_pass` against every decided
+   *   review.** A partial pass is an approval that paid less, not a rejection;
+   *   treating it as a failure would make a reviewer who marks spans carefully
+   *   look worse than one who passes everything whole.
+   * - **Settled value is `sum(amount)`, and it is scoped to this reviewer.** It
+   *   is not the programme's spend and is not labelled as such anywhere.
+   */
+  app.get('/api/review/shift', opts, async (req, reply) => {
+    const reviewer = reviewerOf(req.actor!);
+
+    const [totals] = await db
+      .select({
+        decided: sql<number>`count(*)::int`,
+        approved: sql<number>`count(*) filter (where ${schema.episodeReviews.reviewState} in ('pass', 'partial_pass'))::int`,
+        payableSeconds: sql<string>`coalesce(sum(${schema.episodeReviews.effectiveDurationS}), 0)::text`,
+        medianSeconds: sql<string | null>`percentile_cont(0.5) within group (order by ${schema.episodeReviews.timeToVerdictS})::text`,
+      })
+      .from(schema.episodeReviews)
+      .where(
+        and(
+          eq(schema.episodeReviews.reviewerRef, reviewer),
+          sql`${schema.episodeReviews.reviewState} <> 'pending'`,
+          sql`${schema.episodeReviews.reviewedAt} >= date_trunc('day', now())`,
+        ),
+      );
+
+    const [settled] = await db
+      .select({ amount: sql<string>`coalesce(sum(${schema.settlements.amount}), 0)::text` })
+      .from(schema.settlements)
+      .innerJoin(
+        schema.episodeReviews,
+        eq(schema.settlements.episodeReviewId, schema.episodeReviews.id),
+      )
+      .where(
+        and(
+          eq(schema.episodeReviews.reviewerRef, reviewer),
+          sql`${schema.episodeReviews.reviewedAt} >= date_trunc('day', now())`,
+        ),
+      );
+
+    /**
+     * Episodes the resolver refused to guess on.
+     *
+     * Not a review figure at all — it is the counter's work, surfaced here
+     * because Home is the only screen everybody opens and an unresolved episode
+     * is somebody's unpaid recording sitting still. Principle 1: the resolver
+     * has no tie-break, so these exist by design and need a human, not a fix.
+     */
+    const [stuck] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.episodes)
+      .where(sql`${schema.episodes.resolutionState} not in ('resolved')`);
+
+    return reply.send({
+      currency,
+      reviewer,
+      /** Configuration, not data: no table records a per-shift target yet. */
+      target: Number(process.env['PLAYERONE_SHIFT_TARGET'] ?? 60),
+      decided: totals?.decided ?? 0,
+      approved: totals?.approved ?? 0,
+      payable_seconds: totals?.payableSeconds ?? '0',
+      median_seconds_to_verdict: totals?.medianSeconds ?? null,
+      settled_amount: settled?.amount ?? '0',
+      queue_depth: await queueDepth(),
+      session_average_seconds: await sessionAverage(reviewer),
+      needs_human: stuck?.count ?? 0,
+    });
+  });
+
   /** The reject reasons, localised. LOC-02: PaXini's reviewers work in Chinese. */
   app.get('/api/review/reasons', opts, async (_req, reply) => {
     const rows = await db

@@ -140,6 +140,56 @@ const en = {
 
   'recent.title': 'Recent verdicts',
   'recent.empty': 'No verdicts yet this session',
+
+  // ---------------------------------------------------------------------
+  // Added with the React console. Home, Pipeline and the shell's navigation
+  // did not exist while the console was one screen.
+
+  'nav.home': 'Home',
+  'nav.counter': 'Counter',
+  'nav.review': 'Review',
+  'nav.episodes': 'Episodes',
+  'nav.settle': 'Settle',
+  'nav.pipeline': 'Pipeline',
+  'nav.notBuilt': 'Not built yet',
+  'nav.notBuilt.body':
+    'This surface is planned and has no screen. The work it names is done at the command line today.',
+
+  'home.greeting': 'Your shift',
+  'home.reviewed': 'episodes reviewed',
+  'home.target': 'target',
+  'home.start': 'Start reviewing',
+  'home.payable': 'Payable today',
+  'home.approval': 'Approval rate',
+  'home.settled': 'Settled value',
+  'home.needsHuman': 'episodes need a human',
+  'home.needsHuman.body': 'The resolver refused to guess who recorded them.',
+  'home.needsHuman.open': 'Open',
+  'home.queueEmpty': 'The queue is empty. Cú has nothing to watch.',
+  'home.shiftEarly': 'Early bird',
+  'home.shiftDay': 'Day shift',
+  'home.shiftGolden': 'Golden hour',
+  'home.shiftNight': 'Night owl',
+
+  'pipeline.title': 'What is actually built',
+  'pipeline.intro':
+    'Every capability the brief asks for, and the honest state of each one. Blocked items name the deliverable that blocks them.',
+  'pipeline.built': 'built',
+  'pipeline.next': 'next',
+  'pipeline.blocked': 'blocked',
+  'pipeline.capability': 'Capability',
+  'pipeline.requirement': 'Requirement',
+  'pipeline.state': 'State',
+  'pipeline.surface': 'Surface',
+  'pipeline.state.built': 'Built',
+  'pipeline.state.partial': 'Partial',
+  'pipeline.state.buildable': 'Buildable',
+  'pipeline.state.blocked': 'Blocked',
+  'pipeline.state.verified': 'Verified',
+
+  'theme.toggle': 'Theme',
+  'theme.light': 'Light',
+  'theme.dark': 'Dark',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -250,6 +300,50 @@ const zh: Record<MessageKey, string> = {
 
   'recent.title': '最近的审核',
   'recent.empty': '本次登录尚无记录',
+
+  'nav.home': '概览',
+  'nav.counter': '柜台',
+  'nav.review': '审核',
+  'nav.episodes': '片段',
+  'nav.settle': '结算',
+  'nav.pipeline': '流程',
+  'nav.notBuilt': '尚未开发',
+  'nav.notBuilt.body': '该界面已在计划中，目前尚无页面。相关工作现在通过命令行完成。',
+
+  'home.greeting': '本班次',
+  'home.reviewed': '已审核片段',
+  'home.target': '目标',
+  'home.start': '开始审核',
+  'home.payable': '今日可结算时长',
+  'home.approval': '通过率',
+  'home.settled': '结算金额',
+  'home.needsHuman': '个片段需要人工处理',
+  'home.needsHuman.body': '归属程序拒绝猜测录制人。',
+  'home.needsHuman.open': '打开',
+  'home.queueEmpty': '队列已清空，Cú 没有可看的内容。',
+  'home.shiftEarly': '早班',
+  'home.shiftDay': '白班',
+  'home.shiftGolden': '黄昏',
+  'home.shiftNight': '夜猫子',
+
+  'pipeline.title': '已建成的部分',
+  'pipeline.intro': '需求文档列出的每项能力，以及各自的真实状态。受阻项会写明所缺的交付物。',
+  'pipeline.built': '已建成',
+  'pipeline.next': '下一步',
+  'pipeline.blocked': '受阻',
+  'pipeline.capability': '能力',
+  'pipeline.requirement': '需求编号',
+  'pipeline.state': '状态',
+  'pipeline.surface': '所属界面',
+  'pipeline.state.built': '已建成',
+  'pipeline.state.partial': '部分完成',
+  'pipeline.state.buildable': '可开发',
+  'pipeline.state.blocked': '受阻',
+  'pipeline.state.verified': '已验证',
+
+  'theme.toggle': '主题',
+  'theme.light': '浅色',
+  'theme.dark': '深色',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { en, zh };
