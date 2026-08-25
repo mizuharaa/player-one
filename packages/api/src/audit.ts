@@ -58,13 +58,32 @@ export async function mutate<T>(
   return db.transaction(async (tx) => {
     const result = await write(tx);
     if (result === undefined) return undefined;
+    /**
+     * A reviewer is recorded as a reviewer. PLT-10 asks for remote review that
+     * is *fully logged*, and a row that named a PaXini reviewer in the same
+     * column and the same shape as a VNG counter operator would be logged
+     * without being answerable: "did anyone in Shenzhen touch this episode" is
+     * the question the trail has to answer, and `actor_role` is what answers it.
+     * There is no upload device and no upload centre behind that person, so
+     * neither is invented here.
+     */
     await tx.insert(schema.auditEvents).values({
       action: event.action,
       targetTable: event.targetTable,
       targetId: event.targetId,
-      operatorId: actor.operator.operatorId,
-      uploadDeviceId: actor.machine.uploadDeviceId,
-      uploadCentreId: actor.operator.uploadCentreId,
+      ...(actor.reviewer === undefined
+        ? {
+            actorRole: 'operator',
+            operatorId: actor.operator.operatorId,
+            uploadDeviceId: actor.machine.uploadDeviceId,
+            uploadCentreId: actor.operator.uploadCentreId,
+          }
+        : {
+            actorRole: 'reviewer',
+            operatorId: actor.reviewer.reviewerId,
+            uploadDeviceId: null,
+            uploadCentreId: null,
+          }),
       before: event.before ?? null,
       after: event.after ?? null,
       reason: event.reason ?? null,
@@ -83,15 +102,19 @@ export async function auditLogin(
   action: `${string}.login`,
   targetTable: string,
   targetId: string,
-  who: { operatorId?: string; uploadDeviceId?: string; uploadCentreId: string },
+  who: { operatorId?: string; uploadDeviceId?: string; uploadCentreId?: string },
 ): Promise<void> {
   await db.insert(schema.auditEvents).values({
     action,
     targetTable,
     targetId,
+    // From the action, not a fourth argument: `reviewer.login` is the only
+    // login a reviewer can perform, so a caller cannot get the pair wrong.
+    actorRole: action.startsWith('reviewer.') ? 'reviewer' : 'operator',
     operatorId: who.operatorId ?? null,
     uploadDeviceId: who.uploadDeviceId ?? null,
-    uploadCentreId: who.uploadCentreId,
+    // Null for a reviewer: PaXini staff belong to no upload centre.
+    uploadCentreId: who.uploadCentreId ?? null,
     after: who,
   });
 }

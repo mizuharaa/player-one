@@ -27,11 +27,21 @@ const rootRoute = createRootRoute({ component: Outlet });
  * whether it is signed in — it has to ask. `/whoami` is the cheapest question
  * that answers it, and a 401 from any screen's own data fetch reaches the same
  * place through the error boundary.
+ *
+ * It also answers *what* the caller is. A PLT-10 reviewer session reaches the
+ * review lane and gets 403 from everything else, so sending one to the home
+ * screen renders a page of refusals; they go to `/review` instead. The
+ * redirect is a convenience on top of the server's rule and not the rule
+ * itself — the API refuses those routes whatever this file does.
  */
-async function requireSession() {
+async function requireSession({ location }: { location: { pathname: string } }) {
   const res = await fetch('/whoami', { credentials: 'same-origin' });
   if (res.status === 401 || res.status === 403) {
     throw redirect({ to: '/login' });
+  }
+  const who = (await res.json().catch(() => ({}))) as { role?: string };
+  if (who.role === 'reviewer' && location.pathname !== '/review') {
+    throw redirect({ to: '/review' });
   }
 }
 

@@ -104,13 +104,19 @@ export function registerReview(
   /**
    * Who is reviewing.
    *
-   * The operator id from the existing both-token session, and deliberately not
-   * a new identity. Reviewer accounts, roles and PaXini-side login are the
-   * roles slice; inventing half of them here would leave two auth models to
-   * reconcile later. The consequence is visible and worth stating: today a
-   * reviewer signs in with an upload-centre operator credential.
+   * Two kinds of session reach this lane and both name a person by an
+   * `operators.id`: a PaXini reviewer signed in under PLT-10, and a VNG
+   * upload-centre operator on the both-token session this lane was built on.
+   * One column holds either, so `reviewer_ref` stays one kind of value and the
+   * queue's lease predicates did not have to learn about roles.
+   *
+   * The counter operator is still allowed on purpose — the pilot has VNG staff
+   * reviewing alongside PaXini, and §7.2's end state is review moving to
+   * Vietnam entirely. What changed is that a reviewer no longer *has* to
+   * borrow one of those credentials to work.
    */
-  const reviewerOf = (actor: Actor): string => actor.operator.operatorId;
+  const reviewerOf = (actor: Actor): string =>
+    actor.reviewer === undefined ? actor.operator.operatorId : actor.reviewer.reviewerId;
 
   // -------------------------------------------------------------------------
   // The queue

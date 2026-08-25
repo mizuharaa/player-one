@@ -49,7 +49,20 @@ export async function verifyCredential(secret: string, stored: string | null): P
 
 export type MachineClaims = { kind: 'machine'; uploadDeviceId: string; uploadCentreId: string };
 export type OperatorClaims = { kind: 'operator'; operatorId: string; uploadCentreId: string };
-export type Claims = MachineClaims | OperatorClaims;
+/**
+ * PLT-10. A third kind rather than a flag on `OperatorClaims`, for one reason:
+ * a reviewer has no upload centre, and every counter route in this service
+ * reads `uploadCentreId` off the operator token to scope its query. Making that
+ * field optional would turn eight scoping expressions into `string | undefined`
+ * and the compiler would ask each of them what to do about a missing centre —
+ * which is exactly the wrong question, because those routes are unreachable
+ * with this token. A separate kind makes them unreachable to the *type* too.
+ *
+ * `reviewerId` is an `operators.id`, so `audit_events.operator_id` keeps its
+ * foreign key and `episode_reviews.reviewer_ref` keeps holding one kind of value.
+ */
+export type ReviewerClaims = { kind: 'reviewer'; reviewerId: string };
+export type Claims = MachineClaims | OperatorClaims | ReviewerClaims;
 
 /**
  * The centre is baked into both tokens at issue time and is never taken from the
@@ -91,5 +104,6 @@ export function verifyToken(
   if (typeof c?.exp !== 'number' || c.exp < nowS) return null;
   if (c.kind === 'machine' && c.uploadDeviceId && c.uploadCentreId) return c;
   if (c.kind === 'operator' && c.operatorId && c.uploadCentreId) return c;
+  if (c.kind === 'reviewer' && c.reviewerId) return c;
   return null;
 }

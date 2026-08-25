@@ -6,11 +6,15 @@
  * §8.3.2 rule 1). The form says so rather than presenting four boxes and
  * letting an operator guess why their username is split in half.
  *
- * The known gap is stated in the code and not hidden: PaXini's reviewers are in
- * Shenzhen and are not standing at a VNG counter, so signing them in with
- * upload-centre *operator* credentials is wrong. PLT-10 wants a scoped,
- * fully-logged remote reviewer role. That is the next architectural correction
- * to this screen and it changes this form, not the review lane behind it.
+ * PLT-10 is now the other half of this screen. PaXini's reviewers are in
+ * Shenzhen and are not standing at a VNG counter, so they no longer sign in
+ * with upload-centre operator credentials: choosing "Reviewer" drops the
+ * machine fieldset entirely, because there is no machine, and the session the
+ * server issues reaches the review lane and nothing else.
+ *
+ * The choice is a real `<fieldset>` of radios rather than two tabs or two
+ * pages. It is two options that are visible at once, it works before any script
+ * has run, and a screen reader announces it as one question.
  *
  * Composition note: this is not a centred card on a grey field. The left half
  * carries the identity at a size that means it, the right half carries the
@@ -34,6 +38,8 @@ export function LoginScreen() {
   const navigate = useNavigate();
   const [failure, setFailure] = useState<Failure>(null);
   const [busy, setBusy] = useState(false);
+  const [role, setRole] = useState<'operator' | 'reviewer'>('operator');
+  const reviewer = role === 'reviewer';
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,7 +55,10 @@ export function LoginScreen() {
         body: JSON.stringify(Object.fromEntries(form)),
       });
       if (res.ok) {
-        void navigate({ to: '/' });
+        // Where the session can actually go. A reviewer is scoped to the review
+        // lane server-side, so the home screen would be a page of 403s.
+        const body = (await res.json().catch(() => ({}))) as { role?: string };
+        void navigate({ to: body.role === 'reviewer' ? '/review' : '/' });
         return;
       }
       const body = (await res.json().catch(() => ({}))) as { reason?: string };
@@ -98,25 +107,60 @@ export function LoginScreen() {
 
           <h1 className="text-[1.625rem] font-extrabold tracking-[-0.025em]">{t('login.title')}</h1>
           <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">
-            {t('login.intro')}
+            {t(reviewer ? 'login.reviewerIntro' : 'login.intro')}
           </p>
 
           <form onSubmit={submit} className="mt-8 flex flex-col gap-5">
-            <Fieldset legend={t('login.machine')}>
-              <Input name="machine_identifier" label={t('login.machine')} autoComplete="username" />
-              <Input
-                name="machine_secret"
-                label={t('login.machineSecret')}
-                type="password"
-                autoComplete="current-password"
-              />
-            </Fieldset>
+            <fieldset className="flex flex-col gap-2">
+              <legend className="text-[0.8125rem] font-semibold text-[var(--muted-foreground)]">
+                {t('login.role')}
+              </legend>
+              <div className="flex gap-2">
+                <Role
+                  value="operator"
+                  checked={!reviewer}
+                  label={t('login.roleCounter')}
+                  onPick={setRole}
+                />
+                <Role
+                  value="reviewer"
+                  checked={reviewer}
+                  label={t('login.roleReviewer')}
+                  onPick={setRole}
+                />
+              </div>
+            </fieldset>
 
-            <Fieldset legend={t('login.operator')}>
-              <Input name="external_ref" label={t('login.operator')} autoComplete="username" />
+            {/*
+              Unmounted, not hidden. A hidden-but-present input still posts its
+              value, and a machine identifier travelling with a reviewer
+              sign-in is exactly the confusion this screen exists to end.
+            */}
+            {reviewer ? null : (
+              <Fieldset legend={t('login.machine')}>
+                <Input
+                  name="machine_identifier"
+                  label={t('login.machine')}
+                  autoComplete="username"
+                />
+                <Input
+                  name="machine_secret"
+                  label={t('login.machineSecret')}
+                  type="password"
+                  autoComplete="current-password"
+                />
+              </Fieldset>
+            )}
+
+            <Fieldset legend={reviewer ? t('login.reviewer') : t('login.operator')}>
+              <Input
+                name="external_ref"
+                label={reviewer ? t('login.reviewer') : t('login.operator')}
+                autoComplete="username"
+              />
               <Input
                 name="operator_secret"
-                label={t('login.operatorSecret')}
+                label={reviewer ? t('login.reviewerSecret') : t('login.operatorSecret')}
                 type="password"
                 autoComplete="current-password"
               />
@@ -158,6 +202,45 @@ function Fieldset({ legend, children }: { legend: string; children: React.ReactN
       <legend className="sr-only">{legend}</legend>
       {children}
     </fieldset>
+  );
+}
+
+/**
+ * One of the two roles. A real radio: arrow keys move between them, the browser
+ * enforces that exactly one is chosen, and the label is the hit target.
+ */
+function Role({
+  value,
+  checked,
+  label,
+  onPick,
+}: {
+  value: 'operator' | 'reviewer';
+  checked: boolean;
+  label: string;
+  onPick: (role: 'operator' | 'reviewer') => void;
+}) {
+  return (
+    <label
+      className={cn(
+        'flex flex-1 cursor-pointer items-center justify-center rounded-[var(--radius-base)] border px-3 py-2.5',
+        'text-[0.875rem] font-semibold transition-colors duration-150 ease-[var(--ease)]',
+        'has-[:focus-visible]:border-[var(--sun-500)]',
+        checked
+          ? 'border-[var(--sun-500)] bg-[var(--card)] text-[var(--foreground)]'
+          : 'border-[var(--border-strong)] text-[var(--muted-foreground)] hover:border-[var(--faint-foreground)]',
+      )}
+    >
+      <input
+        type="radio"
+        name="role"
+        value={value}
+        checked={checked}
+        onChange={() => onPick(value)}
+        className="sr-only"
+      />
+      {label}
+    </label>
   );
 }
 

@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { extname, join, relative, resolve, sep } from 'node:path';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
@@ -100,6 +100,39 @@ export function registerMedia(
     const { id, index } = req.params as { id: string; index: string };
     const part = Number(index);
     if (!Number.isInteger(part) || part < 0) return reply.code(400).send({ error: 'bad part index' });
+
+    /**
+     * A reviewer sees the episode they hold, and no other.
+     *
+     * Reaching this route at all takes `reviewerMediaEnabled`, which is off
+     * until Legal signs the playback architecture (see D11 and Part 7.3). When
+     * it is on, the route guard alone would let any signed-in reviewer stream
+     * any episode id they can name, which is a poor answer to "scoped to review
+     * functions only" — remote access to *their queue* is what PLT-10 grants.
+     *
+     * The consequence, stated because it is a real one: the console prefetches
+     * the *next* episode's video into a hidden element while the current one
+     * plays, and that prefetch will be refused for a reviewer. It costs a warm
+     * buffer, not a review, and it costs nothing at all today because a
+     * reviewer reaches no media at all with the flag off. A prefetch that
+     * survives this needs a short-lived per-episode grant, which is part of the
+     * same decision that flips the flag.
+     */
+    const reviewer = req.actor?.reviewer;
+    if (reviewer !== undefined) {
+      const [held] = await db
+        .select({ id: schema.episodeReviews.id })
+        .from(schema.episodeReviews)
+        .where(
+          and(
+            eq(schema.episodeReviews.episodeId, id),
+            eq(schema.episodeReviews.reviewerRef, reviewer.reviewerId),
+          ),
+        );
+      if (held === undefined) {
+        return reply.code(403).send({ error: 'not an episode you hold' });
+      }
+    }
 
     const [row] = await db
       .select({

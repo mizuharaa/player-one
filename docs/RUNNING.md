@@ -141,6 +141,7 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 | `PLAYERONE_MEDIA_ROOT` | | The directory holding the imported `ego_*` folders. Without it the console runs and the stream route answers 503 saying so. |
 | `PLAYERONE_CURRENCY` | `VND` | What `tasks.unit_price` is denominated in. Configuration because there is no currency column — see the gaps in `docs/review.md`. |
 | `PLAYERONE_SECURE_COOKIES` | off | Turn on wherever there is TLS. Off by default because a `Secure` cookie is never sent over plain HTTP and the symptom is a sign-in that silently does nothing. |
+| `PLAYERONE_REVIEWER_MEDIA` | **off** | Whether a PLT-10 reviewer session may stream raw footage. Leave it off. Brief D11 records remote online playback of raw video as unresolved and escalated, and Part 7.3 says the Phase 1 arrangement is remote access and not data transfer — so a reviewer gets review metadata and no bytes until Legal signs the playback architecture. Counter operators are unaffected. |
 | `PLAYERONE_DB_POOL` | `10` | A single connection serialises the claim queue: `for update skip locked` has nothing to skip. |
 | `HOST` / `PORT` | `127.0.0.1` / `8080` | |
 

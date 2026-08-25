@@ -1,9 +1,15 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { schema, type Db } from '@playerone/store';
 import { auditLogin } from './audit.ts';
 import { clearCookie, MACHINE_COOKIE, OPERATOR_COOKIE, sessionCookie } from './cookies.ts';
-import { signToken, verifyCredential, type MachineClaims, type OperatorClaims } from './credentials.ts';
+import {
+  signToken,
+  verifyCredential,
+  type MachineClaims,
+  type OperatorClaims,
+  type ReviewerClaims,
+} from './credentials.ts';
 
 /**
  * Checking the two credentials, in one place.
@@ -45,6 +51,14 @@ export async function authenticateMachine(
   return { kind: 'machine', uploadDeviceId: device.id, uploadCentreId: device.uploadCentreId };
 }
 
+/**
+ * Reviewer rows are excluded, and that is the whole of it: `operators` now holds
+ * both kinds, and without the filter a reviewer credential presented here would
+ * mint an *operator* token — a token whose whole job is to say which upload
+ * centre its holder may write to, held by somebody who belongs to none. It
+ * would fail verification a moment later on the null centre, which is a fail
+ * closed, but failing closed by accident three functions away is not a rule.
+ */
 export async function authenticateOperator(
   db: Db,
   externalRef: string,
@@ -53,9 +67,15 @@ export async function authenticateOperator(
   const [operator] = await db
     .select()
     .from(schema.operators)
-    .where(eq(schema.operators.externalRef, externalRef));
+    .where(
+      and(eq(schema.operators.externalRef, externalRef), ne(schema.operators.role, 'reviewer')),
+    );
 
-  if (operator === undefined || !(await verifyCredential(secret, operator.credentialHash))) {
+  if (
+    operator === undefined ||
+    operator.uploadCentreId === null ||
+    !(await verifyCredential(secret, operator.credentialHash))
+  ) {
     return null;
   }
 
@@ -64,6 +84,40 @@ export async function authenticateOperator(
     uploadCentreId: operator.uploadCentreId,
   });
   return { kind: 'operator', operatorId: operator.id, uploadCentreId: operator.uploadCentreId };
+}
+
+/**
+ * PLT-10. One credential, no machine and no centre.
+ *
+ * The second credential exists because PRD §8.3.2 rule 1 wants an operator
+ * logged in to a *fixed upload device* before importing data. There is no fixed
+ * upload device in Shenzhen, so demanding one would either block the reviewer or
+ * be satisfied by handing PaXini a machine credential for a VNG counter — which
+ * is worse than having none, because from then on the audit trail names a
+ * counter that nobody was standing at.
+ *
+ * `operators_reviewer_ref_key` is what makes the lookup by reference alone
+ * safe: reviewer references are unique across the table, so there is one row or
+ * none, never a first row.
+ */
+export async function authenticateReviewer(
+  db: Db,
+  externalRef: string,
+  secret: string,
+): Promise<ReviewerClaims | null> {
+  const [reviewer] = await db
+    .select()
+    .from(schema.operators)
+    .where(
+      and(eq(schema.operators.externalRef, externalRef), eq(schema.operators.role, 'reviewer')),
+    );
+
+  if (reviewer === undefined || !(await verifyCredential(secret, reviewer.credentialHash))) {
+    return null;
+  }
+
+  await auditLogin(db, 'reviewer.login', 'operators', reviewer.id, { operatorId: reviewer.id });
+  return { kind: 'reviewer', reviewerId: reviewer.id };
 }
 
 /**
@@ -89,6 +143,34 @@ export function registerSessionRoutes(
   app.post('/api/session', async (req, reply) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const str = (k: string): string => (typeof body[k] === 'string' ? (body[k] as string) : '');
+
+    /**
+     * The reviewer path is tried first and returns on its own.
+     *
+     * PLT-10 scopes a reviewer to review, so the session it gets carries no
+     * machine token — and the stale one a shared workstation may still hold is
+     * cleared rather than left to combine with a reviewer token into something
+     * neither credential earned.
+     *
+     * A reviewer whose secret is wrong falls through to the counter path and is
+     * refused there, with the same opaque `credentials` answer as everybody
+     * else: the form does not confirm which references exist.
+     */
+    const reviewer = await authenticateReviewer(db, str('external_ref'), str('operator_secret'));
+    if (reviewer !== null) {
+      return reply
+        .headers({
+          'set-cookie': [
+            clearCookie(MACHINE_COOKIE),
+            sessionCookie(
+              OPERATOR_COOKIE,
+              signToken(options.tokenSecret, reviewer),
+              options.secureCookies,
+            ),
+          ],
+        })
+        .send({ role: 'reviewer', reviewer_id: reviewer.reviewerId });
+    }
 
     const machine = await authenticateMachine(db, str('machine_identifier'), str('machine_secret'));
     const operator = await authenticateOperator(db, str('external_ref'), str('operator_secret'));
@@ -123,6 +205,7 @@ export function registerSessionRoutes(
         ],
       })
       .send({
+        role: 'operator',
         upload_centre_id: machine.uploadCentreId,
         operator_id: operator.operatorId,
       });

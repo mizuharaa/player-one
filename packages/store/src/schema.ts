@@ -535,13 +535,26 @@ export const uploadDevices = pgTable(
   ],
 );
 
+/**
+ * People who sign in. Two kinds, one table, told apart by `role`.
+ *
+ * PLT-10 wants PaXini's reviewers to reach in from China, scoped to review and
+ * fully logged. They are not standing at a VNG counter, so `upload_centre_id`
+ * cannot be mandatory for them — and a second `reviewers` table would mean a
+ * second credential store, a second login path, and a second nullable actor
+ * column on `audit_events` with a CHECK to say exactly one is set. The `role`
+ * column was already here and already `not null`; using it is the smaller and
+ * the more auditable change.
+ *
+ * `role` still has no CHECK: the value set is a back-office concern that grows,
+ * and the two constraints below are the ones that carry weight.
+ */
 export const operators = pgTable(
   'operators',
   {
     id: uuid('id').primaryKey(),
-    uploadCentreId: uuid('upload_centre_id')
-      .notNull()
-      .references(() => uploadCentres.id),
+    /** Null only for a reviewer — see `operators_centre_check`. */
+    uploadCentreId: uuid('upload_centre_id').references(() => uploadCentres.id),
     externalRef: text('external_ref').notNull(),
     role: text('role').notNull(),
     /** scrypt, `N$salt$hash`. Never a secret at rest, never logged. */
@@ -549,7 +562,28 @@ export const operators = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('operators_ref_key').on(t.uploadCentreId, t.externalRef)],
+  (t) => [
+    uniqueIndex('operators_ref_key').on(t.uploadCentreId, t.externalRef),
+    /**
+     * A reviewer's reference is unique on its own, because `operators_ref_key`
+     * cannot hold it: two rows with a null centre are distinct to a unique
+     * index no matter what the second column says, so without this a second
+     * `pax-01` would insert cleanly and `authenticateReviewer` would sign in
+     * whichever row came back first.
+     */
+    uniqueIndex('operators_reviewer_ref_key')
+      .on(t.externalRef)
+      .where(sql`role = 'reviewer'`),
+    /**
+     * Everyone but a reviewer belongs to a centre. Dropping `not null` to make
+     * room for reviewers must not quietly make it optional for the operators
+     * BO-11 / SEC-02 scope by centre.
+     */
+    check(
+      'operators_centre_check',
+      sql`${t.uploadCentreId} is not null or ${t.role} = 'reviewer'`,
+    ),
+  ],
 );
 
 /**
@@ -726,8 +760,15 @@ export const episodeReviews = pgTable(
      * lease that expires and is re-claimed transfers both facts at once — the
      * new claimant is the one who will decide — and two columns would raise a
      * "which is authoritative" question that has no useful answer.
+     *
+     * A real foreign key, and `uuid` rather than `text` since PLT-10. It held
+     * an `operators.id` from the first day and always will — a PaXini reviewer
+     * and a VNG counter operator are both rows in that table — so leaving it as
+     * unconstrained text meant the one column naming who decided a payment
+     * could hold a string that matches nobody. Every verdict is money and this
+     * is the only record of who made it.
      */
-    reviewerRef: text('reviewer_ref'),
+    reviewerRef: uuid('reviewer_ref').references(() => operators.id),
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
     /**
      * The client's own id for one verdict attempt, and the whole of the
@@ -959,6 +1000,20 @@ export const auditEvents = pgTable(
     operatorId: uuid('operator_id').references(() => operators.id),
     uploadDeviceId: uuid('upload_device_id').references(() => uploadDevices.id),
     uploadCentreId: uuid('upload_centre_id').references(() => uploadCentres.id),
+    /**
+     * Which kind of person `operator_id` names. PLT-10 asks for reviewer access
+     * that is *fully logged*, and "logged" is not the same as "distinguishable"
+     * — a reviewer's row and a counter operator's row both point into
+     * `operators`, so without this column the trail cannot answer "did anything
+     * a remote reviewer did touch this episode" without a join that a future
+     * schema change can silently break.
+     *
+     * It is also what keeps the attribution CHECK below enforceable. A reviewer
+     * has no upload device and no centre, so the old two-columns-not-null rule
+     * had to be relaxed; relaxing it on the strength of a value stored on the
+     * row itself keeps a counter mutation with a missing device unrepresentable.
+     */
+    actorRole: text('actor_role').notNull().default('operator'),
     before: jsonb('before'),
     after: jsonb('after'),
     reason: text('reason'),
@@ -966,10 +1021,15 @@ export const auditEvents = pgTable(
   (t) => [
     index('audit_events_target_idx').on(t.targetTable, t.targetId, t.occurredAt.desc()),
     index('audit_events_operator_idx').on(t.operatorId, t.occurredAt.desc()),
-    /** An unattributed audit row defeats the table. Logins are the one case with no actor yet. */
+    check('audit_events_actor_role_check', sql`${t.actorRole} in ('operator', 'reviewer')`),
+    /**
+     * An unattributed audit row defeats the table. Logins are the one case with
+     * no actor yet; a reviewer is the one case with a person and no machine.
+     */
     check(
       'audit_events_attributed_check',
       sql`${t.action} like '%.login'
+          or (${t.actorRole} = 'reviewer' and ${t.operatorId} is not null)
           or (${t.operatorId} is not null and ${t.uploadDeviceId} is not null)`,
     ),
     /** Manual resolution overrides the machine on a money path. It says why. */

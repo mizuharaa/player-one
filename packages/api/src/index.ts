@@ -11,12 +11,12 @@ import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
 import { registerReview } from './review.ts';
 import { registerSessionRoutes } from './session.ts';
 import { authenticateMachine, authenticateOperator } from './session.ts';
-import type { Actor } from './actor.ts';
+import type { Actor, CounterActor } from './actor.ts';
 import { signToken, verifyToken } from './credentials.ts';
 
 export * from './credentials.ts';
 export * from './audit.ts';
-export type { Actor } from './actor.ts';
+export type { Actor, CounterActor, ReviewerActor } from './actor.ts';
 export * from './resolve.ts';
 export * from './money.ts';
 export { LEASE_MS } from './review.ts';
@@ -65,7 +65,46 @@ export type ApiOptions = {
    * sent and the symptom is a login that appears to do nothing.
    */
   secureCookies?: boolean;
+  /**
+   * Whether a reviewer session may reach `/media/*` — raw footage, streamed.
+   *
+   * **Default off, and it stays off until Legal signs the playback
+   * architecture.** Brief D11 — *"whether background review requires online
+   * playback of raw video"* — is recorded as unresolved and marked *"Escalate —
+   * this is not a minor detail"*, precisely because it *"decides whether
+   * reviewers stream video, and therefore whether video leaves Vietnam in
+   * practice"*. Part 7.3 is the reason it matters: the Phase 1 arrangement is
+   * *"remote access, not data transfer"*, and that distinction *"must hold in
+   * the implementation, not just in the description"*.
+   *
+   * PLT-10 reviewers are PaXini staff in Shenzhen. Serving them a video byte
+   * range is a cross-border transfer of raw Vietnamese-collected footage, so it
+   * is refused by default rather than enabled by default and audited
+   * afterwards. Review metadata, spans, reasons and verdicts carry no footage
+   * and are open to a reviewer with this flag off — the lane still works, the
+   * screen just has no picture until the question is answered.
+   *
+   * Counter operators are unaffected: they are inside Vietnam, on the machine
+   * holding the files.
+   */
+  reviewerMediaEnabled?: boolean;
 };
+
+/** What a reviewer session may reach. Everything else answers 403. */
+const REVIEW_SCOPE = '/api/review/';
+/** Raw footage. In scope for a reviewer only behind `reviewerMediaEnabled`. */
+const MEDIA_SCOPE = '/media/';
+/**
+ * The one route outside the review lane a reviewer may call, named exactly and
+ * not by prefix.
+ *
+ * The console's cookies are `HttpOnly`, so the browser cannot tell a signed-in
+ * reviewer from a signed-out one without asking — and a 403 here would put the
+ * SPA in a loop, bounced from the review screen to sign-in and straight back.
+ * It answers with the caller's own identity and nothing else: no centre, no
+ * fleet, no data.
+ */
+const IDENTITY_ROUTE = '/whoami';
 
 export function buildApi({
   db,
@@ -74,6 +113,7 @@ export function buildApi({
   mediaRoot,
   currency,
   secureCookies = false,
+  reviewerMediaEnabled = false,
 }: ApiOptions): FastifyInstance {
   if (!tokenSecret) throw new Error('tokenSecret is required');
   const app = Fastify({ logger: false });
@@ -103,14 +143,39 @@ export function buildApi({
    * either way it is not a write we can attribute.
    */
   const requireActor = async (req: FastifyRequest, reply: { code: (n: number) => { send: (b: unknown) => unknown } }) => {
+    const person = verifyToken(tokenSecret, bearer(req, 'authorization', OPERATOR_COOKIE));
+
+    /**
+     * PLT-10, and the only place it is enforced.
+     *
+     * *"Remote access for PaXini reviewers in China, scoped to review functions
+     * only, fully logged."* Scope is decided here, once, and not by an `if` at
+     * the top of each review route: a route added next month is in scope or out
+     * of it by its path, and nobody has to remember to guard it. The scope is a
+     * prefix on the matched route pattern rather than on `req.url`, so it is the
+     * string this service registered and not one a caller composed.
+     *
+     * Media is deliberately not in that scope by default — see
+     * `reviewerMediaEnabled`, D11 and Part 7.3.
+     */
+    if (person?.kind === 'reviewer') {
+      const route = req.routeOptions.url ?? '';
+      const inScope =
+        route.startsWith(REVIEW_SCOPE) ||
+        route === IDENTITY_ROUTE ||
+        (reviewerMediaEnabled && route.startsWith(MEDIA_SCOPE));
+      if (!inScope) return reply.code(403).send({ error: 'reviewer session is scoped to review' });
+      req.actor = { reviewer: person };
+      return;
+    }
+
     const machine = verifyToken(tokenSecret, bearer(req, 'x-machine-token', MACHINE_COOKIE));
-    const operator = verifyToken(tokenSecret, bearer(req, 'authorization', OPERATOR_COOKIE));
     if (machine?.kind !== 'machine') return reply.code(401).send({ error: 'machine token required' });
-    if (operator?.kind !== 'operator') return reply.code(401).send({ error: 'operator token required' });
-    if (machine.uploadCentreId !== operator.uploadCentreId) {
+    if (person?.kind !== 'operator') return reply.code(401).send({ error: 'operator token required' });
+    if (machine.uploadCentreId !== person.uploadCentreId) {
       return reply.code(403).send({ error: 'operator and machine belong to different centres' });
     }
-    req.actor = { machine, operator };
+    req.actor = { machine, operator: person };
   };
 
   app.post('/auth/machine', async (req, reply) => {
@@ -138,8 +203,9 @@ export function buildApi({
   app.get('/reference/sync', { preHandler: requireActor }, async (req, reply) => {
     // BO-11 / SEC-02: the centre comes from the token, never from the request,
     // so an operator at centre A cannot address centre B by asking nicely.
+    const actor = req.actor as CounterActor;
     const centreId = (req.query as Record<string, string>)['centre_id'];
-    if (centreId && centreId !== req.actor!.operator.uploadCentreId) {
+    if (centreId && centreId !== actor.operator.uploadCentreId) {
       return reply.code(403).send({ error: 'not your centre' });
     }
     const [collectors, devices, tasks, scenarios] = await Promise.all([
@@ -150,7 +216,7 @@ export function buildApi({
     ]);
     return {
       fetched_at: new Date().toISOString(),
-      upload_centre_id: req.actor!.operator.uploadCentreId,
+      upload_centre_id: actor.operator.uploadCentreId,
       collectors,
       devices,
       tasks,
@@ -175,12 +241,23 @@ export function buildApi({
   /** The JSON sign-in the React console uses. Same credentials, same cookies. */
   registerSessionRoutes(app, db, { tokenSecret, secureCookies });
 
-  /** Proves both-tokens and centre scope on its own, with no counter state needed. */
-  app.get('/whoami', { preHandler: requireActor }, async (req) => ({
-    operator_id: req.actor!.operator.operatorId,
-    upload_device_id: req.actor!.machine.uploadDeviceId,
-    upload_centre_id: req.actor!.operator.uploadCentreId,
-  }));
+  /**
+   * Who the caller is. Proves both-tokens and centre scope on its own, with no
+   * counter state needed — and, for a reviewer, is the only thing the console
+   * can ask to find out it is signed in.
+   */
+  app.get(IDENTITY_ROUTE, { preHandler: requireActor }, async (req) => {
+    const actor = req.actor!;
+    if (actor.reviewer !== undefined) {
+      return { role: 'reviewer', reviewer_id: actor.reviewer.reviewerId };
+    }
+    return {
+      role: 'operator',
+      operator_id: actor.operator.operatorId,
+      upload_device_id: actor.machine.uploadDeviceId,
+      upload_centre_id: actor.operator.uploadCentreId,
+    };
+  });
 
   return app;
 }

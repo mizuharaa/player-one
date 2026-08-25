@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, storeEpisode, type Db } from '@playerone/store';
 import { mutate } from './audit.ts';
-import type { Actor } from './actor.ts';
+import type { CounterActor } from './actor.ts';
 import { resolveEpisode, resolverDefects, type Resolution } from './resolve.ts';
 
 /**
@@ -44,9 +44,15 @@ export function registerEpisodes(
   toleranceMs: number,
 ): void {
   const opts = { preHandler: requireActor };
+  /**
+   * The counter, always. A reviewer session is refused by the route guard on
+   * every path in this file, so both halves are present by the time anything
+   * here runs.
+   */
+  const actorOf = (req: FastifyRequest): CounterActor => req.actor as CounterActor;
 
   /** The batch, its handover, and the sessions declared against that handover. */
-  const context = async (batchId: string, actor: Actor) => {
+  const context = async (batchId: string, actor: CounterActor) => {
     const [batch] = await db
       .select()
       .from(schema.uploadBatches)
@@ -100,7 +106,7 @@ export function registerEpisodes(
     if (!body.success) {
       return reply.code(400).send({ error: 'invalid body', detail: body.error.issues.slice(0, 5) });
     }
-    const actor = req.actor!;
+    const actor = actorOf(req);
     const batchId = (req.params as { id: string }).id;
     const ctx = await context(batchId, actor);
     if (ctx === null) return reply.code(404).send({ error: 'no such batch on this machine' });
@@ -222,7 +228,7 @@ export function registerEpisodes(
    * settlement report.
    */
   app.get('/upload-batches/:id/exceptions', opts, async (req, reply) => {
-    const actor = req.actor!;
+    const actor = actorOf(req);
     const batchId = (req.params as { id: string }).id;
     const ctx = await context(batchId, actor);
     if (ctx === null) return reply.code(404).send({ error: 'no such batch on this machine' });
@@ -270,7 +276,7 @@ export function registerEpisodes(
   app.post('/episodes/:id/resolve', opts, async (req, reply) => {
     const body = ResolveBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
-    const actor = req.actor!;
+    const actor = actorOf(req);
     const episodeId = (req.params as { id: string }).id;
 
     const [episode] = await db
@@ -340,7 +346,7 @@ export function registerEpisodes(
    * different endpoint and a different audit action.
    */
   app.post('/episodes/:id/confirm', opts, async (req, reply) => {
-    const actor = req.actor!;
+    const actor = actorOf(req);
     const episodeId = (req.params as { id: string }).id;
 
     const [episode] = await db
@@ -381,7 +387,7 @@ export function registerEpisodes(
 
   /** The status view: batches on this machine, newest first. */
   app.get('/upload-batches', opts, async (req, reply) => {
-    const actor = req.actor!;
+    const actor = actorOf(req);
     const status = (req.query as Record<string, string>)['status'];
     const rows = await db
       .select({

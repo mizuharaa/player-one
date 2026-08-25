@@ -59,6 +59,15 @@ const app = buildApi({
    * appears to succeed and does nothing. Turn it on wherever there is TLS.
    */
   secureCookies: env['PLAYERONE_SECURE_COOKIES'] === '1',
+  /**
+   * Off unless Legal has signed the playback architecture. D11 — whether
+   * background review needs online playback of raw video — is unresolved and
+   * escalated, and Part 7.3 says the Phase 1 arrangement is remote access and
+   * not data transfer. Until that is answered, a PaXini reviewer in Shenzhen
+   * gets review metadata and no footage; setting this to `1` streams raw
+   * Vietnamese-collected video across the border, so it is a deliberate act.
+   */
+  reviewerMediaEnabled: env['PLAYERONE_REVIEWER_MEDIA'] === '1',
 });
 
 const shutdown = async (signal: string) => {
