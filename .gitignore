@@ -5,3 +5,7 @@ sample-data/
 # Sample sessions are evidence, not source. Hundreds of MB of MP4 per copy;
 # point PLAYERONE_SESSIONS at them instead.
 docs/sample_data/
+
+# Screenshot rounds are evidence, not source.
+.impeccable/review/
+apps/console/dist/

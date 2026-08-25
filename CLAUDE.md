@@ -182,9 +182,28 @@ Take that literally when asked.
 Commit messages here are long and explanatory, and he reads them. State what was
 measured, what changed, and what did not.
 
+**No assistant attribution.** No `Co-Authored-By:` naming an AI, no
+`Claude-Session:` trailer, no "Generated with" line in a commit message or a pull
+request body. The history was rewritten once on 2026-08-25 to strip these and he
+does not want them reintroduced; the work is authored by whoever runs the repo.
+A sentence that happens to mention `CLAUDE.md` is content about a file and is
+fine.
+
 ## Environment
 
-Windows, Git Bash and PowerShell both available. Local Postgres 18 is running;
-password `090807@Khang` for all — **percent-encode the `@` as `%40`** in a URL.
-Use a throwaway database, never the default. ffmpeg is on PATH from winget.
-Node 24, pnpm 9.
+Windows, Git Bash and PowerShell both available. ffmpeg is on PATH from winget.
+Use a throwaway database, never the default.
+
+He works across two machines and they differ in the two ways that break a
+command, so **check which one you are on before pasting a `DATABASE_URL`**:
+
+- **The org PC.** Local Postgres 18 is installed and running; password
+  `090807@Khang` for all — **percent-encode the `@` as `%40`** in a URL.
+  Node 24, pnpm 9.
+- **The other machine.** No local Postgres at all: it runs in Docker, as
+  `docker start playerone-pg`, password `playerone`, and Docker Desktop may need
+  launching first. Node 24, **pnpm 11** — which is why `pnpm-workspace.yaml`
+  carries `allowBuilds: esbuild: true` and `.npmrc` carries
+  `confirm-modules-purge=false`. Neither is needed on pnpm 9 and neither harms it.
+
+`docs/RUNNING.md` has both paths written out.
