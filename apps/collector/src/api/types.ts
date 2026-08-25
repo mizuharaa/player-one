@@ -12,12 +12,21 @@
  *   here or on `DeviceTransport`. Recording is the device's own affair.
  */
 
-/** APP-02's six agreements, versioned. Acceptance names the version it saw. */
+/**
+ * APP-02's six agreements, versioned. Acceptance names the version it saw.
+ *
+ * These six identifiers are NOT the app's to choose. They are the closed set
+ * in the server's `collector_agreements_name_check` CHECK constraint
+ * (`packages/store/src/schema.ts`), which is what actually rejects an unknown
+ * agreement; the app is the client of that constraint. Keep them byte-equal —
+ * `test/mock-api.test.ts` pins the list, so a rename here fails loudly instead
+ * of failing at the first real POST.
+ */
 export const AGREEMENTS = [
   { id: 'user', version: '1.0' },
   { id: 'privacy', version: '1.0' },
   { id: 'data_collection', version: '1.0' },
-  { id: 'data_commercial_use', version: '1.0' },
+  { id: 'commercial_use', version: '1.0' },
   { id: 'manual_review', version: '1.0' },
   { id: 'offline_settlement', version: '1.0' },
 ] as const;

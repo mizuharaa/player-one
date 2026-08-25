@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EXAM_QUESTION_COUNT, MockCollectorApi } from '../src/api/mock.ts';
 import { AGREEMENTS } from '../src/api/types.ts';
+import { LOCALES, MESSAGES } from '../src/i18n.ts';
 
 /**
  * The mock is the app's server until the real one exists, so its gates are
@@ -19,6 +20,38 @@ async function onboarded(): Promise<MockCollectorApi> {
   await api.submitExam(PASSING);
   return api;
 }
+
+describe('the agreement contract with the server (APP-02)', () => {
+  it('names the six agreements exactly as the server CHECK does', () => {
+    // This app cannot enforce anything: acceptance is only real once the
+    // server has written a `collector_agreements` row, and that table's
+    // `collector_agreements_name_check` accepts these six strings and no
+    // others. The app shipped `data_commercial_use` against the server's
+    // `commercial_use` — six agreements presented, five acceptable, and no
+    // collector could ever become eligible. The list is duplicated across a
+    // repository boundary, so it is pinned on both sides rather than hoped at.
+    //
+    // Source of truth: packages/store/src/schema.ts, collector_agreements_name_check.
+    expect(AGREEMENTS.map((a) => a.id)).toEqual([
+      'user',
+      'privacy',
+      'data_collection',
+      'commercial_use',
+      'manual_review',
+      'offline_settlement',
+    ]);
+  });
+
+  it('has a label for every agreement in every locale', () => {
+    // A renamed id that slipped past the list above would still render as a
+    // missing key rather than an agreement title.
+    for (const locale of LOCALES) {
+      for (const a of AGREEMENTS) {
+        expect(MESSAGES[locale][`agreement.${a.id}`]).toBeTruthy();
+      }
+    }
+  });
+});
 
 describe('registration and the six agreements (APP-01/02)', () => {
   it('records acceptance with version and timestamp, all six required', async () => {

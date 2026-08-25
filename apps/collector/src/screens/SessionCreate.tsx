@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { View } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Card, Note, Row, Screen, Title } from '../ui.tsx';
+import { Body, Button, Card, Choice, Note, Row, Screen, Title } from '../ui.tsx';
 
 /**
  * APP-16/17: one session binds task + collector + device + scenario, before
@@ -25,40 +25,22 @@ function YesNo({
 }) {
   const tt = useT();
   const theme = useTheme();
-  const option = (label: string, v: boolean) => {
-    const selected = value === v;
-    return (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${question} ${label}`}
-        onPress={() => onChange(v)}
-        style={{
-          backgroundColor: selected ? theme.color.sun[500] : theme.color.background,
-          borderWidth: 1,
-          borderColor: selected ? theme.color.sun[500] : theme.color.borderStrong,
-          borderRadius: theme.radius.sm,
-          paddingVertical: theme.space[2],
-          paddingHorizontal: theme.space[5],
-        }}
-      >
-        <Text
-          style={{
-            color: selected ? theme.color.background : theme.color.foreground,
-            fontSize: theme.fontSize.base,
-            fontWeight: theme.fontWeight.semibold,
-          }}
-        >
-          {label}
-        </Text>
-      </Pressable>
-    );
-  };
   return (
     <View style={{ gap: theme.space[2] }}>
       <Body>{question}</Body>
       <View style={{ flexDirection: 'row', gap: theme.space[3] }}>
-        {option(tt('session.yes'), true)}
-        {option(tt('session.no'), false)}
+        <Choice
+          label={tt('session.yes')}
+          describedBy={question}
+          selected={value === true}
+          onPress={() => onChange(true)}
+        />
+        <Choice
+          label={tt('session.no')}
+          describedBy={question}
+          selected={value === false}
+          onPress={() => onChange(false)}
+        />
       </View>
     </View>
   );
@@ -101,31 +83,24 @@ export function SessionCreate() {
     onSuccess: (session) => setCreatedId(session.id),
   });
 
-  const pick = <T,>(items: T[], key: (x: T) => string, label: (x: T) => string, selected: string | null, onPick: (k: string) => void) => (
+  const pick = <T,>(
+    items: T[],
+    key: (x: T) => string,
+    label: (x: T) => string,
+    describedBy: string,
+    selected: string | null,
+    onPick: (k: string) => void,
+  ) => (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2] }}>
-      {items.map((item) => {
-        const k = key(item);
-        const isSelected = selected === k;
-        return (
-          <Pressable
-            key={k}
-            accessibilityRole="button"
-            onPress={() => onPick(k)}
-            style={{
-              backgroundColor: isSelected ? theme.color.tech[100] : theme.color.background,
-              borderWidth: 1,
-              borderColor: isSelected ? theme.color.tech[500] : theme.color.borderStrong,
-              borderRadius: theme.radius.pill,
-              paddingVertical: theme.space[2],
-              paddingHorizontal: theme.space[4],
-            }}
-          >
-            <Text style={{ color: theme.color.foreground, fontSize: theme.fontSize.sm }}>
-              {label(item)}
-            </Text>
-          </Pressable>
-        );
-      })}
+      {items.map((item) => (
+        <Choice
+          key={key(item)}
+          label={label(item)}
+          describedBy={describedBy}
+          selected={selected === key(item)}
+          onPress={() => onPick(key(item))}
+        />
+      ))}
     </View>
   );
 
@@ -136,7 +111,7 @@ export function SessionCreate() {
       <Card>
         <Title>{tt('session.task')}</Title>
         {claimedTasks.length === 0 ? <Note text={tt('session.needClaim')} /> : null}
-        {pick(claimedTasks, (t) => t.id, (t) => t.title, taskId, setTaskId)}
+        {pick(claimedTasks, (t) => t.id, (t) => t.title, tt('session.task'), taskId, setTaskId)}
         {task !== undefined ? (
           <Row label={tt('session.scenario')} value={tt(`scenario.${task.scenario}`)} />
         ) : null}
@@ -145,7 +120,14 @@ export function SessionCreate() {
       <Card>
         <Title>{tt('session.device')}</Title>
         {(devices.data ?? []).length === 0 ? <Note text={tt('session.needDevice')} /> : null}
-        {pick(devices.data ?? [], (d) => d.serial, (d) => d.serial, deviceSerial, setDeviceSerial)}
+        {pick(
+          devices.data ?? [],
+          (d) => d.serial,
+          (d) => d.serial,
+          tt('session.device'),
+          deviceSerial,
+          setDeviceSerial,
+        )}
       </Card>
 
       <Card>

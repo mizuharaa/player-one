@@ -6,7 +6,7 @@ import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import type { NativeTheme } from '@playerone/design/native';
-import { Body, Button, Card, Note, Row, Screen, Tag, Title } from '../ui.tsx';
+import { Body, Button, Card, ListScreen, Note, Row, Tag, Title } from '../ui.tsx';
 
 /**
  * APP-23/24: every episode and its state. APP-25: the upload starts from an
@@ -51,15 +51,16 @@ export function Uploads() {
   });
 
   return (
-    <Screen title={tt('uploads.title')}>
-      <Note text={tt('uploads.confirmBody')} />
-      {episodes.data !== undefined && episodes.data.length === 0 ? (
-        <Body muted>{tt('uploads.empty')}</Body>
-      ) : null}
-      {(episodes.data ?? []).map((episode) => {
+    <ListScreen
+      title={tt('uploads.title')}
+      data={episodes.data ?? []}
+      keyOf={(episode) => episode.episodeId}
+      header={<Note text={tt('uploads.confirmBody')} />}
+      empty={episodes.data !== undefined ? <Body muted>{tt('uploads.empty')}</Body> : null}
+      renderItem={(episode) => {
         const colors = stateColors(theme, episode.state);
         return (
-          <Card key={episode.episodeId}>
+          <Card>
             <Title>{episode.episodeId}</Title>
             <Row label={tt('uploads.size')} value={gb(episode.sizeBytes)} />
             <Tag label={tt(`state.${episode.state}`)} fg={colors.fg} bg={colors.bg} />
@@ -79,7 +80,7 @@ export function Uploads() {
             ) : null}
           </Card>
         );
-      })}
-    </Screen>
+      }}
+    />
   );
 }

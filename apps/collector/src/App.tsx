@@ -47,6 +47,24 @@ function Current() {
 }
 
 const queryClient = new QueryClient();
+
+/**
+ * The whole app's state, in memory, for the length of one process.
+ *
+ * ponytail: known ceiling, and it is the largest one in this directory —
+ * killing the app resets registration, agreements, exam result, claims, bound
+ * devices, sessions, the upload queue and income. Nothing here survives a
+ * restart, so this scaffold does NOT yet meet the product's offline /
+ * restart-survival requirement (APP-25's queue, PRODUCT.md's SQLite + MMKV +
+ * offline queue of claims, sessions and upload intents).
+ *
+ * Upgrade path, in order: replace `MockCollectorApi` with the HTTP client once
+ * the server's collector endpoints and auth exist; put the queue behind
+ * SQLite/Drizzle with MMKV for session state; move the transfer itself into
+ * the Kotlin foreground-service TurboModule so it survives app kill and Doze.
+ * The `CollectorApi` interface is the seam all three land behind, and the
+ * screens do not change. Until then, treat every queue on screen as a demo.
+ */
 const api = new MockCollectorApi({ advanceUploads: true });
 
 export function App() {

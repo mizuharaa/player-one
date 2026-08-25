@@ -41,7 +41,7 @@ const vi = {
   'agreement.user': 'Thỏa thuận người dùng',
   'agreement.privacy': 'Thỏa thuận quyền riêng tư',
   'agreement.data_collection': 'Ủy quyền thu thập dữ liệu',
-  'agreement.data_commercial_use': 'Ủy quyền sử dụng dữ liệu thương mại',
+  'agreement.commercial_use': 'Ủy quyền sử dụng dữ liệu thương mại',
   'agreement.manual_review': 'Mô tả quy trình duyệt thủ công',
   'agreement.offline_settlement': 'Mô tả thanh toán thủ công ngoại tuyến',
 
@@ -193,7 +193,7 @@ const en: Record<MessageKey, string> = {
   'agreement.user': 'User Agreement',
   'agreement.privacy': 'Privacy Agreement',
   'agreement.data_collection': 'Data Collection Authorisation',
-  'agreement.data_commercial_use': 'Data Commercial Use Authorisation',
+  'agreement.commercial_use': 'Data Commercial Use Authorisation',
   'agreement.manual_review': 'Manual Review Description',
   'agreement.offline_settlement': 'Offline Manual Settlement Description',
 

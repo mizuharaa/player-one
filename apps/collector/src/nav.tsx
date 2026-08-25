@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { BackHandler } from 'react-native';
 
 /**
  * A typed stack navigator in ~60 lines.
@@ -31,7 +32,8 @@ interface Nav {
   route: Route;
   canGoBack: boolean;
   push: (route: Route) => void;
-  back: () => void;
+  /** True if a screen was popped; false at the root, where Android Back exits. */
+  back: () => boolean;
   /** Clears history — used when onboarding hands over to the home screen. */
   reset: (route: Route) => void;
 }
@@ -41,13 +43,31 @@ const NavContext = createContext<Nav | null>(null);
 export function NavProvider({ initial, children }: { initial: Route; children: ReactNode }) {
   const [stack, setStack] = useState<Route[]>([initial]);
   const route = stack[stack.length - 1] ?? initial;
+  const canGoBack = stack.length > 1;
+  const back = (): boolean => {
+    if (!canGoBack) return false;
+    setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
+    return true;
+  };
   const nav: Nav = {
     route,
-    canGoBack: stack.length > 1,
+    canGoBack,
     push: (r) => setStack((s) => [...s, r]),
-    back: () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)),
+    back,
     reset: (r) => setStack([r]),
   };
+
+  // Android's hardware/gesture Back. Without this a hand-rolled stack leaves
+  // Back wired to "exit the app", so a collector two screens deep loses the
+  // screen instead of stepping out of it. Returning false at the root is what
+  // lets the system close the app normally. Re-subscribed every render on
+  // purpose: `back` closes over the current stack, so a `[]` dependency list
+  // would pin the handler to the first screen.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', back);
+    return () => sub.remove();
+  });
+
   return <NavContext.Provider value={nav}>{children}</NavContext.Provider>;
 }
 

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Row, Screen, Tag, Title } from '../ui.tsx';
+import { Body, ListScreen, Row, Tag, Title } from '../ui.tsx';
 
 /**
  * APP-33/34: per-episode effective minutes, amount and settlement state —
@@ -19,15 +19,15 @@ export function Income() {
   const income = useQuery({ queryKey: ['income'], queryFn: () => api.income() });
 
   return (
-    <Screen title={tt('income.title')}>
-      {income.data !== undefined && income.data.length === 0 ? (
-        <Body muted>{tt('income.empty')}</Body>
-      ) : null}
-      {(income.data ?? []).map((entry) => {
+    <ListScreen
+      title={tt('income.title')}
+      data={income.data ?? []}
+      keyOf={(entry) => entry.episodeId}
+      empty={income.data !== undefined ? <Body muted>{tt('income.empty')}</Body> : null}
+      renderItem={(entry) => {
         const confirmed = entry.kind === 'confirmed';
         return (
           <View
-            key={entry.episodeId}
             style={{
               backgroundColor: confirmed ? theme.color.card : theme.color.surface,
               borderWidth: 1,
@@ -52,7 +52,7 @@ export function Income() {
             {!confirmed ? <Body muted>{tt('income.estimatedHint')}</Body> : null}
           </View>
         );
-      })}
-    </Screen>
+      }}
+    />
   );
 }
