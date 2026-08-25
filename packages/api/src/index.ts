@@ -10,7 +10,8 @@ import { registerMedia } from './media.ts';
 import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
 import { registerReview } from './review.ts';
 import { registerSessionRoutes } from './session.ts';
-import { registerUpload, type ObjectStore } from './upload.ts';
+import { registerUpload } from './upload.ts';
+import type { ObjectStore, UploadProgress } from './upload-worker.ts';
 import { authenticateMachine, authenticateOperator } from './session.ts';
 import type { Actor } from './actor.ts';
 import { signToken, verifyToken } from './credentials.ts';
@@ -23,15 +24,21 @@ export * from './money.ts';
 export { LEASE_MS } from './review.ts';
 export { parseRange, safeJoin } from './media.ts';
 export {
+  noProgress,
   objectKey,
   planParts,
   PART_SIZE,
   S3ObjectStore,
   s3StoreFromEnv,
+  transportInventory,
+  uploadEpisode,
+  type EpisodeUploadResult,
   type Mismatch,
   type ObjectStore,
   type PutResult,
-} from './upload.ts';
+  type TransportFile,
+  type UploadProgress,
+} from './upload-worker.ts';
 export { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 
 /**
@@ -88,6 +95,12 @@ export type ApiOptions = {
    * retires that ADR. See `ReviewOptions.verificationGate`.
    */
   verificationGate?: 'local' | 'cloud';
+  /**
+   * Where the upload centre remembers what it has already transported
+   * (PRODUCT.md:34). Defaults to `noProgress`, which remembers nothing and is
+   * correct — see `UploadProgress`.
+   */
+  uploadProgress?: UploadProgress;
 };
 
 export function buildApi({
@@ -99,6 +112,7 @@ export function buildApi({
   secureCookies = false,
   objectStore,
   verificationGate,
+  uploadProgress,
 }: ApiOptions): FastifyInstance {
   if (!tokenSecret) throw new Error('tokenSecret is required');
   const app = Fastify({ logger: false });
@@ -194,7 +208,7 @@ export function buildApi({
 
   registerCounter(app, db, requireActor);
   registerEpisodes(app, db, requireActor, toleranceMs);
-  registerUpload(app, db, requireActor, { objectStore, mediaRoot });
+  registerUpload(app, db, requireActor, { objectStore, mediaRoot, uploadProgress });
   registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate });
   registerMedia(app, db, requireActor, mediaRoot);
   registerConsole(app, db, { tokenSecret, secureCookies });

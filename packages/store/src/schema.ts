@@ -94,6 +94,13 @@ export const episodes = pgTable(
       'episodes_upload_path_check',
       sql`${t.uploadPath} is null or ${t.uploadPath} in ('A', 'B', 'C')`,
     ),
+    /**
+     * The cloud read-back verdict, and a fact about ONE delivery's bytes.
+     * Migration 0007 carries the other half: a trigger resets this to
+     * 'pending' whenever `latest_ingest_id` moves, because a changed
+     * redelivery's bytes have never been uploaded and must not inherit the
+     * previous ingest's verdict.
+     */
     check(
       'episodes_verification_check',
       sql`${t.verificationState} in ('pending', 'verified', 'failed')`,
@@ -592,11 +599,13 @@ export const handovers = pgTable(
  * cloud says otherwise, so "cleaned before verified" must be unrepresentable.
  *
  * The other half of that gate lives in migration 0007, because drizzle cannot
- * express a trigger: `upload_batches_cloud_verify_guard` refuses to set
- * `cloud_verified_at` unless the batch has at least one episode and every
- * episode on it has `verification_state = 'verified'` — the byte read-back
- * verdict written by the upload leg (packages/api/src/upload.ts), never an
- * ETag (spec ING-29).
+ * express a trigger: `upload_batches_cloud_verify_guard` refuses to set EITHER
+ * `cloud_verified_at` OR `local_cache_cleaned_at` unless the batch has at least
+ * one episode and every episode on it reads `verification_state = 'verified'`
+ * at that moment — the byte read-back verdict written by the upload leg
+ * (packages/api/src/upload.ts), never an ETag (spec ING-29). Both timestamps,
+ * because "verified once" is a fact that stays true while "safe to delete the
+ * only local copy" is a question about now.
  */
 export const uploadBatches = pgTable(
   'upload_batches',

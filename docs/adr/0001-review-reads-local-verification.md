@@ -115,6 +115,16 @@ conditions above:
    separately. Nothing in the upload leg deletes anything — the cache-clean
    route records; no code path touches TF-card source media.
 
+One correction to what "verified" means, made after the leg landed:
+`verification_state` is a verdict about **one delivery's** bytes, not about the
+episode for all time. A changed redelivery writes a new ingest, and migration
+0007 resets the column to `'pending'` when `latest_ingest_id` moves — otherwise
+the cloud gate would admit a delivery nobody has uploaded on the strength of the
+previous one's read-back. Cache cleanup re-reads the same column for the same
+reason: `cloud_verified_at` records that a verification passed once, which stays
+true, while deleting the only local copy is a decision about the bytes that are
+in the cloud now.
+
 ## Alternatives considered
 
 **Wait for the cloud.** Rejected: it blocks the one piece of the system that

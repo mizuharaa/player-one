@@ -7,11 +7,13 @@ import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { contentFingerprint, type EpisodeRecord } from '@playerone/contracts';
-import { buildApi, hashCredential, objectKey, planParts, PART_SIZE, s3StoreFromEnv, type ObjectStore, type PutResult } from '../src/index.ts';
+import { buildApi, hashCredential, objectKey, planParts, PART_SIZE, s3StoreFromEnv, transportInventory, type ObjectStore, type PutResult } from '../src/index.ts';
 import { closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('upload');
+
+const sha = (b: Buffer): string => createHash('sha256').update(b).digest('hex');
 
 /**
  * Path C's cloud leg: upload, read-back verification, the UPL-06 cache gate,
@@ -55,8 +57,34 @@ describe('multipart part planning', () => {
 });
 
 describe('object keys', () => {
-  it('derive from episode id and relative path, so redelivery lands on the same keys', () => {
-    expect(objectKey('abc', 'left_part0001.mp4')).toBe('episodes/abc/left_part0001.mp4');
+  it('name the exact delivery, so a re-run lands on the same keys and a redelivery does not', () => {
+    expect(objectKey('abc', 'ing-1', 'left_part0001.mp4')).toBe('episodes/abc/ing-1/left_part0001.mp4');
+    expect(objectKey('abc', 'ing-1', 'x.mp4')).toBe(objectKey('abc', 'ing-1', 'x.mp4'));
+    expect(objectKey('abc', 'ing-2', 'x.mp4')).not.toBe(objectKey('abc', 'ing-1', 'x.mp4'));
+  });
+});
+
+describe('the transport inventory', () => {
+  it('carries the rest of the delivery, hashed here, without touching the fingerprint', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'po-transport-'));
+    const media = randomBytes(64);
+    const manifest = Buffer.from('{"duration_sec": 41.3}');
+    await writeFile(join(dir, 'ego_X_20260813_072310_camera_left.mp4'), media);
+    await writeFile(join(dir, 'meta_ego_X_20260813_072310.json'), manifest);
+
+    // source_files is what the engine fingerprinted — the manifest is not in it
+    // (ING-02), which is right for identity and wrong for transport.
+    const fingerprinted = [
+      { relative_path: 'ego_X_20260813_072310_camera_left.mp4', sha256: sha(media) },
+    ];
+    const inventory = await transportInventory(dir, fingerprinted);
+    expect(inventory).toEqual([
+      ...fingerprinted,
+      { relative_path: 'meta_ego_X_20260813_072310.json', sha256: sha(manifest) },
+    ]);
+    // The engine's settled digests are copied through untouched, never recomputed.
+    expect(inventory[0]).toBe(fingerprinted[0]);
+    await rm(dir, { recursive: true, force: true });
   });
 });
 
@@ -141,7 +169,6 @@ class FsObjectStore implements ObjectStore {
 const SECRET = 'k';
 const uid = () => randomUUID();
 const T = Date.parse('2026-08-21T09:00:00.000Z');
-const sha = (b: Buffer): string => createHash('sha256').update(b).digest('hex');
 
 describe.skipIf(!hasDb())('the cloud leg', () => {
   beforeEach(truncate);
@@ -267,9 +294,12 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     const submitEpisode = async (
       which: 'A' | 'B',
       files: Record<string, Buffer> = { 'left_part0001.mp4': randomBytes(4096) },
+      /** A second delivery of an episode already submitted: same id, same directory. */
+      again?: { episodeId: string; basename: string },
     ) => {
       const serial = which === 'A' ? 'AZER76400FE' : 'BZAR12345CD';
-      const basename = `ego_${serial}_20260813_${String(72310 + sessionSeq++).padStart(6, '0')}`;
+      const basename =
+        again?.basename ?? `ego_${serial}_20260813_${String(72310 + sessionSeq++).padStart(6, '0')}`;
       const dir = join(mediaRoot, basename);
       await mkdir(dir, { recursive: true });
       const sourceFiles = [];
@@ -280,7 +310,7 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
       sourceFiles.sort((a, b) => (a.relative_path < b.relative_path ? -1 : 1));
 
       const first = sourceFiles[0]!;
-      const episodeId = uid();
+      const episodeId = again?.episodeId ?? uid();
       const record: EpisodeRecord = {
         schema_version: '1.1.0',
         episode_id: episodeId,
@@ -320,8 +350,9 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
       const submitted = await send('POST', `/upload-batches/${batch}/episodes`, { episodes: [record] }, who);
       expect(submitted.statusCode, submitted.body).toBe(200);
       expect(submitted.json().episodes[0].resolution_state).toBe('resolved');
-      const keys = sourceFiles.map((f) => objectKey(episodeId, f.relative_path));
-      return { episodeId, record, keys, sourceFiles };
+      const ingestId = await latestIngestOf(episodeId);
+      const keys = sourceFiles.map((f) => objectKey(episodeId, ingestId, f.relative_path));
+      return { episodeId, ingestId, basename, record, keys, sourceFiles };
     };
 
     const upload = (batch: string, who: Record<string, string> = headersA) =>
@@ -336,6 +367,12 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
       )) as unknown as Record<string, unknown>[];
       return rows[0]!;
     };
+    const latestIngestOf = async (episodeId: string) => {
+      const rows = (await d.execute(
+        sql`select latest_ingest_id from episodes where episode_id = ${episodeId}`,
+      )) as unknown as { latest_ingest_id: string }[];
+      return rows[0]!.latest_ingest_id;
+    };
     const verificationOf = async (episodeId: string) => {
       const rows = (await d.execute(
         sql`select verification_state from episodes where episode_id = ${episodeId}`,
@@ -344,7 +381,7 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     };
 
     return { d, app, ids, headersA, headersB, send, A, B, store, mediaRoot,
-             submitEpisode, upload, cacheClean, claim, batchRow, verificationOf };
+             submitEpisode, upload, cacheClean, claim, batchRow, verificationOf, latestIngestOf };
   }
 
   // -------------------------------------------------------------------------
@@ -502,6 +539,73 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
 
     await h.upload(h.A.batch);
     expect((await h.claim()).statusCode).toBe(200);
+  });
+
+  it('a changed redelivery is unverified again, keeps the reviewed bytes, and blocks the cache', async () => {
+    const h = await harness({ verificationGate: 'cloud' });
+    const first = await h.submitEpisode('A', { 'left_part0001.mp4': randomBytes(4096) });
+    await h.upload(h.A.batch);
+    expect(await h.verificationOf(first.episodeId)).toBe('verified');
+    expect((await h.cacheClean(h.A.batch)).json()).toEqual({ id: h.A.batch, replayed: false });
+
+    // The card comes back with different bytes for the same session: a second
+    // ingest, CHECKSUM-MISMATCH, and nothing of it uploaded anywhere.
+    const second = await h.submitEpisode(
+      'A',
+      { 'left_part0001.mp4': randomBytes(4096) },
+      { episodeId: first.episodeId, basename: first.basename },
+    );
+    expect(second.ingestId).not.toBe(first.ingestId);
+
+    // The verdict does not carry over onto bytes nobody transported...
+    expect(await h.verificationOf(first.episodeId)).toBe('pending');
+    // ...so under QR-02 as written the new delivery is not reviewable yet.
+    expect((await h.claim()).statusCode).toBe(204);
+
+    // ...and the batch, already cloud_verified_at once, cannot be cleaned
+    // again on the strength of that historical timestamp.
+    await h.d.execute(sql`update upload_batches set local_cache_cleaned_at = null, batch_status = 'verified' where id = ${h.A.batch}`);
+    expect((await h.cacheClean(h.A.batch)).statusCode).toBe(409);
+
+    const before = new Set(h.store.meta.keys());
+    await h.upload(h.A.batch);
+    expect(await h.verificationOf(first.episodeId)).toBe('verified');
+    expect((await h.claim()).statusCode).toBe(200);
+
+    // The first delivery's objects are still there, untouched: a review, a
+    // verdict and a settlement all name an ingest, and the bytes they named
+    // must still be readable.
+    for (const key of first.keys) {
+      expect(before.has(key)).toBe(true);
+      expect(h.store.meta.has(key)).toBe(true);
+      expect(h.store.writes.get(key)).toBe(1);
+    }
+    for (const key of second.keys) expect(before.has(key)).toBe(false);
+  });
+
+  it('transports the manifest too, and verifies it, without it joining the fingerprint', async () => {
+    const h = await harness();
+    const manifest = Buffer.from('{"duration_sec": 41.3, "files": []}');
+    const e = await h.submitEpisode('A', { 'left_part0001.mp4': randomBytes(4096) });
+    // The manifest is beside the media on the card and out of source_files by
+    // design (ING-02). Out of the cloud copy too would mean the delivered
+    // directory cannot be reproduced from the bucket.
+    await writeFile(join(h.mediaRoot, e.basename, `meta_${e.basename}.json`), manifest);
+
+    const res = await h.upload(h.A.batch);
+    expect(res.json().episodes[0]).toMatchObject({ uploaded: 2, verification_state: 'verified' });
+    const manifestKey = objectKey(e.episodeId, e.ingestId, `meta_${e.basename}.json`);
+    expect(h.store.meta.get(manifestKey)?.sha256).toBe(sha(manifest));
+
+    // Verified by read-back like every other object: corrupt it and the
+    // episode fails, naming the manifest.
+    h.store.corruptOnPut.add(manifestKey);
+    await h.d.execute(sql`update episodes set verification_state = 'failed' where episode_id = ${e.episodeId}`);
+    const bad = await h.upload(h.A.batch);
+    expect(bad.json().episodes[0].verification_state).toBe('failed');
+    expect(bad.json().episodes[0].mismatches).toEqual([
+      expect.objectContaining({ relative_path: `meta_${e.basename}.json` }),
+    ]);
   });
 
   it('answers 503, not silence, on a machine with no object store configured', async () => {

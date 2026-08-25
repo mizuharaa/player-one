@@ -333,12 +333,9 @@ describe.skipIf(!hasDb())('the identity spine', () => {
   it('UPL-06: a local cache cannot be cleaned before the cloud verified it', async () => {
     const ids = await seedSpine();
     const d = await db();
-    await violates('upload_batches_cache_after_verify_check', d.execute(sql`
-        update upload_batches set local_cache_cleaned_at = now() where id = ${ids.batch};
-      `));
 
-    // Migration 0007 extends the gate: cloud_verified_at is not a status an
-    // operator can assert, it is a consequence of every episode on the batch
+    // Migration 0007 extends the gate: neither timestamp is a status an
+    // operator can assert, both are consequences of every episode on the batch
     // passing byte read-back. An empty batch has nothing the cloud verified...
     await violates('upload_batches_verify_needs_episodes', d.execute(sql`
       update upload_batches set cloud_verified_at = now(), batch_status = 'verified'
@@ -355,6 +352,14 @@ describe.skipIf(!hasDb())('the identity spine', () => {
     await d.execute(sql`
       update episodes set verification_state = 'verified' where episode_id = ${ep.episodeId};
     `);
+
+    // With the episodes in order, the original CHECK is what still refuses a
+    // cleanup the cloud has not signed off: an upload centre's local copy is
+    // the only copy until then.
+    await violates('upload_batches_cache_after_verify_check', d.execute(sql`
+        update upload_batches set local_cache_cleaned_at = now() where id = ${ids.batch};
+      `));
+
     await d.execute(sql`
       update upload_batches set cloud_verified_at = now(), batch_status = 'verified'
       where id = ${ids.batch};
@@ -363,6 +368,70 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       update upload_batches set local_cache_cleaned_at = now(), batch_status = 'closed'
       where id = ${ids.batch};
     `);
+
+    // And cleaning reads the episodes NOW, not cloud_verified_at. That
+    // timestamp says a full verification passed once, which stays true;
+    // deleting the only local copy is a decision about the current bytes, so a
+    // batch whose episode has since failed re-verification is not cleanable
+    // even though it is still stamped verified.
+    await d.execute(sql`
+      update upload_batches set local_cache_cleaned_at = null where id = ${ids.batch};
+    `);
+    await d.execute(sql`
+      update episodes set verification_state = 'failed' where episode_id = ${ep.episodeId};
+    `);
+    await violates('upload_batches_verify_needs_verified_episodes', d.execute(sql`
+      update upload_batches set local_cache_cleaned_at = now(), batch_status = 'closed'
+      where id = ${ids.batch};
+    `));
+  });
+
+  // -- UPL-05: a verdict belongs to one delivery ---------------------------
+
+  it('UPL-05: a new ingest is unverified, whatever the last one scored', async () => {
+    const ids = await seedSpine();
+    const d = await db();
+    const ep = await seedEpisode({ sessionId: ids.session, measured: '8.500000', batchId: ids.batch });
+    const verificationOf = async () => {
+      const rows = (await d.execute(sql`
+        select verification_state from episodes where episode_id = ${ep.episodeId}
+      `)) as unknown as { verification_state: string }[];
+      return rows[0]!.verification_state;
+    };
+
+    await d.execute(sql`
+      update episodes set latest_ingest_id = ${ep.ingestId} where episode_id = ${ep.episodeId};
+    `);
+    await d.execute(sql`
+      update episodes set verification_state = 'verified' where episode_id = ${ep.episodeId};
+    `);
+    expect(await verificationOf()).toBe('verified');
+
+    // The card comes back with different bytes: a second ingest, and no cloud
+    // copy of it. The verdict is about the FIRST delivery's bytes and must not
+    // survive onto the second — otherwise QR-02's cloud gate admits an episode
+    // whose current bytes nobody has uploaded.
+    const second = uid();
+    await d.execute(sql`
+      insert into episode_ingests (ingest_id, episode_id, content_fingerprint, state, source_basename,
+                                   measured_duration_s, timing_source, timing_confidence, manifest_present,
+                                   engine_version, host, ingested_at, record_json)
+        values (${second}, ${ep.episodeId}, repeat('b', 64), 'ok', 'ego_AZER76400FE_20260813_072310',
+                '8.500000', 'pts_sidecar', 'exact', true, '0.3.1', 'test', now(), '{}'::jsonb);
+    `);
+    await d.execute(sql`
+      update episodes set latest_ingest_id = ${second}, ingest_count = 2
+      where episode_id = ${ep.episodeId};
+    `);
+    expect(await verificationOf()).toBe('pending');
+
+    // Raw SQL cannot smuggle the old verdict across either: the reset is a
+    // BEFORE trigger, so it wins over whatever the same statement sets.
+    await d.execute(sql`
+      update episodes set latest_ingest_id = ${ep.ingestId}, verification_state = 'verified'
+      where episode_id = ${ep.episodeId};
+    `);
+    expect(await verificationOf()).toBe('pending');
   });
 
   // -- UPL-07 --------------------------------------------------------------
