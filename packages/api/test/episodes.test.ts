@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import type { EpisodeRecord } from '@playerone/contracts';
+import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential } from '../src/index.ts';
 import { closeDb, db, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
@@ -34,8 +34,9 @@ function record(opts: {
   const path = opts.basename ?? `ego_AZER76400FE_20260813_${String(Math.random()).slice(2, 8)}`;
   return {
     schema_version: '1.1.0',
-    // Derived from the basename in real life; any distinct uuid does here.
-    episode_id: uid(),
+    // Derived from the basename, exactly as the engine does it — the submit
+    // route re-derives and refuses anything else.
+    episode_id: deriveEpisodeId(path),
     content_fingerprint: 'a'.repeat(64),
     state: 'ok',
     source: { path, ingest_tool_version: '0.3.1', ingested_at: new Date().toISOString(), ingest_host: 'test' },
@@ -208,6 +209,31 @@ describe.skipIf(!hasDb())('episode submission and resolution', () => {
     expect(rows[0]!['collection_session_id']).toBe(session);
     expect(rows[0]!['upload_path']).toBe('C');
     expect(rows[0]!['upload_batch_id']).toBe(h.batch);
+    await assertNoThirdState();
+  });
+
+  it('refuses an episode id that does not derive from its own basename', async () => {
+    const h = await harness();
+    await h.addSession(-60);
+    const honest = record({ basename: 'ego_AZER76400FE_20260813_072310' });
+    expect((await h.submit([honest])).json().episodes[0].resolution_state).toBe('resolved');
+
+    /**
+     * The id is global by design — a card at the counter and a cloud
+     * re-download of one session are one episode and one payment. A caller who
+     * could choose it could therefore name an episode belonging to another
+     * centre and, two transactions later, have it attached to this machine's
+     * batch. The basename is the only input the id has.
+     */
+    const forged = { ...record({ basename: 'ego_AZER76400FE_20260813_073055' }), episode_id: honest.episode_id };
+    const res = await h.submit([forged]);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().episodes[0].error).toMatch(/does not derive/);
+    expect(res.json().episodes[0].expected_episode_id).not.toBe(honest.episode_id);
+
+    // Nothing moved: one episode, still on its own delivery.
+    const rows = (await h.d.execute(sql`select count(*) as n from episodes`)) as unknown as { n: string }[];
+    expect(Number(rows[0]!.n)).toBe(1);
     await assertNoThirdState();
   });
 

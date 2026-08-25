@@ -32,6 +32,27 @@ const BLOCKING = new Set([
   'MEDIA-UNREADABLE',
   'MEDIA-TRUNCATED',
   'PART-MISSING-INTERIOR',
+  /**
+   * CHECKSUM-MISMATCH is here for a different reason from the other four, and
+   * the ingest spec (§6, defect table) is explicit about it: the bytes of one
+   * session changed between two deliveries, so which delivery is the real one
+   * is an open question, and "does not enter the review queue, does not
+   * generate settlement, is never deleted" is what the spec says to do with an
+   * open question. A reviewer can watch the video perfectly well; what they
+   * cannot do is decide which of two conflicting deliveries they are being
+   * paid to judge.
+   *
+   * It became reachable when the cloud leg landed: a changed redelivery is
+   * unverified again (migration 0007), re-uploads, verifies against its own new
+   * digest, and was then reviewable with the cross-delivery conflict still
+   * unresolved.
+   *
+   * ponytail: no per-episode clearing route exists yet, so a mismatched
+   * redelivery stays out of the queue until somebody builds one — flipping
+   * `blocks_review` for the code is one UPDATE, per the note above. That route
+   * belongs to the counter's quarantine workflow, not to the cloud leg.
+   */
+  'CHECKSUM-MISMATCH',
 ]);
 
 /**

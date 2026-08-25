@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { EpisodeRecord } from '@playerone/contracts';
@@ -165,6 +165,26 @@ export function registerReview(
   `;
 
   /**
+   * The same eligibility question asked about a review row that already exists.
+   *
+   * Materialisation is not the last moment eligibility matters: the cloud leg's
+   * read-back can find a corrupt copy, and a redelivery can move the episode
+   * onto an ingest this review does not name, both AFTER a pending row was
+   * created. So takeover asks it, the queue depth asks it, and the verdict
+   * transaction asks it. `episode_ingests.ingest_id = <ingest>` joined against
+   * `latest_ingest_id` is what pins it to the exact delivery under review.
+   */
+  const stillEligible = (episodeId: SQL | string, ingestId: SQL | string) => sql`
+    exists (
+      select 1
+        from episodes
+        join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
+       where episodes.episode_id = ${episodeId}
+         and episode_ingests.ingest_id = ${ingestId}
+         and ${eligible}
+    )`;
+
+  /**
    * Claims the next episode for this reviewer, in two statements and at most
    * `CLAIM_ATTEMPTS` tries.
    *
@@ -197,20 +217,7 @@ export function registerReview(
              from episode_reviews r
             where r.review_state = 'pending'
               and (r.reviewer_ref is null or r.lease_expires_at < now())
-              /**
-               * Eligibility is re-checked at takeover, not only at
-               * materialisation: verification can fail AFTER a pending row was
-               * created (the cloud leg's read-back finding a corrupt copy), and
-               * a row that was eligible last week must not be handed out today.
-               */
-              and exists (
-                select 1
-                  from episodes
-                  join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
-                 where episodes.episode_id = r.episode_id
-                   and episode_ingests.ingest_id = r.ingest_id
-                   and ${eligible}
-              )
+              and ${stillEligible(sql`r.episode_id`, sql`r.ingest_id`)}
             order by r.created_at
               for update skip locked
             limit 1
@@ -275,14 +282,7 @@ export function registerReview(
             and (pr.reviewer_ref is null or pr.lease_expires_at < now())
             -- Same re-check as the takeover: a pending row whose episode has
             -- since failed cloud verification is not claimable, so it is not depth.
-            and exists (
-              select 1
-                from episodes
-                join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
-               where episodes.episode_id = pr.episode_id
-                 and episode_ingests.ingest_id = pr.ingest_id
-                 and ${eligible}
-            ))
+            and ${stillEligible(sql`pr.episode_id`, sql`pr.ingest_id`)})
       + (select count(*)
            from episodes
            join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
@@ -784,6 +784,16 @@ export function registerReview(
               and(
                 eq(schema.episodeReviews.id, review.id),
                 eq(schema.episodeReviews.reviewState, 'pending'),
+                /**
+                 * And the episode is still reviewable NOW. A lease lasts
+                 * minutes and the cloud leg runs in that window: read-back can
+                 * turn the copy 'failed', or a redelivery can move the episode
+                 * onto an ingest this review does not name. Either way the
+                 * bytes the reviewer judged are not the bytes on record, and a
+                 * settlement written here would pay for footage QR-02 says
+                 * never entered review.
+                 */
+                stillEligible(body.episode_id, review.ingestId),
               ),
             )
             .returning({ id: schema.episodeReviews.id });
@@ -848,6 +858,21 @@ export function registerReview(
        */
       const raced = await resultOf(db, body.verdict_id);
       if (raced !== null) return reply.send({ ...raced, replayed: true });
+      /**
+       * Still pending means nobody decided it — the eligibility clause is what
+       * refused. Saying "decided elsewhere" there would send the reviewer
+       * looking for a colleague who does not exist.
+       */
+      const [current] = await db
+        .select({ state: schema.episodeReviews.reviewState })
+        .from(schema.episodeReviews)
+        .where(eq(schema.episodeReviews.id, review.id));
+      if (current?.state === 'pending') {
+        return reply.code(409).send({
+          error: 'not reviewable',
+          detail: 'this episode stopped being reviewable while it was open; nothing was recorded',
+        });
+      }
       return reply.code(409).send({ error: 'reassigned', detail: 'this review was decided elsewhere' });
     }
 

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { contentFingerprint, type EpisodeRecord } from '@playerone/contracts';
+import { contentFingerprint, deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential, objectKey, planParts, PART_SIZE, s3StoreFromEnv, transportInventory, type ObjectStore, type PutResult } from '../src/index.ts';
 import { closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
 
@@ -294,8 +294,8 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     const submitEpisode = async (
       which: 'A' | 'B',
       files: Record<string, Buffer> = { 'left_part0001.mp4': randomBytes(4096) },
-      /** A second delivery of an episode already submitted: same id, same directory. */
-      again?: { episodeId: string; basename: string },
+      /** A second delivery of an episode already submitted: same directory, so same id. */
+      again?: { basename: string },
     ) => {
       const serial = which === 'A' ? 'AZER76400FE' : 'BZAR12345CD';
       const basename =
@@ -310,7 +310,8 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
       sourceFiles.sort((a, b) => (a.relative_path < b.relative_path ? -1 : 1));
 
       const first = sourceFiles[0]!;
-      const episodeId = again?.episodeId ?? uid();
+      // Exactly as the engine derives it; the submit route re-derives and checks.
+      const episodeId = deriveEpisodeId(basename);
       const record: EpisodeRecord = {
         schema_version: '1.1.0',
         episode_id: episodeId,
@@ -529,6 +530,37 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     expect((await h.claim(h.headersB)).statusCode).toBe(204);
   });
 
+  it('a verdict is refused when the copy fails DURING a live lease, and pays nothing', async () => {
+    const h = await harness();
+    const e = await h.submitEpisode('A');
+
+    // The reviewer holds a valid, unexpired lease. A lease lasts minutes and
+    // the cloud leg runs in that window, so the read-back verdict can land
+    // between the claim and the verdict.
+    const claimed = await h.claim();
+    expect(claimed.statusCode).toBe(200);
+    await h.d.execute(sql`update episodes set verification_state = 'failed' where episode_id = ${e.episodeId}`);
+
+    const res = await h.send('POST', '/api/review/verdict', {
+      verdict_id: uid(),
+      episode_id: e.episodeId,
+      decision: 'good',
+      spans: [],
+      reject_reasons: [],
+    });
+    expect(res.statusCode, res.body).toBe(409);
+    expect(res.json().error).toBe('not reviewable');
+
+    // Nothing was recorded: no verdict, no settlement, and the review is still
+    // pending so it can be decided once the copy is healed.
+    const rows = (await h.d.execute(sql`
+      select (select count(*) from settlements) as settlements,
+             (select review_state from episode_reviews where episode_id = ${e.episodeId}) as state
+    `)) as unknown as { settlements: string; state: string }[];
+    expect(Number(rows[0]!.settlements)).toBe(0);
+    expect(rows[0]!.state).toBe('pending');
+  });
+
   it('the cloud gate (QR-02 as written) admits only cloud-verified episodes', async () => {
     const h = await harness({ verificationGate: 'cloud' });
     await h.submitEpisode('A');
@@ -553,7 +585,7 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     const second = await h.submitEpisode(
       'A',
       { 'left_part0001.mp4': randomBytes(4096) },
-      { episodeId: first.episodeId, basename: first.basename },
+      { basename: first.basename },
     );
     expect(second.ingestId).not.toBe(first.ingestId);
 
@@ -570,6 +602,12 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     const before = new Set(h.store.meta.keys());
     await h.upload(h.A.batch);
     expect(await h.verificationOf(first.episodeId)).toBe('verified');
+
+    // Verified, and still not reviewable: CHECKSUM-MISMATCH blocks review, so
+    // the cloud saying "these bytes arrived intact" does not answer "which of
+    // two deliveries of this session is the real one".
+    expect((await h.claim()).statusCode).toBe(204);
+    await h.d.execute(sql`update defect_codes set blocks_review = false where code = 'CHECKSUM-MISMATCH'`);
     expect((await h.claim()).statusCode).toBe(200);
 
     // The first delivery's objects are still there, untouched: a review, a

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import type { EpisodeRecord } from '@playerone/contracts';
+import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { open, type Db } from '@playerone/store';
 import { buildApi, hashCredential } from '../src/index.ts';
 import { DB_URL, closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
@@ -28,13 +28,15 @@ const T = Date.parse('2026-08-21T09:00:00.000Z');
 
 const record = (opts: { basename?: string; measured?: number; declared?: number | null }): EpisodeRecord => {
   const measured = opts.measured ?? 100;
+  const path = opts.basename ?? `ego_AZER76400FE_20260813_${String(Math.random()).slice(2, 8)}`;
   return {
     schema_version: '1.1.0',
-    episode_id: uid(),
+    // The submit route re-derives this from the basename and refuses anything else.
+    episode_id: deriveEpisodeId(path),
     content_fingerprint: 'a'.repeat(64),
     state: 'ok',
     source: {
-      path: opts.basename ?? `ego_AZER76400FE_20260813_${String(Math.random()).slice(2, 8)}`,
+      path,
       ingest_tool_version: '0.3.1',
       ingested_at: new Date().toISOString(),
       ingest_host: 'test',

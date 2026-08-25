@@ -508,7 +508,18 @@ describe.skipIf(!hasDb())('the catalogues', () => {
     expect(blocking).not.toContain('STATS-STALE');
     expect(blocking).not.toContain('PTS-EMPTY');
     expect(blocking).not.toContain('TIMING-ESTIMATED');
-    expect(blocking).not.toContain('CHECKSUM-MISMATCH');
+
+    /**
+     * CHECKSUM-MISMATCH used to be on the permissive side of this line, with no
+     * reason recorded anywhere for that specific code. The ingest spec's defect
+     * table (§6) says quarantine — "does not enter the review queue, does not
+     * generate settlement, is never deleted" — because the bytes of one session
+     * changed between two deliveries and which one is real is an open question.
+     * A reviewer can watch it; they cannot decide which delivery they are being
+     * paid to judge. Reversing the old assertion is deliberate and this is what
+     * says so.
+     */
+    expect(blocking).toContain('CHECKSUM-MISMATCH');
 
     // Open question for the product owner, seeded permissive. If this flips,
     // it flips deliberately and this line is what says so.

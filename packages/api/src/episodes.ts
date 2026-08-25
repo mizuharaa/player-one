@@ -1,7 +1,8 @@
+import { basename } from 'node:path';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { EpisodeRecord } from '@playerone/contracts';
+import { deriveEpisodeId, EpisodeRecord } from '@playerone/contracts';
 import { schema, storeEpisode, type Db } from '@playerone/store';
 import { mutate } from './audit.ts';
 import type { Actor } from './actor.ts';
@@ -107,6 +108,28 @@ export function registerEpisodes(
 
     const results = [];
     for (const record of body.data.episodes) {
+      /**
+       * The id is re-derived here, from the record's own basename, before the
+       * record is allowed to touch anything.
+       *
+       * `episodes.episode_id` is global — that is the point of deriving it from
+       * the basename (docs/episode-identity.md): a card at the counter and a
+       * cloud re-download of the same session are one episode and one payment.
+       * The cost of a global key is that a caller who could choose it could
+       * name somebody else's episode and, two transactions later, move it onto
+       * this machine's batch. The id is a pure function of the basename and the
+       * engine computes it with this same function, so a record that disagrees
+       * with itself is not a delivery to reconcile — it is refused.
+       */
+      const expected = deriveEpisodeId(basename(record.source.path));
+      if (record.episode_id !== expected) {
+        results.push({
+          episode_id: record.episode_id,
+          error: 'episode_id does not derive from the source basename',
+          expected_episode_id: expected,
+        });
+        continue;
+      }
       /**
        * The measurement is stored first, by the code that already owns that job.
        * `storeEpisode` runs its own transaction and handles the re-delivery cases
