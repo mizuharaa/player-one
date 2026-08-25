@@ -2,6 +2,9 @@ import { eq } from 'drizzle-orm';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { schema, seedCatalogues, type Db } from '@playerone/store';
 import { auditLogin } from './audit.ts';
+import { registerBackOffice } from './backoffice.ts';
+
+export { REFUSALS } from './backoffice.ts';
 import { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';
@@ -167,6 +170,7 @@ export function buildApi({
    */
   app.addHook('onReady', () => seedCatalogues(db));
 
+  registerBackOffice(app, db, requireActor);
   registerCounter(app, db, requireActor);
   registerEpisodes(app, db, requireActor, toleranceMs);
   registerReview(app, db, requireActor, { mediaRoot, currency });

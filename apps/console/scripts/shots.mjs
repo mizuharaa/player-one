@@ -96,6 +96,35 @@ const shots = [
     { viewport: MOBILE.width ? DESKTOP : DESKTOP, theme: 'light', locale: 'zh', path: '/review', prepare: async (p) => p.waitForTimeout(2500) },
   ],
   ['review-mobile', { viewport: MOBILE, theme: 'light', locale: 'en', path: '/review', prepare: async (p) => p.waitForTimeout(2500) }],
+  // The back office is three tabs on one screen, so it takes three shots: the
+  // tab is not in the URL and a single one would only ever show the tasks table.
+  ['backoffice-tasks-desktop', { viewport: DESKTOP, theme: 'light', locale: 'en', path: '/backoffice' }],
+  [
+    'backoffice-collectors-desktop-dark',
+    {
+      viewport: DESKTOP,
+      theme: 'dark',
+      locale: 'zh',
+      path: '/backoffice',
+      prepare: async (p) => {
+        await p.getByRole('tab').nth(1).click();
+        await p.waitForTimeout(600);
+      },
+    },
+  ],
+  [
+    'backoffice-devices-mobile',
+    {
+      viewport: MOBILE,
+      theme: 'light',
+      locale: 'en',
+      path: '/backoffice',
+      prepare: async (p) => {
+        await p.getByRole('tab').nth(2).click();
+        await p.waitForTimeout(600);
+      },
+    },
+  ],
   ['pipeline-desktop', { viewport: DESKTOP, theme: 'light', locale: 'en', path: '/pipeline' }],
   ['pipeline-desktop-dark', { viewport: DESKTOP, theme: 'dark', locale: 'zh', path: '/pipeline' }],
   ['notbuilt-desktop', { viewport: DESKTOP, theme: 'light', locale: 'en', path: '/settle' }],

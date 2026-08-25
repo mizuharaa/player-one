@@ -17,6 +17,7 @@ import { ReviewScreen } from './routes/Review.tsx';
 import { PipelineScreen } from './routes/Pipeline.tsx';
 import { LoginScreen } from './routes/Login.tsx';
 import { NotBuiltScreen } from './routes/NotBuilt.tsx';
+import { BackOfficeScreen } from './routes/BackOffice.tsx';
 
 const rootRoute = createRootRoute({ component: Outlet });
 
@@ -53,6 +54,14 @@ const reviewRoute = createRoute({
   path: '/review',
   beforeLoad: requireSession,
   component: ReviewScreen,
+});
+
+/** BO-01 to BO-04, on one screen: tasks, collectors and devices. */
+const backOfficeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/backoffice',
+  beforeLoad: requireSession,
+  component: BackOfficeScreen,
 });
 
 const pipelineRoute = createRoute({
@@ -94,6 +103,7 @@ const routeTree = rootRoute.addChildren([
   homeRoute,
   loginRoute,
   reviewRoute,
+  backOfficeRoute,
   pipelineRoute,
   counterRoute,
   episodesRoute,

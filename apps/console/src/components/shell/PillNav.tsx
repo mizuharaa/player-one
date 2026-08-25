@@ -18,6 +18,7 @@ import {
   IconCounter,
   IconEpisodes,
   IconHome,
+  IconBackOffice,
   IconPipeline,
   IconReview,
   IconSettle,
@@ -37,6 +38,7 @@ const DESTINATIONS: Destination[] = [
   { to: '/review', key: 'nav.review', Icon: IconReview, built: true },
   { to: '/episodes', key: 'nav.episodes', Icon: IconEpisodes, built: false },
   { to: '/settle', key: 'nav.settle', Icon: IconSettle, built: false },
+  { to: '/backoffice', key: 'nav.backoffice', Icon: IconBackOffice, built: true },
   { to: '/pipeline', key: 'nav.pipeline', Icon: IconPipeline, built: true },
 ];
 

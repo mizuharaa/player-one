@@ -64,7 +64,7 @@ pnpm test
 An unencoded one parses as part of the host and fails to connect.
 
 The suite creates `<database>_store`, `_spine`, `_api`, `_audit`, `_counter`,
-`_episodes` and `_review` beside whatever `DATABASE_URL` names, one per test
+`_episodes`, `_review` and `_backoffice` beside whatever `DATABASE_URL` names, one per test
 file, because vitest runs files in parallel and each truncates. Nothing else uses
 them.
 

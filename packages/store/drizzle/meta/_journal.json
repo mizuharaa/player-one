@@ -36,6 +36,13 @@
       "when": 1787564322984,
       "tag": "0004_review_lane",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787648340226,
+      "tag": "0006_back_office_crud",
+      "breakpoints": true
     }
   ]
 }
