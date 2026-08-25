@@ -54,6 +54,14 @@ const app = buildApi({
   mediaRoot: env['PLAYERONE_MEDIA_ROOT'],
   currency: env['PLAYERONE_CURRENCY'],
   /**
+   * SET-07's cycle. Weekly is `[ASSUMED]` in the brief's §13.2 rather than
+   * agreed, so it is settable here; the API defaults to 7 and nothing in
+   * `settle.ts` writes the number down.
+   */
+  settlementCycleDays: env['PLAYERONE_SETTLEMENT_CYCLE_DAYS']
+    ? Number(env['PLAYERONE_SETTLEMENT_CYCLE_DAYS'])
+    : undefined,
+  /**
    * Off unless asked for. Pilot upload centres are a LAN over plain HTTP, where
    * a `Secure` cookie is simply never sent and the symptom is a sign-in that
    * appears to succeed and does nothing. Turn it on wherever there is TLS.

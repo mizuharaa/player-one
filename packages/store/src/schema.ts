@@ -937,6 +937,80 @@ export const settlements = pgTable(
   ],
 );
 
+/**
+ * SET-06 / BO-08: what finance pays, for one collector, for one cycle.
+ *
+ * `settlements_state_check` says which states exist. It cannot say which
+ * *changes* are allowed, because a CHECK only ever sees the row in front of it
+ * — `manually_paid → pending_review` satisfies it in both directions. The
+ * ordering is enforced by `settlements_transition_guard`, a BEFORE INSERT OR
+ * UPDATE trigger written by hand in `0005_settlement_lifecycle.sql`; drizzle
+ * has no way to declare a trigger, so the migration is the source and this
+ * comment is the pointer to it.
+ *
+ * The period is a parameter, not a constant: weekly is `[ASSUMED]` in the
+ * brief's §13.2, so it is stored on every bill rather than implied by one.
+ *
+ * `total` is stored and is the sum of the line amounts. It is a denormalisation
+ * with a guard: the same trigger refuses any later change to a settlement's
+ * `amount`, so a bill's arithmetic cannot be invalidated after it is issued.
+ * That is also why `bill_lines` carries no money of its own — there is exactly
+ * one place each figure is written down.
+ */
+export const bills = pgTable(
+  'bills',
+  {
+    id: uuid('id').primaryKey(),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+    periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+    /** No column on `tasks` says this yet; see the known gaps in docs/review.md. */
+    currency: text('currency').notNull(),
+    total: numeric('total', { precision: 14, scale: 4, mode: 'string' }).notNull(),
+    generatedAt: timestamp('generated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /**
+     * SET-07's idempotency, as an index rather than as a check in the
+     * generator: re-running a cycle has nowhere to put a second bill, so a
+     * regeneration provably changes nothing even if it is issued by a cron that
+     * fired twice, by two operators at once, or straight from psql.
+     */
+    uniqueIndex('bills_collector_period_key').on(t.collectorId, t.periodStart, t.periodEnd),
+    check('bills_period_check', sql`${t.periodEnd} > ${t.periodStart}`),
+    check('bills_total_nonneg_check', sql`${t.total} >= 0`),
+  ],
+);
+
+/**
+ * One settlement on one bill. The primary key is the settlement alone, so a
+ * settlement that is already billed cannot be added to a second bill — double
+ * payment is unrepresentable rather than guarded against.
+ *
+ * SET-01 makes payable settlements out of pass and partial-pass reviews only.
+ * The review lane writes a settlement for a rejected episode too, worth 0.0000,
+ * because that row is the score of the review; `bill_lines_payable_guard` in
+ * `0005_settlement_lifecycle.sql` is what keeps it off a bill, so a refused
+ * episode cannot print a zero-value line.
+ */
+export const billLines = pgTable(
+  'bill_lines',
+  {
+    billId: uuid('bill_id')
+      .notNull()
+      .references(() => bills.id),
+    settlementId: uuid('settlement_id')
+      .notNull()
+      .references(() => settlements.id),
+  },
+  (t) => [
+    primaryKey({ name: 'bill_lines_settlement_key', columns: [t.settlementId] }),
+    index('bill_lines_bill_idx').on(t.billId),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Auth, audit and machine status (PLT-06/07/08, SEC-01/02/04/05)
 

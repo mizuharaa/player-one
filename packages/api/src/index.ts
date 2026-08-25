@@ -10,6 +10,7 @@ import { registerMedia } from './media.ts';
 import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
 import { registerReview } from './review.ts';
 import { registerSessionRoutes } from './session.ts';
+import { registerSettle } from './settle.ts';
 import { authenticateMachine, authenticateOperator } from './session.ts';
 import type { Actor } from './actor.ts';
 import { signToken, verifyToken } from './credentials.ts';
@@ -65,6 +66,12 @@ export type ApiOptions = {
    * sent and the symptom is a login that appears to do nothing.
    */
   secureCookies?: boolean;
+  /**
+   * SET-07's settlement cycle, in days. Weekly is `[ASSUMED]` in the brief's
+   * §13.2 rather than decided, so it is a parameter with a default and not a
+   * constant somewhere in `settle.ts`.
+   */
+  settlementCycleDays?: number;
 };
 
 export function buildApi({
@@ -74,6 +81,7 @@ export function buildApi({
   mediaRoot,
   currency,
   secureCookies = false,
+  settlementCycleDays,
 }: ApiOptions): FastifyInstance {
   if (!tokenSecret) throw new Error('tokenSecret is required');
   const app = Fastify({ logger: false });
@@ -170,6 +178,7 @@ export function buildApi({
   registerCounter(app, db, requireActor);
   registerEpisodes(app, db, requireActor, toleranceMs);
   registerReview(app, db, requireActor, { mediaRoot, currency });
+  registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays });
   registerMedia(app, db, requireActor, mediaRoot);
   registerConsole(app, db, { tokenSecret, secureCookies });
   /** The JSON sign-in the React console uses. Same credentials, same cookies. */
