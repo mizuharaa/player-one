@@ -275,6 +275,10 @@ const en = {
   'bo.refused.collectors_external_ref_key': 'Another collector already uses that reference.',
   'bo.refused.devices_hardware_serial_key': 'Another device already carries that serial.',
   'bo.refused.device_already_bound': 'That device is bound to somebody else. Unbind it first.',
+  'bo.refused.device_assignments_no_overlap':
+    'That device is already assigned to somebody for part of that period.',
+  'bo.refused.device_assignments_id_reused':
+    'That assignment reference already belongs to another device or collector.',
   'bo.refused.unknown': 'The server refused that change.',
 
   'theme.toggle': 'Theme',
@@ -505,6 +509,8 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.collectors_external_ref_key': '该采集者编号已被占用。',
   'bo.refused.devices_hardware_serial_key': '该序列号已被其他设备占用。',
   'bo.refused.device_already_bound': '该设备已绑定给其他人，请先解绑。',
+  'bo.refused.device_assignments_no_overlap': '该设备在这段时间内已分配给其他采集者。',
+  'bo.refused.device_assignments_id_reused': '该分配编号已属于其他设备或采集者。',
   'bo.refused.unknown': '服务端拒绝了该操作。',
 
   'theme.toggle': '主题',

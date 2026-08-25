@@ -79,6 +79,8 @@ describe.skipIf(!hasDb())('episode submission and resolution', () => {
     const d = await db();
     const ids = {
       centre: uid(), machine: uid(), operator: uid(), collector: uid(),
+      /** The next collector in the device's rotation. See the crosscheck tests. */
+      collector2: uid(),
       deviceType: uid(), device: uid(), task: uid(), scenario: uid(),
     };
     const hash = await hashCredential('pw');
@@ -86,10 +88,24 @@ describe.skipIf(!hasDb())('episode submission and resolution', () => {
     await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash) values (${ids.machine}, ${ids.centre}, 'M1', 'active', ${hash})`);
     await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.operator}, ${ids.centre}, 'op', 'centre_operator', ${hash})`);
     await d.execute(sql`insert into collectors (id, external_ref, status) values (${ids.collector}, 'c1', 'qualified')`);
+    await d.execute(sql`insert into collectors (id, external_ref, status) values (${ids.collector2}, 'c2', 'qualified')`);
     await d.execute(sql`insert into device_types (id, code, generation) values (${ids.deviceType}, 'ego', 'g1')`);
     await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status) values (${ids.device}, ${ids.deviceType}, 'AZER76400FE', 'active')`);
     await d.execute(sql`insert into tasks (id, name, unit_price, max_concurrent_claimants, status) values (${ids.task}, 'housework', 1200, 5, 'published')`);
     await d.execute(sql`insert into scenarios (id, code, privacy_risk_level) values (${ids.scenario}, 'home', 'low')`);
+    /**
+     * The device's allotted period: open, and starting a month before every
+     * episode in this file.
+     *
+     * Daniel, 2026-08-25: one collector holds a headset for about three months,
+     * and the resolver crosschecks each candidate session against that. So a
+     * fixture with no assignment row is a fixture in which every episode
+     * legitimately routes to a human — true, and it would say nothing at all
+     * about the rest of the decision table.
+     */
+    await d.execute(sql`
+      insert into device_assignments (id, device_id, collector_id, valid_from)
+      values (${uid()}, ${ids.device}, ${ids.collector}, ${new Date(T - min(60 * 24 * 30)).toISOString()})`);
 
     const app = buildApi({ db: d, tokenSecret: SECRET });
     const m = await app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: 'M1', secret: 'pw' } });
@@ -173,7 +189,31 @@ describe.skipIf(!hasDb())('episode submission and resolution', () => {
     const submitTo = (b: string, episodes: EpisodeRecord[]) =>
       send('POST', `/upload-batches/${b}/episodes`, { episodes });
 
-    return { d, ids, handover, batch, send, addSession, submit, newHandover, addSessionOn, submitTo };
+    /** The end of one allotment and the start of the next, as the back office writes it. */
+    const reassignTo = async (collectorId: string, atMs: number) => {
+      const at = new Date(atMs).toISOString();
+      await d.execute(sql`
+        update device_assignments set valid_to = ${at}
+         where device_id = ${ids.device} and valid_to is null`);
+      await d.execute(sql`
+        insert into device_assignments (id, device_id, collector_id, valid_from)
+        values (${uid()}, ${ids.device}, ${collectorId}, ${at})`);
+    };
+
+    /** Everything the resolver considered, off the audit row it was written to. */
+    const evaluatedOf = async (episodeId: string) => {
+      const rows = (await d.execute(sql`
+        select after from audit_events
+         where action = 'episode.submit' and target_id = ${episodeId}`)) as unknown as {
+        after: { evaluated: { collection_session_id: string; rejection_reason: string | null }[] };
+      }[];
+      return rows[0]!.after.evaluated;
+    };
+
+    return {
+      d, ids, handover, batch, send, addSession, submit, newHandover, addSessionOn, submitTo,
+      reassignTo, evaluatedOf,
+    };
   }
 
   /** §10.2, as a property of the table rather than of a response. */
@@ -353,6 +393,79 @@ describe.skipIf(!hasDb())('episode submission and resolution', () => {
       select collection_session_id from episodes where upload_batch_id = ${second.batch}
     `)) as unknown as Record<string, string>[];
     expect(rows[0]!['collection_session_id']).toBe(later);
+    await assertNoThirdState();
+  });
+
+  // -- the device-assignment crosscheck (Daniel, 2026-08-25) ----------------
+
+  /**
+   * A device belongs to one collector for an allotted period, so device serial
+   * plus recording start names a collector. The resolver crosschecks each
+   * candidate against that, and the three outcomes below are the whole rule.
+   *
+   * The handover scope is untouched by any of it: these episodes all arrive on
+   * a card their collector handed across a counter, and the crosscheck only
+   * ever narrows the set that scope produced.
+   */
+  it('resolves when the card holder held the device when the recording started', async () => {
+    const h = await harness();
+    const session = await h.addSession(-60);
+    const res = await h.submit([record({})]);
+
+    const e = res.json().episodes[0];
+    expect(e.resolution_state).toBe('resolved');
+    expect(e.reason).toBe('single_session');
+    const evaluated = await h.evaluatedOf(e.episode_id);
+    expect(evaluated).toEqual([
+      expect.objectContaining({ collectionSessionId: session, survived: true, rejectionReason: null }),
+    ]);
+    await assertNoThirdState();
+  });
+
+  it('drops a session whose collector had already handed the device on', async () => {
+    const h = await harness();
+    const session = await h.addSession(-60);
+    // The allotment swapped to the second collector a week before this
+    // recording, so this card's own declared task cannot own the footage.
+    await h.reassignTo(h.ids.collector2, T - min(60 * 24 * 7));
+
+    const res = await h.submit([record({})]);
+    const e = res.json().episodes[0];
+    expect(e.resolution_state).toBe('quarantined');
+    expect(e.reason).toBe('all_candidates_ineligible');
+
+    // The drop is on the record with its own reason, like every other drop.
+    const evaluated = await h.evaluatedOf(e.episode_id);
+    expect(evaluated).toEqual([
+      expect.objectContaining({
+        collectionSessionId: session,
+        survived: false,
+        rejectionReason: 'device_not_assigned_to_collector',
+      }),
+    ]);
+    await assertNoThirdState();
+  });
+
+  it('sends an episode to a human when no allotment covers its start, dropping nobody', async () => {
+    const h = await harness();
+    const session = await h.addSession(-60);
+    // The assignment record exists and starts tomorrow. Nobody is on record as
+    // holding the device at the moment this was recorded — which is not the
+    // same fact as "this collector was not", so nothing is refused, and the
+    // absence itself is what the operator is shown.
+    await h.d.execute(sql`
+      update device_assignments set valid_from = ${new Date(T + min(60 * 24)).toISOString()}
+       where device_id = ${h.ids.device}`);
+
+    const res = await h.submit([record({})]);
+    const e = res.json().episodes[0];
+    expect(e.resolution_state).toBe('quarantined');
+    expect(e.reason).toBe('device_assignment_unknown');
+
+    const evaluated = await h.evaluatedOf(e.episode_id);
+    expect(evaluated).toEqual([
+      expect.objectContaining({ collectionSessionId: session, survived: true, rejectionReason: null }),
+    ]);
     await assertNoThirdState();
   });
 

@@ -513,6 +513,61 @@ export const devices = pgTable(
   ],
 );
 
+/**
+ * BO-04's other half: who holds a device FOR A PERIOD, rather than who holds it
+ * at this moment.
+ *
+ * Daniel, from PaXini, 2026-08-25: one collector holds a given headset for an
+ * allotted period of about three months, and at the end of it the credentials
+ * swap to the next collector. So a device serial plus a recording start instant
+ * names a collector — which makes this a CROSSCHECK on payment attribution and
+ * not a replacement for one. The resolver's handover scoping is still the outer
+ * bound; `resolve.ts` says why, and this table only ever narrows what that scope
+ * already produced.
+ *
+ * `devices.bound_collector_id` is not this and does not become this. It is the
+ * current answer with no history and no instants, so it cannot say who held
+ * AZER76400FE on 13 August. Both stay: the column is what the counter reads when
+ * a card arrives, this table is what settlement replays six months later.
+ *
+ * THE invariant — two assignments of one device can never overlap in time — is
+ * `device_assignments_no_overlap` in migration 0010 and not in this file.
+ * Drizzle cannot express an EXCLUDE constraint, and no CHECK can see another
+ * row. Adjacent periods are deliberately legal: the range is half-open, so a
+ * handover at the instant the last period ends is one continuous custody chain
+ * and not an overlap.
+ */
+export const deviceAssignments = pgTable(
+  'device_assignments',
+  {
+    id: uuid('id').primaryKey(),
+    deviceId: uuid('device_id')
+      .notNull()
+      .references(() => devices.id),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    validFrom: timestamp('valid_from', { withTimezone: true }).notNull(),
+    /** Null is the open period: this collector holds the device now. */
+    validTo: timestamp('valid_to', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** A period ends after it starts, or it is not a period. */
+    check(
+      'device_assignments_period_check',
+      sql`${t.validTo} is null or ${t.validTo} > ${t.validFrom}`,
+    ),
+    /**
+     * Only the collector side. The exclusion constraint in 0010 is backed by a
+     * gist index on `(device_id, period)`, which already serves every lookup by
+     * device — a second btree index on the same column would be dead weight.
+     */
+    index('device_assignments_collector_idx').on(t.collectorId),
+  ],
+);
+
 export const scenarios = pgTable(
   'scenarios',
   {

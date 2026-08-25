@@ -383,6 +383,119 @@ describe.skipIf(!hasDb())('the identity spine', () => {
     expect(rows[0]!['collector']).toBe(ids.collector);
     expect(rows[0]!['device']).toBe(ids.device);
   });
+
+  // -- device assignment ----------------------------------------------------
+
+  /**
+   * Daniel, 2026-08-25: one collector holds a headset for an allotted period,
+   * and at the end of it the credentials swap to the next collector. That is
+   * only a usable crosscheck if the periods cannot overlap — two collectors
+   * holding one device across one instant makes "who recorded this" ambiguous
+   * again, which is the question the table exists to answer.
+   *
+   * So the overlap rule is tested here, in SQL, with no API in the path: it has
+   * to hold against a psql session and a backfill script as well as against the
+   * routes in backoffice.ts.
+   */
+  describe('a device is assigned to one collector at a time', () => {
+    /** The second collector the whole slice turns on, plus a second device. */
+    const second = async (ids: { deviceType: string }) => {
+      const d = await db();
+      const collector = uid();
+      const device = uid();
+      await d.execute(sql`
+        insert into collectors (id, external_ref, status)
+          values (${collector}, 'collector-0002', 'qualified');
+      `);
+      await d.execute(sql`
+        insert into devices (id, device_type_id, hardware_serial, status)
+          values (${device}, ${ids.deviceType}, 'BZER99900AA', 'active');
+      `);
+      return { collector, device };
+    };
+
+    const assign = async (
+      deviceId: string,
+      collectorId: string,
+      from: string,
+      to: string | null,
+    ) => {
+      const d = await db();
+      return d.execute(sql`
+        insert into device_assignments (id, device_id, collector_id, valid_from, valid_to)
+          values (${uid()}, ${deviceId}, ${collectorId}, ${from}, ${to});
+      `);
+    };
+
+    it('refuses two closed periods that overlap', async () => {
+      const ids = await seedSpine();
+      const other = await second(ids);
+      await assign(ids.device, ids.collector, '2026-05-01T00:00:00Z', '2026-08-01T00:00:00Z');
+      await violates(
+        'device_assignments_no_overlap',
+        assign(ids.device, other.collector, '2026-07-01T00:00:00Z', '2026-10-01T00:00:00Z'),
+      );
+    });
+
+    it('refuses a closed period that a later open one reaches back into', async () => {
+      const ids = await seedSpine();
+      const other = await second(ids);
+      await assign(ids.device, ids.collector, '2026-05-01T00:00:00Z', '2026-08-01T00:00:00Z');
+      await violates(
+        'device_assignments_no_overlap',
+        assign(ids.device, other.collector, '2026-07-31T23:59:59Z', null),
+      );
+    });
+
+    it('refuses a second open period, because two open periods always overlap', async () => {
+      const ids = await seedSpine();
+      const other = await second(ids);
+      await assign(ids.device, ids.collector, '2026-05-01T00:00:00Z', null);
+      await violates(
+        'device_assignments_no_overlap',
+        assign(ids.device, other.collector, '2027-05-01T00:00:00Z', null),
+      );
+    });
+
+    it('refuses a period that ends before it starts, or lasts no time at all', async () => {
+      const ids = await seedSpine();
+      await violates(
+        'device_assignments_period_check',
+        assign(ids.device, ids.collector, '2026-08-01T00:00:00Z', '2026-05-01T00:00:00Z'),
+      );
+      await violates(
+        'device_assignments_period_check',
+        assign(ids.device, ids.collector, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
+      );
+    });
+
+    it('allows adjacent periods, because that is what a handover looks like', async () => {
+      const ids = await seedSpine();
+      const other = await second(ids);
+      const d = await db();
+      // The instant one allotment ends is the instant the next begins. A rule
+      // that refused this would force a gap in which the device belonged to
+      // nobody, and an episode recorded in that gap would resolve to no one.
+      await assign(ids.device, ids.collector, '2026-05-01T00:00:00Z', '2026-08-01T00:00:00Z');
+      await assign(ids.device, other.collector, '2026-08-01T00:00:00Z', null);
+
+      const rows = (await d.execute(sql`
+        select collector_id from device_assignments
+         where device_id = ${ids.device}
+           and tstzrange(valid_from, valid_to, '[)') @> '2026-08-01T00:00:00Z'::timestamptz
+      `)) as unknown as Record<string, string>[];
+      // The boundary instant belongs to the incoming collector, and to one only.
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!['collector_id']).toBe(other.collector);
+    });
+
+    it('scopes the rule to one device, so the fleet is not one queue', async () => {
+      const ids = await seedSpine();
+      const other = await second(ids);
+      await assign(ids.device, ids.collector, '2026-05-01T00:00:00Z', null);
+      await assign(other.device, other.collector, '2026-05-01T00:00:00Z', null);
+    });
+  });
 });
 
 describe.skipIf(!hasDb())('the catalogues', () => {

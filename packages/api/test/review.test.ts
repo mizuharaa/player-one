@@ -120,6 +120,15 @@ describe.skipIf(!hasDb())('the review lane', () => {
     await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status) values (${ids.device}, ${ids.deviceType}, 'AZER76400FE', 'active')`);
     await d.execute(sql`insert into tasks (id, name, unit_price, max_concurrent_claimants, status) values (${ids.task}, 'housework', 1200, 5, 'published')`);
     await d.execute(sql`insert into scenarios (id, code, privacy_risk_level) values (${ids.scenario}, 'home', 'low')`);
+    /**
+     * The device's allotted period, open, starting a month before T. The
+     * resolver crosschecks each candidate session against who held the device
+     * when the recording started (Daniel, 2026-08-25), so without this every
+     * episode below would route to a human and the review lane would have
+     * nothing to review.
+     */
+    await d.execute(sql`insert into device_assignments (id, device_id, collector_id, valid_from)
+      values (${uid()}, ${ids.device}, ${ids.collector}, ${new Date(T - 30 * 24 * 60 * 60_000).toISOString()})`);
 
     const app = buildApi({ db: d, tokenSecret: SECRET, mediaRoot: options.mediaRoot });
     await app.ready();

@@ -5,6 +5,7 @@ import {
   DEFAULT_RESOLVER_CONFIG,
   resolveEpisode,
   resolverDefects,
+  type DeviceAssignment,
   type SessionRow,
 } from '../src/resolve.ts';
 
@@ -371,6 +372,129 @@ describe('the eligibility filter', () => {
     expect(
       resolveEpisode(episode({}), [session('s1', -60, 'handover')], undefined, ['s1']).reason,
     ).toBe('all_candidates_ineligible');
+  });
+});
+
+/**
+ * The device-assignment crosscheck (Daniel, from PaXini, 2026-08-25).
+ *
+ * One collector holds a headset for an allotted period, so device serial plus
+ * recording start names a collector. Two collectors here throughout, never one:
+ * the last payment bug in this repo survived a green suite because every
+ * fixture had a single collector, and a crosscheck between two parties is
+ * exactly the shape a one-party fixture cannot test.
+ */
+describe('the device-assignment crosscheck', () => {
+  const C1 = 'collector-1';
+  const C2 = 'collector-2';
+
+  /** A candidate that names who declared it. */
+  const declaredBy = (id: string, collectorId: string, offsetMin = -60): SessionRow => ({
+    ...session(id, offsetMin, 'handover'),
+    collectorId,
+  });
+
+  const period = (
+    collectorId: string,
+    fromMin: number | null,
+    toMin: number | null,
+  ): DeviceAssignment => ({
+    collectorId,
+    validFrom: new Date(fromMin === null ? T - min(60 * 24 * 365) : T + min(fromMin)),
+    validTo: toMin === null ? null : new Date(T + min(toMin)),
+  });
+
+  it('resolves when the declaring collector held the device at the episode start', () => {
+    const r = resolveEpisode(episode({}), [declaredBy('s1', C1)], undefined, [], [
+      period(C1, -60 * 24 * 30, null),
+    ]);
+    expect(r).toMatchObject({ state: 'resolved', sessionId: 's1', reason: 'single_session' });
+    expect(r.evaluated[0]).toMatchObject({ survived: true, rejectionReason: null });
+  });
+
+  it('drops a candidate whose collector was not the assignee at that instant', () => {
+    // The allotment swapped to the second collector a week before this
+    // recording, so a session the first one declared cannot be its owner.
+    const r = resolveEpisode(episode({}), [declaredBy('s1', C1)], undefined, [], [
+      period(C1, -60 * 24 * 100, -60 * 24 * 7),
+      period(C2, -60 * 24 * 7, null),
+    ]);
+    expect(r.evaluated[0]).toMatchObject({
+      survived: false,
+      rejectionReason: 'device_not_assigned_to_collector',
+    });
+    expect(r).toMatchObject({ state: 'quarantined', reason: 'all_candidates_ineligible' });
+    expect(r.candidateCount).toBe(0);
+  });
+
+  it('keeps the assignee and drops the other, out of two candidates on one card', () => {
+    const r = resolveEpisode(
+      episode({}),
+      [declaredBy('theirs', C1, -120), declaredBy('ours', C2, -60)],
+      undefined,
+      [],
+      [period(C1, -60 * 24 * 100, -60 * 24 * 7), period(C2, -60 * 24 * 7, null)],
+    );
+    // Two candidates would have gone to an operator. The crosscheck leaves one,
+    // which is the whole reason it earns its place on the money path.
+    expect(r).toMatchObject({ state: 'resolved', sessionId: 'ours', reason: 'single_session' });
+    expect(r.evaluated.map((e) => e.rejectionReason)).toEqual([
+      'device_not_assigned_to_collector',
+      null,
+    ]);
+  });
+
+  it('routes to a human when no period covers the start, and drops nobody', () => {
+    // The device has a record and this instant is not in it. Nobody is known to
+    // have held it then, which is not the same fact as "this collector did not".
+    const r = resolveEpisode(episode({}), [declaredBy('s1', C1)], undefined, [], [
+      period(C1, 60 * 24, null),
+    ]);
+    expect(r).toMatchObject({
+      state: 'quarantined',
+      reason: 'device_assignment_unknown',
+      sessionId: null,
+    });
+    expect(r.evaluated[0]).toMatchObject({ survived: true, rejectionReason: null });
+    expect(r.candidateCount).toBe(1);
+  });
+
+  it('gives a boundary instant to the incoming collector, and to one only', () => {
+    // Half-open, [from, to), the same rule device_assignments_no_overlap uses.
+    // Closed on both ends would make the swap instant belong to two people.
+    const swap = [period(C1, -60 * 24 * 30, 0), period(C2, 0, null)];
+    const r = resolveEpisode(episode({}), [declaredBy('s2', C2)], undefined, [], swap);
+    expect(r).toMatchObject({ state: 'resolved', sessionId: 's2' });
+
+    const outgoing = resolveEpisode(episode({}), [declaredBy('s1', C1)], undefined, [], swap);
+    expect(outgoing.evaluated[0]!.rejectionReason).toBe('device_not_assigned_to_collector');
+  });
+
+  it('does not run at all when no assignments are supplied', () => {
+    // Every caller that does not know about devices, including the CLI and the
+    // resolver's own older tests. Not supplied can never drop a candidate.
+    const r = resolveEpisode(episode({}), [declaredBy('s1', C1)]);
+    expect(r).toMatchObject({ state: 'resolved', sessionId: 's1' });
+  });
+
+  it('does not run when the episode has no start instant to check against', () => {
+    // What is missing is the clock, not the assignment record, and the
+    // resolution already carries startSource: null to say so. Calling this
+    // device_assignment_unknown would blame the wrong record.
+    const r = resolveEpisode(episode({ startMs: null }), [declaredBy('s1', C1)], undefined, [], [
+      period(C2, -60 * 24 * 30, null),
+    ]);
+    expect(r).toMatchObject({ state: 'resolved', sessionId: 's1', startSource: null });
+    expect(r.evaluated[0]!.rejectionReason).toBeNull();
+  });
+
+  it('cannot drop a candidate whose collector nobody supplied', () => {
+    // The same rule the claim fields follow: a comparison that was never made
+    // is not a comparison that failed.
+    const r = resolveEpisode(episode({}), [session('s1', -60, 'handover')], undefined, [], [
+      period(C2, -60 * 24 * 30, null),
+    ]);
+    expect(r).toMatchObject({ state: 'resolved', sessionId: 's1' });
   });
 });
 

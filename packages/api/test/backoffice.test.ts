@@ -910,6 +910,176 @@ describe.skipIf(!hasDb())('the back office', () => {
     });
   });
 
+  /**
+   * Daniel, from PaXini, 2026-08-25: one collector holds a given headset for an
+   * allotted period of about three months, and at the end of it the credentials
+   * swap to the next collector.
+   *
+   * Two collectors and two devices throughout, from the fixture: an assignment
+   * is a statement about which of two people a device belonged to, and a
+   * one-collector fixture cannot tell a correct answer from a constant.
+   */
+  describe('device assignment over time', () => {
+    const MAY = '2026-05-01T00:00:00.000Z';
+    const AUG = '2026-08-01T00:00:00.000Z';
+    const NOV = '2026-11-01T00:00:00.000Z';
+
+    it('closes the open period and opens the next one, in one request', async () => {
+      const ids = await seed();
+      const c = await client();
+      const first = uid();
+      const second = uid();
+
+      expect(
+        (await c.post(`/api/devices/${ids.device1}/assignments`, {
+          id: first,
+          collector_id: ids.collector1,
+          valid_from: MAY,
+        })).statusCode,
+      ).toBe(201);
+
+      const swap = await c.post(`/api/devices/${ids.device1}/assignments`, {
+        id: second,
+        collector_id: ids.collector2,
+        valid_from: AUG,
+      });
+      expect(swap.statusCode, swap.body).toBe(201);
+      // The swap says what it ended, so the audit row and the reply agree.
+      expect(swap.json().closed_assignment_id).toBe(first);
+
+      const listed = (await c.get(`/api/devices/${ids.device1}/assignments`)).json()
+        .assignments as Record<string, string | null>[];
+      expect(listed.map((a) => [a['collector_external_ref'], a['valid_to']])).toEqual([
+        ['c-2', null],
+        ['c-1', AUG],
+      ]);
+    });
+
+    it('refuses a period that overlaps one already on record', async () => {
+      const ids = await seed();
+      const c = await client();
+      await c.post(`/api/devices/${ids.device1}/assignments`, {
+        id: uid(),
+        collector_id: ids.collector1,
+        valid_from: AUG,
+      });
+      // Back-dating behind an open period is a correction, not a swap: the open
+      // one is not closed, and the database refuses the overlap.
+      const res = await c.post(`/api/devices/${ids.device1}/assignments`, {
+        id: uid(),
+        collector_id: ids.collector2,
+        valid_from: MAY,
+      });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().constraint).toBe('device_assignments_no_overlap');
+    });
+
+    it('is idempotent on the id, and changes nothing when it replays', async () => {
+      const ids = await seed();
+      const c = await client();
+      const first = uid();
+      const second = uid();
+      const body = { id: second, collector_id: ids.collector2, valid_from: AUG };
+
+      await c.post(`/api/devices/${ids.device1}/assignments`, {
+        id: first,
+        collector_id: ids.collector1,
+        valid_from: MAY,
+      });
+      await c.post(`/api/devices/${ids.device1}/assignments`, body);
+
+      const again = await c.post(`/api/devices/${ids.device1}/assignments`, body);
+      expect(again.statusCode).toBe(200);
+      expect(again.json().replayed).toBe(true);
+
+      // The replay must not have closed the period it opened the first time.
+      // That would leave the device assigned to nobody and quarantine every
+      // later episode, while telling the caller nothing had happened.
+      const listed = (await c.get(`/api/devices/${ids.device1}/assignments`)).json()
+        .assignments as Record<string, string | null>[];
+      expect(listed).toHaveLength(2);
+      expect(listed[0]!['valid_to']).toBeNull();
+    });
+
+    it('refuses an id already used for a different device or collector', async () => {
+      const ids = await seed();
+      const c = await client();
+      const id = uid();
+      await c.post(`/api/devices/${ids.device1}/assignments`, {
+        id,
+        collector_id: ids.collector1,
+        valid_from: MAY,
+      });
+      const res = await c.post(`/api/devices/${ids.device2}/assignments`, {
+        id,
+        collector_id: ids.collector2,
+        valid_from: MAY,
+      });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().constraint).toBe('device_assignments_id_reused');
+      // And device2 still has nothing, rather than an unexplained closed period.
+      expect((await c.get(`/api/devices/${ids.device2}/assignments`)).json().assignments).toEqual([]);
+    });
+
+    it('answers the same chain from the collector side, with the serial on it', async () => {
+      const ids = await seed();
+      const c = await client();
+      await c.post(`/api/devices/${ids.device1}/assignments`, {
+        id: uid(),
+        collector_id: ids.collector1,
+        valid_from: MAY,
+      });
+      await c.post(`/api/devices/${ids.device2}/assignments`, {
+        id: uid(),
+        collector_id: ids.collector1,
+        valid_from: NOV,
+      });
+      const listed = (await c.get(`/api/collectors/${ids.collector1}/assignments`)).json()
+        .assignments as Record<string, string>[];
+      // Newest first, and the serial is there because an episode names its
+      // device by serial and never by uuid.
+      expect(listed.map((a) => a['hardware_serial'])).toEqual(['AZER76400FF', 'AZER76400FE']);
+    });
+
+    it('leaves a named audit row for the swap, on both halves of it', async () => {
+      const ids = await seed();
+      const c = await client();
+      const first = uid();
+      await c.post(`/api/devices/${ids.device1}/assignments`, {
+        id: first,
+        collector_id: ids.collector1,
+        valid_from: MAY,
+      });
+      await c.post(`/api/devices/${ids.device1}/assignments`, {
+        id: uid(),
+        collector_id: ids.collector2,
+        valid_from: AUG,
+      });
+
+      const events = await rows<{ before: Record<string, string | null>; after: Record<string, string> }>(
+        sql`select before, after from audit_events where action = 'device.assign' order by id`,
+      );
+      expect(events).toHaveLength(2);
+      expect(events[0]!.before['closed_assignment_id']).toBeNull();
+      expect(events[1]!.before).toMatchObject({
+        closed_assignment_id: first,
+        closed_collector_id: ids.collector1,
+      });
+      expect(events[1]!.after).toMatchObject({ collector_id: ids.collector2 });
+    });
+
+    it('answers 404 for a device that does not exist', async () => {
+      await seed();
+      const c = await client();
+      const res = await c.post(`/api/devices/${uid()}/assignments`, {
+        id: uid(),
+        collector_id: uid(),
+        valid_from: MAY,
+      });
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
   it('freezes the price of a published task, and says so rather than throwing', async () => {
     // Settlement reads the task's price when the verdict lands, not when the
     // claim was made, so editing a published price re-prices footage already
@@ -950,8 +1120,12 @@ describe.skipIf(!hasDb())('the back office', () => {
       expect(MESSAGES.en[key], `no English sentence for ${constraint}`).toBeTruthy();
       expect(MESSAGES.zh[key], `no Chinese sentence for ${constraint}`).toBeTruthy();
     }
-    // The two the API raises itself, which are not database constraints.
-    for (const constraint of ['device_already_bound', 'task_claims_id_reused']) {
+    // The ones the API raises itself, which are not database constraints.
+    for (const constraint of [
+      'device_already_bound',
+      'task_claims_id_reused',
+      'device_assignments_id_reused',
+    ]) {
       const key = `bo.refused.${constraint}` as keyof typeof MESSAGES.en;
       expect(MESSAGES.en[key], `no English sentence for ${constraint}`).toBeTruthy();
       expect(MESSAGES.zh[key], `no Chinese sentence for ${constraint}`).toBeTruthy();
