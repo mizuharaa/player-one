@@ -232,6 +232,70 @@ describe.skipIf(!hasDb())('the identity spine', () => {
         `));
     });
 
+    it('QR-05: bounds the priority below the API, not only inside it', async () => {
+      /**
+       * The queue is ordered by this column. One row carrying `2^31-1` sits at
+       * the head of every lane until somebody notices; one carrying the minimum
+       * is buried under everything that will ever arrive. The request parser
+       * bounds it too, and this is the half a `psql` session cannot skip.
+       */
+      const ids = await seedSpine();
+      const { episodeId, ingestId } = await seedEpisode({
+        sessionId: ids.session,
+        measured: '8.500000',
+      });
+      const d = await db();
+      await violates('episode_reviews_priority_range_check', d.execute(sql`
+          insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                       review_state, priority)
+            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', 'pending', 2147483647);
+        `));
+      // And a stopwatch cannot run backwards, for the same reason: it is the
+      // input to a number about a person's pace.
+      await violates('episode_reviews_time_to_verdict_check', d.execute(sql`
+          insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                       review_state, effective_duration_s, verdict_id,
+                                       reviewed_at, time_to_verdict_s)
+            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', 'pass', '8.500000',
+                    ${uid()}, now(), -1);
+        `));
+    });
+
+    it('QR-05: refuses an assignment to somebody who is not an operator', async () => {
+      /**
+       * An assignment is the one column on this row that can make an episode
+       * invisible to everybody at once: the queue offers an assigned review to
+       * its assignee and to nobody else, so a typed or stale id parks the
+       * footage forever with nothing to see. That has to be a foreign key —
+       * the id will be typed by a supervisor into a form, and nothing in the
+       * service can tell a wrong uuid from a right one.
+       */
+      const ids = await seedSpine();
+      const { episodeId, ingestId } = await seedEpisode({
+        sessionId: ids.session,
+        measured: '8.500000',
+      });
+      const d = await db();
+      await violates('episode_reviews_assignee_ref_operators_id_fk', d.execute(sql`
+          insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                       review_state, assignee_ref)
+            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', 'pending', ${uid()});
+        `));
+
+      // A real operator is accepted. The identity is `operators.id` because that
+      // is what a reviewer signs in with today; when reviewers get their own
+      // role the parent moves and this test moves with it.
+      await d.execute(sql`
+        insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                     review_state, assignee_ref)
+          values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', 'pending', ${ids.operator});
+      `);
+      const rows = (await d.execute(
+        sql`select count(*)::int as n from episode_reviews where assignee_ref = ${ids.operator}`,
+      )) as unknown as { n: number }[];
+      expect(rows[0]!.n).toBe(1);
+    });
+
     it('requires a failed review to be worth nothing (§6.9)', async () => {
       const ids = await seedSpine();
       const { episodeId, ingestId } = await seedEpisode({

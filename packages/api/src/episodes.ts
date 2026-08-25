@@ -328,6 +328,29 @@ export function registerEpisodes(
           })
           .where(eq(schema.episodes.episodeId, episodeId))
           .returning();
+        /**
+         * QR-07. The review lane is derived from the session's two APP-17b
+         * declarations, and this endpoint is the one place a resolved episode
+         * can be pointed at a *different* session. A pending review keeps the
+         * lane it was materialised with, so without this an episode re-resolved
+         * onto a session that declares others in frame stays in the queue every
+         * reviewer sees.
+         *
+         * Upgrades only. A reviewer's own PRV-04 flag lives in the same column
+         * and is not this endpoint's to lift; the declaration is a floor, not
+         * the whole value.
+         */
+        await tx.execute(sql`
+          update episode_reviews r
+             set queue = 'privacy', reviewer_ref = null, claimed_at = null,
+                 lease_expires_at = null, assignee_ref = null, updated_at = now()
+            from collection_sessions s
+           where r.episode_id = ${episodeId}
+             and r.review_state = 'pending'
+             and r.queue <> 'privacy'
+             and s.id = ${body.data.collection_session_id}
+             and (s.others_in_frame or s.sensitive_info_present)
+        `);
         return row;
       },
     );

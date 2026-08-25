@@ -752,8 +752,15 @@ export const episodeReviews = pgTable(
      * assignment is somebody's intent and survives the lease expiring. Nullable
      * and null by default — the pilot queue is a pool and assignment is the
      * exception.
+     *
+     * A foreign key and not free text. An assignment is the one column here
+     * that can make a row invisible to everybody — the queue offers an assigned
+     * review to its assignee and to nobody else — so a typed or stale id would
+     * park an episode forever with no error anywhere. `operators` is the right
+     * parent today because that is the identity a reviewer signs in with; see
+     * `reviewerOf` in `review.ts`.
      */
-    assigneeRef: text('assignee_ref'),
+    assigneeRef: uuid('assignee_ref').references(() => operators.id),
     /**
      * Who holds this review. On a pending row that is the current leaseholder;
      * on a decided row it is who decided. One column and not two, because a
@@ -849,6 +856,24 @@ export const episodeReviews = pgTable(
     ),
     /** Two lanes and no third. A misspelt lane is an episode nobody is offered. */
     check('episode_reviews_queue_check', sql`${t.queue} in ('standard', 'privacy')`),
+    /**
+     * QR-05, bounded at the database and not only in the request parser.
+     *
+     * The queue is ordered by this column, so one row with `2^31-1` on it sits
+     * at the head of every lane until somebody notices, and one with the
+     * minimum buries an episode under everything that will ever arrive. The
+     * API bounds it too; this is the half a `psql` session cannot skip.
+     */
+    check('episode_reviews_priority_range_check', sql`${t.priority} between -1000 and 1000`),
+    /**
+     * A stopwatch cannot run backwards. `time_to_verdict_s` feeds
+     * `/api/review/throughput`, which is a number about a person's pace, and a
+     * negative row there would divide the rate rather than adding to it.
+     */
+    check(
+      'episode_reviews_time_to_verdict_check',
+      sql`${t.timeToVerdictS} is null or ${t.timeToVerdictS} >= 0`,
+    ),
     /**
      * A decided review names the request that decided it. This is what makes
      * the idempotency key load-bearing rather than advisory: a verdict written

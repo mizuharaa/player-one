@@ -1,5 +1,5 @@
 {
-  "id": "971f817d-337f-447f-8dad-4f64baa89912",
+  "id": "45540dc0-70de-47ca-b3d4-3436499e4067",
   "prevId": "0dbe538a-87e2-4289-85fb-111d2f2f7cce",
   "version": "7",
   "dialect": "postgresql",
@@ -1540,7 +1540,7 @@
         },
         "assignee_ref": {
           "name": "assignee_ref",
-          "type": "text",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
@@ -1701,6 +1701,19 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
+        "episode_reviews_assignee_ref_operators_id_fk": {
+          "name": "episode_reviews_assignee_ref_operators_id_fk",
+          "tableFrom": "episode_reviews",
+          "tableTo": "operators",
+          "columnsFrom": [
+            "assignee_ref"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "episode_reviews_ingest_fk": {
           "name": "episode_reviews_ingest_fk",
           "tableFrom": "episode_reviews",
@@ -1730,6 +1743,14 @@
         "episode_reviews_queue_check": {
           "name": "episode_reviews_queue_check",
           "value": "\"episode_reviews\".\"queue\" in ('standard', 'privacy')"
+        },
+        "episode_reviews_priority_range_check": {
+          "name": "episode_reviews_priority_range_check",
+          "value": "\"episode_reviews\".\"priority\" between -1000 and 1000"
+        },
+        "episode_reviews_time_to_verdict_check": {
+          "name": "episode_reviews_time_to_verdict_check",
+          "value": "\"episode_reviews\".\"time_to_verdict_s\" is null or \"episode_reviews\".\"time_to_verdict_s\" >= 0"
         },
         "episode_reviews_verdict_id_check": {
           "name": "episode_reviews_verdict_id_check",

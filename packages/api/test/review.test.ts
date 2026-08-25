@@ -511,6 +511,147 @@ describe.skipIf(!hasDb())('the review lane', () => {
       expect(declared[0]!.sensitive_info_present).toBe(false);
     });
 
+    it('refuses a lane it does not have, rather than quietly serving the normal one', async () => {
+      const h = await harness({ episodes: [record({})] });
+      // A misspelling that reads as success is the failure worth refusing: a
+      // client asking for a privacy queue and being handed ordinary footage
+      // cannot tell, and neither can the reviewer looking at it.
+      const misspelt = await claimIn(h, 'privicy');
+      expect(misspelt.statusCode, misspelt.body).toBe(400);
+      expect((await h.send('GET', '/api/review/next?queue=nope')).statusCode).toBe(400);
+      // And the episode is still there, untouched, in the lane it belongs to.
+      expect((await claim(h)).statusCode).toBe(200);
+    });
+
+    it('hands a quarantined episode on, instead of back to the reviewer it was taken from', async () => {
+      const h = await harness({ episodes: [record({ basename: 'ego_AZER76400FE_20260813_133000' })] });
+      const [episodeId] = h.episodeIds;
+      expect(
+        (await h.send('POST', `/api/review/route/${episodeId}`, { assignee_ref: h.ids.operator2 }))
+          .statusCode,
+      ).toBe(200);
+
+      const flagged = await h.send('POST', `/api/review/route/${episodeId}`, { queue: 'privacy' });
+      expect(flagged.statusCode, flagged.body).toBe(200);
+      // The assignment went with the lease. Keeping it would put the episode in
+      // a lane for cleared reviewers and then offer it to exactly one person —
+      // the one it was taken away from.
+      expect(flagged.json().assignee_ref).toBeNull();
+      expect((await claimIn(h, 'privacy')).json().episode_id).toBe(episodeId);
+    });
+
+    it('routes the delivery the queue is waiting on, not the one already decided', async () => {
+      const delivered = record({ basename: 'ego_AZER76400FE_20260813_134500', measured: 60 });
+      const h = await harness({ episodes: [delivered] });
+      const [episodeId] = h.episodeIds;
+      const decided = (await claim(h)).json();
+      await verdict(h, { verdict_id: uid(), episode_id: decided.episode_id, decision: 'good' });
+
+      // The card comes back and the same session arrives again with different
+      // bytes. That is a second ingest and a second review row; the first stays
+      // attached to what it judged, and the queue is now waiting on the second.
+      const again = await h.send('POST', `/upload-batches/${h.batch}/episodes`, {
+        episodes: [{ ...delivered, content_fingerprint: 'c'.repeat(64) }],
+      });
+      expect(again.statusCode, again.body).toBe(200);
+      expect(again.json().episodes[0].outcome).toBe('mismatch');
+      // The fixture depends on the catalogue's own routing decision: a local
+      // CHECKSUM-MISMATCH is flagged and still judgeable, because blocking is
+      // reserved for "a reviewer cannot judge this" (catalogue.ts). UPL-04's
+      // "mismatch blocks review" is about the *cloud* checksum, which is QR-02
+      // and is not built. If that decision is ever flipped to blocking, this
+      // assertion is where the redelivery fixture has to change.
+      const blocking = (await h.d.execute(sql`
+        select blocks_review from defect_codes where code = 'CHECKSUM-MISMATCH'
+      `)) as unknown as { blocks_review: boolean }[];
+      expect(blocking[0]!.blocks_review).toBe(false);
+
+      const routed = await h.send('POST', `/api/review/route/${episodeId}`, { priority: 7 });
+      expect(routed.statusCode, routed.body).toBe(200);
+      expect(routed.json().priority).toBe(7);
+      expect(routed.json().review_id).not.toBe(decided.review_id);
+
+      const rows = (await h.d.execute(sql`
+        select r.id, r.review_state, r.priority, r.ingest_id = e.latest_ingest_id as is_latest
+          from episode_reviews r join episodes e on e.episode_id = r.episode_id
+         order by r.created_at
+      `)) as unknown as {
+        id: string;
+        review_state: string;
+        priority: number;
+        is_latest: boolean;
+      }[];
+      expect(rows).toHaveLength(2);
+      expect(rows[0]!.review_state).toBe('pass');
+      expect(rows[0]!.priority).toBe(0);
+      expect(rows[1]!.is_latest).toBe(true);
+      expect(rows[1]!.priority).toBe(7);
+
+      // And the audit names the row that changed. `target_table` says
+      // episode_reviews, so an episode id there is a pointer into nothing.
+      const audit = (await h.d.execute(sql`
+        select target_id, before from audit_events where action = 'review.route'
+      `)) as unknown as { target_id: string; before: unknown }[];
+      expect(audit).toHaveLength(1);
+      expect(audit[0]!.target_id).toBe(routed.json().review_id);
+      expect(audit[0]!.before).toBeNull();
+    });
+
+    it('will not move declared-privacy footage into the lane everybody sees', async () => {
+      const h = await harness({
+        episodes: [record({ basename: 'ego_AZER76400FE_20260813_135000' })],
+        privacy: [record({ basename: `ego_${SERIAL_2}_20260813_135100`, serial: SERIAL_2 })],
+      });
+      const [flagged] = h.privacyIds;
+
+      // The collector declared others in frame. That is a floor, not a default:
+      // a reviewer's own PRV-04 flag sits above it and could be lifted, but
+      // nobody overrules what was declared before the recording was made.
+      const forced = await h.send('POST', `/api/review/route/${flagged}`, { queue: 'standard' });
+      expect(forced.statusCode, forced.body).toBe(409);
+      expect((await claim(h)).json().episode_id).not.toBe(flagged);
+
+      // Priority still moves, and does not drag the lane with it.
+      const prioritised = await h.send('POST', `/api/review/route/${flagged}`, { priority: 5 });
+      expect(prioritised.statusCode, prioritised.body).toBe(200);
+      expect(prioritised.json().queue).toBe('privacy');
+    });
+
+    it('moves a pending review into the privacy lane when the episode is re-resolved onto a declared session', async () => {
+      const h = await harness({
+        episodes: [record({ basename: 'ego_AZER76400FE_20260813_135500' })],
+      });
+      const [episodeId] = h.episodeIds;
+      // Materialise the review in the ordinary lane, the way a reviewer would.
+      expect((await claim(h)).json().episode_id).toBe(episodeId);
+
+      // A second session on the same card, this one declaring sensitive
+      // information, and an operator corrects the attribution.
+      const corrected = uid();
+      const made = await h.send('POST', `/handovers/${h.handover}/sessions`, {
+        id: corrected,
+        task_id: h.ids.task,
+        scenario_id: h.ids.scenario,
+        others_in_frame: false,
+        sensitive_info_present: true,
+        prepare_time: new Date(T - 30_000).toISOString(),
+      });
+      expect(made.statusCode, made.body).toBe(201);
+      const moved = await h.send('POST', `/episodes/${episodeId}/resolve`, {
+        collection_session_id: corrected,
+        reason: 'the collector recorded against the later session',
+      });
+      expect(moved.statusCode, moved.body).toBe(200);
+
+      // The lane is derived from the session, so re-pointing the episode has to
+      // carry it. Otherwise the review sits in the ordinary queue describing
+      // footage the collector declared.
+      expect((await claim(h, h.headers2)).statusCode).toBe(204);
+      const privacy = await h.send('POST', '/api/review/claim?queue=privacy', undefined, h.headers2);
+      expect(privacy.statusCode, privacy.body).toBe(200);
+      expect(privacy.json().episode_id).toBe(episodeId);
+    });
+
     it('refuses to re-queue a review that has already been decided', async () => {
       const h = await harness({ episodes: [record({ measured: 60 })] });
       const episodeId = (await claim(h)).json().episode_id;
@@ -527,20 +668,24 @@ describe.skipIf(!hasDb())('the review lane', () => {
           record({ basename: 'ego_AZER76400FE_20260813_140200', measured: 60 }),
         ],
       });
-      // op decides two, at 12 s and 24 s. op2 decides one, at 30 s.
+      // op decides two, at 12 s and 24 s. op2 decides one, at 30 s. The elapsed
+      // time is set by backdating the claim, because that is the only end of it
+      // a test — or a reviewer — can reach: the verdict measures it server-side.
+      const backdate = async (episodeId: string, seconds: number) =>
+        h.d.execute(sql`
+          update episode_reviews set claimed_at = now() - ${`${seconds} seconds`}::interval
+           where episode_id = ${episodeId}
+        `);
       for (const seconds of [12, 24]) {
         const episodeId = (await claim(h)).json().episode_id;
-        await verdict(h, {
-          verdict_id: uid(),
-          episode_id: episodeId,
-          decision: 'good',
-          time_to_verdict_seconds: seconds,
-        });
+        await backdate(episodeId, seconds);
+        await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'good' });
       }
       const theirs = (await claim(h, h.headers2)).json().episode_id;
+      await backdate(theirs, 30);
       await verdict(
         h,
-        { verdict_id: uid(), episode_id: theirs, decision: 'bad', reject_reasons: ['VQ-DARK'], time_to_verdict_seconds: 30 },
+        { verdict_id: uid(), episode_id: theirs, decision: 'bad', reject_reasons: ['VQ-DARK'] },
         h.headers2,
       );
 
@@ -552,14 +697,16 @@ describe.skipIf(!hasDb())('the review lane', () => {
       const op = rows.find((r) => r['reviewer'] === h.ids.operator)!;
       expect(op['decided']).toBe(2);
       expect(op['approved']).toBe(2);
-      // 3600 × 2 ÷ 36 s of measured review time.
-      expect(op['reviews_per_hour']).toBeCloseTo(200, 6);
-      expect(Number(op['median_seconds_to_verdict'])).toBeCloseTo(18, 6);
+      // 3600 × 2 ÷ 36 s of measured review time. Loose to a tenth: the
+      // stopwatch runs from a real claim to a real verdict, so the request
+      // itself is in the number.
+      expect(op['reviews_per_hour'] as number).toBeCloseTo(200, 0);
+      expect(Number(op['median_seconds_to_verdict'])).toBeCloseTo(18, 1);
 
       const op2 = rows.find((r) => r['reviewer'] === h.ids.operator2)!;
       expect(op2['decided']).toBe(1);
       expect(op2['approved']).toBe(0);
-      expect(op2['reviews_per_hour']).toBeCloseTo(120, 6);
+      expect(op2['reviews_per_hour'] as number).toBeCloseTo(120, 0);
 
       // A window that starts after every verdict reports nobody, rather than
       // reporting yesterday's pace as today's.
@@ -799,19 +946,27 @@ describe.skipIf(!hasDb())('the review lane', () => {
       expect(rows[0]!.episode_id).toBe(episodeId);
     });
 
-    it('records how long the verdict took, without letting it touch the money', async () => {
+    it('measures how long the verdict took itself, and ignores what the client claims', async () => {
       const h = await harness({ episodes: [record({ measured: 60 })] });
       const episodeId = (await claim(h)).json().episode_id;
+      // The claim is the start of the clock, so moving it is how the elapsed
+      // time is set in a test. The reviewer cannot reach it.
+      await h.d.execute(
+        sql`update episode_reviews set claimed_at = now() - interval '12.5 seconds'`,
+      );
       await verdict(h, {
         verdict_id: uid(),
         episode_id: episodeId,
         decision: 'good',
-        time_to_verdict_seconds: 12.5,
+        // A client trying to look ten times faster than it is. `/throughput`
+        // reports on people, so this number is the server's or it is nothing.
+        time_to_verdict_seconds: 0.1,
       });
       const rows = (await h.d.execute(sql`
         select time_to_verdict_s, effective_duration_s from episode_reviews
       `)) as unknown as { time_to_verdict_s: string; effective_duration_s: string }[];
-      expect(rows[0]!.time_to_verdict_s).toBe('12.500');
+      expect(Number(rows[0]!.time_to_verdict_s)).toBeGreaterThan(12);
+      expect(Number(rows[0]!.time_to_verdict_s)).toBeLessThan(13);
       expect(rows[0]!.effective_duration_s).toBe('60.000000');
     });
   });
