@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { EpisodeRecord } from '@playerone/contracts';
@@ -56,6 +56,31 @@ export const LEASE_MS = 10 * 60 * 1000;
 /** Bounded, because the only way to lose the race twice is for the queue to be busy. */
 const CLAIM_ATTEMPTS = 3;
 
+/**
+ * QR-07. Two lanes, and an episode is in exactly one of them.
+ *
+ * The privacy lane holds everything whose collection session carries either
+ * APP-17b declaration, plus whatever a reviewer or the back office has flagged
+ * since. It is not a filter on the normal queue — it is a queue nothing reaches
+ * unless it asks for it by name, which is what "route to a separate queue"
+ * means when the alternative is a checkbox somebody forgets to tick.
+ */
+export const LANES = ['standard', 'privacy'] as const;
+export type Lane = (typeof LANES)[number];
+
+/**
+ * PRV-04's reason, fixed rather than passed.
+ *
+ * §6.9 lists exactly one compliance code and `review_reason_codes` carries it.
+ * A parameter here would let a caller record a privacy quarantine under a
+ * visual-quality code, which is a wrong audit row that nobody would ever catch.
+ *
+ * ponytail: one code because the taxonomy has one. If PaXini's rewrite adds a
+ * second compliance reason, this becomes a validated body field like the
+ * verdict's `reject_reasons`.
+ */
+const PRIVACY_REASON = 'CO-PRIVACY';
+
 export type ReviewOptions = {
   /**
    * The directory holding the imported `ego_*` session folders. Media is served
@@ -91,6 +116,33 @@ const VerdictBody = z.object({
   /** Instrumentation. Never money — see `episode_reviews.time_to_verdict_s`. */
   time_to_verdict_seconds: z.number().nonnegative().finite().nullish(),
 });
+
+/**
+ * QR-05, QR-07, PRV-04 and BO-15, in one body.
+ *
+ * They are one endpoint because they are one UPDATE of three columns on one
+ * row: a reviewer quarantining what they are watching, an operator flagging an
+ * episode from a browse screen, a supervisor raising a priority or handing a
+ * card to a named reviewer. Three routes would be three copies of the same
+ * upsert with a different subject line.
+ *
+ * Every field is optional and an absent one is left alone, so a caller changing
+ * a priority cannot silently move an episode out of the privacy lane.
+ */
+const RouteBody = z
+  .object({
+    queue: z.enum(LANES).optional(),
+    /** Higher first. Bounded so a typo cannot bury the rest of the queue forever. */
+    priority: z.number().int().min(-1000).max(1000).optional(),
+    /** `null` clears an assignment; absent leaves it. */
+    assignee_ref: z.string().min(1).max(200).nullish(),
+    /** Free text for the human. The reason *code* is not a parameter — see PRIVACY_REASON. */
+    reason: z.string().min(1).max(500).optional(),
+  })
+  .refine(
+    (b) => b.queue !== undefined || b.priority !== undefined || b.assignee_ref !== undefined,
+    { message: 'nothing to change: name a queue, a priority or an assignee' },
+  );
 
 export function registerReview(
   app: FastifyInstance,
@@ -145,6 +197,30 @@ export function registerReview(
   `;
 
   /**
+   * Which lane an episode nobody has claimed yet belongs to.
+   *
+   * QR-07 routes on the two APP-17b declarations, which live on the collection
+   * session and not on the review — and the review row does not exist until
+   * somebody claims. So the lane is derived here for an unclaimed episode and
+   * stamped onto `episode_reviews.queue` the moment a row is materialised.
+   * After that the column is authoritative, because a reviewer's PRV-04 flag
+   * must not be undone by a session that never declared anything.
+   *
+   * Written against `episodes` rather than a bound alias so the same fragment
+   * serves the claim, the peek and the depth.
+   */
+  const declaredLane = sql`case when exists (
+      select 1
+        from collection_sessions s
+       where s.id = ${schema.episodes.collectionSessionId}
+         and (s.others_in_frame or s.sensitive_info_present)
+    ) then 'privacy' else 'standard' end`;
+
+  /** `?queue=privacy` opts in. Anything else, including nothing, is the normal lane. */
+  const laneOf = (req: FastifyRequest): Lane =>
+    (req.query as { queue?: string } | undefined)?.queue === 'privacy' ? 'privacy' : 'standard';
+
+  /**
    * Claims the next episode for this reviewer, in two statements and at most
    * `CLAIM_ATTEMPTS` tries.
    *
@@ -163,8 +239,14 @@ export function registerReview(
    * episode is the one case both statements can miss, and
    * `episode_reviews_delivery_key` decides it: the loser's insert does nothing
    * and it tries again.
+   *
+   * Both statements are scoped to one lane and skip rows assigned to somebody
+   * else, so a reviewer is only ever offered work that is theirs to take.
    */
-  async function claimNext(reviewer: string): Promise<{ reviewId: string; episodeId: string } | null> {
+  async function claimNext(
+    reviewer: string,
+    lane: Lane,
+  ): Promise<{ reviewId: string; episodeId: string } | null> {
     for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
       const takeover = (await db.execute(sql`
         update episode_reviews
@@ -176,8 +258,10 @@ export function registerReview(
            select r.id
              from episode_reviews r
             where r.review_state = 'pending'
+              and r.queue = ${lane}
+              and (r.assignee_ref is null or r.assignee_ref = ${reviewer})
               and (r.reviewer_ref is null or r.lease_expires_at < now())
-            order by r.created_at
+            order by r.priority desc, r.created_at
               for update skip locked
             limit 1
          )
@@ -188,13 +272,14 @@ export function registerReview(
 
       const created = (await db.execute(sql`
         insert into episode_reviews
-          (id, episode_id, ingest_id, measured_duration_s, review_state,
+          (id, episode_id, ingest_id, measured_duration_s, review_state, queue,
            reviewer_ref, claimed_at, lease_expires_at)
-        select ${randomUUID()}, episodes.episode_id, episode_ingests.ingest_id, episode_ingests.measured_duration_s, 'pending',
+        select ${randomUUID()}, episodes.episode_id, episode_ingests.ingest_id, episode_ingests.measured_duration_s, 'pending', ${lane},
                ${reviewer}, now(), now() + ${`${LEASE_MS} milliseconds`}::interval
           from episodes
           join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
          where ${eligible}
+           and ${declaredLane} = ${lane}
            and not exists (
              select 1 from episode_reviews r
               where r.episode_id = episodes.episode_id and r.ingest_id = episode_ingests.ingest_id
@@ -215,6 +300,7 @@ export function registerReview(
           from episodes
           join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
          where ${eligible}
+           and ${declaredLane} = ${lane}
            and not exists (
              select 1 from episode_reviews r
               where r.episode_id = episodes.episode_id and r.ingest_id = episode_ingests.ingest_id
@@ -232,17 +318,24 @@ export function registerReview(
    * Pending rows that another reviewer currently holds are excluded, including
    * the one the caller has just claimed. A depth that counts episodes nobody
    * can pick up is a number that never reaches zero and stops being read.
+   *
+   * Which is also why it is per lane and per reviewer: an episode in the
+   * privacy queue, or assigned to somebody else, is not work this reviewer can
+   * pick up either.
    */
-  async function queueDepth(): Promise<number> {
+  async function queueDepth(reviewer: string, lane: Lane): Promise<number> {
     const rows = (await db.execute(sql`
       select
         (select count(*) from episode_reviews
           where review_state = 'pending'
+            and queue = ${lane}
+            and (assignee_ref is null or assignee_ref = ${reviewer})
             and (reviewer_ref is null or lease_expires_at < now()))
       + (select count(*)
            from episodes
            join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
           where ${eligible}
+            and ${declaredLane} = ${lane}
             and not exists (
               select 1 from episode_reviews r
                where r.episode_id = episodes.episode_id and r.ingest_id = episode_ingests.ingest_id
@@ -477,7 +570,8 @@ export function registerReview(
   /** Claims and returns the next episode. 204 when there is nothing to review. */
   app.post('/api/review/claim', opts, async (req, reply) => {
     const reviewer = reviewerOf(req.actor!);
-    const claim = await claimNext(reviewer);
+    const lane = laneOf(req);
+    const claim = await claimNext(reviewer, lane);
     if (claim === null) {
       return reply.code(204).send();
     }
@@ -487,8 +581,9 @@ export function registerReview(
     return reply.send({
       ...body,
       review_id: claim.reviewId,
+      queue: lane,
       lease_expires_at: lease?.leaseExpiresAt?.toISOString() ?? null,
-      queue_depth: await queueDepth(),
+      queue_depth: await queueDepth(reviewer, lane),
       session_average_seconds: await sessionAverage(reviewer),
     });
   });
@@ -508,8 +603,20 @@ export function registerReview(
   /**
    * A peek at what would be claimed next, so the client can prefetch it without
    * taking it off somebody else's queue. Returns 204 when nothing is waiting.
+   *
+   * The ORDER BY reproduces `claimNext`'s two statements in one: rows that
+   * already exist come first (`r.id is null` sorts false before true), because
+   * the claim drains the takeover before it materialises anything; then
+   * priority, then how long the thing has waited. A peek that predicted a
+   * different episode from the one the claim hands over would warm the wrong
+   * video, which is the whole reason this route exists.
+   *
+   * QR-07: a privacy-declared episode is not merely ranked lower here. It is
+   * not in this result at all unless the caller asked for that lane.
    */
   app.get('/api/review/next', opts, async (req, reply) => {
+    const reviewer = reviewerOf(req.actor!);
+    const lane = laneOf(req);
     const rows = (await db.execute(sql`
       select episodes.episode_id
         from episodes
@@ -517,17 +624,138 @@ export function registerReview(
         left join episode_reviews r
           on r.episode_id = episodes.episode_id and r.ingest_id = episode_ingests.ingest_id
        where ${eligible}
+         and coalesce(r.queue, ${declaredLane}) = ${lane}
+         and coalesce(r.assignee_ref, ${reviewer}) = ${reviewer}
          and (r.id is null
               or (r.review_state = 'pending'
                   and (r.reviewer_ref is null or r.lease_expires_at < now())))
-       order by episodes.first_seen_at
+       order by (r.id is null), coalesce(r.priority, 0) desc,
+                coalesce(r.created_at, episodes.first_seen_at)
        limit 1
     `)) as unknown as { episode_id: string }[];
     const next = rows[0];
     if (next === undefined) return reply.code(204).send();
     const body = await payload(next.episode_id);
     if (body === null) return reply.code(204).send();
-    return reply.send(body);
+    return reply.send({ ...body, queue: lane });
+  });
+
+  /**
+   * QR-05, QR-07, PRV-04, BO-15: move an episode within the queue, or out of it
+   * into the privacy lane.
+   *
+   * One upsert. A lazy queue means the row a caller wants to prioritise may not
+   * exist yet — an episode nobody has claimed has no review — so this
+   * materialises it rather than refusing, which is also what makes flagging an
+   * episode from a browse screen (BO-15) work on footage no reviewer has opened.
+   *
+   * Routing to `privacy` releases the lease. The reviewer who flagged it is
+   * handing the episode to somebody cleared to watch it, and leaving their own
+   * claim on it would park it for the rest of the lease in a queue they are
+   * done with.
+   *
+   * The two APP-17b booleans are never written here. They are what the collector
+   * declared before recording and a reviewer's later judgement is a different
+   * fact; overwriting them would erase the only evidence of what was declared.
+   *
+   * ponytail: any authenticated operator may call this. "Specialist review"
+   * (BO-15) needs a reviewer role to be a real gate, and roles are the
+   * reviewer-auth slice — this endpoint is the queue half and stays that way.
+   */
+  app.post('/api/review/route/:id', opts, async (req, reply) => {
+    const parsed = RouteBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid body', detail: parsed.error.issues.slice(0, 5) });
+    }
+    const body = parsed.data;
+    const actor = req.actor!;
+    const episodeId = (req.params as { id: string }).id;
+
+    const [before] = await db
+      .select({
+        id: schema.episodeReviews.id,
+        queue: schema.episodeReviews.queue,
+        priority: schema.episodeReviews.priority,
+        assigneeRef: schema.episodeReviews.assigneeRef,
+        reviewState: schema.episodeReviews.reviewState,
+      })
+      .from(schema.episodeReviews)
+      .where(eq(schema.episodeReviews.episodeId, episodeId));
+    if (before !== undefined && before.reviewState !== 'pending') {
+      // A decided review is a payment. Re-queueing one is the dispute path,
+      // which is P2 and is a supersedes column, not an UPDATE.
+      return reply.code(409).send({ error: 'this episode has already been reviewed' });
+    }
+
+    const assignments: SQL[] = [];
+    if (body.queue !== undefined) assignments.push(sql`queue = ${body.queue}`);
+    if (body.priority !== undefined) assignments.push(sql`priority = ${body.priority}`);
+    if (body.assignee_ref !== undefined) assignments.push(sql`assignee_ref = ${body.assignee_ref}`);
+    if (body.queue === 'privacy') {
+      assignments.push(sql`reviewer_ref = null, claimed_at = null, lease_expires_at = null`);
+    }
+    assignments.push(sql`updated_at = now()`);
+
+    const written = await mutate(
+      db,
+      actor,
+      {
+        action: 'review.route',
+        targetTable: 'episode_reviews',
+        targetId: before?.id ?? episodeId,
+        before:
+          before === undefined
+            ? null
+            : { queue: before.queue, priority: before.priority, assignee_ref: before.assigneeRef },
+        after: {
+          episode_id: episodeId,
+          ...(body.queue === undefined ? {} : { queue: body.queue }),
+          ...(body.priority === undefined ? {} : { priority: body.priority }),
+          ...(body.assignee_ref === undefined ? {} : { assignee_ref: body.assignee_ref }),
+          ...(body.queue === 'privacy' ? { reason_code: PRIVACY_REASON } : {}),
+        },
+        reason: body.reason ?? (body.queue === 'privacy' ? PRIVACY_REASON : undefined),
+      },
+      async (tx) => {
+        const rows = (await tx.execute(sql`
+          insert into episode_reviews
+            (id, episode_id, ingest_id, measured_duration_s, review_state, queue, priority, assignee_ref)
+          select ${randomUUID()}, episodes.episode_id, episode_ingests.ingest_id,
+                 episode_ingests.measured_duration_s, 'pending',
+                 ${body.queue === undefined ? declaredLane : sql`${body.queue}`},
+                 ${body.priority ?? 0}, ${body.assignee_ref ?? null}
+            from episodes
+            join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
+           where episodes.episode_id = ${episodeId}
+             and ${eligible}
+          on conflict (episode_id, ingest_id) do update
+             set ${sql.join(assignments, sql`, `)}
+           where episode_reviews.review_state = 'pending'
+          returning id, queue, priority, assignee_ref
+        `)) as unknown as {
+          id: string;
+          queue: Lane;
+          priority: number;
+          assignee_ref: string | null;
+        }[];
+        return rows[0];
+      },
+    );
+
+    if (written === undefined) {
+      // Either the episode is not reviewable at all — no owner, quarantined
+      // ingest, a blocking defect — or it was decided between the read above
+      // and this write. Both are the same answer to the caller: there is no
+      // pending review here to move.
+      return reply.code(409).send({ error: 'no reviewable episode to route', episode_id: episodeId });
+    }
+    return reply.send({
+      episode_id: episodeId,
+      review_id: written.id,
+      queue: written.queue,
+      priority: written.priority,
+      assignee_ref: written.assignee_ref,
+    });
   });
 
   /** Extends a lease while the tab is open. A reviewer who leaves stops sending these. */
@@ -822,7 +1050,8 @@ export function registerReview(
       effective_minutes: bill.effectiveMinutes,
       amount: bill.amount,
       replayed: false,
-      queue_depth: await queueDepth(),
+      /** The lane the reviewer is working, read off the row rather than asked for. */
+      queue_depth: await queueDepth(reviewer, review.queue as Lane),
       session_average_seconds: await sessionAverage(reviewer),
     });
   });
@@ -935,10 +1164,69 @@ export function registerReview(
       payable_seconds: totals?.payableSeconds ?? '0',
       median_seconds_to_verdict: totals?.medianSeconds ?? null,
       settled_amount: settled?.amount ?? '0',
-      queue_depth: await queueDepth(),
+      queue_depth: await queueDepth(reviewer, 'standard'),
+      /** QR-07, on the one screen everybody opens: work nobody normal will see. */
+      privacy_queue_depth: await queueDepth(reviewer, 'privacy'),
       session_average_seconds: await sessionAverage(reviewer),
       needs_human: stuck?.count ?? 0,
     });
+  });
+
+  /**
+   * QR-06. Reviewer throughput, per reviewer, from columns the verdict already
+   * writes — nothing here is stored, incremented or sampled.
+   *
+   * **`reviews_per_hour` is per hour of measured review time**, not per hour on
+   * shift: `3600 × verdicts ÷ Σ time_to_verdict_s`. A wall-clock denominator
+   * would need a shift table nobody has, and would report a reviewer who spent
+   * half the day on something else as half as fast as they are. The inputs are
+   * returned alongside so anybody who wants a different denominator can compute
+   * it rather than argue with this one.
+   *
+   * Reviews with no `time_to_verdict_s` — a row decided by a client that sent
+   * none, on a review with no claim time — are counted in `decided` and left out
+   * of the rate and the median. `timed` is the difference, so a deployment where
+   * that number is climbing can see it.
+   *
+   * `since` is optional and there is no default window. A default would be an
+   * operational decision, and this endpoint does not get to make it.
+   *
+   * ponytail: aggregates over the whole table, with no index on `reviewer_ref`.
+   * At pilot volume that is a millisecond; add
+   * `(reviewer_ref, reviewed_at)` when the plan says so.
+   */
+  app.get('/api/review/throughput', opts, async (req, reply) => {
+    const raw = (req.query as { since?: string } | undefined)?.since;
+    const since = raw === undefined ? null : new Date(raw);
+    if (since !== null && Number.isNaN(since.getTime())) {
+      return reply.code(400).send({ error: 'since must be an ISO timestamp' });
+    }
+    /**
+     * The bound `since` is an ISO string and not the `Date`. `db.execute` hands
+     * parameters to postgres.js's `unsafe`, which does not serialise a `Date` —
+     * it throws ERR_INVALID_ARG_TYPE inside the driver, surfaced by drizzle as
+     * "Failed query" with the date printed in the params line, which reads like
+     * a SQL fault and is not one.
+     */
+    const rows = (await db.execute(sql`
+      select reviewer_ref as reviewer,
+             count(*)::int as decided,
+             count(*) filter (where review_state in ('pass', 'partial_pass'))::int as approved,
+             count(time_to_verdict_s)::int as timed,
+             coalesce(sum(time_to_verdict_s), 0)::text as review_seconds,
+             (3600 * count(time_to_verdict_s) / nullif(sum(time_to_verdict_s), 0))::float8
+               as reviews_per_hour,
+             percentile_cont(0.5) within group (order by time_to_verdict_s)::text
+               as median_seconds_to_verdict,
+             max(reviewed_at) as last_verdict_at
+        from episode_reviews
+       where review_state <> 'pending'
+         and reviewer_ref is not null
+         ${since === null ? sql`` : sql`and reviewed_at >= ${since.toISOString()}::timestamptz`}
+       group by reviewer_ref
+       order by count(*) desc, reviewer_ref
+    `)) as unknown as Record<string, unknown>[];
+    return reply.send({ since: since?.toISOString() ?? null, reviewers: rows });
   });
 
   /** The reject reasons, localised. LOC-02: PaXini's reviewers work in Chinese. */

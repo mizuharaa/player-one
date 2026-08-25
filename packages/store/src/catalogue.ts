@@ -120,16 +120,23 @@ export async function seedCatalogues(db: Db): Promise<void> {
       },
     });
 
-  await db
-    .insert(reviewReasonCodes)
-    .values(REVIEW_REASON_CATALOGUE)
-    .onConflictDoUpdate({
-      target: reviewReasonCodes.code,
-      set: {
-        category: sqlExcluded('category'),
-        labelEn: sqlExcluded('label_en'),
-        labelVi: sqlExcluded('label_vi'),
-        labelZh: sqlExcluded('label_zh'),
-      },
-    });
+  /**
+   * Reason codes are seeded once and never overwritten.
+   *
+   * This is the difference between reference data and configuration, and the
+   * two catalogues are not the same kind of thing. `blocks_review` above is a
+   * routing decision the deployed engine owns, so re-seeding re-tunes it. A
+   * reason code's category and its three labels are the *review standard*, and
+   * PaXini said on 13 Aug it does not exist yet and will be rewritten during
+   * the pilot — §6.9's own note says to build the codes configurable rather
+   * than hard-coded. Upserting them made an operator's UPDATE last until the
+   * next restart, which is a worse failure than not being editable at all:
+   * nothing errors, the labels simply revert and the pilot's own tuning is
+   * silently lost.
+   *
+   * So: a code the deployment does not have yet is inserted; one it has is left
+   * exactly as the operator left it, including `active`, which is how a code is
+   * retired without orphaning the reviews that already cite it.
+   */
+  await db.insert(reviewReasonCodes).values(REVIEW_REASON_CATALOGUE).onConflictDoNothing();
 }

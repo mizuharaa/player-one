@@ -459,4 +459,91 @@ describe.skipIf(!hasDb())('the catalogues', () => {
     )) as unknown as { n: number }[];
     expect(rows[0]!.n).toBe(DEFECT_CATALOGUE.length);
   });
+
+  /**
+   * §6.9's own note: build the reason codes configurable rather than hard-coded,
+   * because PaXini said on 13 Aug the in-the-wild standard does not exist yet
+   * and will be rewritten during the pilot.
+   *
+   * Configurable means an operator's UPDATE survives a restart. It did not: the
+   * boot-time seed upserted the labels back over it, which is the worse failure
+   * of the two — nothing errors, and the pilot's own tuning quietly reverts to
+   * whatever was compiled in.
+   */
+  it('leaves an operator edit alone, because the review standard is theirs to rewrite', async () => {
+    const d = await db();
+    await seedCatalogues(d);
+    await d.execute(sql`
+      update review_reason_codes
+         set label_en = 'Lens blocked by clothing', category = 'visual', active = false
+       where code = 'VQ-OCCLUSION'
+    `);
+
+    await seedCatalogues(d);
+
+    const rows = (await d.execute(sql`
+      select label_en, category, active from review_reason_codes where code = 'VQ-OCCLUSION'
+    `)) as unknown as { label_en: string; category: string; active: boolean }[];
+    expect(rows[0]!.label_en).toBe('Lens blocked by clothing');
+    expect(rows[0]!.category).toBe('visual');
+    // Retiring a code is how the taxonomy shrinks. The row stays, so the
+    // reviews already citing it still render.
+    expect(rows[0]!.active).toBe(false);
+
+    // A code the deployment does not have yet still arrives with a release.
+    const all = (await d.execute(
+      sql`select count(*)::int as n from review_reason_codes`,
+    )) as unknown as { n: number }[];
+    expect(all[0]!.n).toBe(REVIEW_REASON_CATALOGUE.length);
+  });
+
+  /**
+   * QR-01 and QR-04 both rest on a decided review still being able to name why.
+   * The taxonomy is editable, so the question is what an edit can do to the
+   * reviews that already cite it — and the answer has to be a foreign key,
+   * because the edit will be typed into psql by somebody who has never read
+   * this repository.
+   */
+  it('cannot orphan a past review, however the taxonomy is edited', async () => {
+    const d = await db();
+    await seedCatalogues(d);
+    const ids = await seedSpine();
+    const { episodeId, ingestId } = await seedEpisode({ sessionId: ids.session, measured: '60.000000' });
+    const reviewId = uid();
+    await d.execute(sql`
+      insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s, review_state,
+                                   effective_duration_s, verdict_id, reviewed_at)
+        values (${reviewId}, ${episodeId}, ${ingestId}, '60.000000', 'fail', 0, ${uid()}, now());
+    `);
+    await d.execute(sql`
+      insert into episode_review_reasons (review_id, code) values (${reviewId}, 'VQ-DARK');
+    `);
+
+    // Deactivating and relabelling: the picker loses the code, the verdict does not.
+    await d.execute(sql`
+      update review_reason_codes set active = false, label_en = 'Underexposed' where code = 'VQ-DARK'
+    `);
+    const joined = (await d.execute(sql`
+      select r.code, c.label_en, c.active
+        from episode_review_reasons r
+        join review_reason_codes c on c.code = r.code
+       where r.review_id = ${reviewId}
+    `)) as unknown as { code: string; label_en: string; active: boolean }[];
+    expect(joined).toHaveLength(1);
+    expect(joined[0]!.label_en).toBe('Underexposed');
+    expect(joined[0]!.active).toBe(false);
+
+    // Deleting it is the edit that would orphan the verdict, so the database
+    // refuses it. Not a rule in the service: this is a psql session.
+    await violates(
+      'episode_review_reasons_code_review_reason_codes_code_fk',
+      d.execute(sql`delete from review_reason_codes where code = 'VQ-DARK'`),
+    );
+
+    // Renaming the primary key is the same edit wearing a different hat.
+    await violates(
+      'episode_review_reasons_code_review_reason_codes_code_fk',
+      d.execute(sql`update review_reason_codes set code = 'VQ-UNDEREXPOSED' where code = 'VQ-DARK'`),
+    );
+  });
 });
