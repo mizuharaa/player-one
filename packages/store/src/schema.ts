@@ -590,6 +590,13 @@ export const handovers = pgTable(
  * upload-batch lifecycle. The cache-cleanup gate (UPL-06) is a CHECK rather
  * than a procedure: an upload centre's local copy is the only copy until the
  * cloud says otherwise, so "cleaned before verified" must be unrepresentable.
+ *
+ * The other half of that gate lives in migration 0007, because drizzle cannot
+ * express a trigger: `upload_batches_cloud_verify_guard` refuses to set
+ * `cloud_verified_at` unless the batch has at least one episode and every
+ * episode on it has `verification_state = 'verified'` — the byte read-back
+ * verdict written by the upload leg (packages/api/src/upload.ts), never an
+ * ETag (spec ING-29).
  */
 export const uploadBatches = pgTable(
   'upload_batches',

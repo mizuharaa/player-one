@@ -16,7 +16,7 @@
 
 import { env, exit } from 'node:process';
 import { open, redact } from '@playerone/store';
-import { buildApi } from '../src/index.ts';
+import { buildApi, s3StoreFromEnv } from '../src/index.ts';
 
 const required = (name: string): string => {
   const value = env[name];
@@ -43,6 +43,24 @@ const port = Number(env['PORT'] ?? 8080);
  */
 const db = await open(databaseUrl, { max: Number(env['PLAYERONE_DB_POOL'] ?? 10) });
 
+/**
+ * The cloud leg (UPL-04/05/06). STORAGE_ENDPOINT unset means no GreenNode
+ * contract yet: the upload routes answer 503 and everything else runs. A
+ * partial STORAGE_* configuration fails closed inside `s3StoreFromEnv`.
+ */
+const objectStore = s3StoreFromEnv() ?? undefined;
+
+/**
+ * Which integrity check QR-02's review gate reads. 'local' until a real cloud
+ * endpoint is verifying uploads; setting 'cloud' is what retires ADR 0001
+ * (docs/adr/0001-review-reads-local-verification.md).
+ */
+const verificationGate = env['REVIEW_VERIFICATION_GATE'] ?? 'local';
+if (verificationGate !== 'local' && verificationGate !== 'cloud') {
+  console.error(`REVIEW_VERIFICATION_GATE must be 'local' or 'cloud', not '${verificationGate}'`);
+  exit(2);
+}
+
 const app = buildApi({
   db,
   tokenSecret,
@@ -59,6 +77,8 @@ const app = buildApi({
    * appears to succeed and does nothing. Turn it on wherever there is TLS.
    */
   secureCookies: env['PLAYERONE_SECURE_COOKIES'] === '1',
+  objectStore,
+  verificationGate,
 });
 
 const shutdown = async (signal: string) => {

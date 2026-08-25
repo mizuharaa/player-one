@@ -337,6 +337,24 @@ describe.skipIf(!hasDb())('the identity spine', () => {
         update upload_batches set local_cache_cleaned_at = now() where id = ${ids.batch};
       `));
 
+    // Migration 0007 extends the gate: cloud_verified_at is not a status an
+    // operator can assert, it is a consequence of every episode on the batch
+    // passing byte read-back. An empty batch has nothing the cloud verified...
+    await violates('upload_batches_verify_needs_episodes', d.execute(sql`
+      update upload_batches set cloud_verified_at = now(), batch_status = 'verified'
+      where id = ${ids.batch};
+    `));
+
+    // ...and a batch with an unverified episode is not verified either.
+    const ep = await seedEpisode({ sessionId: ids.session, measured: '8.500000', batchId: ids.batch });
+    await violates('upload_batches_verify_needs_verified_episodes', d.execute(sql`
+      update upload_batches set cloud_verified_at = now(), batch_status = 'verified'
+      where id = ${ids.batch};
+    `));
+
+    await d.execute(sql`
+      update episodes set verification_state = 'verified' where episode_id = ${ep.episodeId};
+    `);
     await d.execute(sql`
       update upload_batches set cloud_verified_at = now(), batch_status = 'verified'
       where id = ${ids.batch};

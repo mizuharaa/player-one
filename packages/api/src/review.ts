@@ -76,6 +76,16 @@ export type ReviewOptions = {
    * here. Until then one currency per deployment is honest and visible.
    */
   currency?: string;
+  /**
+   * Which integrity check QR-02's gate reads: 'local' (the ingest engine's own
+   * check, the ADR 0001 deviation) or 'cloud' (`verification_state =
+   * 'verified'`, written by the upload leg's read-back). Defaults to 'local'
+   * because no GreenNode endpoint exists until the contract is signed —
+   * flipping to 'cloud' is what retires ADR 0001. Under either setting an
+   * episode whose cloud copy FAILED read-back is blocked: a known-bad copy is
+   * information, whichever gate is in force.
+   */
+  verificationGate?: 'local' | 'cloud';
 };
 
 const VerdictBody = z.object({
@@ -119,22 +129,32 @@ export function registerReview(
    * An episode is reviewable when it has an owner, its bytes arrived intact,
    * and nothing about it blocks review.
    *
-   * The integrity half of that is **the local check the ingest engine already
-   * ran**, not a cloud checksum receipt. QR-02 says no episode enters review
-   * before cloud verification and the cloud does not exist yet; reading the
-   * local result instead is a documented deviation with an ADR owed. The
-   * adjacent rule is not deviable and nothing in this file bends it: no TF card
-   * is cleared, and no route here deletes source media.
+   * The integrity half of that depends on `verificationGate`. 'local' reads
+   * **the check the ingest engine already ran** — the ADR 0001 deviation,
+   * still the default while no cloud endpoint exists — plus one addition the
+   * cloud leg made possible: an episode whose cloud copy failed read-back
+   * (`verification_state = 'failed'`) is blocked even under the local gate,
+   * because a copy known to be bad is not a pending one. 'cloud' is QR-02 as
+   * written: only `verification_state = 'verified'` enters review, and setting
+   * it is what retires ADR 0001. The adjacent rule is not deviable under
+   * either gate and nothing in this file bends it: no TF card is cleared, and
+   * no route here deletes source media.
    *
    * `resolution_state = 'resolved'` is the other half and is not negotiable —
    * an episode with no session has no collector and no task, so there is
    * nobody to pay and no price to pay them at. Those stay in the counter's
    * quarantine queue until a human attaches them.
    */
+  const cloudGate = (options.verificationGate ?? 'local') === 'cloud';
   const eligible = sql`
     ${schema.episodes.resolutionState} = 'resolved'
     and ${schema.episodeIngests.state} <> 'quarantined'
     and ${schema.episodeIngests.measuredDurationS} > 0
+    and ${
+      cloudGate
+        ? sql`${schema.episodes.verificationState} = 'verified'`
+        : sql`${schema.episodes.verificationState} <> 'failed'`
+    }
     and not exists (
       select 1
         from episode_defects d
@@ -177,6 +197,20 @@ export function registerReview(
              from episode_reviews r
             where r.review_state = 'pending'
               and (r.reviewer_ref is null or r.lease_expires_at < now())
+              /**
+               * Eligibility is re-checked at takeover, not only at
+               * materialisation: verification can fail AFTER a pending row was
+               * created (the cloud leg's read-back finding a corrupt copy), and
+               * a row that was eligible last week must not be handed out today.
+               */
+              and exists (
+                select 1
+                  from episodes
+                  join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
+                 where episodes.episode_id = r.episode_id
+                   and episode_ingests.ingest_id = r.ingest_id
+                   and ${eligible}
+              )
             order by r.created_at
               for update skip locked
             limit 1
@@ -236,9 +270,19 @@ export function registerReview(
   async function queueDepth(): Promise<number> {
     const rows = (await db.execute(sql`
       select
-        (select count(*) from episode_reviews
-          where review_state = 'pending'
-            and (reviewer_ref is null or lease_expires_at < now()))
+        (select count(*) from episode_reviews pr
+          where pr.review_state = 'pending'
+            and (pr.reviewer_ref is null or pr.lease_expires_at < now())
+            -- Same re-check as the takeover: a pending row whose episode has
+            -- since failed cloud verification is not claimable, so it is not depth.
+            and exists (
+              select 1
+                from episodes
+                join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
+               where episodes.episode_id = pr.episode_id
+                 and episode_ingests.ingest_id = pr.ingest_id
+                 and ${eligible}
+            ))
       + (select count(*)
            from episodes
            join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id

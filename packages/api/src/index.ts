@@ -10,6 +10,7 @@ import { registerMedia } from './media.ts';
 import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
 import { registerReview } from './review.ts';
 import { registerSessionRoutes } from './session.ts';
+import { registerUpload, type ObjectStore } from './upload.ts';
 import { authenticateMachine, authenticateOperator } from './session.ts';
 import type { Actor } from './actor.ts';
 import { signToken, verifyToken } from './credentials.ts';
@@ -21,6 +22,16 @@ export * from './resolve.ts';
 export * from './money.ts';
 export { LEASE_MS } from './review.ts';
 export { parseRange, safeJoin } from './media.ts';
+export {
+  objectKey,
+  planParts,
+  PART_SIZE,
+  S3ObjectStore,
+  s3StoreFromEnv,
+  type Mismatch,
+  type ObjectStore,
+  type PutResult,
+} from './upload.ts';
 export { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 
 /**
@@ -65,6 +76,18 @@ export type ApiOptions = {
    * sent and the symptom is a login that appears to do nothing.
    */
   secureCookies?: boolean;
+  /**
+   * Where episodes are uploaded to and verified against (UPL-04/05). Absent
+   * until the GreenNode contract yields an endpoint; the upload routes answer
+   * 503 saying so. See `s3StoreFromEnv`.
+   */
+  objectStore?: ObjectStore;
+  /**
+   * Which integrity check QR-02's review gate reads. 'local' (default) is the
+   * ADR 0001 deviation; 'cloud' requires `verification_state = 'verified'` and
+   * retires that ADR. See `ReviewOptions.verificationGate`.
+   */
+  verificationGate?: 'local' | 'cloud';
 };
 
 export function buildApi({
@@ -74,6 +97,8 @@ export function buildApi({
   mediaRoot,
   currency,
   secureCookies = false,
+  objectStore,
+  verificationGate,
 }: ApiOptions): FastifyInstance {
   if (!tokenSecret) throw new Error('tokenSecret is required');
   const app = Fastify({ logger: false });
@@ -169,7 +194,8 @@ export function buildApi({
 
   registerCounter(app, db, requireActor);
   registerEpisodes(app, db, requireActor, toleranceMs);
-  registerReview(app, db, requireActor, { mediaRoot, currency });
+  registerUpload(app, db, requireActor, { objectStore, mediaRoot });
+  registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate });
   registerMedia(app, db, requireActor, mediaRoot);
   registerConsole(app, db, { tokenSecret, secureCookies });
   /** The JSON sign-in the React console uses. Same credentials, same cookies. */

@@ -1,7 +1,10 @@
 # ADR 0001 — the review gate reads local verification, not a cloud receipt
 
-**Status** Accepted, with an expiry condition
-**Date** 2026-08-24
+**Status** Accepted, in force only while `REVIEW_VERIFICATION_GATE=local` (the
+default). The exit mechanism is built — see "The exit, as built" below — and
+setting the gate to `cloud` on a deployment whose uploads a real endpoint is
+verifying supersedes this ADR.
+**Date** 2026-08-24, exit mechanism 2026-08-25
 **Affects** QR-02; PRD §11.3.1 rule 6
 
 ## Context
@@ -86,6 +89,31 @@ something other than a human. At that point:
    question, not a review question, and it needs an answer before the switch —
    the review row and its spans are preserved, so it is answerable.
 3. Only then may card-clearing policy be revisited, and separately.
+
+## The exit, as built (2026-08-25)
+
+The cloud leg landed (`packages/api/src/upload.ts`, migration 0007): multipart
+upload to an S3-compatible endpoint configured by `STORAGE_*` environment
+variables, verification by byte read-back against the per-file sha256 the
+engine recorded at import — never an ETag, which GreenNode does not make a
+content digest — and the UPL-06 cache gate as schema state. Against the exit
+conditions above:
+
+1. **Built, behind a flag.** `REVIEW_VERIFICATION_GATE=cloud` puts
+   `verification_state = 'verified'` into the eligibility predicate. The flag
+   defaults to `local` because no real endpoint exists until the GreenNode
+   contract is signed, and a cloud gate with no cloud behind it reviews
+   nothing. One addition applies under **both** settings: an episode whose
+   cloud copy *failed* read-back is blocked from review — a copy known to be
+   bad is not a pending one.
+2. **Still owed, and still blocking the flip.** What settlement does about an
+   episode reviewed and paid under this deviation whose cloud copy then fails
+   verification remains undecided. The review row and its spans are preserved,
+   so it stays answerable — but the flag stays `local` in production until it
+   is answered.
+3. Unchanged: card-clearing policy is revisited only after the flip, and
+   separately. Nothing in the upload leg deletes anything — the cache-clean
+   route records; no code path touches TF-card source media.
 
 ## Alternatives considered
 
