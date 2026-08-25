@@ -220,12 +220,31 @@ export function registerReview(
    * Written against `episodes` rather than a bound alias so the same fragment
    * serves the claim, the peek and the depth.
    */
-  const declaredLane = sql`case when exists (
+  const declaredPrivacy = sql`exists (
       select 1
         from collection_sessions s
        where s.id = ${schema.episodes.collectionSessionId}
          and (s.others_in_frame or s.sensitive_info_present)
-    ) then 'privacy' else 'standard' end`;
+    )`;
+
+  /**
+   * A reviewer's PRV-04 flag on an earlier delivery of the same episode.
+   *
+   * A redelivery is a different ingest and gets a different review row, so
+   * without this the second delivery of footage somebody quarantined arrives
+   * back in the ordinary queue with the flag left behind on a row nobody reads.
+   * The bytes changed; the bank card in shot did not.
+   */
+  const quarantinedBefore = sql`exists (
+      select 1
+        from episode_reviews q
+       where q.episode_id = ${schema.episodes.episodeId}
+         and q.queue = 'privacy'
+    )`;
+
+  /** The lane a review row is born in: the declaration, or an earlier flag. */
+  const derivedLane = sql`case when ${declaredPrivacy} or ${quarantinedBefore}
+      then 'privacy' else 'standard' end`;
 
   /**
    * `?queue=privacy` opts in; no `queue` at all is the normal lane.
@@ -304,7 +323,7 @@ export function registerReview(
           from episodes
           join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
          where ${eligible}
-           and ${declaredLane} = ${lane}
+           and ${derivedLane} = ${lane}
            and not exists (
              select 1 from episode_reviews r
               where r.episode_id = episodes.episode_id and r.ingest_id = episode_ingests.ingest_id
@@ -325,7 +344,7 @@ export function registerReview(
           from episodes
           join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
          where ${eligible}
-           and ${declaredLane} = ${lane}
+           and ${derivedLane} = ${lane}
            and not exists (
              select 1 from episode_reviews r
               where r.episode_id = episodes.episode_id and r.ingest_id = episode_ingests.ingest_id
@@ -360,7 +379,7 @@ export function registerReview(
            from episodes
            join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
           where ${eligible}
-            and ${declaredLane} = ${lane}
+            and ${derivedLane} = ${lane}
             and not exists (
               select 1 from episode_reviews r
                where r.episode_id = episodes.episode_id and r.ingest_id = episode_ingests.ingest_id
@@ -651,7 +670,7 @@ export function registerReview(
         left join episode_reviews r
           on r.episode_id = episodes.episode_id and r.ingest_id = episode_ingests.ingest_id
        where ${eligible}
-         and coalesce(r.queue, ${declaredLane}) = ${lane}
+         and coalesce(r.queue, ${derivedLane}) = ${lane}
          and coalesce(r.assignee_ref, ${reviewer}) = ${reviewer}
          and (r.id is null
               or (r.review_state = 'pending'
@@ -744,65 +763,97 @@ export function registerReview(
        * routers racing to materialise the same missing row: the loser waits,
        * then sees the winner's.
        */
-      const found = (await tx.execute(sql`
+      const episode = (await tx.execute(sql`
         select episodes.latest_ingest_id as ingest_id,
                episode_ingests.measured_duration_s as measured,
-               ${declaredLane} as declared_lane,
-               r.id, r.queue, r.priority, r.assignee_ref, r.review_state
+               ${declaredPrivacy} as declared_privacy,
+               ${derivedLane} as derived_lane
           from episodes
           join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
-          left join episode_reviews r
-            on r.episode_id = episodes.episode_id
-           and r.ingest_id = episodes.latest_ingest_id
          where episodes.episode_id = ${episodeId}
            and ${eligible}
            for update of episodes
       `)) as unknown as {
         ingest_id: string;
         measured: string;
-        declared_lane: Lane;
-        id: string | null;
-        queue: Lane | null;
-        priority: number | null;
-        assignee_ref: string | null;
-        review_state: string | null;
+        declared_privacy: boolean;
+        derived_lane: Lane;
       }[];
-      const held = found[0];
-      if (held === undefined) {
+      const ep = episode[0];
+      if (ep === undefined) {
         // Not reviewable at all: no owner, a quarantined ingest, a blocking
         // defect, or no such episode. Materialising a row here would put
         // unjudgeable footage in a queue.
         refusal = 'no reviewable episode to route';
         return undefined;
       }
-      if (held.id !== null && held.review_state !== 'pending') {
+
+      /**
+       * A second statement, and that is the whole point of it.
+       *
+       * Under READ COMMITTED every statement takes its own snapshot, so this
+       * one sees whatever another router committed while the statement above
+       * was waiting for the episode lock. A single joined read cannot: the row
+       * it locks is re-checked, but the outer-joined review is still the one
+       * from the snapshot taken before the wait — which is how a second router
+       * ends up writing over a row it believes does not exist, and auditing the
+       * change against `before: null`.
+       */
+      const prior = (await tx.execute(sql`
+        select id, queue, priority, assignee_ref, reviewer_ref, review_state
+          from episode_reviews
+         where episode_id = ${episodeId}
+           and ingest_id = ${ep.ingest_id}
+           for update
+      `)) as unknown as {
+        id: string;
+        queue: Lane;
+        priority: number;
+        assignee_ref: string | null;
+        reviewer_ref: string | null;
+        review_state: string;
+      }[];
+      const held = prior[0];
+      if (held !== undefined && held.review_state !== 'pending') {
         // A decided review is a payment. Re-queueing one is the dispute path,
         // which is P2 and is a supersedes column, not an UPDATE.
         refusal = 'this episode has already been reviewed';
         return undefined;
       }
-      if (body.queue === 'standard' && held.declared_lane === 'privacy') {
+      if (body.queue === 'standard' && ep.declared_privacy) {
         // QR-07's floor. The collector declared others in frame or sensitive
         // information; no request moves that footage into the lane every
         // reviewer sees.
         refusal = 'this episode was declared a privacy risk by the collector';
         return undefined;
       }
+      const quarantined = held?.queue === 'privacy' || ep.derived_lane === 'privacy';
+      if (body.queue === 'standard' && quarantined && body.reason === undefined) {
+        /**
+         * Lifting a reviewer's PRV-04 flag is a compliance decision, and the
+         * audit row for it has to say why in words. Raising one does not need a
+         * typed reason because the code is fixed and the direction is safe;
+         * lowering one is the direction that puts footage in front of more
+         * people.
+         */
+        refusal = 'declassifying a quarantined episode needs a reason';
+        return undefined;
+      }
 
-      const lane = body.queue ?? held.queue ?? held.declared_lane;
+      const lane = body.queue ?? held?.queue ?? ep.derived_lane;
       /**
        * The lease and the assignment go only when the lane actually changes. A
        * retried privacy flag - a lost response, a double tap - would otherwise
        * take the episode away from the specialist who has since picked it up,
        * every time it arrived.
        */
-      const quarantining = lane === 'privacy' && held.queue !== 'privacy';
+      const quarantining = lane === 'privacy' && held?.queue !== 'privacy';
       const assignee =
         body.assignee_ref !== undefined
           ? body.assignee_ref
           : quarantining
             ? null
-            : (held.assignee_ref ?? null);
+            : (held?.assignee_ref ?? null);
 
       const sets: SQL[] = [sql`queue = ${lane}`, sql`assignee_ref = ${assignee}`];
       if (body.priority !== undefined) sets.push(sql`priority = ${body.priority}`);
@@ -814,7 +865,7 @@ export function registerReview(
       const rows = (await tx.execute(sql`
         insert into episode_reviews
           (id, episode_id, ingest_id, measured_duration_s, review_state, queue, priority, assignee_ref)
-        values (${randomUUID()}, ${episodeId}, ${held.ingest_id}, ${held.measured}, 'pending',
+        values (${randomUUID()}, ${episodeId}, ${ep.ingest_id}, ${ep.measured}, 'pending',
                 ${lane}, ${body.priority ?? 0}, ${assignee})
         on conflict (episode_id, ingest_id) do update
            set ${sql.join(sets, sql`, `)}
@@ -834,24 +885,34 @@ export function registerReview(
 
       event.targetId = row.id;
       event.before =
-        held.id === null
+        held === undefined
           ? null
-          : { queue: held.queue, priority: held.priority, assignee_ref: held.assignee_ref };
+          : {
+              queue: held.queue,
+              priority: held.priority,
+              assignee_ref: held.assignee_ref,
+              /** Who lost the episode, when a flag takes it off them. */
+              reviewer_ref: held.reviewer_ref,
+            };
       event.after = {
         episode_id: episodeId,
-        ingest_id: held.ingest_id,
+        ingest_id: ep.ingest_id,
         queue: row.queue,
         priority: row.priority,
         assignee_ref: row.assignee_ref,
-        ...(quarantining ? { lease_released: true, reason_code: PRIVACY_REASON } : {}),
+        ...(quarantining
+          ? { reviewer_ref: null, lease_released: true, reason_code: PRIVACY_REASON }
+          : {}),
       };
       return row;
     });
 
     if (written === undefined) {
-      return reply
-        .code(409)
-        .send({ error: refusal ?? 'no reviewable episode to route', episode_id: episodeId });
+      const error: string = refusal ?? 'no reviewable episode to route';
+      // A missing reason is the caller's to fix; everything else here is a
+      // conflict with the state of the row.
+      const status = error === 'declassifying a quarantined episode needs a reason' ? 400 : 409;
+      return reply.code(status).send({ error, episode_id: episodeId });
     }
     return reply.send({
       episode_id: episodeId,

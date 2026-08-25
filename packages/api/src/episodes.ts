@@ -302,22 +302,29 @@ export function registerEpisodes(
       return reply.code(409).send({ error: 'that session does not belong to this delivery' });
     }
 
+    /**
+     * `mutate` reads the event after the write callback resolves, so the
+     * callback can add what only the write knows: which reviews this
+     * re-attribution moved, and who lost them. A privacy handoff that says only
+     * "the session changed" is not reconstructable afterwards.
+     */
+    const event = {
+      action: 'episode.resolve_manual',
+      targetTable: 'episodes',
+      targetId: episodeId,
+      // What the machine suggested and what the human picked, so a dispute can
+      // see the difference without another column on episodes.
+      before: {
+        resolution_state: episode.resolutionState,
+        proposed_session_id: episode.collectionSessionId,
+      },
+      after: { collection_session_id: body.data.collection_session_id } as Record<string, unknown>,
+      reason: body.data.reason,
+    };
     await mutate(
       db,
       actor,
-      {
-        action: 'episode.resolve_manual',
-        targetTable: 'episodes',
-        targetId: episodeId,
-        // What the machine suggested and what the human picked, so a dispute can
-        // see the difference without another column on episodes.
-        before: {
-          resolution_state: episode.resolutionState,
-          proposed_session_id: episode.collectionSessionId,
-        },
-        after: { collection_session_id: body.data.collection_session_id },
-        reason: body.data.reason,
-      },
+      event,
       async (tx) => {
         const [row] = await tx
           .update(schema.episodes)
@@ -340,7 +347,7 @@ export function registerEpisodes(
          * and is not this endpoint's to lift; the declaration is a floor, not
          * the whole value.
          */
-        await tx.execute(sql`
+        const moved = (await tx.execute(sql`
           update episode_reviews r
              set queue = 'privacy', reviewer_ref = null, claimed_at = null,
                  lease_expires_at = null, assignee_ref = null, updated_at = now()
@@ -350,7 +357,12 @@ export function registerEpisodes(
              and r.queue <> 'privacy'
              and s.id = ${body.data.collection_session_id}
              and (s.others_in_frame or s.sensitive_info_present)
-        `);
+          returning r.id, r.reviewer_ref as displaced_reviewer_ref
+        `)) as unknown as { id: string; displaced_reviewer_ref: string | null }[];
+        if (moved.length > 0) {
+          event.after['quarantined_reviews'] = moved;
+          event.after['reason_code'] = 'CO-PRIVACY';
+        }
         return row;
       },
     );

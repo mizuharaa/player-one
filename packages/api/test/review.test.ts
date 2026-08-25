@@ -494,13 +494,22 @@ describe.skipIf(!hasDb())('the review lane', () => {
       // PRV-04 is a compliance action, so it is in the audit trail under the
       // taxonomy's own code and not as free text somebody has to interpret.
       const audit = (await h.d.execute(sql`
-        select action, reason, after from audit_events
+        select action, reason, before, after from audit_events
          where action = 'review.route' and operator_id = ${h.ids.operator}
-      `)) as unknown as { action: string; reason: string; after: Record<string, unknown> }[];
+      `)) as unknown as {
+        action: string;
+        reason: string;
+        before: Record<string, unknown> | null;
+        after: Record<string, unknown>;
+      }[];
       expect(audit).toHaveLength(1);
       expect(audit[0]!.reason).toBe('a bank card is legible at 00:41');
       expect(audit[0]!.after['reason_code']).toBe('CO-PRIVACY');
       expect(audit[0]!.after['queue']).toBe('privacy');
+      // Who lost the episode is part of a privacy handoff, not a detail: the
+      // move is only reconstructable if the displaced leaseholder is named.
+      expect((audit[0]!.before as Record<string, unknown>)['reviewer_ref']).toBe(h.ids.operator);
+      expect(audit[0]!.after['reviewer_ref']).toBeNull();
 
       // And the collector's own declaration is untouched: a reviewer's judgement
       // is a different fact from what was declared before recording.
@@ -650,6 +659,58 @@ describe.skipIf(!hasDb())('the review lane', () => {
       const privacy = await h.send('POST', '/api/review/claim?queue=privacy', undefined, h.headers2);
       expect(privacy.statusCode, privacy.body).toBe(200);
       expect(privacy.json().episode_id).toBe(episodeId);
+    });
+
+    it('keeps a quarantine across a redelivery of the same session', async () => {
+      const delivered = record({ basename: 'ego_AZER76400FE_20260813_140500', measured: 60 });
+      const h = await harness({ episodes: [delivered] });
+      const [episodeId] = h.episodeIds;
+      expect((await claim(h)).json().episode_id).toBe(episodeId);
+      const flagged = await h.send('POST', `/api/review/route/${episodeId}`, {
+        queue: 'privacy',
+        reason: 'a bank card is legible at 00:41',
+      });
+      expect(flagged.statusCode, flagged.body).toBe(200);
+
+      // The card comes back and the same session arrives again. Different
+      // bytes, a different ingest, and a review row that does not exist yet -
+      // and the bank card in shot did not change with the bytes. The lane a new
+      // row is born in has to remember the flag, or the redelivery puts the
+      // footage back in front of everybody.
+      const again = await h.send('POST', `/upload-batches/${h.batch}/episodes`, {
+        episodes: [{ ...delivered, content_fingerprint: 'd'.repeat(64) }],
+      });
+      expect(again.statusCode, again.body).toBe(200);
+      expect(again.json().episodes[0].outcome).toBe('mismatch');
+
+      const ordinary = await h.send('GET', '/api/review/next', undefined, h.headers2);
+      expect(ordinary.statusCode, ordinary.body).toBe(204);
+      const privacy = await h.send('GET', '/api/review/next?queue=privacy', undefined, h.headers2);
+      expect(privacy.statusCode, privacy.body).toBe(200);
+      expect(privacy.json().episode_id).toBe(episodeId);
+    });
+
+    it('asks why before it lets a quarantine be lifted', async () => {
+      const h = await harness({ episodes: [record({ basename: 'ego_AZER76400FE_20260813_141000' })] });
+      const [episodeId] = h.episodeIds;
+      expect(
+        (await h.send('POST', `/api/review/route/${episodeId}`, {
+          queue: 'privacy',
+          reason: 'a bank card is legible at 00:41',
+        })).statusCode,
+      ).toBe(200);
+
+      // Raising a flag needs no typed reason: the code is fixed and the
+      // direction is safe. Lowering one puts footage in front of more people,
+      // and the audit row for that has to say why in words.
+      const bare = await h.send('POST', `/api/review/route/${episodeId}`, { queue: 'standard' });
+      expect(bare.statusCode, bare.body).toBe(400);
+      const lifted = await h.send('POST', `/api/review/route/${episodeId}`, {
+        queue: 'standard',
+        reason: 'the card is a loyalty card and carries no number',
+      });
+      expect(lifted.statusCode, lifted.body).toBe(200);
+      expect(lifted.json().queue).toBe('standard');
     });
 
     it('refuses to re-queue a review that has already been decided', async () => {

@@ -98,6 +98,17 @@ any pending review up to the privacy lane when the new session declares. Upgrade
 only, in both places, for the same reason: a reviewer's flag lives in the same
 column and nothing here may clear it.
 
+A reviewer's own flag is carried across deliveries too. A redelivery is a
+different ingest and gets a different review row, so the lane a *new* row is born
+in reads both the declaration and whether any earlier review of the same episode
+sits in the privacy lane. The bytes changed; the bank card in shot did not.
+
+Lifting a flag is allowed and needs a typed reason. Raising one does not: the
+code is fixed, `CO-PRIVACY`, and the direction is safe. Lowering one is the
+direction that puts footage in front of more people, so `POST /api/review/route`
+answers 400 to `queue: 'standard'` on a quarantined episode with no `reason`, and
+the words end up on the audit row.
+
 Migration `0008` backfills the lane for reviews that already existed, and **takes
 the lease with it**. A pending review that changes lane while somebody holds it
 is footage the same uncleared reviewer can go on to heartbeat and decide: the
@@ -137,12 +148,24 @@ from — and, once the lane is properly gated, to nobody at all.
 
 One endpoint sets all three, because all three are one `UPDATE` of one row — the
 row bound to `episodes.latest_ingest_id`, located and locked inside the same
-transaction as the write. "The review for this episode" is not a thing that
+transaction as the write, in **two statements rather than one join**. Under READ
+COMMITTED a statement's snapshot is taken before it waits for a lock, so a single
+joined read would lock the episode, wait, and still be looking at a review row
+from before the wait: that is how a second router writes over a row it believes
+does not exist and audits the change as `before: null`. Locking the episode
+first and reading the review second gives the second statement a fresh snapshot
+and the committed truth. "The review for this episode" is not a thing that
 exists: a second delivery of the same session is a second ingest and gets its own
 review, so an episode whose first delivery was rejected and redelivered has a
 decided row and a pending one. Reading either at random would refuse the pending
 review because an older one is decided, and would audit the move against a row
 nobody touched.
+
+A quarantine names who lost the episode. `before.reviewer_ref` is the displaced
+leaseholder and `after.reviewer_ref` is null, because a privacy handoff that
+records only "the lane changed" is not reconstructable afterwards. The same
+applies to `episode.resolve_manual`: when re-attribution moves reviews, the audit
+row lists the review ids it moved and who held them.
 
 `review.route` in the audit trail is a reviewer quarantining what they are
 watching, an operator flagging from a browse screen, or a supervisor moving work
