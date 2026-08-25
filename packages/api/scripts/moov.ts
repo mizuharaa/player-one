@@ -27,7 +27,7 @@ const HEAD_BYTES = 64 * 1024;
 
 type Box = { type: string; offset: number; size: number };
 
-async function boxes(path: string): Promise<{ size: number; boxes: Box[] }> {
+async function boxes(path: string): Promise<{ size: number; boxes: Box[]; tiled: boolean }> {
   const { size } = await stat(path);
   const handle = await open(path, 'r');
   try {
@@ -54,7 +54,11 @@ async function boxes(path: string): Promise<{ size: number; boxes: Box[] }> {
       found.push(box);
       offset += box.size;
     }
-    return { size, boxes: found };
+    // Top-level boxes must tile the file exactly. A truncated capture walks off
+    // the end and starts reading media as box headers: 072538 and 073055 both
+    // end in types like `e¸` and `1`. Without this the walk reports a happy
+    // `moov` at the front of a file that is not a whole MP4.
+    return { size, boxes: found, tiled: offset === size };
   } finally {
     await handle.close();
   }
@@ -79,29 +83,34 @@ if (paths.length === 0) {
   exit(2);
 }
 
-let anyAtBack = false;
+let failures = 0;
 for (const path of paths) {
   try {
-    const { size, boxes: found } = await boxes(path);
+    const { size, boxes: found, tiled } = await boxes(path);
     const moov = found.findIndex((b) => b.type === 'moov');
     const mdat = found.findIndex((b) => b.type === 'mdat');
+    // Every branch except FRONT is a failure. Printing a warning and exiting 0
+    // let this certify an unreadable or half-written file as fit to serve.
     const verdict =
       moov < 0
         ? 'NO MOOV — not a readable MP4, or truncated'
         : mdat < 0
-          ? 'moov present, no mdat'
-          : moov < mdat
-            ? 'FRONT — seeking is one small range request'
-            : 'BACK — seeking needs the tail first; remux at ingest';
-    if (moov >= 0 && mdat >= 0 && moov > mdat) anyAtBack = true;
+          ? 'NO MDAT — moov present, no media'
+          : moov > mdat
+            ? 'BACK — seeking needs the tail first; remux at ingest'
+            : tiled
+              ? 'FRONT — seeking is one small range request'
+              : 'DAMAGED — moov is at the front, but the boxes do not tile the file';
+    if (!verdict.startsWith('FRONT')) failures += 1;
     console.log(
       `${basename(path).padEnd(58)} ${String(size).padStart(12)} B  ` +
         `${found.map((b) => b.type).join(' ')}  ->  ${verdict}`,
     );
   } catch (err) {
+    failures += 1;
     console.log(`${basename(path).padEnd(58)} unreadable: ${(err as Error).message}`);
   }
 }
 
 // Non-zero so this can gate a check rather than only be read by a person.
-exit(anyAtBack ? 1 : 0);
+exit(failures > 0 ? 1 : 0);
