@@ -60,6 +60,20 @@ describe('the moov gate', () => {
     expect(code).toBe(0);
   });
 
+  /**
+   * The script may only claim what it measured. It walks top-level box headers,
+   * so it knows the index is ahead of the media and nothing about what a seek
+   * costs — no byte-range request has ever been issued against these files, and
+   * a fragmented MP4 without a useful `sidx` can make a player walk fragments.
+   * The wording drifted back to "seeking is one small range request" once; this
+   * pins it, and `docs/hardware-checkout.md` test 19 quotes the same string.
+   */
+  it('claims only that the index leads, never that a seek is cheap', async () => {
+    const { out } = await moovts(file('front.mp4'));
+    expect(out).toContain('FRONT — index ahead of the media; seek cost unverified');
+    expect(out).not.toMatch(/one small range request/i);
+  });
+
   it('fails a back-loaded moov', async () => {
     const { code, out } = await moovts(file('back.mp4'));
     expect(out).toContain('BACK');

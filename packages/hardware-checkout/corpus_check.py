@@ -14,9 +14,10 @@ folders. Omitted, it is discovered the way the TypeScript tests do
   warmup      per-stream first sample minus the manifest ``start_time``.
   gravity     mean accelerometer vector and its magnitude.
 
-``--check`` additionally asserts the numbers measured from the real 5-session
-corpus on 2026-08-25 and prints PASS/FAIL per expectation. Exit 0 all pass,
-1 any fail or no corpus, 2 bad arguments.
+``--check`` runs ``--selftest`` first, then asserts the numbers measured from the
+real 5-session corpus on 2026-08-25, printing PASS/FAIL per expectation. Exit 0
+all pass, 1 any fail or no corpus, 2 bad arguments, 4 ffprobe not installed
+(a tool fault, never a verdict on the footage).
 
 Nothing here touches a database, a network, or the TF card.
 """
@@ -83,15 +84,28 @@ def media_for(pts_path):
     return pts_path.with_name(pts_path.name[: -len("_pts.csv")] + ".mp4")
 
 
+class ToolMissing(Exception):
+    """ffprobe is not installed. An install fault, never a verdict on media."""
+
+
 def packet_count(mp4):
     """Video packets in the container, via the same ffprobe invocation
     packages/ingest/src/timing.ts uses. A second full read of the file, which is
-    why it is behind --packets there and here."""
+    why it is behind --packets there and here.
+
+    A spawn ENOENT is ffprobe missing from PATH and is raised, never returned as
+    None: `packages/ingest/src/timing.ts` refuses to read a bare ENOENT as a
+    statement about the file, and neither does this. Returning None here would
+    condemn every MP4 on the machine as MEDIA-UNREADABLE."""
     try:
         out = subprocess.run(
             ["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_packets",
              "-show_entries", "stream=nb_read_packets", "-of", "csv=p=0", str(mp4)],
             capture_output=True, text=True, check=True)
+    except FileNotFoundError as e:
+        raise ToolMissing(
+            "ffprobe was not found on PATH. Install ffmpeg; packet counts are "
+            "not optional for a camera verdict.") from e
     except (OSError, subprocess.CalledProcessError):
         return None
     if out.stderr.strip():
@@ -168,6 +182,10 @@ def gap_sec(first_us, start_dt):
 def verdict(rows, partial, packets, manifest, media="n/a"):
     """Which of the engine's defect codes this stream earns.
 
+    For a camera the clean invariant is EXACT: one PTS row per MP4 packet. Both
+    directions are a defect and they are different defects - short sidecar means
+    the index was cut, long sidecar means the container was.
+
     The distinction matters and is easy to get backwards. A sidecar shorter than
     the MEDIA is a real index truncation (`PTS-TRUNCATED`). A sidecar that
     disagrees with the MANIFEST is only the manifest being advisory
@@ -187,8 +205,16 @@ def verdict(rows, partial, packets, manifest, media="n/a"):
         # Audio: the WAV gives no packet reference the sidecar can be measured
         # against, so only the tail is evidence. TAIL-OK is not OK.
         return "PTS-TRUNCATED" if partial or rows == 0 else "TAIL-OK"
-    if partial or rows < packets:
-        return "PTS-TRUNCATED"
+    if rows < packets:
+        return "PTS-TRUNCATED"  # the index stopped before the media did
+    if rows > packets:
+        # More timestamps than frames. The sidecar outlived the container, so
+        # the MEDIA is the short side - and 10 stale rows against 0 packets used
+        # to read as OK, which blessed timestamps that index nothing. Code from
+        # packages/contracts/src/episode.ts, same meaning: container is short.
+        return "MEDIA-TRUNCATED"
+    if partial:
+        return "PTS-TRUNCATED"  # counts agree, but the last row was cut mid-value
     if isinstance(manifest, int) and manifest not in (0, packets):
         return "FRAMECOUNT-MISMATCH"
     return "OK"
@@ -296,6 +322,10 @@ def render(report):
                 "yes" if st["pts_partial_tail"] else "-",
                 "-" if pk is None else pk, "-" if m is None else m,
                 st["verdict"]))
+    print("  OK: camera only, and only on exact equality - rows == packets.")
+    print("  PTS-TRUNCATED: fewer rows than packets (or a cut final row).")
+    print("  MEDIA-TRUNCATED: MORE rows than packets - timestamps with no frame.")
+    print("  FRAMECOUNT-MISMATCH: rows == packets, the manifest disagrees. Advisory.")
     print("  TAIL-OK: audio, which has no packet reference; only its tail is checked.")
     print("  UNMEASURED: camera, no packet count taken - re-run with --packets.")
     print("  MEDIA-MISSING / MEDIA-UNREADABLE: a camera part has no usable MP4,")
@@ -415,6 +445,25 @@ def check(report):
     closed = [s for s in report if s["status"] == "completed"]
     add("three closed sessions present", len(closed) == 3, len(closed))
 
+    # Codex, 2026-08-25: --check used to prove exact PTS/packet equality for one
+    # of the six closed camera streams and forbid only PTS-TRUNCATED, so a
+    # corpus that had lost half its MP4s could still print all-pass -
+    # MEDIA-MISSING satisfies "not PTS-TRUNCATED". Every closed camera stream
+    # must now be measurable AND exactly equal.
+    cams = [(x["session"][-6:], k, x["streams"].get(k))
+            for x in closed for k in ("camera_left", "camera_right")]
+    add("all 6 closed camera streams present and measurable (media=ok)",
+        len(cams) == 6 and all(st and st["media"] == "ok" for _, _, st in cams),
+        [(sid, k, st["media"] if st else "absent") for sid, k, st in cams])
+    add("all 6 closed camera streams: PTS rows == MP4 packets exactly",
+        len(cams) == 6 and all(st and st["pts_rows"] == st["media_packets"]
+                               for _, _, st in cams),
+        [(sid, k, st["pts_rows"], st["media_packets"]) for sid, k, st in cams if st])
+    add("every closed session has audio, camera_left, camera_right",
+        all(set(x["streams"]) == set(STREAMS) for x in closed),
+        [(x["session"][-6:], sorted(x["streams"])) for x in closed
+         if set(x["streams"]) != set(STREAMS)])
+
     s = by_id.get("072516")
     add("072516 opens with 916 IMU rows on a corrupt clock",
         s and s["imu"].get("clock_outlier_rows") == 916,
@@ -460,6 +509,13 @@ def selftest():
     assert verdict(10, False, None, None, "unmeasured") == "UNMEASURED"
     assert verdict(10, False, None, None, "n/a") == "TAIL-OK"      # audio
     assert verdict(0, False, None, None, "n/a") == "PTS-TRUNCATED"  # empty audio
+    # Both directions of the exact-equality invariant, and only equality is OK.
+    assert verdict(10, False, 20, 20, "ok") == "PTS-TRUNCATED"    # index cut
+    assert verdict(20, False, 10, 10, "ok") == "MEDIA-TRUNCATED"  # container cut
+    assert verdict(10, False, 0, None, "ok") == "MEDIA-TRUNCATED"  # rows, no frames
+    assert verdict(10, False, 10, 10, "ok") == "OK"
+    assert verdict(10, True, 10, 10, "ok") == "PTS-TRUNCATED"     # equal but cut tail
+    assert verdict(10, False, 10, 12, "ok") == "FRAMECOUNT-MISMATCH"
     with tempfile.TemporaryDirectory() as tmp:
         d = Path(tmp) / "ego_TEST00000000_20260825_000000"
         d.mkdir()
@@ -494,7 +550,7 @@ def main(argv=None):
     ap.add_argument("--selftest", action="store_true",
                     help="run the built-in assertions; needs no corpus")
     ap.add_argument("--check", action="store_true",
-                    help="assert known corpus numbers; implies --packets")
+                    help="assert known corpus numbers; implies --packets and --selftest")
     a = ap.parse_args(argv)
     if a.selftest:
         selftest()
@@ -504,7 +560,13 @@ def main(argv=None):
     if root is None or not root.is_dir():
         print("no sessions directory ({})".format(root), file=sys.stderr)
         return 1
-    report = analyse(root, a.packets or a.check)
+    if a.check and not selftest():  # the corpus cannot show the absent-media cases
+        return 1
+    try:
+        report = analyse(root, a.packets or a.check)
+    except ToolMissing as e:
+        print(e, file=sys.stderr)
+        return 4
     if not report:
         print("no ego_* session folders under {}".format(root), file=sys.stderr)
         return 1

@@ -43,13 +43,16 @@ directory in the working directory — gitignored, delete it freely.
 `corpus_check.py` takes a sessions directory, `--json` for a machine-readable
 report, `--packets` to count MP4 packets with `ffprobe` (a second full read of
 every video, so it is opt-in), and `--check` to assert the reference numbers and
-print PASS/FAIL. `--check` implies `--packets`. `--selftest` runs the built-in
-assertions and needs no corpus and no device — it covers the cases the reference
-corpus cannot show, chiefly a camera sidecar whose MP4 is absent.
+print PASS/FAIL. `--check` implies both `--packets` and `--selftest`, and runs
+the self-test first. `--selftest` alone needs no corpus and no device — it
+covers the cases the reference corpus cannot show, chiefly a camera sidecar
+whose MP4 is absent, and both directions of the PTS-rows-vs-packets invariant.
 
 Exit codes, `probe.py`: 0 ok, 1 the DLL would not load, 2 an SDK call failed,
 3 the SDK loaded and found no device. `corpus_check.py`: 0 ok, 1 no corpus or a
-failed expectation, 2 bad arguments.
+failed expectation, 2 bad arguments, 4 `ffprobe` is not installed. Exit 4 is
+deliberately distinct: a missing tool says nothing about the footage, so it must
+never surface as `MEDIA-UNREADABLE`.
 
 ---
 
@@ -211,7 +214,7 @@ manifest `start_time`. Both numbers are pinned by `--check`. This is a device
 defect to raise with PaXini, not a parser problem: a naive reader that trusts
 row 0 reports a 1.77-billion-second warm-up.
 
-**Result (reference corpus, re-run 2026-08-25).** ✅ 27/27 expectations pass
+**Result (reference corpus, re-run 2026-08-25).** ✅ 30/30 expectations pass
 under `--check`, including the 072516 clock defect. Per unit: ____________
 
 ### 9. IMU gravity consistency
@@ -258,16 +261,26 @@ power off hard. Do **not** stop normally.
 **Command.**
 
 ```bash
-python packages/hardware-checkout/corpus_check.py /path/to/sessions
+python packages/hardware-checkout/corpus_check.py /path/to/sessions --packets
 ```
 
-Read the `== buffer` section.
+`--packets` is **required here, not optional**. Without it every camera stream
+is reported `UNMEASURED` — the analyser refuses to judge a sidecar it has no
+frame count to compare against — and the pass condition below cannot be met.
+It costs a second full read of each MP4 through `ffprobe`, so it is opt-in
+everywhere else. `ffprobe` must be on PATH; if it is not, the run exits **4**
+and condemns nothing, because a missing tool is not evidence about footage.
 
-**Expected — this is what pass/fail turns on.** Read the `== truncation`
-section first: the interrupted session's streams must come back
-`PTS-TRUNCATED`, i.e. **measured** loss — an unterminated final row, or fewer
-PTS rows than the media has packets — and `status` stays `recording`. A cleanly
-closed session must show no `PTS-TRUNCATED` stream.
+Read the `== truncation` section first, then `== buffer`.
+
+**Expected — this is what pass/fail turns on.** In `== truncation` the
+interrupted session's camera streams must come back `PTS-TRUNCATED`, i.e.
+**measured** loss — fewer PTS rows than the media has packets, or an
+unterminated final row — and `status` stays `recording`. Audio has no packet
+reference, so it can only reach `PTS-TRUNCATED` through its tail. A cleanly
+closed session must show no `PTS-TRUNCATED` and no `MEDIA-TRUNCATED` stream,
+and no camera may be left `UNMEASURED`, `MEDIA-MISSING` or `MEDIA-UNREADABLE` —
+each of those means the test did not run, not that the unit passed.
 
 The `== buffer` 4096-byte table is **corroborating telemetry, not the test**. A
 4 KiB-multiple size on an interrupted sidecar supports the buffering story; its
@@ -561,6 +574,10 @@ and the manifest may still disagree. Verdicts use the engine's own codes from
   manifest is wrong. Not a data loss.
 - `PTS-TRUNCATED` — sidecar is short of the media, or stops mid-digit. Real
   index loss.
+- `MEDIA-TRUNCATED` — the other direction: **more** PTS rows than the container
+  has packets. Timestamps that index no frame, so the container is the short
+  side. Equality is the invariant, and it is checked both ways — a sidecar with
+  10 rows against an MP4 with 0 packets used to be reported `OK`.
 - `TAIL-OK` — audio only. A WAV gives no packet count, so only the tail is
   evidence. It is not a clean bill of health.
 - `UNMEASURED` — a camera stream with no packet count taken. Re-run with
@@ -606,11 +623,22 @@ recording.
 == MP4 packets on 6/6 camera streams, manifest wrong on 6/6. Interrupted
 sessions: PTS-TRUNCATED on 6/6 streams. Per unit: ____________
 
-### 19. MP4 layout and container integrity — **re-run 2026-08-25**
+### 19. MP4 top-level box layout — **re-run 2026-08-25**
 
 **Purpose.** A review UI must seek in a 195 MB clip without downloading it
-whole. That needs `moov` before `mdat`. The same walk also proves whether the
-file is a whole MP4 at all.
+whole. That needs `moov` before `mdat`. The same walk also shows whether the
+top-level boxes tile the file, which is how an interrupted transfer looks from
+the container side.
+
+**Scope — what this walk does *not* establish.** It reads only the top-level box
+headers: type, offset, declared size. It never parses box *contents*, so it says
+nothing about whether the tracks decode, whether the samples are intact, or
+whether the file plays. The regression fixtures are deliberately zero-filled
+`moov`/`mdat` payloads and they pass, which is the honest statement of the
+limit. Read a `FRONT` verdict as *structural layout is right*, not as
+*container integrity* and not as *playable*. Playback and decode are a separate
+test that nobody has written; the nearest thing in the repo is `ffprobe`
+succeeding on the file, which test 18's `--packets` already exercises.
 
 **Command.**
 
