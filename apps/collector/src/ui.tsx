@@ -254,10 +254,18 @@ export function Button({
     >
       <Text
         style={{
+          // The primary fill is `sun[500]` and the sun ramp does NOT invert
+          // between schemes, so the ink on it cannot come from the scheme
+          // either. It used to: `background` is white in light mode, and white
+          // on #FF7A1A is 2.61:1 — the app's most-tapped control failing AA on
+          // the default theme. `stage.ground` is the one dark ink the tokens
+          // define identically in both schemes; on sun[500] it measures 7.19:1.
+          // Disabled text stays faint (2.62:1) — WCAG 1.4.3 exempts inactive
+          // controls, and dimming is how "you cannot press this" is read.
           color: disabled
             ? theme.color.faintForeground
             : primary
-              ? theme.color.background
+              ? theme.color.stage.ground
               : theme.color.foreground,
           fontSize: theme.fontSize.base,
           fontWeight: theme.fontWeight.semibold,

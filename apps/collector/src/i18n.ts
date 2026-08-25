@@ -24,6 +24,9 @@ const vi = {
   'common.cancel': 'Hủy',
   'common.loading': 'Đang tải…',
   'common.language': 'English',
+  'common.retry': 'Thử lại',
+  'common.loadFailed': 'Không tải được dữ liệu. Kiểm tra kết nối rồi thử lại.',
+  'common.actionFailed': 'Không thực hiện được. Vui lòng thử lại.',
 
   'register.title': 'Đăng ký',
   'register.intro': 'Tạo tài khoản người thu thập để nhận nhiệm vụ và được trả công theo phút hiệu quả.',
@@ -92,6 +95,9 @@ const vi = {
   'detail.claimed': 'Đã nhận nhiệm vụ này',
   'detail.needExam': 'Cần đạt bài kiểm tra trước khi nhận nhiệm vụ.',
   'detail.full': 'Nhiệm vụ đã đủ người nhận.',
+  'detail.claiming': 'Đang nhận…',
+  'detail.needAgreements': 'Cần đồng ý cả sáu thỏa thuận trước khi nhận nhiệm vụ.',
+  'detail.needTraining': 'Cần hoàn thành đào tạo trước khi nhận nhiệm vụ.',
 
   'mine.title': 'Nhiệm vụ của tôi',
   'mine.empty': 'Chưa nhận nhiệm vụ nào.',
@@ -165,6 +171,11 @@ const vi = {
   'income.settlement': 'Thanh toán',
   'income.estimatedHint': 'Ước tính — con số cuối cùng do máy chủ quyết định sau khi duyệt.',
   'income.empty': 'Chưa có thu nhập nào.',
+  'settlement.pending_review': 'Chờ duyệt',
+  'settlement.pending_settlement': 'Chờ thanh toán',
+  'settlement.bill_generated': 'Đã lập bảng kê',
+  'settlement.manually_paid': 'Đã trả thủ công',
+  'settlement.exception': 'Có vấn đề, đang xử lý',
 };
 
 export type MessageKey = keyof typeof vi;
@@ -176,6 +187,9 @@ const en: Record<MessageKey, string> = {
   'common.cancel': 'Cancel',
   'common.loading': 'Loading…',
   'common.language': 'Tiếng Việt',
+  'common.retry': 'Try again',
+  'common.loadFailed': 'Could not load this. Check the connection and try again.',
+  'common.actionFailed': 'That did not go through. Please try again.',
 
   'register.title': 'Register',
   'register.intro': 'Create a collector account to claim tasks and be paid per effective minute.',
@@ -244,6 +258,9 @@ const en: Record<MessageKey, string> = {
   'detail.claimed': 'Already claimed',
   'detail.needExam': 'Pass the exam before claiming a task.',
   'detail.full': 'This task is at claimant capacity.',
+  'detail.claiming': 'Claiming…',
+  'detail.needAgreements': 'Accept all six agreements before claiming a task.',
+  'detail.needTraining': 'Finish the training before claiming a task.',
 
   'mine.title': 'My tasks',
   'mine.empty': 'No tasks claimed yet.',
@@ -317,6 +334,11 @@ const en: Record<MessageKey, string> = {
   'income.settlement': 'Settlement',
   'income.estimatedHint': 'An estimate — the final figure is the server’s, after review.',
   'income.empty': 'No income yet.',
+  'settlement.pending_review': 'Awaiting review',
+  'settlement.pending_settlement': 'Awaiting settlement',
+  'settlement.bill_generated': 'On a bill',
+  'settlement.manually_paid': 'Paid manually',
+  'settlement.exception': 'Held — being looked at',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en };

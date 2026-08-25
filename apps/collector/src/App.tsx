@@ -65,7 +65,7 @@ const queryClient = new QueryClient();
  * The `CollectorApi` interface is the seam all three land behind, and the
  * screens do not change. Until then, treat every queue on screen as a demo.
  */
-const api = new MockCollectorApi({ advanceUploads: true });
+const api = new MockCollectorApi();
 
 export function App() {
   return (

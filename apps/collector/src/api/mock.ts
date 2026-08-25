@@ -44,11 +44,7 @@ export class MockCollectorApi implements CollectorApi {
   private taskRows: Task[];
   private incomeRows: IncomeEntry[];
 
-  /**
-   * `advanceUploads` lets the running app show uploading → uploaded without a
-   * device; tests leave it off so no state ever moves on its own.
-   */
-  constructor(private readonly opts: { advanceUploads?: boolean } = {}) {
+  constructor() {
     this.taskRows = [
       {
         id: 'task-cook',
@@ -126,14 +122,23 @@ export class MockCollectorApi implements CollectorApi {
     return this.me;
   }
 
+  /**
+   * Every read hands out a copy.
+   *
+   * These used to return the live arrays and the live row objects, which is
+   * not what an HTTP client does and is not safe: a screen could mutate the
+   * "server", and a test could compare a list to itself and pass whatever
+   * happened in between. One of them did exactly that — the manual-upload
+   * regression held aliases of the very rows it was checking had not moved.
+   */
   async profile(): Promise<CollectorProfile | null> {
-    return this.me;
+    return this.me === null ? null : { ...this.me, agreements: this.me.agreements.map((a) => ({ ...a })) };
   }
 
   async register(name: string, phone: string): Promise<CollectorProfile> {
     if (name.trim() === '' || phone.trim() === '') throw new ApiError('missing_fields');
     this.me = { id: id('col'), name, phone, agreements: [], trainingDone: false, examPassed: false };
-    return this.me;
+    return { ...this.me };
   }
 
   async acceptAgreements(
@@ -148,13 +153,13 @@ export class MockCollectorApi implements CollectorApi {
     }
     const acceptedAt = new Date().toISOString();
     me.agreements = acceptances.map((a) => ({ ...a, acceptedAt }));
-    return me;
+    return { ...me, agreements: me.agreements.map((a) => ({ ...a })) };
   }
 
   async completeTraining(): Promise<CollectorProfile> {
     const me = this.mustProfile();
     me.trainingDone = true;
-    return me;
+    return { ...me };
   }
 
   async submitExam(answers: boolean[]): Promise<{ passed: boolean }> {
@@ -167,34 +172,59 @@ export class MockCollectorApi implements CollectorApi {
   }
 
   async tasks(): Promise<Task[]> {
-    return this.taskRows;
+    return this.taskRows.map((t) => ({ ...t }));
   }
 
-  async task(taskId: string): Promise<Task> {
+  private taskRow(taskId: string): Task {
     const found = this.taskRows.find((t) => t.id === taskId);
     if (found === undefined) throw new ApiError('task_not_found');
     return found;
   }
 
-  async claimTask(taskId: string): Promise<Claim> {
+  async task(taskId: string): Promise<Task> {
+    return { ...this.taskRow(taskId) };
+  }
+
+  /**
+   * The whole eligibility contract, in the order a collector meets it.
+   *
+   * APP-02 (all six agreements, at the version shown), APP-03/04 (training,
+   * then the exam) and APP-05 (no exam pass, no claiming) are one gate, not
+   * three optional ones. This mock previously checked the last of them only,
+   * so registering and answering the exam yes was enough to claim a task —
+   * an onboarding bypass the server will not honour, taught to every screen
+   * developed against it.
+   */
+  private mustBeEligible(): CollectorProfile {
     const me = this.mustProfile();
-    // APP-05, mirrored: the server refuses too, this is not the only gate.
+    for (const a of AGREEMENTS) {
+      const accepted = me.agreements.find((x) => x.agreementId === a.id);
+      if (accepted === undefined || accepted.version !== a.version) {
+        throw new ApiError('agreements_incomplete');
+      }
+    }
+    if (!me.trainingDone) throw new ApiError('training_incomplete');
     if (!me.examPassed) throw new ApiError('exam_not_passed');
-    const task = await this.task(taskId);
+    return me;
+  }
+
+  async claimTask(taskId: string): Promise<Claim> {
+    this.mustBeEligible();
+    const task = this.taskRow(taskId);
     if (task.claimants >= task.maxClaimants) throw new ApiError('task_at_capacity');
     if (this.claims.some((c) => c.taskId === taskId)) throw new ApiError('already_claimed');
     task.claimants += 1;
     const claim: Claim = { id: id('claim'), taskId, claimedAt: new Date().toISOString() };
     this.claims.push(claim);
-    return claim;
+    return { ...claim };
   }
 
   async myClaims(): Promise<Claim[]> {
-    return this.claims;
+    return this.claims.map((c) => ({ ...c }));
   }
 
   async boundDevices(): Promise<BoundDevice[]> {
-    return this.devices;
+    return this.devices.map((d) => ({ ...d }));
   }
 
   async bindDevice(serial: string): Promise<BoundDevice> {
@@ -204,7 +234,7 @@ export class MockCollectorApi implements CollectorApi {
     if (this.devices.some((d) => d.serial === trimmed)) throw new ApiError('already_bound');
     const device: BoundDevice = { serial: trimmed, boundAt: new Date().toISOString() };
     this.devices.push(device);
-    return device;
+    return { ...device };
   }
 
   async createSession(input: SessionInput): Promise<CollectionSession> {
@@ -219,15 +249,15 @@ export class MockCollectorApi implements CollectorApi {
       createdAt: new Date().toISOString(),
     };
     this.sessionRows.push(session);
-    return session;
+    return { ...session };
   }
 
   async sessions(): Promise<CollectionSession[]> {
-    return this.sessionRows;
+    return this.sessionRows.map((s) => ({ ...s }));
   }
 
   async episodes(): Promise<EpisodeUpload[]> {
-    return this.episodeRows;
+    return this.episodeRows.map((e) => ({ ...e }));
   }
 
   async confirmUpload(episodeId: string): Promise<EpisodeUpload> {
@@ -235,18 +265,16 @@ export class MockCollectorApi implements CollectorApi {
     const episode = this.episodeRows.find((e) => e.episodeId === episodeId);
     if (episode === undefined) throw new ApiError('episode_not_found');
     if (episode.state !== 'pending_upload') throw new ApiError('not_pending');
+    // `uploading` is where it stops. A two-second timer used to flip it to
+    // `uploaded` for demo effect: it moved no bytes, told React Query nothing,
+    // so the screen sat on `uploading` anyway, and it put a state change in
+    // the one class that must not have one. Removed. The transition out of
+    // `uploading` belongs to the transfer worker that does not exist yet.
     episode.state = 'uploading';
-    if (this.opts.advanceUploads === true) {
-      // Demo affordance for the running app. Nothing else in this class, and
-      // nothing anywhere in the app, changes an episode state on its own.
-      setTimeout(() => {
-        if (episode.state === 'uploading') episode.state = 'uploaded';
-      }, 2000);
-    }
-    return episode;
+    return { ...episode };
   }
 
   async income(): Promise<IncomeEntry[]> {
-    return this.incomeRows;
+    return this.incomeRows.map((i) => ({ ...i }));
   }
 }

@@ -3,6 +3,23 @@ import { useApi } from '../api/context.tsx';
 import { useNav, useRoute } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { Body, Button, Card, Note, Row, Screen, Title } from '../ui.tsx';
+import type { MessageKey } from '../i18n.ts';
+
+/**
+ * The server's refusal, in the collector's language. Anything unrecognised
+ * falls back to a generic message rather than showing an English error code
+ * to a Vietnamese collector (LOC-01).
+ */
+const CLAIM_ERRORS: Record<string, MessageKey> = {
+  exam_not_passed: 'detail.needExam',
+  agreements_incomplete: 'detail.needAgreements',
+  training_incomplete: 'detail.needTraining',
+  task_at_capacity: 'detail.full',
+  already_claimed: 'detail.claimed',
+};
+
+const claimErrorKey = (error: unknown): MessageKey =>
+  CLAIM_ERRORS[error instanceof Error ? error.message : ''] ?? 'common.actionFailed';
 
 /**
  * APP-09 (instructions, scenario, privacy notice, payment rule) and APP-10
@@ -28,6 +45,17 @@ export function TaskDetail() {
     },
   });
 
+  // A failed query used to fall into the same branch as a pending one, so a
+  // dead network read "Đang tải…" for ever with no way out. Error and loading
+  // are different screens, and the error one has a button.
+  if (task.isError) {
+    return (
+      <Screen title={tt('detail.title')}>
+        <Note text={tt('common.loadFailed')} />
+        <Button label={tt('common.retry')} onPress={() => void task.refetch()} />
+      </Screen>
+    );
+  }
   if (task.data === undefined) {
     return (
       <Screen title={tt('detail.title')}>
@@ -63,9 +91,17 @@ export function TaskDetail() {
       </Card>
       {!examPassed ? <Note text={tt('detail.needExam')} /> : null}
       {full && !alreadyClaimed ? <Note text={tt('detail.full')} /> : null}
+      {/*
+        The capacity and eligibility answers on screen came from a list that
+        may be seconds old; the server's refusal is the authoritative one and
+        it arrives here. Showing it — and locking the button while the claim is
+        in flight — is what stops a collector tapping four times and being told
+        nothing four times.
+      */}
+      {claim.isError ? <Note text={tt(claimErrorKey(claim.error))} /> : null}
       <Button
-        label={alreadyClaimed ? tt('detail.claimed') : tt('detail.claim')}
-        disabled={!examPassed || full || alreadyClaimed}
+        label={claim.isPending ? tt('detail.claiming') : alreadyClaimed ? tt('detail.claimed') : tt('detail.claim')}
+        disabled={!examPassed || full || alreadyClaimed || claim.isPending}
         onPress={() => claim.mutate()}
       />
     </Screen>

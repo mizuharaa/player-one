@@ -82,5 +82,19 @@ Every one of these is marked `ponytail:` at the place it bites:
 - QR device binding is a fixed serial; VisionCamera needs a native build
   (`src/screens/Devices.tsx`).
 - Training and exam content is a shell. PaXini owes it.
+- No login, logout, token or restored session: the app always opens on
+  registration. An existing collector cannot sign back in, because there is no
+  auth endpoint to sign in to (`src/App.tsx`).
+- Agreements show a title and a version, not a document. There is no body,
+  effective date, or server-supplied current version, so the revision path
+  cannot be exercised — consent here is a mechanism, not yet informed consent
+  (`src/screens/Agreements.tsx`).
+- Verdict status pills fail WCAG AA for normal text on the light theme —
+  measured 3.06:1 (pass), 3.81:1 (partial), 3.43:1 (reject), and 3.80/4.28:1
+  for partial and reject on dark. The values are `verdict.*.fg` in
+  `packages/design`, shared with the back-office console, so the fix belongs
+  in the token set for all three surfaces rather than forked here. The primary
+  button was the same failure (white on `sun[500]`, 2.61:1) and *was* fixable
+  in this app without forking, so it was: it now measures 7.19:1.
 - One-column phone layout only. No tablet or foldable adaptation — none is
   specified, and the pilot is phones.

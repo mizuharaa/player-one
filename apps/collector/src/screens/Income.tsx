@@ -4,6 +4,28 @@ import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { Body, ListScreen, Row, Tag, Title } from '../ui.tsx';
+import type { MessageKey } from '../i18n.ts';
+
+/**
+ * The five values `settlements.settlement_state` can hold
+ * (`packages/store/src/schema.ts`), in the collector's language. The screen
+ * used to print the raw column value, so a Vietnamese collector read
+ * "bill_generated". An unknown value falls back to itself rather than
+ * disappearing — a state the server invented later should be visible, not
+ * silently blank.
+ */
+const SETTLEMENT_STATES: Record<string, MessageKey> = {
+  pending_review: 'settlement.pending_review',
+  pending_settlement: 'settlement.pending_settlement',
+  bill_generated: 'settlement.bill_generated',
+  manually_paid: 'settlement.manually_paid',
+  exception: 'settlement.exception',
+};
+
+const settlementLabel = (tt: (key: MessageKey) => string, state: string): string => {
+  const key = SETTLEMENT_STATES[state];
+  return key === undefined ? state : tt(key);
+};
 
 /**
  * APP-33/34: per-episode effective minutes, amount and settlement state —
@@ -47,7 +69,7 @@ export function Income() {
             <Row label={tt('income.minutes')} value={entry.effectiveMinutes ?? '—'} />
             <Row label={tt('income.amount')} value={entry.amountVnd !== null ? `${entry.amountVnd} ₫` : '—'} />
             {entry.settlementState !== null ? (
-              <Row label={tt('income.settlement')} value={entry.settlementState} />
+              <Row label={tt('income.settlement')} value={settlementLabel(tt, entry.settlementState)} />
             ) : null}
             {!confirmed ? <Body muted>{tt('income.estimatedHint')}</Body> : null}
           </View>

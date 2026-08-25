@@ -83,11 +83,24 @@ describe('registration and the six agreements (APP-01/02)', () => {
   });
 });
 
-describe('exam gates claiming (APP-04/05)', () => {
-  it('refuses a claim before a pass, allows it after', async () => {
+describe('the full eligibility gate on claiming (APP-02/03/04/05)', () => {
+  const ACCEPTANCES = AGREEMENTS.map((a) => ({ agreementId: a.id, version: a.version }));
+
+  it('refuses at every missing prerequisite, in the order they are met', async () => {
+    // This test used to skip agreements and training entirely and still claim,
+    // because the gate checked `examPassed` alone. The server will not honour
+    // that: PRODUCT.md and APP-02/05 make the six agreements, the training and
+    // the exam one contract, enforced server-side. A permissive seam teaches
+    // every screen built against it to expect a permissive server.
     const api = new MockCollectorApi();
     await api.register('Lê Văn C', '0903000003');
 
+    await expect(api.claimTask('task-cook')).rejects.toThrow('agreements_incomplete');
+
+    await api.acceptAgreements(ACCEPTANCES);
+    await expect(api.claimTask('task-cook')).rejects.toThrow('training_incomplete');
+
+    await api.completeTraining();
     await expect(api.claimTask('task-cook')).rejects.toThrow('exam_not_passed');
 
     const failed = await api.submitExam([true, false, true]);
@@ -99,6 +112,12 @@ describe('exam gates claiming (APP-04/05)', () => {
     const claim = await api.claimTask('task-cook');
     expect(claim.taskId).toBe('task-cook');
   });
+
+  // Not tested: the revision path — a published new version of one agreement
+  // making a previous acceptance stale. `mustBeEligible` compares the stored
+  // version against the presented one, but nothing in this seam can publish a
+  // new version, so there is no honest way to reach that branch from outside.
+  // It needs the server's current-version endpoint first.
 });
 
 describe('the task hall (APP-08/10)', () => {
@@ -172,9 +191,18 @@ describe('uploads are manual, never automatic, never silent (APP-23/24/25)', () 
     expect(pending.length).toBeGreaterThan(0);
 
     // Time passing and re-listing change nothing: no upload starts on its own.
+    // This assertion is only worth something because `episodes()` hands out
+    // copies — while it returned the live rows, `before` and `relisted` were
+    // the same objects and the comparison could not fail whatever happened.
+    expect(before[0]).not.toBe((await api.episodes())[0]);
     await new Promise((resolve) => setTimeout(resolve, 20));
     const relisted = await api.episodes();
     expect(relisted).toEqual(before);
+
+    // And a screen cannot promote its own episode by writing to what it read.
+    const wasFirst = before[0]!.state;
+    before[0]!.state = 'review_passed';
+    expect((await api.episodes())[0]?.state).toBe(wasFirst);
 
     const first = pending[0]!;
     const confirmed = await api.confirmUpload(first.episodeId);
