@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -15,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 describe('the API loads under node strip-only mode, as bin/ runs it', () => {
   it('imports src/index.ts with plain node', () => {
     const entry = join(import.meta.dirname, '..', 'src', 'index.ts');
-    const url = `file:///${entry.replaceAll('\', '/')}`;
+    const url = pathToFileURL(entry).href;
     const run = spawnSync(
       process.execPath,
       ['--input-type=module', '-e', `await import(${JSON.stringify(url)});`],
