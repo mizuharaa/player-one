@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from './audit.ts';
-import type { Actor } from './actor.ts';
+import type { CounterActor } from './actor.ts';
 import { uploadEpisode, type ObjectStore, type UploadProgress } from './upload-worker.ts';
 
 /**
@@ -88,7 +88,7 @@ export function registerUpload(
   const opts = { preHandler: requireActor };
 
   /** Same machine scope as the counter's batch routes: the uploader is the machine holding the cache. */
-  const batchOf = async (batchId: string, actor: Actor) => {
+  const batchOf = async (batchId: string, actor: CounterActor) => {
     const [batch] = await db
       .select()
       .from(schema.uploadBatches)
@@ -113,7 +113,7 @@ export function registerUpload(
    * stops fitting in a request timeout.
    */
   app.post('/upload-batches/:id/upload', opts, async (req, reply) => {
-    const actor = req.actor as Actor;
+    const actor = req.actor as CounterActor;
     const batchId = (req.params as { id: string }).id;
     if (options.objectStore === undefined) {
       return reply.code(503).send({ error: 'no object store is configured on this machine' });
@@ -301,7 +301,7 @@ export function registerUpload(
    * So the current state of every episode is re-read here.
    */
   app.post('/upload-batches/:id/cache-clean', opts, async (req, reply) => {
-    const actor = req.actor as Actor;
+    const actor = req.actor as CounterActor;
     const batchId = (req.params as { id: string }).id;
     const batch = await batchOf(batchId, actor);
     if (batch === undefined) return reply.code(404).send({ error: 'no such batch on this machine' });

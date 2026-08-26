@@ -120,6 +120,7 @@ export type ReviewOptions = {
    * information, whichever gate is in force.
    */
   verificationGate?: 'local' | 'cloud';
+  /**
    * Whether a reviewer session may fetch raw footage. Mirrors the API option of
    * the same name and defaults to off — see `index.ts` for D11 and Part 7.3.
    *
@@ -173,6 +174,8 @@ const RouteBody = z
     (b) => b.queue !== undefined || b.priority !== undefined || b.assignee_ref !== undefined,
     { message: 'nothing to change: name a queue, a priority or an assignee' },
   );
+
+/**
  * Does this reviewer hold — or did they decide — a review of this episode?
  *
  * One definition, used by the metadata route here and by the media route in
@@ -881,6 +884,21 @@ export function registerReview(
     const body = parsed.data;
     const actor = req.actor!;
     const episodeId = (req.params as { id: string }).id;
+    /**
+     * A PaXini reviewer raises the PRV-04 flag and nothing else. Lowering one
+     * puts footage in front of more people, and moving priority or assignee is
+     * queue management — both are the upload centre's call, not the reviewer's
+     * (BO-15). The scope check in `buildApi` is by route prefix, so this is the
+     * only place the distinction can be made.
+     */
+    if (
+      actor.reviewer !== undefined &&
+      (body.queue !== 'privacy' || body.priority !== undefined || body.assignee_ref !== undefined)
+    ) {
+      return reply
+        .code(403)
+        .send({ error: 'a reviewer may quarantine an episode; routing it is an operator decision' });
+    }
 
     /**
      * The audit event is filled in from inside the transaction.

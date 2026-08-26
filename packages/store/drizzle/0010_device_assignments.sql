@@ -42,3 +42,12 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 ALTER TABLE device_assignments
   ADD CONSTRAINT device_assignments_no_overlap
   EXCLUDE USING gist (device_id WITH =, tstzrange(valid_from, valid_to, '[)') WITH &&);
+--> statement-breakpoint
+-- Seed from the counter's current bindings. Without this, every episode of a
+-- device bound before this migration arrives with no covering period and goes to
+-- the human queue as `device_assignment_unknown` — on deploy day, that is the
+-- whole pilot fleet. A device nobody has bound still has no row, on purpose.
+INSERT INTO device_assignments (id, device_id, collector_id, valid_from)
+SELECT gen_random_uuid(), id, bound_collector_id, coalesce(bound_at, now())
+  FROM devices
+ WHERE bound_collector_id IS NOT NULL;

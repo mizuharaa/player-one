@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
+import type { EpisodeRecord } from '@playerone/contracts';
 import { open, type Db } from '@playerone/store';
 import { buildApi, hashCredential } from '../src/index.ts';
 import { DB_URL, closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';

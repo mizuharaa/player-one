@@ -552,7 +552,7 @@ def main(argv=None):
     ap.add_argument("--check", action="store_true",
                     help="assert known corpus numbers; implies --packets and --selftest")
     a = ap.parse_args(argv)
-    if a.selftest:
+    if a.selftest and not a.check:
         selftest()
         return 0
 

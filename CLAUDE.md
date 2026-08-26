@@ -197,9 +197,10 @@ Use a throwaway database, never the default.
 He works across two machines and they differ in the two ways that break a
 command, so **check which one you are on before pasting a `DATABASE_URL`**:
 
-- **The org PC.** Local Postgres 18 is installed and running; password
-  `090807@Khang` for all — **percent-encode the `@` as `%40`** in a URL.
-  Node 24, pnpm 9.
+- **The org PC.** Local Postgres 18 is installed and running. The password is
+  in the untracked `.env.local` on that machine and nowhere else — it was in
+  this file once, in a public repository, and has to be rotated. If it has an
+  `@`, **percent-encode it as `%40`** in a URL. Node 24, pnpm 9.
 - **The other machine.** No local Postgres at all: it runs in Docker, as
   `docker start playerone-pg`, password `playerone`, and Docker Desktop may need
   launching first. Node 24, **pnpm 11** — which is why `pnpm-workspace.yaml`

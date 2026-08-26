@@ -93,6 +93,7 @@ export type ApiOptions = {
    * constant somewhere in `settle.ts`.
    */
   settlementCycleDays?: number;
+  /**
    * Where episodes are uploaded to and verified against (UPL-04/05). Absent
    * until the GreenNode contract yields an endpoint; the upload routes answer
    * 503 saying so. See `s3StoreFromEnv`.
@@ -110,6 +111,7 @@ export type ApiOptions = {
    * correct — see `UploadProgress`.
    */
   uploadProgress?: UploadProgress;
+  /**
    * Whether a reviewer session may reach `/media/*` — raw footage, streamed.
    *
    * **Default off, and it stays off until Legal signs the playback

@@ -1120,7 +1120,12 @@ export function registerBackOffice(
       .select()
       .from(schema.deviceAssignments)
       .where(eq(schema.deviceAssignments.id, b.id));
-    if (held === undefined || held.deviceId !== deviceId || held.collectorId !== b.collector_id) {
+    if (
+      held === undefined ||
+      held.deviceId !== deviceId ||
+      held.collectorId !== b.collector_id ||
+      held.validFrom.getTime() !== new Date(b.valid_from).getTime()
+    ) {
       return reply.code(409).send({ error: 'refused', constraint: 'device_assignments_id_reused' });
     }
     return reply.code(200).send({ id: b.id, replayed: true });
