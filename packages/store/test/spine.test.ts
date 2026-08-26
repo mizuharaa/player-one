@@ -292,6 +292,226 @@ describe.skipIf(!hasDb())('the identity spine', () => {
     });
   });
 
+  // -- SET-05 / SET-06: the lifecycle, and the bill it ends on --------------
+
+  /**
+   * SET-05 gives five states. `settlements_state_check` says which values are
+   * legal; it cannot say which *changes* are, because a CHECK only ever sees the
+   * row in front of it and `manually_paid` is a legal value whichever row it is
+   * on. The edges are enforced by `settlements_transition_guard`, and these
+   * tests reach the trigger the way a psql session or a future service would --
+   * raw SQL, with no `settle.ts` in the path. That is the whole reason the guard
+   * is in the database and not in the endpoint that marks a bill paid.
+   */
+  describe('SET-05: a settlement moves forward, and nothing walks it back', () => {
+    /** A review with a settlement on it, in whatever state the test starts from. */
+    async function seedSettlement(state = 'pending_settlement') {
+      const ids = await seedSpine();
+      const { episodeId, ingestId } = await seedEpisode({
+        sessionId: ids.session,
+        measured: '8.500000',
+      });
+      const d = await db();
+      const reviewId = uid();
+      const settlementId = uid();
+      await d.execute(sql`
+        insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                     effective_duration_s, review_state, reviewed_at, verdict_id)
+          values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now(), ${uid()});
+      `);
+      await d.execute(sql`
+        insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+                                 amount, settlement_state)
+          values (${settlementId}, ${reviewId}, ${ids.task}, '1200.0000', '0.141667', '170.0000', ${state});
+      `);
+      return { ...ids, settlementId };
+    }
+
+    const move = async (settlementId: string, to: string): Promise<unknown> => {
+      const d = await db();
+      return d.execute(sql`
+        update settlements set settlement_state = ${to}, updated_at = now() where id = ${settlementId};
+      `);
+    };
+
+    const stateOf = async (settlementId: string): Promise<string | undefined> => {
+      const d = await db();
+      const rows = (await d.execute(
+        sql`select settlement_state from settlements where id = ${settlementId}`,
+      )) as unknown as { settlement_state: string }[];
+      return rows[0]?.settlement_state;
+    };
+
+    it('refuses a settlement that is born already paid', async () => {
+      const ids = await seedSpine();
+      const { episodeId, ingestId } = await seedEpisode({
+        sessionId: ids.session,
+        measured: '8.500000',
+      });
+      const d = await db();
+      const reviewId = uid();
+      await d.execute(sql`
+        insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                     effective_duration_s, review_state, reviewed_at, verdict_id)
+          values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now(), ${uid()});
+      `);
+      // Without this every guarded edge is skippable by inserting the end state.
+      await violates(
+        'settlements_transition_check',
+        d.execute(sql`
+          insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+                                   amount, settlement_state)
+            values (${uid()}, ${reviewId}, ${ids.task}, '1200.0000', '0.141667', '170.0000', 'manually_paid');
+        `),
+      );
+    });
+
+    it('walks pending_settlement to bill_generated to manually_paid', async () => {
+      const { settlementId } = await seedSettlement();
+      await move(settlementId, 'bill_generated');
+      await move(settlementId, 'manually_paid');
+      expect(await stateOf(settlementId)).toBe('manually_paid');
+    });
+
+    it('refuses manually_paid -> pending_review, which the state CHECK accepts', async () => {
+      const { settlementId } = await seedSettlement();
+      await move(settlementId, 'bill_generated');
+      await move(settlementId, 'manually_paid');
+
+      // Both values satisfy settlements_state_check. The edge is what is
+      // illegal: a paid settlement that re-enters the queue is a second payment.
+      await violates('settlements_transition_check', move(settlementId, 'pending_review'));
+      await violates('settlements_transition_check', move(settlementId, 'pending_settlement'));
+      await violates('settlements_transition_check', move(settlementId, 'bill_generated'));
+      await violates('settlements_transition_check', move(settlementId, 'exception'));
+      expect(await stateOf(settlementId)).toBe('manually_paid');
+    });
+
+    it('refuses every other jump that skips or reverses the lane', async () => {
+      const illegal: [string, string][] = [
+        ['pending_review', 'bill_generated'],
+        ['pending_review', 'manually_paid'],
+        ['pending_settlement', 'pending_review'],
+        ['pending_settlement', 'manually_paid'],
+        ['bill_generated', 'pending_review'],
+        ['bill_generated', 'pending_settlement'],
+        ['exception', 'bill_generated'],
+        ['exception', 'manually_paid'],
+        ['exception', 'pending_review'],
+      ];
+      for (const [from, to] of illegal) {
+        await truncate();
+        const { settlementId } = await seedSettlement(
+          from === 'pending_review' ? 'pending_review' : 'pending_settlement',
+        );
+        if (from === 'bill_generated') await move(settlementId, 'bill_generated');
+        if (from === 'exception') await move(settlementId, 'exception');
+        await violates('settlements_transition_check', move(settlementId, to));
+        expect(await stateOf(settlementId)).toBe(from);
+      }
+    });
+
+    it('lets an exception go back to the queue, because that is the only way out', async () => {
+      const { settlementId } = await seedSettlement();
+      await move(settlementId, 'exception');
+      await move(settlementId, 'pending_settlement');
+      await move(settlementId, 'bill_generated');
+      expect(await stateOf(settlementId)).toBe('bill_generated');
+    });
+
+    it('refuses to change what a settlement is worth after it is written', async () => {
+      const { settlementId } = await seedSettlement();
+      const d = await db();
+      // `bills.total` is the sum of its lines and `bill_lines` stores no money of
+      // its own, so an editable amount would let an issued bill quietly stop
+      // adding up with nothing in the schema noticing.
+      await violates(
+        'settlements_amount_immutable_check',
+        d.execute(sql`update settlements set amount = '999.0000' where id = ${settlementId};`),
+      );
+      await violates(
+        'settlements_amount_immutable_check',
+        d.execute(sql`update settlements set unit_price = '2400.0000' where id = ${settlementId};`),
+      );
+      await violates(
+        'settlements_amount_immutable_check',
+        d.execute(
+          sql`update settlements set effective_minutes = '9.999999' where id = ${settlementId};`,
+        ),
+      );
+    });
+
+    it('cannot put one settlement on two bills', async () => {
+      const { settlementId, collector } = await seedSettlement();
+      const d = await db();
+      const billOne = uid();
+      const billTwo = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${billOne}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
+                 (${billTwo}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`
+        insert into bill_lines (bill_id, settlement_id) values (${billOne}, ${settlementId});
+      `);
+      // A second bill for the same work has nowhere to write the line.
+      await violates(
+        'bill_lines_settlement_key',
+        d.execute(sql`
+          insert into bill_lines (bill_id, settlement_id) values (${billTwo}, ${settlementId});
+        `),
+      );
+    });
+
+    it('cannot bill a rejected episode, which is worth nothing', async () => {
+      // SET-01 pays for pass and partial-pass reviews. The review lane still
+      // writes a settlement for a `fail`, worth 0.0000, because that row is the
+      // score of the review — but it is not a bill line, and the database is
+      // what says so rather than the generator's WHERE clause.
+      const ids = await seedSpine();
+      const { episodeId, ingestId } = await seedEpisode({
+        sessionId: ids.session,
+        measured: '8.500000',
+      });
+      const d = await db();
+      const reviewId = uid();
+      const settlementId = uid();
+      const billId = uid();
+      await d.execute(sql`
+        insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                     effective_duration_s, review_state, reviewed_at, verdict_id)
+          values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '0.000000', 'fail', now(), ${uid()});
+      `);
+      await d.execute(sql`
+        insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+                                 amount, settlement_state)
+          values (${settlementId}, ${reviewId}, ${ids.task}, '1200.0000', '0.000000', '0.0000', 'pending_settlement');
+      `);
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '0.0000');
+      `);
+      await violates(
+        'bill_lines_payable_check',
+        d.execute(sql`
+          insert into bill_lines (bill_id, settlement_id) values (${billId}, ${settlementId});
+        `),
+      );
+    });
+
+    it('refuses a second bill for the same collector and cycle', async () => {
+      const { collector } = await seedSettlement();
+      const d = await db();
+      const insert = (id: string) => sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${id}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+      `;
+      await d.execute(insert(uid()));
+      // SET-07's idempotency, with the generator bypassed entirely.
+      await violates('bills_collector_period_key', d.execute(insert(uid())));
+    });
+  });
+
   // -- P2-01 / APP-17b ------------------------------------------------------
 
   describe('the session binds devices as a set, and records both declarations', () => {

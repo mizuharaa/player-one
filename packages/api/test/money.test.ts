@@ -261,6 +261,28 @@ describe('what a verdict is worth', () => {
     );
   });
 
+  it('reproduces the amount from the stored minutes even where the amount rounds', () => {
+    /**
+     * The 16 s at 1200 case above does not round on the last step — the product
+     * of the stored minutes is already exact at four places — so on its own it
+     * cannot tell the quantised invariant from a raw equality. One second at 1 a
+     * minute does: the stored minutes are `0.016667`, and the stored amount is
+     * `0.0167`, which is not the same number. Raw equality is false here.
+     *
+     * The property a disputed invoice is checked against is the quantised one —
+     * multiply the two columns and round to the money scale — and it holds. Any
+     * bill line has to satisfy this and not the raw product.
+     */
+    const bill = settlementFor('1.0000', '1.000000');
+    expect(bill).toEqual({ effectiveMinutes: '0.016667', amount: '0.0167' });
+    expect(mul(fromDecimal('1.0000'), fromDecimal(bill.effectiveMinutes))).not.toEqual(
+      fromDecimal(bill.amount),
+    );
+    expect(quantise(mul(fromDecimal('1.0000'), fromDecimal(bill.effectiveMinutes)), 4)).toBe(
+      bill.amount,
+    );
+  });
+
   it('bills nothing for a failed review', () => {
     expect(settlementFor('12.0000', '0.000000')).toEqual({
       effectiveMinutes: '0.000000',

@@ -227,6 +227,63 @@ a test enforces the first two:
 - **Every colour lives in `:root`.** A screen that needs one adds it there, so
   the next screen inherits it rather than inventing a near-miss.
 
+## After the verdict: the bill
+
+`settle.ts` is the rest of the money chain — SET-03, SET-05, SET-06, SET-07 and
+BO-08 — and it writes no arithmetic of its own. Every figure on a bill is already
+on a settlement, computed once by `settlementFor`; the bill total is a sum taken
+with `money.ts`' exact rationals and quantised at the scale of the column it
+lands in. `unit_price × effective_minutes = amount` therefore still reads true on
+the export, which is the first thing checked when an invoice is disputed.
+
+**A CHECK cannot enforce a lifecycle.** `settlements_state_check` names SET-05's
+five states and validates the row in front of it, which means it accepts
+`manually_paid → pending_review` exactly as readily as the reverse: both are
+legal *values*. What is illegal is the *edge*, and an edge needs the previous
+value. `0005_settlement_lifecycle.sql` adds
+`settlements_transition_guard`, a `BEFORE INSERT OR UPDATE` trigger that allows
+seven edges and refuses everything else, including every jump out of
+`manually_paid`. It also refuses any later change to `unit_price`,
+`effective_minutes`, `amount`, `episode_review_id` or `task_id`.
+
+The alternative considered was an append-only transition table. It can make an
+illegal jump uninsertable, but only with a self-referencing composite foreign key
+from `(settlement, seq-1, from_state)` to `(settlement, seq, to_state)`, which
+needs a generated `prev_seq` column, a per-settlement sequence, a special case
+for the first row, and a second place the current state is written down. The
+trigger refuses the same jumps with one function and one source of truth, and the
+history it would have kept is already kept: every move goes through `mutate`,
+which writes an `audit_events` row in the same transaction.
+
+**Regenerating a cycle changes nothing, and the index is what says so.** Not a
+"have we run this already?" query, which races a second operator, a retried
+request and a cron that fired twice. `bills_collector_period_key` has nowhere to
+put a second bill for the same collector and period; `bill_lines`' primary key is
+the settlement alone, so a settlement that is already billed has nowhere to
+appear twice. The generator inserts and lets the index decide, and when it
+decides against, `mutate` sees `undefined`, writes no audit row, and the second
+run is a read. Both are tested in raw SQL with the generator bypassed.
+
+**A rejected episode cannot be billed.** SET-01 makes settlement records out of
+pass and partial-pass reviews; the review lane writes one for a `fail` as well,
+worth `0.0000`, and that row stays because it is the *score* of the review — what
+the console's settled-value sum reads and what a dispute over a refused episode
+points at. What must not happen is that row reaching a bill, where it would print
+a zero-value line for work that was refused. `bill_lines_payable_guard` refuses
+it outright, so the rule is a row that cannot be inserted rather than a `WHERE`
+clause in one generator. The generator counts them instead and reports
+`not_payable` on the response, because a settlement nothing will ever bill is
+otherwise a silent backlog.
+
+`bill_lines` deliberately carries no money. `bills.total` is the sum of its
+lines, and the same trigger that orders the states also freezes the amounts, so
+an issued bill cannot quietly stop adding up.
+
+The cycle length is a parameter (`settlementCycleDays`,
+`PLAYERONE_SETTLEMENT_CYCLE_DAYS`, default 7) and not a constant, because weekly
+is `[ASSUMED]` in the brief's §13.2 rather than decided. It only ever supplies
+the *end* of a period whose start the caller gave.
+
 ## Known gaps
 
 - **`tasks` has no currency column.** The schema cannot say what a task pays in.
@@ -235,6 +292,21 @@ a test enforces the first two:
 - **`collectors` has no display name.** The screen shows `external_ref`.
 - **Frame stepping falls back to 30 fps** when `nominal_rate_hz` is absent from
   the record.
+- **Finance is not a role.** `/api/settle/*` takes the same both-token operator
+  session as everything else, so today any centre operator can generate and pay a
+  bill. Same shape as the reviewer gap above, and it goes away with the roles
+  slice.
+- **A rejected episode's settlement never leaves `pending_settlement`.** It is
+  worth nothing, it cannot be billed, and none of SET-05's five states means
+  "scored, and owed nothing". It shows up as `not_payable` on every cycle it
+  falls in, which is honest and is not a resting place. The two candidate fixes
+  are a sixth state or SET-01's literal reading — no settlement row at all for a
+  `fail`, which would change what `settlements_review_key` and the console's
+  settled-value sum mean. That is a decision, not a defect to patch quietly.
+- **A bill is never revised.** There is no credit note and no way to take a line
+  off an issued bill; a settlement that turns out to be wrong goes to
+  `exception`, and the bill it is on shows as unpaid for ever. That is honest and
+  it is not a workflow. It needs one when the dispute path (QR-08) lands.
 - **Dispute and second review are P2** and deliberately not built.
   `episode_reviews_delivery_key` is one review per delivery; when the dispute
   flow lands it needs a supersedes column rather than a second row, or that index
