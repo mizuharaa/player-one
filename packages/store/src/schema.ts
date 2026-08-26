@@ -1467,3 +1467,203 @@ export const uploadDeviceStatus = pgTable('upload_device_status', {
   lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// Payout (the §2.1 contract of the payout brief; migrations 0012 and 0013)
+
+/**
+ * Where a collector's money goes. Append-only history: a collector who fixes
+ * their details declares a new account, and the old row stops being current.
+ * `payout_accounts_append_only` (0012) refuses every other change and every
+ * delete, because what was declared and what ZaloPay answered is the evidence
+ * behind a name-mismatch flag.
+ *
+ * The full account number is never stored here — `account_no_last4` is for
+ * display. The brief places the full value in a secrets store that this repo
+ * does not have yet; see the payout handoff.
+ */
+export const payoutAccounts = pgTable(
+  'payout_accounts',
+  {
+    id: uuid('id').primaryKey(),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    method: text('method').notNull(),
+    /** WALLET only. */
+    phone: text('phone'),
+    /** BANK_* only. */
+    bankCode: text('bank_code'),
+    accountNoLast4: text('account_no_last4'),
+    /** What the collector typed. Never overwritten with ZaloPay's answer. */
+    declaredName: text('declared_name').notNull(),
+    /** What ZaloPay returned. */
+    verifiedName: text('verified_name'),
+    /** WALLET only, from verify-account; the transfer route needs it. */
+    mUId: text('m_u_id'),
+    verifyStatus: text('verify_status').notNull(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    isCurrent: boolean('is_current').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => operators.id),
+  },
+  (t) => [
+    /** Exactly one current account per collector. */
+    uniqueIndex('payout_accounts_current_key').on(t.collectorId).where(sql`${t.isCurrent}`),
+    index('payout_accounts_collector_idx').on(t.collectorId, t.createdAt.desc()),
+    check(
+      'payout_accounts_method_check',
+      sql`${t.method} in ('WALLET', 'BANK_ACCOUNT', 'BANK_CARD')`,
+    ),
+    check(
+      'payout_accounts_verify_status_check',
+      sql`${t.verifyStatus} in ('unverified', 'verified', 'name_mismatch', 'no_wallet', 'locked', 'kyc_limit', 'error')`,
+    ),
+    check(
+      'payout_accounts_route_check',
+      sql`(${t.method} = 'WALLET' and ${t.phone} is not null and ${t.bankCode} is null)
+          or (${t.method} <> 'WALLET' and ${t.bankCode} is not null and ${t.phone} is null and ${t.mUId} is null)`,
+    ),
+    check('payout_accounts_declared_name_check', sql`length(trim(${t.declaredName})) > 0`),
+    check(
+      'payout_accounts_last4_check',
+      sql`${t.accountNoLast4} is null or length(${t.accountNoLast4}) <= 4`,
+    ),
+    check(
+      'payout_accounts_verified_at_check',
+      sql`(${t.verifyStatus} = 'unverified') = (${t.verifiedAt} is null)`,
+    ),
+  ],
+);
+
+/**
+ * One row per (bill, attempt). `partner_order_id` is ZaloPay's server-side
+ * idempotency key (Part 0, F3) and is computed by `payout_attempts_guard`
+ * (0012) as `'PO-' || bill_id || '-' || attempt_seq`; the application never
+ * supplies it. The same trigger computes `attempt_seq`, refuses a new attempt
+ * while the last one is not `failed`, refuses an amount that is not the bill's
+ * whole-dong total, refuses a bank transfer outside ZaloPay's limits, holds
+ * the state machine's edges, writes evidence once, and refuses DELETE.
+ * `payout_attempts_pending_resolved` keeps `pending_zlp` for an operator with
+ * a typed reason, and `payout_attempts_by_finance` (0013) keeps every INSERT
+ * for the finance role.
+ *
+ * `amount_vnd` is whole dong as a bigint; `mode: 'number'` is safe because a
+ * payout above 2^53 dong is not a number this table will ever hold.
+ */
+export const payoutAttempts = pgTable(
+  'payout_attempts',
+  {
+    id: uuid('id').primaryKey(),
+    billId: uuid('bill_id')
+      .notNull()
+      .references(() => bills.id),
+    payoutAccountId: uuid('payout_account_id')
+      .notNull()
+      .references(() => payoutAccounts.id),
+    /** Computed by the trigger. Declared not-null because it is, once inserted. */
+    partnerOrderId: text('partner_order_id').notNull(),
+    /** Computed by the trigger. */
+    attemptSeq: integer('attempt_seq').notNull(),
+    amountVnd: bigint('amount_vnd', { mode: 'number' }).notNull(),
+    mode: text('mode').notNull(),
+    status: text('status').notNull(),
+    zlpOrderId: text('zlp_order_id'),
+    zpTransId: text('zp_trans_id'),
+    subReturnCode: integer('sub_return_code'),
+    /** Required when mode = 'manual'. */
+    manualReference: text('manual_reference'),
+    lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
+    pollCount: integer('poll_count').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+  },
+  (t) => [
+    unique('payout_attempts_partner_order_key').on(t.partnerOrderId),
+    unique('payout_attempts_bill_seq_key').on(t.billId, t.attemptSeq),
+    index('payout_attempts_polling_idx')
+      .on(t.status, t.lastPolledAt)
+      .where(sql`${t.status} in ('submitted', 'processing', 'unknown')`),
+    check('payout_attempts_amount_positive_check', sql`${t.amountVnd} > 0`),
+    check('payout_attempts_mode_check', sql`${t.mode} in ('manual', 'api')`),
+    check(
+      'payout_attempts_status_check',
+      sql`${t.status} in ('created', 'submitted', 'processing', 'pending_zlp', 'succeeded', 'failed', 'unknown')`,
+    ),
+    check(
+      'payout_attempts_manual_reference_check',
+      sql`${t.mode} <> 'manual' or length(trim(coalesce(${t.manualReference}, ''))) > 0`,
+    ),
+    check('payout_attempts_poll_count_check', sql`${t.pollCount} >= 0`),
+  ],
+);
+
+/**
+ * What the payout side tells the risk engine, and what its workers did.
+ * Append-only (`payout_events_append_only`, 0012). Agent C reads `kind` and
+ * `evidence`; the kinds this side writes are listed in
+ * `packages/api/src/payout/domain/events.ts`.
+ */
+export const payoutEvents = pgTable(
+  'payout_events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    kind: text('kind').notNull(),
+    collectorId: uuid('collector_id').references(() => collectors.id),
+    payoutAccountId: uuid('payout_account_id').references(() => payoutAccounts.id),
+    billId: uuid('bill_id').references(() => bills.id),
+    payoutAttemptId: uuid('payout_attempt_id').references(() => payoutAttempts.id),
+    evidence: jsonb('evidence').notNull().default(sql`'{}'::jsonb`),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('payout_events_collector_idx').on(t.collectorId, t.occurredAt.desc()),
+    index('payout_events_bill_idx').on(t.billId, t.occurredAt.desc()),
+    index('payout_events_kind_idx').on(t.kind, t.occurredAt.desc()),
+    check('payout_events_kind_check', sql`length(trim(${t.kind})) > 0`),
+  ],
+);
+
+/**
+ * Every export finance was handed, with the hash of the whole file, and one
+ * row per bill with the hash of its line — so the file that comes back can be
+ * proved to be the file that went out. Beside `bills` rather than on it,
+ * because `bills` is frozen by 0011 and is not this slice's table to widen.
+ * Append-only, and sealed: rows join an export only in the transaction that
+ * creates it (`payout_export_rows_sealed`), and the count must match at
+ * commit (`payout_exports_complete`).
+ */
+export const payoutExports = pgTable(
+  'payout_exports',
+  {
+    id: uuid('id').primaryKey(),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+    periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+    fileHash: text('file_hash').notNull(),
+    rowCount: integer('row_count').notNull(),
+    exportedAt: timestamp('exported_at', { withTimezone: true }).notNull().defaultNow(),
+    exportedBy: uuid('exported_by')
+      .notNull()
+      .references(() => operators.id),
+  },
+  (t) => [
+    index('payout_exports_period_idx').on(t.periodStart, t.periodEnd, t.exportedAt.desc()),
+    check('payout_exports_period_check', sql`${t.periodEnd} > ${t.periodStart}`),
+  ],
+);
+
+export const payoutExportRows = pgTable(
+  'payout_export_rows',
+  {
+    exportId: uuid('export_id')
+      .notNull()
+      .references(() => payoutExports.id),
+    billId: uuid('bill_id')
+      .notNull()
+      .references(() => bills.id),
+    rowHash: text('row_hash').notNull(),
+  },
+  (t) => [primaryKey({ name: 'payout_export_rows_pk', columns: [t.exportId, t.billId] })],
+);
