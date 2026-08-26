@@ -721,6 +721,47 @@ export const episodeReviews = pgTable(
     }),
     reviewState: text('review_state').notNull(),
     /**
+     * QR-07. Which lane this review waits in.
+     *
+     * `privacy` is set when the collection session carries either APP-17b
+     * declaration — others in frame, or sensitive information — and by a
+     * reviewer or the back office flagging one mid-review (PRV-04, BO-15). A
+     * column and not a join, because the reviewer's flag has to be recordable
+     * *without* rewriting the collector's own declaration: those two booleans
+     * are what the collector said before recording, and a reviewer overwriting
+     * them would destroy the only evidence of what was declared.
+     *
+     * The lane is materialised at claim time from the declarations, so the
+     * derivation lives in one SQL expression in `review.ts` and this column is
+     * what the queue reads.
+     */
+    queue: text('queue').notNull().default('standard'),
+    /**
+     * QR-05. Higher goes first; ties break on how long the row has waited.
+     *
+     * Only rows that exist can be prioritised, which is a real consequence of a
+     * lazy queue: an episode nobody has claimed has no review row and therefore
+     * no priority. `POST /api/review/route/:episodeId` materialises the row, so
+     * prioritising an unseen episode is one request rather than a backfill.
+     */
+    priority: integer('priority').notNull().default(0),
+    /**
+     * QR-05. When set, only this reviewer is offered the row.
+     *
+     * Separate from `reviewer_ref`, which is a lease and moves on its own: an
+     * assignment is somebody's intent and survives the lease expiring. Nullable
+     * and null by default — the pilot queue is a pool and assignment is the
+     * exception.
+     *
+     * A foreign key and not free text. An assignment is the one column here
+     * that can make a row invisible to everybody — the queue offers an assigned
+     * review to its assignee and to nobody else — so a typed or stale id would
+     * park an episode forever with no error anywhere. `operators` is the right
+     * parent today because that is the identity a reviewer signs in with; see
+     * `reviewerOf` in `review.ts`.
+     */
+    assigneeRef: uuid('assignee_ref').references(() => operators.id),
+    /**
      * Who holds this review. On a pending row that is the current leaseholder;
      * on a decided row it is who decided. One column and not two, because a
      * lease that expires and is re-claimed transfers both facts at once — the
@@ -792,14 +833,46 @@ export const episodeReviews = pgTable(
      */
     uniqueIndex('episode_reviews_verdict_key').on(t.verdictId),
     /**
-     * The queue read, in one index: pending rows ordered by how long they have
-     * waited, with the lease column alongside so reclaiming an expired lease is
-     * the same scan and not a second one.
+     * The queue read, in one index: within a lane, pending rows in the order
+     * they are handed out.
+     *
+     * `lease_expires_at` used to sit where `queue` and `priority` now are. It
+     * never served the scan: the predicate that reclaims an expired lease is
+     * `reviewer_ref is null or lease_expires_at < now()`, an OR across two
+     * columns, which no btree can use as a key — it was always a filter, and
+     * holding second position stopped `created_at` from supplying the sort.
+     * Both `review_state` and `queue` are equality here, so the remaining two
+     * columns are the ORDER BY exactly.
      */
-    index('episode_reviews_queue_idx').on(t.reviewState, t.leaseExpiresAt, t.createdAt),
+    index('episode_reviews_queue_idx').on(
+      t.reviewState,
+      t.queue,
+      t.priority.desc(),
+      t.createdAt,
+    ),
     check(
       'episode_reviews_state_check',
       sql`${t.reviewState} in ('pending', 'pass', 'partial_pass', 'fail')`,
+    ),
+    /** Two lanes and no third. A misspelt lane is an episode nobody is offered. */
+    check('episode_reviews_queue_check', sql`${t.queue} in ('standard', 'privacy')`),
+    /**
+     * QR-05, bounded at the database and not only in the request parser.
+     *
+     * The queue is ordered by this column, so one row with `2^31-1` on it sits
+     * at the head of every lane until somebody notices, and one with the
+     * minimum buries an episode under everything that will ever arrive. The
+     * API bounds it too; this is the half a `psql` session cannot skip.
+     */
+    check('episode_reviews_priority_range_check', sql`${t.priority} between -1000 and 1000`),
+    /**
+     * A stopwatch cannot run backwards. `time_to_verdict_s` feeds
+     * `/api/review/throughput`, which is a number about a person's pace, and a
+     * negative row there would divide the rate rather than adding to it.
+     */
+    check(
+      'episode_reviews_time_to_verdict_check',
+      sql`${t.timeToVerdictS} is null or ${t.timeToVerdictS} >= 0`,
     ),
     /**
      * A decided review names the request that decided it. This is what makes

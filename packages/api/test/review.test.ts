@@ -26,20 +26,29 @@ const SECRET = 'k';
 const uid = () => randomUUID();
 const T = Date.parse('2026-08-21T09:00:00.000Z');
 
-const record = (opts: { basename?: string; measured?: number; declared?: number | null }): EpisodeRecord => {
+/** The second card is a second device, and a device serial is unique. */
+const SERIAL_2 = 'BZER76400FF';
+
+const record = (opts: {
+  basename?: string;
+  measured?: number;
+  declared?: number | null;
+  serial?: string;
+}): EpisodeRecord => {
   const measured = opts.measured ?? 100;
+  const serial = opts.serial ?? 'AZER76400FE';
   return {
     schema_version: '1.1.0',
     episode_id: uid(),
     content_fingerprint: 'a'.repeat(64),
     state: 'ok',
     source: {
-      path: opts.basename ?? `ego_AZER76400FE_20260813_${String(Math.random()).slice(2, 8)}`,
+      path: opts.basename ?? `ego_${serial}_20260813_${String(Math.random()).slice(2, 8)}`,
       ingest_tool_version: '0.3.1',
       ingested_at: new Date().toISOString(),
       ingest_host: 'test',
     },
-    device: { serial: 'AZER76400FE', firmware_declared: '1.0.3', calibration_serial: null },
+    device: { serial, firmware_declared: '1.0.3', calibration_serial: null },
     declared:
       opts.declared === undefined
         ? null
@@ -97,7 +106,22 @@ describe.skipIf(!hasDb())('the review lane', () => {
    * `unitPrice` is 1200 per minute so the arithmetic in the assertions is
    * legible: 60 seconds is exactly 1200.
    */
-  async function harness(options: { episodes?: EpisodeRecord[]; mediaRoot?: string } = {}) {
+  async function harness(
+    options: {
+      episodes?: EpisodeRecord[];
+      /**
+       * Episodes on a *second* centre, a second collector and a second card,
+       * whose session declares others in frame — QR-07's own input.
+       *
+       * A second of everything on purpose. The resolver's payment bug survived
+       * every test in the suite because every fixture used one handover, which
+       * is exactly the shape that hides a query scoped to the wrong parent; a
+       * privacy queue filtered by the wrong join would hide the same way.
+       */
+      privacy?: EpisodeRecord[];
+      mediaRoot?: string;
+    } = {},
+  ) {
     const d = await db();
     const ids = {
       centre: uid(),
@@ -109,6 +133,11 @@ describe.skipIf(!hasDb())('the review lane', () => {
       device: uid(),
       task: uid(),
       scenario: uid(),
+      centre2: uid(),
+      machine2: uid(),
+      operator3: uid(),
+      collector2: uid(),
+      device2: uid(),
     };
     const hash = await hashCredential('pw');
     await d.execute(sql`insert into upload_centres (id, region, name, status) values (${ids.centre}, 'HCM', 'c', 'active')`);
@@ -124,8 +153,8 @@ describe.skipIf(!hasDb())('the review lane', () => {
     const app = buildApi({ db: d, tokenSecret: SECRET, mediaRoot: options.mediaRoot });
     await app.ready();
 
-    const login = async (ref: string) => {
-      const m = await app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: 'M1', secret: 'pw' } });
+    const login = async (ref: string, machine = 'M1') => {
+      const m = await app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: machine, secret: 'pw' } });
       const o = await app.inject({ method: 'POST', url: '/auth/operator', payload: { external_ref: ref, secret: 'pw' } });
       return {
         'x-machine-token': `Bearer ${m.json().token}`,
@@ -178,8 +207,54 @@ describe.skipIf(!hasDb())('the review lane', () => {
     for (const e of submitted.json().episodes as { resolution_state: string }[]) {
       expect(e.resolution_state).toBe('resolved');
     }
+    const episodeIds = (submitted.json().episodes as { episode_id: string }[]).map(
+      (e) => e.episode_id,
+    );
 
-    return { d, app, ids, headers, headers2, send, handover, batch, session };
+    /** A second centre, collector, card and session — this one declaring others in frame. */
+    let privacyIds: string[] = [];
+    if (options.privacy !== undefined) {
+      await d.execute(sql`insert into upload_centres (id, region, name, status) values (${ids.centre2}, 'HN', 'c2', 'active')`);
+      await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash) values (${ids.machine2}, ${ids.centre2}, 'M2', 'active', ${hash})`);
+      await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.operator3}, ${ids.centre2}, 'op3', 'centre_operator', ${hash})`);
+      await d.execute(sql`insert into collectors (id, external_ref, status) values (${ids.collector2}, 'c2', 'qualified')`);
+      await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status) values (${ids.device2}, ${ids.deviceType}, ${SERIAL_2}, 'active')`);
+
+      const headers3: Record<string, string> = await login('op3', 'M2');
+      const handover2 = uid();
+      await send('POST', '/handovers', {
+        id: handover2,
+        collector_id: ids.collector2,
+        device_id: ids.device2,
+        tf_card_id: 'CARD-2',
+        handover_time: new Date(T).toISOString(),
+      }, headers3);
+      const batch2 = uid();
+      await send('POST', '/upload-batches', {
+        id: batch2,
+        handover_id: handover2,
+        import_started_at: new Date(T).toISOString(),
+      }, headers3);
+      await send('POST', `/handovers/${handover2}/sessions`, {
+        id: uid(),
+        task_id: ids.task,
+        scenario_id: ids.scenario,
+        /** APP-17b. This one boolean is the whole of QR-07's input. */
+        others_in_frame: true,
+        sensitive_info_present: false,
+        prepare_time: new Date(T - 60_000).toISOString(),
+      }, headers3);
+      const flagged = await send('POST', `/upload-batches/${batch2}/episodes`, {
+        episodes: options.privacy,
+      }, headers3);
+      expect(flagged.statusCode, flagged.body).toBe(200);
+      for (const e of flagged.json().episodes as { resolution_state: string }[]) {
+        expect(e.resolution_state).toBe('resolved');
+      }
+      privacyIds = (flagged.json().episodes as { episode_id: string }[]).map((e) => e.episode_id);
+    }
+
+    return { d, app, ids, headers, headers2, send, handover, batch, session, episodeIds, privacyIds };
   }
 
   const claim = async (h: Awaited<ReturnType<typeof harness>>, who?: Record<string, string>) =>
@@ -297,6 +372,411 @@ describe.skipIf(!hasDb())('the review lane', () => {
         update episodes set resolution_state = 'quarantined', collection_session_id = null,
                             resolution_method = null`);
       expect((await claim(h)).statusCode).toBe(204);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+
+  /**
+   * QR-05, QR-06, QR-07, PRV-04, BO-15.
+   *
+   * The queue is a pool by default and the pool is what has to be wrong safely:
+   * an episode in the wrong lane is footage a reviewer with no privacy clearance
+   * watches, and there is no way to un-watch it. So the first two tests are
+   * about absence — the flagged episode is not merely ranked lower, it is not
+   * in the answer at all.
+   */
+  describe('the lanes', () => {
+    const claimIn = (
+      h: Awaited<ReturnType<typeof harness>>,
+      lane: string,
+      who?: Record<string, string>,
+    ) => h.send('POST', `/api/review/claim?queue=${lane}`, undefined, who);
+
+    it('never offers a privacy-declared episode to the normal queue', async () => {
+      const h = await harness({
+        episodes: [record({ basename: 'ego_AZER76400FE_20260813_100000' })],
+        privacy: [record({ basename: `ego_${SERIAL_2}_20260813_100100`, serial: SERIAL_2 })],
+      });
+      const [ordinary] = h.episodeIds;
+      const [flagged] = h.privacyIds;
+
+      // The peek: one episode waiting, and it is not the flagged one.
+      expect((await h.send('GET', '/api/review/next')).json().episode_id).toBe(ordinary);
+
+      // The claim: the normal lane empties after the one episode it may see.
+      expect((await claim(h)).json().episode_id).toBe(ordinary);
+      expect((await claim(h, h.headers2)).statusCode).toBe(204);
+      expect((await h.send('GET', '/api/review/next', undefined, h.headers2)).statusCode).toBe(204);
+
+      // And the depth agrees with what the queue will actually hand out.
+      expect((await h.send('GET', '/api/review/shift', undefined, h.headers2)).json().queue_depth).toBe(0);
+
+      // It is not lost — it is in the lane that had to ask for it by name.
+      const privacy = await claimIn(h, 'privacy', h.headers2);
+      expect(privacy.statusCode, privacy.body).toBe(200);
+      expect(privacy.json().episode_id).toBe(flagged);
+      expect(privacy.json().queue).toBe('privacy');
+      expect(privacy.json().declared.others_in_frame).toBe(true);
+    });
+
+    it('hands out the higher priority first, whatever order the footage arrived in', async () => {
+      const h = await harness({
+        episodes: [
+          record({ basename: 'ego_AZER76400FE_20260813_110000' }),
+          record({ basename: 'ego_AZER76400FE_20260813_110100' }),
+        ],
+      });
+      const [first, second] = h.episodeIds;
+      // Two `new Date()` calls a transaction apart can land on the same
+      // millisecond, and then "oldest first" has no answer. Pinned, so the
+      // assertion below is about the ordering and not about the clock.
+      await h.d.execute(sql`update episodes set first_seen_at = now() - interval '2 hours' where episode_id = ${first}`);
+      await h.d.execute(sql`update episodes set first_seen_at = now() - interval '1 hour' where episode_id = ${second}`);
+
+      // Untouched, the queue is oldest-first.
+      expect((await h.send('GET', '/api/review/next')).json().episode_id).toBe(first);
+
+      // Both rows exist, and the older one was materialised first — so
+      // `created_at` alone would still put it in front. Priority is the only
+      // difference between them.
+      expect((await h.send('POST', `/api/review/route/${first}`, { priority: 1 })).statusCode).toBe(200);
+      const routed = await h.send('POST', `/api/review/route/${second}`, { priority: 10 });
+      expect(routed.statusCode, routed.body).toBe(200);
+      expect(routed.json().priority).toBe(10);
+
+      // The peek has to predict the claim: the client warms a video from it.
+      expect((await h.send('GET', '/api/review/next')).json().episode_id).toBe(second);
+      expect((await claim(h)).json().episode_id).toBe(second);
+      expect((await claim(h, h.headers2)).json().episode_id).toBe(first);
+    });
+
+    it('offers an assigned episode to nobody but its assignee', async () => {
+      const h = await harness({
+        episodes: [
+          record({ basename: 'ego_AZER76400FE_20260813_120000' }),
+          record({ basename: 'ego_AZER76400FE_20260813_120100' }),
+        ],
+      });
+      const [first, second] = h.episodeIds;
+      expect(
+        (await h.send('POST', `/api/review/route/${first}`, { assignee_ref: h.ids.operator2 }))
+          .statusCode,
+      ).toBe(200);
+
+      // op is never offered it, by either route, and does not count it as work.
+      expect((await h.send('GET', '/api/review/next')).json().episode_id).toBe(second);
+      expect((await h.send('GET', '/api/review/shift')).json().queue_depth).toBe(1);
+      expect((await claim(h)).json().episode_id).toBe(second);
+      expect((await claim(h)).statusCode).toBe(204);
+
+      // op2 is.
+      expect((await claim(h, h.headers2)).json().episode_id).toBe(first);
+    });
+
+    it('moves an episode a reviewer flags mid-review into the privacy lane, and says why', async () => {
+      const h = await harness({ episodes: [record({ basename: 'ego_AZER76400FE_20260813_130000' })] });
+      const episodeId = (await claim(h)).json().episode_id;
+
+      const flagged = await h.send('POST', `/api/review/route/${episodeId}`, {
+        queue: 'privacy',
+        reason: 'a bank card is legible at 00:41',
+      });
+      expect(flagged.statusCode, flagged.body).toBe(200);
+      expect(flagged.json().queue).toBe('privacy');
+
+      // Gone from the normal queue for everybody, including the reviewer who
+      // flagged it — the lease goes with the move, because they are handing it on.
+      expect((await claim(h)).statusCode).toBe(204);
+      expect((await claim(h, h.headers2)).statusCode).toBe(204);
+      expect((await claimIn(h, 'privacy', h.headers2)).json().episode_id).toBe(episodeId);
+
+      // PRV-04 is a compliance action, so it is in the audit trail under the
+      // taxonomy's own code and not as free text somebody has to interpret.
+      const audit = (await h.d.execute(sql`
+        select action, reason, before, after from audit_events
+         where action = 'review.route' and operator_id = ${h.ids.operator}
+      `)) as unknown as {
+        action: string;
+        reason: string;
+        before: Record<string, unknown> | null;
+        after: Record<string, unknown>;
+      }[];
+      expect(audit).toHaveLength(1);
+      expect(audit[0]!.reason).toBe('a bank card is legible at 00:41');
+      expect(audit[0]!.after['reason_code']).toBe('CO-PRIVACY');
+      expect(audit[0]!.after['queue']).toBe('privacy');
+      // Who lost the episode is part of a privacy handoff, not a detail: the
+      // move is only reconstructable if the displaced leaseholder is named.
+      expect((audit[0]!.before as Record<string, unknown>)['reviewer_ref']).toBe(h.ids.operator);
+      expect(audit[0]!.after['reviewer_ref']).toBeNull();
+
+      // And the collector's own declaration is untouched: a reviewer's judgement
+      // is a different fact from what was declared before recording.
+      const declared = (await h.d.execute(sql`
+        select others_in_frame, sensitive_info_present from collection_sessions
+      `)) as unknown as { others_in_frame: boolean; sensitive_info_present: boolean }[];
+      expect(declared[0]!.others_in_frame).toBe(false);
+      expect(declared[0]!.sensitive_info_present).toBe(false);
+    });
+
+    it('refuses a lane it does not have, rather than quietly serving the normal one', async () => {
+      const h = await harness({ episodes: [record({})] });
+      // A misspelling that reads as success is the failure worth refusing: a
+      // client asking for a privacy queue and being handed ordinary footage
+      // cannot tell, and neither can the reviewer looking at it.
+      const misspelt = await claimIn(h, 'privicy');
+      expect(misspelt.statusCode, misspelt.body).toBe(400);
+      expect((await h.send('GET', '/api/review/next?queue=nope')).statusCode).toBe(400);
+      // And the episode is still there, untouched, in the lane it belongs to.
+      expect((await claim(h)).statusCode).toBe(200);
+    });
+
+    it('hands a quarantined episode on, instead of back to the reviewer it was taken from', async () => {
+      const h = await harness({ episodes: [record({ basename: 'ego_AZER76400FE_20260813_133000' })] });
+      const [episodeId] = h.episodeIds;
+      expect(
+        (await h.send('POST', `/api/review/route/${episodeId}`, { assignee_ref: h.ids.operator2 }))
+          .statusCode,
+      ).toBe(200);
+
+      const flagged = await h.send('POST', `/api/review/route/${episodeId}`, { queue: 'privacy' });
+      expect(flagged.statusCode, flagged.body).toBe(200);
+      // The assignment went with the lease. Keeping it would put the episode in
+      // a lane for cleared reviewers and then offer it to exactly one person —
+      // the one it was taken away from.
+      expect(flagged.json().assignee_ref).toBeNull();
+      expect((await claimIn(h, 'privacy')).json().episode_id).toBe(episodeId);
+    });
+
+    it('routes the delivery the queue is waiting on, not the one already decided', async () => {
+      const delivered = record({ basename: 'ego_AZER76400FE_20260813_134500', measured: 60 });
+      const h = await harness({ episodes: [delivered] });
+      const [episodeId] = h.episodeIds;
+      const decided = (await claim(h)).json();
+      await verdict(h, { verdict_id: uid(), episode_id: decided.episode_id, decision: 'good' });
+
+      // The card comes back and the same session arrives again with different
+      // bytes. That is a second ingest and a second review row; the first stays
+      // attached to what it judged, and the queue is now waiting on the second.
+      const again = await h.send('POST', `/upload-batches/${h.batch}/episodes`, {
+        episodes: [{ ...delivered, content_fingerprint: 'c'.repeat(64) }],
+      });
+      expect(again.statusCode, again.body).toBe(200);
+      expect(again.json().episodes[0].outcome).toBe('mismatch');
+      // The fixture depends on the catalogue's own routing decision: a local
+      // CHECKSUM-MISMATCH is flagged and still judgeable, because blocking is
+      // reserved for "a reviewer cannot judge this" (catalogue.ts). UPL-04's
+      // "mismatch blocks review" is about the *cloud* checksum, which is QR-02
+      // and is not built. If that decision is ever flipped to blocking, this
+      // assertion is where the redelivery fixture has to change.
+      const blocking = (await h.d.execute(sql`
+        select blocks_review from defect_codes where code = 'CHECKSUM-MISMATCH'
+      `)) as unknown as { blocks_review: boolean }[];
+      expect(blocking[0]!.blocks_review).toBe(false);
+
+      const routed = await h.send('POST', `/api/review/route/${episodeId}`, { priority: 7 });
+      expect(routed.statusCode, routed.body).toBe(200);
+      expect(routed.json().priority).toBe(7);
+      expect(routed.json().review_id).not.toBe(decided.review_id);
+
+      const rows = (await h.d.execute(sql`
+        select r.id, r.review_state, r.priority, r.ingest_id = e.latest_ingest_id as is_latest
+          from episode_reviews r join episodes e on e.episode_id = r.episode_id
+         order by r.created_at
+      `)) as unknown as {
+        id: string;
+        review_state: string;
+        priority: number;
+        is_latest: boolean;
+      }[];
+      expect(rows).toHaveLength(2);
+      expect(rows[0]!.review_state).toBe('pass');
+      expect(rows[0]!.priority).toBe(0);
+      expect(rows[1]!.is_latest).toBe(true);
+      expect(rows[1]!.priority).toBe(7);
+
+      // And the audit names the row that changed. `target_table` says
+      // episode_reviews, so an episode id there is a pointer into nothing.
+      const audit = (await h.d.execute(sql`
+        select target_id, before from audit_events where action = 'review.route'
+      `)) as unknown as { target_id: string; before: unknown }[];
+      expect(audit).toHaveLength(1);
+      expect(audit[0]!.target_id).toBe(routed.json().review_id);
+      expect(audit[0]!.before).toBeNull();
+    });
+
+    it('will not move declared-privacy footage into the lane everybody sees', async () => {
+      const h = await harness({
+        episodes: [record({ basename: 'ego_AZER76400FE_20260813_135000' })],
+        privacy: [record({ basename: `ego_${SERIAL_2}_20260813_135100`, serial: SERIAL_2 })],
+      });
+      const [flagged] = h.privacyIds;
+
+      // The collector declared others in frame. That is a floor, not a default:
+      // a reviewer's own PRV-04 flag sits above it and could be lifted, but
+      // nobody overrules what was declared before the recording was made.
+      const forced = await h.send('POST', `/api/review/route/${flagged}`, { queue: 'standard' });
+      expect(forced.statusCode, forced.body).toBe(409);
+      expect((await claim(h)).json().episode_id).not.toBe(flagged);
+
+      // Priority still moves, and does not drag the lane with it.
+      const prioritised = await h.send('POST', `/api/review/route/${flagged}`, { priority: 5 });
+      expect(prioritised.statusCode, prioritised.body).toBe(200);
+      expect(prioritised.json().queue).toBe('privacy');
+    });
+
+    it('moves a pending review into the privacy lane when the episode is re-resolved onto a declared session', async () => {
+      const h = await harness({
+        episodes: [record({ basename: 'ego_AZER76400FE_20260813_135500' })],
+      });
+      const [episodeId] = h.episodeIds;
+      // Materialise the review in the ordinary lane, the way a reviewer would.
+      expect((await claim(h)).json().episode_id).toBe(episodeId);
+
+      // A second session on the same card, this one declaring sensitive
+      // information, and an operator corrects the attribution.
+      const corrected = uid();
+      const made = await h.send('POST', `/handovers/${h.handover}/sessions`, {
+        id: corrected,
+        task_id: h.ids.task,
+        scenario_id: h.ids.scenario,
+        others_in_frame: false,
+        sensitive_info_present: true,
+        prepare_time: new Date(T - 30_000).toISOString(),
+      });
+      expect(made.statusCode, made.body).toBe(201);
+      const moved = await h.send('POST', `/episodes/${episodeId}/resolve`, {
+        collection_session_id: corrected,
+        reason: 'the collector recorded against the later session',
+      });
+      expect(moved.statusCode, moved.body).toBe(200);
+
+      // The lane is derived from the session, so re-pointing the episode has to
+      // carry it. Otherwise the review sits in the ordinary queue describing
+      // footage the collector declared.
+      expect((await claim(h, h.headers2)).statusCode).toBe(204);
+      const privacy = await h.send('POST', '/api/review/claim?queue=privacy', undefined, h.headers2);
+      expect(privacy.statusCode, privacy.body).toBe(200);
+      expect(privacy.json().episode_id).toBe(episodeId);
+    });
+
+    it('keeps a quarantine across a redelivery of the same session', async () => {
+      const delivered = record({ basename: 'ego_AZER76400FE_20260813_140500', measured: 60 });
+      const h = await harness({ episodes: [delivered] });
+      const [episodeId] = h.episodeIds;
+      expect((await claim(h)).json().episode_id).toBe(episodeId);
+      const flagged = await h.send('POST', `/api/review/route/${episodeId}`, {
+        queue: 'privacy',
+        reason: 'a bank card is legible at 00:41',
+      });
+      expect(flagged.statusCode, flagged.body).toBe(200);
+
+      // The card comes back and the same session arrives again. Different
+      // bytes, a different ingest, and a review row that does not exist yet -
+      // and the bank card in shot did not change with the bytes. The lane a new
+      // row is born in has to remember the flag, or the redelivery puts the
+      // footage back in front of everybody.
+      const again = await h.send('POST', `/upload-batches/${h.batch}/episodes`, {
+        episodes: [{ ...delivered, content_fingerprint: 'd'.repeat(64) }],
+      });
+      expect(again.statusCode, again.body).toBe(200);
+      expect(again.json().episodes[0].outcome).toBe('mismatch');
+
+      const ordinary = await h.send('GET', '/api/review/next', undefined, h.headers2);
+      expect(ordinary.statusCode, ordinary.body).toBe(204);
+      const privacy = await h.send('GET', '/api/review/next?queue=privacy', undefined, h.headers2);
+      expect(privacy.statusCode, privacy.body).toBe(200);
+      expect(privacy.json().episode_id).toBe(episodeId);
+    });
+
+    it('asks why before it lets a quarantine be lifted', async () => {
+      const h = await harness({ episodes: [record({ basename: 'ego_AZER76400FE_20260813_141000' })] });
+      const [episodeId] = h.episodeIds;
+      expect(
+        (await h.send('POST', `/api/review/route/${episodeId}`, {
+          queue: 'privacy',
+          reason: 'a bank card is legible at 00:41',
+        })).statusCode,
+      ).toBe(200);
+
+      // Raising a flag needs no typed reason: the code is fixed and the
+      // direction is safe. Lowering one puts footage in front of more people,
+      // and the audit row for that has to say why in words.
+      const bare = await h.send('POST', `/api/review/route/${episodeId}`, { queue: 'standard' });
+      expect(bare.statusCode, bare.body).toBe(400);
+      const lifted = await h.send('POST', `/api/review/route/${episodeId}`, {
+        queue: 'standard',
+        reason: 'the card is a loyalty card and carries no number',
+      });
+      expect(lifted.statusCode, lifted.body).toBe(200);
+      expect(lifted.json().queue).toBe('standard');
+    });
+
+    it('refuses to re-queue a review that has already been decided', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const episodeId = (await claim(h)).json().episode_id;
+      await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'good' });
+      const routed = await h.send('POST', `/api/review/route/${episodeId}`, { queue: 'privacy' });
+      expect(routed.statusCode).toBe(409);
+    });
+
+    it('measures each reviewer against their own verdicts, and nobody else', async () => {
+      const h = await harness({
+        episodes: [
+          record({ basename: 'ego_AZER76400FE_20260813_140000', measured: 60 }),
+          record({ basename: 'ego_AZER76400FE_20260813_140100', measured: 60 }),
+          record({ basename: 'ego_AZER76400FE_20260813_140200', measured: 60 }),
+        ],
+      });
+      // op decides two, at 12 s and 24 s. op2 decides one, at 30 s. The elapsed
+      // time is set by backdating the claim, because that is the only end of it
+      // a test — or a reviewer — can reach: the verdict measures it server-side.
+      const backdate = async (episodeId: string, seconds: number) =>
+        h.d.execute(sql`
+          update episode_reviews set claimed_at = now() - ${`${seconds} seconds`}::interval
+           where episode_id = ${episodeId}
+        `);
+      for (const seconds of [12, 24]) {
+        const episodeId = (await claim(h)).json().episode_id;
+        await backdate(episodeId, seconds);
+        await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'good' });
+      }
+      const theirs = (await claim(h, h.headers2)).json().episode_id;
+      await backdate(theirs, 30);
+      await verdict(
+        h,
+        { verdict_id: uid(), episode_id: theirs, decision: 'bad', reject_reasons: ['VQ-DARK'] },
+        h.headers2,
+      );
+
+      const res = await h.send('GET', '/api/review/throughput');
+      expect(res.statusCode, res.body).toBe(200);
+      const rows = res.json().reviewers as Record<string, unknown>[];
+      expect(rows).toHaveLength(2);
+
+      const op = rows.find((r) => r['reviewer'] === h.ids.operator)!;
+      expect(op['decided']).toBe(2);
+      expect(op['approved']).toBe(2);
+      // 3600 × 2 ÷ 36 s of measured review time. Loose to a tenth: the
+      // stopwatch runs from a real claim to a real verdict, so the request
+      // itself is in the number.
+      expect(op['reviews_per_hour'] as number).toBeCloseTo(200, 0);
+      expect(Number(op['median_seconds_to_verdict'])).toBeCloseTo(18, 1);
+
+      const op2 = rows.find((r) => r['reviewer'] === h.ids.operator2)!;
+      expect(op2['decided']).toBe(1);
+      expect(op2['approved']).toBe(0);
+      expect(op2['reviews_per_hour'] as number).toBeCloseTo(120, 0);
+
+      // A window that starts after every verdict reports nobody, rather than
+      // reporting yesterday's pace as today's.
+      const later = await h.send(
+        'GET',
+        `/api/review/throughput?since=${new Date(Date.now() + 60_000).toISOString()}`,
+      );
+      expect(later.statusCode, later.body).toBe(200);
+      expect(later.json().reviewers).toHaveLength(0);
     });
   });
 
@@ -527,19 +1007,27 @@ describe.skipIf(!hasDb())('the review lane', () => {
       expect(rows[0]!.episode_id).toBe(episodeId);
     });
 
-    it('records how long the verdict took, without letting it touch the money', async () => {
+    it('measures how long the verdict took itself, and ignores what the client claims', async () => {
       const h = await harness({ episodes: [record({ measured: 60 })] });
       const episodeId = (await claim(h)).json().episode_id;
+      // The claim is the start of the clock, so moving it is how the elapsed
+      // time is set in a test. The reviewer cannot reach it.
+      await h.d.execute(
+        sql`update episode_reviews set claimed_at = now() - interval '12.5 seconds'`,
+      );
       await verdict(h, {
         verdict_id: uid(),
         episode_id: episodeId,
         decision: 'good',
-        time_to_verdict_seconds: 12.5,
+        // A client trying to look ten times faster than it is. `/throughput`
+        // reports on people, so this number is the server's or it is nothing.
+        time_to_verdict_seconds: 0.1,
       });
       const rows = (await h.d.execute(sql`
         select time_to_verdict_s, effective_duration_s from episode_reviews
       `)) as unknown as { time_to_verdict_s: string; effective_duration_s: string }[];
-      expect(rows[0]!.time_to_verdict_s).toBe('12.500');
+      expect(Number(rows[0]!.time_to_verdict_s)).toBeGreaterThan(12);
+      expect(Number(rows[0]!.time_to_verdict_s)).toBeLessThan(13);
       expect(rows[0]!.effective_duration_s).toBe('60.000000');
     });
   });

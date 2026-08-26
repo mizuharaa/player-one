@@ -68,6 +68,174 @@ nothing to skip. `bin/serve.ts` opens a pool. The concurrency test opens a secon
 connection for the same reason — on one connection it would pass without proving
 anything.
 
+## Two lanes, a priority and an assignee
+
+`episode_reviews` carries three more columns, and all three exist because the
+pool is the default and the pool has to be wrong safely.
+
+**`queue` is QR-07, and it is an absence, not a ranking.** An episode whose
+collection session carries either APP-17b declaration — others in frame, or
+sensitive information — is in the `privacy` lane, and `GET /api/review/next` and
+`POST /api/review/claim` do not return it. Not ranked lower: not in the answer.
+A reviewer reaches it by asking for it, `?queue=privacy`, and there is no way to
+arrive there by scrolling. Footage with a bystander in it that a reviewer with no
+clearance watches cannot be un-watched, so the failure mode that matters is the
+one where a filter is forgotten, and a filter that has to be added to see the
+lane fails the safe way round.
+
+`?queue=` takes the two lane names and nothing else: anything unrecognised is a
+400, not a silent fall back to the ordinary lane. A client asking for
+`?queue=privicy` and being handed ordinary footage cannot tell, and neither can
+the reviewer looking at it — the misspelling would live in a UI for a pilot.
+
+The declaration is a **floor**, not a default. `POST /api/review/route` refuses
+`queue: 'standard'` on an episode whose session declares either flag, whoever
+asks: a reviewer's own PRV-04 flag sits above the floor and could be lifted, but
+what the collector declared before recording is not a reviewer's to overrule. And
+because the lane is derived from the session, `POST /episodes/:id/resolve` — the
+one endpoint that can point a resolved episode at a *different* session — moves
+any pending review up to the privacy lane when the new session declares. Upgrades
+only, in both places, for the same reason: a reviewer's flag lives in the same
+column and nothing here may clear it.
+
+A reviewer's own flag is carried across deliveries too. A redelivery is a
+different ingest and gets a different review row, so the lane a *new* row is born
+in reads both the declaration and whether any earlier review of the same episode
+sits in the privacy lane. The bytes changed; the bank card in shot did not.
+
+Lifting a flag is allowed and needs a typed reason. Raising one does not: the
+code is fixed, `CO-PRIVACY`, and the direction is safe. Lowering one is the
+direction that puts footage in front of more people, so `POST /api/review/route`
+answers 400 to `queue: 'standard'` on a quarantined episode with no `reason`, and
+the words end up on the audit row.
+
+Migration `0008` backfills the lane for reviews that already existed, and **takes
+the lease with it**. A pending review that changes lane while somebody holds it
+is footage the same uncleared reviewer can go on to heartbeat and decide: the
+lane would be right and the person watching would not have changed. Decided rows
+are left alone — there `reviewer_ref` is who decided, not a lease, and blanking
+it would erase the attribution on a payment.
+
+The lane is derived at claim time and stored. It has to be stored, because
+PRV-04 says a reviewer can flag privacy risk mid-review — and the two APP-17b
+booleans are **what the collector declared before recording**. A reviewer's later
+judgement is a different fact; writing it over the declaration would destroy the
+only evidence of what was declared. So the flag moves the review row and leaves
+the session alone.
+
+**`priority` is higher-first, and only a row that exists can carry one.** That is
+the real cost of a lazy queue: an episode nobody has claimed has no review row,
+so nothing to prioritise. `POST /api/review/route/:episodeId` materialises the
+row rather than refusing — which is also what makes BO-15 work, flagging footage
+from a browse screen that no reviewer has ever opened.
+
+**`assignee_ref` is not `reviewer_ref`.** The lease moves on its own — it expires,
+it is reclaimed, it transfers. An assignment is somebody's intent and outlives all
+of that. A reviewer is never offered a row assigned to somebody else, and their
+queue depth does not count it either, on the same argument the depth was written
+under: a number that counts work you cannot pick up stops being read.
+
+It is a foreign key onto `operators`, not free text, because it is the one column
+here that can make an episode invisible to everybody at once — an id with a typo
+in it is offered to nobody and reports nothing. `operators` is the right parent
+today because that is the identity a reviewer signs in with; when reviewers get
+their own role the parent moves and the column moves with it.
+
+Quarantining a review clears its assignment along with its lease, unless the same
+request names a new one. Keeping it would put the episode in a lane for cleared
+reviewers and then offer it to exactly one person — the one it was taken away
+from — and, once the lane is properly gated, to nobody at all.
+
+One endpoint sets all three, because all three are one `UPDATE` of one row — the
+row bound to `episodes.latest_ingest_id`, located and locked inside the same
+transaction as the write, in **two statements rather than one join**. Under READ
+COMMITTED a statement's snapshot is taken before it waits for a lock, so a single
+joined read would lock the episode, wait, and still be looking at a review row
+from before the wait: that is how a second router writes over a row it believes
+does not exist and audits the change as `before: null`. Locking the episode
+first and reading the review second gives the second statement a fresh snapshot
+and the committed truth. "The review for this episode" is not a thing that
+exists: a second delivery of the same session is a second ingest and gets its own
+review, so an episode whose first delivery was rejected and redelivered has a
+decided row and a pending one. Reading either at random would refuse the pending
+review because an older one is decided, and would audit the move against a row
+nobody touched.
+
+A quarantine names who lost the episode. `before.reviewer_ref` is the displaced
+leaseholder and `after.reviewer_ref` is null, because a privacy handoff that
+records only "the lane changed" is not reconstructable afterwards. The same
+applies to `episode.resolve_manual`: when re-attribution moves reviews, the audit
+row lists the review ids it moved and who held them.
+
+`review.route` in the audit trail is a reviewer quarantining what they are
+watching, an operator flagging from a browse screen, or a supervisor moving work
+— the `after` says which. A privacy move stamps `CO-PRIVACY`, §6.9's only
+compliance code, so the reason is the taxonomy's and not free text somebody has
+to interpret.
+
+Today any authenticated operator may call it, and may ask for the privacy lane by
+name. **The lane is a routing guarantee, not an access boundary.** It guarantees
+that privacy footage never reaches a reviewer who did not ask for it, which is
+what QR-07 requires; it does not and cannot decide who is allowed to ask. That
+needs a role, roles are the reviewer-auth slice, and until they land the whole
+review surface — both lanes — is open to any authenticated operator, which is
+the exposure the standard lane already had.
+
+### The index, measured
+
+`episode_reviews_queue_idx` was `(review_state, lease_expires_at, created_at)`
+and is now `(review_state, queue, priority desc, created_at)`.
+
+`lease_expires_at` never earned second position. The predicate that reclaims an
+expired lease is `reviewer_ref is null or lease_expires_at < now()` — an OR
+across two columns, which no btree can use as a key. It was always a filter, and
+holding second place stopped `created_at` from supplying the sort.
+
+Measured, not asserted. 200,000 rows, 60,000 of them pending, one in fifty in the
+privacy lane, on the claim's own predicate and ordering — `EXPLAIN (ANALYZE,
+BUFFERS)` against each index in turn, on the same rows:
+
+| | old index | new index |
+|---|---|---|
+| plan | Bitmap Heap Scan + top-N sort | Index Scan, stops at row 1 |
+| rows read | 60,000, 56,000 surviving the filter | 1 |
+| buffers | 2,169 | 4 |
+| execution | 23.3 ms | 0.073 ms |
+
+`review_state` and `queue` are both equality, so the remaining two index columns
+are the `ORDER BY` exactly and the scan stops at the first row it can hand out.
+
+### Throughput, and what the denominator is
+
+`GET /api/review/throughput` is QR-06, per reviewer, computed from
+`time_to_verdict_s` and `reviewed_at` — columns the verdict already writes.
+Nothing is stored, incremented or sampled, for the same reason the shift figures
+are not: a counter written on every verdict is a counter that can disagree with
+the rows it counts.
+
+**`time_to_verdict_s` is measured from the claim, by the server.** The client
+used to send it and no longer may. It is the input to a number about a person's
+pace, and a caller-supplied duration there is the same mistake as a
+caller-supplied duration on the money path: a client sending `0.1` for every
+verdict would report a reviewer as ten times faster than anybody else, and
+nothing would look wrong. The lease already knows when the episode was handed
+over, so the server does not need to be told.
+
+`priority` and `time_to_verdict_s` are bounded by CHECK constraints and not only
+by the request parser: the queue is ordered by the first, so one row carrying
+`2^31-1` sits at the head of every lane until somebody notices, and the second
+feeds a number about a person's pace, where a negative row divides the rate
+instead of adding to it. Both are reachable from `psql`, which is where the
+review standard will actually be re-tuned.
+
+**`reviews_per_hour` is per hour of measured review time**, `3600 × verdicts ÷ Σ
+time_to_verdict_s`, and not per hour on shift. A wall-clock denominator needs a
+shift table nobody has, and would report a reviewer who spent half the day on
+something else as half as fast as they are. The inputs travel alongside, so
+anybody who wants a different denominator can compute one rather than argue with
+this one. `since` is optional and has no default: a default window would be an
+operational decision and this endpoint does not get to make it.
+
 ## What is eligible, and the QR-02 deviation
 
 An episode reaches the queue when it is `resolved`, its latest ingest is not
@@ -100,6 +268,30 @@ must name at least one reason. QR-01 requires the codes and QR-04 requires them
 in a form the collector can act on, which is why they come from
 `review_reason_codes` — a server-side enumeration with an `en`, a `zh` and a `vi`
 label — and never from free text.
+
+Those rows are **configuration, and the boot-time seed no longer overwrites
+them**. §6.9's own note says to build the codes configurable rather than
+hard-coded, because PaXini said on 13 Aug that the in-the-wild standard does not
+exist yet and will be rewritten during the pilot. `seedCatalogues` used to upsert
+the category and all three labels on every server start, so an operator's `UPDATE`
+lasted until the next restart and then quietly reverted — the worse of the two
+failures, because nothing errors and the pilot's own tuning is simply lost. It
+now inserts codes the deployment does not have and leaves the rest exactly as it
+found them, `active` included. `defect_codes` still upserts: `blocks_review` is a
+routing decision the deployed engine owns, and that is a different kind of thing.
+
+Retiring a code is `active = false`, which takes it out of the picker and leaves
+every verdict that cites it intact. Deleting one is refused by
+`episode_review_reasons_code_review_reason_codes_code_fk`, and so is renaming the
+primary key — tested in raw SQL, because the edit that would orphan a past
+verdict will be typed into psql by somebody who has never read this repository.
+
+The verdict's own `UPDATE` carries the lease in its `WHERE`, not only in the
+checks above it: `id`, `review_state = 'pending'`, `reviewer_ref` and a
+`lease_expires_at` still in the future. A reviewer whose lease ran out while they
+were deciding is a reviewer whose episode belongs to somebody else now, and the
+transaction — audit row and settlement included — has to be the arbiter of that
+rather than a read taken twenty lines earlier.
 
 `partial` pays exactly what was marked, after normalisation: validate, clamp to
 the measured duration, quantise to microseconds, drop the empty, sort, merge.
