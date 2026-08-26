@@ -1467,3 +1467,146 @@ export const uploadDeviceStatus = pgTable('upload_device_status', {
   lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// The risk engine (migration 0014). Advisory, explainable, append-only,
+// versioned. It writes these three tables and nothing else; it never writes
+// bills, bill_lines, settlements, payout_attempts or collectors, and the
+// `playerone_risk` role created in 0014 is what makes that a property of the
+// database rather than of one process. The triggers, the two views and the
+// role are in `0014_risk.sql`; drizzle cannot express any of them.
+
+/**
+ * The signal catalogue, versioned by row. One current row per signal
+ * (`risk_signals_current_key`, partial on `superseded_at is null`); a retune
+ * supersedes the row and inserts a new `threshold_version`, never edits in
+ * place (`risk_signals_supersede_only`). Bands are rows too, family 'BAND',
+ * with the band's lower edge in `default_points`.
+ */
+export const riskSignals = pgTable(
+  'risk_signals',
+  {
+    signalId: text('signal_id').notNull(),
+    thresholdVersion: text('threshold_version').notNull(),
+    family: text('family').notNull(),
+    description: text('description').notNull(),
+    defaultPoints: integer('default_points').notNull(),
+    defaultSeverity: text('default_severity').notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    /** Every threshold a detector reads. On the row a flag cites, forever. */
+    params: jsonb('params').notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    supersededAt: timestamp('superseded_at', { withTimezone: true }),
+  },
+  (t) => [
+    primaryKey({ name: 'risk_signals_pkey', columns: [t.signalId, t.thresholdVersion] }),
+    uniqueIndex('risk_signals_current_key')
+      .on(t.signalId)
+      .where(sql`${t.supersededAt} is null`),
+    check(
+      'risk_signals_family_check',
+      sql`${t.family} in ('IDENT', 'VOL', 'CONT', 'PROV', 'OPS', 'BAND', 'META')`,
+    ),
+    check(
+      'risk_signals_severity_check',
+      sql`${t.defaultSeverity} in ('info', 'notice', 'review', 'hold')`,
+    ),
+    check('risk_signals_points_check', sql`${t.defaultPoints} between 0 and 100`),
+    check('risk_signals_id_shape_check', sql`${t.signalId} ~ '^[A-Z]+\\.[A-Z0-9_]+$'`),
+    check('risk_signals_version_check', sql`length(trim(${t.thresholdVersion})) > 0`),
+    /** The lowest-weight signal is capped at the catalogue; no retune lifts it. */
+    check(
+      'risk_signals_synthetic_cap_check',
+      sql`${t.signalId} <> 'PROV.SYNTHETIC_HEURISTIC' or ${t.defaultSeverity} in ('info', 'notice')`,
+    ),
+  ],
+);
+
+/**
+ * One finding, from one evaluation run, about one subject. Never edited
+ * (`risk_flags_append_only`). `run_id` groups a run; every run also writes a
+ * META.EVALUATED row so the latest run is identifiable even when it found
+ * nothing, which is how a flag falls away. The composite FK to `risk_signals`
+ * is the explainability guarantee: the exact points and thresholds that judged
+ * this flag are reachable from the row for as long as the row exists.
+ */
+export const riskFlags = pgTable(
+  'risk_flags',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    /** Insertion order: what "the latest run" means. `computed_at` is the engine's clock, for the explanation. */
+    seq: bigint('seq', { mode: 'number' }).generatedAlwaysAsIdentity(),
+    runId: uuid('run_id').notNull(),
+    subjectType: text('subject_type').notNull(),
+    /** text: collectors, episodes and bills are uuids; a batch is a period. */
+    subjectId: text('subject_id').notNull(),
+    signalId: text('signal_id').notNull(),
+    thresholdVersion: text('threshold_version').notNull(),
+    points: integer('points').notNull(),
+    severity: text('severity').notNull(),
+    /** Human-readable in the console: the numbers the sentence is built from. */
+    evidence: jsonb('evidence').notNull(),
+    computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.signalId, t.thresholdVersion],
+      foreignColumns: [riskSignals.signalId, riskSignals.thresholdVersion],
+      name: 'risk_flags_signal_fk',
+    }),
+    index('risk_flags_subject_idx').on(t.subjectType, t.subjectId, t.seq.desc()),
+    index('risk_flags_run_idx').on(t.runId),
+    index('risk_flags_signal_idx').on(t.signalId, t.computedAt.desc()),
+    check(
+      'risk_flags_subject_type_check',
+      sql`${t.subjectType} in ('collector', 'episode', 'bill', 'batch')`,
+    ),
+    check('risk_flags_severity_check', sql`${t.severity} in ('info', 'notice', 'review', 'hold')`),
+    check('risk_flags_points_check', sql`${t.points} between 0 and 100`),
+    check('risk_flags_evidence_object_check', sql`jsonb_typeof(${t.evidence}) = 'object'`),
+    check(
+      'risk_flags_synthetic_cap_check',
+      sql`${t.signalId} <> 'PROV.SYNTHETIC_HEURISTIC' or ${t.severity} in ('info', 'notice')`,
+    ),
+  ],
+);
+
+/**
+ * A reversible hold on a bill, as a chain of rows: a raise, then a clear that
+ * copies the raise's identity and adds who, when, a typed reason and a
+ * verdict. `risk_holds_chain_guard` (0014) refuses a clear with no open hold
+ * and a second open hold over one already open; `risk_holds_append_only`
+ * refuses UPDATE and DELETE. `risk_current_holds` is the view the payout side
+ * reads. `signal_ids` is what the operator saw when they cleared it, and the
+ * engine re-holds only on a signal that was not in it.
+ */
+export const riskHolds = pgTable(
+  'risk_holds',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    billId: uuid('bill_id')
+      .notNull()
+      .references(() => bills.id),
+    raisedByFlag: uuid('raised_by_flag')
+      .notNull()
+      .references(() => riskFlags.id),
+    raisedAt: timestamp('raised_at', { withTimezone: true }).notNull().defaultNow(),
+    signalIds: text('signal_ids').array().notNull(),
+    clearedAt: timestamp('cleared_at', { withTimezone: true }),
+    clearedBy: uuid('cleared_by').references(() => operators.id),
+    clearReason: text('clear_reason'),
+    /** What the false-positive report counts: only 'false_positive' is a mark against the thresholds. */
+    clearVerdict: text('clear_verdict'),
+  },
+  (t) => [
+    index('risk_holds_bill_idx').on(t.billId, t.raisedAt.desc(), t.clearedAt.desc().nullsLast()),
+    check(
+      'risk_holds_clear_shape_check',
+      sql`(${t.clearedAt} is null and ${t.clearedBy} is null and ${t.clearReason} is null and ${t.clearVerdict} is null)
+          or (${t.clearedAt} is not null and ${t.clearedBy} is not null
+              and length(trim(${t.clearReason})) >= 10
+              and ${t.clearVerdict} in ('false_positive', 'accepted', 'resolved')
+              and ${t.clearedAt} >= ${t.raisedAt})`,
+    ),
+  ],
+);
