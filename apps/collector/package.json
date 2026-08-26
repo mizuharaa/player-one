@@ -1,0 +1,19 @@
+{
+  "name": "@playerone/collector",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Player One collector app (React Native). UI scaffold: the server and the device are mocked, there is no native project, and it does not launch on a phone yet — see README.md.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@playerone/design": "workspace:*",
+    "@tanstack/react-query": "^5.66.0",
+    "react": "^19.1.0",
+    "react-native": "^0.82.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.8"
+  }
+}
