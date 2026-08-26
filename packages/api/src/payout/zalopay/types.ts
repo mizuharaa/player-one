@@ -183,9 +183,21 @@ export type TransferFundResult =
 export type VerifyAccountResult =
   | {
       kind: 'verified';
-      /** ZaloPay's real name for the holder. B compares; it never overwrites the declared name. */
-      verifiedName: string;
-      /** Wallet route only; the id the transfer must use. Null on bank routes. */
+      /**
+       * The holder's name as ZaloPay has it — `account_holder_name` on the
+       * bank-account route, `card_holder_name` on the card route. B compares;
+       * it never overwrites the declared name.
+       *
+       * NULL ON THE WALLET ROUTE. The official Verify Account response for a
+       * wallet carries `m_u_id` and nothing else (docs.zalopay.vn
+       * disbursement-query-user response table; the All-in-One guide's wallet
+       * example is `"data": {"m_u_id": "..."}`). Part 0.6's "phone lookup
+       * returns the account holder's real name" is not what the current spec
+       * says, so a wallet payout has no name check from this call — escalated
+       * in the handoff, not papered over here. Bridge finding F-35.
+       */
+      verifiedName: string | null;
+      /** Wallet route: the id the transfer must use (§0.4). Null on bank routes. */
       mUId: string | null;
     }
   | {
@@ -317,11 +329,20 @@ export type ReceiverInfoPayload =
   | { bank_code: string; account_no: string; account_holder_name: string }
   | { bank_code: string; card_no: string; card_holder_name: string };
 
-/** Our §2.1 method → ZaloPay's `disbursement_type`. One table, one place to correct. */
-export const WIRE_DISBURSEMENT_TYPE: Readonly<Record<PayoutMethod, string>> = {
+/**
+ * Our §2.1 method → ZaloPay's `disbursement_type`.
+ *
+ * ZaloPay has TWO wire types, not three: `WALLET` or `BANK`
+ * (docs.zalopay.vn/vi/docs/specs/disbursement-query-user, request table;
+ * the All-in-One guide's ATM-card transfer example is
+ * `"disbursement_type": "BANK"`). A card is told from an account by the
+ * encrypted payload — `card_no`/`card_holder_name` versus
+ * `account_no`/`account_holder_name` — never by the type. Bridge finding F-34.
+ */
+export const WIRE_DISBURSEMENT_TYPE: Readonly<Record<PayoutMethod, 'WALLET' | 'BANK'>> = {
   WALLET: 'WALLET',
   BANK_ACCOUNT: 'BANK',
-  BANK_CARD: 'CARD',
+  BANK_CARD: 'BANK',
 };
 
 export interface VerifyAccountRequest {
@@ -381,26 +402,47 @@ export interface ZaloPayEnvelope<Data> {
   data?: Data;
 }
 
+/**
+ * Verify Account `data`, per route (official response table): the wallet
+ * route answers `m_u_id` only; the bank-account route `account_holder_name`;
+ * the card route `card_holder_name`. `reform_url` comes with -406 and -101 on
+ * the wallet route; `onboarding_url` is Part 0.5's name for the -101 page and
+ * is read too in case the PDF and the web page differ.
+ */
 export interface VerifyAccountData {
-  /** The holder's real name as ZaloPay has it. */
-  receiver_name?: string;
   m_u_id?: string;
-  onboarding_url?: string;
+  account_holder_name?: string;
+  card_holder_name?: string;
   reform_url?: string;
+  onboarding_url?: string;
 }
 
+/**
+ * Transfer Fund and Query Transaction share one `data` shape on the official
+ * pages: the order, its state, and an echo of the receiver (masked phone,
+ * account/card fields). `zp_trans_id` and `result_url` are Part 0's names
+ * from the PDF and are ABSENT from the current web pages — read when present,
+ * never required.
+ */
 export interface TransferFundData {
   order_id?: string;
-  status?: number;
-  partner_order_id?: string;
-}
-
-export interface QueryTxnData {
-  order_id?: string;
-  zp_trans_id?: string;
+  disbursement_type?: string;
   status?: number;
   amount?: number;
-  partner_order_id?: string;
+  partner_fee?: number;
+  zlp_fee?: number;
+  server_time?: number;
+  m_u_id?: string;
+  phone?: string;
+  bank_code?: string;
+  account_no?: string;
+  account_holder_name?: string;
+  card_no?: string;
+  card_holder_name?: string;
+}
+
+export interface QueryTxnData extends TransferFundData {
+  zp_trans_id?: string;
   result_url?: string;
 }
 
@@ -413,16 +455,25 @@ export interface BankCodesData {
 }
 
 /**
- * Names Part 0 does not spell out and the PDF was not here to settle. Each is
- * used in exactly one place in `client.ts` and one in `fake-server.ts`; a wrong
- * one is a -401 in sandbox and a two-line fix, not a design change.
+ * What the official web pages (docs.zalopay.vn, read 2026-08-26) settled, and
+ * what they did not. The PDF named in Part 0 was not on this machine.
+ *
+ * CONFIRMED from the spec pages and the All-in-One guide's worked examples:
+ * `disbursement_type` is `WALLET` | `BANK` (card = BANK); verify-account
+ * `data` is `m_u_id` | `account_holder_name` | `card_holder_name` by route;
+ * transfer-fund and query-txn `data.order_id`, `.status`, `.amount`; balance
+ * `data.balance`; the per-endpoint hmac inputs match Part 0.3 exactly; the
+ * signature field is `mac` on verify-account, query-txn, balance and in every
+ * transfer-fund example in the guide.
+ *
+ * STILL OPEN — each is one line here and one in the fake; a wrong one is a
+ * -401/-402 on the first sandbox call, not a design change:
  */
 export const WIRE_NAMES_TO_CONFIRM = [
-  "disbursement_type for the card route ('CARD')",
-  "verify-account data.receiver_name (the holder's real name)",
-  'transfer-fund data.order_id (the zlp order id)',
-  'query-txn data.zp_trans_id, data.result_url, data.amount',
-  'balance data.balance',
-  'get-bank-code data.banks[].bank_code / .name',
-  "receiver_info RSA padding (default PKCS#1 v1.5, see crypto.ts)",
+  "transfer-fund signature field: the guide's examples send `mac`; the spec page's request table has a row named `sig` (optional) with the HMAC description and no `mac` row. This client sends `mac`.",
+  'endpoint URIs (/v2/disbursement/verify-account, transfer-fund, query-txn, balance, get-bank-code) come from Part 0.1; the web pages do not print them',
+  'query-txn data.zp_trans_id and data.result_url (Part 0 / PDF) are absent from the current web pages; read when present, never required',
+  'get-bank-code request/response shape (data.banks[].bank_code / .name) is not on any page reached',
+  "partner_embed_data / extra_info when empty: spec page default is \"{}\" (as Part 0 says); the guide's examples send \"\". This client sends \"{}\".",
+  'receiver_info RSA padding (default PKCS#1 v1.5, see crypto.ts)',
 ] as const;

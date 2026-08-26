@@ -61,12 +61,13 @@ export const VECTORS = {
       '2553|PM-001|PO-6f1c2d3e-0002|BANK|ZW5jcnlwdGVkLXJlY2VpdmVyLWluZm8tZml4dHVyZQ==|2000|Player One 2026-08 payout|{}|{}|1756200000001',
     mac: '19fd6a25d3015223c3b2897e020bb2083688440a3ae06d59befe44877edf173e',
   },
+  /** A card is `BANK` on the wire (F-34); only the encrypted payload says it is a card. */
   transferFundBankCard: {
     fields: {
       app_id: APP_ID,
       payment_id: PAYMENT_ID,
       partner_order_id: 'PO-6f1c2d3e-0003',
-      disbursement_type: 'CARD',
+      disbursement_type: 'BANK',
       receiver_info: RECEIVER_INFO_FIXTURE,
       amount: 10_000_000,
       description: DESCRIPTION,
@@ -75,8 +76,8 @@ export const VECTORS = {
       time: 1756200000002,
     },
     macInput:
-      '2553|PM-001|PO-6f1c2d3e-0003|CARD|ZW5jcnlwdGVkLXJlY2VpdmVyLWluZm8tZml4dHVyZQ==|10000000|Player One 2026-08 payout|{"bill":"6f1c2d3e"}|{}|1756200000002',
-    mac: '5d12b0465d9527816db90934f4ee1a95fc99eaab3ca2175ac287cc45023a6979',
+      '2553|PM-001|PO-6f1c2d3e-0003|BANK|ZW5jcnlwdGVkLXJlY2VpdmVyLWluZm8tZml4dHVyZQ==|10000000|Player One 2026-08 payout|{"bill":"6f1c2d3e"}|{}|1756200000002',
+    mac: '2bc435b37adda41e2f6cf02536b5187ed134decfcfd756169f34f62a724c5f6a',
   },
   verifyAccountWallet: {
     fields: {
@@ -154,6 +155,123 @@ gwIDAQAB
 -----END PUBLIC KEY-----
 `,
 };
+
+/**
+ * OFFICIAL SHAPES — verbatim from docs.zalopay.vn, read 2026-08-26, after
+ * bridge findings F-34 and F-35 showed the first version of this module
+ * inventing a wire type (`CARD`) and a response field (`receiver_name`) that
+ * ZaloPay does not have. These are the vendor's own examples; the tests
+ * assert that the client parses them and that the fake server answers in
+ * exactly their key sets, so nothing here can pass against a shape only our
+ * own fake produces.
+ *
+ * Sources:
+ *   guide  https://docs.zalopay.vn/docs/guides/business-operation/disbursement-all-in-one/intro/
+ *   spec   https://docs.zalopay.vn/vi/docs/specs/disbursement-query-user/  (verify account)
+ *   spec   https://docs.zalopay.vn/vi/docs/specs/disbursement-topup/       (transfer)
+ *   spec   https://docs.zalopay.vn/vi/docs/specs/disbursement-query-order/ (query)
+ *   spec   https://docs.zalopay.vn/vi/docs/specs/disbursement-query-merchant-balance/
+ *
+ * The macs in the guide's requests were made with ZaloPay's sample key,
+ * which is not published, so they cannot be re-derived here; the requests are
+ * pinned for their KEY SET and their `disbursement_type`, not their mac.
+ */
+export const OFFICIAL = {
+  /** Guide, "Transfer Fund" — Zalopay wallet route. */
+  transferFundWalletRequest: {
+    app_id: 15752,
+    payment_id: 'P270868',
+    partner_order_id: '231010_6006493217',
+    disbursement_type: 'WALLET',
+    receiver_info: 'EKDa5iB2QvDMOOAlwqDXRZDTR+B3y....',
+    amount: 10000,
+    description: 'Bonuses for users',
+    partner_embed_data: '',
+    extra_info: '',
+    time: 1700634330810,
+    mac: 'e299e9189904266571daa7011d1746bd6d0082c8e1fccc3b07d203d3b9103585',
+    mc_reference_id: 'TRANSACTION_01',
+  },
+  /** Guide, "Transfer Fund" — ATM card route. Note `disbursement_type: "BANK"`. */
+  transferFundAtmCardRequest: {
+    app_id: 15752,
+    payment_id: 'P270868',
+    partner_order_id: '3729797766',
+    disbursement_type: 'BANK',
+    receiver_info: 'IhtaVoGt19bRqU8vzinEwfy....',
+    amount: 10000,
+    description: 'Bonuses for users',
+    partner_embed_data: '',
+    extra_info: '',
+    time: 1700635341572,
+    mac: '76a9ef49f7b334b9957962c04e41cb16b33623ce8e457b193d30c69ae45e2044',
+    mc_reference_id: 'TRANSACTION_01',
+  },
+  /** Guide, "Verify Account" — wallet route request. `redirect_url` is optional and outside the mac. */
+  verifyAccountWalletRequest: {
+    app_id: 15752,
+    disbursement_type: 'WALLET',
+    receiver_info: '[encrypted]',
+    amount: 10000,
+    redirect_url: 'zalopay://launch/app/2242',
+    time: 1700551306699,
+    mac: '[signature]',
+  },
+  /** Guide, "Verify Account" — wallet route response. `m_u_id` and NO name. */
+  verifyAccountWalletResponse: {
+    return_code: 1,
+    return_message: 'Giao dịch thành công',
+    sub_return_code: 1,
+    sub_return_message: 'Giao dịch thành công',
+    data: { m_u_id: 'Yh2mBCG983efb1Iwu4FuZJO5TgpnCXT-4fwvhNJV1a8' },
+  },
+  /** Guide, "Verify Account" — bank-account route response carries `account_holder_name`. */
+  verifyAccountBankAccountResponse: {
+    return_code: 1,
+    return_message: 'Giao dịch thành công',
+    sub_return_code: 1,
+    sub_return_message: 'Giao dịch thành công',
+    data: { account_holder_name: 'NGUYEN VAN A' },
+  },
+  /** Guide, "Verify Account" — ATM card route response carries `card_holder_name`. */
+  verifyAccountAtmCardResponse: {
+    return_code: 1,
+    return_message: 'Giao dịch thành công',
+    sub_return_code: 1,
+    sub_return_message: 'Giao dịch thành công',
+    data: { card_holder_name: 'NGUYEN VAN A' },
+  },
+  /** Guide, "Transfer Fund" — wallet route response `data`. */
+  transferFundWalletResponse: {
+    return_code: 3,
+    return_message: 'PROCESSING',
+    sub_return_code: 3,
+    sub_return_message: 'PROCESSING',
+    data: { order_id: '51642840027000060', status: 3, amount: 10000 },
+  },
+  /**
+   * Spec, transfer / query response `data` — every documented key. The
+   * client must accept all of them and require only `order_id` and `status`.
+   */
+  transferOrQueryDataKeys: [
+    'order_id',
+    'disbursement_type',
+    'm_u_id',
+    'phone',
+    'bank_code',
+    'account_no',
+    'account_holder_name',
+    'card_no',
+    'card_holder_name',
+    'status',
+    'amount',
+    'partner_fee',
+    'zlp_fee',
+    'server_time',
+  ],
+  /** Guide, "Balance" response. */
+  balanceResponse: { return_code: 1, data: { balance: 42712 } },
+} as const;
 
 /**
  * Legacy topup: `sig = RSA_sign(privateKey, HMAC_SHA256(key1, input))`, the

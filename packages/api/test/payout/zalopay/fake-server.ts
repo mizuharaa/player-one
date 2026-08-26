@@ -284,9 +284,23 @@ export class FakeZaloPay {
     }
     switch (endpoint) {
       case 'verifyAccount': {
-        const data: Record<string, unknown> = { receiver_name: scenario.name ?? nameFor(receiver) };
-        if (receiver !== null && 'phone' in receiver) data['m_u_id'] = scenario.mUId ?? `MU-${receiver.phone}`;
-        return this.envelope(1, 1, 'SUCCESS', data);
+        // Route-shaped, exactly as the official response table: a wallet
+        // answers `m_u_id` and no name; an account `account_holder_name`; a
+        // card `card_holder_name`. `scenario.name` overrides the holder name
+        // on the two bank routes and is ignored on the wallet route, which
+        // has no name to override (bridge finding F-35).
+        if (receiver !== null && 'phone' in receiver) {
+          return this.envelope(1, 1, 'Giao dịch thành công', { m_u_id: scenario.mUId ?? `MU-${receiver.phone}` });
+        }
+        if (receiver !== null && 'card_no' in receiver) {
+          return this.envelope(1, 1, 'Giao dịch thành công', { card_holder_name: scenario.name ?? receiver.card_holder_name });
+        }
+        if (receiver !== null && 'account_no' in receiver) {
+          return this.envelope(1, 1, 'Giao dịch thành công', { account_holder_name: scenario.name ?? receiver.account_holder_name });
+        }
+        // receiver_info did not decrypt to any documented route: ZaloPay
+        // would not have understood the request either.
+        return this.envelope(2, -401, 'ILLEGAL_DATA_REQUEST');
       }
       case 'transferFund': {
         const partnerOrderId = String(body['partner_order_id'] ?? '');
@@ -309,8 +323,11 @@ export class FakeZaloPay {
         // (no order, sub code) is the `sub` scenario.
         return this.envelope(status === 3 ? 3 : 1, 1, statusName(status), {
           order_id: order.orderId,
-          partner_order_id: partnerOrderId,
+          disbursement_type: String(body['disbursement_type'] ?? ''),
+          ...echo(receiver),
           status,
+          amount: order.amount,
+          server_time: Date.now(),
         });
       }
       case 'queryTxn': {
@@ -319,10 +336,15 @@ export class FakeZaloPay {
         const status = scenario.status ?? order.status;
         return this.envelope(status === 3 ? 3 : 1, 1, statusName(status), {
           order_id: order.orderId,
-          partner_order_id: order.partnerOrderId,
-          zp_trans_id: status === 1 ? (order.zpTransId ?? `ZP${order.orderId}`) : undefined,
+          disbursement_type: order.receiver !== null && 'm_u_id' in order.receiver ? 'WALLET' : 'BANK',
+          ...echo(order.receiver),
           status,
           amount: order.amount,
+          server_time: Date.now(),
+          // Part 0's PDF names these on query-txn; the current web page does
+          // not. Produced here because B's ledger records zp_trans_id; the
+          // client treats both as optional.
+          zp_trans_id: status === 1 ? (order.zpTransId ?? `ZP${order.orderId}`) : undefined,
           result_url: `https://sb-openapi.zalopay.vn/result/${order.orderId}`,
         });
       }
@@ -403,12 +425,20 @@ function statusName(status: ZlpStatus): string {
   return { 1: 'SUCCESS', 2: 'FAIL', 3: 'PROCESSING', 4: 'PENDING' }[status];
 }
 
-/** A plausible verified name for a receiver, so the default `ok` verify answers with something. */
-function nameFor(receiver: ReceiverInfoPayload | null): string {
-  if (receiver === null) return 'NGUYEN VAN A';
-  if ('account_holder_name' in receiver) return receiver.account_holder_name;
-  if ('card_holder_name' in receiver) return receiver.card_holder_name;
-  return 'NGUYEN VAN A';
+/**
+ * The receiver echo the official transfer/query `data` carries: `m_u_id` and
+ * a masked `phone` on the wallet route, the account or card fields on the
+ * bank route. A transfer names a wallet by `m_u_id` only, so the phone echo is
+ * synthesised from it here.
+ */
+function echo(receiver: ReceiverInfoPayload | null): Record<string, string> {
+  if (receiver === null) return {};
+  if ('m_u_id' in receiver) return { m_u_id: receiver.m_u_id, phone: `****${receiver.m_u_id.slice(-4)}` };
+  if ('phone' in receiver) return { phone: `****${receiver.phone.slice(-4)}` };
+  if ('card_no' in receiver) {
+    return { bank_code: receiver.bank_code, card_no: receiver.card_no, card_holder_name: receiver.card_holder_name };
+  }
+  return { bank_code: receiver.bank_code, account_no: receiver.account_no, account_holder_name: receiver.account_holder_name };
 }
 
 /** Start one and hand it back. `await fake.close()` in `afterAll`. */

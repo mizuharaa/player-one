@@ -15,7 +15,7 @@ import {
   type ZlpStatus,
 } from '../../../src/payout/zalopay/types.ts';
 import { FakeZaloPay, startFakeZaloPay } from './fake-server.ts';
-import { TEST_RSA } from './fixtures.ts';
+import { OFFICIAL, TEST_RSA } from './fixtures.ts';
 
 /**
  * The client against the fake server (§2.2 seam). Everything on 127.0.0.1,
@@ -153,7 +153,7 @@ describe('zaloPayClientFromEnv', () => {
     const c = zaloPayClientFromEnv({ ...complete, PLAYERONE_ZALOPAY_PUBLIC_KEY: flattened });
     expect(c).not.toBeNull();
     // A broken PEM would throw inside publicEncrypt on first use.
-    const capture: typeof fetch = async () => new Response(JSON.stringify({ return_code: 1, data: { receiver_name: 'X' } }));
+    const capture: typeof fetch = async () => new Response(JSON.stringify({ return_code: 1, data: { m_u_id: 'MU' } }));
     const usable = new ZaloPayHttpClient({ ...config(), zaloPayPublicKeyPem: flattened.replaceAll('\\n', '\n'), fetch: capture });
     await expect(usable.verifyAccount({ receiver: { method: 'WALLET', phone: '0901234567' }, amountVnd: 1 })).resolves.toMatchObject({ kind: 'verified' });
   });
@@ -167,9 +167,9 @@ describe('zaloPayClientFromEnv', () => {
 // ---------------------------------------------------------------------------
 
 describe('verify-account', () => {
-  it('wallet route: sends the phone, gets the real name and the m_u_id the transfer will need', async () => {
+  it('wallet route: sends the phone, gets the m_u_id the transfer will need — and NO name (official shape, F-35)', async () => {
     const r = await client().verifyAccount({ receiver: { method: 'WALLET', phone: '0901234567' }, amountVnd: 1 });
-    expect(r).toEqual({ kind: 'verified', verifiedName: 'NGUYEN VAN A', mUId: 'MU-0901234567' });
+    expect(r).toEqual({ kind: 'verified', verifiedName: null, mUId: 'MU-0901234567' });
     const [req] = fake.requests('verifyAccount');
     expect(req?.macValid).toBe(true);
     expect(req?.receiver).toEqual({ phone: '0901234567' });
@@ -177,7 +177,7 @@ describe('verify-account', () => {
     expect(req?.body['amount']).toBe(1);
   });
 
-  it('bank routes: the holder name goes in, a verified name comes back, no m_u_id', async () => {
+  it('bank routes: the holder name goes in, the verified name comes back by route, no m_u_id; a card is BANK on the wire (F-34)', async () => {
     fake.plan('verifyAccount', { kind: 'ok', name: 'NGUYEN VAN B' });
     const r = await client().verifyAccount({ receiver: BANK, amountVnd: 2_000 });
     expect(r).toEqual({ kind: 'verified', verifiedName: 'NGUYEN VAN B', mUId: null });
@@ -189,13 +189,14 @@ describe('verify-account', () => {
     expect(fake.requests('verifyAccount')[0]?.body['disbursement_type']).toBe('BANK');
 
     const r2 = await client().verifyAccount({ receiver: CARD, amountVnd: 2_000 });
-    expect(r2).toMatchObject({ kind: 'verified', mUId: null });
+    expect(r2).toEqual({ kind: 'verified', verifiedName: 'TRAN THI B', mUId: null });
     expect(fake.requests('verifyAccount')[1]?.receiver).toEqual({
       bank_code: 'TCB',
       card_no: '9704000000000001',
       card_holder_name: 'TRAN THI B',
     });
-    expect(fake.requests('verifyAccount')[1]?.body['disbursement_type']).toBe('CARD');
+    expect(fake.requests('verifyAccount')[1]?.body['disbursement_type']).toBe('BANK');
+    expect(fake.requests('verifyAccount').every((q) => q.macValid)).toBe(true);
   });
 
   it('-101 no wallet: rejected, carrying the onboarding page for the collector', async () => {
@@ -269,8 +270,10 @@ describe('transfer-fund', () => {
     const [a, b] = fake.requests('transferFund');
     expect(a?.body['disbursement_type']).toBe('BANK');
     expect(a?.receiver).toEqual({ bank_code: 'VCB', account_no: '0011002233445', account_holder_name: 'NGUYEN VAN A' });
-    expect(b?.body['disbursement_type']).toBe('CARD');
+    // F-34: a card is `BANK` on the wire; only the encrypted payload says card.
+    expect(b?.body['disbursement_type']).toBe('BANK');
     expect(b?.receiver).toEqual({ bank_code: 'TCB', card_no: '9704000000000001', card_holder_name: 'TRAN THI B' });
+    expect(b?.macValid).toBe(true);
   });
 
   it('partner_embed_data and extra_info default to "{}" — not "", not omitted — and "" is corrected to "{}"', async () => {
@@ -493,5 +496,104 @@ describe('balance and get-bank-code', () => {
     const fetchFn = (body: object): typeof fetch => async () => new Response(JSON.stringify(body));
     await expect(client({ fetch: fetchFn({ return_code: 1, data: {} }) }).balance()).rejects.toMatchObject({ cause: 'malformed' });
     await expect(client({ fetch: fetchFn({ return_code: 1, data: { banks: [{ name: 'x' }] } }) }).bankCodes()).rejects.toMatchObject({ cause: 'malformed' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * The vendor's own examples (fixtures.ts `OFFICIAL`), fed to the client
+ * through an injected fetch — no fake in the loop — and then the fake held to
+ * the same key sets. Bridge findings F-34 and F-35: the first version of this
+ * module passed 85 tests against a shape only its own fake produced.
+ */
+describe('official shapes from docs.zalopay.vn', () => {
+  const answer = (body: object): typeof fetch => async () => new Response(JSON.stringify(body));
+
+  it('verify-account, wallet route: m_u_id and no name → verified with verifiedName null', async () => {
+    const c = client({ fetch: answer(OFFICIAL.verifyAccountWalletResponse) });
+    const r = await c.verifyAccount({ receiver: { method: 'WALLET', phone: '0901234567' }, amountVnd: 10000 });
+    expect(r).toEqual({ kind: 'verified', verifiedName: null, mUId: 'Yh2mBCG983efb1Iwu4FuZJO5TgpnCXT-4fwvhNJV1a8' });
+  });
+
+  it('verify-account, bank-account route: account_holder_name', async () => {
+    const c = client({ fetch: answer(OFFICIAL.verifyAccountBankAccountResponse) });
+    expect(await c.verifyAccount({ receiver: BANK, amountVnd: 10000 })).toEqual({ kind: 'verified', verifiedName: 'NGUYEN VAN A', mUId: null });
+  });
+
+  it('verify-account, ATM card route: card_holder_name', async () => {
+    const c = client({ fetch: answer(OFFICIAL.verifyAccountAtmCardResponse) });
+    expect(await c.verifyAccount({ receiver: CARD, amountVnd: 10000 })).toEqual({ kind: 'verified', verifiedName: 'NGUYEN VAN A', mUId: null });
+  });
+
+  it('a route answered with the OTHER route’s field is malformed, not silently accepted', async () => {
+    // A card answered with account_holder_name, a wallet answered with a name and no m_u_id.
+    await expect(client({ fetch: answer(OFFICIAL.verifyAccountBankAccountResponse) }).verifyAccount({ receiver: CARD, amountVnd: 1 })).rejects.toMatchObject({ cause: 'malformed' });
+    await expect(client({ fetch: answer({ return_code: 1, data: { account_holder_name: 'X' } }) }).verifyAccount({ receiver: { method: 'WALLET', phone: '0901234567' }, amountVnd: 1 })).rejects.toMatchObject({ cause: 'malformed' });
+  });
+
+  it('transfer-fund response from the guide → accepted, PROCESSING, with the order id', async () => {
+    const r = await transfer(client({ fetch: answer(OFFICIAL.transferFundWalletResponse) }));
+    expect(r).toEqual({ kind: 'accepted', zlpOrderId: '51642840027000060', status: 3 });
+  });
+
+  it('balance response from the guide', async () => {
+    expect(await client({ fetch: answer(OFFICIAL.balanceResponse) }).balance()).toEqual({ balanceVnd: 42712 });
+  });
+
+  it('the request the client sends has the key set of the guide’s transfer-fund example, with disbursement_type BANK for a card', async () => {
+    const sent: Record<string, unknown>[] = [];
+    const capture: typeof fetch = async (_url, init) => {
+      sent.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify(OFFICIAL.transferFundWalletResponse));
+    };
+    await transfer(client({ fetch: capture }), 'PO-official-1', CARD);
+    await transfer(client({ fetch: capture }), 'PO-official-2', WALLET);
+    const official = Object.keys(OFFICIAL.transferFundAtmCardRequest).filter((k) => k !== 'mc_reference_id').sort();
+    expect(Object.keys(sent[0]!).sort()).toEqual(official);
+    expect(sent[0]).toMatchObject({ disbursement_type: 'BANK' });
+    expect(sent[1]).toMatchObject({ disbursement_type: 'WALLET' });
+    // Signed under `mac`, as every transfer-fund example in the guide is. The
+    // spec page's table names a `sig` row instead — WIRE_NAMES_TO_CONFIRM.
+    expect(sent[0]).toHaveProperty('mac');
+    expect(sent[0]).not.toHaveProperty('sig');
+  });
+
+  it('the fake answers verify-account in exactly the official key set per route', async () => {
+    const c = client();
+    await c.verifyAccount({ receiver: { method: 'WALLET', phone: '0901234567' }, amountVnd: 1 });
+    await c.verifyAccount({ receiver: BANK, amountVnd: 1 });
+    await c.verifyAccount({ receiver: CARD, amountVnd: 1 });
+    const raw = await Promise.all(
+      fake.requests('verifyAccount').map(async (q) => {
+        // Re-ask the fake directly for the same body to see the exact JSON it produced.
+        const res = await fetch(fake.baseUrl + ENDPOINTS.verifyAccount, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(q.body) });
+        return (await res.json()) as { data: Record<string, unknown> };
+      }),
+    );
+    expect(Object.keys(raw[0]!.data)).toEqual(Object.keys(OFFICIAL.verifyAccountWalletResponse.data));
+    expect(Object.keys(raw[1]!.data)).toEqual(Object.keys(OFFICIAL.verifyAccountBankAccountResponse.data));
+    expect(Object.keys(raw[2]!.data)).toEqual(Object.keys(OFFICIAL.verifyAccountAtmCardResponse.data));
+  });
+
+  it('the fake’s transfer and query data use only keys the spec documents (plus the two Part 0 names, flagged)', async () => {
+    // A fetch that records what the fake actually sent back, byte for byte.
+    const answers: { data: Record<string, unknown> }[] = [];
+    const recording: typeof fetch = async (url, init) => {
+      const res = await fetch(url, init);
+      const text = await res.text();
+      answers.push(JSON.parse(text) as { data: Record<string, unknown> });
+      return new Response(text, { status: res.status, headers: { 'content-type': 'application/json' } });
+    };
+    const c = client({ fetch: recording });
+    expect(await transfer(c, 'PO-keys', BANK)).toMatchObject({ kind: 'accepted', status: 3 });
+    fake.setOrderStatus('PO-keys', 1);
+    expect(await c.queryTransaction('PO-keys')).toMatchObject({ kind: 'found', status: 1 });
+    expect(answers).toHaveLength(2);
+    const allowed = new Set<string>([...OFFICIAL.transferOrQueryDataKeys, 'zp_trans_id', 'result_url']);
+    for (const a of answers) {
+      for (const k of Object.keys(a.data)) expect(allowed.has(k), `undocumented key ${k}`).toBe(true);
+      expect(a.data).toMatchObject({ disbursement_type: 'BANK', bank_code: 'VCB', account_holder_name: 'NGUYEN VAN A' });
+    }
   });
 });

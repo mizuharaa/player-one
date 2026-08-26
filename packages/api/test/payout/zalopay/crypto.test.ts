@@ -99,7 +99,7 @@ describe('the encrypted receiver_info in the body is the one in the mac', () => 
   });
 
   it('verify-account, 20 random receivers', async () => {
-    const { fetch: fetchFn, bodies } = capturing<VerifyAccountRequest>({ receiver_name: 'NGUYEN VAN A', m_u_id: 'MU' });
+    const { fetch: fetchFn, bodies } = capturing<VerifyAccountRequest>({ m_u_id: 'MU' });
     const client = new ZaloPayHttpClient({
       env: 'sandbox',
       appId: APP_ID,
@@ -120,7 +120,7 @@ describe('the encrypted receiver_info in the body is the one in the mac', () => 
   });
 
   it('the body carries the ciphertext, never the plaintext', async () => {
-    const { fetch: fetchFn, bodies } = capturing<VerifyAccountRequest>({ receiver_name: 'X' });
+    const { fetch: fetchFn, bodies } = capturing<VerifyAccountRequest>({ account_holder_name: 'X' });
     const client = new ZaloPayHttpClient({
       env: 'sandbox',
       appId: APP_ID,

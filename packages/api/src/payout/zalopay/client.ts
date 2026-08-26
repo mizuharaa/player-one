@@ -114,12 +114,31 @@ export class ZaloPayHttpClient implements ZaloPayClient {
 
     const r = await this.post<VerifyAccountData>('verifyAccount', body, this.timeouts.otherMs);
     if (r.return_code === 1) {
-      const name = r.data?.receiver_name;
-      if (typeof name !== 'string' || name === '') {
-        throw new ZaloPayTransportError('verifyAccount', 'malformed', 'success without receiver_name');
+      // Parsed BY ROUTE, because the official response is route-shaped
+      // (see `VerifyAccountData`): a wallet answers only `m_u_id`, an account
+      // only `account_holder_name`, a card only `card_holder_name`. Each route
+      // requires the one field it is documented to return and nothing else.
+      const d = r.data ?? {};
+      switch (input.receiver.method) {
+        case 'WALLET': {
+          if (!nonEmpty(d.m_u_id)) {
+            throw new ZaloPayTransportError('verifyAccount', 'malformed', 'wallet success without m_u_id');
+          }
+          return { kind: 'verified', verifiedName: null, mUId: d.m_u_id };
+        }
+        case 'BANK_ACCOUNT': {
+          if (!nonEmpty(d.account_holder_name)) {
+            throw new ZaloPayTransportError('verifyAccount', 'malformed', 'bank-account success without account_holder_name');
+          }
+          return { kind: 'verified', verifiedName: d.account_holder_name, mUId: null };
+        }
+        case 'BANK_CARD': {
+          if (!nonEmpty(d.card_holder_name)) {
+            throw new ZaloPayTransportError('verifyAccount', 'malformed', 'card success without card_holder_name');
+          }
+          return { kind: 'verified', verifiedName: d.card_holder_name, mUId: null };
+        }
       }
-      const mUId = r.data?.m_u_id;
-      return { kind: 'verified', verifiedName: name, mUId: typeof mUId === 'string' ? mUId : null };
     }
     const sub = this.subCode('verifyAccount', r, null);
     if (sub.kind === 'system') return sub;
@@ -350,6 +369,10 @@ function wholeVnd(amount: number): number {
 
 function zlpStatus(s: unknown): ZlpStatus | null {
   return s === 1 || s === 2 || s === 3 || s === 4 ? s : null;
+}
+
+function nonEmpty(s: unknown): s is string {
+  return typeof s === 'string' && s !== '';
 }
 
 /** §0.4 — verify by phone on the wallet route. */
