@@ -303,9 +303,13 @@ export type PayOutcome =
   | { kind: 'refused'; constraint: PayRefusal | string; attempt?: AttemptRow };
 
 export class PayRefused extends Error {
-  constructor(readonly constraint: string) {
+  /** Not a parameter property: Node's strip-only TypeScript refuses those (RUNNING.md). */
+  readonly constraint: string;
+
+  constructor(constraint: string) {
     super(constraint);
     this.name = 'PayRefused';
+    this.constraint = constraint;
   }
 }
 
@@ -325,24 +329,35 @@ function receiverOf(bill: BatchBill): TransferReceiver | PayRefusal {
   return 'payout_bank_details_unavailable';
 }
 
-export async function payBill(
+/**
+ * What stands between this bill and ANY payment, manual or API, as the name
+ * the console maps to a sentence — or null when nothing does. One function,
+ * asked by `payBill` and by `/mark-paid` alike (bridge review F-41), so the
+ * default manual rail cannot record as paid what the API rail would refuse
+ * to send: an unverified or mismatched destination, a held bill while holds
+ * are on, a bill over the cap. The cap raises its ticket here, so it is
+ * raised the same way whichever rail asks. ZaloPay's bank limits are asked
+ * too, because the trigger will refuse them anyway and a sentence beats a 500.
+ */
+export async function refusalFor(
   db: Db,
-  client: ZaloPayClient | undefined,
-  actor: Actor,
   bill: BatchBill,
-  options: BatchOptions & { pauseMs?: number } = {},
-): Promise<PayOutcome> {
-  if (client === undefined) return { kind: 'refused', constraint: 'payout_no_client' };
-  if (bill.paid) return { kind: 'refused', constraint: 'payout_already_paid' };
-  if (bill.amountVnd === null) return { kind: 'refused', constraint: 'payout_attempts_total_fractional' };
+  options: Pick<BatchOptions, 'capVnd'>,
+): Promise<PayRefusal | null> {
+  if (bill.paid) return 'payout_already_paid';
+  if (bill.amountVnd === null) return 'payout_attempts_total_fractional';
   for (const issue of bill.issues) {
     switch (issue) {
+      case 'no_account':
+        return 'payout_account_missing';
+      case 'account_unverified':
+        return 'payout_account_unverified';
       case 'over_bank_ceiling':
-        return { kind: 'refused', constraint: 'payout_attempts_bank_ceiling' };
+        return 'payout_attempts_bank_ceiling';
       case 'under_bank_minimum':
-        return { kind: 'refused', constraint: 'payout_attempts_bank_minimum' };
+        return 'payout_attempts_bank_minimum';
       case 'risk_hold':
-        return { kind: 'refused', constraint: 'payout_risk_hold' };
+        return 'payout_risk_hold';
       case 'over_cap':
         // Loudly: a ticket, and no attempt. Never silently the cap.
         await emitEvent(db, {
@@ -352,18 +367,31 @@ export async function payBill(
           evidence: {
             amount_vnd: bill.amountVnd,
             cap_vnd: options.capVnd,
-            message: `Bill of ${bill.amountVnd} VND exceeds the per-collector-per-period cap of ${options.capVnd} VND and was not sent.`,
+            message: `Bill of ${bill.amountVnd} VND exceeds the per-collector-per-period cap of ${options.capVnd} VND and was not paid.`,
           },
         });
-        return { kind: 'refused', constraint: 'payout_cap_exceeded' };
+        return 'payout_cap_exceeded';
       default:
         break;
     }
   }
+  return null;
+}
+
+export async function payBill(
+  db: Db,
+  client: ZaloPayClient | undefined,
+  actor: Actor,
+  bill: BatchBill,
+  options: BatchOptions & { pauseMs?: number } = {},
+): Promise<PayOutcome> {
+  if (client === undefined) return { kind: 'refused', constraint: 'payout_no_client' };
+  const gate = await refusalFor(db, bill, options);
+  if (gate !== null) return { kind: 'refused', constraint: gate };
   const receiver = receiverOf(bill);
   if (typeof receiver === 'string') return { kind: 'refused', constraint: receiver };
 
-  const amountVnd = bill.amountVnd;
+  const amountVnd = bill.amountVnd!;
   const attemptId = randomUUID();
 
   // 1. The attempt exists, or the database has said why not.

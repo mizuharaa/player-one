@@ -206,6 +206,7 @@ DECLARE
   acct_method text;
   acct_collector uuid;
   acct_current boolean;
+  acct_verify text;
   computed_seq integer;
   computed_id text;
 BEGIN
@@ -253,7 +254,8 @@ BEGIN
         USING ERRCODE = '23514', CONSTRAINT = 'payout_attempts_amount_check';
     END IF;
 
-    SELECT method, collector_id, is_current INTO acct_method, acct_collector, acct_current
+    SELECT method, collector_id, is_current, verify_status
+      INTO acct_method, acct_collector, acct_current, acct_verify
       FROM payout_accounts WHERE id = NEW.payout_account_id;
     IF acct_collector IS NULL THEN RETURN NEW; END IF;
     IF acct_collector <> bill_collector THEN
@@ -265,6 +267,19 @@ BEGIN
       RAISE EXCEPTION 'payout_attempts_account_current: account % has been replaced; pay the current account',
         NEW.payout_account_id
         USING ERRCODE = '23514', CONSTRAINT = 'payout_attempts_account_current';
+    END IF;
+    -- Whatever the rail. A manual attempt records that a person sent money to
+    -- this destination; if ZaloPay did not confirm the destination is the
+    -- collector — name mismatch, no wallet, locked, or never asked — that is
+    -- the payment to a stranger the whole pilot posture exists to prevent, and
+    -- the record of it is refused here, not only by the route that happens to
+    -- exist today. Consequence: a pilot with no ZaloPay credentials verifies
+    -- nobody and can therefore pay nobody. That is the G3 gate (every active
+    -- collector verified before payout), and any override is an escalation.
+    IF acct_verify IS DISTINCT FROM 'verified' THEN
+      RAISE EXCEPTION 'payout_attempts_account_unverified: account % is %, and only a verified account is paid',
+        NEW.payout_account_id, acct_verify
+        USING ERRCODE = '23514', CONSTRAINT = 'payout_attempts_account_unverified';
     END IF;
     IF acct_method IN ('BANK_ACCOUNT', 'BANK_CARD') THEN
       IF NEW.amount_vnd > 10000000 THEN
