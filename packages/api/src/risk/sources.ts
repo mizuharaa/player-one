@@ -93,21 +93,16 @@ export async function identInputFor(db: Reader, collectorId: string): Promise<Id
   };
   let kyc = accounts.filter((a) => a.verifyStatus === 'kyc_limit').length;
   if (await tableExists(db, 'payout_events')) {
-    // The event table's columns are B's to name; these are the ones the
-    // brief's own wording implies. A table without them counts nothing and
-    // says so nowhere but here — see the handoff.
-    const cols = await rows(
+    // Agent B's table (0012, packages/api/src/payout/domain/events.ts): a
+    // `kind` per event and an `evidence` jsonb. -406 is 'IDENT.KYC_LIMIT';
+    // the sub code is also read from the evidence in case a kind is renamed.
+    const [r] = await rows(
       db,
-      sql`select column_name from information_schema.columns where table_schema = 'public' and table_name = 'payout_events'`,
+      sql`select count(*)::int as n from payout_events
+           where collector_id = ${collectorId}::uuid
+             and (kind = 'IDENT.KYC_LIMIT' or evidence->>'sub_return_code' = '-406')`,
     );
-    const names = new Set(cols.map((c) => String(c['column_name'])));
-    if (names.has('collector_id') && names.has('sub_return_code')) {
-      const [r] = await rows(
-        db,
-        sql`select count(*)::int as n from payout_events where collector_id = ${collectorId}::uuid and sub_return_code = -406`,
-      );
-      kyc += Number(r?.['n'] ?? 0);
-    }
+    kyc += Number(r?.['n'] ?? 0);
   }
   return { collectorId, accounts, peers, kycLimitOccurrences: kyc };
 }

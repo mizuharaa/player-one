@@ -24,8 +24,9 @@ useDatabase('risk_engine');
  * a hold is raised only when holds are on, is cleared with a reason, and is
  * not raised again on evidence the operator already saw.
  *
- * Agent B's `payout_accounts` is created here from the §2.1 contract DDL so
- * this file runs without B's branch. It is created AFTER the migration, on
+ * Agent B's `payout_accounts` and `payout_events` are created here from the
+ * §2.1 contract DDL and B's 0012 shape, `if not exists`, so this file runs
+ * without B's branch and unchanged with it. Created AFTER the migration, on
  * purpose: that is the shape production will have, and it is what proves the
  * `playerone_risk` role can read a table that did not exist when it was
  * granted SELECT on everything.
@@ -69,12 +70,16 @@ async function payoutTables() {
       created_by uuid not null references operators(id)
     )`);
   await d.execute(sql`create unique index if not exists payout_accounts_current_key on payout_accounts (collector_id) where is_current`);
+  // Agent B's shape (0012), so this file runs the same against the real table.
   await d.execute(sql`
     create table if not exists payout_events (
-      id uuid primary key default gen_random_uuid(),
-      collector_id uuid not null references collectors(id),
+      id bigserial primary key,
       kind text not null,
-      sub_return_code integer,
+      collector_id uuid,
+      payout_account_id uuid,
+      bill_id uuid,
+      payout_attempt_id uuid,
+      evidence jsonb not null default '{}'::jsonb,
       occurred_at timestamptz not null default now()
     )`);
 }
@@ -280,7 +285,7 @@ describe.skipIf(!hasDb())('the risk engine', () => {
       await account(w, c, { status: 'kyc_limit', verified: null });
       expect(signals(await engine.evaluateCollector(c.id))).toEqual([]);
       const d = await db();
-      await d.execute(sql`insert into payout_events (collector_id, kind, sub_return_code) values (${c.id}, 'verify', -406)`);
+      await d.execute(sql`insert into payout_events (collector_id, kind, evidence) values (${c.id}, 'IDENT.KYC_LIMIT', '{"sub_return_code": -406}'::jsonb)`);
       const r = await engine.evaluateCollector(c.id);
       expect(signals(r)).toEqual(['IDENT.KYC_LIMIT_REPEATED']);
       expect(r.flags[0]!.evidence['occurrences']).toBe(3);

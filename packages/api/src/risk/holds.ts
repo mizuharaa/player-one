@@ -80,6 +80,9 @@ export async function currentHolds(db: Reader): Promise<{ holdId: string; billId
  * Raises a hold unless one is open, or unless the last clearance already
  * covered every signal now present. An operator's clear is a statement about
  * the evidence they saw; the engine re-holds only on evidence they did not.
+ * That trust is safe because `risk_holds_chain_guard` refuses a clear whose
+ * `signal_ids` is not exactly the open raise's: no writer, raw SQL included,
+ * can clear "more" than was raised (Codex F-37).
  * Returns the new hold, or null when nothing was raised and why.
  */
 export async function raiseHold(

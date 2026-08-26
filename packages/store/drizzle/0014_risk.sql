@@ -162,12 +162,20 @@ CREATE TRIGGER risk_flags_append_only
 -- `signal_ids` is the set of signals that were current when the hold was
 -- raised. It is what stops the engine re-holding a bill the moment an operator
 -- clears it: a hold is raised again only when a signal appears that the
--- operator did not see (packages/api/src/risk/holds.ts).
+-- operator did not see (packages/api/src/risk/holds.ts). Because the engine
+-- TRUSTS that set, the chain guard requires a clear row to carry exactly the
+-- open raise's set: a clear written with an invented superset would otherwise
+-- mark risk the operator never saw as already reviewed (Codex F-37).
 --
 -- `clear_verdict` is what the false-positive report counts. 'false_positive'
 -- means the operator looked and found nothing; 'accepted' means the risk is
 -- real and finance pays anyway; 'resolved' means the cause was fixed. Only the
 -- first one is a mark against the thresholds.
+-- A CHECK cannot hold a subquery, so the set test is a function it calls.
+CREATE FUNCTION risk_is_signal_set(ids text[]) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
+  SELECT cardinality(ids) > 0 AND cardinality(ids) = (SELECT count(DISTINCT x) FROM unnest(ids) x)
+$$;
+--> statement-breakpoint
 CREATE TABLE "risk_holds" (
   "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "bill_id" uuid NOT NULL,
@@ -182,6 +190,8 @@ CREATE TABLE "risk_holds" (
   CONSTRAINT "risk_holds_bill_id_bills_id_fk" FOREIGN KEY ("bill_id") REFERENCES "public"."bills"("id"),
   CONSTRAINT "risk_holds_raised_by_flag_risk_flags_id_fk" FOREIGN KEY ("raised_by_flag") REFERENCES "public"."risk_flags"("id"),
   CONSTRAINT "risk_holds_cleared_by_operators_id_fk" FOREIGN KEY ("cleared_by") REFERENCES "public"."operators"("id"),
+  -- A set: at least one signal, and no signal twice.
+  CONSTRAINT "risk_holds_signal_ids_check" CHECK (risk_is_signal_set("signal_ids")),
   -- Two complete shapes and nothing between: a raise, or a clear with a person,
   -- a typed reason of at least ten characters, and a verdict.
   CONSTRAINT "risk_holds_clear_shape_check" CHECK (
@@ -210,11 +220,12 @@ CREATE FUNCTION risk_holds_chain_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   open_flag uuid;
   open_raised timestamp with time zone;
+  open_signals text[];
 BEGIN
   -- Serialise raises and clears on one bill: two engines, or an engine and an
   -- operator, must not both see "no open hold" and both insert.
   PERFORM pg_advisory_xact_lock(hashtext('risk_holds:' || NEW.bill_id::text));
-  SELECT raised_by_flag, raised_at INTO open_flag, open_raised
+  SELECT raised_by_flag, raised_at, signal_ids INTO open_flag, open_raised, open_signals
     FROM risk_holds
    WHERE bill_id = NEW.bill_id AND cleared_at IS NULL
      AND NOT EXISTS (
@@ -235,6 +246,13 @@ BEGIN
     IF open_flag IS NULL OR open_flag <> NEW.raised_by_flag OR open_raised <> NEW.raised_at THEN
       RAISE EXCEPTION 'risk_holds_clear_requires_open: bill % has no open hold matching flag % raised at %', NEW.bill_id, NEW.raised_by_flag, NEW.raised_at
         USING ERRCODE = '23514', CONSTRAINT = 'risk_holds_clear_requires_open';
+    END IF;
+    -- The clear says what the operator saw, and that is exactly what was raised:
+    -- the same set, compared sorted so order cannot make two equal sets differ.
+    IF (SELECT array_agg(x ORDER BY x) FROM unnest(NEW.signal_ids) x)
+       IS DISTINCT FROM (SELECT array_agg(x ORDER BY x) FROM unnest(open_signals) x) THEN
+      RAISE EXCEPTION 'risk_holds_clear_signals_check: a clear of bill % must carry the open hold signals % exactly, not %', NEW.bill_id, open_signals, NEW.signal_ids
+        USING ERRCODE = '23514', CONSTRAINT = 'risk_holds_clear_signals_check';
     END IF;
   END IF;
   RETURN NEW;

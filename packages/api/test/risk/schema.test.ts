@@ -126,6 +126,9 @@ describe.skipIf(!hasDb())('migration 0014, the risk tables', () => {
         sql`insert into risk_holds (bill_id, raised_by_flag, signal_ids, cleared_at, cleared_by, clear_reason, clear_verdict) values (${ids.bill}, ${flagId}::uuid, '{IDENT.PHONE_SHARED}', now(), ${ids.operator}, 'looked, nothing there', 'false_positive')`,
       ),
     );
+    // A raise carries a set: at least one signal, none twice (the CHECK).
+    await violates('risk_holds_signal_ids_check', d.execute(sql`insert into risk_holds (bill_id, raised_by_flag, signal_ids) values (${ids.bill}, ${flagId}::uuid, '{}')`));
+    await violates('risk_holds_signal_ids_check', d.execute(sql`insert into risk_holds (bill_id, raised_by_flag, signal_ids) values (${ids.bill}, ${flagId}::uuid, '{IDENT.PHONE_SHARED,IDENT.PHONE_SHARED}')`));
     const [open] = (await d.execute(
       sql`insert into risk_holds (bill_id, raised_by_flag, signal_ids) values (${ids.bill}, ${flagId}::uuid, '{IDENT.PHONE_SHARED}') returning id, raised_at`,
     )) as unknown as { id: string; raised_at: Date }[];
@@ -141,6 +144,23 @@ describe.skipIf(!hasDb())('migration 0014, the risk tables', () => {
       'risk_holds_clear_shape_check',
       d.execute(sql`insert into risk_holds (bill_id, raised_by_flag, raised_at, signal_ids, cleared_at, cleared_by, clear_reason, clear_verdict) values (${ids.bill}, ${flagId}::uuid, ${open!.raised_at}, '{IDENT.PHONE_SHARED}', now(), ${ids.operator}, 'checked with the collector', 'whatever')`),
     );
+    // F-37: a clear carries the raise's set exactly. Not a superset (which would
+    // mark risk the operator never saw as reviewed), not a subset, not a
+    // duplicate; and the raise itself is a set.
+    await violates(
+      'risk_holds_clear_signals_check',
+      d.execute(sql`insert into risk_holds (bill_id, raised_by_flag, raised_at, signal_ids, cleared_at, cleared_by, clear_reason, clear_verdict) values (${ids.bill}, ${flagId}::uuid, ${open!.raised_at}, '{IDENT.PHONE_SHARED,IDENT.NAME_MISMATCH}', now(), ${ids.operator}, 'clearing more than was raised', 'false_positive')`),
+    );
+    await violates(
+      'risk_holds_clear_signals_check',
+      d.execute(sql`insert into risk_holds (bill_id, raised_by_flag, raised_at, signal_ids, cleared_at, cleared_by, clear_reason, clear_verdict) values (${ids.bill}, ${flagId}::uuid, ${open!.raised_at}, '{IDENT.MUID_SHARED}', now(), ${ids.operator}, 'clearing something else entirely', 'false_positive')`),
+    );
+    // A duplicate on a clear is caught by the trigger first (BEFORE triggers run
+    // before CHECKs): {A,A} is not the set {A} either way.
+    await violates(
+      'risk_holds_clear_signals_check',
+      d.execute(sql`insert into risk_holds (bill_id, raised_by_flag, raised_at, signal_ids, cleared_at, cleared_by, clear_reason, clear_verdict) values (${ids.bill}, ${flagId}::uuid, ${open!.raised_at}, '{IDENT.PHONE_SHARED,IDENT.PHONE_SHARED}', now(), ${ids.operator}, 'a duplicate is not a set', 'false_positive')`),
+    );
     let holds = (await d.execute(sql`select bill_id from risk_current_holds`)) as unknown as { bill_id: string }[];
     expect(holds.map((h) => h.bill_id)).toEqual([ids.bill]);
     await d.execute(
@@ -149,9 +169,14 @@ describe.skipIf(!hasDb())('migration 0014, the risk tables', () => {
     holds = (await d.execute(sql`select bill_id from risk_current_holds`)) as unknown as { bill_id: string }[];
     expect(holds).toEqual([]);
     // Cleared, so a new hold can be raised again later, and the chain keeps both.
-    await d.execute(sql`insert into risk_holds (bill_id, raised_by_flag, signal_ids) values (${ids.bill}, ${flagId}::uuid, '{IDENT.PHONE_SHARED,IDENT.MUID_SHARED}')`);
+    const [second] = (await d.execute(sql`insert into risk_holds (bill_id, raised_by_flag, signal_ids) values (${ids.bill}, ${flagId}::uuid, '{IDENT.PHONE_SHARED,IDENT.MUID_SHARED}') returning raised_at`)) as unknown as { raised_at: Date }[];
+    // The same set in another order clears: equality of sets, not of arrays.
+    await d.execute(
+      sql`insert into risk_holds (bill_id, raised_by_flag, raised_at, signal_ids, cleared_at, cleared_by, clear_reason, clear_verdict) values (${ids.bill}, ${flagId}::uuid, ${second!.raised_at}, '{IDENT.MUID_SHARED,IDENT.PHONE_SHARED}', now(), ${ids.operator}, 'both destinations checked in person', 'resolved')`,
+    );
     const [n] = (await d.execute(sql`select count(*)::int as n from risk_holds where bill_id = ${ids.bill}`)) as unknown as { n: number }[];
-    expect(n!.n).toBe(3);
+    expect(n!.n).toBe(4);
+    expect(await d.execute(sql`select 1 from risk_current_holds`)).toEqual([]);
   });
 
   it('shows only the latest run of a subject, and drops a flag the next run did not find', async () => {

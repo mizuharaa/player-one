@@ -1600,6 +1600,8 @@ export const riskHolds = pgTable(
   },
   (t) => [
     index('risk_holds_bill_idx').on(t.billId, t.raisedAt.desc(), t.clearedAt.desc().nullsLast()),
+    /** A set: at least one signal, none twice. The chain guard in 0014 makes a clear carry the raise's set exactly. */
+    check('risk_holds_signal_ids_check', sql`risk_is_signal_set(${t.signalIds})`),
     check(
       'risk_holds_clear_shape_check',
       sql`(${t.clearedAt} is null and ${t.clearedBy} is null and ${t.clearReason} is null and ${t.clearVerdict} is null)
