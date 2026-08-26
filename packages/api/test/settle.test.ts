@@ -487,7 +487,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
         update settlements set settlement_state = 'exception', updated_at = now() where id = ${disputed}
       `);
 
-      const paid = await h.send('POST', `/api/settle/bills/${target.id}/pay`);
+      const paid = await h.send('POST', `/api/settle/bills/${target.id}/pay`, undefined, h.headersF);
       expect(paid.statusCode, paid.body).toBe(200);
       expect(paid.json().marked).toBe(1);
       expect(paid.json().paid).toBe(false);

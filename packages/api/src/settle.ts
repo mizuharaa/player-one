@@ -66,6 +66,14 @@ const PeriodQuery = z.object({
  * named `Housework, kitchen`, a collector reference with a newline pasted into
  * it — and quoting unconditionally has none. Excel reads it identically.
  */
+function constraintOf(err: unknown): string | undefined {
+  for (let e: unknown = err; e !== null && e !== undefined; e = (e as { cause?: unknown }).cause) {
+    const name = (e as { constraint_name?: string }).constraint_name;
+    if (name !== undefined && name !== '') return name;
+  }
+  return undefined;
+}
+
 const csvRow = (cells: readonly string[]): string =>
   cells.map((c) => `"${c.replaceAll('"', '""')}"`).join(',');
 
@@ -462,7 +470,9 @@ export function registerSettle(
 
     let marked = 0;
     if (payable.length > 0) {
-      const paid = await mutate(
+      let paid: { id: string }[] | undefined;
+      try {
+        paid = await mutate(
         db,
         req.actor!,
         // Built from the rows the UPDATE returned: a line somebody moved to
@@ -498,6 +508,18 @@ export function registerSettle(
           return rows.length === 0 ? undefined : rows;
         },
       );
+      } catch (err) {
+        /**
+         * 0013 decides at commit who may pay: a finance operator who neither
+         * issued the bill nor created the collector. The refusal arrives as a
+         * constraint error and is answered like every other refusal on this
+         * service. This route is superseded by /api/payout/bills/:id/mark-paid,
+         * which also records the payment reference; it stays for the settle tab.
+         */
+        const name = constraintOf(err);
+        if (name !== undefined) return reply.code(409).send({ error: 'refused', constraint: name });
+        throw err;
+      }
       marked = paid?.length ?? 0;
     }
 
