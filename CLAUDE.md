@@ -66,11 +66,12 @@ dispute and second review (P2), and everything in the payout & risk brief
 `feat/payout-*` / `feat/risk-engine` branches as of 2026-08-26).
 
 Integration decisions taken on 2026-08-26, reversible, recorded in code:
-a local `CHECKSUM-MISMATCH` is flagged and judgeable, the cloud read-back
-failing is what blocks (`packages/store/src/catalogue.ts`); custody tracking
-for a device starts with its first recorded period and footage from before
-that is not judged (`resolve.ts`, `assigneeAt`); bind/unbind write the custody
-period (`backoffice.ts`).
+custody tracking for a device starts with its first recorded period and
+footage from before that is not judged (`resolve.ts`, `assigneeAt`);
+bind/unbind write the custody period (`backoffice.ts`). NOT a decision:
+`CHECKSUM-MISMATCH` quarantines, because the ingest spec (§6) says so — a
+mismatched redelivery is unpayable until a per-episode clearing route exists,
+which is escalated to Daniel, not decided.
 
 ## The review slice, now built
 

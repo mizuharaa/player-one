@@ -1008,16 +1008,16 @@ describe.skipIf(!hasDb())('the catalogues', () => {
     expect(blocking).not.toContain('TIMING-ESTIMATED');
 
     /**
-     * CHECKSUM-MISMATCH is permissive, deliberately (integration decision,
-     * 2026-08-26 — the reasoning is on the code in catalogue.ts). The cloud leg
-     * had flipped it blocking on "which of two deliveries is real"; the review
-     * queue answers that per row (`episode_reviews.ingest_id`, latest ingest
-     * only), and blocking a redelivery with no clearing route made every
-     * redelivery unpayable. The cloud read-back failing is what blocks, via
-     * `verification_state = 'failed'` in review.ts. If this flips again, it
-     * flips deliberately and this line is what says so.
+     * CHECKSUM-MISMATCH blocks. The ingest spec's defect table (§6) says
+     * quarantine — "does not enter the review queue, does not generate
+     * settlement, is never deleted" — because the bytes of one session changed
+     * between two deliveries and which one is real is an open question. The
+     * review-queue slice had tested the opposite; the integration follows the
+     * spec (bridge F-36, rebutted and withdrawn). Until a per-episode clearing
+     * route exists, a mismatched redelivery is unpayable — escalated, not
+     * decided here.
      */
-    expect(blocking).not.toContain('CHECKSUM-MISMATCH');
+    expect(blocking).toContain('CHECKSUM-MISMATCH');
 
     // Open question for the product owner, seeded permissive. If this flips,
     // it flips deliberately and this line is what says so.

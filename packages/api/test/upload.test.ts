@@ -603,9 +603,11 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     await h.upload(h.A.batch);
     expect(await h.verificationOf(first.episodeId)).toBe('verified');
 
-    // Verified, and reviewable: the redelivery is flagged CHECKSUM-MISMATCH and
-    // judgeable (catalogue.ts, integration decision 2026-08-26). The review row
-    // names the ingest it judges, so "which delivery" is answered per row.
+    // Verified, and still not reviewable: CHECKSUM-MISMATCH blocks review, so
+    // the cloud saying "these bytes arrived intact" does not answer "which of
+    // two deliveries of this session is the real one".
+    expect((await h.claim()).statusCode).toBe(204);
+    await h.d.execute(sql`update defect_codes set blocks_review = false where code = 'CHECKSUM-MISMATCH'`);
     expect((await h.claim()).statusCode).toBe(200);
 
     // The first delivery's objects are still there, untouched: a review, a
