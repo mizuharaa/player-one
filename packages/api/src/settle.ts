@@ -66,14 +66,6 @@ const PeriodQuery = z.object({
  * named `Housework, kitchen`, a collector reference with a newline pasted into
  * it — and quoting unconditionally has none. Excel reads it identically.
  */
-function constraintOf(err: unknown): string | undefined {
-  for (let e: unknown = err; e !== null && e !== undefined; e = (e as { cause?: unknown }).cause) {
-    const name = (e as { constraint_name?: string }).constraint_name;
-    if (name !== undefined && name !== '') return name;
-  }
-  return undefined;
-}
-
 const csvRow = (cells: readonly string[]): string =>
   cells.map((c) => `"${c.replaceAll('"', '""')}"`).join(',');
 
@@ -457,83 +449,6 @@ export function registerSettle(
       .send(`﻿${rows.join('\r\n')}\r\n`);
   });
 
-  // -------------------------------------------------------------------------
-  // SET-03: finance marks manual payment
-
-  app.post('/api/settle/bills/:id/pay', opts, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const [bill] = await db.select().from(schema.bills).where(eq(schema.bills.id, id));
-    if (bill === undefined) return reply.code(404).send({ error: 'no such bill' });
-
-    const before = await linesOf(id);
-    const payable = before.filter((l) => l.state === 'bill_generated').map((l) => l.settlementId);
-
-    let marked = 0;
-    if (payable.length > 0) {
-      let paid: { id: string }[] | undefined;
-      try {
-        paid = await mutate(
-        db,
-        req.actor!,
-        // Built from the rows the UPDATE returned: a line somebody moved to
-        // `exception` between the read and the write is not on this list.
-        (moved: { id: string }[]) => ({
-          action: 'bill.pay',
-          targetTable: 'bills',
-          targetId: id,
-          before: { settlement_states: before.map((l) => [l.settlementId, l.state]) },
-          after: {
-            settlement_state: 'manually_paid',
-            settlement_ids: moved.map((m) => m.id),
-            total: bill.total,
-          },
-        }),
-        async (tx) => {
-          /**
-           * `bill_generated` in the WHERE and `manually_paid` as the target, so
-           * the transition guard is the arbiter and this never has to enumerate
-           * which states may be paid. A settlement someone moved to `exception`
-           * between the read and this write simply is not matched.
-           */
-          const rows = await tx
-            .update(schema.settlements)
-            .set({ settlementState: 'manually_paid', updatedAt: new Date() })
-            .where(
-              and(
-                inArray(schema.settlements.id, payable),
-                eq(schema.settlements.settlementState, 'bill_generated'),
-              ),
-            )
-            .returning({ id: schema.settlements.id });
-          return rows.length === 0 ? undefined : rows;
-        },
-      );
-      } catch (err) {
-        /**
-         * 0013 decides at commit who may pay: a finance operator who neither
-         * issued the bill nor created the collector. The refusal arrives as a
-         * constraint error and is answered like every other refusal on this
-         * service. This route is superseded by /api/payout/bills/:id/mark-paid,
-         * which also records the payment reference; it stays for the settle tab.
-         */
-        const name = constraintOf(err);
-        if (name !== undefined) return reply.code(409).send({ error: 'refused', constraint: name });
-        throw err;
-      }
-      marked = paid?.length ?? 0;
-    }
-
-    const after = await linesOf(id);
-    return reply.send({
-      id,
-      total: bill.total,
-      currency: bill.currency,
-      paid: after.length > 0 && after.every((l) => l.state === 'manually_paid'),
-      /** Zero on a bill that was already paid, which is not an error. */
-      marked,
-      settlements: after.map((l) => ({ settlement_id: l.settlementId, settlement_state: l.state })),
-    });
-  });
 }
 
 type BillRow = {
