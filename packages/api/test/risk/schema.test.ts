@@ -221,8 +221,14 @@ describe.skipIf(!hasDb())('migration 0014, the risk tables', () => {
       const { d, ids } = await scaffold();
       const [role] = (await d.execute(sql`select 1 as ok from pg_roles where rolname = 'playerone_risk'`)) as unknown as { ok: number }[];
       expect(role, 'the migrating user could not CREATE ROLE; see 0014_risk.sql').toBeDefined();
-      // Agent B's table, created after the migration: default privileges give SELECT and nothing else.
-      await d.execute(sql`create table if not exists payout_attempts (id uuid primary key default gen_random_uuid(), bill_id uuid not null references bills(id), amount_vnd bigint not null, status text not null)`);
+      // Agent B's table. With B's 0012 merged it is the real one; before that a
+      // stand-in created AFTER the migration, which is the case that proves the
+      // default privileges give SELECT and nothing else.
+      const [existing] = (await d.execute(sql`select to_regclass('public.payout_attempts') as t`)) as unknown as { t: string | null }[];
+      const standIn = existing?.t === null;
+      if (standIn) {
+        await d.execute(sql`create table payout_attempts (id uuid primary key default gen_random_uuid(), bill_id uuid not null references bills(id), amount_vnd bigint not null, status text not null)`);
+      }
       const INSUFFICIENT = '42501';
       expect(await asRisk(sql`update bills set total = 1 where id = ${ids.bill}`)).toBe(INSUFFICIENT);
       expect(await asRisk(sql`delete from bills where id = ${ids.bill}`)).toBe(INSUFFICIENT);
@@ -237,7 +243,7 @@ describe.skipIf(!hasDb())('migration 0014, the risk tables', () => {
       expect(await asRisk(sql`select count(*) from bills`)).toBeNull();
       expect(await asRisk(sql`select count(*) from payout_attempts`)).toBeNull();
       expect(await asRisk(sql`insert into risk_flags (run_id, subject_type, subject_id, signal_id, threshold_version, points, severity, evidence) values (${uid()}::uuid, 'bill', 'b', 'IDENT.PHONE_SHARED', 'v1', 60, 'hold', '{}'::jsonb)`)).toBeNull();
-      await d.execute(sql`drop table payout_attempts`);
+      if (standIn) await d.execute(sql`drop table payout_attempts`);
     });
   });
 });

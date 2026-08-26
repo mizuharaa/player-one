@@ -1,7 +1,7 @@
 # PlayerOne — agent handoff
 
-Read this before touching anything. Written 2026-08-22, at the end of the slice
-that gave every recording an owner.
+Read this before touching anything. State below is as of 2026-08-26; the
+Decisions and Traps sections are cumulative.
 
 ## What this is
 
@@ -24,29 +24,54 @@ the second one govern the upload centre.
 
 ## State
 
-Branch **`fix/session-handover-scope`**, everything pushed. `origin/main` is
-five PR merge commits behind and **has none of this session's work** — the
-content of those merges is already in this chain, so `main` needs a merge commit
-when someone decides to do it. Nobody has.
+Written 2026-08-26, at the end of the eight-way integration.
 
-Branch per feature, all on the remote: `feat/operator-auth`,
-`feat/audit-trail`, `feat/counter-endpoints`, `feat/session-resolver`,
-`fix/session-handover-scope`. Daniel wants a branch per feature with a
-descriptive name, and no commit until the feature actually works.
+Branch **`integration/eight-features`**, local only until Daniel says push.
+It is `feat/review-console` (which already carries #11, the React SPA) plus
+the eight feature branches of 2026-08-25 merged in journal order —
+settlement-lifecycle, review-queues, backoffice-crud, device-assignment,
+greennode-upload, reviewer-role, hardware-checkout, collector-app — then the
+fixes the combined tree needed (commits `c1cf15e`, `e6624e5`). `main` is
+still at #9; PRs #10, #12, #13, #14 are open and superseded by this branch;
+the other five branches never had a PR. The review record for the merge is
+`codex-bridge.md` at the repo root (untracked, never committed): 36 findings,
+each with a verdict and the evidence.
 
-Built and tested: the ingest engine, the episode store, the identity spine,
-both-token auth, the audit trail, the counter workflow, the session resolver,
-**the review lane and its console** (QR-*, the screen at `/review`, and the
-settlement row a verdict writes). Migrations `0000`–`0004`.
+Built and tested, all on this branch: the ingest engine, the episode store,
+the identity spine, both-token auth, the audit trail, the counter workflow,
+the session resolver with the device-custody crosscheck, the review lane with
+two queues (standard/privacy), priority and assignee, the PaXini reviewer role
+(scoped, logged, media denied by default), the back office (tasks, collectors,
+devices, claims, agreements, exam result) with its console screen, the
+settlement lifecycle (state machine, bills, lines, CSV export, manual pay),
+the cloud leg to GreenNode with read-back verification (unproven live — no
+credits), the Ego hardware checkout tools, and the collector-app scaffold
+(real home: `mizuharaa/player-one-app`). Migrations `0000`–`0011`; the
+journal is ordered by `when`, and tags with the same numeric prefix
+(`0007_*`, `0009_*`) are distinct migrations — never renumber.
 
-**342 tests, 2 skip** (they need `PAXINI_SAMPLE`, a HuggingFace checkout nobody
-has). With no `DATABASE_URL`: 182 pass, 160 skip — that property is load-bearing,
-see below.
+**With `DATABASE_URL`: 492 pass, 41 skip** (the 41 want `docs/sample_data/`).
+**With none: 228 pass, 305 skip** — that property is load-bearing, see below.
+On a loaded machine the default 30 s test timeout produces first-test-in-file
+timeouts that cascade into duplicate-key noise; `--testTimeout=180000`
+separates load from defects.
 
-Not built: cloud upload and verification (UPL-04/05/06 runtime), the rest of the
-operator console (BO-09/BO-10), settlement beyond the row a verdict writes
-(SET-05 onward, bill generation, payout), the collector app (all `APP-*`, blocked
-on PaXini owing D1 and D5), dispute and second review (P2).
+Not built: a console screen for Settle (the API is complete), the per-episode
+clearing route for a quarantined/mismatched delivery, `exception` as a state
+any route can reach (F-14/F-15 in the bridge), the finance role, the
+claims → sessions → settlement join (footage can still be paid with no live
+claim behind it), a launchable collector app (device transfer is a mock),
+dispute and second review (P2), and everything in the payout & risk brief
+(ZaloPay client, payout domain, risk engine, payout console — in progress on
+`feat/payout-*` / `feat/risk-engine` branches as of 2026-08-26).
+
+Integration decisions taken on 2026-08-26, reversible, recorded in code:
+custody tracking for a device starts with its first recorded period and
+footage from before that is not judged (`resolve.ts`, `assigneeAt`);
+bind/unbind write the custody period (`backoffice.ts`). NOT a decision:
+`CHECKSUM-MISMATCH` quarantines, because the ingest spec (§6) says so — a
+mismatched redelivery is unpayable until a per-episode clearing route exists,
+which is escalated to Daniel, not decided.
 
 ## The review slice, now built
 
@@ -130,11 +155,14 @@ blocked. **Ask.** It was meant to run in parallel, not after.
 
 ## Traps that have already cost time
 
-- **`~/playerone-sample` holds a DEGRADED copy of the corpus** — two of the five
-  sessions have no media. It was the test default and produced green runs on
-  broken data. The real corpus is in `docs/sample_data/` (gitignored) and the
-  tests find it there with no environment variable. **Delete or replace
-  `~/playerone-sample`.** It is still there.
+- **The corpus is per machine, and a degraded copy once produced green runs.**
+  The five real sessions live in `docs/sample_data/` (gitignored) on the org
+  PC; the tests find them there with no environment variable and skip 41 tests
+  when the directory is absent, which is what happens on the home machine.
+  Check before trusting a green run: `ls docs/sample_data | wc -l` should say 5.
+  A copy at `~/playerone-sample` with two sessions missing their media was the
+  test default once; if such a copy still exists anywhere, do not point tests
+  at it.
 - **Never `git add -A` in this repo.** The sample corpus is 630 MB of MP4 under
   `docs/sample_data/`. It is gitignored now, but one careless add already staged
   it and timed out a push.

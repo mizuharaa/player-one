@@ -32,6 +32,8 @@ async function seedSpine() {
     centre: uid(),
     uploadDevice: uid(),
     operator: uid(),
+    /** 0013: only a finance operator on the audit trail may mark a settlement paid. */
+    finance: uid(),
     handover: uid(),
     batch: uid(),
     session: uid(),
@@ -66,7 +68,8 @@ async function seedSpine() {
   `);
   await d.execute(sql`
     insert into operators (id, upload_centre_id, external_ref, role)
-      values (${ids.operator}, ${ids.centre}, 'op-01', 'centre_operator');
+      values (${ids.operator}, ${ids.centre}, 'op-01', 'centre_operator'),
+             (${ids.finance}, ${ids.centre}, 'fin-01', 'finance');
   `);
   await d.execute(sql`
     insert into handovers (id, collector_id, device_id, tf_card_id, upload_centre_id, operator_id, handover_time)
@@ -398,6 +401,33 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       `);
     };
 
+    /**
+     * The last edge, the way 0013 requires it to be walked: the settlement is
+     * on a bill, and the transaction that marks it paid carries the audit row
+     * of a finance operator who did not issue that bill
+     * (`settlements_paid_by_finance`, checked at commit against
+     * `audit_events`). A bare `move(id, 'manually_paid')` is refused, which
+     * `payout/domain/schema.test.ts` proves; this helper is the legal shape.
+     */
+    const pay = async (ids: Awaited<ReturnType<typeof seedSettlement>>): Promise<void> => {
+      const d = await db();
+      const billId = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${billId}, ${ids.settlementId});`);
+      await d.transaction(async (tx) => {
+        await tx.execute(sql`
+          update settlements set settlement_state = 'manually_paid', updated_at = now() where id = ${ids.settlementId};
+        `);
+        await tx.execute(sql`
+          insert into audit_events (action, target_table, target_id, actor_role, operator_id, upload_device_id, upload_centre_id)
+            values ('bill.pay', 'bills', ${billId}, 'operator', ${ids.finance}, ${ids.uploadDevice}, ${ids.centre});
+        `);
+      });
+    };
+
     const stateOf = async (settlementId: string): Promise<string | undefined> => {
       const d = await db();
       const rows = (await d.execute(
@@ -431,16 +461,18 @@ describe.skipIf(!hasDb())('the identity spine', () => {
     });
 
     it('walks pending_settlement to bill_generated to manually_paid', async () => {
-      const { settlementId } = await seedSettlement();
+      const ids = await seedSettlement();
+      const { settlementId } = ids;
       await move(settlementId, 'bill_generated');
-      await move(settlementId, 'manually_paid');
+      await pay(ids);
       expect(await stateOf(settlementId)).toBe('manually_paid');
     });
 
     it('refuses manually_paid -> pending_review, which the state CHECK accepts', async () => {
-      const { settlementId } = await seedSettlement();
+      const ids = await seedSettlement();
+      const { settlementId } = ids;
       await move(settlementId, 'bill_generated');
-      await move(settlementId, 'manually_paid');
+      await pay(ids);
 
       // Both values satisfy settlements_state_check. The edge is what is
       // illegal: a paid settlement that re-enters the queue is a second payment.
@@ -525,6 +557,75 @@ describe.skipIf(!hasDb())('the identity spine', () => {
           insert into bill_lines (bill_id, settlement_id) values (${billTwo}, ${settlementId});
         `),
       );
+    });
+
+    it('freezes an issued bill, and only an issued one', async () => {
+      // 0011: a bill is evidence once it has a line. Its collector, period,
+      // currency and total are what finance was sent, and a raw-SQL edit after
+      // the fact is the tampering the trigger exists to refuse.
+      const { settlementId, collector } = await seedSettlement();
+      const d = await db();
+      const issued = uid();
+      const draft = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${issued}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
+                 (${draft}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${issued}, ${settlementId});`);
+      await violates(
+        'bills_issued_immutable',
+        d.execute(sql`update bills set total = '1.0000' where id = ${issued};`),
+      );
+      await violates(
+        'bills_issued_immutable',
+        d.execute(sql`update bills set period_end = '2026-09-01T00:00:00Z' where id = ${issued};`),
+      );
+      // A bill with no lines is not issued: the generator may still be writing it.
+      await d.execute(sql`update bills set total = '0.0000' where id = ${draft};`);
+    });
+
+    it('refuses a line that is another collector\'s work', async () => {
+      // 0011: bill_lines carries no collector, so without this a line from
+      // collector A's settlement could sit on collector B's bill and the export
+      // would pay B for A's minutes.
+      const { settlementId } = await seedSettlement();
+      const d = await db();
+      const other = uid();
+      const bill = uid();
+      await d.execute(sql`insert into collectors (id, external_ref, status) values (${other}, 'collector-0002', 'qualified');`);
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${bill}, ${other}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+      `);
+      await violates(
+        'bill_lines_owner_guard',
+        d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`),
+      );
+    });
+
+    it('refuses a total its lines do not add up to', async () => {
+      // 0011, deferred to commit: the total is the sum of the lines. The bill
+      // may be written before its lines (the generator does), so the check runs
+      // when the transaction ends, over the finished bill.
+      const { settlementId, collector } = await seedSettlement();
+      const d = await db();
+      const bill = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${bill}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '1.0000');
+      `);
+      await violates(
+        'bills_total_matches_lines',
+        d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`),
+      );
+      // The same line on a bill that says 170.0000 is fine.
+      const right = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${right}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${right}, ${settlementId});`);
     });
 
     it('cannot bill a rejected episode, which is worth nothing', async () => {
@@ -907,14 +1008,14 @@ describe.skipIf(!hasDb())('the catalogues', () => {
     expect(blocking).not.toContain('TIMING-ESTIMATED');
 
     /**
-     * CHECKSUM-MISMATCH used to be on the permissive side of this line, with no
-     * reason recorded anywhere for that specific code. The ingest spec's defect
-     * table (§6) says quarantine — "does not enter the review queue, does not
-     * generate settlement, is never deleted" — because the bytes of one session
-     * changed between two deliveries and which one is real is an open question.
-     * A reviewer can watch it; they cannot decide which delivery they are being
-     * paid to judge. Reversing the old assertion is deliberate and this is what
-     * says so.
+     * CHECKSUM-MISMATCH blocks. The ingest spec's defect table (§6) says
+     * quarantine — "does not enter the review queue, does not generate
+     * settlement, is never deleted" — because the bytes of one session changed
+     * between two deliveries and which one is real is an open question. The
+     * review-queue slice had tested the opposite; the integration follows the
+     * spec (bridge F-36, rebutted and withdrawn). Until a per-episode clearing
+     * route exists, a mismatched redelivery is unpayable — escalated, not
+     * decided here.
      */
     expect(blocking).toContain('CHECKSUM-MISMATCH');
 

@@ -170,11 +170,20 @@ async function bill(c: Collector, settlements: string[], o: { periodStart?: Date
   const id = uid();
   const start = o.periodStart ?? new Date(T0);
   const end = o.periodEnd ?? new Date(T0 + 7 * DAY);
-  await d.execute(sql`insert into bills (id, collector_id, period_start, period_end, currency, total) values (${id}, ${c.id}, ${start.toISOString()}, ${end.toISOString()}, 'VND', 0)`);
-  for (const s of settlements) {
-    await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${id}, ${s})`);
-    await d.execute(sql`update settlements set settlement_state = 'bill_generated' where id = ${s}`);
-  }
+  await d.transaction(async (tx) => {
+    const ids = sql.join(settlements.map((s) => sql`${s}::uuid`), sql`, `);
+    const [sum] = (await tx.execute(sql`
+      select coalesce(sum(amount), 0)::text as total from settlements where id in (${ids})
+    `)) as unknown as { total: string }[];
+    await tx.execute(sql`
+      insert into bills (id, collector_id, period_start, period_end, currency, total)
+      values (${id}, ${c.id}, ${start.toISOString()}, ${end.toISOString()}, 'VND', ${sum!.total}::numeric)
+    `);
+    for (const s of settlements) {
+      await tx.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${id}, ${s})`);
+      await tx.execute(sql`update settlements set settlement_state = 'bill_generated' where id = ${s}`);
+    }
+  });
   return id;
 }
 

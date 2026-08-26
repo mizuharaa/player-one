@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { schema, type Db } from '@playerone/store';
@@ -919,11 +920,31 @@ export function registerBackOffice(
           after: { bound_collector_id: collectorId },
         },
         async (tx) => {
+          const at = new Date();
           const [row] = await tx
             .update(schema.devices)
-            .set({ boundCollectorId: collectorId, boundAt: new Date(), updatedAt: new Date() })
+            .set({ boundCollectorId: collectorId, boundAt: at, updatedAt: at })
             .where(and(eq(schema.devices.id, id), isNull(schema.devices.boundCollectorId)))
             .returning();
+          if (row === undefined) return row;
+          /**
+           * A bind is a custody event, so it is also the start of an assignment
+           * period — the record the payment crosscheck reads. Without this the
+           * column and `device_assignments` were two answers to "who holds it"
+           * that nothing kept in step (bridge F-1), and on the upgrade path
+           * from 0004 nothing ever seeded the table at all (F-20). Whoever held
+           * the open period until now stops holding it at this instant; the
+           * half-open range makes the boundary belong to the incoming collector.
+           */
+          await tx
+            .update(schema.deviceAssignments)
+            .set({ validTo: at, updatedAt: at })
+            .where(
+              and(eq(schema.deviceAssignments.deviceId, id), isNull(schema.deviceAssignments.validTo)),
+            );
+          await tx
+            .insert(schema.deviceAssignments)
+            .values({ id: randomUUID(), deviceId: id, collectorId, validFrom: at });
           return row;
         },
       ),
@@ -989,9 +1010,17 @@ export function registerBackOffice(
         before.bound_collector_id = held.collectorId;
         before.bound_at = held.boundAt;
 
+        const at = new Date();
+        // The custody period the bind opened ends here (see the bind route).
+        await tx
+          .update(schema.deviceAssignments)
+          .set({ validTo: at, updatedAt: at })
+          .where(
+            and(eq(schema.deviceAssignments.deviceId, id), isNull(schema.deviceAssignments.validTo)),
+          );
         const [row] = await tx
           .update(schema.devices)
-          .set({ boundCollectorId: null, boundAt: null, updatedAt: new Date() })
+          .set({ boundCollectorId: null, boundAt: null, updatedAt: at })
           .where(eq(schema.devices.id, id))
           .returning();
         return row;
