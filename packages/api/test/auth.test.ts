@@ -270,8 +270,8 @@ describe.skipIf(!hasDb())('operator API auth', () => {
     await violates(
       'audit_events_manual_reason_check',
       d.execute(sql`
-        insert into audit_events (action, target_table, target_id, operator_id, upload_device_id)
-          values ('episode.resolve_manual', 'episodes', ${uid()}, ${ids.operatorA}, ${ids.deviceA})`),
+        insert into audit_events (action, target_table, target_id, operator_id, upload_device_id, upload_centre_id)
+          values ('episode.resolve_manual', 'episodes', ${uid()}, ${ids.operatorA}, ${ids.deviceA}, ${ids.centreA})`),
     );
   });
 });

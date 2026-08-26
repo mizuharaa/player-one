@@ -33,6 +33,14 @@ const host = env['HOST'] ?? '127.0.0.1';
 const port = Number(env['PORT'] ?? 8080);
 
 /**
+ * `buildApi` refuses the two together — reviewer media on with the session
+ * cookie in clear — so the rule lives in the service and this file only reads
+ * the environment. See `ApiOptions.reviewerMediaEnabled`.
+ */
+const secureCookies = env['PLAYERONE_SECURE_COOKIES'] === '1';
+const reviewerMediaEnabled = env['PLAYERONE_REVIEWER_MEDIA'] === '1';
+
+/**
  * A pool, not a single connection.
  *
  * `open` defaults to one because it was written for the ingest CLI, where one
@@ -84,9 +92,18 @@ const app = buildApi({
    * a `Secure` cookie is simply never sent and the symptom is a sign-in that
    * appears to succeed and does nothing. Turn it on wherever there is TLS.
    */
-  secureCookies: env['PLAYERONE_SECURE_COOKIES'] === '1',
+  secureCookies,
   objectStore,
   verificationGate,
+  /**
+   * Off unless Legal has signed the playback architecture. D11 — whether
+   * background review needs online playback of raw video — is unresolved and
+   * escalated, and Part 7.3 says the Phase 1 arrangement is remote access and
+   * not data transfer. Until that is answered, a PaXini reviewer in Shenzhen
+   * gets review metadata and no footage; setting this to `1` streams raw
+   * Vietnamese-collected video across the border, so it is a deliberate act.
+   */
+  reviewerMediaEnabled,
 });
 
 const shutdown = async (signal: string) => {

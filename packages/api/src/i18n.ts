@@ -38,6 +38,13 @@ const en = {
   'login.machineSecret': 'Machine secret',
   'login.operator': 'Operator reference',
   'login.operatorSecret': 'Operator secret',
+  'login.role': 'Sign in as',
+  'login.roleCounter': 'Upload centre',
+  'login.roleReviewer': 'Reviewer',
+  'login.reviewer': 'Reviewer reference',
+  'login.reviewerSecret': 'Reviewer secret',
+  'login.reviewerIntro':
+    'One credential. A reviewer works remotely and not at a counter, so there is no machine to prove — and the session reaches the review lane and nothing else.',
   'login.submit': 'Sign in',
   'login.failed': 'Those credentials were not accepted.',
   'login.mismatch': 'The machine and the operator belong to different upload centres.',
@@ -106,6 +113,9 @@ const en = {
   'state.leaseExpired.body':
     'The claim on it expired and another reviewer may now hold it. The verdict you were preparing has been discarded.',
   'state.leaseExpired.action': 'Claim the next episode',
+  'state.playbackWithheld.title': 'Review is not open on this session yet',
+  'state.playbackWithheld.body':
+    'Remote playback of raw footage is not authorised yet, so there is nothing to review here. No episode has been taken off the queue, and no verdict can be given without watching the footage. This screen will work as soon as the playback arrangement is approved.',
   'state.mediaFailed.title': 'The footage will not play',
   'state.mediaFailed.body':
     'The media is recorded in the store but this machine cannot read it. That is a fault on this machine, not with the recording.',
@@ -341,6 +351,12 @@ const zh: Record<MessageKey, string> = {
   'login.machineSecret': '机器密钥',
   'login.operator': '操作员编号',
   'login.operatorSecret': '操作员密钥',
+  'login.role': '登录身份',
+  'login.roleCounter': '上传中心',
+  'login.roleReviewer': '审核员',
+  'login.reviewer': '审核员编号',
+  'login.reviewerSecret': '审核员密钥',
+  'login.reviewerIntro': '仅需一组凭据。审核员远程办公，不在上传柜台，因此无需机器凭据；该会话仅可访问审核功能。',
   'login.submit': '登录',
   'login.failed': '凭据未被接受。',
   'login.mismatch': '机器与操作员属于不同的上传中心。',
@@ -407,6 +423,9 @@ const zh: Record<MessageKey, string> = {
   'state.leaseExpired.title': '该片段已被重新分配',
   'state.leaseExpired.body': '认领已过期，可能已由其他审核员接手。您正在填写的结果已被丢弃。',
   'state.leaseExpired.action': '领取下一条',
+  'state.playbackWithheld.title': '本会话暂未开放审核',
+  'state.playbackWithheld.body':
+    '原始素材的远程播放尚未获得授权，因此此处暂无可审核的内容。系统未从队列中取走任何片段；未观看素材即不可提交审核结论。播放方案获批后本页即可使用。',
   'state.mediaFailed.title': '素材无法播放',
   'state.mediaFailed.body': '记录已存在于数据库中，但本机无法读取该文件。这是本机的问题，与录制内容无关。',
   'state.mediaFailed.action': '跳过该片段',

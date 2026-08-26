@@ -84,8 +84,35 @@ export function ReviewScreen() {
     setClaimedAt(Date.now());
   }, []);
 
+  /**
+   * Take the next episode — after giving back the one we are holding.
+   *
+   * The release is not optional and its failure is not swallowed. A lease we
+   * still hold on footage that will not play stays held for the full lease
+   * window, so claiming another one without releasing this one walks the queue
+   * and locks every episode the reviewer touches. If the release itself fails —
+   * the network, the server — the claim does not happen either: the mutation
+   * ends in its error state, the screen keeps the action that got here, and
+   * pressing it again tries the whole thing again. Claiming anyway would turn
+   * one stuck lease into two.
+   *
+   * Releasing something already gone is not an error: the server answers
+   * `released: false` and logs nothing, which is what the lease-expired path
+   * wants.
+   */
+  /**
+   * What the claim releases before it claims. A ref, not the state, so the
+   * mutation is built once instead of on every episode.
+   */
+  const episodeRef = useRef<string | null>(null);
+  episodeRef.current = episode?.episode_id ?? null;
+
   const claim = useMutation({
-    mutationFn: () => api.claimNext(),
+    mutationFn: async () => {
+      const held = episodeRef.current;
+      if (held !== null) await api.release(held);
+      return api.claimNext();
+    },
     onSuccess: (next) => adopt(next),
   });
 
@@ -338,6 +365,25 @@ export function ReviewScreen() {
     queueDepth: episode?.queue_depth,
     averageSeconds: episode?.session_average_seconds,
   };
+
+  /**
+   * Playback is not authorised for this session, so there is no review to do.
+   *
+   * A whole screen rather than a banner over a live verdict panel: the server
+   * refuses the claim as well as the footage, so nothing has been taken off the
+   * queue and there is nothing here to decide. Offering the controls anyway
+   * would invite a verdict on footage nobody watched, which is a payment.
+   */
+  if (claim.error instanceof ApiError && claim.error.isWithheld) {
+    return (
+      <AppShell {...shellProps}>
+        <EmptyState
+          title={t('state.playbackWithheld.title')}
+          body={t('state.playbackWithheld.body')}
+        />
+      </AppShell>
+    );
+  }
 
   /** The queue is empty. A state, and the only one Cú is allowed on. */
   if (!claim.isPending && episode === null && !claim.isError) {

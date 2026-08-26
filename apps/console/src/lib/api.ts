@@ -150,6 +150,15 @@ export class ApiError extends Error {
   get isReassigned() {
     return this.status === 409;
   }
+
+  /**
+   * The server refused for a policy reason, not a technical one: remote
+   * playback of raw footage is not authorised (brief D11, Part 7.3). A state to
+   * explain, never a request to retry.
+   */
+  get isWithheld() {
+    return this.status === 451;
+  }
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T | null> {

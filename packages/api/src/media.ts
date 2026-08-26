@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
+import { holdsReview } from './review.ts';
 
 /**
  * Serving the footage a reviewer is about to judge.
@@ -100,6 +101,36 @@ export function registerMedia(
     const { id, index } = req.params as { id: string; index: string };
     const part = Number(index);
     if (!Number.isInteger(part) || part < 0) return reply.code(400).send({ error: 'bad part index' });
+
+    /**
+     * A reviewer sees the episode they hold, and no other.
+     *
+     * Reaching this route at all takes `reviewerMediaEnabled`, which is off
+     * until Legal signs the playback architecture (see D11 and Part 7.3). When
+     * it is on, the route guard alone would let any signed-in reviewer stream
+     * any episode id they can name, which is a poor answer to "scoped to review
+     * functions only" — remote access to *their queue* is what PLT-10 grants.
+     *
+     * The consequence, stated because it is a real one: the console prefetches
+     * the *next* episode's video into a hidden element while the current one
+     * plays, and that prefetch will be refused for a reviewer. It costs a warm
+     * buffer, not a review, and it costs nothing at all today because a
+     * reviewer reaches no media at all with the flag off. A prefetch that
+     * survives this needs a short-lived per-episode grant, which is part of the
+     * same decision that flips the flag.
+     *
+     * ponytail: the *access log* is the `review.claim` audit row, not a row per
+     * range request. Holding a review row is the only way to reach this route,
+     * and a review row is only obtained through the audited claim — so "which
+     * footage did this reviewer open" is answerable, while a byte-range log
+     * would be thousands of rows per episode and would still not say more. If
+     * an auditor ever needs per-part or per-range evidence, that is a
+     * requirement to write down when the flag is flipped, not before.
+     */
+    const reviewer = req.actor?.reviewer;
+    if (reviewer !== undefined && !(await holdsReview(db, reviewer.reviewerId, id))) {
+      return reply.code(403).send({ error: 'not an episode you hold' });
+    }
 
     const [row] = await db
       .select({
