@@ -193,6 +193,23 @@ describe.skipIf(!hasDb())('the payout schema', () => {
       );
     });
 
+    it('refuses an account ZaloPay has not verified, on either rail (F-41)', async () => {
+      const { d, ids, bill2 } = await seeded();
+      for (const status of ['unverified', 'name_mismatch', 'no_wallet', 'locked', 'kyc_limit', 'error']) {
+        await d.execute(sql`update payout_accounts set is_current = false where collector_id = ${ids.collector2}`);
+        const account = await seedAccount(d, ids, 2, { verifyStatus: status });
+        await violates(
+          'payout_attempts_account_unverified',
+          insertAttemptAs(d, ids, ids.finA, { billId: bill2, accountId: account, amountVnd: 1200 }),
+        );
+        await violates(
+          'payout_attempts_account_unverified',
+          insertAttemptAs(d, ids, ids.finA, { billId: bill2, accountId: account, amountVnd: 1200, mode: 'manual', manualReference: 'VCB-1', settledAt: new Date() }),
+        );
+      }
+      expect(await countOf(d, sql`select count(*) as n from payout_attempts`)).toBe(0);
+    });
+
     it('keeps exactly one current account per collector', async () => {
       const { d, ids } = await seeded();
       await violates('payout_accounts_current_key', seedAccount(d, ids, 1, { id: uid() }));

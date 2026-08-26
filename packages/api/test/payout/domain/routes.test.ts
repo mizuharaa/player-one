@@ -214,6 +214,42 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       expect(await countOf(h.d, sql`select count(*) as n from payout_accounts`)).toBe(2);
     });
 
+    it('refuses a used id under a different destination, before ZaloPay is asked (F-40)', async () => {
+      const stub = new StubZaloPay();
+      const h = await harness({ client: stub });
+      const original = wallet(h.ids);
+      expect((await h.send('POST', '/api/payout/accounts', h.finA, original)).statusCode).toBe(201);
+      const bank = { id: uid(), collector_id: h.ids.collector2, method: 'BANK_ACCOUNT', declared_name: 'Nguyen Van A', bank_code: 'VCB', account_no: '0071000123456' };
+      expect((await h.send('POST', '/api/payout/accounts', h.finB, bank)).statusCode).toBe(201);
+      const asked = stub.calls.verifyAccount;
+      expect(asked).toBe(2);
+
+      const different: [string, Record<string, unknown>][] = [
+        ['phone', { ...original, phone: '0987654321' }],
+        ['declared name', { ...original, declared_name: 'Nguyễn Văn B' }],
+        ['collector', { ...original, collector_id: h.ids.collector2 }],
+        ['method', { ...bank, id: original.id, collector_id: h.ids.collector1 }],
+        ['bank code', { ...bank, bank_code: 'TCB' }],
+        ['account number', { ...bank, account_no: '0071000129999' }],
+        ['holder name', { ...bank, declared_name: 'Nguyen Van B' }],
+      ];
+      for (const [what, body] of different) {
+        const res = await h.send('POST', '/api/payout/accounts', h.finA, body);
+        expect(res.statusCode, what).toBe(409);
+        expect(res.json().constraint, what).toBe('payout_accounts_id_reused');
+      }
+      // ZaloPay was not asked about any of them, and nothing was written.
+      expect(stub.calls.verifyAccount).toBe(asked);
+      expect(await countOf(h.d, sql`select count(*) as n from payout_accounts`)).toBe(2);
+      const [held] = await rows<{ phone: string; declared_name: string }>(h.d, sql`select phone, declared_name from payout_accounts where id = ${original.id}`);
+      expect(held).toEqual({ phone: '0912345678', declared_name: 'Nguyễn Văn A' });
+      // The same declaration, same last four digits, is still a replay, and still not a vendor call.
+      const again = await h.send('POST', '/api/payout/accounts', h.finB, { ...bank, account_no: '0071000123456' });
+      expect(again.statusCode).toBe(200);
+      expect(again.json()).toMatchObject({ replayed: true, account_no_last4: '3456' });
+      expect(stub.calls.verifyAccount).toBe(asked);
+    });
+
     it('stores unverified with no client, which the batch view then counts', async () => {
       const h = await harness();
       const res = await h.send('POST', '/api/payout/accounts', h.finA, wallet(h.ids));
@@ -285,8 +321,68 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       expect((await h.send('POST', `/api/payout/bills/${bill1}/mark-paid`, h.finA, { manual_reference: 'VCB-1', amount_vnd: 2400 })).statusCode).toBe(201);
       const again = await h.send('POST', `/api/payout/bills/${bill1}/mark-paid`, h.finA, { manual_reference: 'VCB-2', amount_vnd: 2400 });
       expect(again.statusCode).toBe(409);
-      expect(again.json().constraint).toBe('payout_attempts_previous_not_failed');
+      // The gate says so before the trigger has to (`payout_attempts_previous_not_failed` is the SQL answer, proved in schema.test.ts).
+      expect(again.json().constraint).toBe('payout_already_paid');
       expect(await countOf(h.d, sql`select count(*) as n from payout_attempts`)).toBe(1);
+    });
+
+    it('asks the same questions as the API rail: verification, hold and cap (F-41)', async () => {
+      const held: RiskReader = {
+        billSummary: async (billId) => ({ subjectType: 'bill', subjectId: billId, score: 70, band: 'hold', flags: [] }),
+      };
+      const settlements = (d: Db, billId: string) =>
+        rows<{ settlement_state: string }>(d, sql`select s.settlement_state from bill_lines l join settlements s on s.id = l.settlement_id where l.bill_id = ${billId}`);
+      const pay = (h: Awaited<ReturnType<typeof harness>>, billId: string, amount: number) =>
+        h.send('POST', `/api/payout/bills/${billId}/mark-paid`, h.finA, { manual_reference: 'VCB-1', amount_vnd: amount });
+
+      // An account ZaloPay did not confirm — every status but verified.
+      const h1 = await harness();
+      const { bill1 } = await seedBills(h1.d, h1.ids);
+      for (const status of ['unverified', 'name_mismatch', 'no_wallet', 'locked', 'kyc_limit', 'error']) {
+        await h1.d.execute(sql`update payout_accounts set is_current = false where collector_id = ${h1.ids.collector1}`);
+        await seedAccount(h1.d, h1.ids, 1, { verifyStatus: status });
+        const res = await pay(h1, bill1, 2400);
+        expect(res.statusCode, status).toBe(409);
+        expect(res.json().constraint, status).toBe('payout_account_unverified');
+      }
+      expect(await countOf(h1.d, sql`select count(*) as n from payout_attempts`)).toBe(0);
+      expect((await settlements(h1.d, bill1)).map((s) => s.settlement_state)).toEqual(['bill_generated', 'bill_generated']);
+      await h1.app.close();
+      await truncate();
+
+      // A risk hold, while holds are on.
+      const h2 = await harness({ risk: held, holdsEnabled: true });
+      const b2 = await seedBills(h2.d, h2.ids);
+      await seedAccount(h2.d, h2.ids, 1);
+      const hold = await pay(h2, b2.bill1, 2400);
+      expect(hold.statusCode).toBe(409);
+      expect(hold.json().constraint).toBe('payout_risk_hold');
+      expect(await countOf(h2.d, sql`select count(*) as n from payout_attempts`)).toBe(0);
+      await h2.app.close();
+      await truncate();
+
+      // Holds off (the pilot default): advisory, and the manual rail pays.
+      const h3 = await harness({ risk: held, holdsEnabled: false });
+      const b3 = await seedBills(h3.d, h3.ids);
+      await seedAccount(h3.d, h3.ids, 1);
+      expect((await pay(h3, b3.bill1, 2400)).statusCode).toBe(201);
+      await h3.app.close();
+      await truncate();
+
+      // Over a configured cap: refused, and the ticket is raised — never silently the cap.
+      const h4 = await harness({ capVnd: 2_000 });
+      const b4 = await seedBills(h4.d, h4.ids);
+      await seedAccount(h4.d, h4.ids, 1);
+      await seedAccount(h4.d, h4.ids, 2);
+      const capped = await pay(h4, b4.bill1, 2400);
+      expect(capped.statusCode).toBe(409);
+      expect(capped.json().constraint).toBe('payout_cap_exceeded');
+      expect(await countOf(h4.d, sql`select count(*) as n from payout_attempts`)).toBe(0);
+      const tickets = await rows<{ kind: string; evidence: Record<string, unknown> }>(h4.d, sql`select kind, evidence from payout_events where kind like 'TICKET.%'`);
+      expect(tickets).toHaveLength(1);
+      expect(tickets[0]!.evidence).toMatchObject({ amount_vnd: 2400, cap_vnd: 2_000 });
+      // Under the cap, the other bill pays.
+      expect((await pay(h4, b4.bill2, 1200)).statusCode).toBe(201);
     });
 
     it('refuses the API rail in manual mode', async () => {
