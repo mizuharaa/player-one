@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { schema, type Db } from '@playerone/store';
 import { z } from 'zod';
@@ -157,6 +157,17 @@ const DevicePatch = z
   })
   .refine((b) => Object.keys(b).length > 0, 'nothing to change');
 
+/**
+ * An allotment starts; it does not carry an end. The end of one period is the
+ * start of the next, written by the next POST, so an operator is never asked to
+ * type a date twice and the two can never disagree.
+ */
+const AssignmentBody = z.object({
+  id: uuid,
+  collector_id: uuid,
+  valid_from: z.string().datetime(),
+});
+
 type Reply = {
   code: (n: number) => { send: (b: unknown) => unknown };
 };
@@ -214,6 +225,9 @@ export const REFUSALS = new Set([
   'task_claims_collector_id_collectors_id_fk',
   'devices_bound_collector_id_collectors_id_fk',
   'devices_device_type_id_device_types_id_fk',
+  'device_assignments_no_overlap',
+  'device_assignments_device_id_devices_id_fk',
+  'device_assignments_collector_id_collectors_id_fk',
 ]);
 
 /**
@@ -985,6 +999,169 @@ export function registerBackOffice(
     );
     if (!exists) return reply.code(404).send({ error: 'no such device' });
     return reply.send({ id, bound_collector_id: null, replayed: written === undefined });
+  });
+
+  // -- device assignment (Daniel, 2026-08-25) -------------------------------
+
+  /**
+   * Who holds this device for the next three months, and who stopped holding it.
+   *
+   * `devices/:id/bind` is the counter's answer to "who has it in their hands
+   * right now". This is settlement's answer to "who had it on 13 August", and
+   * the two are different questions: `device_assignments` keeps periods, the
+   * column keeps one current value. Neither is derived from the other.
+   *
+   * One POST does both halves of a swap. The open period is closed at exactly
+   * the instant the new one opens, in the same transaction, because a swap sent
+   * as two requests can fail between them and leave a device belonging to
+   * nobody or to two people at once. The exclusion constraint would refuse the
+   * second request anyway, which is the same outage with a worse message.
+   *
+   * No console screen: API and fixtures is the pilot shape, the same cut BO-09
+   * took for centres and machines. A screen is owed when the fleet outgrows the
+   * twenty pilot devices, or when somebody other than an engineer has to record
+   * a swap.
+   */
+  app.post('/api/devices/:id/assignments', opts, async (req, reply) => {
+    const body = AssignmentBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
+    const deviceId = (req.params as { id: string }).id;
+    const b = body.data;
+    const from = new Date(b.valid_from);
+
+    const [device] = await db.select().from(schema.devices).where(eq(schema.devices.id, deviceId));
+    if (device === undefined) return reply.code(404).send({ error: 'no such device' });
+
+    /** What the swap ended, filled inside the transaction. Same shape as unbind. */
+    const before: { closed_assignment_id: string | null; closed_collector_id: string | null } = {
+      closed_assignment_id: null,
+      closed_collector_id: null,
+    };
+
+    const attempt = await guarded(() =>
+      mutate(
+        db,
+        actorOf(req),
+        {
+          action: 'device.assign',
+          targetTable: 'device_assignments',
+          targetId: b.id,
+          before,
+          after: { device_id: deviceId, collector_id: b.collector_id, valid_from: b.valid_from },
+        },
+        async (tx) => {
+          /**
+           * The id decides first, and it decides inside the transaction.
+           *
+           * Closing the open period and then discovering the insert was a no-op
+           * would leave the device assigned to nobody, every later episode
+           * quarantining as `device_assignment_unknown`, and the caller told it
+           * was a harmless replay. So a submission whose id is already here
+           * changes nothing at all, and the route reads the row back afterwards
+           * to say whether it really was the same submission.
+           */
+          const [taken] = await tx
+            .select({ id: schema.deviceAssignments.id })
+            .from(schema.deviceAssignments)
+            .where(eq(schema.deviceAssignments.id, b.id));
+          if (taken !== undefined) return undefined;
+
+          /**
+           * `valid_from <` and not merely "still open": an open period that
+           * already starts at or after this instant is not something to close,
+           * it is an overlap, and `device_assignments_no_overlap` refuses the
+           * insert below with the sentence that says so. Back-dating an
+           * assignment behind one already on record is a correction, not a swap.
+           */
+          const [closed] = await tx
+            .update(schema.deviceAssignments)
+            .set({ validTo: from, updatedAt: new Date() })
+            .where(
+              and(
+                eq(schema.deviceAssignments.deviceId, deviceId),
+                isNull(schema.deviceAssignments.validTo),
+                lt(schema.deviceAssignments.validFrom, from),
+              ),
+            )
+            .returning({
+              id: schema.deviceAssignments.id,
+              collectorId: schema.deviceAssignments.collectorId,
+            });
+          if (closed !== undefined) {
+            before.closed_assignment_id = closed.id;
+            before.closed_collector_id = closed.collectorId;
+          }
+
+          const [row] = await tx
+            .insert(schema.deviceAssignments)
+            .values({ id: b.id, deviceId, collectorId: b.collector_id, validFrom: from })
+            .returning();
+          return row;
+        },
+      ),
+    );
+    if (!attempt.ok) return refused(reply, attempt.constraint);
+    if (attempt.value !== undefined) {
+      return reply.code(201).send({
+        id: b.id,
+        replayed: false,
+        closed_assignment_id: before.closed_assignment_id,
+      });
+    }
+
+    /**
+     * Nothing was written because that id is already here, and there are two
+     * ways for that to happen. The same swap arriving twice is a replay and
+     * costs nothing. A different pairing under an id already in use is not:
+     * answering 200 there says this collector holds this device when somebody
+     * else does, on the one path that decides who gets paid for the footage.
+     */
+    const [held] = await db
+      .select()
+      .from(schema.deviceAssignments)
+      .where(eq(schema.deviceAssignments.id, b.id));
+    if (held === undefined || held.deviceId !== deviceId || held.collectorId !== b.collector_id) {
+      return reply.code(409).send({ error: 'refused', constraint: 'device_assignments_id_reused' });
+    }
+    return reply.code(200).send({ id: b.id, replayed: true });
+  });
+
+  /** Who has held this device, newest period first: the custody chain in one read. */
+  app.get('/api/devices/:id/assignments', opts, async (req) => {
+    const rows = await db
+      .select({
+        id: schema.deviceAssignments.id,
+        collector_id: schema.deviceAssignments.collectorId,
+        collector_external_ref: schema.collectors.externalRef,
+        valid_from: schema.deviceAssignments.validFrom,
+        valid_to: schema.deviceAssignments.validTo,
+      })
+      .from(schema.deviceAssignments)
+      .innerJoin(schema.collectors, eq(schema.collectors.id, schema.deviceAssignments.collectorId))
+      .where(eq(schema.deviceAssignments.deviceId, (req.params as { id: string }).id))
+      .orderBy(desc(schema.deviceAssignments.validFrom));
+    return { assignments: rows };
+  });
+
+  /**
+   * The same chain from the other end. The serial comes back because the serial
+   * is what the crosscheck keys on: an episode names its device by serial and
+   * never by uuid.
+   */
+  app.get('/api/collectors/:id/assignments', opts, async (req) => {
+    const rows = await db
+      .select({
+        id: schema.deviceAssignments.id,
+        device_id: schema.deviceAssignments.deviceId,
+        hardware_serial: schema.devices.hardwareSerial,
+        valid_from: schema.deviceAssignments.validFrom,
+        valid_to: schema.deviceAssignments.validTo,
+      })
+      .from(schema.deviceAssignments)
+      .innerJoin(schema.devices, eq(schema.devices.id, schema.deviceAssignments.deviceId))
+      .where(eq(schema.deviceAssignments.collectorId, (req.params as { id: string }).id))
+      .orderBy(desc(schema.deviceAssignments.validFrom));
+    return { assignments: rows };
   });
 }
 

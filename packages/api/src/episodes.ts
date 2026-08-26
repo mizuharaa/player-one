@@ -88,11 +88,38 @@ export function registerEpisodes(
         id: schema.collectionSessions.id,
         prepareTime: schema.collectionSessions.prepareTime,
         sessionOrigin: schema.collectionSessions.sessionOrigin,
+        /** Read only by the device-assignment crosscheck in `resolve.ts`. */
+        collectorId: schema.collectionSessions.collectorId,
       })
       .from(schema.collectionSessions)
       .where(eq(schema.collectionSessions.handoverId, batch.handoverId));
 
-    return { batch, handover, sessions };
+    /**
+     * The device's assignment periods, for the crosscheck the resolver cannot
+     * make on its own: `resolve.ts` is pure and may not read a database, so the
+     * lookup happens here and the periods travel in as data.
+     *
+     * One query per batch rather than per episode. An allotment runs about three
+     * months, so a device carries a handful of rows for its whole service life
+     * and filtering them in memory beats a query for every episode on the card.
+     *
+     * ponytail: keyed on the HANDOVER's device, the one an operator physically
+     * looked at when the card came across the counter, and not on the serial the
+     * episode's own manifest claims. When those two disagree, SERIAL-CONFLICT
+     * already records it against the ingest for a human. Keying on the episode's
+     * serial is the upgrade path and it needs every serial the fleet has emitted
+     * to exist as a `devices` row first, which at the pilot it does not.
+     */
+    const assignments = await db
+      .select({
+        collectorId: schema.deviceAssignments.collectorId,
+        validFrom: schema.deviceAssignments.validFrom,
+        validTo: schema.deviceAssignments.validTo,
+      })
+      .from(schema.deviceAssignments)
+      .where(eq(schema.deviceAssignments.deviceId, handover.deviceId));
+
+    return { batch, handover, sessions, assignments };
   };
 
   app.post('/upload-batches/:id/episodes', opts, async (req, reply) => {
@@ -120,10 +147,13 @@ export function registerEpisodes(
        * buy atomicity between a safe state and a safer one.
        */
       const stored = await storeEpisode(db, record);
-      const resolution = resolveEpisode(record, ctx.sessions, {
-        toleranceMs,
-        latestPlausibleStartMs: Date.now() + FUTURE_START_SLACK_MS,
-      });
+      const resolution = resolveEpisode(
+        record,
+        ctx.sessions,
+        { toleranceMs, latestPlausibleStartMs: Date.now() + FUTURE_START_SLACK_MS },
+        [],
+        ctx.assignments,
+      );
       const defects = resolverDefects(record, ctx.handover, resolution.sessionId);
 
       await mutate(

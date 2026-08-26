@@ -313,6 +313,13 @@ const en = {
     'That collector no longer exists. Reload the list.',
   'bo.refused.devices_device_type_id_device_types_id_fk':
     'That device type no longer exists. Reload the list.',
+  'bo.refused.device_assignments_no_overlap':
+    'That device is already assigned to somebody for part of that period.',
+  'bo.refused.device_assignments_id_reused':
+    'That assignment reference already belongs to another device or collector.',
+  'bo.refused.device_assignments_device_id_devices_id_fk': 'That device no longer exists. Reload the list.',
+  'bo.refused.device_assignments_collector_id_collectors_id_fk':
+    'That collector no longer exists. Reload the list.',
   'bo.refused.unknown': 'The server refused that change.',
 
   'theme.toggle': 'Theme',
@@ -572,6 +579,10 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.task_claims_collector_id_collectors_id_fk': '该采集者已不存在，请刷新列表。',
   'bo.refused.devices_bound_collector_id_collectors_id_fk': '该采集者已不存在，请刷新列表。',
   'bo.refused.devices_device_type_id_device_types_id_fk': '该设备型号已不存在，请刷新列表。',
+  'bo.refused.device_assignments_no_overlap': '该设备在这段时间内已分配给其他采集者。',
+  'bo.refused.device_assignments_id_reused': '该分配编号已属于其他设备或采集者。',
+  'bo.refused.device_assignments_device_id_devices_id_fk': '该设备已不存在，请刷新列表。',
+  'bo.refused.device_assignments_collector_id_collectors_id_fk': '该采集者已不存在，请刷新列表。',
   'bo.refused.unknown': '服务端拒绝了该操作。',
 
   'theme.toggle': '主题',

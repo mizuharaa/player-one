@@ -40,12 +40,33 @@
     {
       "idx": 5,
       "version": "7",
+      "when": 1787646292979,
+      "tag": "0005_settlement_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787646405302,
+      "tag": "0008_review_queues",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
       "when": 1787648340226,
       "tag": "0006_back_office_crud",
       "breakpoints": true
     },
     {
-      "idx": 6,
+      "idx": 8,
+      "version": "7",
+      "when": 1787664812423,
+      "tag": "0010_device_assignments",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
       "version": "7",
       "when": 1787734740226,
       "tag": "0007_back_office_guards",

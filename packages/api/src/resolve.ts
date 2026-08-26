@@ -23,6 +23,23 @@ import type { EpisodeRecord } from '@playerone/contracts';
  * week's task at last week's unit price (SET-08). Time is a filter INSIDE the
  * handover's set, never the outer bound.
  *
+ * ## The device-assignment crosscheck
+ *
+ * Daniel, from PaXini, 2026-08-25: one collector holds a given headset for an
+ * allotted period of about three months, and at the end of it the credentials
+ * swap to the next collector. So the device serial plus the recording start
+ * instant names a collector.
+ *
+ * That is a CROSSCHECK and not a second scoping rule. It runs INSIDE the
+ * handover's candidate set, exactly as time matching does, and the paragraph
+ * above still holds: the handover is the outer bound and nothing here widens
+ * it. What the crosscheck can do is drop a candidate the handover admitted —
+ * a session declared by a collector who was not holding this device when the
+ * recording started.
+ *
+ * The assignments themselves are looked up by the adapter and arrive as data,
+ * because this file may not read a database.
+ *
  * Which upload path each case belongs to, because the next reader will ask why
  * a resolver needs a handover at all:
  *
@@ -42,6 +59,12 @@ export type SessionRow = {
   prepareTime: Date | null;
   sessionOrigin: string;
   /**
+   * Who declared the session. Read only by the device-assignment crosscheck,
+   * and optional for the same reason the claim fields below are: a caller that
+   * does not supply it cannot have a candidate dropped for it.
+   */
+  collectorId?: string | null;
+  /**
    * Eligibility inputs. Optional because NO COLUMN CARRIES THEM YET —
    * `collection_sessions` has no claim status and `tasks` has no expiry. The
    * filter below is built and tested against the shapes the spec describes, so
@@ -59,6 +82,21 @@ export type HandoverRow = {
   deviceSerial: string | null;
 };
 
+/**
+ * One collector's allotted period with one device, as the adapter read it out
+ * of `device_assignments`.
+ *
+ * Half-open — `[validFrom, validTo)` — matching the exclusion constraint that
+ * stops two of them overlapping, so the instant one period ends is the instant
+ * the next begins and a boundary belongs to the incoming collector alone. A
+ * null `validTo` is the open period: this collector holds the device now.
+ */
+export type DeviceAssignment = {
+  collectorId: string;
+  validFrom: Date;
+  validTo: Date | null;
+};
+
 export type ResolutionReason =
   | 'single_session'
   | 'time_window'
@@ -69,10 +107,15 @@ export type ResolutionReason =
   | 'episode_precedes_all_sessions'
   | 'ambiguous_within_tolerance'
   | 'session_missing_prepare_time'
-  | 'all_candidates_ineligible';
+  | 'all_candidates_ineligible'
+  | 'device_assignment_unknown';
 
 /** Why a candidate was dropped before any strategy ran. */
-export type RejectionReason = 'claim_status_ineligible' | 'claim_expired' | 'already_taken';
+export type RejectionReason =
+  | 'claim_status_ineligible'
+  | 'claim_expired'
+  | 'already_taken'
+  | 'device_not_assigned_to_collector';
 
 /** Which pass a candidate was looked at in. */
 export type ResolverStrategy =
@@ -247,6 +290,38 @@ function pickStart(record: EpisodeRecord, cfg: ResolverConfig): StartPick | null
 }
 
 /**
+ * Which collector held the device at the episode's start instant.
+ *
+ * Three answers, and the difference between the last two is the whole design:
+ *
+ *   undefined  not checkable — no assignments were supplied, or the episode has
+ *              no start instant to check one against. The crosscheck does not
+ *              run and nothing is dropped.
+ *   null       assignments were supplied and none covers the instant. Nobody is
+ *              on record as holding the device then, which is a different fact
+ *              from "this collector did not", so it routes to a human instead
+ *              of dropping anybody.
+ *   a uuid     the device's assignee at that instant.
+ *
+ * An episode with no start instant is deliberately in the first case rather than
+ * the second: what is missing there is the clock, not the assignment, and the
+ * resolution already carries `startSource: null` to say so. Naming it
+ * `device_assignment_unknown` would put the blame on the wrong record.
+ */
+function assigneeAt(
+  assignments: readonly DeviceAssignment[] | undefined,
+  startUs: bigint | null,
+): string | null | undefined {
+  if (assignments === undefined || startUs === null) return undefined;
+  const covering = assignments.find(
+    (a) =>
+      BigInt(a.validFrom.getTime()) * US_PER_MS <= startUs &&
+      (a.validTo === null || startUs < BigInt(a.validTo.getTime()) * US_PER_MS),
+  );
+  return covering?.collectorId ?? null;
+}
+
+/**
  * Eligibility. Runs before any strategy, and records every drop.
  *
  * The expiry comparison uses the EPISODE'S START, never `now`. A collector who
@@ -260,6 +335,7 @@ function eligible(
   startUs: bigint | null,
   taken: ReadonlySet<string>,
   cfg: ResolverConfig,
+  assignee: string | null | undefined,
 ): { survivors: SessionRow[]; evaluated: EvaluatedCandidate[] } {
   const survivors: SessionRow[] = [];
   const evaluated: EvaluatedCandidate[] = [];
@@ -276,6 +352,19 @@ function eligible(
 
     if (taken.has(s.id)) {
       drop('already_taken');
+      continue;
+    }
+    /**
+     * The device-assignment crosscheck. A session declared by somebody who was
+     * not holding this device when the recording started cannot be the session
+     * this recording belongs to: that instant was another collector's period.
+     *
+     * Both halves have to be known first. `typeof assignee === 'string'` is the
+     * only case where the device's holder is established, and a candidate with
+     * no collector supplied was never compared — neither is a drop.
+     */
+    if (typeof assignee === 'string' && typeof s.collectorId === 'string' && s.collectorId !== assignee) {
+      drop('device_not_assigned_to_collector');
       continue;
     }
     if (
@@ -318,12 +407,25 @@ export function resolveEpisode(
   sessions: readonly SessionRow[],
   config: number | Partial<ResolverConfig> = DEFAULT_RESOLVER_CONFIG,
   takenSessionIds: readonly string[] = [],
+  /**
+   * The device's assignment periods, read by the adapter. Omitted means the
+   * crosscheck does not run at all, which is what every caller that does not
+   * know about devices gets — see `assigneeAt`.
+   */
+  deviceAssignments?: readonly DeviceAssignment[],
 ): Resolution {
   const cfg = normalise(config);
   const start = pickStart(record, cfg);
   const startUs = start?.us ?? null;
+  const assignee = assigneeAt(deviceAssignments, startUs);
 
-  const { survivors, evaluated } = eligible(sessions, startUs, new Set(takenSessionIds), cfg);
+  const { survivors, evaluated } = eligible(
+    sessions,
+    startUs,
+    new Set(takenSessionIds),
+    cfg,
+    assignee,
+  );
 
   /**
    * Closes over everything the caller cannot see, so that no branch below can
@@ -379,6 +481,20 @@ export function resolveEpisode(
     // from "no sessions on the handover", and the reasons are already in
     // `evaluated` for the operator to read.
     return quarantine('all_candidates_ineligible', null, 'eligibility');
+  }
+  if (assignee === null) {
+    /**
+     * The device has assignment periods and none of them covers this episode's
+     * start. Nobody is on record as holding it then.
+     *
+     * Nothing is dropped for that: a gap in the assignment record is a gap in
+     * what the back office typed, and inventing an ineligibility out of it is
+     * the same class of mistake as inventing a match. The episode goes to the
+     * human queue carrying the reason, and the operator either fills the gap in
+     * `device_assignments` or resolves the episode by hand — both of which are
+     * on the record afterwards, which a silent automatic match would not be.
+     */
+    return quarantine('device_assignment_unknown', null, 'eligibility');
   }
 
   if (survivors.length === 1) {
