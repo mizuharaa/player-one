@@ -170,9 +170,14 @@ async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
     let message = res.statusText;
     let detail: unknown;
     try {
-      const body = (await res.json()) as { error?: string; detail?: unknown };
+      const body = (await res.json()) as { error?: string; detail?: unknown; constraint?: string };
       if (body.error) message = body.error;
-      detail = body.detail;
+      /**
+       * A back-office 409 carries the constraint that refused it rather than a
+       * sentence, so the console can say why in the reader's own language
+       * instead of echoing an English string the server chose.
+       */
+      detail = body.detail ?? body.constraint;
     } catch {
       /* A non-JSON error body is still an error; the status carries it. */
     }
@@ -181,6 +186,119 @@ async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
 
   return (await res.json()) as T;
 }
+
+/* -------------------------------------------------------------------------
+   The back office (BO-01 to BO-04). Same transport, same cookies.
+   ---------------------------------------------------------------------- */
+
+export interface BoTask {
+  id: string;
+  name: string;
+  type: string | null;
+  /** A decimal string. Displayed as written; the server multiplies it. */
+  unit_price: Decimal;
+  target_effective_duration_s: Decimal | null;
+  max_concurrent_claimants: number;
+  status: 'draft' | 'published' | 'taken_down';
+  claimants: number;
+}
+
+export interface BoAgreement {
+  agreement: string;
+  version: string;
+  accepted_at: string;
+}
+
+export interface BoCollector {
+  id: string;
+  external_ref: string;
+  status: 'pending' | 'qualified' | 'suspended';
+  exam_result: 'pass' | 'fail' | null;
+  exam_decided_at: string | null;
+  agreements: BoAgreement[];
+}
+
+export interface BoDevice {
+  id: string;
+  hardware_serial: string;
+  firmware_version: string | null;
+  status: 'active' | 'faulty' | 'retired';
+  fault_note: string | null;
+  bound_collector_id: string | null;
+  bound_collector_ref: string | null;
+  bound_at: string | null;
+  device_type_code: string | null;
+}
+
+const send = (path: string, body?: unknown) =>
+  call<unknown>(path, {
+    method: 'POST',
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
+const patch = (path: string, body: unknown) =>
+  call<unknown>(path, { method: 'PATCH', body: JSON.stringify(body) });
+
+/** What BO-01 lets an operator change about a task after it exists. */
+export interface BoTaskEdit {
+  name?: string;
+  type?: string;
+  unit_price?: string;
+  target_effective_duration_s?: string | null;
+  max_concurrent_claimants?: number;
+  status?: BoTask['status'];
+}
+
+export const backOffice = {
+  tasks: () => call<{ tasks: BoTask[] }>('/api/tasks'),
+  createTask: (body: {
+    id: string;
+    name: string;
+    type: string;
+    unit_price: string;
+    target_effective_duration_s?: string;
+    max_concurrent_claimants: number;
+  }) => send('/api/tasks', body),
+  setTask: (id: string, body: BoTaskEdit) => patch(`/api/tasks/${id}`, body),
+  setTaskStatus: (id: string, status: BoTask['status']) => patch(`/api/tasks/${id}`, { status }),
+
+  collectors: () =>
+    call<{ required_agreements: string[]; collectors: BoCollector[] }>('/api/collectors'),
+  createCollector: (body: {
+    id: string;
+    external_ref: string;
+    status?: BoCollector['status'];
+  }) => send('/api/collectors', body),
+  setCollector: (
+    id: string,
+    body: {
+      status?: BoCollector['status'];
+      /** `null` clears a result recorded against the wrong person. */
+      exam?: { result: 'pass' | 'fail'; decided_at: string } | null;
+      agreements?: BoAgreement[];
+    },
+  ) => patch(`/api/collectors/${id}`, body),
+
+  devices: () =>
+    call<{ devices: BoDevice[]; device_types: { id: string; code: string }[] }>('/api/devices'),
+  createDevice: (body: {
+    id: string;
+    device_type_id: string;
+    hardware_serial: string;
+    firmware_version?: string;
+  }) => send('/api/devices', body),
+  setDevice: (
+    id: string,
+    body: {
+      status?: BoDevice['status'];
+      firmware_version?: string | null;
+      fault_note?: string | null;
+    },
+  ) => patch(`/api/devices/${id}`, body),
+  bindDevice: (id: string, collectorId: string) =>
+    send(`/api/devices/${id}/bind`, { collector_id: collectorId }),
+  unbindDevice: (id: string) => send(`/api/devices/${id}/unbind`),
+};
 
 export const api = {
   /** Claims the next episode, or null when there is nothing to review. */

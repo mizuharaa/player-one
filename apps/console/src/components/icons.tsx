@@ -84,6 +84,15 @@ export const IconPipeline = (p: IconProps) => (
   </Icon>
 );
 
+/** The back office: a list with a control beside it. */
+export const IconBackOffice = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 5h8M3 10h8M3 15h8" />
+    <circle cx="15.5" cy="5" r="1.8" />
+    <circle cx="15.5" cy="15" r="1.8" />
+  </Icon>
+);
+
 export const IconClock = (p: IconProps) => (
   <Icon {...p}>
     <circle cx="10" cy="10" r="7" />

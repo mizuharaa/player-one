@@ -268,6 +268,17 @@ export const tasks = pgTable(
   {
     id: uuid('id').primaryKey(),
     name: text('name').notNull(),
+    /**
+     * APP-08: the task hall lists "type, unit price, target duration, current
+     * progress and claimable state", so type is the one thing BO-02 configures
+     * that this table did not carry.
+     *
+     * No CHECK, by the file's own rule: the collection taxonomy is PaXini's and
+     * grows — kitchen, assembly, retail — and an enum migration per new theme is
+     * a tax. Nullable because the rows that exist predate the column; the API
+     * requires it on create, so nothing new is written without one.
+     */
+    type: text('type'),
     /** Per effective minute. Never a float: this is multiplied into a payment. */
     unitPrice: numeric('unit_price', { precision: 12, scale: 4, mode: 'string' }).notNull(),
     targetEffectiveDurationS: numeric('target_effective_duration_s', {
@@ -281,7 +292,22 @@ export const tasks = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    /**
+     * BO-01's four verbs — create, edit, publish, take down — are three states
+     * and two legal moves. The CHECK below says which states exist; it cannot
+     * say which moves are legal, because a CHECK only ever sees the new row.
+     * `tasks_status_transition` (migration 0006) is the BEFORE UPDATE trigger
+     * that refuses `published -> draft` and anything out of `taken_down`, and
+     * it is at the database rather than in the route for the usual reason: a
+     * second writer must not be able to un-take-down a task by knowing SQL.
+     */
     check('tasks_status_check', sql`${t.status} in ('draft', 'published', 'taken_down')`),
+    /**
+     * Positive is all a CHECK can say. `tasks_capacity_below_live` (migration
+     * 0007) is the other half: a cap cannot be lowered under the claims already
+     * live on the task, which needs the count of other rows and the same task
+     * lock `task_claims_guard` takes.
+     */
     check('tasks_claimants_check', sql`${t.maxConcurrentClaimants} > 0`),
   ],
 );
@@ -292,6 +318,19 @@ export const collectors = pgTable(
     id: uuid('id').primaryKey(),
     externalRef: text('external_ref').notNull(),
     status: text('status').notNull(),
+    /**
+     * APP-04: "An exam follows training. Pass/fail is recorded." Both answers,
+     * so a fail is a recorded fact and not the absence of one — which matters
+     * because APP-05 refuses a claim on anything that is not 'pass', and
+     * "refused because they failed" and "refused because nobody examined them"
+     * are different conversations at a counter.
+     *
+     * ponytail: one result, not an attempts table. APP-07 (retake policy) is P2
+     * and undecided; when it lands, this becomes the latest row of
+     * `collector_exam_attempts` and the gate reads that instead.
+     */
+    examResult: text('exam_result'),
+    examDecidedAt: timestamp('exam_decided_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -300,6 +339,122 @@ export const collectors = pgTable(
     check(
       'collectors_status_check',
       sql`${t.status} in ('pending', 'qualified', 'suspended')`,
+    ),
+    check(
+      'collectors_exam_result_check',
+      sql`${t.examResult} is null or ${t.examResult} in ('pass', 'fail')`,
+    ),
+    /** A result without a date is not a record of anything. Both or neither. */
+    check(
+      'collectors_exam_decided_check',
+      sql`(${t.examResult} is null) = (${t.examDecidedAt} is null)`,
+    ),
+  ],
+);
+
+/**
+ * APP-02 and PRV-01: the six agreements, each with the version accepted and the
+ * moment it was accepted.
+ *
+ * A child table rather than twelve columns on `collectors`. The six names are a
+ * closed set today and the set is legal's to change — a seventh agreement is
+ * then one CHECK edit, not two more columns and every query rewritten. It also
+ * makes "which agreements is this collector missing?" a query rather than a
+ * hand-written twelve-way null test.
+ *
+ * The version is text, not a number: legal versions these as "2026-08-v2" and
+ * whatever they hand over is what has to be storable verbatim.
+ *
+ * The version is IN the key, which is what makes this append-only in fact and
+ * not only in intent. Keyed on `(collector_id, agreement)` alone, accepting a
+ * reissued privacy policy could only overwrite the acceptance of the old one —
+ * and the question a regulator asks is "what did this person agree to, and
+ * when", which needs both rows. So a new version is a new row, re-posting the
+ * same version is a no-op, and nothing here is ever updated in place.
+ *
+ * "Has this collector accepted all six?" is therefore `count(distinct
+ * agreement)`, not `count(*)` — which is exactly how `task_claims_guard` asks
+ * it, because PRODUCT.md gates claiming a task on all six.
+ *
+ * `collector_agreements_append_only` (migration 0006) refuses UPDATE and
+ * DELETE on this table. Append-only was the intent from the start; the trigger
+ * is what makes it true for writers that are not this API.
+ */
+export const collectorAgreements = pgTable(
+  'collector_agreements',
+  {
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    agreement: text('agreement').notNull(),
+    version: text('version').notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.collectorId, t.agreement, t.version] }),
+    check(
+      'collector_agreements_name_check',
+      sql`${t.agreement} in ('user', 'privacy', 'data_collection', 'commercial_use', 'manual_review', 'offline_settlement')`,
+    ),
+    check('collector_agreements_version_check', sql`length(trim(${t.version})) > 0`),
+  ],
+);
+
+/**
+ * APP-10 / BO-02: a collector holds a claim on a task, and a task at its
+ * maximum concurrent claimants is not claimable.
+ *
+ * The cap is a cross-row invariant, so it is not a CHECK — a CHECK sees one row
+ * and cannot count the others. It is not application code either: two counters
+ * both reading "4 of 5 taken" and both inserting is the classic overshoot, and
+ * no amount of care in one route protects against a second writer.
+ *
+ * `task_claims_guard` (migration 0006) takes `select ... for update` on the
+ * task row before counting, so two genuinely concurrent claims for the last
+ * slot serialise on that lock: the second one waits, then counts the first and
+ * is refused. It carries the eligibility gates in the same place for the same
+ * reason — a gate that lives in one route is a gate one route can forget.
+ *
+ * Three of them, which is what PRODUCT.md asks for: the exam pass (APP-05),
+ * `qualified` status, and all six agreements (APP-02 / PRV-01). Training is the
+ * fourth and is missing because nothing here records it yet.
+ *
+ * `released_at` rather than a delete: who held what, and until when, is the
+ * evidence behind a settlement dispute. `task_claims_history_immutable`
+ * (migration 0007) is what makes that true rather than customary — a claim row
+ * cannot be deleted, `claimed_at` cannot move, and a `released_at` already set
+ * cannot be rewritten. Releasing and re-claiming are still allowed, and the
+ * re-claim clears the gates again.
+ */
+export const taskClaims = pgTable(
+  'task_claims',
+  {
+    id: uuid('id').primaryKey(),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull().defaultNow(),
+    releasedAt: timestamp('released_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('task_claims_task_idx').on(t.taskId, t.releasedAt),
+    index('task_claims_collector_idx').on(t.collectorId),
+    /**
+     * One live claim per collector per task. Partial, so a released claim stays
+     * on the record and the same collector can claim the task again later.
+     */
+    uniqueIndex('task_claims_live_key')
+      .on(t.taskId, t.collectorId)
+      .where(sql`${t.releasedAt} is null`),
+    check(
+      'task_claims_released_after_check',
+      sql`${t.releasedAt} is null or ${t.releasedAt} >= ${t.claimedAt}`,
     ),
   ],
 );
@@ -330,12 +485,41 @@ export const devices = pgTable(
     hardwareSerial: text('hardware_serial').notNull(),
     firmwareVersion: text('firmware_version'),
     status: text('status').notNull(),
+    /**
+     * BO-04 / APP-14: who holds this device now. One column and not a bindings
+     * table, because §4.3 already forbids inferring a session's device from
+     * "whoever last had it" — the session records its own device, so this is
+     * only ever the *current* answer and history belongs to `audit_events`,
+     * where SEC-04 requires unbinding to appear anyway.
+     *
+     * ponytail: current-binding column. A bindings table earns its place when a
+     * device must be held by two collectors at once, which phase 1 forbids.
+     */
+    boundCollectorId: uuid('bound_collector_id').references(() => collectors.id),
+    boundAt: timestamp('bound_at', { withTimezone: true }),
+    /** BO-04's fault state, said out loud. `status = 'faulty'` is the flag; this is why. */
+    faultNote: text('fault_note'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex('devices_hardware_serial_key').on(t.hardwareSerial),
     check('devices_status_check', sql`${t.status} in ('active', 'faulty', 'retired')`),
+    /** A binding is always a binding *since* a moment, or it is not a binding. */
+    check(
+      'devices_bound_at_check',
+      sql`(${t.boundCollectorId} is null) = (${t.boundAt} is null)`,
+    ),
+    /**
+     * A retired device is off the fleet, so it cannot be in someone's hands. A
+     * faulty one deliberately still can: hardware fails while it is being worn,
+     * and a constraint that unbound it on the way in would erase who had it.
+     */
+    check(
+      'devices_retired_unbound_check',
+      sql`${t.status} <> 'retired' or ${t.boundCollectorId} is null`,
+    ),
+    index('devices_bound_collector_idx').on(t.boundCollectorId),
   ],
 );
 

@@ -47,6 +47,16 @@ const dbName = (): string => {
   return suffix === '' ? base : `${base}_${suffix}`;
 };
 
+/**
+ * This file's own database, as a URL.
+ *
+ * Exported because a test that has to prove a *concurrency* design needs two
+ * genuinely separate connections: `db()` hands back one pool, and two
+ * transactions on one pooled connection serialise before they ever reach
+ * Postgres, which would make a broken lock look correct.
+ */
+export const dbUrl = (): string => urlFor(dbName());
+
 /** One connection for the whole file, migrated once, truncated per test. */
 let shared: Promise<Db> | null = null;
 
