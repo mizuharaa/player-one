@@ -9,3 +9,10 @@ docs/sample_data/
 # Screenshot rounds are evidence, not source.
 .impeccable/review/
 apps/console/dist/
+
+# Extracted vendor SDKs and the kit they come from: hundreds of MB, not source.
+tools/
+docs/sdks/
+# OrbbecSDK writes this wherever it is run from.
+Log/
+__pycache__/
