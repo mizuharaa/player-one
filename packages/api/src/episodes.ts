@@ -126,7 +126,20 @@ export function registerEpisodes(
       .from(schema.deviceAssignments)
       .where(eq(schema.deviceAssignments.deviceId, handover.deviceId));
 
-    return { batch, handover, sessions, assignments };
+    /**
+     * A device with no custody history at all is a device nobody has
+     * recorded an assignment for yet — not a device with a gap in its record.
+     * On the upgrade path from 0004 the `devices.bound_collector_id` column
+     * 0010 seeds from is created empty, so every pilot device starts here, and
+     * running the crosscheck against an empty history would send the whole
+     * fleet's footage to the human queue on deploy day. `undefined` is the
+     * resolver's "not supplied" and switches the crosscheck off; the first
+     * bind (or a typed assignment) turns it on for that device from that
+     * instant — `assigneeAt` treats footage from before the earliest period as
+     * untracked too, so a backlog upload is not quarantined by the bind that
+     * came after it (F-33). From then on a gap is a gap.
+     */
+    return { batch, handover, sessions, assignments: assignments.length === 0 ? undefined : assignments };
   };
 
   app.post('/upload-batches/:id/episodes', opts, async (req, reply) => {

@@ -294,9 +294,10 @@ function pickStart(record: EpisodeRecord, cfg: ResolverConfig): StartPick | null
  *
  * Three answers, and the difference between the last two is the whole design:
  *
- *   undefined  not checkable — no assignments were supplied, or the episode has
- *              no start instant to check one against. The crosscheck does not
- *              run and nothing is dropped.
+ *   undefined  not checkable — no assignments were supplied, the episode has
+ *              no start instant to check one against, or it started before the
+ *              earliest period on record (custody was not being tracked yet;
+ *              bridge F-33). The crosscheck does not run and nothing is dropped.
  *   null       assignments were supplied and none covers the instant. Nobody is
  *              on record as holding the device then, which is a different fact
  *              from "this collector did not", so it routes to a human instead
@@ -313,6 +314,11 @@ function assigneeAt(
   startUs: bigint | null,
 ): string | null | undefined {
   if (assignments === undefined || startUs === null) return undefined;
+  const earliest = assignments.reduce(
+    (min, a) => (a.validFrom.getTime() < min ? a.validFrom.getTime() : min),
+    Number.POSITIVE_INFINITY,
+  );
+  if (startUs < BigInt(earliest) * US_PER_MS) return undefined;
   const covering = assignments.find(
     (a) =>
       BigInt(a.validFrom.getTime()) * US_PER_MS <= startUs &&

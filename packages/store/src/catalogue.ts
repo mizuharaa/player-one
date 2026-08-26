@@ -33,26 +33,26 @@ const BLOCKING = new Set([
   'MEDIA-TRUNCATED',
   'PART-MISSING-INTERIOR',
   /**
-   * CHECKSUM-MISMATCH is here for a different reason from the other four, and
-   * the ingest spec (§6, defect table) is explicit about it: the bytes of one
-   * session changed between two deliveries, so which delivery is the real one
-   * is an open question, and "does not enter the review queue, does not
-   * generate settlement, is never deleted" is what the spec says to do with an
-   * open question. A reviewer can watch the video perfectly well; what they
-   * cannot do is decide which of two conflicting deliveries they are being
-   * paid to judge.
+   * CHECKSUM-MISMATCH is deliberately NOT here (integration decision,
+   * 2026-08-26, reversible).
    *
-   * It became reachable when the cloud leg landed: a changed redelivery is
-   * unverified again (migration 0009), re-uploads, verifies against its own new
-   * digest, and was then reviewable with the cross-delivery conflict still
-   * unresolved.
+   * The cloud leg made it blocking on the argument that a reviewer "cannot
+   * decide which of two conflicting deliveries they are being paid to judge".
+   * The review-queue slice answers that structurally: every review row names
+   * its `ingest_id`, the queue only ever routes `episodes.latest_ingest_id`,
+   * and an earlier verdict stays attached to the delivery it judged
+   * (review.test.ts, "routes the delivery the queue is waiting on"). So a
+   * local mismatch is a flagged, judgeable redelivery — blocking is reserved
+   * for "a reviewer cannot judge this" — and with no per-episode clearing
+   * route yet, blocking it would make every redelivery unpayable for the
+   * whole pilot.
    *
-   * ponytail: no per-episode clearing route exists yet, so a mismatched
-   * redelivery stays out of the queue until somebody builds one — flipping
-   * `blocks_review` for the code is one UPDATE, per the note above. That route
-   * belongs to the counter's quarantine workflow, not to the cloud leg.
+   * What DOES block is the cloud read-back failing: `eligible` in review.ts
+   * refuses `verification_state = 'failed'` under either gate. That is UPL-04's
+   * "mismatch blocks review", and it is about the cloud checksum (QR-02).
+   * Flipping this code back is one UPDATE; if it is flipped, the two lane
+   * tests named above are where the redelivery fixture has to change.
    */
-  'CHECKSUM-MISMATCH',
 ]);
 
 /**

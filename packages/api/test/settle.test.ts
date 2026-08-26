@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import type { EpisodeRecord } from '@playerone/contracts';
+import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential } from '../src/index.ts';
 import { ZERO, add, fromDecimal, mul, quantise } from '../src/money.ts';
 import { closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
@@ -36,13 +36,15 @@ const T = Date.parse('2026-08-21T09:00:00.000Z');
 /** Sixteen seconds of clean footage, which is the case the money tests pin. */
 const record = (): EpisodeRecord => {
   const measured = 16;
+  const path = `ego_AZER76400FE_20260813_${String(Math.random()).slice(2, 8)}`;
   return {
     schema_version: '1.1.0',
-    episode_id: uid(),
+    // The submit route re-derives this from the basename and refuses anything else.
+    episode_id: deriveEpisodeId(path),
     content_fingerprint: 'a'.repeat(64),
     state: 'ok',
     source: {
-      path: `ego_AZER76400FE_20260813_${String(Math.random()).slice(2, 8)}`,
+      path,
       ingest_tool_version: '0.3.1',
       ingested_at: new Date().toISOString(),
       ingest_host: 'test',
@@ -458,6 +460,36 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
   // -------------------------------------------------------------------------
 
   describe('SET-03: finance marks manual payment', () => {
+    it('reports and audits only the lines it actually moved', async () => {
+      // Bridge F-6. Between reading the bill and writing the payment a line can
+      // move to `exception`; the UPDATE skips it by design, and the response and
+      // the audit row must describe the rows the UPDATE returned, not the list
+      // read beforehand.
+      const h = await harness();
+      const generated = await h.send('POST', '/api/settle/bills', period());
+      const bills = generated.json().bills as { id: string; collector_ref: string }[];
+      const target = bills.find((b) => b.collector_ref === 'c-0001')!;
+      const lines = (await h.send('GET', `/api/settle/bills/${target.id}`)).json().lines as {
+        settlement_id: string;
+      }[];
+      expect(lines).toHaveLength(2);
+      const [held, disputed] = lines.map((l) => l.settlement_id);
+      await h.d.execute(sql`
+        update settlements set settlement_state = 'exception', updated_at = now() where id = ${disputed}
+      `);
+
+      const paid = await h.send('POST', `/api/settle/bills/${target.id}/pay`);
+      expect(paid.statusCode, paid.body).toBe(200);
+      expect(paid.json().marked).toBe(1);
+      expect(paid.json().paid).toBe(false);
+
+      const audits = (await h.d.execute(sql`
+        select after from audit_events where action = 'bill.pay'
+      `)) as unknown as { after: { settlement_ids: string[] } }[];
+      expect(audits).toHaveLength(1);
+      expect(audits[0]!.after.settlement_ids).toEqual([held]);
+    });
+
     it('moves every line to manually_paid and audits it in the same transaction', async () => {
       const h = await harness();
       const generated = await h.send('POST', '/api/settle/bills', period());

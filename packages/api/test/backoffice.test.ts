@@ -1455,6 +1455,53 @@ describe.skipIf(!hasDb())('the back office', () => {
       expect((await c.get(`/api/devices/${ids.device2}/assignments`)).json().assignments).toEqual([]);
     });
 
+    it('refuses a replay that asks for a different period under the same id', async () => {
+      // Bridge F-3. A replay is the same submission; a different `valid_from`
+      // under a reused id is a second, different custody claim answered 200
+      // "already recorded" — on the path that decides who is paid.
+      const ids = await seed();
+      const c = await client();
+      const id = uid();
+      const first = await c.post(`/api/devices/${ids.device1}/assignments`, {
+        id,
+        collector_id: ids.collector1,
+        valid_from: MAY,
+      });
+      expect(first.statusCode, first.body).toBe(201);
+      const later = new Date(Date.parse(MAY) + 86_400_000).toISOString();
+      const res = await c.post(`/api/devices/${ids.device1}/assignments`, {
+        id,
+        collector_id: ids.collector1,
+        valid_from: later,
+      });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().constraint).toBe('device_assignments_id_reused');
+    });
+
+    it('opens a custody period on bind and closes it on unbind', async () => {
+      // Bridge F-1 / F-20. The counter's bind is a custody event: it is what
+      // the payment crosscheck reads, so it has to land in `device_assignments`
+      // in the same transaction, not only in `devices.bound_collector_id`.
+      const ids = await seed();
+      const c = await client();
+      const bound = await c.post(`/api/devices/${ids.device1}/bind`, { collector_id: ids.collector2 });
+      expect(bound.statusCode, bound.body).toBe(200);
+      let listed = (await c.get(`/api/devices/${ids.device1}/assignments`)).json()
+        .assignments as Record<string, string | null>[];
+      // Newest first: the bind's period is open and names the bound collector.
+      expect(listed[0]!['collector_id']).toBe(ids.collector2);
+      expect(listed[0]!['valid_to']).toBeNull();
+      // Any earlier open period was closed at the bind instant, not left overlapping.
+      expect(listed.slice(1).every((a) => a['valid_to'] !== null)).toBe(true);
+
+      const unbound = await c.post(`/api/devices/${ids.device1}/unbind`);
+      expect(unbound.statusCode, unbound.body).toBe(200);
+      listed = (await c.get(`/api/devices/${ids.device1}/assignments`)).json()
+        .assignments as Record<string, string | null>[];
+      expect(listed[0]!['collector_id']).toBe(ids.collector2);
+      expect(listed[0]!['valid_to']).not.toBeNull();
+    });
+
     it('answers the same chain from the collector side, with the serial on it', async () => {
       const ids = await seed();
       const c = await client();
@@ -1627,6 +1674,17 @@ describe.skipIf(!hasDb())('the back office', () => {
       'collector_agreements_collector_id_agreement_version_pk',
       // The collector is written in the same transaction as its acceptances.
       'collector_agreements_collector_id_collectors_id_fk',
+      // Raised by the settlement lane (0005, 0011) and the upload leg (0007,
+      // 0009). The back office never writes settlements, bills or upload
+      // batches; those routes have their own refusals and their own tests.
+      'settlements_transition_check',
+      'settlements_amount_immutable_check',
+      'bill_lines_payable_check',
+      'bills_issued_immutable',
+      'bill_lines_owner_guard',
+      'bills_total_matches_lines',
+      'upload_batches_verify_needs_episodes',
+      'upload_batches_verify_needs_verified_episodes',
     ]);
 
     for (const name of [...declared.map((d) => d.name), ...raised]) {

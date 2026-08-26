@@ -54,7 +54,13 @@ type Reply = { code: (n: number) => { send: (b: unknown) => unknown } };
 export const LEASE_MS = 10 * 60 * 1000;
 
 /** Bounded, because the only way to lose the race twice is for the queue to be busy. */
-const CLAIM_ATTEMPTS = 3;
+/**
+ * Concurrent claimers all pick the same head of the queue and `on conflict do
+ * nothing` lets one of them win each round, so N claimers arriving together
+ * need N rounds in the worst case. Eight is well above the number of reviewers
+ * a pilot has, and a spare attempt costs one cheap statement.
+ */
+const CLAIM_ATTEMPTS = 8;
 
 /**
  * QR-07. Two lanes, and an episode is in exactly one of them.
