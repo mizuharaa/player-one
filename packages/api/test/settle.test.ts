@@ -108,6 +108,8 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       machineB: uid(),
       operatorA: uid(),
       operatorB: uid(),
+      /** 0013: a bill is paid by finance, and never by the operator who issued it. */
+      financeA: uid(),
       collector1: uid(),
       collector2: uid(),
       deviceType: uid(),
@@ -120,7 +122,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
     const hash = await hashCredential('pw');
     await d.execute(sql`insert into upload_centres (id, region, name, status) values (${ids.centreA}, 'HCM', 'District 7', 'active'), (${ids.centreB}, 'HAN', 'Cau Giay', 'active')`);
     await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash) values (${ids.machineA}, ${ids.centreA}, 'HCM-01', 'active', ${hash}), (${ids.machineB}, ${ids.centreB}, 'HAN-01', 'active', ${hash})`);
-    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.operatorA}, ${ids.centreA}, 'op-hcm', 'centre_operator', ${hash}), (${ids.operatorB}, ${ids.centreB}, 'op-han', 'centre_operator', ${hash})`);
+    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.operatorA}, ${ids.centreA}, 'op-hcm', 'centre_operator', ${hash}), (${ids.operatorB}, ${ids.centreB}, 'op-han', 'centre_operator', ${hash}), (${ids.financeA}, ${ids.centreA}, 'fin-hcm', 'finance', ${hash})`);
     await d.execute(sql`insert into collectors (id, external_ref, status) values (${ids.collector1}, 'c-0001', 'qualified'), (${ids.collector2}, 'c-0002', 'qualified')`);
     await d.execute(sql`insert into device_types (id, code, generation) values (${ids.deviceType}, 'ego_headset', 'gen1')`);
     await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status) values (${ids.device1}, ${ids.deviceType}, 'AZER76400FE', 'active'), (${ids.device2}, ${ids.deviceType}, 'AZER76400FF', 'active')`);
@@ -141,6 +143,13 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
     };
     const headersA = await login('HCM-01', 'op-hcm');
     const headersB = await login('HAN-01', 'op-han');
+    /**
+     * Who pays. `settlements_paid_by_finance` (0013) refuses `manually_paid`
+     * unless the transaction's audit row names a finance operator who did not
+     * issue the bill, so the operator who generates the cycle cannot also mark
+     * it paid — that is the separation of duty, and it holds here too.
+     */
+    const headersF = await login('HCM-01', 'fin-hcm');
 
     const send = async (
       method: 'POST' | 'GET',
@@ -232,7 +241,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       }
     }
 
-    return { d, app, ids, headersA, headersB, send, expected };
+    return { d, app, ids, headersA, headersB, headersF, send, expected };
   }
 
   /**
@@ -465,7 +474,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       const target = bills.find((b) => b.collector_ref === 'c-0001')!;
       const other = bills.find((b) => b.collector_ref === 'c-0002')!;
 
-      const paid = await h.send('POST', `/api/settle/bills/${target.id}/pay`);
+      const paid = await h.send('POST', `/api/settle/bills/${target.id}/pay`, undefined, h.headersF);
       expect(paid.statusCode, paid.body).toBe(200);
       expect(paid.json().paid).toBe(true);
       expect(paid.json().marked).toBe(2);
@@ -487,16 +496,16 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       `)) as unknown as { target_id: string; operator_id: string; upload_device_id: string }[];
       expect(audits).toHaveLength(1);
       expect(audits[0]!.target_id).toBe(target.id);
-      expect(audits[0]!.operator_id).toBe(h.ids.operatorA);
+      expect(audits[0]!.operator_id).toBe(h.ids.financeA);
       expect(audits[0]!.upload_device_id).toBe(h.ids.machineA);
     });
 
     it('paying a bill twice marks nothing the second time', async () => {
       const h = await harness({ each: 1 });
       const bills = (await h.send('POST', '/api/settle/bills', period())).json().bills as { id: string }[];
-      await h.send('POST', `/api/settle/bills/${bills[0]!.id}/pay`);
+      await h.send('POST', `/api/settle/bills/${bills[0]!.id}/pay`, undefined, h.headersF);
 
-      const again = await h.send('POST', `/api/settle/bills/${bills[0]!.id}/pay`);
+      const again = await h.send('POST', `/api/settle/bills/${bills[0]!.id}/pay`, undefined, h.headersF);
       expect(again.statusCode).toBe(200);
       expect(again.json().marked).toBe(0);
       expect(again.json().paid).toBe(true);
