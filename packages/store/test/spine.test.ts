@@ -604,6 +604,30 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       );
     });
 
+    it('never lets a line leave an issued bill', async () => {
+      // Bridge F-28. Deleting or re-pointing the last line would leave the
+      // frozen total standing over nothing, and the issued-bill guard reads
+      // "issued" as "has a line". A line is evidence: written once.
+      const { settlementId, collector } = await seedSettlement();
+      const d = await db();
+      const bill = uid();
+      const other = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${bill}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
+                 (${other}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`);
+      await violates(
+        'bill_lines_immutable',
+        d.execute(sql`delete from bill_lines where settlement_id = ${settlementId};`),
+      );
+      await violates(
+        'bill_lines_immutable',
+        d.execute(sql`update bill_lines set bill_id = ${other} where settlement_id = ${settlementId};`),
+      );
+    });
+
     it('refuses a total its lines do not add up to', async () => {
       // 0011, deferred to commit: the total is the sum of the lines. The bill
       // may be written before its lines (the generator does), so the check runs

@@ -1683,6 +1683,7 @@ describe.skipIf(!hasDb())('the back office', () => {
       'bills_issued_immutable',
       'bill_lines_owner_guard',
       'bills_total_matches_lines',
+      'bill_lines_immutable',
       'upload_batches_verify_needs_episodes',
       'upload_batches_verify_needs_verified_episodes',
       // Raised by the payout lane's tamper guards (0012/0013): append-only,
