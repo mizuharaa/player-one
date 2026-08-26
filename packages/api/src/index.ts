@@ -14,6 +14,8 @@ import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
 import { registerReview } from './review.ts';
 import { registerSessionRoutes } from './session.ts';
 import { registerSettle } from './settle.ts';
+import { registerUpload } from './upload.ts';
+import type { ObjectStore, UploadProgress } from './upload-worker.ts';
 import { authenticateMachine, authenticateOperator } from './session.ts';
 import type { Actor } from './actor.ts';
 import { signToken, verifyToken } from './credentials.ts';
@@ -25,6 +27,22 @@ export * from './resolve.ts';
 export * from './money.ts';
 export { LEASE_MS } from './review.ts';
 export { parseRange, safeJoin } from './media.ts';
+export {
+  noProgress,
+  objectKey,
+  planParts,
+  PART_SIZE,
+  S3ObjectStore,
+  s3StoreFromEnv,
+  transportInventory,
+  uploadEpisode,
+  type EpisodeUploadResult,
+  type Mismatch,
+  type ObjectStore,
+  type PutResult,
+  type TransportFile,
+  type UploadProgress,
+} from './upload-worker.ts';
 export { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 
 /**
@@ -75,6 +93,23 @@ export type ApiOptions = {
    * constant somewhere in `settle.ts`.
    */
   settlementCycleDays?: number;
+   * Where episodes are uploaded to and verified against (UPL-04/05). Absent
+   * until the GreenNode contract yields an endpoint; the upload routes answer
+   * 503 saying so. See `s3StoreFromEnv`.
+   */
+  objectStore?: ObjectStore;
+  /**
+   * Which integrity check QR-02's review gate reads. 'local' (default) is the
+   * ADR 0001 deviation; 'cloud' requires `verification_state = 'verified'` and
+   * retires that ADR. See `ReviewOptions.verificationGate`.
+   */
+  verificationGate?: 'local' | 'cloud';
+  /**
+   * Where the upload centre remembers what it has already transported
+   * (PRODUCT.md:34). Defaults to `noProgress`, which remembers nothing and is
+   * correct — see `UploadProgress`.
+   */
+  uploadProgress?: UploadProgress;
 };
 
 export function buildApi({
@@ -85,6 +120,9 @@ export function buildApi({
   currency,
   secureCookies = false,
   settlementCycleDays,
+  objectStore,
+  verificationGate,
+  uploadProgress,
 }: ApiOptions): FastifyInstance {
   if (!tokenSecret) throw new Error('tokenSecret is required');
   const app = Fastify({ logger: false });
@@ -181,7 +219,8 @@ export function buildApi({
   registerBackOffice(app, db, requireActor);
   registerCounter(app, db, requireActor);
   registerEpisodes(app, db, requireActor, toleranceMs);
-  registerReview(app, db, requireActor, { mediaRoot, currency });
+  registerUpload(app, db, requireActor, { objectStore, mediaRoot, uploadProgress });
+  registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate });
   registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays });
   registerMedia(app, db, requireActor, mediaRoot);
   registerConsole(app, db, { tokenSecret, secureCookies });

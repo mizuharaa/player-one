@@ -110,6 +110,16 @@ export type ReviewOptions = {
    * here. Until then one currency per deployment is honest and visible.
    */
   currency?: string;
+  /**
+   * Which integrity check QR-02's gate reads: 'local' (the ingest engine's own
+   * check, the ADR 0001 deviation) or 'cloud' (`verification_state =
+   * 'verified'`, written by the upload leg's read-back). Defaults to 'local'
+   * because no GreenNode endpoint exists until the contract is signed —
+   * flipping to 'cloud' is what retires ADR 0001. Under either setting an
+   * episode whose cloud copy FAILED read-back is blocked: a known-bad copy is
+   * information, whichever gate is in force.
+   */
+  verificationGate?: 'local' | 'cloud';
 };
 
 const VerdictBody = z.object({
@@ -182,22 +192,32 @@ export function registerReview(
    * An episode is reviewable when it has an owner, its bytes arrived intact,
    * and nothing about it blocks review.
    *
-   * The integrity half of that is **the local check the ingest engine already
-   * ran**, not a cloud checksum receipt. QR-02 says no episode enters review
-   * before cloud verification and the cloud does not exist yet; reading the
-   * local result instead is a documented deviation with an ADR owed. The
-   * adjacent rule is not deviable and nothing in this file bends it: no TF card
-   * is cleared, and no route here deletes source media.
+   * The integrity half of that depends on `verificationGate`. 'local' reads
+   * **the check the ingest engine already ran** — the ADR 0001 deviation,
+   * still the default while no cloud endpoint exists — plus one addition the
+   * cloud leg made possible: an episode whose cloud copy failed read-back
+   * (`verification_state = 'failed'`) is blocked even under the local gate,
+   * because a copy known to be bad is not a pending one. 'cloud' is QR-02 as
+   * written: only `verification_state = 'verified'` enters review, and setting
+   * it is what retires ADR 0001. The adjacent rule is not deviable under
+   * either gate and nothing in this file bends it: no TF card is cleared, and
+   * no route here deletes source media.
    *
    * `resolution_state = 'resolved'` is the other half and is not negotiable —
    * an episode with no session has no collector and no task, so there is
    * nobody to pay and no price to pay them at. Those stay in the counter's
    * quarantine queue until a human attaches them.
    */
+  const cloudGate = (options.verificationGate ?? 'local') === 'cloud';
   const eligible = sql`
     ${schema.episodes.resolutionState} = 'resolved'
     and ${schema.episodeIngests.state} <> 'quarantined'
     and ${schema.episodeIngests.measuredDurationS} > 0
+    and ${
+      cloudGate
+        ? sql`${schema.episodes.verificationState} = 'verified'`
+        : sql`${schema.episodes.verificationState} <> 'failed'`
+    }
     and not exists (
       select 1
         from episode_defects d
@@ -265,6 +285,26 @@ export function registerReview(
     reply.code(400).send({ error: `queue must be one of ${LANES.join(', ')}` });
 
   /**
+   * The same eligibility question asked about a review row that already exists.
+   *
+   * Materialisation is not the last moment eligibility matters: the cloud leg's
+   * read-back can find a corrupt copy, and a redelivery can move the episode
+   * onto an ingest this review does not name, both AFTER a pending row was
+   * created. So takeover asks it, the queue depth asks it, and the verdict
+   * transaction asks it. `episode_ingests.ingest_id = <ingest>` joined against
+   * `latest_ingest_id` is what pins it to the exact delivery under review.
+   */
+  const stillEligible = (episodeId: SQL | string, ingestId: SQL | string) => sql`
+    exists (
+      select 1
+        from episodes
+        join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
+       where episodes.episode_id = ${episodeId}
+         and episode_ingests.ingest_id = ${ingestId}
+         and ${eligible}
+    )`;
+
+  /**
    * Claims the next episode for this reviewer, in two statements and at most
    * `CLAIM_ATTEMPTS` tries.
    *
@@ -305,6 +345,7 @@ export function registerReview(
               and r.queue = ${lane}
               and (r.assignee_ref is null or r.assignee_ref = ${reviewer})
               and (r.reviewer_ref is null or r.lease_expires_at < now())
+              and ${stillEligible(sql`r.episode_id`, sql`r.ingest_id`)}
             order by r.priority desc, r.created_at
               for update skip locked
             limit 1
@@ -370,11 +411,14 @@ export function registerReview(
   async function queueDepth(reviewer: string, lane: Lane): Promise<number> {
     const rows = (await db.execute(sql`
       select
-        (select count(*) from episode_reviews
-          where review_state = 'pending'
-            and queue = ${lane}
-            and (assignee_ref is null or assignee_ref = ${reviewer})
-            and (reviewer_ref is null or lease_expires_at < now()))
+        (select count(*) from episode_reviews pr
+          where pr.review_state = 'pending'
+            and pr.queue = ${lane}
+            and (pr.assignee_ref is null or pr.assignee_ref = ${reviewer})
+            and (pr.reviewer_ref is null or pr.lease_expires_at < now())
+            -- Same re-check as the takeover: a pending row whose episode has
+            -- since failed cloud verification is not claimable, so it is not depth.
+            and ${stillEligible(sql`pr.episode_id`, sql`pr.ingest_id`)})
       + (select count(*)
            from episodes
            join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
@@ -1137,6 +1181,25 @@ export function registerReview(
            * belongs to somebody else now, and a verdict written under an
            * expired claim writes a payment against footage the row says another
            * person holds.
+           * The episode row is locked before the eligibility clause below reads
+           * it. Under READ COMMITTED an `exists` subquery answers from a
+           * statement snapshot, so a read-back verdict or a redelivery
+           * committing microseconds later would slip past it and this
+           * transaction would still write a settlement. The upload leg's own
+           * verdict write updates this row, so taking the lock here is what
+           * makes the two serialise: whichever arrives second waits and then
+           * sees the other's decision.
+           */
+          await tx.execute(
+            sql`select 1 from episodes where episode_id = ${body.episode_id} for update`,
+          );
+          /**
+           * `review_state = 'pending'` in the WHERE is not belt and braces. It
+           * is what makes the transaction the arbiter rather than the check
+           * twenty lines above: another request may have decided this review
+           * between that read and this write, and then this update matches
+           * nothing and the whole transaction — audit row included — does not
+           * happen.
            */
           const [row] = await tx
             .update(schema.episodeReviews)
@@ -1155,6 +1218,16 @@ export function registerReview(
                 eq(schema.episodeReviews.reviewState, 'pending'),
                 eq(schema.episodeReviews.reviewerRef, reviewer),
                 sql`${schema.episodeReviews.leaseExpiresAt} >= now()`,
+                /**
+                 * And the episode is still reviewable NOW. A lease lasts
+                 * minutes and the cloud leg runs in that window: read-back can
+                 * turn the copy 'failed', or a redelivery can move the episode
+                 * onto an ingest this review does not name. Either way the
+                 * bytes the reviewer judged are not the bytes on record, and a
+                 * settlement written here would pay for footage QR-02 says
+                 * never entered review.
+                 */
+                stillEligible(body.episode_id, review.ingestId),
               ),
             )
             .returning({ id: schema.episodeReviews.id });
@@ -1219,9 +1292,22 @@ export function registerReview(
        */
       const raced = await resultOf(db, body.verdict_id);
       if (raced !== null) return reply.send({ ...raced, replayed: true });
-      return reply
-        .code(409)
-        .send({ error: 'reassigned', detail: 'this review is no longer yours to decide' });
+      /**
+       * Still pending means nobody decided it — the eligibility clause is what
+       * refused. Saying "decided elsewhere" there would send the reviewer
+       * looking for a colleague who does not exist.
+       */
+      const [current] = await db
+        .select({ state: schema.episodeReviews.reviewState })
+        .from(schema.episodeReviews)
+        .where(eq(schema.episodeReviews.id, review.id));
+      if (current?.state === 'pending') {
+        return reply.code(409).send({
+          error: 'not reviewable',
+          detail: 'this episode stopped being reviewable while it was open; nothing was recorded',
+        });
+      }
+      return reply.code(409).send({ error: 'reassigned', detail: 'this review was decided elsewhere' });
     }
 
     return reply.send({
