@@ -10,6 +10,8 @@ import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';
 import { registerEpisodes } from './episodes.ts';
 import { registerMedia } from './media.ts';
+import { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
+import { registerPayout } from './payout/routes/payout.ts';
 import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
 import { registerReview } from './review.ts';
 import { registerSessionRoutes } from './session.ts';
@@ -44,6 +46,10 @@ export {
   type UploadProgress,
 } from './upload-worker.ts';
 export { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
+export { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS } from './payout/routes/payout.ts';
+export { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
+export type { ZaloPayClient } from './payout/domain/client-contract.ts';
+export type { RiskReader, RiskSummary, Flag } from './payout/domain/risk.ts';
 
 /**
  * The operator API. The upload-centre console never touches Postgres — PRD
@@ -134,6 +140,15 @@ export type ApiOptions = {
    * holding the files.
    */
   reviewerMediaEnabled?: boolean;
+  /**
+   * The payout rail (payout brief, §2.4). Defaults to what the environment
+   * says, which defaults to `manual` on `sandbox`: the pilot shape, where an
+   * operator moves the money and records the reference, and nothing here can
+   * send a transfer. `PLAYERONE_PAYOUT_MODE=api` needs a production ZaloPay
+   * environment with every credential present, or `buildApi` throws — see
+   * `assertPayoutBootInvariants`.
+   */
+  payout?: PayoutOptions;
 };
 
 /** What a reviewer session may reach. Everything else answers 403. */
@@ -164,8 +179,16 @@ export function buildApi({
   verificationGate,
   uploadProgress,
   reviewerMediaEnabled = false,
+  payout = payoutOptionsFromEnv(),
 }: ApiOptions): FastifyInstance {
   if (!tokenSecret) throw new Error('tokenSecret is required');
+  /**
+   * Two more service invariants, same shape as the one below: a live payout
+   * path never runs on sandbox credentials, and production is never named
+   * with a credential missing. Thrown here so an embedded caller cannot
+   * assemble either combination.
+   */
+  assertPayoutBootInvariants(payout);
   /**
    * A service invariant, not an entrypoint check.
    *
@@ -309,6 +332,7 @@ export function buildApi({
   registerUpload(app, db, requireActor, { objectStore, mediaRoot, uploadProgress });
   registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate, reviewerMediaEnabled });
   registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays });
+  registerPayout(app, db, requireActor, { cycleDays: settlementCycleDays, ...payout });
   registerMedia(app, db, requireActor, mediaRoot);
   registerConsole(app, db, { tokenSecret, secureCookies });
   /** The JSON sign-in the React console uses. Same credentials, same cookies. */
