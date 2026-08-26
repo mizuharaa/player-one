@@ -303,9 +303,13 @@ export type PayOutcome =
   | { kind: 'refused'; constraint: PayRefusal | string; attempt?: AttemptRow };
 
 export class PayRefused extends Error {
-  constructor(readonly constraint: string) {
+  // A declared field, not a parameter property: bin/ runs .ts under Node's
+  // strip-only type stripping, which refuses those (RUNNING.md).
+  readonly constraint: string;
+  constructor(constraint: string) {
     super(constraint);
     this.name = 'PayRefused';
+    this.constraint = constraint;
   }
 }
 
