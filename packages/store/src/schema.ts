@@ -1667,3 +1667,99 @@ export const payoutExportRows = pgTable(
   },
   (t) => [primaryKey({ name: 'payout_export_rows_pk', columns: [t.exportId, t.billId] })],
 );
+
+// ---------------------------------------------------------------------------
+// Reconciliation (Agent F of the payout brief; migration 0015)
+
+/**
+ * One row per time this system asked whether the other side agrees with its
+ * ledger: the daily query-txn run (`zalopay`), a bank or wallet statement
+ * matched against manual attempts (`statement`), what the API rail would have
+ * sent while the mode is manual (`shadow`), and that intention diffed against
+ * what was actually paid (`shadow_diff`). Started once, finished once, never
+ * deleted (`recon_runs_sealed`, 0015).
+ */
+export const reconRuns = pgTable(
+  'recon_runs',
+  {
+    id: uuid('id').primaryKey(),
+    /** The window as a label, `2026-08-17/2026-08-24`; the bounds are beside it. */
+    period: text('period').notNull(),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+    periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+    source: text('source').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    summary: jsonb('summary').notNull().default(sql`'{}'::jsonb`),
+  },
+  (t) => [
+    index('recon_runs_source_idx').on(t.source, t.startedAt.desc()),
+    check('recon_runs_source_check', sql`${t.source} in ('zalopay', 'statement', 'shadow', 'shadow_diff')`),
+    check('recon_runs_period_check', sql`${t.periodEnd} > ${t.periodStart}`),
+    check('recon_runs_finished_check', sql`${t.finishedAt} is null or ${t.finishedAt} >= ${t.startedAt}`),
+  ],
+);
+
+/**
+ * One discrepancy. What we say, what they say, and which of the eight kinds
+ * it is. Written once (`recon_lines_append_only`); the one edit it ever takes
+ * is its resolution, by an operator with the finance role and a typed reason,
+ * proved against the audit trail at commit (`recon_lines_resolved_by_operator`).
+ * No run, poll or script resolves a line — that is the whole point of the
+ * table.
+ */
+export const reconLines = pgTable(
+  'recon_lines',
+  {
+    id: uuid('id').primaryKey(),
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => reconRuns.id),
+    /** Null for a statement line that matched nothing of ours. */
+    billId: uuid('bill_id').references(() => bills.id),
+    payoutAttemptId: uuid('payout_attempt_id').references(() => payoutAttempts.id),
+    partnerOrderId: text('partner_order_id'),
+    /** The other side's name for it: a zlp order id, or a statement reference. */
+    reference: text('reference'),
+    ourStatus: text('our_status'),
+    theirStatus: text('their_status'),
+    ourAmount: bigint('our_amount', { mode: 'number' }),
+    theirAmount: bigint('their_amount', { mode: 'number' }),
+    discrepancyKind: text('discrepancy_kind').notNull(),
+    detail: jsonb('detail').notNull().default(sql`'{}'::jsonb`),
+    raisedAt: timestamp('raised_at', { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolvedBy: uuid('resolved_by').references(() => operators.id),
+    resolveReason: text('resolve_reason'),
+  },
+  (t) => [
+    index('recon_lines_run_idx').on(t.runId),
+    index('recon_lines_bill_idx').on(t.billId, t.raisedAt.desc()),
+    index('recon_lines_open_idx')
+      .on(t.discrepancyKind, t.raisedAt.desc())
+      .where(sql`${t.resolvedAt} is null`),
+    /**
+     * One open line per discrepancy, held by the database so two runs at
+     * once cannot raise and ticket it twice (F-44). The migration declares
+     * it `NULLS NOT DISTINCT`, which drizzle cannot express on an index;
+     * 0015 is hand-written and is the authority.
+     */
+    uniqueIndex('recon_lines_open_key')
+      .on(t.discrepancyKind, t.payoutAttemptId, t.billId, t.partnerOrderId, t.reference)
+      .where(sql`${t.resolvedAt} is null`),
+    check(
+      'recon_lines_kind_check',
+      sql`${t.discrepancyKind} in ('WE_SAY_PAID_THEY_DONT', 'THEY_SAY_PAID_WE_DONT', 'AMOUNT_MISMATCH', 'ORPHAN_AT_ZLP', 'STALE_PROCESSING', 'STUCK_PENDING', 'SHADOW_UNPAID', 'SHADOW_UNINTENDED')`,
+    ),
+    /** All three or none, spelled out: an open line carries no reason (F-43). */
+    check(
+      'recon_lines_resolution_check',
+      sql`(${t.resolvedAt} is null and ${t.resolvedBy} is null and ${t.resolveReason} is null)
+          or (${t.resolvedAt} is not null and ${t.resolvedBy} is not null and length(trim(coalesce(${t.resolveReason}, ''))) > 0)`,
+    ),
+    check(
+      'recon_lines_amount_check',
+      sql`(${t.ourAmount} is null or ${t.ourAmount} >= 0) and (${t.theirAmount} is null or ${t.theirAmount} >= 0)`,
+    ),
+  ],
+);
