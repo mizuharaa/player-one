@@ -121,6 +121,7 @@ export const PAYOUT_API_REFUSALS = new Set([
   'payout_cap_exceeded',
   'payout_risk_hold',
   'payout_already_paid',
+  'payout_settlement_exception',
   'payout_accounts_id_reused',
   'payout_attempt_not_resolvable',
   'payout_bill_period_mismatch',

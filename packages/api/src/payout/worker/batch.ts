@@ -63,7 +63,9 @@ export type Issue =
   | 'over_cap'
   | 'risk_hold'
   | 'attempt_open'
-  | 'already_paid';
+  | 'already_paid'
+  /** A line parked in `exception` (0016). The bill waits until it is released. */
+  | 'line_in_exception';
 
 export type BatchBill = {
   id: string;
@@ -79,6 +81,8 @@ export type BatchBill = {
   lineCount: number;
   /** All settlements manually_paid (SET-03), or a succeeded attempt exists. */
   paid: boolean;
+  /** Any settlement on the bill is in `exception`. */
+  inException: boolean;
   account: {
     id: string;
     method: 'WALLET' | 'BANK_ACCOUNT' | 'BANK_CARD';
@@ -106,6 +110,7 @@ export function issuesOf(
 ): Issue[] {
   const issues: Issue[] = [];
   if (bill.paid) issues.push('already_paid');
+  if (bill.inException) issues.push('line_in_exception');
   if (bill.latestAttempt !== null && !['succeeded', 'failed'].includes(bill.latestAttempt.status)) {
     issues.push('attempt_open');
   }
@@ -132,6 +137,7 @@ type BillRow = {
   total: string;
   line_count: number;
   all_paid: boolean | null;
+  any_exception: boolean | null;
   account_id: string | null;
   method: 'WALLET' | 'BANK_ACCOUNT' | 'BANK_CARD' | null;
   verify_status: string | null;
@@ -156,6 +162,9 @@ export async function loadBatch(
            (select bool_and(s.settlement_state = 'manually_paid')
               from bill_lines l join settlements s on s.id = l.settlement_id
              where l.bill_id = b.id) as all_paid,
+           (select bool_or(s.settlement_state = 'exception')
+              from bill_lines l join settlements s on s.id = l.settlement_id
+             where l.bill_id = b.id) as any_exception,
            a.id as account_id, a.method, a.verify_status, a.declared_name, a.verified_name, a.phone, a.m_u_id
       from bills b
       join collectors c on c.id = b.collector_id
@@ -180,6 +189,7 @@ export async function loadBatch(
       amountVnd: wholeVnd(r.total),
       lineCount: r.line_count,
       paid: (r.all_paid ?? false) || latestAttempt?.status === 'succeeded',
+      inException: r.any_exception ?? false,
       account:
         r.account_id === null
           ? null
@@ -229,7 +239,7 @@ export async function preflight(
 ): Promise<Preflight & { billsDetail: BatchBill[] }> {
   const bills = await loadBatch(db, period, options);
   const counts = Object.fromEntries(
-    (['no_account', 'account_unverified', 'total_fractional', 'over_bank_ceiling', 'under_bank_minimum', 'over_cap', 'risk_hold', 'attempt_open', 'already_paid'] as Issue[]).map((i) => [i, 0]),
+    (['no_account', 'account_unverified', 'total_fractional', 'over_bank_ceiling', 'under_bank_minimum', 'over_cap', 'risk_hold', 'attempt_open', 'already_paid', 'line_in_exception'] as Issue[]).map((i) => [i, 0]),
   ) as Record<Issue, number>;
   const bands: Record<RiskSummary['band'], number> = { clear: 0, notice: 0, review: 0, hold: 0 };
   let payable = 0;
@@ -296,7 +306,8 @@ export type PayRefusal =
   | 'payout_attempts_bank_minimum'
   | 'payout_cap_exceeded'
   | 'payout_risk_hold'
-  | 'payout_already_paid';
+  | 'payout_already_paid'
+  | 'payout_settlement_exception';
 
 export type PayOutcome =
   | { kind: 'sent'; attempt: AttemptRow; result: AttemptEvent['type'] }
@@ -345,6 +356,8 @@ export async function refusalFor(
   options: Pick<BatchOptions, 'capVnd'>,
 ): Promise<PayRefusal | null> {
   if (bill.paid) return 'payout_already_paid';
+  // Before the arithmetic: a parked line is a question about the bill, not its total.
+  if (bill.inException) return 'payout_settlement_exception';
   if (bill.amountVnd === null) return 'payout_attempts_total_fractional';
   for (const issue of bill.issues) {
     switch (issue) {

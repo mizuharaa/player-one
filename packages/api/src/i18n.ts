@@ -331,6 +331,11 @@ const en = {
   'bo.refused.device_assignments_collector_id_collectors_id_fk':
     'That collector no longer exists. Reload the list.',
   'bo.refused.unknown': 'The server refused that change.',
+  'bo.refused.settlements_transition_check':
+    'That settlement cannot be moved from the state it is in. A paid settlement stays paid.',
+  'bo.refused.settlements_not_in_exception': 'That settlement is not in exception, so there is nothing to release.',
+  'bo.refused.payout_settlement_exception':
+    'A line on this bill is in exception. Release it before the bill can be paid.',
 
   'theme.toggle': 'Theme',
   'theme.light': 'Light',
@@ -603,6 +608,9 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.device_assignments_device_id_devices_id_fk': '该设备已不存在，请刷新列表。',
   'bo.refused.device_assignments_collector_id_collectors_id_fk': '该采集者已不存在，请刷新列表。',
   'bo.refused.unknown': '服务端拒绝了该操作。',
+  'bo.refused.settlements_transition_check': '该结算记录无法从当前状态移动。已支付的结算记录保持已支付。',
+  'bo.refused.settlements_not_in_exception': '该结算记录不在异常状态，无需释放。',
+  'bo.refused.payout_settlement_exception': '该账单中有一条结算记录处于异常状态。请先释放，账单才能支付。',
 
   'theme.toggle': '主题',
   'theme.light': '浅色',

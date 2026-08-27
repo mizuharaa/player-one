@@ -1684,6 +1684,11 @@ describe.skipIf(!hasDb())('the back office', () => {
       'bill_lines_owner_guard',
       'bills_total_matches_lines',
       'bill_lines_immutable',
+      // 0016: the settle routes write `exception_from_state` from the row they
+      // read, and the generator never bills a parked row; only raw SQL can
+      // trip either, and spine.test.ts proves both.
+      'settlements_exception_from_check',
+      'bill_lines_exception_check',
       'upload_batches_verify_needs_episodes',
       'upload_batches_verify_needs_verified_episodes',
       // Raised by the payout lane's tamper guards (0012/0013): append-only,

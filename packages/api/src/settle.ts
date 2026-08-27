@@ -60,6 +60,29 @@ const PeriodQuery = z.object({
 });
 
 /**
+ * SET-05's `exception`, with the reasons the brief gives a name to: a dispute
+ * (QR-08), a duplicate delivery (UPL-15), footage attributed to the wrong
+ * collector (one collector per headset per period), and a hold finance asked
+ * for. The same list is `settlements_exception_reason_check` in 0016.
+ */
+export const EXCEPTION_REASONS = ['disputed', 'duplicate', 'wrong_collector', 'manual_hold'] as const;
+
+const ExceptionBody = z.object({
+  reason: z.enum(EXCEPTION_REASONS),
+  note: z.string().trim().min(1).max(2000).optional(),
+});
+const ReleaseBody = z.object({ note: z.string().trim().min(1).max(2000).optional() });
+
+/**
+ * The refusals these routes raise themselves. `settlements_transition_check`
+ * is the trigger's name for the same answer, reused so the console has one
+ * sentence for "that settlement cannot move from where it is".
+ */
+export const SETTLE_API_REFUSALS = new Set(['settlements_transition_check', 'settlements_not_in_exception']);
+
+const uuid = z.string().uuid();
+
+/**
  * RFC 4180, quoting everything.
  *
  * Deciding per field which ones need quotes is a rule with edge cases — a task
@@ -160,6 +183,8 @@ export function registerSettle(
          * reads them.
          */
         paid: sql<boolean>`bool_and(${schema.settlements.settlementState} = 'manually_paid')`,
+        /** Lines parked in `exception`. The bill keeps them and cannot be paid while there are any. */
+        exceptions: sql<number>`count(*) filter (where ${schema.settlements.settlementState} = 'exception')::int`,
       })
       .from(schema.bills)
       .innerJoin(schema.collectors, eq(schema.collectors.id, schema.bills.collectorId))
@@ -200,6 +225,21 @@ export function registerSettle(
       .innerJoin(schema.tasks, eq(schema.tasks.id, schema.settlements.taskId))
       .where(eq(schema.billLines.billId, billId))
       .orderBy(asc(schema.episodeReviews.reviewedAt), asc(schema.settlements.id));
+
+  /** Settlements of the window parked in `exception`, on a bill or not. */
+  const exceptionsIn = async (start: Date, end: Date): Promise<number> => {
+    const [row] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.settlements)
+      .where(
+        and(
+          eq(schema.settlements.settlementState, 'exception'),
+          gte(schema.settlements.createdAt, start),
+          lt(schema.settlements.createdAt, end),
+        ),
+      );
+    return row?.n ?? 0;
+  };
 
   // -------------------------------------------------------------------------
   // SET-07: generate the cycle
@@ -323,8 +363,148 @@ export function registerSettle(
        * backlog becomes a surprise. See the known gaps in docs/review.md.
        */
       not_payable: notPayable,
+      /** Parked settlements in the window. Never billed; released ones re-enter `pending_settlement`. */
+      exception: await exceptionsIn(start, end),
       bills: (await billsIn(start, end)).map(shapeBill),
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // SET-05: exception, and the way back
+
+  const settlementById = (id: string) =>
+    db
+      .select({
+        id: schema.settlements.id,
+        amount: schema.settlements.amount,
+        state: schema.settlements.settlementState,
+        fromState: schema.settlements.exceptionFromState,
+        reason: schema.settlements.exceptionReason,
+        note: schema.settlements.exceptionNote,
+      })
+      .from(schema.settlements)
+      .where(eq(schema.settlements.id, id));
+
+  type SettlementRow = Awaited<ReturnType<typeof settlementById>>[number];
+  const shapeSettlement = (s: SettlementRow) => ({
+    id: s.id,
+    amount: s.amount,
+    settlement_state: s.state,
+    exception_from_state: s.fromState,
+    exception_reason: s.reason,
+    exception_note: s.note,
+  });
+  const refused = (reply: Reply, constraint: string) => reply.code(409).send({ error: 'refused', constraint });
+  const pathId = (req: FastifyRequest): string | null => {
+    const parsed = uuid.safeParse((req.params as { id?: string }).id);
+    return parsed.success ? parsed.data : null;
+  };
+
+  /**
+   * Park a settlement. From any state that is not `manually_paid`, including
+   * `bill_generated`: the line stays on its bill, the bill's total still adds
+   * up (the amount is frozen), and the bill cannot be paid until the line is
+   * released — `refusalFor` in the payout lane asks. There is no credit note;
+   * a wrong line on an issued bill is parked, not removed.
+   *
+   * Replay-safe: a row already parked is answered with its current state and
+   * no second audit event, whatever reason the retry carries. To change the
+   * reason, release and park again, so both are on the record.
+   */
+  app.post('/api/settle/settlements/:id/exception', opts, async (req, reply) => {
+    const id = pathId(req);
+    if (id === null) return reply.code(400).send({ error: 'invalid id' });
+    const body = ExceptionBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
+
+    const [row] = await settlementById(id);
+    if (row === undefined) return reply.code(404).send({ error: 'no such settlement' });
+    if (row.state === 'exception') return reply.send(shapeSettlement(row));
+    if (row.state === 'manually_paid') return refused(reply, 'settlements_transition_check');
+
+    const moved = await mutate(
+      db,
+      req.actor!,
+      {
+        action: 'settlement.exception',
+        targetTable: 'settlements',
+        targetId: id,
+        before: { settlement_state: row.state },
+        after: {
+          settlement_state: 'exception',
+          exception_from_state: row.state,
+          exception_reason: body.data.reason,
+          exception_note: body.data.note ?? null,
+        },
+        reason: body.data.reason,
+      },
+      async (tx) => {
+        // The state read above is in the WHERE: a row somebody else moved in
+        // between matches nothing, and the trigger never has to say no.
+        const [updated] = await tx
+          .update(schema.settlements)
+          .set({
+            settlementState: 'exception',
+            exceptionFromState: row.state,
+            exceptionReason: body.data.reason,
+            exceptionNote: body.data.note ?? null,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(schema.settlements.id, id), eq(schema.settlements.settlementState, row.state)))
+          .returning({ id: schema.settlements.id });
+        return updated;
+      },
+    );
+    if (moved === undefined) return refused(reply, 'settlements_transition_check');
+    const [after] = await settlementById(id);
+    return reply.send(shapeSettlement(after!));
+  });
+
+  /** Release a parked settlement to the state it came from — the trigger allows no other. */
+  app.post('/api/settle/settlements/:id/release', opts, async (req, reply) => {
+    const id = pathId(req);
+    if (id === null) return reply.code(400).send({ error: 'invalid id' });
+    const body = ReleaseBody.safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
+
+    const [row] = await settlementById(id);
+    if (row === undefined) return reply.code(404).send({ error: 'no such settlement' });
+    if (row.state !== 'exception') return refused(reply, 'settlements_not_in_exception');
+
+    const moved = await mutate(
+      db,
+      req.actor!,
+      {
+        action: 'settlement.release',
+        targetTable: 'settlements',
+        targetId: id,
+        before: {
+          settlement_state: 'exception',
+          exception_from_state: row.fromState,
+          exception_reason: row.reason,
+          exception_note: row.note,
+        },
+        after: { settlement_state: row.fromState },
+        reason: body.data.note,
+      },
+      async (tx) => {
+        const [updated] = await tx
+          .update(schema.settlements)
+          .set({
+            settlementState: row.fromState!,
+            exceptionFromState: null,
+            exceptionReason: null,
+            exceptionNote: null,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(schema.settlements.id, id), eq(schema.settlements.settlementState, 'exception')))
+          .returning({ id: schema.settlements.id });
+        return updated;
+      },
+    );
+    if (moved === undefined) return refused(reply, 'settlements_not_in_exception');
+    const [after] = await settlementById(id);
+    return reply.send(shapeSettlement(after!));
   });
 
   // -------------------------------------------------------------------------
@@ -336,6 +516,7 @@ export function registerSettle(
     return reply.send({
       period_start: period.start.toISOString(),
       period_end: period.end.toISOString(),
+      exception: await exceptionsIn(period.start, period.end),
       bills: (await billsIn(period.start, period.end)).map(shapeBill),
     });
   });
@@ -367,6 +548,7 @@ export function registerSettle(
       total: bill.total,
       generated_at: bill.generatedAt.toISOString(),
       paid: lines.length > 0 && lines.every((l) => l.state === 'manually_paid'),
+      exceptions: lines.filter((l) => l.state === 'exception').length,
       lines: lines.map((l) => ({
         settlement_id: l.settlementId,
         /** SET-04: the line names the episode it was paid for. */
@@ -461,6 +643,7 @@ type BillRow = {
   generatedAt: Date;
   lines: number;
   paid: boolean | null;
+  exceptions: number;
 };
 
 const shapeBill = (b: BillRow) => ({
@@ -474,4 +657,5 @@ const shapeBill = (b: BillRow) => ({
   lines: b.lines,
   /** `bool_and` over no rows is null; an empty bill is not a paid one. */
   paid: b.paid ?? false,
+  exceptions: b.exceptions,
 });

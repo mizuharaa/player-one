@@ -124,7 +124,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
     const hash = await hashCredential('pw');
     await d.execute(sql`insert into upload_centres (id, region, name, status) values (${ids.centreA}, 'HCM', 'District 7', 'active'), (${ids.centreB}, 'HAN', 'Cau Giay', 'active')`);
     await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash) values (${ids.machineA}, ${ids.centreA}, 'HCM-01', 'active', ${hash}), (${ids.machineB}, ${ids.centreB}, 'HAN-01', 'active', ${hash})`);
-    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.operatorA}, ${ids.centreA}, 'op-hcm', 'centre_operator', ${hash}), (${ids.operatorB}, ${ids.centreB}, 'op-han', 'centre_operator', ${hash}), (${ids.financeA}, ${ids.centreA}, 'fin-hcm', 'finance', ${hash})`);
+    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.operatorA}, ${ids.centreA}, 'op-hcm', 'centre_operator', ${hash}), (${ids.operatorB}, ${ids.centreB}, 'op-han', 'centre_operator', ${hash}), (${ids.financeA}, ${ids.centreA}, 'fin-hcm', 'finance', ${hash}), (${uid()}, null, 'pax-01', 'reviewer', ${hash})`);
     await d.execute(sql`insert into collectors (id, external_ref, status) values (${ids.collector1}, 'c-0001', 'qualified'), (${ids.collector2}, 'c-0002', 'qualified')`);
     await d.execute(sql`insert into device_types (id, code, generation) values (${ids.deviceType}, 'ego_headset', 'gen1')`);
     await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status) values (${ids.device1}, ${ids.deviceType}, 'AZER76400FE', 'active'), (${ids.device2}, ${ids.deviceType}, 'AZER76400FF', 'active')`);
@@ -152,6 +152,18 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
      * it paid — that is the separation of duty, and it holds here too.
      */
     const headersF = await login('HCM-01', 'fin-hcm');
+    /** A PaXini reviewer, signed in the way the console does it; scoped to `/api/review/`. */
+    const headersR = await (async () => {
+      const session = await app.inject({
+        method: 'POST',
+        url: '/api/session',
+        payload: { role: 'reviewer', external_ref: 'pax-01', operator_secret: 'pw' },
+      });
+      expect(session.statusCode, session.body).toBe(200);
+      const setCookie = [session.headers['set-cookie'] ?? []].flat().join(' | ');
+      const token = /po_operator=([^;]+)/.exec(setCookie)?.[1] ?? '';
+      return { authorization: `Bearer ${decodeURIComponent(token)}` };
+    })();
 
     const send = async (
       method: 'POST' | 'GET',
@@ -243,7 +255,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       }
     }
 
-    return { d, app, ids, headersA, headersB, headersF, send, expected };
+    return { d, app, ids, headersA, headersB, headersF, headersR, send, expected };
   }
 
   /**
@@ -467,6 +479,172 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
   });
 
   // -------------------------------------------------------------------------
+
+  describe('SET-05: exception, and the way back', () => {
+    type Row = { id: string; settlement_state: string; amount: string };
+    const settlements = async (h: Awaited<ReturnType<typeof harness>>): Promise<Row[]> =>
+      (await h.d.execute(sql`select id, settlement_state, amount::text as amount from settlements order by created_at, id`)) as unknown as Row[];
+    const events = async (h: Awaited<ReturnType<typeof harness>>, action: string): Promise<number> => {
+      const rows = (await h.d.execute(sql`select count(*)::int as n from audit_events where action = ${action}`)) as unknown as { n: number }[];
+      return rows[0]!.n;
+    };
+
+    it('parks a queued settlement with a reason, and generating the cycle leaves it out and counts it', async () => {
+      const h = await harness();
+      const [first] = await settlements(h);
+      const parked = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, {
+        reason: 'wrong_collector',
+        note: 'card CARD-1 was carried by c-0002 that week',
+      });
+      expect(parked.statusCode, parked.body).toBe(200);
+      expect(parked.json()).toEqual({
+        id: first!.id,
+        amount: first!.amount,
+        settlement_state: 'exception',
+        exception_from_state: 'pending_settlement',
+        exception_reason: 'wrong_collector',
+        exception_note: 'card CARD-1 was carried by c-0002 that week',
+      });
+
+      const res = await h.send('POST', '/api/settle/bills', period());
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().exception).toBe(1);
+      expect(res.json().created).toBe(2);
+      const lines = (await h.d.execute(sql`select count(*)::int as n from bill_lines`)) as unknown as { n: number }[];
+      expect(lines[0]!.n).toBe(3);
+      expect((res.json().bills as { exceptions: number }[]).map((b) => b.exceptions)).toEqual([0, 0]);
+      expect((await h.send('GET', `/api/settle/bills?period_start=${encodeURIComponent(period().period_start)}`)).json().exception).toBe(1);
+
+      // The event says who, what and why, in the same transaction as the move.
+      const [event] = (await h.d.execute(sql`
+        select operator_id::text as operator_id, reason, before, after from audit_events where action = 'settlement.exception'
+      `)) as unknown as { operator_id: string; reason: string; before: unknown; after: unknown }[];
+      expect(event!.operator_id).toBe(h.ids.operatorA);
+      expect(event!.reason).toBe('wrong_collector');
+      expect(event!.before).toEqual({ settlement_state: 'pending_settlement' });
+      expect(event!.after).toMatchObject({ settlement_state: 'exception', exception_from_state: 'pending_settlement' });
+    });
+
+    it('is idempotent: the same request twice is one event, and a release twice is one event', async () => {
+      const h = await harness({ each: 1 });
+      const [first] = await settlements(h);
+      const body = { reason: 'disputed' };
+      const once = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, body);
+      const twice = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, body);
+      expect(once.statusCode).toBe(200);
+      expect(twice.statusCode).toBe(200);
+      expect(twice.json()).toEqual(once.json());
+      expect(await events(h, 'settlement.exception')).toBe(1);
+      // A different reason on a parked row does not overwrite the first one.
+      const other = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, { reason: 'duplicate' });
+      expect(other.json().exception_reason).toBe('disputed');
+      expect(await events(h, 'settlement.exception')).toBe(1);
+
+      const released = await h.send('POST', `/api/settle/settlements/${first!.id}/release`, { note: 'resolved with PaXini' });
+      expect(released.statusCode, released.body).toBe(200);
+      expect(released.json()).toEqual({
+        id: first!.id,
+        amount: first!.amount,
+        settlement_state: 'pending_settlement',
+        exception_from_state: null,
+        exception_reason: null,
+        exception_note: null,
+      });
+      const again = await h.send('POST', `/api/settle/settlements/${first!.id}/release`);
+      expect(again.statusCode).toBe(409);
+      expect(again.json().constraint).toBe('settlements_not_in_exception');
+      expect(await events(h, 'settlement.release')).toBe(1);
+    });
+
+    it('validates the reason, the id and the actor', async () => {
+      const h = await harness({ each: 1 });
+      const [first] = await settlements(h);
+      const url = `/api/settle/settlements/${first!.id}/exception`;
+      expect((await h.send('POST', url, {})).statusCode).toBe(400);
+      expect((await h.send('POST', url, { reason: 'because' })).statusCode).toBe(400);
+      expect((await h.send('POST', url, { reason: 'disputed', note: '   ' })).statusCode).toBe(400);
+      expect((await h.send('POST', url, { reason: 'disputed', note: 'x'.repeat(2001) })).statusCode).toBe(400);
+      expect((await h.send('POST', '/api/settle/settlements/not-a-uuid/exception', { reason: 'disputed' })).statusCode).toBe(400);
+      expect((await h.send('POST', `/api/settle/settlements/${uid()}/exception`, { reason: 'disputed' })).statusCode).toBe(404);
+      expect((await h.send('POST', `/api/settle/settlements/${uid()}/release`)).statusCode).toBe(404);
+      // A reviewer session is scoped to review (PLT-10) and never reaches settlement.
+      expect((await h.send('POST', url, { reason: 'disputed' }, h.headersR)).statusCode).toBe(403);
+      expect((await h.send('POST', `/api/settle/settlements/${first!.id}/release`, {}, h.headersR)).statusCode).toBe(403);
+      // Nothing above moved the row or wrote an event.
+      expect((await settlements(h))[0]!.settlement_state).toBe('pending_settlement');
+      expect(await events(h, 'settlement.exception')).toBe(0);
+      // Finance may park too; a centre operator at the other centre may as well.
+      expect((await h.send('POST', url, { reason: 'manual_hold' }, h.headersF)).statusCode).toBe(200);
+      expect((await h.send('POST', `/api/settle/settlements/${first!.id}/release`, {}, h.headersB)).statusCode).toBe(200);
+    });
+
+    it('parks a billed line: the bill keeps it, shows it, and cannot be paid until it is released', async () => {
+      const h = await harness({ each: 1 });
+      const generated = await h.send('POST', '/api/settle/bills', period());
+      const bill = (generated.json().bills as { id: string; collector_ref: string; total: string }[]).find((b) => b.collector_ref === 'c-0001')!;
+      const [line] = (await h.send('GET', `/api/settle/bills/${bill.id}`)).json().lines as { settlement_id: string }[];
+
+      const parked = await h.send('POST', `/api/settle/settlements/${line!.settlement_id}/exception`, { reason: 'duplicate' });
+      expect(parked.statusCode, parked.body).toBe(200);
+      expect(parked.json().exception_from_state).toBe('bill_generated');
+
+      const detail = (await h.send('GET', `/api/settle/bills/${bill.id}`)).json();
+      expect(detail.exceptions).toBe(1);
+      expect(detail.paid).toBe(false);
+      expect(detail.total).toBe(bill.total);
+      expect(detail.lines).toHaveLength(1);
+      expect(detail.lines[0].settlement_state).toBe('exception');
+      const listed = (await h.send('GET', `/api/settle/bills?period_start=${encodeURIComponent(period().period_start)}`)).json();
+      expect((listed.bills as { id: string; exceptions: number }[]).find((b) => b.id === bill.id)!.exceptions).toBe(1);
+      // The export prints the state as it is; the arithmetic columns are unchanged.
+      const csv = parseCsv((await h.send('GET', `/api/settle/export.csv?period_start=${encodeURIComponent(period().period_start)}`)).body);
+      const header = csv[0]!;
+      const row = csv.slice(1).find((r) => r[header.indexOf('bill_id')] === bill.id)!;
+      expect(row[header.indexOf('settlement_state')]).toBe('exception');
+      expect(row[header.indexOf('amount')]).toBe(bill.total);
+
+      // The manual rail refuses by name, before it asks about the account or the total.
+      const pay = await h.send('POST', `/api/payout/bills/${bill.id}/mark-paid`, { manual_reference: 'TX-1', amount_vnd: 320 }, h.headersF);
+      expect(pay.statusCode, pay.body).toBe(409);
+      expect(pay.json().constraint).toBe('payout_settlement_exception');
+      expect(await events(h, 'bill.mark_paid')).toBe(0);
+      // And the preflight lists it as an issue rather than a payable bill.
+      const preflight = await h.send('POST', `/api/payout/batches/${encodeURIComponent(period().period_start)}/preflight`, {}, h.headersF);
+      expect(preflight.statusCode, preflight.body).toBe(200);
+      expect(preflight.json().counts.line_in_exception).toBe(1);
+      expect((preflight.json().exceptions as { id: string; issues: string[] }[]).find((b) => b.id === bill.id)!.issues).toContain('line_in_exception');
+
+      // Released: back onto the bill, not into the queue, and the cycle does not re-bill it.
+      const released = await h.send('POST', `/api/settle/settlements/${line!.settlement_id}/release`);
+      expect(released.json().settlement_state).toBe('bill_generated');
+      expect((await h.send('POST', '/api/settle/bills', period())).json().created).toBe(0);
+      expect((await h.send('GET', `/api/settle/bills/${bill.id}`)).json().exceptions).toBe(0);
+      const after = await h.send('POST', `/api/payout/bills/${bill.id}/mark-paid`, { manual_reference: 'TX-1', amount_vnd: 320 }, h.headersF);
+      expect(after.json().constraint).not.toBe('payout_settlement_exception');
+    });
+
+    it('refuses to park a paid settlement, because paid is final', async () => {
+      const h = await harness({ each: 1 });
+      const [first] = await settlements(h);
+      // Paid the way 0013 requires: a finance operator who did not issue the
+      // bill, in the same transaction as the move. Straight SQL, so the row is
+      // `manually_paid` without a payout account in the fixture.
+      await h.send('POST', '/api/settle/bills', period());
+      const [bill] = (await h.d.execute(sql`select bill_id::text as bill_id from bill_lines where settlement_id = ${first!.id}`)) as unknown as { bill_id: string }[];
+      await h.d.transaction(async (tx) => {
+        await tx.execute(sql`update settlements set settlement_state = 'manually_paid', updated_at = now() where id = ${first!.id}`);
+        await tx.execute(sql`
+          insert into audit_events (action, target_table, target_id, actor_role, operator_id, upload_device_id, upload_centre_id)
+            values ('bill.pay', 'bills', ${bill!.bill_id}, 'operator', ${h.ids.financeA}, ${h.ids.machineA}, ${h.ids.centreA})
+        `);
+      });
+      const res = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, { reason: 'disputed' });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().constraint).toBe('settlements_transition_check');
+      expect((await settlements(h)).find((s) => s.id === first!.id)!.settlement_state).toBe('manually_paid');
+      expect(await events(h, 'settlement.exception')).toBe(0);
+    });
+  });
 
   // -------------------------------------------------------------------------
 

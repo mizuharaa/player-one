@@ -496,9 +496,16 @@ the *end* of a period whose start the caller gave.
   `fail`, which would change what `settlements_review_key` and the console's
   settled-value sum mean. That is a decision, not a defect to patch quietly.
 - **A bill is never revised.** There is no credit note and no way to take a line
-  off an issued bill; a settlement that turns out to be wrong goes to
-  `exception`, and the bill it is on shows as unpaid for ever. That is honest and
-  it is not a workflow. It needs one when the dispute path (QR-08) lands.
+  off an issued bill. What exists (0016) is `exception`: an operator parks a
+  settlement with a reason code and a note (`POST
+  /api/settle/settlements/:id/exception`), from any state but `manually_paid`,
+  and releases it (`.../release`) back to the state it was parked from — the
+  trigger stores `exception_from_state` and allows no other exit. A line parked
+  off an issued bill stays on that bill, the bill's total still adds up, the
+  bill lists it under `exceptions`, and the payout lane refuses to pay the bill
+  (`payout_settlement_exception`) until it is released. A parked row cannot be
+  billed (`bill_lines_exception_check`). That is a place to hold a wrong line;
+  it is still not a correction, and the dispute path (QR-08) still needs one.
 - **Dispute and second review are P2** and deliberately not built.
   `episode_reviews_delivery_key` is one review per delivery; when the dispute
   flow lands it needs a supersedes column rather than a second row, or that index
