@@ -4,8 +4,8 @@
 a second upload centre goes live, or the collector count reaches 500,
 whichever comes first.
 **Date** 2026-08-27
-**Affects** BO-09; acceptance §10.2 item 8; BO-11 and SEC-02 where they scope
-an operator by centre
+**Affects** BO-09; acceptance §10.2 item 8; BO-11 and SEC-02 for the role the
+retirement needs
 
 ## Context
 
@@ -41,8 +41,9 @@ unbound. The centre scope is then read on every mutation: `/auth/machine` and
 `OperatorClaims`), the counter refuses a handover at a centre the operator does
 not serve (`packages/api/src/counter.ts`, and the cross-centre case in
 `packages/api/test/counter.test.ts`, which seeds a second centre `HAN` with its
-own operator), and every audit row records the centre
-(`packages/api/src/audit.ts`).
+own operator), and every audit row written by an operator or a machine records
+the centre (`packages/api/src/audit.ts`; a reviewer has no centre, and its rows
+carry `null`).
 
 What does not exist is a way to create the rows without SQL. There is no
 `/api/upload-centres`, `/api/upload-devices` or `/api/operators` route in
@@ -115,8 +116,9 @@ first:
 
 1. **A second upload centre goes live** — a second row in `upload_centres`
    that real operators sign in against, not a test fixture. At that point an
-   engineer is no longer the person on site, and the per-centre scoping that
-   BO-11 / SEC-02 require has to be administered by someone who cannot run
+   engineer is no longer the person on site, and the per-centre scoping the
+   counter enforces (`packages/api/src/counter.ts`, handover must belong to
+   the operator's centre) has to be administered by someone who cannot run
    SQL.
 2. **The collector count reaches 500** — the §3.3 target. At that scale
    throughput at the counter makes operator turnover and machine replacement a
@@ -144,7 +146,15 @@ The trigger is a fact in the database, so it can be checked with two queries:
    administrator's job in §4.1, so the routes need a role the session can
    carry before they are safe to expose. `operators.role` has no CHECK by
    design (the schema comment says why), so the value set can grow without a
-   migration; the enforcement is in the route, the way `payout.ts` does it.
+   migration. The enforcement goes in two places, the way `finance` is done:
+   a route `preHandler` that reads the role from the row (`payout.ts`,
+   `requireFinance`), and the invariant in the schema — 0013's
+   `payout_finance_required` trigger refuses a payout row whose audited actor
+   is not `finance`, so the route check is a courtesy and the database is the
+   gate. Centre and operator creation needs the same pair: a trigger on
+   `upload_centres` / `upload_devices` / `operators` that requires the
+   audited actor in the transaction to hold the new role, tested in raw SQL
+   via `violates()` in `packages/store/test/db.ts`.
 3. A console screen under `/counter` (or a new `/centres` route in
    `apps/console/src/router.tsx`), replacing the `counter` entry in
    `NotBuilt.tsx`, and flipping the BO-09 row in `Pipeline.tsx` from
@@ -152,8 +162,8 @@ The trigger is a fact in the database, so it can be checked with two queries:
 4. Fixtures with a second centre, a second machine and a second operator in
    the new tests, because a single-centre fixture is the shape that hid a
    scoping bug before.
-5. No migration. The tables, constraints and FKs are already what the screen
-   needs.
+5. One migration, for the trigger in item 2 only. The tables, constraints and
+   FKs are already what the screen needs.
 
 ## Alternatives considered
 

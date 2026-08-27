@@ -154,9 +154,10 @@ retires it. Rule 6's other half is *not* deviable and nothing in the lane bends
 it — **no TF card is cleared**, and no code path deletes source media. That is
 still a hard gate at acceptance.
 
-The **BO-09 cut** ADR is still owed (centres, machines and operators stay
-CLI/fixtures) with its trigger condition — second upload centre, or 500
-collectors, whichever first.
+The **BO-09 cut** (centres, machines and operators stay CLI/fixtures) is
+recorded in `docs/adr/0003-bo09-centres-machines-operators-stay-fixtures.md`
+with its trigger condition — second upload centre, or 500 collectors,
+whichever first.
 
 Daniel was sending the storage target, so the upload slice may no longer be
 blocked. **Ask.** It was meant to run in parallel, not after.
