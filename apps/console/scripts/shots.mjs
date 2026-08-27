@@ -127,7 +127,43 @@ const shots = [
   ],
   ['pipeline-desktop', { viewport: DESKTOP, theme: 'light', locale: 'en', path: '/pipeline' }],
   ['pipeline-desktop-dark', { viewport: DESKTOP, theme: 'dark', locale: 'zh', path: '/pipeline' }],
-  ['notbuilt-desktop', { viewport: DESKTOP, theme: 'light', locale: 'en', path: '/settle' }],
+  ['notbuilt-desktop', { viewport: DESKTOP, theme: 'light', locale: 'en', path: '/counter' }],
+  // Settle and the payout console. The seed's three verdicts sit in the
+  // current week, so the first shot generates the period's bills and the
+  // rest read them. `op-1` is not finance: every payment control renders
+  // disabled with its reason, which is the state worth a picture.
+  [
+    'settle-bills-desktop',
+    {
+      viewport: DESKTOP,
+      theme: 'light',
+      locale: 'en',
+      path: '/settle',
+      prepare: async (p) => {
+        await p.getByRole('button', { name: /generate bills/i }).click();
+        await p.waitForTimeout(1500);
+      },
+    },
+  ],
+  ['settle-bills-mobile-vi', { viewport: MOBILE, theme: 'light', locale: 'vi', path: '/settle' }],
+  ['settle-preflight-desktop-dark-zh', { viewport: DESKTOP, theme: 'dark', locale: 'zh', path: '/settle/preflight' }],
+  ['settle-preflight-mobile', { viewport: MOBILE, theme: 'light', locale: 'en', path: '/settle/preflight' }],
+  [
+    'settle-bill-desktop',
+    {
+      viewport: DESKTOP,
+      theme: 'light',
+      locale: 'en',
+      path: '/settle',
+      prepare: async (p) => {
+        await p.getByRole('link', { name: /^open$/i }).first().click();
+        await p.waitForTimeout(1200);
+      },
+    },
+  ],
+  ['settle-exceptions-desktop-vi', { viewport: DESKTOP, theme: 'light', locale: 'vi', path: '/settle/exceptions' }],
+  ['risk-desktop-dark', { viewport: DESKTOP, theme: 'dark', locale: 'en', path: '/risk' }],
+  ['risk-mobile-zh', { viewport: MOBILE, theme: 'light', locale: 'zh', path: '/risk' }],
 ];
 
 for (const [name, options] of shots) {

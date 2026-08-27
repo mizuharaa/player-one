@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseCookies, parseRange, safeJoin } from '../src/index.ts';
-import { LOCALES, MESSAGES, missingKeys, pickLocale, type MessageKey } from '../src/i18n.ts';
+import { HTML_LANG, LOCALES, MESSAGES, missingKeys, pickLocale, type Locale, type MessageKey } from '../src/i18n.ts';
+import { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS } from '../src/payout/routes/payout.ts';
 import { BASE_CSS, escapeHtml, escapeJson, page } from '../src/shell.ts';
 
 /**
@@ -23,17 +24,55 @@ describe('the message catalogue', () => {
     for (const locale of LOCALES) expect(missingKeys(locale)).toEqual([]);
   });
 
-  it('has actually been translated, not copied', () => {
+  it('has actually been translated, not copied, in every locale', () => {
     /**
-     * `app.name` is a product name and `player.of` is a separator; everything
-     * else being byte-identical to the English means somebody pasted the
-     * English in to make the completeness check above pass.
+     * `app.name` is a product name; everything else being byte-identical to
+     * the English means somebody pasted the English in to make the
+     * completeness check above pass. Every non-English locale is held to it,
+     * so a Vietnamese column added in a hurry is caught the same way a Chinese
+     * one would be.
      */
     const sameOnPurpose = new Set<MessageKey>(['app.name']);
-    const copied = (Object.keys(MESSAGES.en) as MessageKey[]).filter(
-      (key) => !sameOnPurpose.has(key) && MESSAGES.zh[key] === MESSAGES.en[key],
-    );
-    expect(copied).toEqual([]);
+    const others = LOCALES.filter((l): l is Exclude<Locale, 'en'> => l !== 'en');
+    expect(others.length).toBeGreaterThanOrEqual(2);
+    for (const locale of others) {
+      const copied = (Object.keys(MESSAGES.en) as MessageKey[]).filter(
+        (key) => !sameOnPurpose.has(key) && MESSAGES[locale][key] === MESSAGES.en[key],
+      );
+      expect(copied, locale).toEqual([]);
+    }
+  });
+
+  it('names every payout refusal in every locale', () => {
+    /**
+     * A 409 from a payout route carries a constraint name, and the console
+     * turns it into a sentence through `bo.refused.<name>`. A name without a
+     * sentence would reach a finance operator as the generic line, which is
+     * exactly what an unknown refusal should look like and exactly what a
+     * known one must not.
+     */
+    const names = [...PAYOUT_REFUSALS, ...PAYOUT_API_REFUSALS];
+    expect(names.length).toBeGreaterThan(20);
+    for (const locale of LOCALES) {
+      const missing = names.filter((name) => {
+        const value = (MESSAGES[locale] as Record<string, string>)[`bo.refused.${name}`];
+        return typeof value !== 'string' || value.trim() === '';
+      });
+      expect(missing, locale).toEqual([]);
+    }
+  });
+
+  it('keeps the same placeholders in every locale of every flag sentence', () => {
+    // A locale that drops `{episodes}` renders a sentence without the number
+    // that caused the flag, which is the one thing the brief forbids.
+    const placeholders = (s: string) => [...s.matchAll(/\{([a-z0-9_]+)\}/g)].map((m) => m[1]).sort();
+    const keys = (Object.keys(MESSAGES.en) as MessageKey[]).filter((k) => k.startsWith('risk.signal.'));
+    expect(keys.length).toBeGreaterThan(30);
+    for (const key of keys) {
+      const en = placeholders(MESSAGES.en[key]);
+      expect(en.length, key).toBeGreaterThan(0);
+      for (const locale of LOCALES) expect(placeholders(MESSAGES[locale][key]), `${locale} ${key}`).toEqual(en);
+    }
   });
 
   it('takes the explicit choice over the browser, and English over nothing', () => {
@@ -42,8 +81,11 @@ describe('the message catalogue', () => {
     expect(pickLocale({ lang: 'zh' }, 'en-GB,en;q=0.9')).toBe('zh');
     expect(pickLocale({}, 'zh-CN,zh;q=0.9,en;q=0.8')).toBe('zh');
     expect(pickLocale({}, 'en-GB,en;q=0.9')).toBe('en');
+    expect(pickLocale({ lang: 'vi' }, 'en-GB,en;q=0.9')).toBe('vi');
+    expect(pickLocale({}, 'vi-VN,vi;q=0.9,en;q=0.8')).toBe('vi');
     expect(pickLocale({}, undefined)).toBe('en');
     expect(pickLocale({ lang: 'fr' }, undefined)).toBe('en');
+    for (const locale of LOCALES) expect(HTML_LANG[locale]).toBeTruthy();
   });
 });
 
