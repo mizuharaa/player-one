@@ -444,10 +444,23 @@ describe('the device-assignment crosscheck', () => {
     ]);
   });
 
-  it('routes to a human when no period covers the start, and drops nobody', () => {
-    // The device has a record and this instant is not in it. Nobody is known to
-    // have held it then, which is not the same fact as "this collector did not".
+  it('does not judge footage from before the record begins', () => {
+    // Bridge F-33. Custody tracking starts with the earliest period on record;
+    // a recording from before it was made while nobody was keeping the record,
+    // and the bind that came later must not quarantine it retroactively.
     const r = resolveEpisode(episode({}), [declaredBy('s1', C1)], undefined, [], [
+      period(C1, 60 * 24, null),
+    ]);
+    expect(r).toMatchObject({ state: 'resolved', sessionId: 's1' });
+    expect(r.evaluated[0]).toMatchObject({ survived: true, rejectionReason: null });
+  });
+
+  it('routes to a human when no period covers the start, and drops nobody', () => {
+    // The device has a record and this instant is not in it: one allotment
+    // ended two hours ago and the next starts tomorrow. Nobody is known to have
+    // held it then, which is not the same fact as "this collector did not".
+    const r = resolveEpisode(episode({}), [declaredBy('s1', C1)], undefined, [], [
+      period(C1, -60 * 24 * 30, -120),
       period(C1, 60 * 24, null),
     ]);
     expect(r).toMatchObject({

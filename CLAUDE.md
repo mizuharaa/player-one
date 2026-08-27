@@ -1,7 +1,7 @@
 # PlayerOne — agent handoff
 
-Read this before touching anything. Written 2026-08-22, at the end of the slice
-that gave every recording an owner.
+Read this before touching anything. State below is as of 2026-08-26; the
+Decisions and Traps sections are cumulative.
 
 ## What this is
 
@@ -24,29 +24,118 @@ the second one govern the upload centre.
 
 ## State
 
-Branch **`fix/session-handover-scope`**, everything pushed. `origin/main` is
-five PR merge commits behind and **has none of this session's work** — the
-content of those merges is already in this chain, so `main` needs a merge commit
-when someone decides to do it. Nobody has.
+Written 2026-08-27, at the cut-over from the home machine to the org PC.
+Everything below is on GitHub; nothing is stranded on either machine.
 
-Branch per feature, all on the remote: `feat/operator-auth`,
-`feat/audit-trail`, `feat/counter-endpoints`, `feat/session-resolver`,
-`fix/session-handover-scope`. Daniel wants a branch per feature with a
-descriptive name, and no commit until the feature actually works.
+**Branch `integration/eight-features` — pushed.** It is `feat/review-console`
+(which already carries #11, the React SPA) plus the eight feature branches of
+2026-08-25 merged in journal order — settlement-lifecycle, review-queues,
+backoffice-crud, device-assignment, greennode-upload, reviewer-role,
+hardware-checkout, collector-app — plus the ZaloPay client
+(`feat/payout-zalopay-client`) and the payout domain (`feat/payout-domain`
+through `d84d60c`), plus the fixes the combined tree needed. `main` is still
+at #9; PRs #10, #12, #13, #14 are open and superseded by this branch. When
+Daniel says so, this branch becomes one PR to `main`.
 
-Built and tested: the ingest engine, the episode store, the identity spine,
-both-token auth, the audit trail, the counter workflow, the session resolver,
-**the review lane and its console** (QR-*, the screen at `/review`, and the
-settlement row a verdict writes). Migrations `0000`–`0004`.
+**With `DATABASE_URL`: 685 pass, 41 skip** (the 41 want `docs/sample_data/`).
+**With none: 356 pass, 370 skip** — that property is load-bearing, see below.
+Measured at `a8b20c6` on a fresh Postgres 16 with `--testTimeout=180000`.
+The first run against brand-new databases showed 16 first-test-in-file
+timeouts while 41 files migrated at once; the rerun on the same databases was
+clean. That is load, not defects: rerun before believing a red first run.
 
-**342 tests, 2 skip** (they need `PAXINI_SAMPLE`, a HuggingFace checkout nobody
-has). With no `DATABASE_URL`: 182 pass, 160 skip — that property is load-bearing,
-see below.
+Built and tested, all on this branch: the ingest engine, the episode store,
+the identity spine, both-token auth, the audit trail, the counter workflow,
+the session resolver with the device-custody crosscheck, the review lane with
+two queues (standard/privacy), priority and assignee, the PaXini reviewer role
+(scoped, logged, media denied by default), the back office (tasks, collectors,
+devices, claims, agreements, exam result) with its console screen, the
+settlement lifecycle (state machine, bills, lines, CSV export), the cloud leg
+to GreenNode with read-back verification (unproven live — no credits), the
+Ego hardware checkout tools, the collector-app scaffold (real home:
+`mizuharaa/player-one-app`), the ZaloPay disbursement client (HMAC signing,
+RSA-encrypted receiver_info, every sub-code mapped, fake server; 94 tests, no
+network), and the payout domain (0012/0013: `payout_accounts`,
+`payout_attempts`, `payout_events`, `payout_exports`; finance role with
+separation of duty in the database; manual rail `/api/payout/bills/:id/mark-paid`
+as the ONLY way a bill becomes paid; API rail + poller + batch runner behind
+`PLAYERONE_PAYOUT_MODE=manual`). Migrations `0000`–`0013`; the journal is
+ordered by `when`, and tags with the same numeric prefix (`0007_*`,
+`0009_*`) are distinct migrations — never renumber.
 
-Not built: cloud upload and verification (UPL-04/05/06 runtime), the rest of the
-operator console (BO-09/BO-10), settlement beyond the row a verdict writes
-(SET-05 onward, bill generation, payout), the collector app (all `APP-*`, blocked
-on PaXini owing D1 and D5), dispute and second review (P2).
+**In progress on their own branches, all pushed, merge in this order:**
+
+1. `feat/payout-domain` tip `f8667a2` is a WIP commit on top of the merged
+   `d84d60c`: `POST /api/payout/batches/:period/run`, the server-side batch
+   the console must call instead of looping pay in the browser. Design is in
+   the commit message (transaction-scoped advisory lock → 409
+   `payout_batch_running`; 200 with `preflight`, `sent[]`, `refused[]`,
+   `stopped_at`, `tickets[]`). Not typechecked, not run. Finish, test
+   (finance gate, manual mode refused, idempotent second run sends nothing,
+   stop-on-failure), merge.
+2. `feat/risk-engine` tip `a1145bd` (advisory flags with evidence, reversible
+   holds, tuning as data, wrappers over the hardware-checkout analysers,
+   provenance detectors designed with stubs; 7,100 lines, migration 0014).
+   Two things before it merges: (a) `0014_risk.sql` and `schema.ts` put a
+   subquery inside a CHECK constraint (`count(DISTINCT x) from
+   unnest(signal_ids)`), which PostgreSQL refuses at CREATE TABLE — move it
+   into the BEFORE INSERT trigger and prove it on a freshly migrated database;
+   (b) the WIP commit's wiring (`RiskReader` implementation for the payout
+   domain's `buildApi({ payout: { risk } })`, `bin/risk-worker.ts`,
+   `src/risk/run.ts`) is untested. No parameter properties anywhere —
+   `packages/api/test/strip-only.test.ts` fails if one appears.
+3. `feat/payout-recon` tip `2454dbd` (0015 recon tables, daily reconciliation
+   tick, statement matching, shadow mode, the E01–E29 edge-case suite). Five
+   review findings open, all real: an open discrepancy's resolution is
+   mutable (make it write-once); two concurrent runs duplicate one open
+   discrepancy and its ticket (partial unique index or SKIP LOCKED); the
+   losing concurrent resolver returns the stale row (lock, then re-read); a
+   provider order behind a locally never-sent attempt is reported clean
+   (must be a discrepancy); impossible statement dates normalise into real
+   dates (parse strictly). Fixtures must write a bill's lines in ONE
+   statement (0011's total check runs at statement end) and use whole-dong
+   totals.
+4. `feat/payout-console` tip `5216c51` — a single WIP commit: the whole
+   console (settle tab, preflight, bill screen with mark-paid, API batch,
+   exceptions queue, flag review, api client, vi catalogue in
+   `packages/api/src/i18n.ts` with a sentence for every `PAYOUT_REFUSALS`
+   name). Never typechecked or run. Open: the preflight gate compares `>` at
+   the five-minute boundary and has no fake-clock test (make it `>=`, cover
+   299,999 / 300,000 / future / changed fingerprint); the API batch calls the
+   `/run` route from item 1; the three-locale switch is a cycle and must be a
+   selector; `lib/i18n.ts`'s comment still says Vietnamese is absent.
+5. `mizuharaa/player-one-app` branch `feat/payout-screens` (`f75506d`, 58
+   tests) — the collector's payout screens; merge into that repo's `main`.
+
+Then: one full run with a database, a rewrite of this section, one PR.
+
+**Decisions Daniel has to make before any real payout, in order:**
+whole-dong rounding of fractional bill totals (every review-lane bill is
+fractional today, e.g. 320.0004 VND, and the domain refuses an attempt on one);
+non-verified payout accounts are refused on BOTH rails by SQL, so with no
+live ZaloPay verification nobody is payable — gate G3, override is an
+escalation; ZaloPay's wallet verification returns no holder name, so
+"verified" on the wallet route cannot include a name check; the
+`CHECKSUM-MISMATCH` quarantine (ingest spec §6) makes a redelivery with
+changed bytes unpayable until a per-episode clearing route exists; PIT
+withholding (export column is 0); bank-ceiling splitting (refused by name).
+
+Not built: a console screen for Settle beyond item 4, `exception` as a
+state any route can reach, the claims → sessions → settlement join (footage
+can still be paid with no live claim behind it), a launchable collector app
+(device transfer is a mock), dispute and second review (P2), achievements /
+badges / reputation / deposit (no spec; the brief says a deposit is likely
+unviable — decide before building).
+
+Integration decisions taken on 2026-08-26, reversible, recorded in code:
+custody tracking for a device starts with its first recorded period and
+footage from before that is not judged (`resolve.ts`, `assigneeAt`);
+bind/unbind write the custody period (`backoffice.ts`); the legacy
+`/api/settle/bills/:id/pay` is gone.
+
+The review ledger for all of this (`codex-bridge.md`, 51 findings with
+verdicts and evidence) is an untracked file on the home machine; every open
+item from it is in this section.
 
 ## The review slice, now built
 
@@ -130,11 +219,14 @@ blocked. **Ask.** It was meant to run in parallel, not after.
 
 ## Traps that have already cost time
 
-- **`~/playerone-sample` holds a DEGRADED copy of the corpus** — two of the five
-  sessions have no media. It was the test default and produced green runs on
-  broken data. The real corpus is in `docs/sample_data/` (gitignored) and the
-  tests find it there with no environment variable. **Delete or replace
-  `~/playerone-sample`.** It is still there.
+- **The corpus is per machine, and a degraded copy once produced green runs.**
+  The five real sessions live in `docs/sample_data/` (gitignored) on the org
+  PC; the tests find them there with no environment variable and skip 41 tests
+  when the directory is absent, which is what happens on the home machine.
+  Check before trusting a green run: `ls docs/sample_data | wc -l` should say 5.
+  A copy at `~/playerone-sample` with two sessions missing their media was the
+  test default once; if such a copy still exists anywhere, do not point tests
+  at it.
 - **Never `git add -A` in this repo.** The sample corpus is 630 MB of MP4 under
   `docs/sample_data/`. It is gitignored now, but one careless add already staged
   it and timed out a push.

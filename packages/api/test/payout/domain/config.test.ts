@@ -38,9 +38,9 @@ describe('the payout switches', () => {
   it('reads presence, never values, from the environment', () => {
     const o = payoutOptionsFromEnv({
       PLAYERONE_ZALOPAY_ENV: 'production',
-      ZALOPAY_APP_ID: '2553',
-      ZALOPAY_PAYMENT_ID: 'p',
-      ZALOPAY_KEY1: 'k1',
+      PLAYERONE_ZALOPAY_APP_ID: '2553',
+      PLAYERONE_ZALOPAY_PAYMENT_ID: 'p',
+      PLAYERONE_ZALOPAY_KEY1: 'k1',
     });
     expect(o.credentialsPresent).toEqual({ appId: true, paymentId: true, key1: true, publicKey: false });
     expect(JSON.stringify(o)).not.toContain('k1');

@@ -433,6 +433,48 @@ describe.skipIf(!hasDb())('episode submission and resolution', () => {
    * a card their collector handed across a counter, and the crosscheck only
    * ever narrows the set that scope produced.
    */
+  it('treats footage from before the first recorded period as untracked, not as a gap', async () => {
+    // Bridge F-33. Custody tracking starts with the first bind or typed
+    // period. A backlog card recorded before that instant must not be
+    // quarantined by the bind that came after it: before the record begins
+    // there is nothing to disagree with.
+    const h = await harness();
+    const session = await h.addSession(-60);
+    await h.d.execute(sql`
+      update device_assignments set valid_from = ${new Date(T + min(60 * 24)).toISOString()}
+       where device_id = ${h.ids.device}`);
+
+    const res = await h.submit([record({})]);
+    const e = res.json().episodes[0];
+    expect(e.resolution_state).toBe('resolved');
+    expect(e.reason).toBe('single_session');
+    const evaluated = await h.evaluatedOf(e.episode_id);
+    expect(evaluated).toEqual([
+      expect.objectContaining({ collectionSessionId: session, survived: true, rejectionReason: null }),
+    ]);
+    await assertNoThirdState();
+  });
+
+  it('does not run the crosscheck for a device with no custody history at all', async () => {
+    // Bridge F-20. On the upgrade path nothing seeds `device_assignments`, so
+    // every pilot device starts with no history. That is "not tracked yet", not
+    // "a gap in the record": the crosscheck stays off until the first bind or
+    // typed period exists for the device, and the episode resolves as before.
+    const h = await harness();
+    const session = await h.addSession(-60);
+    await h.d.execute(sql`delete from device_assignments where device_id = ${h.ids.device}`);
+
+    const res = await h.submit([record({})]);
+    const e = res.json().episodes[0];
+    expect(e.resolution_state).toBe('resolved');
+    expect(e.reason).toBe('single_session');
+    const evaluated = await h.evaluatedOf(e.episode_id);
+    expect(evaluated).toEqual([
+      expect.objectContaining({ collectionSessionId: session, survived: true, rejectionReason: null }),
+    ]);
+    await assertNoThirdState();
+  });
+
   it('resolves when the card holder held the device when the recording started', async () => {
     const h = await harness();
     const session = await h.addSession(-60);
@@ -475,13 +517,17 @@ describe.skipIf(!hasDb())('episode submission and resolution', () => {
   it('sends an episode to a human when no allotment covers its start, dropping nobody', async () => {
     const h = await harness();
     const session = await h.addSession(-60);
-    // The assignment record exists and starts tomorrow. Nobody is on record as
-    // holding the device at the moment this was recorded — which is not the
-    // same fact as "this collector was not", so nothing is refused, and the
-    // absence itself is what the operator is shown.
+    // The record has a hole: the first allotment ended two hours before this
+    // recording and the next starts tomorrow. Nobody is on record as holding
+    // the device at the moment this was recorded — which is not the same fact
+    // as "this collector was not", so nothing is refused, and the absence
+    // itself is what the operator is shown.
     await h.d.execute(sql`
-      update device_assignments set valid_from = ${new Date(T + min(60 * 24)).toISOString()}
+      update device_assignments set valid_to = ${new Date(T - min(120)).toISOString()}
        where device_id = ${h.ids.device}`);
+    await h.d.execute(sql`
+      insert into device_assignments (id, device_id, collector_id, valid_from)
+      values (${uid()}, ${h.ids.device}, ${h.ids.collector}, ${new Date(T + min(60 * 24)).toISOString()})`);
 
     const res = await h.submit([record({})]);
     const e = res.json().episodes[0];

@@ -75,10 +75,10 @@ export function payoutOptionsFromEnv(
     mode,
     zaloPayEnv,
     credentialsPresent: {
-      appId: Boolean(env['ZALOPAY_APP_ID']),
-      paymentId: Boolean(env['ZALOPAY_PAYMENT_ID']),
-      key1: Boolean(env['ZALOPAY_KEY1']),
-      publicKey: Boolean(env['ZALOPAY_PUBLIC_KEY']),
+      appId: Boolean(env['PLAYERONE_ZALOPAY_APP_ID']),
+      paymentId: Boolean(env['PLAYERONE_ZALOPAY_PAYMENT_ID']),
+      key1: Boolean(env['PLAYERONE_ZALOPAY_KEY1']),
+      publicKey: Boolean(env['PLAYERONE_ZALOPAY_PUBLIC_KEY']),
     },
     holdsEnabled: env['PLAYERONE_RISK_HOLD'] === '1',
     capVnd: cap === undefined ? undefined : Number(cap),
@@ -113,7 +113,7 @@ export function assertPayoutBootInvariants(options: PayoutOptions): void {
       throw new Error(
         `PLAYERONE_ZALOPAY_ENV=production without ${missing.join(', ')}: production needs ` +
           'all of app_id, payment_id, key1 and the ZaloPay RSA public key ' +
-          '(ZALOPAY_APP_ID, ZALOPAY_PAYMENT_ID, ZALOPAY_KEY1, ZALOPAY_PUBLIC_KEY).',
+          '(PLAYERONE_ZALOPAY_APP_ID, PLAYERONE_ZALOPAY_PAYMENT_ID, PLAYERONE_ZALOPAY_KEY1, PLAYERONE_ZALOPAY_PUBLIC_KEY).',
       );
     }
   }

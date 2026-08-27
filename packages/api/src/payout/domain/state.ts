@@ -57,12 +57,11 @@ export type AttemptEvent =
 
 /** An edge the machine does not have. A value, not a throw: callers decide the status code. */
 export class IllegalTransition extends Error {
-  // Declared and assigned, not parameter properties: Node's strip-only
-  // TypeScript refuses `constructor(readonly x: T)` (RUNNING.md), and vitest's
-  // esbuild transpile would hide that until `bin/serve.ts` fails to boot.
+  // Declared and assigned, not parameter properties: `bin/` runs .ts under
+  // Node's strip-only type stripping, which refuses them (RUNNING.md), and
+  // index.ts imports this file, so a parameter property here stops serve.ts.
   readonly from: AttemptStatus;
   readonly event: AttemptEvent;
-
   constructor(from: AttemptStatus, event: AttemptEvent, why: string) {
     super(`${from} + ${event.type}: ${why}`);
     this.name = 'IllegalTransition';

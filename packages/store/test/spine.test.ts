@@ -559,6 +559,99 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       );
     });
 
+    it('freezes an issued bill, and only an issued one', async () => {
+      // 0011: a bill is evidence once it has a line. Its collector, period,
+      // currency and total are what finance was sent, and a raw-SQL edit after
+      // the fact is the tampering the trigger exists to refuse.
+      const { settlementId, collector } = await seedSettlement();
+      const d = await db();
+      const issued = uid();
+      const draft = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${issued}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
+                 (${draft}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${issued}, ${settlementId});`);
+      await violates(
+        'bills_issued_immutable',
+        d.execute(sql`update bills set total = '1.0000' where id = ${issued};`),
+      );
+      await violates(
+        'bills_issued_immutable',
+        d.execute(sql`update bills set period_end = '2026-09-01T00:00:00Z' where id = ${issued};`),
+      );
+      // A bill with no lines is not issued: the generator may still be writing it.
+      await d.execute(sql`update bills set total = '0.0000' where id = ${draft};`);
+    });
+
+    it('refuses a line that is another collector\'s work', async () => {
+      // 0011: bill_lines carries no collector, so without this a line from
+      // collector A's settlement could sit on collector B's bill and the export
+      // would pay B for A's minutes.
+      const { settlementId } = await seedSettlement();
+      const d = await db();
+      const other = uid();
+      const bill = uid();
+      await d.execute(sql`insert into collectors (id, external_ref, status) values (${other}, 'collector-0002', 'qualified');`);
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${bill}, ${other}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+      `);
+      await violates(
+        'bill_lines_owner_guard',
+        d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`),
+      );
+    });
+
+    it('never lets a line leave an issued bill', async () => {
+      // Bridge F-28. Deleting or re-pointing the last line would leave the
+      // frozen total standing over nothing, and the issued-bill guard reads
+      // "issued" as "has a line". A line is evidence: written once.
+      const { settlementId, collector } = await seedSettlement();
+      const d = await db();
+      const bill = uid();
+      const other = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${bill}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
+                 (${other}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`);
+      await violates(
+        'bill_lines_immutable',
+        d.execute(sql`delete from bill_lines where settlement_id = ${settlementId};`),
+      );
+      await violates(
+        'bill_lines_immutable',
+        d.execute(sql`update bill_lines set bill_id = ${other} where settlement_id = ${settlementId};`),
+      );
+    });
+
+    it('refuses a total its lines do not add up to', async () => {
+      // 0011, deferred to commit: the total is the sum of the lines. The bill
+      // may be written before its lines (the generator does), so the check runs
+      // when the transaction ends, over the finished bill.
+      const { settlementId, collector } = await seedSettlement();
+      const d = await db();
+      const bill = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${bill}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '1.0000');
+      `);
+      await violates(
+        'bills_total_matches_lines',
+        d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`),
+      );
+      // The same line on a bill that says 170.0000 is fine.
+      const right = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${right}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${right}, ${settlementId});`);
+    });
+
     it('cannot bill a rejected episode, which is worth nothing', async () => {
       // SET-01 pays for pass and partial-pass reviews. The review lane still
       // writes a settlement for a `fail`, worth 0.0000, because that row is the
@@ -939,14 +1032,14 @@ describe.skipIf(!hasDb())('the catalogues', () => {
     expect(blocking).not.toContain('TIMING-ESTIMATED');
 
     /**
-     * CHECKSUM-MISMATCH used to be on the permissive side of this line, with no
-     * reason recorded anywhere for that specific code. The ingest spec's defect
-     * table (§6) says quarantine — "does not enter the review queue, does not
-     * generate settlement, is never deleted" — because the bytes of one session
-     * changed between two deliveries and which one is real is an open question.
-     * A reviewer can watch it; they cannot decide which delivery they are being
-     * paid to judge. Reversing the old assertion is deliberate and this is what
-     * says so.
+     * CHECKSUM-MISMATCH blocks. The ingest spec's defect table (§6) says
+     * quarantine — "does not enter the review queue, does not generate
+     * settlement, is never deleted" — because the bytes of one session changed
+     * between two deliveries and which one is real is an open question. The
+     * review-queue slice had tested the opposite; the integration follows the
+     * spec (bridge F-36, rebutted and withdrawn). Until a per-episode clearing
+     * route exists, a mismatched redelivery is unpayable — escalated, not
+     * decided here.
      */
     expect(blocking).toContain('CHECKSUM-MISMATCH');
 

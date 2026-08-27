@@ -306,6 +306,41 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
     expect(rows[0]!.reviewer_ref).toBe(h.ids.reviewer);
   });
 
+  it('lets a reviewer quarantine what they hold, and nothing else on the routing route', async () => {
+    // Bridge F-5. The reviewer scope is a route prefix, and /api/review/route
+    // is inside it — so the route itself has to say that lowering a flag,
+    // moving priority or reassigning are the upload centre's decisions.
+    const h = await lane();
+    const who = h.reviewerHeaders;
+    const episodeId = (await h.send('POST', '/api/review/claim', undefined, who)).json()
+      .episode_id as string;
+
+    for (const body of [
+      { queue: 'standard', reason: 'looked fine to me' },
+      { queue: 'privacy', priority: 5 },
+      { queue: 'privacy', assignee_ref: h.ids.reviewer },
+      { priority: 1 },
+    ]) {
+      const res = await h.send('POST', `/api/review/route/${episodeId}`, body, who);
+      expect(res.statusCode, `${JSON.stringify(body)}: ${res.body}`).toBe(403);
+    }
+
+    const raised = await h.send('POST', `/api/review/route/${episodeId}`, { queue: 'privacy' }, who);
+    expect(raised.statusCode, raised.body).toBe(200);
+    expect(raised.json().queue).toBe('privacy');
+  });
+
+  it('keeps a reviewer session out of the upload leg', async () => {
+    // Bridge F-7. `/upload-batches/*` is the machine's route; a reviewer has no
+    // machine, and the route must refuse before the handler dereferences one.
+    const h = await lane();
+    const batch = h.cards[0]!.batch;
+    for (const url of [`/upload-batches/${batch}/upload`, `/upload-batches/${batch}/cache-clean`]) {
+      const res = await h.send('POST', url, undefined, h.reviewerHeaders);
+      expect(res.statusCode, `${url}: ${res.body}`).toBe(403);
+    }
+  });
+
   it('records a reviewer verdict as a reviewer, with no invented machine or centre', async () => {
     const h = await lane();
     const who = h.reviewerHeaders;
