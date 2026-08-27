@@ -8,7 +8,7 @@ import { identChangedLate, identSignals } from './detectors/ident.ts';
 import { approvalOutliers, concentration, reviewTooFast, selfDealing } from './detectors/ops.ts';
 import { provenanceSignals } from './detectors/provenance.ts';
 import { volumeSignals } from './detectors/volume.ts';
-import { raiseHold } from './holds.ts';
+import { holdDecision, raiseHold } from './holds.ts';
 import { measureEpisodeMedia, type MediaTools } from './media.ts';
 import { byWeight, isFinding, rollup, summarise } from './scoring.ts';
 import {
@@ -37,7 +37,11 @@ import { numParam, strListParam, type Bands, type Finding, type Flag, type RiskS
  * (0014), so this process cannot write a bill, a settlement, a payout attempt
  * or a collector even by mistake: Postgres refuses, and a test proves it.
  * Reads happen before the transaction, because the media analysers take
- * seconds and a transaction that long would hold nothing useful.
+ * seconds and a transaction that long would hold nothing useful. The price is
+ * that two evaluations of one subject can read, read, write, write — so the
+ * write refuses, under the subject's lock, when a run newer than the one it
+ * read from has been committed meanwhile. The later commit never carries the
+ * older facts; the caller gets `RiskBusy` and the worker counts it as skipped.
  *
  * Nothing here rejects, suspends or voids anything. The worst outcome of an
  * evaluation is a row in `risk_holds` that an operator with a reason removes.
@@ -58,8 +62,12 @@ export type RiskEngineOptions = {
 };
 
 export class RiskBusy extends Error {
-  constructor(subjectType: SubjectType, subjectId: string) {
-    super(`another evaluation of ${subjectType} ${subjectId} is in progress`);
+  constructor(subjectType: SubjectType, subjectId: string, why: 'in_progress' | 'superseded' = 'in_progress') {
+    super(
+      why === 'in_progress'
+        ? `another evaluation of ${subjectType} ${subjectId} is in progress`
+        : `another evaluation of ${subjectType} ${subjectId} committed after this one read its facts; not written`,
+    );
   }
 }
 
@@ -99,6 +107,38 @@ export class RiskEngine {
     return { tuning, bands: bandsFrom(tuning) };
   }
 
+  /**
+   * The first thing every evaluation does. `SET LOCAL ROLE` needs the
+   * connected user to be a member of the role; 0016 grants that to whoever
+   * ran the migration, and any other application user needs it granted by
+   * hand. Without it every evaluation would fail on the same `permission
+   * denied to set role`, so it is said once, plainly, with the statement.
+   */
+  private roleChecked = false;
+  private async assertRole(): Promise<void> {
+    const role = this.o.dbRole;
+    if (!role || this.roleChecked) return;
+    const [r] = (await this.db.execute(
+      sql`select current_user as who, coalesce((select pg_has_role(current_user, oid, 'member') from pg_roles where rolname = ${role}), false) as ok`,
+    )) as unknown as { who: string; ok: boolean }[];
+    if (!r?.ok) {
+      throw new Error(
+        `the risk engine runs its writes as role ${role}, and user ${r?.who} cannot become it. ` +
+          `0014_risk.sql creates the role and 0016 grants it to the migrating user; for another user run: GRANT ${role} TO ${r?.who}`,
+      );
+    }
+    this.roleChecked = true;
+  }
+
+  /** The seq of the subject's latest run, taken before the facts are read; the write refuses if it moves. */
+  private async latestRun(subjectType: SubjectType, subjectId: string): Promise<number> {
+    await this.assertRole();
+    const rows = (await this.db.execute(
+      sql`select coalesce(max(seq), 0)::bigint as seq from risk_flags where signal_id = ${EVALUATED_SIGNAL} and subject_type = ${subjectType} and subject_id = ${subjectId}`,
+    )) as unknown as { seq: string | number }[];
+    return Number(rows[0]?.seq ?? 0);
+  }
+
   private window(): { from: Date; to: Date } {
     const to = this.o.now();
     return { from: new Date(to.getTime() - this.o.windowDays * 86_400_000), to };
@@ -107,6 +147,7 @@ export class RiskEngine {
   // -------------------------------------------------------------------------
 
   async evaluateCollector(collectorId: string): Promise<Evaluation> {
+    const since = await this.latestRun('collector', collectorId);
     const { tuning, bands } = await this.tuning();
     const { from, to } = this.window();
     const findings: Finding[] = [];
@@ -128,10 +169,11 @@ export class RiskEngine {
       findings.push(...concentration(input, tuning));
     }
 
-    return this.write('collector', collectorId, findings, tuning, bands, tools, null);
+    return this.write('collector', collectorId, since, findings, tuning, bands, tools, null);
   }
 
   async evaluateEpisode(episodeId: string): Promise<Evaluation> {
+    const since = await this.latestRun('episode', episodeId);
     const { tuning, bands } = await this.tuning();
     const findings: Finding[] = [];
     const ep = await episodeFactsFor(this.db, episodeId);
@@ -159,10 +201,11 @@ export class RiskEngine {
     const review = await reviewFactFor(this.db, episodeId);
     if (review !== null) findings.push(...reviewTooFast(review, tuning));
 
-    return this.write('episode', episodeId, findings, tuning, bands, tools, null);
+    return this.write('episode', episodeId, since, findings, tuning, bands, tools, null);
   }
 
   async evaluateBill(billId: string): Promise<Evaluation> {
+    const since = await this.latestRun('bill', billId);
     const { tuning, bands } = await this.tuning();
     const bill = await billFactsFor(this.db, billId);
     if (bill === null) throw new Error(`no such bill ${billId}`);
@@ -180,14 +223,16 @@ export class RiskEngine {
     // inside write()'s transaction, after the advisory lock, so the hold
     // decision is on the flags committed at that moment and not on a snapshot
     // taken before another instance re-evaluated the collector.
-    return this.write('bill', billId, findings, tuning, bands, tools, { billId, collectorId: bill.collectorId, episodeIds: bill.episodeIds });
+    return this.write('bill', billId, since, findings, tuning, bands, tools, { billId, collectorId: bill.collectorId, episodeIds: bill.episodeIds });
   }
 
   async evaluateBatch(periodStart: Date, periodEnd: Date): Promise<Evaluation> {
+    const id = batchId(periodStart, periodEnd);
+    const since = await this.latestRun('batch', id);
     const { tuning, bands } = await this.tuning();
     const rates = await reviewerRatesIn(this.db, periodStart, periodEnd);
     const findings = approvalOutliers(rates, tuning);
-    return this.write('batch', batchId(periodStart, periodEnd), findings, tuning, bands, {}, null);
+    return this.write('batch', id, since, findings, tuning, bands, {}, null);
   }
 
   // -------------------------------------------------------------------------
@@ -206,6 +251,22 @@ export class RiskEngine {
     return { ...summarise('bill', subjectId, flags, bands), evaluatedAt };
   }
 
+  /**
+   * What the payout side reads (`RiskReader.billSummary`). Its `band` answers
+   * "must this payment wait", which is the hold chain's answer and not the
+   * score's: 'hold' when a hold is open, or when the engine would raise one on
+   * the signals showing now; otherwise the score band, capped at 'review',
+   * because a score in the hold band whose hold an operator cleared is a bill
+   * that person decided to pay. The flags and the score are the summary's.
+   */
+  async payoutSummary(billId: string): Promise<RiskSummary & { evaluatedAt: string | null }> {
+    const s = await this.summary('bill', billId);
+    const decision = await holdDecision(this.db, billId, s.flags.map((f) => f.signalId));
+    if (decision === 'already_open') return { ...s, band: 'hold' };
+    if (s.band !== 'hold') return s;
+    return { ...s, band: decision === 'raise' ? 'hold' : 'review' };
+  }
+
   private async carriedFlags(db: Reader, collectorId: string, episodeIds: readonly string[]) {
     const groups: { subjectType: SubjectType; subjectId: string; flags: Flag[] }[] = [
       { subjectType: 'collector', subjectId: collectorId, flags: (await currentFlags(db, 'collector', collectorId)).map(strip) },
@@ -222,6 +283,7 @@ export class RiskEngine {
   private async write(
     subjectType: SubjectType,
     subjectId: string,
+    since: number,
     findings: readonly Finding[],
     tuning: TuningMap,
     bands: Bands,
@@ -254,6 +316,12 @@ export class RiskEngine {
         sql`select pg_try_advisory_xact_lock(hashtext(${`risk:${subjectType}:${subjectId}`})) as ok`,
       )) as unknown as { ok: boolean }[];
       if (!lock?.ok) throw new RiskBusy(subjectType, subjectId);
+      // Under the lock: a run newer than the one the facts were read against
+      // means those facts are older than the table, and this run must not win.
+      const [newer] = (await tx.execute(
+        sql`select 1 as x from risk_flags where signal_id = ${EVALUATED_SIGNAL} and subject_type = ${subjectType} and subject_id = ${subjectId} and seq > ${since} limit 1`,
+      )) as unknown as { x: number }[];
+      if (newer !== undefined) throw new RiskBusy(subjectType, subjectId, 'superseded');
 
       const written: Written[] = [];
       for (const f of toWrite) {

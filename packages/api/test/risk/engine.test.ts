@@ -3,12 +3,12 @@ import { sql } from 'drizzle-orm';
 import Fastify from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
-import { open, storeEpisode } from '@playerone/store';
+import { open, storeEpisode, type Db } from '@playerone/store';
 import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../../store/test/db.ts';
 import type { CounterActor } from '../../src/actor.ts';
 import { buildApi } from '../../src/index.ts';
 import { loadTuning, retuneSignal, seedRiskSignals } from '../../src/risk/catalogue.ts';
-import { RiskEngine, batchId, currentFlags } from '../../src/risk/engine.ts';
+import { RiskBusy, RiskEngine, batchId, currentFlags } from '../../src/risk/engine.ts';
 import { billHold, clearHold, currentHolds } from '../../src/risk/holds.ts';
 import { falsePositiveReport } from '../../src/risk/report.ts';
 import { registerRisk } from '../../src/risk/routes.ts';
@@ -189,6 +189,30 @@ async function bill(c: Collector, settlements: string[], o: { periodStart?: Date
 }
 
 /** A collector's whole money path for one episode: episode, review, settlement, bill. */
+/**
+ * The same database, with `after` awaited after every statement — inside a
+ * transaction too. How a test puts a second actor between two statements of
+ * one evaluation, deterministically, without a hook in the engine.
+ */
+function gated(d: Db, after: (q: unknown) => Promise<void>): Db {
+  return new Proxy(d, {
+    get(target, key, receiver) {
+      if (key === 'execute') {
+        return async (q: unknown) => {
+          const out = await target.execute(q as never);
+          await after(q);
+          return out;
+        };
+      }
+      if (key === 'transaction') {
+        return (cb: (tx: unknown) => Promise<unknown>, ...rest: unknown[]) =>
+          target.transaction((tx) => cb(gated(tx as unknown as Db, after)), ...(rest as never[]));
+      }
+      return Reflect.get(target, key, receiver);
+    },
+  });
+}
+
 async function billedEpisode(w: World, c: Collector, o: EpisodeOpts & { reviewer?: string; timeToVerdictS?: number }): Promise<{ episodeId: string; billId: string }> {
   const ep = await episode(c, o);
   const r = await review(w, ep, { measured: o.measured, reviewer: o.reviewer, timeToVerdictS: o.timeToVerdictS });
@@ -562,16 +586,41 @@ describe.skipIf(!hasDb())('the risk engine', () => {
 
       // The engine does not re-hold on the evidence the operator already saw…
       const again = await holding.evaluateBill(billId);
+      // The score band is still 'hold': the flags did not change, and the score
+      // is a sum an operator can redo with a pencil. What changed is the hold.
       expect(again.band).toBe('hold');
       expect(again.hold).toMatchObject({ raised: false, reason: 'cleared_covers_signals' });
       expect(await billHold(d, billId)).toBeNull();
+      // "Reads clear to pay" is a claim about what the payout side reads, so it
+      // is asserted against that read and not only against the view. The
+      // payout side turns band 'hold' into the `risk_hold` refusal, so its band
+      // must mean "there is a live hold", never "the score is in the hold band".
+      expect((await holding.payoutSummary(billId)).band).toBe('review');
 
-      // …but does on evidence they did not.
+      // …but does on evidence they did not, and the payout side sees that
+      // before the engine has written the new hold row.
       await account(w, a, { phone: '0901234567', declared: 'Nguyễn Văn A', verified: 'NGUYEN VAN B', status: 'name_mismatch', createdAt: new Date(T0 - 20 * DAY) });
       await holding.evaluateCollector(a.id);
+      expect((await holding.payoutSummary(billId)).band).toBe('hold');
       const reraised = await holding.evaluateBill(billId);
       expect(reraised.hold).toMatchObject({ raised: true, reason: 'raised' });
       expect((await billHold(d, billId))!.signalIds).toEqual(['IDENT.NAME_MISMATCH', 'IDENT.PHONE_SHARED']);
+      expect((await holding.payoutSummary(billId)).band).toBe('hold');
+    });
+
+    it('the payout side reads an open hold as held even after the flags behind it fell away', async () => {
+      const d = await db();
+      const holding = new RiskEngine(d, { now: () => NOW, holdsEnabled: true });
+      const { a, b, billId } = await heldBill();
+      expect((await holding.evaluateBill(billId)).hold).toMatchObject({ raised: true });
+      // The other collector changes phone: PHONE_SHARED falls away on the next run.
+      await account(w, b, { phone: '0905555555', muid: 'mu-b2' });
+      await holding.evaluateCollector(a.id);
+      const r = await holding.evaluateBill(billId);
+      expect(r.band).toBe('clear');
+      // Nobody cleared the hold, so the bill is still held: an operator says why it is released, not a retune.
+      expect(await billHold(d, billId)).not.toBeNull();
+      expect((await holding.payoutSummary(billId)).band).toBe('hold');
     });
 
     it('measures the false-positive budget from the clear verdicts', async () => {
@@ -678,6 +727,78 @@ describe.skipIf(!hasDb())('the risk engine', () => {
       }
       void d;
       expect(signals(await engine.evaluateCollector(c.id))).toEqual([]);
+    });
+
+    it('a run that read its facts before a newer run committed does not supersede it', async () => {
+      const d = await db();
+      const a = await collector(w, 'c-0001');
+      const b = await collector(w, 'c-0002');
+      const fp = 'e'.repeat(64);
+      const { billId, episodeId } = await billedEpisode(w, a, { startMs: T0, measured: 600, fingerprint: fp });
+      await episode(b, { startMs: T0 + DAY, measured: 600, fingerprint: fp });
+
+      // The worker's engine, on a database that pauses once: after the bill's
+      // own facts are read (the audit rows, the last read before the
+      // transaction) and before the write. In that pause an operator evaluates
+      // the episode (NEAR_DUPLICATE appears) and then the bill, which commits a
+      // newer run. The worker's write must then refuse, not win by seq.
+      let paused = false;
+      let fresh: string | null = null;
+      const worker = new RiskEngine(
+        gated(d, async (q) => {
+          const text = JSON.stringify(q);
+          if (paused || !text.includes('audit_events') || !text.includes(billId)) return;
+          paused = true;
+          await engine.evaluateEpisode(episodeId);
+          fresh = (await engine.evaluateBill(billId)).band;
+          expect(fresh).not.toBe('clear');
+        }),
+        { now: () => NOW },
+      );
+      await expect(worker.evaluateBill(billId)).rejects.toBeInstanceOf(RiskBusy);
+      expect(paused).toBe(true);
+      // The operator's run is the latest one, and the only one.
+      expect((await engine.summary('bill', billId)).band).toBe(fresh);
+      const [n] = (await d.execute(sql`select count(distinct run_id)::int as n from risk_flags where subject_type = 'bill' and subject_id = ${billId}`)) as unknown as { n: number }[];
+      expect(n!.n).toBe(1);
+    });
+  });
+
+  describe('the role, from a connection that is not a superuser', () => {
+    const MEMBER = 'playerone_test_risk_member';
+    const STRANGER = 'playerone_test_risk_stranger';
+    const asUser = (user: string): string => {
+      const u = new URL(dbUrl());
+      u.username = user;
+      u.password = 'pw';
+      return u.toString();
+    };
+
+    it('0016 grants playerone_risk to the migrating user, and a member of it can run an evaluation; a non-member is told what to grant', async () => {
+      const d = await db();
+      const [granted] = (await d.execute(
+        sql`select 1 as ok from pg_auth_members m join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
+             where r.rolname = 'playerone_risk' and u.rolname = current_user`,
+      )) as unknown as { ok: number }[];
+      expect(granted, 'the migrating user is not a member of playerone_risk').toBeDefined();
+
+      const c = await collector(w, 'c-0001');
+      await account(w, c);
+      for (const name of [MEMBER, STRANGER]) {
+        await d.execute(sql.raw(`drop role if exists ${name}`));
+        await d.execute(sql.raw(`create role ${name} login password 'pw'`));
+      }
+      await d.execute(sql.raw(`grant playerone_risk to ${MEMBER}`));
+      const member = await open(asUser(MEMBER), { max: 1 });
+      const stranger = await open(asUser(STRANGER), { max: 1 });
+      try {
+        expect(signals(await new RiskEngine(member, { now: () => NOW }).evaluateCollector(c.id))).toEqual([]);
+        await expect(new RiskEngine(stranger, { now: () => NOW }).evaluateCollector(c.id)).rejects.toThrow(/GRANT playerone_risk TO playerone_test_risk_stranger/);
+      } finally {
+        await member.close();
+        await stranger.close();
+        for (const name of [MEMBER, STRANGER]) await d.execute(sql.raw(`drop role ${name}`));
+      }
     });
   });
 

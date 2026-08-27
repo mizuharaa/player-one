@@ -6,6 +6,7 @@ import { buildApi } from '../../../src/index.ts';
 import type { PayoutOptions } from '../../../src/payout/domain/config.ts';
 import { verifyExport } from '../../../src/payout/domain/export.ts';
 import type { RiskReader } from '../../../src/payout/domain/risk.ts';
+import { clearHold } from '../../../src/risk/holds.ts';
 import { tick } from '../../../src/payout/worker/poll.ts';
 import { closeDb, db, dbUrl, hasDb, truncate, useDatabase } from '../../../../store/test/db.ts';
 import {
@@ -323,6 +324,45 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       expect(again.statusCode).toBe(409);
       // The gate says so before the trigger has to (`payout_attempts_previous_not_failed` is the SQL answer, proved in schema.test.ts).
       expect(again.json().constraint).toBe('payout_already_paid');
+      expect(await countOf(h.d, sql`select count(*) as n from payout_attempts`)).toBe(1);
+    });
+
+    it('through the real risk reader, a live hold refuses the payment and a cleared hold lets it through', async () => {
+      // No `risk` option: the reader is the one `buildApi` wires to the engine.
+      const h = await harness({ holdsEnabled: true });
+      const { bill1 } = await seedBills(h.d, h.ids);
+      await seedAccount(h.d, h.ids, 1);
+      // A hold-band run for the bill, in the shape the engine writes, and the hold it raised.
+      const run = uid();
+      const [t] = await rows<{ v: string }>(h.d, sql`select threshold_version as v from risk_signals where signal_id = 'IDENT.PHONE_SHARED' and superseded_at is null`);
+      await h.d.execute(
+        sql`insert into risk_flags (run_id, subject_type, subject_id, signal_id, threshold_version, points, severity, evidence)
+             values (${run}::uuid, 'bill', ${bill1}, 'META.EVALUATED', ${t!.v}, 0, 'info', '{"findings":1}')`,
+      );
+      const [flag] = await rows<{ id: string }>(
+        h.d,
+        sql`insert into risk_flags (run_id, subject_type, subject_id, signal_id, threshold_version, points, severity, evidence)
+             values (${run}::uuid, 'bill', ${bill1}, 'IDENT.PHONE_SHARED', ${t!.v}, 60, 'hold', '{}') returning id`,
+      );
+      // raised_at at millisecond precision, as the engine writes it: the clear
+      // row copies it back through a JS Date, and the chain guard compares exactly.
+      await h.d.execute(
+        sql`insert into risk_holds (bill_id, raised_by_flag, raised_at, signal_ids) values (${bill1}, ${flag!.id}::uuid, ${new Date().toISOString()}::timestamptz, '{IDENT.PHONE_SHARED}')`,
+      );
+      const pay = () => h.send('POST', `/api/payout/bills/${bill1}/mark-paid`, h.finA, { manual_reference: 'VCB-1', amount_vnd: 2400 });
+
+      const held = await pay();
+      expect(held.statusCode).toBe(409);
+      expect(held.json().constraint).toBe('payout_risk_hold');
+
+      const actor = {
+        machine: { kind: 'machine' as const, uploadDeviceId: h.ids.machineA, uploadCentreId: h.ids.centreA },
+        operator: { kind: 'operator' as const, operatorId: h.ids.finA, uploadCentreId: h.ids.centreA },
+      };
+      await clearHold(h.d, actor, { billId: bill1, operatorId: h.ids.finA, reason: 'The risk is real and finance pays anyway.', verdict: 'accepted' });
+      // The flags have not changed; the hold has. The payment goes.
+      const sent = await pay();
+      expect(sent.statusCode, sent.body).toBe(201);
       expect(await countOf(h.d, sql`select count(*) as n from payout_attempts`)).toBe(1);
     });
 

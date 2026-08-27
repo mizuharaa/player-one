@@ -127,6 +127,13 @@
       "when": 1788310000000,
       "tag": "0015_risk_hold_set_catchup",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788320000000,
+      "tag": "0016_risk_role_membership",
+      "breakpoints": true
     }
   ]
 }

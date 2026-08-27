@@ -340,7 +340,8 @@ export function buildApi({
     mediaRoot: risk.mediaRoot ?? mediaRoot,
     holdsEnabled: risk.holdsEnabled,
   });
-  const riskReader = { billSummary: (billId: string) => riskEngine.summary('bill', billId) };
+  // The band the payout side reads means "there is a live hold", not "the score is in the hold band".
+  const riskReader = { billSummary: (billId: string) => riskEngine.payoutSummary(billId) };
 
   registerBackOffice(app, db, requireActor);
   registerCounter(app, db, requireActor);

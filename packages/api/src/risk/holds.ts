@@ -77,6 +77,27 @@ export async function currentHolds(db: Reader): Promise<{ holdId: string; billId
 }
 
 /**
+ * What the hold chain says about a bill that shows these signals right now:
+ * a hold is open, the last clear already covered every one of them, or a hold
+ * would be raised. `raiseHold` acts on it; the payout read reports it.
+ */
+export async function holdDecision(
+  db: Reader,
+  billId: string,
+  signalIds: readonly string[],
+): Promise<'already_open' | 'cleared_covers_signals' | 'raise'> {
+  const latest = (await (db as Db).execute(
+    sql`select * from risk_holds where bill_id = ${billId}::uuid
+         order by coalesce(cleared_at, raised_at) desc, cleared_at desc nulls last limit 1`,
+  )) as unknown as Row[];
+  const last = latest[0] ? toHold(latest[0]) : null;
+  if (last === null) return 'raise';
+  if (last.clearedAt === null) return 'already_open';
+  const seen = new Set(last.signalIds);
+  return signalIds.every((s) => seen.has(s)) ? 'cleared_covers_signals' : 'raise';
+}
+
+/**
  * Raises a hold unless one is open, or unless the last clearance already
  * covered every signal now present. An operator's clear is a statement about
  * the evidence they saw; the engine re-holds only on evidence they did not.
@@ -89,16 +110,8 @@ export async function raiseHold(
   tx: Reader,
   input: { billId: string; flagId: string; signalIds: readonly string[]; now: Date },
 ): Promise<{ hold: HoldRow | null; reason: 'raised' | 'already_open' | 'cleared_covers_signals' }> {
-  const latest = (await (tx as Db).execute(
-    sql`select * from risk_holds where bill_id = ${input.billId}::uuid
-         order by coalesce(cleared_at, raised_at) desc, cleared_at desc nulls last limit 1`,
-  )) as unknown as Row[];
-  const last = latest[0] ? toHold(latest[0]) : null;
-  if (last !== null && last.clearedAt === null) return { hold: null, reason: 'already_open' };
-  if (last !== null && last.clearedAt !== null) {
-    const seen = new Set(last.signalIds);
-    if (input.signalIds.every((s) => seen.has(s))) return { hold: null, reason: 'cleared_covers_signals' };
-  }
+  const decision = await holdDecision(tx, input.billId, input.signalIds);
+  if (decision !== 'raise') return { hold: null, reason: decision };
   const [row] = (await (tx as Db).execute(
     // The array goes in as JSON: the raw-SQL path hands parameters to the
     // driver untouched, and a JS array is not a Postgres array literal.
