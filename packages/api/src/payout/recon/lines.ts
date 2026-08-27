@@ -43,6 +43,8 @@ export type Finding = {
   theirStatus: string | null;
   ourAmount: number | null;
   theirAmount: number | null;
+  /** When the other side says it happened: a statement line's date. Absent for the ZaloPay kinds. */
+  theirAt?: Date | null;
   detail: Record<string, unknown>;
 };
 
@@ -75,7 +77,9 @@ export async function finishRun(db: Db | Tx, runId: string, finishedAt: Date, su
  * Whether the same discrepancy is already open, so a daily run does not
  * raise it — and ticket it — again every morning. "Same" is the kind and the
  * thing it is about: the attempt when there is one, else the bill and the
- * probed order id, else the statement reference. An open line is never
+ * probed order id, else the statement line — reference, amount AND date,
+ * the three the matcher matches on, so two unmatched lines under one bank
+ * reference are two discrepancies (0016). An open line is never
  * touched; a resolved one does not count, so a discrepancy that returns
  * after being resolved is raised afresh, which is what "resolved" ought to
  * mean.
@@ -89,6 +93,8 @@ export async function openLineExists(db: Db | Tx, f: Finding): Promise<boolean> 
        and bill_id is not distinct from ${f.billId}::uuid
        and partner_order_id is not distinct from ${f.partnerOrderId}::text
        and reference is not distinct from ${f.reference}::text
+       and their_amount is not distinct from ${f.theirAmount}::bigint
+       and their_at is not distinct from ${f.theirAt?.toISOString() ?? null}::timestamptz
      limit 1
   `)) as unknown as unknown[];
   return rows.length > 0;
@@ -140,12 +146,13 @@ export async function writeLine(tx: Tx, runId: string, f: Finding, raisedAt: Dat
   const inserted = (await tx.execute(sql`
     insert into recon_lines
       (id, run_id, bill_id, payout_attempt_id, partner_order_id, reference, our_status, their_status,
-       our_amount, their_amount, discrepancy_kind, detail, raised_at)
+       our_amount, their_amount, their_at, discrepancy_kind, detail, raised_at)
     values
       (${id}, ${runId}, ${f.billId}::uuid, ${f.payoutAttemptId}::uuid, ${f.partnerOrderId}::text, ${f.reference}::text,
        ${f.ourStatus}::text, ${f.theirStatus}::text, ${f.ourAmount}::bigint, ${f.theirAmount}::bigint,
+       ${f.theirAt?.toISOString() ?? null}::timestamptz,
        ${f.kind}, ${JSON.stringify(f.detail)}::jsonb, ${raisedAt.toISOString()}::timestamptz)
-    on conflict (discrepancy_kind, payout_attempt_id, bill_id, partner_order_id, reference) where resolved_at is null
+    on conflict (discrepancy_kind, payout_attempt_id, bill_id, partner_order_id, reference, their_amount, their_at) where resolved_at is null
     do nothing
     returning id
   `)) as unknown as { id: string }[];
@@ -184,6 +191,7 @@ export type ReconLineRow = {
   their_status: string | null;
   our_amount: string | number | null;
   their_amount: string | number | null;
+  their_at: Date | string | null;
   discrepancy_kind: DiscrepancyKind;
   detail: Record<string, unknown>;
   raised_at: Date | string;

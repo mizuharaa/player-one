@@ -1726,6 +1726,8 @@ export const reconLines = pgTable(
     theirStatus: text('their_status'),
     ourAmount: bigint('our_amount', { mode: 'number' }),
     theirAmount: bigint('their_amount', { mode: 'number' }),
+    /** When the other side says it happened: the statement line's date. Null for the ZaloPay kinds. */
+    theirAt: timestamp('their_at', { withTimezone: true }),
     discrepancyKind: text('discrepancy_kind').notNull(),
     detail: jsonb('detail').notNull().default(sql`'{}'::jsonb`),
     raisedAt: timestamp('raised_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1743,10 +1745,12 @@ export const reconLines = pgTable(
      * One open line per discrepancy, held by the database so two runs at
      * once cannot raise and ticket it twice (F-44). The migration declares
      * it `NULLS NOT DISTINCT`, which drizzle cannot express on an index;
-     * 0015 is hand-written and is the authority.
+     * 0015/0016 are hand-written and are the authority. `their_amount` and
+     * `their_at` are in the key so two statement lines under one bank
+     * reference stay two discrepancies (0016).
      */
     uniqueIndex('recon_lines_open_key')
-      .on(t.discrepancyKind, t.payoutAttemptId, t.billId, t.partnerOrderId, t.reference)
+      .on(t.discrepancyKind, t.payoutAttemptId, t.billId, t.partnerOrderId, t.reference, t.theirAmount, t.theirAt)
       .where(sql`${t.resolvedAt} is null`),
     check(
       'recon_lines_kind_check',

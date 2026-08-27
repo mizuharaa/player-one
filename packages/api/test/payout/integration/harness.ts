@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { expect } from 'vitest';
@@ -9,7 +8,7 @@ import type { PayoutOptions } from '../../../src/payout/domain/config.ts';
 import { ZaloPayHttpClient } from '../../../src/payout/zalopay/client.ts';
 import type { ZlpStatus } from '../../../src/payout/zalopay/types.ts';
 import { db, dbUrl } from '../../../../store/test/db.ts';
-import { insertAttemptAs, P1, rows, seedPayout, seedSettlement, type Ids } from '../domain/fixture.ts';
+import { insertAttemptAs, rows, seedPayout, type Ids } from '../domain/fixture.ts';
 import { startFakeZaloPay, type FakeOrder, type FakeZaloPay, type Received } from '../zalopay/fake-server.ts';
 
 /**
@@ -41,39 +40,6 @@ export const P3 = { start: new Date('2026-08-31T00:00:00Z'), end: new Date('2026
 export const P4 = { start: new Date('2026-09-07T00:00:00Z'), end: new Date('2026-09-14T00:00:00Z') };
 export const P5 = { start: new Date('2026-09-14T00:00:00Z'), end: new Date('2026-09-21T00:00:00Z') };
 export const P6 = { start: new Date('2026-09-21T00:00:00Z'), end: new Date('2026-09-28T00:00:00Z') };
-
-/**
- * A bill and ALL its lines in one transaction. B's `seedBill` writes the lines
- * one autocommitted statement at a time, and 0011's deferred total check runs
- * at the end of each — so on a database carrying the current 0011, the first
- * line of a two-line bill is refused ("says 2400, its lines sum to 1200").
- * B's own suites pass only on test databases created before that trigger
- * took its current shape (reported in the handoff). Here the settlements are
- * written first, then the bill and every line together.
- */
-export async function seedBillAtomic(d: Db, ids: Ids, which: 1 | 2, period: { start: Date; end: Date }, amounts: string[], total: string): Promise<string> {
-  const billId = randomUUID();
-  const collector = which === 1 ? ids.collector1 : ids.collector2;
-  const settlements: string[] = [];
-  for (const amount of amounts) settlements.push((await seedSettlement(d, ids, which, amount)).settlementId);
-  await d.transaction(async (tx) => {
-    await tx.execute(sql`
-      insert into bills (id, collector_id, period_start, period_end, currency, total)
-        values (${billId}, ${collector}, ${period.start.toISOString()}::timestamptz, ${period.end.toISOString()}::timestamptz, 'VND', ${total})
-    `);
-    if (settlements.length > 0) {
-      await tx.execute(sql`insert into bill_lines (bill_id, settlement_id) values ${sql.join(settlements.map((s) => sql`(${billId}, ${s})`), sql`, `)}`);
-    }
-  });
-  return billId;
-}
-
-/** The fixture's two bills — c-0001 for 2,400 VND over two lines, c-0002 for 1,200 — written atomically. */
-export async function seedBillsAtomic(d: Db, ids: Ids): Promise<{ bill1: string; bill2: string }> {
-  const bill1 = await seedBillAtomic(d, ids, 1, P1, ['1200.0000', '1200.0000'], '2400.0000');
-  const bill2 = await seedBillAtomic(d, ids, 2, P1, ['1200.0000'], '1200.0000');
-  return { bill1, bill2 };
-}
 
 export type Headers = Record<string, string>;
 

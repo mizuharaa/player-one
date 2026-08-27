@@ -1696,6 +1696,18 @@ describe.skipIf(!hasDb())('the back office', () => {
       'payout_attempts_initial_status',
       'payout_export_rows_sealed',
       'payout_exports_complete',
+      // Raised by the reconciliation tables' guards (0015): runs and lines are
+      // append-only evidence, a run is sealed when finished, a line is born
+      // open, and only a finance operator with an audited reason resolves
+      // one. No route writes these tables yet — `resolveLine` is called from
+      // tests only — so raw SQL is the only caller, and recon.test.ts proves
+      // each. When the exceptions screen lands, `recon_lines_resolved_by_operator`
+      // becomes a person's refusal and moves to a refusal set with a sentence.
+      'recon_runs_append_only',
+      'recon_runs_sealed',
+      'recon_lines_append_only',
+      'recon_lines_resolved_by_operator',
+      'recon_lines_born_open',
     ]);
 
     for (const name of [...declared.map((d) => d.name), ...raised]) {

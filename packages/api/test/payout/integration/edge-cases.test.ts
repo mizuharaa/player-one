@@ -5,7 +5,7 @@ import { tick as reconTick, linesOfRun } from '../../../src/payout/recon/index.t
 import { runBatch } from '../../../src/payout/worker/batch.ts';
 import { tick, type TickOptions } from '../../../src/payout/worker/poll.ts';
 import { closeDb, hasDb, truncate, useDatabase, violates } from '../../../../store/test/db.ts';
-import { auditRow, insertAttemptAs, P0, P1, rows, seedAccount, seedBill, seedFractionalBill, seedSettlement, uid } from '../domain/fixture.ts';
+import { auditRow, insertAttemptAs, P0, P1, rows, seedAccount, seedBill, seedBills, seedFractionalBill, seedSettlement, uid } from '../domain/fixture.ts';
 import {
   DAY,
   HOUR,
@@ -18,7 +18,6 @@ import {
   later,
   plantOrder,
   queries,
-  seedBillsAtomic,
   settlementStates,
   ticketKinds,
   transfers,
@@ -50,7 +49,7 @@ type Seeded = Harness & { bill1: string; bill2: string; account1: string; accoun
 
 async function seeded(over: Parameters<typeof harness>[0] = {}, opts: Parameters<typeof harness>[1] = {}): Promise<Seeded> {
   const h = await harness(over, opts);
-  const bills = await seedBillsAtomic(h.d, h.ids);
+  const bills = await seedBills(h.d, h.ids);
   const account1 = await seedAccount(h.d, h.ids, 1);
   const account2 = await seedAccount(h.d, h.ids, 2);
   return { ...h, ...bills, account1, account2 };
@@ -606,13 +605,12 @@ describe.skipIf(!hasDb())('the edge-case suite, E01–E29, over a real socket to
     });
 
     /**
-     * FINDING (reported in the handoff, not fixed here — settle.ts is not this
-     * agent's territory): the superseded route still records a manual payment
-     * for a finance operator with NO manual_reference and NO payout_attempt,
-     * which is exactly what `mark-paid` exists to require. Marked `.fails` so
-     * the suite stays green while the seam is visible.
+     * Was `.fails`: the superseded route once recorded a manual payment for a
+     * finance operator with no manual_reference and no payout_attempt.
+     * Integration retired the route (2dbd0ff), so the seam is closed and the
+     * test holds as written.
      */
-    it.fails('E21b the superseded route cannot record a manual payment without a reference, even for finance', async () => {
+    it('E21b the superseded route cannot record a manual payment without a reference, even for finance', async () => {
       const h = await seeded();
       try {
         const res = await h.send('POST', `/api/settle/bills/${h.bill1}/pay`, h.finB);
@@ -809,7 +807,7 @@ describe.skipIf(!hasDb())('the edge-case suite, E01–E29, over a real socket to
     it('E29 a name mismatch at declaration keeps both names, tells the risk engine, and is not paid; the declared name is never corrected', async () => {
       const h = await harness();
       try {
-        const { bill1, bill2 } = await seedBillsAtomic(h.d, h.ids);
+        const { bill1, bill2 } = await seedBills(h.d, h.ids);
         h.fake.plan('verifyAccount', { kind: 'ok', name: 'NGUYEN VAN B' });
         const declared = { id: uid(), collector_id: h.ids.collector1, method: 'BANK_ACCOUNT', declared_name: 'Nguyễn Văn A', bank_code: 'VCB', account_no: '00112233445566' };
         const res = await h.send('POST', '/api/payout/accounts', h.finA, declared);

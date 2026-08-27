@@ -297,6 +297,7 @@ export function matchStatement(
       theirStatus: 'statement',
       ourAmount: null,
       theirAmount: line.amountVnd,
+      theirAt: line.date,
       detail: {
         statement_line: line.line,
         statement_date: line.date.toISOString(),

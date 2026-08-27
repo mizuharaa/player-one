@@ -14,7 +14,7 @@ import {
 } from '../../../src/payout/recon/index.ts';
 import { writeLine, type Finding } from '../../../src/payout/recon/lines.ts';
 import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../../../store/test/db.ts';
-import { auditRow, insertAttemptAs, P0, P1, rows, seedAccount, seedBill, uid } from '../domain/fixture.ts';
+import { auditRow, insertAttemptAs, P0, P1, rows, seedAccount, seedBill, seedBills, uid } from '../domain/fixture.ts';
 import {
   DAY,
   HOUR,
@@ -28,7 +28,6 @@ import {
   later,
   plantOrder,
   queries,
-  seedBillsAtomic,
   ticketKinds,
   transfers,
   walkTo,
@@ -179,6 +178,28 @@ describe.skipIf(!hasDb())('reconciliation', () => {
       });
       await line(d, r, { reference: 'VCB-7' });
       expect(await count(d, sql`select count(*) as n from recon_lines`)).toBe(4);
+    });
+
+    it('keeps two statement lines under one bank reference as two discrepancies, and a replayed line as one (0016)', async () => {
+      const d = await db();
+      const r = await run(d);
+      const stmt = (amount: number, at: string) => d.execute(sql`
+        insert into recon_lines (id, run_id, reference, their_status, their_amount, their_at, discrepancy_kind)
+          values (${uid()}, ${r}, 'CHUYEN TIEN', 'statement', ${amount}, ${at}::timestamptz, 'THEY_SAY_PAID_WE_DONT')
+      `);
+      // Line 5 and line 9 of the same statement: same reference, different sums.
+      await stmt(1_200_000, '2026-08-05T03:00:00Z');
+      await stmt(2_400_000, '2026-08-09T03:00:00Z');
+      // The same sum again under the same reference, on another day.
+      await stmt(1_200_000, '2026-08-19T03:00:00Z');
+      // The same statement, ingested again: every line conflicts.
+      await violates('recon_lines_open_key', stmt(1_200_000, '2026-08-05T03:00:00Z'));
+      await violates('recon_lines_open_key', stmt(2_400_000, '2026-08-09T03:00:00Z'));
+      expect(await rows(d, sql`select their_amount from recon_lines where run_id = ${r} order by their_at`)).toEqual([
+        { their_amount: '1200000' },
+        { their_amount: '2400000' },
+        { their_amount: '1200000' },
+      ]);
     });
 
     it('two transactions raising the same discrepancy commit exactly one line and one ticket (F-44)', async () => {
@@ -417,7 +438,7 @@ describe.skipIf(!hasDb())('reconciliation', () => {
       const h = await harness();
       try {
         const account1 = await seedAccount(h.d, h.ids, 1);
-        const { bill1 } = await seedBillsAtomic(h.d, h.ids);
+        const { bill1 } = await seedBills(h.d, h.ids);
         const a = await walkTo(h.d, h.ids, { billId: bill1, accountId: account1, amountVnd: 2400, status: 'processing', createdAt: new Date(Date.now() - 2 * DAY) });
         plantOrder(h.fake, a.partnerOrderId, 3, 2400);
         // The attempt's query hangs; the orphan probe's socket is reset.
@@ -526,7 +547,7 @@ describe.skipIf(!hasDb())('reconciliation', () => {
       try {
         await seedAccount(h.d, h.ids, 1);
         await seedAccount(h.d, h.ids, 2);
-        const { bill1, bill2 } = await seedBillsAtomic(h.d, h.ids);
+        const { bill1, bill2 } = await seedBills(h.d, h.ids);
         const bill3 = await seedBill(h.d, h.ids, 1, P0, ['1200.0000'], '1200.0000');
         const paid = async (bill: string, who: Record<string, string>, ref: string, amount: number) => {
           const res = await h.send('POST', `/api/payout/bills/${bill}/mark-paid`, who, { manual_reference: ref, amount_vnd: amount });
@@ -581,6 +602,29 @@ describe.skipIf(!hasDb())('reconciliation', () => {
         await h.close();
       }
     });
+
+    it('raises every unmatched line even when the bank printed the same reference on two of them (bridge 296)', async () => {
+      const h = await harness({}, { mode: 'manual' });
+      try {
+        const now = new Date();
+        const day = (n: number) => new Date(now.getTime() - n * HOUR).toISOString();
+        const csv = ['date,amount,reference', `${day(20)},1.200.000,CHUYEN TIEN`, `${day(4)},2.400.000,CHUYEN TIEN`].join('\n');
+        const period = { start: new Date(now.getTime() - DAY), end: new Date(now.getTime() + DAY) };
+        const r = await ingestStatement(h.d, period, csv, { now });
+        expect(r).toMatchObject({ matched: 0, raised: 2, still_open: 0, findings_by_kind: { THEY_SAY_PAID_WE_DONT: 2 } });
+        const lines = (await linesOfRun(h.d, r.runId)).sort((a, b) => new Date(a.their_at!).getTime() - new Date(b.their_at!).getTime());
+        expect(lines.map((l) => [l.reference, l.their_amount, new Date(l.their_at!).toISOString()])).toEqual([
+          ['CHUYEN TIEN', '1200000', day(20)],
+          ['CHUYEN TIEN', '2400000', day(4)],
+        ]);
+        expect(await ticketKinds(h.d)).toEqual([RECON_TICKET_KIND, RECON_TICKET_KIND]);
+        // The same statement tomorrow: nothing new, both still open.
+        expect(await ingestStatement(h.d, period, csv, { now })).toMatchObject({ raised: 0, still_open: 2 });
+        expect(await count(h.d, sql`select count(*) as n from recon_lines`)).toBe(2);
+      } finally {
+        await h.close();
+      }
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -589,7 +633,7 @@ describe.skipIf(!hasDb())('reconciliation', () => {
     it('records what the API rail would have sent while the mode is manual, and sends nothing', async () => {
       const h = await harness({}, { mode: 'manual' });
       try {
-        const { bill1, bill2 } = await seedBillsAtomic(h.d, h.ids);
+        const { bill1, bill2 } = await seedBills(h.d, h.ids);
         await seedAccount(h.d, h.ids, 1);
         await seedAccount(h.d, h.ids, 2);
         const s = await shadowRun(h.d, h.client, P1, { now: new Date() });
@@ -625,11 +669,14 @@ describe.skipIf(!hasDb())('reconciliation', () => {
     it('names a manual payment the rail would have refused, with the reason it would have given', async () => {
       const h = await harness({}, { mode: 'manual' });
       try {
-        const { bill1, bill2 } = await seedBillsAtomic(h.d, h.ids);
+        const { bill1, bill2 } = await seedBills(h.d, h.ids);
         await seedAccount(h.d, h.ids, 1);
-        await seedAccount(h.d, h.ids, 2, { verifyStatus: 'unverified', mUId: null });
-        const s = await shadowRun(h.d, h.client, P1, { now: new Date() });
-        expect(s.intended.find((i) => i.bill_id === bill2)).toMatchObject({ would_send: false, issues: ['account_unverified'] });
+        await seedAccount(h.d, h.ids, 2);
+        // The rail, as it will be configured, carries a per-collector cap the
+        // manual route does not know about. (An unverified account is no longer
+        // the example: since d84d60c the manual rail refuses it too.)
+        const s = await shadowRun(h.d, h.client, P1, { now: new Date(), capVnd: 2000 });
+        expect(s.intended.find((i) => i.bill_id === bill1)).toMatchObject({ would_send: false, issues: ['over_cap'] });
         for (const [bill, amount] of [
           [bill1, 2400],
           [bill2, 1200],
@@ -640,8 +687,37 @@ describe.skipIf(!hasDb())('reconciliation', () => {
         const diff = await shadowDiff(h.d, s.runId);
         expect(diff).toMatchObject({ agreed: 1, raised: 1, findings_by_kind: { SHADOW_UNINTENDED: 1 } });
         const [l] = await linesOfRun(h.d, diff.runId);
-        expect(l).toMatchObject({ discrepancy_kind: 'SHADOW_UNINTENDED', bill_id: bill2, their_status: 'manual:succeeded', reference: 'VCB-1200', detail: { issues: ['account_unverified'] } });
+        expect(l).toMatchObject({ discrepancy_kind: 'SHADOW_UNINTENDED', bill_id: bill1, their_status: 'manual:succeeded', reference: 'VCB-2400', detail: { issues: ['over_cap'] } });
         expect(transfers(h)).toHaveLength(0);
+      } finally {
+        await h.close();
+      }
+    });
+
+    it('with no ZaloPay client at all — the manual pilot — still records per-bill intention, and a correct manual cycle diffs clean (bridge 297)', async () => {
+      const h = await harness({}, { mode: 'manual' });
+      try {
+        const { bill1, bill2 } = await seedBills(h.d, h.ids);
+        await seedAccount(h.d, h.ids, 1);
+        await seedAccount(h.d, h.ids, 2, { verifyStatus: 'unverified', mUId: null });
+        const s = await shadowRun(h.d, undefined, P1, { now: new Date() });
+        // The batch refusal is on the run, not on every bill.
+        expect(s.preflight_ok).toBe(false);
+        expect(s.refusal).toMatch(/no ZaloPay client/);
+        expect(s.intended.map((i) => [i.bill_id, i.would_send, i.issues])).toEqual([
+          [bill1, true, []],
+          [bill2, false, ['account_unverified']],
+        ]);
+        const [runRow] = await rows<{ summary: Record<string, unknown> }>(h.d, sql`select summary from recon_runs where id = ${s.runId}`);
+        expect(runRow!.summary).toMatchObject({ would_send: 1, preflight: { ok: false } });
+        expect(h.fake.requests('balance')).toHaveLength(0);
+
+        // The operator pays the one the rail would have sent, by hand.
+        const res = await h.send('POST', `/api/payout/bills/${bill1}/mark-paid`, h.finA, { manual_reference: 'VCB-1', amount_vnd: 2400 });
+        expect(res.statusCode, res.body).toBe(201);
+        const diff = await shadowDiff(h.d, s.runId);
+        expect(diff).toMatchObject({ bills: 2, agreed: 2, raised: 0, findings_by_kind: {} });
+        expect(await count(h.d, sql`select count(*) as n from recon_lines`)).toBe(0);
       } finally {
         await h.close();
       }

@@ -23,7 +23,15 @@ export type Intended = {
   collector_id: string;
   collector_ref: string;
   amount_vnd: number | null;
-  /** Whether the API rail would have sent this bill: preflight ok and no issue on the bill. */
+  /**
+   * Whether the API rail would have sent this bill: no issue on the bill and
+   * a whole-dong amount. The batch-level preflight (wallet balance, or no
+   * client at all) is NOT folded in here: shadow mode runs in the manual
+   * pilot, where there is no ZaloPay client, and a refusal that is about the
+   * wallet says nothing about the bill. Folding it in marked every manual
+   * payment the operator correctly made as SHADOW_UNINTENDED (bridge finding
+   * 297). The batch refusal lives on the run summary and on `ShadowRun`.
+   */
   would_send: boolean;
   issues: string[];
   risk_band: string;
@@ -50,7 +58,7 @@ export async function shadowRun(
     collector_id: b.collectorId,
     collector_ref: b.collectorRef,
     amount_vnd: b.amountVnd,
-    would_send: pre.ok && b.issues.length === 0 && b.amountVnd !== null,
+    would_send: b.issues.length === 0 && b.amountVnd !== null,
     issues: b.issues,
     risk_band: b.risk.band,
   }));
