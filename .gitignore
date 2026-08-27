@@ -11,7 +11,9 @@ docs/sample_data/
 apps/console/dist/
 
 # Extracted vendor SDKs and the kit they come from: hundreds of MB, not source.
-tools/
+tools/*
+# The risk engine's media analysers are source, and the one thing under tools/ that is.
+!tools/analysers/
 docs/sdks/
 # OrbbecSDK writes this wherever it is run from.
 Log/

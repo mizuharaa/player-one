@@ -141,6 +141,27 @@
       "when": 1788420000000,
       "tag": "0016_recon_line_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1788430000000,
+      "tag": "0014_risk",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1788440000000,
+      "tag": "0015_risk_hold_set_catchup",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1788450000000,
+      "tag": "0016_risk_role_membership",
+      "breakpoints": true
     }
   ]
 }

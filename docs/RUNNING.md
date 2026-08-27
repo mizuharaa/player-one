@@ -152,6 +152,31 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 Then `http://127.0.0.1:8080/review`, which redirects to a sign-in form taking the
 same machine and operator credentials.
 
+## The risk worker
+
+```
+DATABASE_URL=... node packages/api/bin/risk-worker.ts          # one tick every PLAYERONE_RISK_INTERVAL_MS (60 s)
+DATABASE_URL=... node packages/api/bin/risk-worker.ts --once   # one tick, a report, exit 0 (1 if any subject failed)
+```
+
+| Variable | | |
+|---|---|---|
+| `PLAYERONE_RISK_ENGINE` | `1` | Advisory evaluation. `0` makes every tick a no-op that says so. |
+| `PLAYERONE_RISK_HOLD` | `0` | Whether a bill in the hold band gets a reversible hold that the payout rail refuses to pay past. Off until the false-positive report says the thresholds are right. |
+| `PLAYERONE_RISK_INTERVAL_MS` | `60000` | |
+
+The engine writes under the Postgres role `playerone_risk` (`SET LOCAL ROLE` at
+the top of every evaluation), which can insert flags and holds and nothing
+else. `0014_risk.sql` creates the role and `0016_risk_role_membership.sql`
+grants it to **the user that ran the migration**. If the API or the worker connects as a different user, grant it by
+hand once, or every evaluation fails on the same line:
+
+```
+GRANT playerone_risk TO <application user>;
+```
+
+The engine checks this at its first evaluation and names the statement to run.
+
 ## The back-office console
 
 A React 19 SPA in `apps/console`, talking to the API over `/v1` and `/api` with a
