@@ -176,10 +176,11 @@ export class RiskEngine {
     const actions = await auditOn(this.db, 'bills', bill.billId);
     findings.push(...selfDealing({ collectorCreates: creates, billActions: actions }, tuning));
 
-    // The roll-up: the collector's and the episodes' current flags, read here
-    // so the hold decision inside the transaction is on the same facts.
-    const carried = await this.carriedFlags(this.db, bill.collectorId, bill.episodeIds);
-    return this.write('bill', billId, findings, tuning, bands, tools, { billId, carried });
+    // The roll-up (the collector's and the episodes' current flags) is read
+    // inside write()'s transaction, after the advisory lock, so the hold
+    // decision is on the flags committed at that moment and not on a snapshot
+    // taken before another instance re-evaluated the collector.
+    return this.write('bill', billId, findings, tuning, bands, tools, { billId, collectorId: bill.collectorId, episodeIds: bill.episodeIds });
   }
 
   async evaluateBatch(periodStart: Date, periodEnd: Date): Promise<Evaluation> {
@@ -225,7 +226,7 @@ export class RiskEngine {
     tuning: TuningMap,
     bands: Bands,
     tools: Record<string, string>,
-    bill: { billId: string; carried: { subjectType: SubjectType; subjectId: string; flags: Flag[] }[] } | null,
+    bill: { billId: string; collectorId: string; episodeIds: readonly string[] } | null,
   ): Promise<Evaluation> {
     const now = this.o.now();
     const runId = randomUUID();
@@ -280,7 +281,8 @@ export class RiskEngine {
       if (bill === null) {
         summary = summarise(subjectType, subjectId, own, bands);
       } else {
-        const flags = rollup([{ subjectType: 'bill', subjectId, flags: own }, ...bill.carried]);
+        const carried = await this.carriedFlags(tx, bill.collectorId, bill.episodeIds);
+        const flags = rollup([{ subjectType: 'bill', subjectId, flags: own }, ...carried]);
         summary = summarise('bill', subjectId, flags, bands);
         if (summary.band === 'hold') {
           if (!this.o.holdsEnabled) {

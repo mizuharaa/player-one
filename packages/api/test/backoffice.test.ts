@@ -1724,6 +1724,9 @@ describe.skipIf(!hasDb())('the back office', () => {
     for (const name of REFUSALS) {
       expect(real.has(name), `${name} is mapped but no constraint by that name exists`).toBe(true);
     }
+    for (const name of INTERNAL) {
+      expect(real.has(name), `${name} is declared unreachable but no constraint by that name exists`).toBe(true);
+    }
 
     // The ones the API raises itself, which are not database constraints.
     for (const constraint of [

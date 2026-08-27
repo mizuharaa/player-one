@@ -783,7 +783,7 @@ describe.skipIf(!hasDb())('the risk engine', () => {
       const lift = await fin.inject({ method: 'POST', url: '/api/risk/signals/PROV.SYNTHETIC_HEURISTIC/retune', payload: { threshold_version: 'v2', severity: 'hold', points: 60, reason: 'trying to lift the cap from the API' } });
       expect(lift.statusCode).toBe(409);
       expect(lift.json().constraint).toBe('risk_signals_synthetic_cap_check');
-      await expect(retuneSignal(d, { machine: { kind: 'machine', uploadDeviceId: w.machine, uploadCentreId: w.centre }, operator: { kind: 'operator', operatorId: w.finance, uploadCentreId: w.centre } }, { signalId: 'BAND.HOLD', thresholdVersion: 'v2', points: 80, reason: 'reusing a version string' })).rejects.toThrow();
+      await violates('risk_signals_pkey', retuneSignal(d, { machine: { kind: 'machine', uploadDeviceId: w.machine, uploadCentreId: w.centre }, operator: { kind: 'operator', operatorId: w.finance, uploadCentreId: w.centre } }, { signalId: 'BAND.HOLD', thresholdVersion: 'v2', points: 80, reason: 'reusing a version string' }));
       expect((await fin.inject({ method: 'POST', url: '/api/risk/signals/NOPE.X/retune', payload: retune })).statusCode).toBe(404);
       await Promise.all([ops.close(), fin.close()]);
     });

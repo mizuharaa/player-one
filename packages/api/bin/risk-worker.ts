@@ -26,7 +26,7 @@ const intervalMs = Number(env['PLAYERONE_RISK_INTERVAL_MS'] ?? 60_000);
 const engine = new RiskEngine(db, { mediaRoot: config.mediaRoot, holdsEnabled: config.holdsEnabled });
 const line = (report: TickResult): string => {
   const total = report.evaluated.episodes + report.evaluated.collectors + report.evaluated.bills;
-  return `${report.finishedAt} risk evaluated ${total} (episodes ${report.evaluated.episodes}, collectors ${report.evaluated.collectors}, bills ${report.evaluated.bills}), skipped ${report.skipped}, failed ${report.failed.length}`;
+  return `${report.finishedAt} risk${config.engineEnabled ? '' : ' (engine off)'} evaluated ${total} (episodes ${report.evaluated.episodes}, collectors ${report.evaluated.collectors}, bills ${report.evaluated.bills}), skipped ${report.skipped}, failed ${report.failed.length}`;
 };
 
 if (argv.includes('--once')) {
