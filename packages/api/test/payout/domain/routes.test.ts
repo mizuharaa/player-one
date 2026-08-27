@@ -88,6 +88,7 @@ describe.skipIf(!hasDb())('the payout routes', () => {
         [`/api/payout/bills/${bill1}/pay`, undefined],
         [`/api/payout/bills/${bill1}/mark-paid`, { manual_reference: 'VCB-1', amount_vnd: 2400 }],
         [`/api/payout/attempts/${attempt}/resolve`, { outcome: 'failed', reason: 'x' }],
+        [`/api/payout/batches/${P1.start.toISOString()}/run`, undefined],
       ] as const) {
         const res = await h.send('POST', url, h.opA, payload);
         expect(res.statusCode, `${url}: ${res.body}`).toBe(403);
@@ -647,6 +648,144 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       const ok = await h2.send('POST', `/api/payout/bills/${again.bill2}/pay`, h2.finA);
       expect(ok.statusCode, ok.body).toBe(201);
       expect(stub.calls.transferFund).toBe(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+
+  describe('the batch run, as one request', () => {
+    const url = `/api/payout/batches/${P1.start.toISOString()}/run`;
+
+    it('is refused in manual mode', async () => {
+      const h = await harness();
+      const res = await h.send('POST', url, h.finA);
+      expect(res.statusCode).toBe(409);
+      expect(res.json().constraint).toBe('payout_mode_manual');
+    });
+
+    it('preflights, pays in order, reports per bill, audits the run, and sends nothing new on a second run', async () => {
+      const stub = new StubZaloPay();
+      stub.transfer = (i) => ({ kind: 'accepted', zlpOrderId: `zlp-${i.partnerOrderId}`, status: 1 });
+      stub.balanceVnd = 3_780;
+      const pooled = await open(dbUrl(), { max: 8 });
+      try {
+        const h = await harness(apiMode(stub), pooled);
+        const { bill1, bill2 } = await seedBills(h.d, h.ids);
+        await seedAccount(h.d, h.ids, 1);
+        await seedAccount(h.d, h.ids, 2);
+        // A third bill the run must report and skip: no account.
+        const noAccount = await seedBill(h.d, h.ids, 1, { start: new Date(P1.start.getTime() + 1), end: P1.end }, ['1200.0000'], '1200.0000');
+
+        const res = await h.send('POST', url, h.finA);
+        expect(res.statusCode, res.body).toBe(200);
+        const body = res.json();
+        expect(body).toMatchObject({ mode: 'api', stopped_at: null, tickets: [] });
+        expect(body.preflight).toMatchObject({ ok: true, bills: 3, payable: 2, total_vnd: 3_600, balance_vnd: 3_780 });
+        expect(body.sent).toEqual([
+          { bill_id: bill1, attempt_id: expect.any(String), partner_order_id: `PO-${bill1}-1`, status: 'succeeded', result: 'ACCEPTED' },
+          { bill_id: bill2, attempt_id: expect.any(String), partner_order_id: `PO-${bill2}-1`, status: 'succeeded', result: 'ACCEPTED' },
+        ]);
+        expect(body.refused).toEqual([{ bill_id: noAccount, collector_ref: 'c-0001', constraint: 'payout_account_missing' }]);
+        expect(stub.transfers.map((t) => t.partnerOrderId)).toEqual([`PO-${bill1}-1`, `PO-${bill2}-1`]);
+        const audits = await rows<{ target_id: string; after: Record<string, unknown> }>(h.d, sql`select target_id, after from audit_events where action = 'payout.batch_run'`);
+        expect(audits).toHaveLength(1);
+        expect(audits[0]!.after).toMatchObject({ preflight_ok: true, stopped_at: null });
+        expect((audits[0]!.after['sent'] as unknown[]).length).toBe(2);
+
+        // Twice: nothing payable, nothing sent, no ticket, and the stub's count is unchanged.
+        const again = await h.send('POST', url, h.finA);
+        expect(again.statusCode, again.body).toBe(200);
+        expect(again.json()).toMatchObject({ sent: [], stopped_at: null, tickets: [] });
+        expect(again.json().preflight).toMatchObject({ ok: false, payable: 0 });
+        expect((again.json().refused as { bill_id: string; constraint: string }[]).map((r) => r.constraint).sort()).toEqual([
+          'payout_account_missing',
+          'payout_already_paid',
+          'payout_already_paid',
+        ]);
+        expect(stub.calls.transferFund).toBe(2);
+        expect(await countOf(h.d, sql`select count(*) as n from payout_attempts`)).toBe(2);
+        await h.app.close();
+      } finally {
+        await pooled.close();
+      }
+    });
+
+    it('refuses the whole batch on a short balance, sends nothing, and reports the ticket', async () => {
+      const stub = new StubZaloPay();
+      stub.balanceVnd = 3_000;
+      const pooled = await open(dbUrl(), { max: 8 });
+      try {
+        const h = await harness(apiMode(stub), pooled);
+        await seedBills(h.d, h.ids);
+        await seedAccount(h.d, h.ids, 1);
+        await seedAccount(h.d, h.ids, 2);
+        const res = await h.send('POST', url, h.finA);
+        expect(res.statusCode, res.body).toBe(200);
+        expect(res.json()).toMatchObject({ sent: [], refused: [], stopped_at: null });
+        expect(res.json().preflight).toMatchObject({ ok: false, shortfall_vnd: 780 });
+        expect((res.json().tickets as { kind: string }[]).map((t) => t.kind)).toEqual(['TICKET.BATCH_REFUSED']);
+        expect(stub.calls.transferFund).toBe(0);
+        await h.app.close();
+      } finally {
+        await pooled.close();
+      }
+    });
+
+    it('stops at the first failure and says where', async () => {
+      const stub = new StubZaloPay();
+      stub.transfer = { kind: 'rejected', subCode: -107, retryable: false };
+      const pooled = await open(dbUrl(), { max: 8 });
+      try {
+        const h = await harness(apiMode(stub), pooled);
+        const { bill1, bill2 } = await seedBills(h.d, h.ids);
+        await seedAccount(h.d, h.ids, 1);
+        await seedAccount(h.d, h.ids, 2);
+        const res = await h.send('POST', url, h.finA);
+        expect(res.statusCode, res.body).toBe(200);
+        expect(res.json().sent).toEqual([expect.objectContaining({ bill_id: bill1, status: 'failed', result: 'REJECTED' })]);
+        expect(res.json().stopped_at).toBe(bill1);
+        expect(res.json().refused).toEqual([{ bill_id: bill1, collector_ref: 'c-0001', constraint: 'payout_transfer_rejected' }]);
+        expect(stub.calls.transferFund).toBe(1);
+        expect(await countOf(h.d, sql`select count(*) as n from payout_attempts where bill_id = ${bill2}`)).toBe(0);
+        await h.app.close();
+      } finally {
+        await pooled.close();
+      }
+    });
+
+    it('answers 409 while a run for the period is in progress', async () => {
+      const stub = new StubZaloPay();
+      const pooled = await open(dbUrl(), { max: 8 });
+      const other = await open(dbUrl(), { max: 1 });
+      try {
+        const h = await harness(apiMode(stub), pooled);
+        await seedBills(h.d, h.ids);
+        await seedAccount(h.d, h.ids, 1);
+        const key = `payout_batch_run:${P1.start.toISOString()}/${new Date(P1.start.getTime() + 7 * 24 * 60 * 60_000).toISOString()}`;
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const holding = other.transaction(async (tx) => {
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${key}))`);
+          await held;
+        });
+        await new Promise((r) => setTimeout(r, 200));
+        const busy = await h.send('POST', url, h.finA);
+        expect(busy.statusCode).toBe(409);
+        expect(busy.json().constraint).toBe('payout_batch_running');
+        expect(stub.calls.transferFund).toBe(0);
+        expect(await countOf(h.d, sql`select count(*) as n from audit_events where action = 'payout.batch_run'`)).toBe(0);
+        release();
+        await holding;
+        const free = await h.send('POST', url, h.finA);
+        expect(free.statusCode, free.body).toBe(200);
+        expect(free.json().sent).toHaveLength(1);
+        await h.app.close();
+      } finally {
+        await other.close();
+        await pooled.close();
+      }
     });
   });
 

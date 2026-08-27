@@ -237,6 +237,8 @@ describe.skipIf(!hasDb())('the payout workers', () => {
       const tickets = await rows<{ kind: string; evidence: Record<string, unknown> }>(d, sql`select kind, evidence from payout_events`);
       expect(tickets.map((t) => t.kind)).toEqual(['TICKET.BATCH_REFUSED']);
       expect(tickets[0]!.evidence).toMatchObject({ balance_vnd: 3_779, required_vnd: 3_780 });
+      expect(run.tickets.map((t) => t.kind)).toEqual(['TICKET.BATCH_REFUSED']);
+      expect(run.refused).toEqual([]);
     });
 
     it('pays sequentially in collector order when the balance covers it, and skips the bills with issues', async () => {
@@ -258,6 +260,9 @@ describe.skipIf(!hasDb())('the payout workers', () => {
       const again = await runBatch(d, stub, finA(ids), P1, { pauseMs: 0 });
       expect(again.preflight.payable).toBe(0);
       expect(again.sent).toEqual([]);
+      // Nothing to refuse is not a refusal: no ticket for a period already paid.
+      expect(again.tickets).toEqual([]);
+      expect(again.refused.map((r) => r.constraint)).toEqual(['payout_already_paid', 'payout_already_paid']);
       expect(stub.calls.transferFund).toBe(2);
     });
 

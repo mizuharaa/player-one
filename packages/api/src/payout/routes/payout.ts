@@ -13,7 +13,7 @@ import { buildExport, type ExportRow } from '../domain/export.ts';
 import { maskPhone } from '../domain/names.ts';
 import { IllegalTransition } from '../domain/state.ts';
 import { verifyDeclaration } from '../domain/verify.ts';
-import { loadBatch, payBill, preflight, refusalFor, type BatchBill } from '../worker/batch.ts';
+import { loadBatch, payBill, preflight, refusalFor, runBatch, type BatchBill, type BatchRun } from '../worker/batch.ts';
 
 /**
  * The payout routes (Agent B brief, BUILD 4). Every mutation goes through
@@ -124,6 +124,9 @@ export const PAYOUT_API_REFUSALS = new Set([
   'payout_accounts_id_reused',
   'payout_attempt_not_resolvable',
   'payout_bill_period_mismatch',
+  'payout_batch_running',
+  'payout_transfer_rejected',
+  'payout_bill_not_payable',
 ]);
 
 export function registerPayout(
@@ -567,6 +570,83 @@ export function registerPayout(
       mode,
       /** The ones an operator has to look at, by name and with why. */
       exceptions: billsDetail.filter((b) => b.issues.length > 0).map(shapeBill),
+    });
+  });
+
+  /**
+   * The batch, as one request (bridge review F-46: the console never loops
+   * pay in the browser). Preflight over the whole period, refuse all if the
+   * balance is short, then one transfer at a time, stopping at the first
+   * failure — `runBatch`, inside the request, and its report rendered.
+   *
+   * One run per period at a time. A transaction-scoped advisory lock keyed on
+   * the period is taken inside the transaction that audits the run and is
+   * held until the run's report is written; a second caller gets `false` and
+   * 409 `payout_batch_running`, immediately, rather than queueing behind the
+   * first and sending nothing an hour later. Transaction-scoped rather than
+   * session-scoped because the pool may hand the release to another
+   * connection. That holder is one connection for the run's duration while
+   * `payBill` opens its own, so the pool must be at least two —
+   * `serve.ts` opens ten. A pool of one would wait forever here.
+   *
+   * Safe to call twice: the second run finds nothing payable and sends
+   * nothing, and `payout_attempts_guard` would refuse a second attempt if it
+   * did. Tested against the stub's transfer count.
+   */
+  app.post('/api/payout/batches/:period/run', finance, async (req, reply) => {
+    const period = periodOf(req);
+    if (typeof period === 'string') return reply.code(422).send({ error: period });
+    if (mode !== 'api') return refused(reply, 'payout_mode_manual');
+
+    const key = `payout_batch_run:${period.start.toISOString()}/${period.end.toISOString()}`;
+    const report: { run: BatchRun | null; running: boolean } = { run: null, running: false };
+    const after: Record<string, unknown> = {};
+
+    await mutate(
+      db,
+      actorOf(req),
+      { action: 'payout.batch_run', targetTable: 'bills', targetId: key, after },
+      async (tx) => {
+        const [lock] = (await tx.execute(
+          sql`select pg_try_advisory_xact_lock(hashtext(${key})) as taken`,
+        )) as unknown as { taken: boolean }[];
+        if (lock?.taken !== true) {
+          report.running = true;
+          return undefined;
+        }
+        const run = await runBatch(db, client, actorOf(req), period, batchOptions);
+        report.run = run;
+        Object.assign(after, {
+          period_start: period.start.toISOString(),
+          period_end: period.end.toISOString(),
+          preflight_ok: run.preflight.ok,
+          refusal: run.preflight.refusal,
+          total_vnd: run.preflight.total_vnd,
+          balance_vnd: run.preflight.balance_vnd,
+          sent: run.sent.map((s) => ({ bill_id: s.billId, attempt_id: s.attemptId, status: s.status })),
+          refused: run.refused.map((r) => ({ bill_id: r.billId, constraint: r.constraint })),
+          stopped_at: run.stopped_at?.billId ?? null,
+        });
+        return run;
+      },
+    );
+    if (report.running) return refused(reply, 'payout_batch_running');
+    const run = report.run!;
+    return reply.send({
+      period_start: period.start.toISOString(),
+      period_end: period.end.toISOString(),
+      mode,
+      preflight: run.preflight,
+      sent: run.sent.map((s) => ({
+        bill_id: s.billId,
+        attempt_id: s.attemptId,
+        partner_order_id: s.partnerOrderId,
+        status: s.status,
+        result: s.result,
+      })),
+      refused: run.refused.map((r) => ({ bill_id: r.billId, collector_ref: r.collectorRef, constraint: r.constraint })),
+      stopped_at: run.stopped_at?.billId ?? null,
+      tickets: run.tickets.map((t) => ({ kind: t.kind, bill_id: t.billId, evidence: t.evidence, occurred_at: t.occurredAt })),
     });
   });
 
