@@ -33,6 +33,7 @@ function initialLocale(): Locale {
    */
   for (const tag of navigator.languages ?? []) {
     if (tag.toLowerCase().startsWith('zh')) return 'zh';
+    if (tag.toLowerCase().startsWith('vi')) return 'vi';
     if (tag.toLowerCase().startsWith('en')) return 'en';
   }
   return DEFAULT_LOCALE;
