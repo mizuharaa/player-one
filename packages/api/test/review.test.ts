@@ -513,16 +513,12 @@ describe.skipIf(!hasDb())('the review lane', () => {
       });
       expect(again.statusCode, again.body).toBe(200);
       expect(again.json().episodes[0].outcome).toBe('mismatch');
-      // The fixture depends on the catalogue's own routing decision: a local
-      // CHECKSUM-MISMATCH is flagged and still judgeable, because blocking is
-      // reserved for "a reviewer cannot judge this" (catalogue.ts). UPL-04's
-      // "mismatch blocks review" is about the *cloud* checksum, which is QR-02
-      // and is not built. If that decision is ever flipped to blocking, this
-      // assertion is where the redelivery fixture has to change.
-      const blocking = (await h.d.execute(sql`
-        select blocks_review from defect_codes where code = 'CHECKSUM-MISMATCH'
-      `)) as unknown as { blocks_review: boolean }[];
-      expect(blocking[0]!.blocks_review).toBe(false);
+      // A redelivery with different bytes is CHECKSUM-MISMATCH, and the ingest
+      // spec (§6) quarantines it: it does not enter the queue until somebody
+      // clears it, and no clearing route exists yet. This test is about the
+      // lane logic after that, so the block is lifted here, in the test, the
+      // way the cloud leg's own redelivery test does.
+      await h.d.execute(sql`update defect_codes set blocks_review = false where code = 'CHECKSUM-MISMATCH'`);
 
       const routed = await h.send('POST', `/api/review/route/${episodeId}`, { priority: 7 });
       expect(routed.statusCode, routed.body).toBe(200);
@@ -631,6 +627,9 @@ describe.skipIf(!hasDb())('the review lane', () => {
       });
       expect(again.statusCode, again.body).toBe(200);
       expect(again.json().episodes[0].outcome).toBe('mismatch');
+      // Quarantined by the spec's rule until cleared (see the test above); the
+      // lane it is born in is what this test checks.
+      await h.d.execute(sql`update defect_codes set blocks_review = false where code = 'CHECKSUM-MISMATCH'`);
 
       const ordinary = await h.send('GET', '/api/review/next', undefined, h.headers2);
       expect(ordinary.statusCode, ordinary.body).toBe(204);

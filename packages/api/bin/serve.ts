@@ -16,7 +16,8 @@
 
 import { env, exit } from 'node:process';
 import { open, redact } from '@playerone/store';
-import { buildApi, s3StoreFromEnv } from '../src/index.ts';
+import { payoutOptionsFromEnv, buildApi, s3StoreFromEnv } from '../src/index.ts';
+import { zaloPayClientFromEnv } from '../src/payout/zalopay/client.ts';
 
 const required = (name: string): string => {
   const value = env[name];
@@ -104,6 +105,12 @@ const app = buildApi({
    * Vietnamese-collected video across the border, so it is a deliberate act.
    */
   reviewerMediaEnabled,
+  /**
+   * The payout rail's client, from PLAYERONE_ZALOPAY_*. Null in sandbox with
+   * no credentials — verification then stores `unverified` and pay refuses
+   * `payout_no_client`; production without every credential throws by name.
+   */
+  payout: { ...payoutOptionsFromEnv(env), client: zaloPayClientFromEnv(env) ?? undefined },
 });
 
 const shutdown = async (signal: string) => {
