@@ -106,3 +106,18 @@ CREATE CONSTRAINT TRIGGER bill_lines_total_matches
   AFTER INSERT OR UPDATE OR DELETE ON bill_lines
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION bills_total_matches_lines();
+--> statement-breakpoint
+-- A bill line is evidence and is never removed or moved. The generator writes
+-- lines once; without this, deleting or re-pointing the last line of an issued
+-- bill leaves its frozen total standing over nothing, and the guards above,
+-- which read "issued" as "has a line", stop protecting it (bridge F-28).
+CREATE FUNCTION bill_lines_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'bill_lines_immutable: a bill line is never % once written', lower(TG_OP)
+    USING ERRCODE = '23514', CONSTRAINT = 'bill_lines_immutable';
+END
+$$;
+--> statement-breakpoint
+CREATE TRIGGER bill_lines_immutable
+  BEFORE UPDATE OR DELETE ON bill_lines
+  FOR EACH ROW EXECUTE FUNCTION bill_lines_immutable();

@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LightMyRequestResponse } from 'fastify';
 import { open, schema } from '@playerone/store';
-import { API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
+import { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
 import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
@@ -1683,13 +1683,26 @@ describe.skipIf(!hasDb())('the back office', () => {
       'bills_issued_immutable',
       'bill_lines_owner_guard',
       'bills_total_matches_lines',
+      'bill_lines_immutable',
       'upload_batches_verify_needs_episodes',
       'upload_batches_verify_needs_verified_episodes',
+      // Raised by the payout lane's tamper guards (0012/0013): append-only,
+      // write-once evidence, computed identity, sealed exports. No route can
+      // reach them; raw SQL is the only caller, and schema.test.ts proves each.
+      'payout_attempts_append_only',
+      'payout_attempts_evidence_immutable',
+      'payout_attempts_identity_computed',
+      'payout_attempts_identity_immutable',
+      'payout_attempts_initial_status',
+      'payout_export_rows_sealed',
+      'payout_exports_complete',
     ]);
 
     for (const name of [...declared.map((d) => d.name), ...raised]) {
       expect(
-        REFUSALS.has(name) || INTERNAL.has(name),
+        // The payout lane keeps its own refusal list; its sentences are the
+        // payout console's keys (bo.refused.*), added with that screen.
+        REFUSALS.has(name) || PAYOUT_REFUSALS.has(name) || PAYOUT_API_REFUSALS.has(name) || INTERNAL.has(name),
         `${name} is neither a mapped refusal nor declared unreachable — a 500 with no sentence`,
       ).toBe(true);
     }

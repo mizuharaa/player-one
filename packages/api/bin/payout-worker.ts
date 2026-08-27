@@ -2,6 +2,7 @@ import { exit } from 'node:process';
 import { open, redact } from '@playerone/store';
 import { payoutOptionsFromEnv, assertPayoutBootInvariants } from '../src/payout/domain/config.ts';
 import type { ZaloPayClient } from '../src/payout/domain/client-contract.ts';
+import { zaloPayClientFromEnv } from '../src/payout/zalopay/client.ts';
 import { runPoller } from '../src/payout/worker/run.ts';
 
 /**
@@ -31,9 +32,12 @@ assertPayoutBootInvariants(options);
  * `packages/api/src/payout/zalopay/client.ts` once it lands. Left as an
  * explicit refusal so the gap is a startup error, not a silent no-op.
  */
-const client: ZaloPayClient | null = null;
+// Built from PLAYERONE_ZALOPAY_* (see zaloPayClientFromEnv): null means no
+// credentials in sandbox, which is not a rail to poll; anything missing in
+// production throws by name. Bridge F-39.
+const client: ZaloPayClient | null = zaloPayClientFromEnv(env);
 if (client === null) {
-  console.error('payout-worker: no ZaloPay client is wired; see packages/api/bin/payout-worker.ts');
+  console.error('payout-worker: no ZaloPay credentials (PLAYERONE_ZALOPAY_APP_ID/PAYMENT_ID/KEY1/PUBLIC_KEY); nothing to poll');
   exit(2);
 }
 

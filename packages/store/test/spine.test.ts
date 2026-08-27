@@ -604,6 +604,30 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       );
     });
 
+    it('never lets a line leave an issued bill', async () => {
+      // Bridge F-28. Deleting or re-pointing the last line would leave the
+      // frozen total standing over nothing, and the issued-bill guard reads
+      // "issued" as "has a line". A line is evidence: written once.
+      const { settlementId, collector } = await seedSettlement();
+      const d = await db();
+      const bill = uid();
+      const other = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${bill}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
+                 (${other}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`);
+      await violates(
+        'bill_lines_immutable',
+        d.execute(sql`delete from bill_lines where settlement_id = ${settlementId};`),
+      );
+      await violates(
+        'bill_lines_immutable',
+        d.execute(sql`update bill_lines set bill_id = ${other} where settlement_id = ${settlementId};`),
+      );
+    });
+
     it('refuses a total its lines do not add up to', async () => {
       // 0011, deferred to commit: the total is the sum of the lines. The bill
       // may be written before its lines (the generator does), so the check runs
@@ -1008,16 +1032,16 @@ describe.skipIf(!hasDb())('the catalogues', () => {
     expect(blocking).not.toContain('TIMING-ESTIMATED');
 
     /**
-     * CHECKSUM-MISMATCH is permissive, deliberately (integration decision,
-     * 2026-08-26 — the reasoning is on the code in catalogue.ts). The cloud leg
-     * had flipped it blocking on "which of two deliveries is real"; the review
-     * queue answers that per row (`episode_reviews.ingest_id`, latest ingest
-     * only), and blocking a redelivery with no clearing route made every
-     * redelivery unpayable. The cloud read-back failing is what blocks, via
-     * `verification_state = 'failed'` in review.ts. If this flips again, it
-     * flips deliberately and this line is what says so.
+     * CHECKSUM-MISMATCH blocks. The ingest spec's defect table (§6) says
+     * quarantine — "does not enter the review queue, does not generate
+     * settlement, is never deleted" — because the bytes of one session changed
+     * between two deliveries and which one is real is an open question. The
+     * review-queue slice had tested the opposite; the integration follows the
+     * spec (bridge F-36, rebutted and withdrawn). Until a per-episode clearing
+     * route exists, a mismatched redelivery is unpayable — escalated, not
+     * decided here.
      */
-    expect(blocking).not.toContain('CHECKSUM-MISMATCH');
+    expect(blocking).toContain('CHECKSUM-MISMATCH');
 
     // Open question for the product owner, seeded permissive. If this flips,
     // it flips deliberately and this line is what says so.

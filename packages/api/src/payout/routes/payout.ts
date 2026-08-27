@@ -13,7 +13,7 @@ import { buildExport, type ExportRow } from '../domain/export.ts';
 import { maskPhone } from '../domain/names.ts';
 import { IllegalTransition } from '../domain/state.ts';
 import { verifyDeclaration } from '../domain/verify.ts';
-import { loadBatch, payBill, preflight, type BatchBill } from '../worker/batch.ts';
+import { loadBatch, payBill, preflight, refusalFor, type BatchBill } from '../worker/batch.ts';
 
 /**
  * The payout routes (Agent B brief, BUILD 4). Every mutation goes through
@@ -93,6 +93,7 @@ export const PAYOUT_REFUSALS = new Set([
   'payout_attempts_amount_check',
   'payout_attempts_account_owner',
   'payout_attempts_account_current',
+  'payout_attempts_account_unverified',
   'payout_attempts_bank_ceiling',
   'payout_attempts_bank_minimum',
   'payout_attempts_transition_check',
@@ -261,10 +262,57 @@ export function registerPayout(
     };
   };
 
+  type AccountRow = typeof schema.payoutAccounts.$inferSelect;
+  type AccountInput = z.infer<typeof AccountBody>;
+
+  /** Every stable field the table stores, compared as stored. */
+  const sameDeclaration = (held: AccountRow, b: AccountInput, last4: string | null): boolean =>
+    held.collectorId === b.collector_id &&
+    held.method === b.method &&
+    held.phone === (b.phone ?? null) &&
+    held.bankCode === (b.bank_code ?? null) &&
+    held.accountNoLast4 === last4 &&
+    held.declaredName === b.declared_name;
+
+  const replayed = async (held: AccountRow) => {
+    const redirect = await redirectFor(held.id);
+    return {
+      id: held.id,
+      replayed: true,
+      method: held.method,
+      verify_status: held.verifyStatus,
+      declared_name: held.declaredName,
+      verified_name: held.verifiedName,
+      account_no_last4: held.accountNoLast4,
+      phone_masked: maskPhone(held.phone),
+      onboarding_url: redirect.onboarding_url,
+      reform_url: redirect.reform_url,
+      is_current: held.isCurrent,
+    };
+  };
+
   app.post('/api/payout/accounts', finance, async (req, reply) => {
     const body = AccountBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
     const b = body.data;
+    const last4 = b.account_no === undefined ? null : b.account_no.slice(-4);
+
+    /**
+     * The id decides first, and it decides BEFORE ZaloPay is asked (bridge
+     * review F-40). A replay is the same destination under the same id —
+     * every stable field this table stores has to agree, not just the
+     * collector and the method — and costs nothing. A different phone, bank
+     * code, account number or holder name under a used id is not a retry, it
+     * is a correction wearing a used id, and answering "replayed" would tell
+     * the caller their corrected destination was stored when payouts still
+     * point at the old one. It is refused, and ZaloPay is never contacted
+     * about a destination that will not be stored.
+     */
+    const existing = await db.select().from(schema.payoutAccounts).where(eq(schema.payoutAccounts.id, b.id));
+    if (existing[0] !== undefined) {
+      if (!sameDeclaration(existing[0], b, last4)) return refused(reply, 'payout_accounts_id_reused');
+      return reply.code(200).send(await replayed(existing[0]));
+    }
 
     /**
      * Verify BEFORE the transaction, so the outcome is written once with the
@@ -278,7 +326,6 @@ export function registerPayout(
           ? { method: 'BANK_ACCOUNT', bankCode: b.bank_code!, accountNo: b.account_no!, accountHolderName: b.declared_name }
           : { method: 'BANK_CARD', bankCode: b.bank_code!, cardNo: b.account_no!, cardHolderName: b.declared_name };
     const outcome = await verifyDeclaration(client, b.declared_name, receiver);
-    const last4 = b.account_no === undefined ? null : b.account_no.slice(-4);
     const verifiedAt = outcome.status === 'unverified' ? null : now();
 
     /** What is audited: no full account number, no full phone. Rule 1 of §2.5. */
@@ -324,7 +371,8 @@ export function registerPayout(
               accountNoLast4: last4,
               declaredName: b.declared_name,
               verifiedName: outcome.verifiedName,
-              mUId: outcome.mUId,
+              /** Wallet-only by the contract; a client answering one on a bank route is ignored, not stored. */
+              mUId: b.method === 'WALLET' ? outcome.mUId : null,
               verifyStatus: outcome.status,
               verifiedAt,
               isCurrent: true,
@@ -354,28 +402,14 @@ export function registerPayout(
     );
     if (!attempt.ok) return refused(reply, attempt.constraint);
     if (attempt.value === undefined) {
-      /** A replay is the same declaration; anything else under a used id is refused. */
-      const [held] = await db
-        .select()
-        .from(schema.payoutAccounts)
-        .where(eq(schema.payoutAccounts.id, b.id));
-      if (held === undefined || held.collectorId !== b.collector_id || held.method !== b.method) {
-        return refused(reply, 'payout_accounts_id_reused');
-      }
-      const redirect = await redirectFor(held.id);
-      return reply.code(200).send({
-        id: b.id,
-        replayed: true,
-        method: held.method,
-        verify_status: held.verifyStatus,
-        declared_name: held.declaredName,
-        verified_name: held.verifiedName,
-        account_no_last4: held.accountNoLast4,
-        phone_masked: maskPhone(held.phone),
-        onboarding_url: redirect.onboarding_url,
-        reform_url: redirect.reform_url,
-        is_current: held.isCurrent,
-      });
+      /**
+       * Nothing was written because the id landed between the read above and
+       * the transaction — the same request twice, at once. Same rule as
+       * above: the same declaration is a replay, anything else is refused.
+       */
+      const [held] = await db.select().from(schema.payoutAccounts).where(eq(schema.payoutAccounts.id, b.id));
+      if (held === undefined || !sameDeclaration(held, b, last4)) return refused(reply, 'payout_accounts_id_reused');
+      return reply.code(200).send(await replayed(held));
     }
     /**
      * The shape the collector app (Agent E) reads: the status, both names side
@@ -580,11 +614,22 @@ export function registerPayout(
 
     const [bill] = await db.select().from(schema.bills).where(eq(schema.bills.id, id));
     if (bill === undefined) return reply.code(404).send({ error: 'no such bill' });
-    const [account] = await db
-      .select({ id: schema.payoutAccounts.id })
-      .from(schema.payoutAccounts)
-      .where(sql`${schema.payoutAccounts.collectorId} = ${bill.collectorId} and ${schema.payoutAccounts.isCurrent}`);
-    if (account === undefined) return refused(reply, 'payout_account_missing');
+
+    /**
+     * The same gate as the API rail, immediately before the transaction
+     * (bridge review F-41). This is the DEFAULT pilot rail, so it is the one
+     * that can actually record an unverified or name-mismatched destination,
+     * a held bill or an over-cap bill as paid — unless it asks the same
+     * questions `payBill` asks. `refusalFor` is those questions, in one
+     * place; the trigger asks the verification one again in SQL.
+     */
+    const [loaded] = (
+      await loadBatch(db, { start: bill.periodStart, end: new Date(bill.periodStart.getTime() + 1) }, batchOptions)
+    ).filter((x) => x.id === id);
+    if (loaded === undefined) return reply.code(404).send({ error: 'no such bill' });
+    const gate = await refusalFor(db, loaded, batchOptions);
+    if (gate !== null) return refused(reply, gate);
+    const account = loaded.account!;
 
     const attemptId = randomUUID();
     const settledAt = now();

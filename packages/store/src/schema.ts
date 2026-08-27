@@ -1544,7 +1544,8 @@ export const payoutAccounts = pgTable(
  * (0012) as `'PO-' || bill_id || '-' || attempt_seq`; the application never
  * supplies it. The same trigger computes `attempt_seq`, refuses a new attempt
  * while the last one is not `failed`, refuses an amount that is not the bill's
- * whole-dong total, refuses a bank transfer outside ZaloPay's limits, holds
+ * whole-dong total, refuses an account that ZaloPay has not verified (in
+ * either mode), refuses a bank transfer outside ZaloPay's limits, holds
  * the state machine's edges, writes evidence once, and refuses DELETE.
  * `payout_attempts_pending_resolved` keeps `pending_zlp` for an operator with
  * a typed reason, and `payout_attempts_by_finance` (0013) keeps every INSERT
