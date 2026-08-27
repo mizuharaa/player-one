@@ -255,6 +255,22 @@ episode with no session has no collector and no task, so there is nobody to pay
 and no price to pay them at; those stay in the counter's quarantine queue until a
 human attaches them.
 
+One blocking defect can be answered by a person: `CHECKSUM-MISMATCH`, which is
+raised when a redelivery's bytes differ from the first delivery's and which the
+ingest spec (§6) keeps out of the queue because *which* delivery is real is an
+open question. `POST /episodes/:id/clear` is where an operator answers it, with
+a mandatory reason and the `ingest_id` of the delivery they judged authoritative.
+The answer is a row in `episode_clearings` (who, when, why, from which delivery
+and state; append-only, tested in raw SQL) and a move of
+`episodes.latest_ingest_id` onto the named delivery. Nothing else changes — the
+other delivery's ingest, files and defects stay on record (Rule 6). The
+eligibility clause above then ignores a `CHECKSUM-MISMATCH` on an ingest a
+clearing names; naming the earlier delivery needs no exception because it never
+carried the defect. A third delivery with yet other bytes is a new conflict and
+blocks again. A clear is refused when another delivery of the episode already
+has a pass or partial-pass review: choosing differently after a payment is the
+dispute path, not a clear.
+
 ## The three verdicts
 
 `good` pays the whole **measured** duration — not the video's length. Measured

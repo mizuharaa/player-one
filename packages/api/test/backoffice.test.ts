@@ -1696,6 +1696,10 @@ describe.skipIf(!hasDb())('the back office', () => {
       'payout_attempts_initial_status',
       'payout_export_rows_sealed',
       'payout_exports_complete',
+      // Raised by 0016's append-only guard on episode_clearings. No route
+      // updates or deletes a clearing; raw SQL is the only caller, and
+      // clearing.test.ts proves it fires.
+      'episode_clearings_append_only',
     ]);
 
     for (const name of [...declared.map((d) => d.name), ...raised]) {

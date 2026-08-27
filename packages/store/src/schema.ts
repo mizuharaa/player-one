@@ -175,6 +175,8 @@ export const episodeIngests = pgTable(
      * episode (ING-17).
      */
     unique('episode_ingests_review_target_key').on(t.episodeId, t.ingestId, t.measuredDurationS),
+    /** The target of `episode_clearings_delivery_fk`: a clear must name a delivery of its own episode. */
+    unique('episode_ingests_delivery_key').on(t.episodeId, t.ingestId),
     check('episode_ingests_state_check', sql`${t.state} in ('ok', 'flagged', 'quarantined')`),
     check(
       'episode_ingests_timing_source_check',
@@ -254,6 +256,52 @@ export const episodeDefects = pgTable(
   (t) => [
     index('episode_defects_ingest_idx').on(t.ingestId),
     check('episode_defects_severity_check', sql`${t.severity} in ('info', 'flag', 'quarantine')`),
+  ],
+);
+
+/**
+ * A person clearing ONE episode out of a CHECKSUM-MISMATCH quarantine by
+ * naming which delivery is the authoritative one. Migration 0016 says why it
+ * is shaped this way; the short version is Rule 6 — nothing modifies an
+ * earlier delivery's record, so the answer to "which bytes are real" is a new
+ * row here and a move of `episodes.latest_ingest_id`, and nothing else.
+ *
+ * Append-only: `episode_clearings_append_only` (0016) refuses UPDATE and
+ * DELETE. A second clear is a second row.
+ */
+export const episodeClearings = pgTable(
+  'episode_clearings',
+  {
+    id: uuid('id').primaryKey(),
+    episodeId: uuid('episode_id')
+      .notNull()
+      .references(() => episodes.episodeId),
+    /** The delivery named as authoritative. Bound to this episode by the composite FK below. */
+    ingestId: uuid('ingest_id').notNull(),
+    /** What `latest_ingest_id` was when the clear was made: the state cleared from. */
+    priorLatestIngestId: uuid('prior_latest_ingest_id')
+      .notNull()
+      .references(() => episodeIngests.ingestId),
+    fromState: text('from_state').notNull(),
+    clearedBy: uuid('cleared_by')
+      .notNull()
+      .references(() => operators.id),
+    clearedAt: timestamp('cleared_at', { withTimezone: true }).notNull().defaultNow(),
+    reason: text('reason').notNull(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.episodeId, t.ingestId],
+      foreignColumns: [episodeIngests.episodeId, episodeIngests.ingestId],
+      name: 'episode_clearings_delivery_fk',
+    }),
+    index('episode_clearings_episode_idx').on(t.episodeId, t.clearedAt.desc()),
+    index('episode_clearings_ingest_idx').on(t.ingestId),
+    check('episode_clearings_reason_check', sql`length(trim(${t.reason})) > 0`),
+    check(
+      'episode_clearings_from_state_check',
+      sql`${t.fromState} in ('ok', 'flagged', 'quarantined')`,
+    ),
   ],
 );
 

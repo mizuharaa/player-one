@@ -303,6 +303,16 @@ export function registerReview(
         join defect_codes c on c.code = d.code
        where d.ingest_id = ${schema.episodeIngests.ingestId}
          and c.blocks_review
+         -- CHECKSUM-MISMATCH is the one blocking defect a person can answer:
+         -- an operator who has looked at both deliveries names the real one
+         -- (POST /episodes/:id/clear, episode_clearings), and a delivery so
+         -- named is judged on its own defects. Naming the earlier delivery
+         -- instead moves latest_ingest_id back to it, and that one never
+         -- carried the defect. Every other blocking code stays blocking.
+         and not (
+           d.code = 'CHECKSUM-MISMATCH'
+           and exists (select 1 from episode_clearings k where k.ingest_id = d.ingest_id)
+         )
     )
   `;
 
@@ -1215,7 +1225,18 @@ export function registerReview(
     const [review] = await db
       .select()
       .from(schema.episodeReviews)
-      .where(eq(schema.episodeReviews.episodeId, body.episode_id));
+      .where(eq(schema.episodeReviews.episodeId, body.episode_id))
+      /**
+       * An episode can carry one review per delivery, and only the row bound
+       * to `latest_ingest_id` can pass `stillEligible` below. Prefer it, so a
+       * stale pending row from a superseded delivery is not the one picked up
+       * and refused. The verdict is still addressed by episode; that is the
+       * console's contract and is not changed here.
+       */
+      .orderBy(
+        sql`${schema.episodeReviews.ingestId} = (select latest_ingest_id from episodes where episode_id = ${body.episode_id}) desc`,
+      )
+      .limit(1);
     if (review === undefined) {
       return reply.code(404).send({ error: 'this episode has not been claimed for review' });
     }

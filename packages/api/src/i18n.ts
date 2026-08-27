@@ -330,6 +330,12 @@ const en = {
   'bo.refused.device_assignments_device_id_devices_id_fk': 'That device no longer exists. Reload the list.',
   'bo.refused.device_assignments_collector_id_collectors_id_fk':
     'That collector no longer exists. Reload the list.',
+  'bo.refused.episode_clearing_nothing_to_clear':
+    'The latest delivery of this episode carries no checksum mismatch, so there is nothing to clear.',
+  'bo.refused.episode_clearing_foreign_delivery':
+    'That delivery does not belong to this episode. Name one of its own deliveries.',
+  'bo.refused.episode_clearing_paid_on_other_delivery':
+    'Another delivery of this episode has already been reviewed and paid. Choosing a different one is a dispute, not a clear.',
   'bo.refused.unknown': 'The server refused that change.',
 
   'theme.toggle': 'Theme',
@@ -602,6 +608,10 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.device_assignments_id_reused': '该分配编号已属于其他设备或采集者。',
   'bo.refused.device_assignments_device_id_devices_id_fk': '该设备已不存在，请刷新列表。',
   'bo.refused.device_assignments_collector_id_collectors_id_fk': '该采集者已不存在，请刷新列表。',
+  'bo.refused.episode_clearing_nothing_to_clear': '该片段的最新交付没有校验和不一致，无需清除。',
+  'bo.refused.episode_clearing_foreign_delivery': '该交付不属于这个片段。请选择该片段自己的交付。',
+  'bo.refused.episode_clearing_paid_on_other_delivery':
+    '该片段的另一次交付已审核并结算。改选其他交付属于争议流程，不是清除。',
   'bo.refused.unknown': '服务端拒绝了该操作。',
 
   'theme.toggle': '主题',

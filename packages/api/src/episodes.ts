@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -36,6 +37,11 @@ const SubmitBody = z.object({ episodes: z.array(EpisodeRecord).min(1) });
 const ResolveBody = z.object({
   collection_session_id: z.string().uuid(),
   reason: z.string().min(1),
+});
+const ClearBody = z.object({
+  /** The delivery the operator judged authoritative. */
+  ingest_id: z.string().uuid(),
+  reason: z.string().trim().min(1),
 });
 
 export function registerEpisodes(
@@ -484,6 +490,140 @@ export function registerEpisodes(
       },
     );
     return reply.send({ episode_id: episodeId, already_confirmed: false });
+  });
+
+  /**
+   * Clearing ONE episode out of a CHECKSUM-MISMATCH quarantine.
+   *
+   * A redelivery whose bytes differ writes a second ingest carrying
+   * CHECKSUM-MISMATCH, and the ingest spec (§6) keeps the episode out of review
+   * until somebody says which delivery is real. This is where they say it. The
+   * answer is a row in `episode_clearings` — who, when, why, from what — and a
+   * move of `latest_ingest_id` onto the delivery named. Nothing else changes:
+   * the other delivery's ingest, files and defects stay exactly as stored
+   * (Rule 6), and the review lane reads the clearing rather than an edit.
+   *
+   * Only the delivery conflict is cleared here. An episode with no session is
+   * a different quarantine with its own route (`/resolve`), and a machine
+   * proposal awaiting a human is `/confirm`; both already exist and this one
+   * does not repeat them. An episode can need two of these in turn.
+   *
+   * The counter only: the route guard refuses a reviewer session on every
+   * path in this file, so `actorOf` is safe here as everywhere above.
+   */
+  app.post('/episodes/:id/clear', opts, async (req, reply) => {
+    const body = ClearBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
+    const actor = actorOf(req);
+    const episodeId = (req.params as { id: string }).id;
+    const named = body.data.ingest_id;
+
+    /**
+     * SEC-02: an operator clears what arrived at their own centre. Same 404
+     * as an id that does not exist, so another centre's episodes cannot be
+     * enumerated from here either.
+     */
+    const [episode] = await db
+      .select({ episodeId: schema.episodes.episodeId })
+      .from(schema.episodes)
+      .innerJoin(schema.uploadBatches, eq(schema.uploadBatches.id, schema.episodes.uploadBatchId))
+      .innerJoin(schema.handovers, eq(schema.handovers.id, schema.uploadBatches.handoverId))
+      .where(
+        and(
+          eq(schema.episodes.episodeId, episodeId),
+          eq(schema.handovers.uploadCentreId, actor.operator.uploadCentreId),
+        ),
+      );
+    if (episode === undefined) return reply.code(404).send({ error: 'no such episode' });
+
+    const event = {
+      action: 'episode.clear',
+      targetTable: 'episodes',
+      targetId: episodeId,
+      before: {} as Record<string, unknown>,
+      after: {} as Record<string, unknown>,
+      reason: body.data.reason,
+    };
+    let refusal: string | null = null;
+    const written = await mutate(db, actor, event, async (tx) => {
+      /**
+       * Lock the episode first, then read the delivery under the lock. A
+       * redelivery landing mid-request moves `latest_ingest_id`, and the
+       * decision below is about the delivery that is latest NOW.
+       */
+      const [row] = (await tx.execute(sql`
+        select e.latest_ingest_id as latest, i.state as from_state,
+               exists (select 1 from episode_defects d
+                        where d.ingest_id = e.latest_ingest_id and d.code = 'CHECKSUM-MISMATCH') as mismatched
+          from episodes e
+          join episode_ingests i on i.ingest_id = e.latest_ingest_id
+         where e.episode_id = ${episodeId}
+           for update of e
+      `)) as unknown as { latest: string; from_state: string; mismatched: boolean }[];
+      if (row === undefined || !row.mismatched) {
+        refusal = 'episode_clearing_nothing_to_clear';
+        return undefined;
+      }
+      /**
+       * The named delivery must be one of this episode's. The composite FK
+       * `episode_clearings_delivery_fk` refuses anything else at the database;
+       * this read is what turns that into a sentence instead of a 500.
+       */
+      const [delivery] = await tx
+        .select({ ingestId: schema.episodeIngests.ingestId })
+        .from(schema.episodeIngests)
+        .where(and(eq(schema.episodeIngests.episodeId, episodeId), eq(schema.episodeIngests.ingestId, named)));
+      if (delivery === undefined) {
+        refusal = 'episode_clearing_foreign_delivery';
+        return undefined;
+      }
+      /**
+       * A delivery that has already been reviewed and paid is not a choice
+       * that can be unmade here: naming a different one would materialise a
+       * second review for the same session and, through `settlements_review_key`
+       * being per review, a second payment. That is the dispute path (P2).
+       */
+      const [paid] = await tx
+        .select({ id: schema.episodeReviews.id })
+        .from(schema.episodeReviews)
+        .where(
+          and(
+            eq(schema.episodeReviews.episodeId, episodeId),
+            sql`${schema.episodeReviews.ingestId} <> ${named}`,
+            inArray(schema.episodeReviews.reviewState, ['pass', 'partial_pass']),
+          ),
+        );
+      if (paid !== undefined) {
+        refusal = 'episode_clearing_paid_on_other_delivery';
+        return undefined;
+      }
+
+      const [clearing] = await tx
+        .insert(schema.episodeClearings)
+        .values({
+          id: randomUUID(),
+          episodeId,
+          ingestId: named,
+          priorLatestIngestId: row.latest,
+          fromState: row.from_state,
+          clearedBy: actor.operator.operatorId,
+          reason: body.data.reason,
+        })
+        .returning({ id: schema.episodeClearings.id });
+      if (row.latest !== named) {
+        await tx
+          .update(schema.episodes)
+          .set({ latestIngestId: named })
+          .where(eq(schema.episodes.episodeId, episodeId));
+      }
+      event.before = { latest_ingest_id: row.latest, state: row.from_state };
+      event.after = { latest_ingest_id: named, clearing_id: clearing!.id };
+      return clearing;
+    });
+    if (written === undefined) {
+      return reply.code(409).send({ error: 'refused', constraint: refusal ?? 'episode_clearing_nothing_to_clear' });
+    }
+    return reply.send({ episode_id: episodeId, clearing_id: written.id, latest_ingest_id: named });
   });
 
   /** The status view: batches on this machine, newest first. */
