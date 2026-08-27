@@ -1386,6 +1386,14 @@ export const settlements = pgTable(
     }).notNull(),
     amount: numeric('amount', { precision: 14, scale: 4, mode: 'string' }).notNull(),
     settlementState: text('settlement_state').notNull(),
+    /**
+     * Set while `settlement_state = 'exception'` and null otherwise (0016).
+     * `exception_from_state` is the state the row was parked from and the only
+     * state it can return to; the trigger checks it against OLD on the way in.
+     */
+    exceptionFromState: text('exception_from_state'),
+    exceptionReason: text('exception_reason'),
+    exceptionNote: text('exception_note'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1403,6 +1411,17 @@ export const settlements = pgTable(
       sql`${t.settlementState} in ('pending_review', 'pending_settlement', 'bill_generated', 'manually_paid', 'exception')`,
     ),
     check('settlements_amount_nonneg_check', sql`${t.amount} >= 0`),
+    check(
+      'settlements_exception_reason_check',
+      // `superseded` is reserved for a second review that rewrites a
+      // settlement (0016's header). No route may write it, and the transition
+      // guard gives a row parked under it no way back.
+      sql`${t.exceptionReason} is null or ${t.exceptionReason} in ('disputed', 'duplicate', 'wrong_collector', 'manual_hold', 'superseded')`,
+    ),
+    check(
+      'settlements_exception_shape_check',
+      sql`case when ${t.settlementState} = 'exception' then ${t.exceptionFromState} is not null and ${t.exceptionReason} is not null else ${t.exceptionFromState} is null and ${t.exceptionReason} is null and ${t.exceptionNote} is null end`,
+    ),
   ],
 );
 

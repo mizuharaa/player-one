@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LightMyRequestResponse } from 'fastify';
 import { open, schema } from '@playerone/store';
-import { COUNTER_REFUSALS, PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
+import { COUNTER_REFUSALS, PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, SETTLE_API_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
 import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
@@ -1692,6 +1692,11 @@ describe.skipIf(!hasDb())('the back office', () => {
       'bill_lines_owner_guard',
       'bills_total_matches_lines',
       'bill_lines_immutable',
+      // 0016: the settle routes write `exception_from_state` from the row they
+      // read, and the generator never bills a parked row; only raw SQL can
+      // trip either, and spine.test.ts proves both.
+      'settlements_exception_from_check',
+      'bill_lines_exception_check',
       'upload_batches_verify_needs_episodes',
       'upload_batches_verify_needs_verified_episodes',
       // Raised by the payout lane's tamper guards (0012/0013): append-only,
@@ -1754,7 +1759,10 @@ describe.skipIf(!hasDb())('the back office', () => {
     }
 
     // The ones the API raises itself, which are not database constraints.
+    // `SETTLE_API_REFUSALS` is the settle lane's own list, spread in rather
+    // than copied, so a refusal added there without a sentence fails here.
     for (const constraint of [
+      ...SETTLE_API_REFUSALS,
       'device_already_bound',
       'tasks_id_reused',
       'collectors_id_reused',

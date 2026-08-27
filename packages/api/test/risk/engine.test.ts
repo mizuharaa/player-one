@@ -4,7 +4,7 @@ import Fastify from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { open, storeEpisode, type Db } from '@playerone/store';
-import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../../store/test/db.ts';
+import { closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase, violates } from '../../../store/test/db.ts';
 import type { CounterActor } from '../../src/actor.ts';
 import { buildApi } from '../../src/index.ts';
 import { loadTuning, retuneSignal, seedRiskSignals } from '../../src/risk/catalogue.ts';
@@ -99,20 +99,23 @@ async function world(): Promise<World> {
   return w;
 }
 
-type Collector = { id: string; ref: string; device: string; serial: string; session: string; handover: string };
+type Collector = { id: string; ref: string; device: string; serial: string; session: string; handover: string; claim: string };
 
 let serialSeq = 0;
 async function collector(w: World, ref: string): Promise<Collector> {
   const d = await db();
   serialSeq += 1;
-  const c: Collector = { id: uid(), ref, device: uid(), serial: `SYN${String(serialSeq).padStart(8, '0')}`, session: uid(), handover: uid() };
+  const c: Collector = { id: uid(), ref, device: uid(), serial: `SYN${String(serialSeq).padStart(8, '0')}`, session: uid(), handover: uid(), claim: '' };
   await d.execute(sql`insert into collectors (id, external_ref, status) values (${c.id}, ${ref}, 'qualified')`);
+  // Since 0016_claim_join a session and its settlements both name the claim
+  // the footage was recorded under; the counter would have issued it.
+  c.claim = await liveClaim(d, w.task, c.id);
   await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status) values (${c.device}, ${w.deviceType}, ${c.serial}, 'active')`);
   await d.execute(
     sql`insert into handovers (id, collector_id, device_id, tf_card_id, upload_centre_id, operator_id, handover_time) values (${c.handover}, ${c.id}, ${c.device}, ${'CARD-' + ref}, ${w.centre}, ${w.operator}, ${new Date(T0).toISOString()})`,
   );
   await d.execute(
-    sql`insert into collection_sessions (id, task_id, collector_id, scenario_id, handover_id, others_in_frame, sensitive_info_present, session_origin) values (${c.session}, ${w.task}, ${c.id}, ${w.scenario}, ${c.handover}, false, false, 'handover')`,
+    sql`insert into collection_sessions (id, task_id, collector_id, scenario_id, handover_id, others_in_frame, sensitive_info_present, session_origin, task_claim_id, unit_price, currency) values (${c.session}, ${w.task}, ${c.id}, ${w.scenario}, ${c.handover}, false, false, 'handover', ${c.claim}, 1200, 'VND')`,
   );
   return c;
 }
@@ -155,13 +158,13 @@ async function review(w: World, ep: { id: string; ingestId: string }, o: { measu
   return id;
 }
 
-async function settlement(w: World, reviewId: string, measured: number): Promise<string> {
+async function settlement(w: World, c: Collector, reviewId: string, measured: number): Promise<string> {
   const d = await db();
   const id = uid();
   const minutes = (measured / 60).toFixed(6);
   const amount = ((measured / 60) * 1200).toFixed(4);
   await d.execute(
-    sql`insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes, amount, settlement_state) values (${id}, ${reviewId}, ${w.task}, 1200, ${minutes}, ${amount}, 'pending_settlement')`,
+    sql`insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes, amount, settlement_state) values (${id}, ${reviewId}, ${w.task}, ${c.claim}, 1200, ${minutes}, ${amount}, 'pending_settlement')`,
   );
   return id;
 }
@@ -216,7 +219,7 @@ function gated(d: Db, after: (q: unknown) => Promise<void>): Db {
 async function billedEpisode(w: World, c: Collector, o: EpisodeOpts & { reviewer?: string; timeToVerdictS?: number }): Promise<{ episodeId: string; billId: string }> {
   const ep = await episode(c, o);
   const r = await review(w, ep, { measured: o.measured, reviewer: o.reviewer, timeToVerdictS: o.timeToVerdictS });
-  const s = await settlement(w, r, o.measured);
+  const s = await settlement(w, c, r, o.measured);
   const day = Math.floor(o.startMs / DAY) * DAY;
   const b = await bill(c, [s], { periodStart: new Date(day), periodEnd: new Date(day + 7 * DAY) });
   return { episodeId: ep.id, billId: b };
@@ -516,7 +519,7 @@ describe.skipIf(!hasDb())('the risk engine', () => {
       const e2 = await episode(a, { startMs: T0 + DAY, measured: 600, fingerprint: fp, audio: false });
       const r1 = await review(w, e1, { measured: 600 });
       const r2 = await review(w, e2, { measured: 600 });
-      const billId = await bill(a, [await settlement(w, r1, 600), await settlement(w, r2, 600)]);
+      const billId = await bill(a, [await settlement(w, a, r1, 600), await settlement(w, a, r2, 600)]);
       await engine.evaluateCollector(a.id);
       await engine.evaluateEpisode(e1.id);
       await engine.evaluateEpisode(e2.id);

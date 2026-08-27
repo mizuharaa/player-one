@@ -727,10 +727,17 @@ describe.skipIf(!hasDb())('the edge-case suite, E01–E29, over a real socket to
       try {
         // One line of the bill moves to exception between the operator's screen and their click.
         const [first] = await rows<{ settlement_id: string }>(h.d, sql`select settlement_id from bill_lines where bill_id = ${h.bill1} order by settlement_id limit 1`);
-        await h.d.execute(sql`update settlements set settlement_state = 'exception', updated_at = now() where id = ${first!.settlement_id}`);
+        // Since 0016_settlement_exception a parked row states where it came
+        // from and why, or `settlements_exception_shape_check` refuses it.
+        await h.d.execute(sql`update settlements set settlement_state = 'exception', exception_from_state = settlement_state, exception_reason = 'manual_hold', updated_at = now() where id = ${first!.settlement_id}`);
         const res = await markPaid(h, h.bill1, h.finA, { manual_reference: 'VCB-1', amount_vnd: 2400 });
-        expect(res.statusCode).toBe(500);
-        // The attempt that was inserted first rolled back with the audit row that never got written.
+        // Before 0016 this reached the manual rail, tripped `bill_lines_payable_check`
+        // inside the transaction and came back as an unnamed 500 that had rolled
+        // back. `refusalFor` is now asked by the manual rail too, so the same input
+        // is refused by name before anything is written. Nothing written either way,
+        // which is what this case is here to prove.
+        expect(res.statusCode).toBe(409);
+        expect(res.json().constraint).toBe('payout_settlement_exception');
         expect(await attemptCount(h.d)).toBe(0);
         expect(await count(h.d, sql`select count(*) as n from audit_events where action = 'bill.mark_paid'`)).toBe(0);
         expect((await settlementStates(h.d, h.bill1)).sort()).toEqual(['bill_generated', 'exception']);

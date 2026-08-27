@@ -353,6 +353,11 @@ const en = {
   'bo.refused.session_task_not_published':
     'That task has been taken down, so no new session can be recorded against it.',
   'bo.refused.unknown': 'The server refused that change.',
+  'bo.refused.settlements_not_in_exception': 'That settlement is not in exception, so there is nothing to release.',
+  'bo.refused.settle_export_bill_in_exception':
+    'A bill in this period has a line in exception. Its total would not match the lines in the file, so the export is held until the line is released.',
+  'bo.refused.payout_settlement_exception':
+    'A line on this bill is in exception. Release it before the bill can be paid.',
 
   'theme.toggle': 'Theme',
   'theme.light': 'Light',
@@ -998,6 +1003,10 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.session_claim_released': '该采集者已释放对此任务的领取。需要重新领取后才能登记采集会话。',
   'bo.refused.session_task_not_published': '该任务已下架，不能再登记新的采集会话。',
   'bo.refused.unknown': '服务端拒绝了该操作。',
+  'bo.refused.settlements_not_in_exception': '该结算记录不在异常状态，无需释放。',
+  'bo.refused.settle_export_bill_in_exception':
+    '本周期内有账单包含异常状态的明细。导出文件的合计与明细将无法对上，因此在释放该明细之前暂不导出。',
+  'bo.refused.payout_settlement_exception': '该账单中有一条结算记录处于异常状态。请先释放，账单才能支付。',
 
   'theme.toggle': '主题',
   'theme.light': '浅色',
@@ -1929,6 +1938,11 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.payout_accounts_append_only': 'Tài khoản nhận tiền là bản ghi của một lời khai và không thể sửa hay xóa.',
   'bo.refused.settlements_transition_check':
     'Một khoản trên hóa đơn này đã được trả hoặc đã chuyển sang ngoại lệ trong lúc đó. Tải lại hóa đơn.',
+  'bo.refused.settlements_not_in_exception': 'Khoản này không ở trạng thái ngoại lệ, nên không có gì để giải phóng.',
+  'bo.refused.settle_export_bill_in_exception':
+    'Một hóa đơn trong kỳ này có khoản đang ở ngoại lệ. Tổng của nó sẽ không khớp với các dòng trong tệp, nên bản xuất được giữ lại cho đến khi khoản đó được giải phóng.',
+  'bo.refused.payout_settlement_exception':
+    'Một khoản trên hóa đơn này đang ở ngoại lệ. Giải phóng nó trước khi hóa đơn có thể được chi trả.',
   'bo.refused.payout_mode_manual': 'Máy chủ đang ở chế độ chi trả thủ công. Tự chuyển tiền và ghi mã tham chiếu tại đây.',
   'bo.refused.payout_batch_running': 'Một lần chạy của kỳ này đang diễn ra trên máy chủ. Hãy chờ báo cáo; không có gì được gửi hai lần.',
   'bo.refused.payout_transfer_rejected': 'ZaloPay đã từ chối lệnh chuyển. Lần chạy dừng ở hóa đơn này; lần chi được ghi là thất bại và không hóa đơn nào sau đó được gửi.',

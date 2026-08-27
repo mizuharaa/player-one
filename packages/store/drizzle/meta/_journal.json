@@ -169,6 +169,13 @@
       "when": 1788460000000,
       "tag": "0016_claim_join",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1788470000000,
+      "tag": "0016_settlement_exception",
+      "breakpoints": true
     }
   ]
 }

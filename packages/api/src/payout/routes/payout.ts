@@ -121,6 +121,7 @@ export const PAYOUT_API_REFUSALS = new Set([
   'payout_cap_exceeded',
   'payout_risk_hold',
   'payout_already_paid',
+  'payout_settlement_exception',
   'payout_accounts_id_reused',
   'payout_attempt_not_resolvable',
   'payout_bill_period_mismatch',
@@ -446,8 +447,19 @@ export function registerPayout(
    *   pending_review   settlements not yet on a bill
    *   approved         billed, not yet paid ("Đã duyệt, chờ chi trả")
    *   paid             a terminal-succeeded attempt, or every line manually_paid
-   *   on_hold          a risk hold on the bill, while holds are enabled. The
-   *                    app shows a neutral state and never the reasons.
+   *   on_hold          a risk hold on the bill, while holds are enabled, OR a
+   *                    line on the bill parked in `exception` (0016). The app
+   *                    shows a neutral state and never the reasons.
+   *
+   * A parked line has to land in `on_hold` and not `approved`. Neither payout
+   * rail will pay a bill that has one — `refusalFor` answers
+   * `payout_settlement_exception` before it asks about the total or the
+   * account — so `approved`, which the app prints as "Đã duyệt, chờ chi trả",
+   * would tell a collector their money is on its way when an operator has
+   * stopped it. `on_hold` is the existing neutral bucket and carries no reason
+   * code and no note, which is what a collector must not be shown: the reason
+   * may name another collector (`wrong_collector`) or an internal judgement
+   * (`disputed`, `manual_hold`), and the free-text note is evidence.
    *
    * There is no collector credential in this service yet (APP-* is blocked
    * on PaXini), so this is addressed by collector id under the operator
@@ -467,18 +479,21 @@ export function registerPayout(
                where l.bill_id = b.id) as minutes,
              (select bool_and(s.settlement_state = 'manually_paid')
                 from bill_lines l join settlements s on s.id = l.settlement_id
-               where l.bill_id = b.id) as all_paid
+               where l.bill_id = b.id) as all_paid,
+             (select bool_or(s.settlement_state = 'exception')
+                from bill_lines l join settlements s on s.id = l.settlement_id
+               where l.bill_id = b.id) as parked
         from bills b
        where b.collector_id = ${id}
        order by b.period_start desc
-    `)) as unknown as { id: string; period_start: Date; period_end: Date; total: string; minutes: string; all_paid: boolean | null }[];
+    `)) as unknown as { id: string; period_start: Date; period_end: Date; total: string; minutes: string; all_paid: boolean | null; parked: boolean | null }[];
 
     const periods: Record<string, unknown>[] = [];
     for (const b of bills) {
       const attempt = await latestAttemptOf(db, b.id);
       const summary = risk === undefined ? null : await risk.billSummary(b.id);
       const paid = (b.all_paid ?? false) || attempt?.status === 'succeeded';
-      const held = options.holdsEnabled === true && summary?.band === 'hold';
+      const held = (options.holdsEnabled === true && summary?.band === 'hold') || b.parked === true;
       periods.push({
         bill_id: b.id,
         period_start: new Date(b.period_start).toISOString(),
