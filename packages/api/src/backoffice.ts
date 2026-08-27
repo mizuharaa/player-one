@@ -182,7 +182,7 @@ type Reply = {
  * would map any failure — including a bug in the query above — onto a polite
  * 409 that says the task is full.
  */
-function constraintOf(err: unknown): string | undefined {
+export function constraintOf(err: unknown): string | undefined {
   for (let e: unknown = err; e !== null && e !== undefined; e = (e as { cause?: unknown }).cause) {
     const name = (e as { constraint_name?: string }).constraint_name;
     if (name !== undefined && name !== '') return name;
@@ -229,6 +229,14 @@ export const REFUSALS = new Set([
   'device_assignments_no_overlap',
   'device_assignments_device_id_devices_id_fk',
   'device_assignments_collector_id_collectors_id_fk',
+  /**
+   * QR-08 (0016). Raised by `POST /api/review/dispute`, which lives in
+   * review.ts and answers them the same way this file does.
+   */
+  'review_disputes_open_key',
+  'review_disputes_decided_check',
+  'review_disputes_final_check',
+  'review_disputes_unbilled_check',
 ]);
 
 /**

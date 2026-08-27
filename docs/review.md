@@ -498,8 +498,35 @@ the *end* of a period whose start the caller gave.
 - **A bill is never revised.** There is no credit note and no way to take a line
   off an issued bill; a settlement that turns out to be wrong goes to
   `exception`, and the bill it is on shows as unpaid for ever. That is honest and
-  it is not a workflow. It needs one when the dispute path (QR-08) lands.
-- **Dispute and second review are P2** and deliberately not built.
-  `episode_reviews_delivery_key` is one review per delivery; when the dispute
-  flow lands it needs a supersedes column rather than a second row, or that index
-  moves.
+  it is not a workflow. The dispute path below therefore stops at the bill:
+  `review_disputes_unbilled_check` refuses a dispute on a settlement that is
+  already `bill_generated` or `manually_paid`.
+
+## Dispute and second review (QR-08)
+
+`POST /api/review/dispute` takes a decided review's id and the collector's
+reason, typed by an operator — the pilot has no collector login. One
+transaction writes an append-only `review_disputes` row and a pending second
+review of the same delivery in the `second_review` lane, audited as
+`review.dispute`. It moves nothing in money: the original settlement stays
+`pending_settlement`, and both the bill generator and `bill_lines_dispute_guard`
+hold it back while the dispute is open.
+
+The second review is an ordinary claim and verdict. `?queue=second_review`
+reuses the takeover statement and the lease; nothing is ever materialised into
+that lane, and the takeover skips the reviewer whose verdict is under challenge
+(`episode_reviews_second_reviewer_check` refuses the write as well). The
+verdict decides the money in its own transaction: the same outcome and the same
+effective seconds closes the dispute `upheld` and writes no second settlement;
+anything else writes one from the second verdict, parks the original in
+`exception` with `superseded_by` pointing at it (`settlements_supersede_guard`
+pins it there — 0005's way back out of `exception` is closed for a superseded
+row), and closes the dispute `overturned`. Every guard is in `0016_dispute_review.sql`
+and tested in raw SQL in `packages/api/test/dispute.test.ts`.
+
+`episode_reviews_delivery_key` moved for this: it is now one review per
+delivery *where `dispute_id is null`*, and `episode_reviews_dispute_key` is one
+second review per dispute. A second review is final — disputing one is refused
+(`review_disputes_final_check`) — so the chain is two rows long at most.
+
+No console screen yet.

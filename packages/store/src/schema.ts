@@ -972,6 +972,49 @@ export const reviewReasonCodes = pgTable(
 );
 
 /**
+ * QR-08. A collector challenging a verdict, raised by an operator on their
+ * behalf — the pilot has no collector login.
+ *
+ * Append-only: written once, closed once (`review_disputes_guard`, 0016).
+ * Raising one moves nothing in money. It is answered by a second review row
+ * carrying `dispute_id`, and the outcome is written here when that verdict
+ * lands: `upheld` when it agrees and the original settlement stands,
+ * `overturned` when it differs and the original is superseded.
+ *
+ * What may be disputed is a database rule, not a route's: a decided review
+ * that is not itself a second review, whose settlement is still
+ * `pending_settlement`. A bill is never revised, so a billed or paid
+ * settlement cannot be reopened until that workflow exists.
+ */
+export const reviewDisputes = pgTable(
+  'review_disputes',
+  {
+    id: uuid('id').primaryKey(),
+    reviewId: uuid('review_id')
+      .notNull()
+      .references((): AnyPgColumn => episodeReviews.id),
+    raisedBy: uuid('raised_by')
+      .notNull()
+      .references(() => operators.id),
+    reason: text('reason').notNull(),
+    raisedAt: timestamp('raised_at', { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    outcome: text('outcome'),
+  },
+  (t) => [
+    /** One OPEN dispute per review. */
+    uniqueIndex('review_disputes_open_key').on(t.reviewId).where(sql`${t.resolvedAt} is null`),
+    index('review_disputes_review_idx').on(t.reviewId),
+    check('review_disputes_reason_check', sql`length(btrim(${t.reason})) > 0`),
+    check(
+      'review_disputes_outcome_check',
+      sql`${t.outcome} is null or ${t.outcome} in ('upheld', 'overturned')`,
+    ),
+    check('review_disputes_resolved_check', sql`(${t.resolvedAt} is null) = (${t.outcome} is null)`),
+  ],
+);
+
+/**
  * The reviewer's verdict, and the reason QR-03 is enforceable at all.
  *
  * `effective_duration_s <= measured_duration_s` has to be a CHECK, and a CHECK
@@ -1095,10 +1138,22 @@ export const episodeReviews = pgTable(
      * it is a stopwatch, not a measurement anything is paid on.
      */
     timeToVerdictS: numeric('time_to_verdict_s', { precision: 12, scale: 3, mode: 'string' }),
+    /**
+     * QR-08. Set on a second review and on nothing else: the dispute this row
+     * answers. `episode_reviews_dispute_guard` (0016) makes it an OPEN dispute
+     * on the same delivery, held by anyone but the reviewer under challenge,
+     * and written once.
+     */
+    disputeId: uuid('dispute_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      columns: [t.disputeId],
+      foreignColumns: [reviewDisputes.id],
+      name: 'episode_reviews_dispute_id_review_disputes_id_fk',
+    }),
     foreignKey({
       columns: [t.episodeId, t.ingestId, t.measuredDurationS],
       foreignColumns: [
@@ -1116,11 +1171,16 @@ export const episodeReviews = pgTable(
      *
      * A second delivery of the same session is a different `ingest_id` and so
      * gets its own review — which is the point of binding a verdict to the
-     * exact bytes it judged. Re-reviewing one delivery is the dispute flow,
-     * which is P2 and deliberately not built; when it lands it needs a
-     * supersedes column here rather than a second row, or this index moves.
+     * exact bytes it judged. Re-reviewing one delivery is the dispute flow
+     * (QR-08, 0016): the second review is a second row carrying `dispute_id`,
+     * so this index is partial — one review per delivery that is NOT a second
+     * review — and `episode_reviews_dispute_key` is one second review per
+     * dispute. The `on conflict` targets in review.ts carry the predicate.
      */
-    uniqueIndex('episode_reviews_delivery_key').on(t.episodeId, t.ingestId),
+    uniqueIndex('episode_reviews_delivery_key')
+      .on(t.episodeId, t.ingestId)
+      .where(sql`${t.disputeId} is null`),
+    uniqueIndex('episode_reviews_dispute_key').on(t.disputeId),
     /**
      * The idempotency guarantee, at the database. Two concurrent requests
      * carrying the same `verdict_id` — a double-tap, or a retry racing the
@@ -1150,8 +1210,14 @@ export const episodeReviews = pgTable(
       'episode_reviews_state_check',
       sql`${t.reviewState} in ('pending', 'pass', 'partial_pass', 'fail')`,
     ),
-    /** Two lanes and no third. A misspelt lane is an episode nobody is offered. */
-    check('episode_reviews_queue_check', sql`${t.queue} in ('standard', 'privacy')`),
+    /**
+     * Two lanes, and the second-review lane (QR-08). A misspelt lane is an
+     * episode nobody is offered.
+     */
+    check(
+      'episode_reviews_queue_check',
+      sql`${t.queue} in ('standard', 'privacy', 'second_review')`,
+    ),
     /**
      * QR-05, bounded at the database and not only in the request parser.
      *
@@ -1292,12 +1358,25 @@ export const settlements = pgTable(
     }).notNull(),
     amount: numeric('amount', { precision: 14, scale: 4, mode: 'string' }).notNull(),
     settlementState: text('settlement_state').notNull(),
+    /**
+     * QR-08. Set when a second verdict differed: the settlement written from
+     * that verdict, which is the one that gets billed. A row with this set
+     * sits in `exception` for good and `bill_lines_dispute_guard` refuses it a
+     * line — both in 0016.
+     */
+    supersededBy: uuid('superseded_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      columns: [t.supersededBy],
+      foreignColumns: [t.id],
+      name: 'settlements_superseded_by_settlements_id_fk',
+    }),
     /** SET-04: one settlement per review, so a verdict cannot be billed twice. */
     uniqueIndex('settlements_review_key').on(t.episodeReviewId),
+    uniqueIndex('settlements_superseded_by_key').on(t.supersededBy),
     check(
       'settlements_state_check',
       sql`${t.settlementState} in ('pending_review', 'pending_settlement', 'bill_generated', 'manually_paid', 'exception')`,

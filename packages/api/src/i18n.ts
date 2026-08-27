@@ -330,6 +330,13 @@ const en = {
   'bo.refused.device_assignments_device_id_devices_id_fk': 'That device no longer exists. Reload the list.',
   'bo.refused.device_assignments_collector_id_collectors_id_fk':
     'That collector no longer exists. Reload the list.',
+  'bo.refused.review_disputes_open_key': 'That verdict is already under dispute.',
+  'bo.refused.review_disputes_decided_check':
+    'That review has not been decided yet, so there is no outcome to challenge.',
+  'bo.refused.review_disputes_final_check':
+    'That verdict is itself a second review, and a second review is final.',
+  'bo.refused.review_disputes_unbilled_check':
+    'That verdict is already on a bill or paid, and a bill is never revised.',
   'bo.refused.unknown': 'The server refused that change.',
 
   'theme.toggle': 'Theme',
@@ -602,6 +609,10 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.device_assignments_id_reused': '该分配编号已属于其他设备或采集者。',
   'bo.refused.device_assignments_device_id_devices_id_fk': '该设备已不存在，请刷新列表。',
   'bo.refused.device_assignments_collector_id_collectors_id_fk': '该采集者已不存在，请刷新列表。',
+  'bo.refused.review_disputes_open_key': '该审核结果已在申诉中。',
+  'bo.refused.review_disputes_decided_check': '该审核尚未给出结果，无可申诉的内容。',
+  'bo.refused.review_disputes_final_check': '该结果本身已是复审结果，复审为最终结论。',
+  'bo.refused.review_disputes_unbilled_check': '该结果已生成账单或已支付，账单不可修改。',
   'bo.refused.unknown': '服务端拒绝了该操作。',
 
   'theme.toggle': '主题',

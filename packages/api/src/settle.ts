@@ -137,6 +137,17 @@ export function registerSettle(
           eq(schema.settlements.settlementState, 'pending_settlement'),
           gte(schema.settlements.createdAt, start),
           lt(schema.settlements.createdAt, end),
+          /**
+           * QR-08: a settlement whose review is under dispute waits for the
+           * second verdict. `bill_lines_dispute_guard` (0016) refuses it a
+           * line anyway; filtering here is what keeps the generator from
+           * throwing on it.
+           */
+          sql`not exists (
+            select 1 from review_disputes d
+             where d.review_id = ${schema.settlements.episodeReviewId}
+               and d.resolved_at is null
+          )`,
         ),
       )
       .orderBy(asc(schema.collectors.externalRef), asc(schema.settlements.createdAt));
