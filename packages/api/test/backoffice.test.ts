@@ -1614,7 +1614,7 @@ describe.skipIf(!hasDb())('the back office', () => {
      * two boxes: something a person can trip by asking for what the rules
      * refuse, or something that means this code is wrong.
      */
-    const TABLES = ['tasks', 'task_claims', 'collectors', 'collector_agreements', 'devices', 'device_assignments'];
+    const TABLES = ['tasks', 'task_claims', 'collectors', 'collector_agreements', 'devices', 'device_assignments', 'review_disputes'];
     const list = TABLES.map((t) => `'${t}'`).join(', ');
 
     const declared = await rows<{ name: string }>(sql`
@@ -1737,6 +1737,28 @@ describe.skipIf(!hasDb())('the back office', () => {
       'risk_holds_already_open',
       'risk_holds_clear_requires_open',
       'risk_holds_clear_signals_check',
+      // Raised by the dispute path's tamper guards (0016). The four a person
+      // can trip through `POST /api/review/dispute` are in REFUSALS; these are
+      // reachable only from raw SQL, and dispute.test.ts proves each.
+      'review_disputes_append_only',
+      // The dispute row's own shape: the route mints the id, copies the
+      // operator from the verified token, and zod refuses a blank reason;
+      // outcome and resolved_at are written as a pair by the verdict.
+      'review_disputes_pkey',
+      'review_disputes_raised_by_operators_id_fk',
+      'review_disputes_reason_check',
+      'review_disputes_outcome_check',
+      'review_disputes_resolved_check',
+      // A review id that names nothing: the route answers 404 on this one.
+      'review_disputes_review_id_episode_reviews_id_fk',
+      'episode_reviews_dispute_immutable',
+      'episode_reviews_dispute_open_check',
+      'episode_reviews_dispute_delivery_check',
+      'episode_reviews_second_reviewer_check',
+      'settlements_superseded_immutable',
+      'settlements_superseded_state_check',
+      'bill_lines_superseded_check',
+      'bill_lines_disputed_check',
     ]);
 
     for (const name of [...declared.map((d) => d.name), ...raised]) {

@@ -352,6 +352,13 @@ const en = {
     'This collector released their claim on that task. A new claim is needed before a session can be recorded.',
   'bo.refused.session_task_not_published':
     'That task has been taken down, so no new session can be recorded against it.',
+  'bo.refused.review_disputes_open_key': 'That verdict is already under dispute.',
+  'bo.refused.review_disputes_decided_check':
+    'That review has not been decided yet, so there is no outcome to challenge.',
+  'bo.refused.review_disputes_final_check':
+    'That verdict is itself a second review, and a second review is final.',
+  'bo.refused.review_disputes_unbilled_check':
+    'That verdict is already on a bill or paid, and a bill is never revised.',
   'bo.refused.unknown': 'The server refused that change.',
   'bo.refused.settlements_not_in_exception': 'That settlement is not in exception, so there is nothing to release.',
   'bo.refused.settle_export_bill_in_exception':
@@ -1002,6 +1009,10 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.session_claim_missing': '该采集者未领取此任务，为其录制的内容无法结算。请先领取任务。',
   'bo.refused.session_claim_released': '该采集者已释放对此任务的领取。需要重新领取后才能登记采集会话。',
   'bo.refused.session_task_not_published': '该任务已下架，不能再登记新的采集会话。',
+  'bo.refused.review_disputes_open_key': '该审核结果已在申诉中。',
+  'bo.refused.review_disputes_decided_check': '该审核尚未给出结果，无可申诉的内容。',
+  'bo.refused.review_disputes_final_check': '该结果本身已是复审结果，复审为最终结论。',
+  'bo.refused.review_disputes_unbilled_check': '该结果已生成账单或已支付，账单不可修改。',
   'bo.refused.unknown': '服务端拒绝了该操作。',
   'bo.refused.settlements_not_in_exception': '该结算记录不在异常状态，无需释放。',
   'bo.refused.settle_export_bill_in_exception':
@@ -1939,6 +1950,13 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.settlements_transition_check':
     'Một khoản trên hóa đơn này đã được trả hoặc đã chuyển sang ngoại lệ trong lúc đó. Tải lại hóa đơn.',
   'bo.refused.settlements_not_in_exception': 'Khoản này không ở trạng thái ngoại lệ, nên không có gì để giải phóng.',
+  'bo.refused.review_disputes_open_key': 'Kết quả duyệt này đã đang được khiếu nại.',
+  'bo.refused.review_disputes_decided_check':
+    'Lần duyệt này chưa có kết quả, nên chưa có gì để khiếu nại.',
+  'bo.refused.review_disputes_final_check':
+    'Kết quả này chính là kết quả duyệt lần hai, và duyệt lần hai là kết luận cuối cùng.',
+  'bo.refused.review_disputes_unbilled_check':
+    'Kết quả này đã lên hóa đơn hoặc đã được chi trả, và hóa đơn không bao giờ được sửa.',
   'bo.refused.settle_export_bill_in_exception':
     'Một hóa đơn trong kỳ này có khoản đang ở ngoại lệ. Tổng của nó sẽ không khớp với các dòng trong tệp, nên bản xuất được giữ lại cho đến khi khoản đó được giải phóng.',
   'bo.refused.payout_settlement_exception':

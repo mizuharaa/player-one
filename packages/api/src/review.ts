@@ -1,14 +1,17 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from './audit.ts';
 import type { Actor } from './actor.ts';
+import { REFUSALS, constraintOf } from './backoffice.ts';
 import {
   REVIEW_STATE,
   SpanError,
+  cmp,
+  fromDecimal,
   normaliseSpans,
   settlementFor,
   usefulSeconds,
@@ -63,6 +66,22 @@ export const LEASE_MS = 10 * 60 * 1000;
 const CLAIM_ATTEMPTS = 8;
 
 /**
+ * QR-08. The second verdict differed, and the settlement it was going to
+ * supersede is no longer waiting to be billed.
+ *
+ * It should be unreachable: the dispute guard proved `pending_settlement` under
+ * a row lock when the dispute was raised, `bill_lines_dispute_guard` has
+ * refused it a line ever since, and the bill generator takes the same lock
+ * before it writes one. It has a name anyway because the alternative is a 500
+ * on the one path that decides what a collector is paid, and a 500 tells the
+ * reviewer nothing and the operator less. The transaction rolls back either
+ * way — no verdict, no settlement, no audit row — and the second review stays
+ * pending, so the answer is a refusal that says what is wrong and not an
+ * "unexpected error".
+ */
+class BilledWhileDisputed extends Error {}
+
+/**
  * QR-07. Two lanes, and an episode is in exactly one of them.
  *
  * The privacy lane holds everything whose collection session carries either
@@ -80,7 +99,13 @@ const CLAIM_ATTEMPTS = 8;
  * `preHandler` on the privacy lane and on `/api/review/route`, not a change
  * here.
  */
-export const LANES = ['standard', 'privacy'] as const;
+/**
+ * `second_review` is QR-08's lane. Nothing is ever *materialised* into it —
+ * `derivedLane` never names it — so the only rows there are the pending
+ * second reviews `POST /api/review/dispute` writes, and the takeover below is
+ * the only statement that hands them out.
+ */
+export const LANES = ['standard', 'privacy', 'second_review'] as const;
 export type Lane = (typeof LANES)[number];
 
 /**
@@ -162,6 +187,12 @@ const VerdictBody = z.object({
  * Every field is optional and an absent one is left alone, so a caller changing
  * a priority cannot silently move an episode out of the privacy lane.
  */
+const DisputeBody = z.object({
+  review_id: z.string().uuid(),
+  /** What the collector said, in the operator's words. The database refuses a blank. */
+  reason: z.string().min(1).max(2000),
+});
+
 const RouteBody = z
   .object({
     queue: z.enum(LANES).optional(),
@@ -409,6 +440,24 @@ export function registerReview(
     )`;
 
   /**
+   * QR-08: a second review is never offered to the reviewer whose verdict it
+   * re-examines. The database refuses the write too
+   * (`episode_reviews_second_reviewer_check`); this is what keeps the refusal
+   * out of the claim's own error path.
+   *
+   * Written once and asked by all three, because a peek, a depth and a claim
+   * that disagree about what is claimable are three numbers a reviewer cannot
+   * reconcile: the queue said one waiting, the prefetch warmed an episode, and
+   * the claim answered 204.
+   */
+  const notOwnSecondReview = (disputeId: SQL | string, reviewer: string) => sql`
+    not exists (
+      select 1 from review_disputes d
+        join episode_reviews o on o.id = d.review_id
+       where d.id = ${disputeId} and o.reviewer_ref = ${reviewer}
+    )`;
+
+  /**
    * Claims the next episode for this reviewer, in two statements and at most
    * `CLAIM_ATTEMPTS` tries.
    *
@@ -451,6 +500,7 @@ export function registerReview(
               and (r.assignee_ref is null or r.assignee_ref = ${reviewer})
               and (r.reviewer_ref is null or r.lease_expires_at < now())
               and ${stillEligible(sql`r.episode_id`, sql`r.ingest_id`)}
+              and ${notOwnSecondReview(sql`r.dispute_id`, reviewer)}
             order by r.priority desc, r.created_at
               for update skip locked
             limit 1
@@ -476,7 +526,7 @@ export function registerReview(
            )
          order by episodes.first_seen_at
          limit 1
-        on conflict (episode_id, ingest_id) do nothing
+        on conflict (episode_id, ingest_id) where dispute_id is null do nothing
         returning id, episode_id
       `)) as unknown as { id: string; episode_id: string }[];
       const fresh = created[0];
@@ -523,7 +573,12 @@ export function registerReview(
             and (pr.reviewer_ref is null or pr.lease_expires_at < now())
             -- Same re-check as the takeover: a pending row whose episode has
             -- since failed cloud verification is not claimable, so it is not depth.
-            and ${stillEligible(sql`pr.episode_id`, sql`pr.ingest_id`)})
+            and ${stillEligible(sql`pr.episode_id`, sql`pr.ingest_id`)}
+            -- And the same QR-08 exclusion as the takeover. Without it the
+            -- depth counted the second review of this reviewer's own verdict,
+            -- which the claim will never hand them: the number never reached
+            -- zero and the lane looked like it had work in it that it had not.
+            and ${notOwnSecondReview(sql`pr.dispute_id`, reviewer)})
       + (select count(*)
            from episodes
            join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
@@ -870,7 +925,11 @@ export function registerReview(
          and coalesce(r.assignee_ref, ${reviewer}) = ${reviewer}
          and (r.id is null
               or (r.review_state = 'pending'
-                  and (r.reviewer_ref is null or r.lease_expires_at < now())))
+                  and (r.reviewer_ref is null or r.lease_expires_at < now())
+                  -- The claim's QR-08 exclusion, so the peek names the episode
+                  -- the claim will actually hand over and not this reviewer's
+                  -- own verdict coming back at them.
+                  and ${notOwnSecondReview(sql`r.dispute_id`, reviewer)}))
        order by (r.id is null), coalesce(r.priority, 0) desc,
                 coalesce(r.created_at, episodes.first_seen_at)
        limit 1
@@ -1015,6 +1074,10 @@ export function registerReview(
           from episode_reviews
          where episode_id = ${episodeId}
            and ingest_id = ${ep.ingest_id}
+           -- The first review. A second review (QR-08) is in its own lane and
+           -- is not routed from here; a disputed episode answers "already
+           -- reviewed" below, which is true of the row this route addresses.
+           and dispute_id is null
            for update
       `)) as unknown as {
         id: string;
@@ -1078,7 +1141,7 @@ export function registerReview(
           (id, episode_id, ingest_id, measured_duration_s, review_state, queue, priority, assignee_ref)
         values (${randomUUID()}, ${episodeId}, ${ep.ingest_id}, ${ep.measured}, 'pending',
                 ${lane}, ${body.priority ?? 0}, ${assignee})
-        on conflict (episode_id, ingest_id) do update
+        on conflict (episode_id, ingest_id) where dispute_id is null do update
            set ${sql.join(sets, sql`, `)}
          where episode_reviews.review_state = 'pending'
         returning id, queue, priority, assignee_ref
@@ -1239,21 +1302,41 @@ export function registerReview(
     const replayed = await resultOf(db, body.verdict_id, scope);
     if (replayed !== null) return reply.send({ ...replayed, replayed: true });
 
-    const [review] = await db
+    /**
+     * The pending row first. A disputed episode (QR-08) carries its decided
+     * first review and a pending second one, and the verdict is for the row
+     * still waiting; with nothing pending, the decided row answers "already
+     * reviewed" below as before.
+     *
+     * **This reviewer's** pending row before any other pending row. An episode
+     * can have two: a redelivery opens a pending first review on the new
+     * ingest while the second review of a dispute on the old one is still
+     * open, and they are usually held by different people. Picking whichever
+     * Postgres returned first would answer one of the two reviewers with
+     * "claimed by someone else" at random. Oldest first breaks the remaining
+     * tie, so the same request always resolves to the same row.
+     */
+    const rows = await db
       .select()
       .from(schema.episodeReviews)
       .where(eq(schema.episodeReviews.episodeId, body.episode_id))
       /**
-       * An episode can carry one review per delivery, and only the row bound
-       * to `latest_ingest_id` can pass `stillEligible` below. Prefer it, so a
-       * stale pending row from a superseded delivery is not the one picked up
-       * and refused. The verdict is still addressed by episode; that is the
-       * console's contract and is not changed here.
+       * The current delivery first. An episode can carry one review per
+       * delivery, and only the row bound to `latest_ingest_id` can pass
+       * `stillEligible` below, so a stale pending row from a superseded
+       * delivery must not be the one picked up and refused. A dispute's second
+       * review sits on the same ingest as its first, so this key never
+       * reorders the two rows the paragraph above is about; it only demotes
+       * rows from deliveries that have been replaced. Oldest first, then id,
+       * breaks the rest, so the same request always resolves to the same row.
        */
       .orderBy(
         sql`${schema.episodeReviews.ingestId} = (select latest_ingest_id from episodes where episode_id = ${body.episode_id}) desc`,
-      )
-      .limit(1);
+        asc(schema.episodeReviews.createdAt),
+        asc(schema.episodeReviews.id),
+      );
+    const pending = rows.filter((r) => r.reviewState === 'pending');
+    const review = pending.find((r) => r.reviewerRef === reviewer) ?? pending[0] ?? rows[0];
     if (review === undefined) {
       return reply.code(404).send({ error: 'this episode has not been claimed for review' });
     }
@@ -1382,18 +1465,25 @@ export function registerReview(
         ? null
         : Math.max(0, (decidedAt.getTime() - review.claimedAt.getTime()) / 1000);
 
+    /**
+     * What the second verdict did to the dispute, filled in by the write. The
+     * event is built after the callback resolves (the function form), so the
+     * audit row for a verdict that closed a dispute says which one and how.
+     */
+    const dispute: Record<string, unknown> = {};
     let written: { id: string } | undefined;
     try {
       written = await mutate(
         db,
         actor,
-        {
+        () => ({
           action: 'episode.review',
           targetTable: 'episode_reviews',
           targetId: review.id,
           before: { review_state: 'pending', reviewer_ref: review.reviewerRef },
           after: {
             verdict_id: body.verdict_id,
+            ...dispute,
             episode_id: body.episode_id,
             ingest_id: review.ingestId,
             decision,
@@ -1407,7 +1497,7 @@ export function registerReview(
             effective_minutes: bill.effectiveMinutes,
             amount: bill.amount,
           },
-        },
+        }),
         async (tx) => {
           /**
            * The WHERE is not belt and braces. It is what makes the transaction
@@ -1496,8 +1586,80 @@ export function registerReview(
            * the schema, not a rule anybody has to remember, and it is why an
            * upload event has nothing it could write against.
            */
+          const settlementId = randomUUID();
+          if (review.disputeId !== null) {
+            /**
+             * QR-08. This is the second verdict, and what it means for money
+             * is decided here, inside the same transaction as the verdict.
+             *
+             * "Agrees" is the same outcome and the same effective seconds —
+             * the two inputs the settlement is computed from. Same money is
+             * the same answer, however the spans were drawn. Then the dispute
+             * closes `upheld`, the original settlement stands and this row
+             * writes no settlement of its own: one payment per delivery.
+             *
+             * Differs: the original settlement is parked in `exception`,
+             * named as superseded by the one written from this verdict, and
+             * that one is billed in its place. The original's `WHERE` carries
+             * `pending_settlement`, which the dispute guard proved at raise
+             * time and the bill guard has held since; matching nothing here
+             * would mean it was billed anyway, and the transaction stops.
+             */
+            const [first] = await tx
+              .select({
+                reviewState: schema.episodeReviews.reviewState,
+                effective: schema.episodeReviews.effectiveDurationS,
+              })
+              .from(schema.reviewDisputes)
+              .innerJoin(
+                schema.episodeReviews,
+                eq(schema.episodeReviews.id, schema.reviewDisputes.reviewId),
+              )
+              .where(eq(schema.reviewDisputes.id, review.disputeId));
+            const agrees =
+              first !== undefined &&
+              first.reviewState === REVIEW_STATE[decision] &&
+              first.effective !== null &&
+              cmp(fromDecimal(first.effective), fromDecimal(effectiveSeconds)) === 0;
+            if (!agrees) {
+              await tx.insert(schema.settlements).values({
+                id: settlementId,
+                episodeReviewId: review.id,
+                taskId: ownership.taskId,
+                taskClaimId: taskClaimId,
+                unitPrice: unitPrice,
+                effectiveMinutes: bill.effectiveMinutes,
+                amount: bill.amount,
+                settlementState: 'pending_settlement',
+              });
+              const parked = (await tx.execute(sql`
+                update settlements s
+                   set settlement_state = 'exception',
+                       exception_from_state = s.settlement_state,
+                       exception_reason = 'superseded',
+                       superseded_by = ${settlementId},
+                       updated_at = now()
+                  from review_disputes d
+                 where d.id = ${review.disputeId}
+                   and s.episode_review_id = d.review_id
+                   and s.settlement_state = 'pending_settlement'
+                returning s.id
+              `)) as unknown as { id: string }[];
+              if (parked.length !== 1) {
+                throw new BilledWhileDisputed('the disputed settlement was billed while the dispute was open');
+              }
+              dispute.superseded_settlement_id = parked[0]!.id;
+            }
+            await tx
+              .update(schema.reviewDisputes)
+              .set({ resolvedAt: decidedAt, outcome: agrees ? 'upheld' : 'overturned' })
+              .where(eq(schema.reviewDisputes.id, review.disputeId));
+            dispute.dispute_id = review.disputeId;
+            dispute.outcome = agrees ? 'upheld' : 'overturned';
+            return row;
+          }
           await tx.insert(schema.settlements).values({
-            id: randomUUID(),
+            id: settlementId,
             episodeReviewId: review.id,
             taskId: ownership.taskId,
             taskClaimId: taskClaimId,
@@ -1510,6 +1672,13 @@ export function registerReview(
         },
       );
     } catch (err) {
+      if (err instanceof BilledWhileDisputed) {
+        return reply.code(409).send({
+          error: 'not reviewable',
+          detail:
+            'the settlement under dispute was billed while the dispute was open, so this verdict cannot replace it; nothing was recorded',
+        });
+      }
       /**
        * Two requests carrying the same `verdict_id` reached the transaction
        * together. One committed; this one lost on the unique index. The correct
@@ -1574,6 +1743,123 @@ export function registerReview(
       queue_depth: await queueDepth(reviewer, review.queue as Lane),
       session_average_seconds: await sessionAverage(reviewer),
     });
+  });
+
+  /**
+   * QR-08. A collector challenges a verdict; an operator raises it for them,
+   * because the pilot has no collector login.
+   *
+   * One transaction writes two rows and moves nothing in money: the dispute,
+   * and a pending second review of the same delivery in the `second_review`
+   * lane, which the claim hands to any reviewer except the one under
+   * challenge. The settlement stays exactly where it was — the bill generator
+   * and `bill_lines_dispute_guard` both hold it back until the second verdict
+   * lands and decides, in the verdict's own transaction, whether it stands.
+   *
+   * What may be disputed is the database's rule (`review_disputes_guard`),
+   * and its refusals come back as the back office's do: a 409 naming the
+   * constraint, with a sentence for it in the catalogue.
+   *
+   * ponytail: an operator, not a reviewer. A PaXini reviewer re-queueing a
+   * colleague's verdict is a supervision decision the brief has not assigned
+   * to them; when it is, this is one more `actor.reviewer` branch.
+   */
+  app.post('/api/review/dispute', opts, async (req, reply) => {
+    const parsed = DisputeBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid body', detail: parsed.error.issues.slice(0, 5) });
+    }
+    const actor = req.actor!;
+    if (actor.reviewer !== undefined) {
+      return reply.code(403).send({ error: 'a dispute is raised at the upload centre, on the collector\'s behalf' });
+    }
+    const body = parsed.data;
+
+    /**
+     * SEC-02, the same rule and the same answer as `/handovers/:id/sessions`
+     * and `/episodes/:id/resolve`: a row that belongs to another centre is not
+     * refused, it does not exist. Without this an operator at any centre could
+     * reopen a verdict on a collector who never handed a card in to them, and
+     * hold that collector's bill back, from a screen that shows them nothing
+     * about the delivery.
+     *
+     * The centre comes from the delivery — `episodes.upload_batch_id` to the
+     * handover the card arrived on — because that is where a collector's
+     * relationship with a centre is written. It is deliberately not the
+     * reviewer's centre: a PaXini reviewer has none, and this route is closed
+     * to them anyway.
+     *
+     * An episode stored by the CLI has no batch and therefore no centre, so it
+     * cannot be disputed through this route. That is the same 404 and not a
+     * separate refusal: nothing in the pilot reaches review that way.
+     */
+    const [own] = await db
+      .select({ id: schema.episodeReviews.id })
+      .from(schema.episodeReviews)
+      .innerJoin(schema.episodes, eq(schema.episodes.episodeId, schema.episodeReviews.episodeId))
+      .innerJoin(schema.uploadBatches, eq(schema.uploadBatches.id, schema.episodes.uploadBatchId))
+      .innerJoin(schema.handovers, eq(schema.handovers.id, schema.uploadBatches.handoverId))
+      .where(
+        and(
+          eq(schema.episodeReviews.id, body.review_id),
+          eq(schema.handovers.uploadCentreId, actor.operator.uploadCentreId),
+        ),
+      );
+    if (own === undefined) return reply.code(404).send({ error: 'no such review' });
+
+    const disputeId = randomUUID();
+    const secondReviewId = randomUUID();
+    const event = {
+      action: 'review.dispute',
+      targetTable: 'review_disputes',
+      targetId: disputeId,
+      after: { review_id: body.review_id, second_review_id: secondReviewId } as Record<string, unknown>,
+      reason: body.reason,
+    };
+    try {
+      const written = await mutate(db, actor, event, async (tx) => {
+        await tx.insert(schema.reviewDisputes).values({
+          id: disputeId,
+          reviewId: body.review_id,
+          raisedBy: actor.operator.operatorId,
+          reason: body.reason,
+        });
+        /**
+         * The same delivery, copied from the row under dispute rather than
+         * from `episodes.latest_ingest_id`: a redelivery since the verdict is
+         * a different ingest and a different review, and the outcome being
+         * challenged is the one on the bytes the first reviewer saw.
+         */
+        const rows = (await tx.execute(sql`
+          insert into episode_reviews
+            (id, episode_id, ingest_id, measured_duration_s, review_state, queue, dispute_id)
+          select ${secondReviewId}, episode_id, ingest_id, measured_duration_s, 'pending', 'second_review', ${disputeId}
+            from episode_reviews
+           where id = ${body.review_id}
+          returning episode_id
+        `)) as unknown as { episode_id: string }[];
+        event.after['episode_id'] = rows[0]?.episode_id ?? null;
+        return rows[0];
+      });
+      if (written === undefined) return reply.code(404).send({ error: 'no such review' });
+      return reply.send({
+        dispute_id: disputeId,
+        review_id: body.review_id,
+        episode_id: written.episode_id,
+        second_review_id: secondReviewId,
+        queue: 'second_review',
+      });
+    } catch (err) {
+      const name = constraintOf(err);
+      if (name !== undefined && REFUSALS.has(name)) {
+        return reply.code(409).send({ error: 'refused', constraint: name });
+      }
+      // A review id that names nothing fails the FK before the guard runs.
+      if (name === 'review_disputes_review_id_episode_reviews_id_fk') {
+        return reply.code(404).send({ error: 'no such review' });
+      }
+      throw err;
+    }
   });
 
   /** What one reviewer has decided recently. The screen's own history strip. */
