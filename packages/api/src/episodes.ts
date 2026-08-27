@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -39,6 +38,13 @@ const ResolveBody = z.object({
   reason: z.string().min(1),
 });
 const ClearBody = z.object({
+  /**
+   * Client-generated, like every other counter mutation (counter.ts): the
+   * console keeps working with the link down and replays its queue, so the
+   * same decision arriving twice has to land once. `episode_clearings.id` is
+   * the primary key, which is the unique key that makes that true.
+   */
+  id: z.string().uuid(),
   /** The delivery the operator judged authoritative. */
   ingest_id: z.string().uuid(),
   reason: z.string().trim().min(1),
@@ -545,23 +551,47 @@ export function registerEpisodes(
       reason: body.data.reason,
     };
     let refusal: string | null = null;
+    /** The clearing this id already names, when the request is a replay. */
+    let replayed: { id: string } | undefined;
+    /** A replay is the same decision: same episode, same delivery, same reason. Anything else under that id is a reused id. */
+    const sameDecision = (k: { episodeId: string; ingestId: string; reason: string }) =>
+      k.episodeId === episodeId && k.ingestId === named && k.reason === body.data.reason;
     const written = await mutate(db, actor, event, async (tx) => {
       /**
        * Lock the episode first, then read the delivery under the lock. A
        * redelivery landing mid-request moves `latest_ingest_id`, and the
        * decision below is about the delivery that is latest NOW.
+       *
+       * `uncleared`: latest carries a CHECKSUM-MISMATCH that no clearing has
+       * yet answered.
        */
       const [row] = (await tx.execute(sql`
         select e.latest_ingest_id as latest, i.state as from_state,
                exists (select 1 from episode_defects d
-                        where d.ingest_id = e.latest_ingest_id and d.code = 'CHECKSUM-MISMATCH') as mismatched
+                        where d.ingest_id = e.latest_ingest_id and d.code = 'CHECKSUM-MISMATCH'
+                          and not exists (select 1 from episode_clearings k where k.ingest_id = d.ingest_id)) as uncleared
           from episodes e
           join episode_ingests i on i.ingest_id = e.latest_ingest_id
          where e.episode_id = ${episodeId}
            for update of e
-      `)) as unknown as { latest: string; from_state: string; mismatched: boolean }[];
-      if (row === undefined || !row.mismatched) {
+      `)) as unknown as { latest: string; from_state: string; uncleared: boolean }[];
+      if (row === undefined) {
         refusal = 'episode_clearing_nothing_to_clear';
+        return undefined;
+      }
+      /**
+       * The replay check comes before every gate, because the gates read
+       * state the first request changed: the identical retry of a clear that
+       * moved latest onto A finds nothing to clear on A. Same-episode clears
+       * are serialised by the lock above, so this read is current.
+       */
+      const [prior] = await tx
+        .select()
+        .from(schema.episodeClearings)
+        .where(eq(schema.episodeClearings.id, body.data.id));
+      if (prior !== undefined) {
+        if (sameDecision(prior)) replayed = prior;
+        else refusal = 'episode_clearing_id_reused';
         return undefined;
       }
       /**
@@ -575,6 +605,20 @@ export function registerEpisodes(
         .where(and(eq(schema.episodeIngests.episodeId, episodeId), eq(schema.episodeIngests.ingestId, named)));
       if (delivery === undefined) {
         refusal = 'episode_clearing_foreign_delivery';
+        return undefined;
+      }
+      /**
+       * Anything to clear? A clear does two things: it answers the mismatch
+       * on the delivery it names, and it moves latest onto that delivery. It
+       * is a no-op only when neither happens — the named delivery is already
+       * latest and its mismatch (if it ever had one) is already answered.
+       * Asking only whether LATEST is mismatched, which this did, refused a
+       * correction in one direction: name A (never mismatched), look again,
+       * name B — B still carries an unanswered CHECKSUM-MISMATCH, but A was
+       * latest by then and clean.
+       */
+      if (named === row.latest && !row.uncleared) {
+        refusal = 'episode_clearing_nothing_to_clear';
         return undefined;
       }
       /**
@@ -601,7 +645,7 @@ export function registerEpisodes(
       const [clearing] = await tx
         .insert(schema.episodeClearings)
         .values({
-          id: randomUUID(),
+          id: body.data.id,
           episodeId,
           ingestId: named,
           priorLatestIngestId: row.latest,
@@ -609,7 +653,14 @@ export function registerEpisodes(
           clearedBy: actor.operator.operatorId,
           reason: body.data.reason,
         })
+        // Only a concurrent clear of ANOTHER episode under this id gets here;
+        // same-episode ones queue on the lock and are caught as `prior`.
+        .onConflictDoNothing({ target: schema.episodeClearings.id })
         .returning({ id: schema.episodeClearings.id });
+      if (clearing === undefined) {
+        refusal = 'episode_clearing_id_reused';
+        return undefined;
+      }
       if (row.latest !== named) {
         await tx
           .update(schema.episodes)
@@ -617,13 +668,19 @@ export function registerEpisodes(
           .where(eq(schema.episodes.episodeId, episodeId));
       }
       event.before = { latest_ingest_id: row.latest, state: row.from_state };
-      event.after = { latest_ingest_id: named, clearing_id: clearing!.id };
+      event.after = { latest_ingest_id: named, clearing_id: clearing.id };
       return clearing;
     });
-    if (written === undefined) {
+    if (written === undefined && replayed === undefined) {
       return reply.code(409).send({ error: 'refused', constraint: refusal ?? 'episode_clearing_nothing_to_clear' });
     }
-    return reply.send({ episode_id: episodeId, clearing_id: written.id, latest_ingest_id: named });
+    // A replay answers with the first clearing's id; nothing was written, no audit row either.
+    return reply.send({
+      episode_id: episodeId,
+      clearing_id: (written ?? replayed)!.id,
+      latest_ingest_id: named,
+      replayed: written === undefined,
+    });
   });
 
   /** The status view: batches on this machine, newest first. */

@@ -246,6 +246,7 @@ export const API_REFUSALS = new Set([
   'devices_id_reused',
   /** Raised by `POST /episodes/:id/clear` in episodes.ts, same shape. */
   'episode_clearing_nothing_to_clear',
+  'episode_clearing_id_reused',
   'episode_clearing_foreign_delivery',
   'episode_clearing_paid_on_other_delivery',
 ]);

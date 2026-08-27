@@ -113,8 +113,9 @@ describe.skipIf(!hasDb())('clearing a mismatched delivery', () => {
       return { episodeId: a.episode_id, ingestA, ingestB };
     };
 
-    const clear = (episodeId: string, body: unknown, who = headers) =>
-      send('POST', `/episodes/${episodeId}/clear`, body, who);
+    /** Client-generated id, like every other counter mutation; a test that wants to replay passes its own. */
+    const clear = (episodeId: string, body: Record<string, unknown>, who = headers) =>
+      send('POST', `/episodes/${episodeId}/clear`, { id: uid(), ...body }, who);
 
     return { d, ids, headers, headers2, reviewer, send, batch, batch2, deliverTwice, clear };
   }
@@ -174,6 +175,7 @@ describe.skipIf(!hasDb())('clearing a mismatched delivery', () => {
     // Another centre's episode reads as unknown, not as refused.
     expect((await h.clear(theirs.episodeId, { ingest_id: theirs.ingestA, reason: 'x' })).statusCode).toBe(404);
     expect((await h.clear(episodeId, { ingest_id: ingestA })).statusCode).toBe(400);
+    expect((await h.send('POST', `/episodes/${episodeId}/clear`, { ingest_id: ingestA, reason: 'x' })).statusCode).toBe(400);
     expect((await h.clear(episodeId, { ingest_id: ingestA, reason: '  ' })).statusCode).toBe(400);
     expect((await h.clear(episodeId, { ingest_id: 'not-a-uuid', reason: 'x' })).statusCode).toBe(400);
 
@@ -220,6 +222,66 @@ describe.skipIf(!hasDb())('clearing a mismatched delivery', () => {
     expect(back.statusCode, back.body).toBe(200);
     expect(await latestOf(a.episode_id)).toBe(ingestA);
     expect((await rows(sql`select 1 from settlements`)).length).toBe(1);
+  });
+
+  it('a replay under the same id returns the first clearing and writes nothing', async () => {
+    const h = await harness();
+    const { episodeId, ingestA, ingestB } = await h.deliverTwice();
+
+    // Name the earlier delivery, then send the identical request again (lost
+    // response, offline queue replay). Before the fix the retry was refused
+    // as nothing_to_clear because latest had already moved onto A.
+    const body = { id: uid(), ingest_id: ingestA, reason: 'first delivery matches the card' };
+    const first = await h.clear(episodeId, body);
+    expect(first.statusCode, first.body).toBe(200);
+    expect(first.json().replayed).toBe(false);
+    const again = await h.clear(episodeId, body);
+    expect(again.statusCode, again.body).toBe(200);
+    expect(again.json()).toEqual({ ...first.json(), replayed: true });
+
+    // The mirror case: naming the delivery that carries the mismatch twice
+    // used to write two rows and two audit rows for one decision.
+    const mirror = { id: uid(), ingest_id: ingestB, reason: 'second copy is complete' };
+    expect((await h.clear(episodeId, mirror)).statusCode).toBe(200);
+    const replay = await h.clear(episodeId, mirror);
+    expect(replay.statusCode, replay.body).toBe(200);
+    expect(replay.json().replayed).toBe(true);
+    expect((await rows(sql`select 1 from episode_clearings`)).length).toBe(2);
+    expect((await rows(sql`select 1 from audit_events where action = 'episode.clear'`)).length).toBe(2);
+
+    // The same id with a different body is not a replay, it is a reused id.
+    const reused = await h.clear(episodeId, { ...mirror, ingest_id: ingestA });
+    expect(reused.statusCode).toBe(409);
+    expect(reused.json().constraint).toBe('episode_clearing_id_reused');
+    const otherReason = await h.clear(episodeId, { ...mirror, reason: 'changed the reason' });
+    expect(otherReason.statusCode).toBe(409);
+    expect(otherReason.json().constraint).toBe('episode_clearing_id_reused');
+    expect((await rows(sql`select 1 from episode_clearings`)).length).toBe(2);
+    expect(await latestOf(episodeId)).toBe(ingestB);
+  });
+
+  it('a clear can be corrected in either direction, and a true no-op is still refused', async () => {
+    const h = await harness();
+    const { episodeId, ingestA, ingestB } = await h.deliverTwice();
+
+    // Name A first: latest moves onto the delivery that never carried the
+    // defect. The operator looks again and names B, which still carries an
+    // unanswered CHECKSUM-MISMATCH. Before the fix this was refused because
+    // the gate only asked whether LATEST was mismatched.
+    expect((await h.clear(episodeId, { ingest_id: ingestA, reason: 'first copy' })).statusCode).toBe(200);
+    const back = await h.clear(episodeId, { ingest_id: ingestB, reason: 'looked again: second copy is the complete one' });
+    expect(back.statusCode, back.body).toBe(200);
+    expect(await latestOf(episodeId)).toBe(ingestB);
+    const claim = await h.send('POST', '/api/review/claim');
+    expect(claim.statusCode, claim.body).toBe(200);
+    expect(claim.json().ingest_id).toBe(ingestB);
+
+    // Naming B again under a NEW id changes nothing: latest is B and its
+    // mismatch is already answered. That is the no-op the gate exists for.
+    const noop = await h.clear(episodeId, { ingest_id: ingestB, reason: 'again' });
+    expect(noop.statusCode).toBe(409);
+    expect(noop.json().constraint).toBe('episode_clearing_nothing_to_clear');
+    expect((await rows(sql`select 1 from episode_clearings`)).length).toBe(2);
   });
 
   // -- the money path, end to end -------------------------------------------
