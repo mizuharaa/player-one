@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LightMyRequestResponse } from 'fastify';
 import { open, schema } from '@playerone/store';
-import { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
+import { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, SETTLE_API_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
 import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
@@ -1720,7 +1720,10 @@ describe.skipIf(!hasDb())('the back office', () => {
     }
 
     // The ones the API raises itself, which are not database constraints.
+    // `SETTLE_API_REFUSALS` is the settle lane's own list, spread in rather
+    // than copied, so a refusal added there without a sentence fails here.
     for (const constraint of [
+      ...SETTLE_API_REFUSALS,
       'device_already_bound',
       'tasks_id_reused',
       'collectors_id_reused',

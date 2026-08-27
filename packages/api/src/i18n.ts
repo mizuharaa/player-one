@@ -334,6 +334,8 @@ const en = {
   'bo.refused.settlements_transition_check':
     'That settlement cannot be moved from the state it is in. A paid settlement stays paid.',
   'bo.refused.settlements_not_in_exception': 'That settlement is not in exception, so there is nothing to release.',
+  'bo.refused.settle_export_bill_in_exception':
+    'A bill in this period has a line in exception. Its total would not match the lines in the file, so the export is held until the line is released.',
   'bo.refused.payout_settlement_exception':
     'A line on this bill is in exception. Release it before the bill can be paid.',
 
@@ -610,6 +612,8 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.unknown': '服务端拒绝了该操作。',
   'bo.refused.settlements_transition_check': '该结算记录无法从当前状态移动。已支付的结算记录保持已支付。',
   'bo.refused.settlements_not_in_exception': '该结算记录不在异常状态，无需释放。',
+  'bo.refused.settle_export_bill_in_exception':
+    '本周期内有账单包含异常状态的明细。导出文件的合计与明细将无法对上，因此在释放该明细之前暂不导出。',
   'bo.refused.payout_settlement_exception': '该账单中有一条结算记录处于异常状态。请先释放，账单才能支付。',
 
   'theme.toggle': '主题',

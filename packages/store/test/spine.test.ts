@@ -663,6 +663,47 @@ describe.skipIf(!hasDb())('the identity spine', () => {
         });
         expect(await stateOf(ids.settlementId)).toBe('manually_paid');
       });
+
+      /**
+       * The reserved reason. A second review that overturns the first one
+       * writes a replacement settlement and parks the original; that row is a
+       * parked row like any other — it names its origin and its reason — but it
+       * has no way back, because the money it stands for has been rewritten and
+       * releasing it would put the same footage on a bill twice.
+       *
+       * This is the shape `feat/dispute-review` has to write. That branch's
+       * `settlements_supersede_guard` says the same thing from the other side
+       * (`superseded_by IS NOT NULL` pins the state); with both migrations
+       * applied the two rules agree instead of contradicting each other, which
+       * they did while a supersede wrote no origin and no reason at all.
+       */
+      it('admits a superseded park, and gives it no way out', async () => {
+        const ids = await seedSettlement();
+        const d = await db();
+        await park(ids.settlementId, 'pending_settlement', 'superseded');
+        expect(await parkedRow(ids.settlementId)).toEqual({
+          settlement_state: 'exception',
+          exception_from_state: 'pending_settlement',
+          exception_reason: 'superseded',
+          exception_note: 'raw',
+        });
+        // Not even home. Every other reason releases to its origin; this one
+        // releases nowhere.
+        for (const to of ['pending_review', 'pending_settlement', 'bill_generated', 'manually_paid']) {
+          await violates('settlements_transition_check', move(ids.settlementId, to));
+        }
+        // And it is a parked row for every other purpose: still unbillable.
+        const billId = uid();
+        await d.execute(sql`
+          insert into bills (id, collector_id, period_start, period_end, currency, total)
+            values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+        `);
+        await violates(
+          'bill_lines_exception_check',
+          d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${billId}, ${ids.settlementId})`),
+        );
+        expect(await stateOf(ids.settlementId)).toBe('exception');
+      });
     });
 
     it('refuses to change what a settlement is worth after it is written', async () => {

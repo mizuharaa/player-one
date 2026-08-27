@@ -1313,7 +1313,10 @@ export const settlements = pgTable(
     check('settlements_amount_nonneg_check', sql`${t.amount} >= 0`),
     check(
       'settlements_exception_reason_check',
-      sql`${t.exceptionReason} is null or ${t.exceptionReason} in ('disputed', 'duplicate', 'wrong_collector', 'manual_hold')`,
+      // `superseded` is reserved for a second review that rewrites a
+      // settlement (0016's header). No route may write it, and the transition
+      // guard gives a row parked under it no way back.
+      sql`${t.exceptionReason} is null or ${t.exceptionReason} in ('disputed', 'duplicate', 'wrong_collector', 'manual_hold', 'superseded')`,
     ),
     check(
       'settlements_exception_shape_check',

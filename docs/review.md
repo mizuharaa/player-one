@@ -506,7 +506,50 @@ the *end* of a period whose start the caller gave.
   (`payout_settlement_exception`) until it is released. A parked row cannot be
   billed (`bill_lines_exception_check`). That is a place to hold a wrong line;
   it is still not a correction, and the dispute path (QR-08) still needs one.
+- **A released settlement rolls into the next cycle, and there is never a
+  supplementary bill.** Decided 2026-08-27. A settlement parked in `exception`
+  while its period's cycle ran, and released afterwards, cannot go on that
+  period's bill: `bills_collector_period_key` has nowhere to put a second bill
+  for the same collector and period. Relaxing that key was the alternative and
+  was rejected — it is the constraint that makes "one bill per collector per
+  period" checkable by hand when an invoice is disputed, and that is a money
+  invariant. So two things hold instead. `settleable`
+  (`packages/api/src/settle.ts`) windows on the period's **end only**: a cycle
+  bills everything still `pending_settlement` up to its end date, not only what
+  became owed inside its own seven days, so a released row lands on the next
+  bill as an arrear line. And the re-run of the already-billed period reports
+  `deferred_to_next_period: { settlements, collector_refs }` instead of
+  answering `created: 0` as if nothing were owed. The old start-of-window was a
+  real trap and not only a reporting one: a released row's `created_at` sat
+  inside a period already billed and outside every later window, so no cycle
+  would have found it again — money owed and unreachable by any route.
+  Two consequences to know about. A bill can carry a line whose `reviewed_at`
+  predates its own period; the export prints `reviewed_at` per line, so the
+  file still says when the work was done. And `not_payable` (a rejected
+  episode's zero-value settlement) is now a running backlog count rather than a
+  one-period one, because those rows are still `pending_settlement` and every
+  later cycle finds them too — which is the same unresolved thing the bullet
+  above describes, counted every week instead of once.
+- **The CSV export excludes parked lines, and refuses any bill whose printed
+  lines then stop matching its printed total.** SET-05 says a parked settlement
+  cannot be billed, paid **or exported**; SET-06 fixes the column list and the
+  format, and neither changes — only which rows are in the file. Because a
+  parked line stays on its bill and inside the bill's stored `total`, excluding
+  it always leaves that bill's rows summing to less than the total it is filed
+  under. The export sums what it is about to print, compares it with the bill,
+  and on any difference answers 409 `settle_export_bill_in_exception` naming
+  the bill, its collector, both totals and how many lines were held back
+  (`packages/api/src/settle.ts`, the export route). Finance is never handed a
+  file that silently does not add up. It is a whole-response refusal because a
+  CSV cannot be half-sent; release the line and the export runs.
 - **Dispute and second review are P2** and deliberately not built.
   `episode_reviews_delivery_key` is one review per delivery; when the dispute
   flow lands it needs a supersedes column rather than a second row, or that index
-  moves.
+  moves. 0016 reserves the exception reason `superseded` for it: a settlement a
+  second review has rewritten is parked like any other row — it names the state
+  it came from and its reason — but the transition guard gives it no way out,
+  because releasing it would put the same footage on a bill twice. No route can
+  write that reason; it is for the dispute lane's own SQL, and the UPDATE that
+  supersedes a settlement must set `exception_from_state` and
+  `exception_reason = 'superseded'` alongside `settlement_state = 'exception'`
+  or the shape CHECK refuses it.
