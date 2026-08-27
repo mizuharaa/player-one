@@ -301,17 +301,32 @@ CREATE VIEW "risk_current_flags" AS
 -- the top of every evaluation transaction, so "the risk engine cannot write to
 -- bills" is a property Postgres enforces and a test proves, not a convention.
 --
--- CREATE ROLE is cluster-wide, so it is guarded: the suite migrates one
--- database per test file on the same server. A migrating user without
--- CREATEROLE gets a NOTICE and the grants are skipped; the engine then refuses
--- to run under the role and says so, which is the right failure.
+-- A role is CLUSTER-wide while a migration runs against one database, and the
+-- suite migrates one database per test file, in parallel, on one server. So
+-- this creates the role and forgives whoever got there first, rather than
+-- looking before it creates. Looking first is the version that broke: between
+-- the `SELECT ... FROM pg_roles` and the `CREATE ROLE` behind it, another
+-- migration on another database of the same cluster can commit the same role,
+-- and the loser dies on the unique index over pg_authid.rolname — SQLSTATE
+-- 23505, which `insufficient_privilege` does not catch — taking the whole
+-- migration and every test in that file with it. Attempting the CREATE
+-- unconditionally instead makes the loser wait on that index until the winner
+-- commits and then catch the duplicate here. It also leaves the role certain
+-- to exist by the time the grants below look for it, which the look-first
+-- version did not: a role created by a transaction that had not committed yet
+-- was invisible, and the grants were silently skipped.
+--
+-- A migrating user without CREATEROLE gets a NOTICE and the grants are
+-- skipped; the engine then refuses to run under the role and says so, which is
+-- the right failure.
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'playerone_risk') THEN
-    CREATE ROLE playerone_risk NOLOGIN;
-  END IF;
-EXCEPTION WHEN insufficient_privilege THEN
-  RAISE NOTICE 'playerone_risk was not created: the migrating user lacks CREATEROLE. Create it by hand and re-run the grants in 0014_risk.sql.';
+  CREATE ROLE playerone_risk NOLOGIN;
+EXCEPTION
+  WHEN duplicate_object OR unique_violation THEN
+    NULL;  -- already there, or another migration on this cluster just made it
+  WHEN insufficient_privilege THEN
+    RAISE NOTICE 'playerone_risk was not created: the migrating user lacks CREATEROLE. Create it by hand and re-run the grants in 0014_risk.sql.';
 END
 $$;
 --> statement-breakpoint

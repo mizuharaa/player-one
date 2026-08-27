@@ -16,6 +16,15 @@
 -- that must not have it edited under them (the rule 0015 states). Guarded
 -- like 0014's own role block, and idempotent — re-granting an existing
 -- membership is a NOTICE, not an error.
+--
+-- Best-effort, and deliberately so. Granting a role needs superuser, or
+-- CREATEROLE plus ADMIN OPTION on it. A user who created the role in 0014 has
+-- that automatically, but a user migrating a database whose role somebody else
+-- created does not, and a migration must not die because it could not hand
+-- itself a privilege. So insufficient_privilege becomes a NOTICE that names
+-- the exact statement an operator has to run instead. The engine does not
+-- guess whether that happened: it checks its own membership before its first
+-- evaluation and refuses with the same statement (engine.ts, assertRole).
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'playerone_risk') THEN
@@ -23,5 +32,7 @@ BEGIN
   ELSE
     RAISE NOTICE 'playerone_risk does not exist (0014 could not CREATE ROLE); create it, re-run the grants in 0014_risk.sql, then GRANT playerone_risk TO %', current_user;
   END IF;
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'playerone_risk was not granted to %: this user may not administer the role. Until a superuser, or a member with ADMIN OPTION, runs  GRANT playerone_risk TO %;  every risk evaluation refuses with that same line.', current_user, current_user;
 END
 $$;

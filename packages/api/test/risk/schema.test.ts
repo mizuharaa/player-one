@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { closeDb, db, hasDb, truncate, useDatabase, violates } from '../../../store/test/db.ts';
+import { open } from '@playerone/store';
+import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../../store/test/db.ts';
 import { RISK_CATALOGUE, SIGNAL_IDS, loadTuning, seedRiskSignals } from '../../src/risk/catalogue.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -244,6 +246,61 @@ describe.skipIf(!hasDb())('migration 0014, the risk tables', () => {
       expect(await asRisk(sql`select count(*) from payout_attempts`)).toBeNull();
       expect(await asRisk(sql`insert into risk_flags (run_id, subject_type, subject_id, signal_id, threshold_version, points, severity, evidence) values (${uid()}::uuid, 'bill', 'b', 'IDENT.PHONE_SHARED', 'v1', 60, 'hold', '{}'::jsonb)`)).toBeNull();
       if (standIn) await d.execute(sql`drop table payout_attempts`);
+    });
+
+    it('is created in a way that two migrations racing on one cluster both survive', async () => {
+      // The CI failure this pins. A role is cluster-wide while a migration
+      // runs against one database, and the suite migrates one database per
+      // test file in parallel on one server. A block that looks before it
+      // creates lets the loser of that race die on pg_authid's unique index —
+      // SQLSTATE 23505, which `insufficient_privilege` does not catch — and it
+      // takes the whole migration and every test in the file with it. Measured
+      // on the pre-fix file under exactly this interleaving: session B failed
+      // 23505 on pg_authid_rolname_index.
+      //
+      // The block is read out of the migration itself, under a throwaway role
+      // name, so a future edit to 0014 is what is tested rather than a copy.
+      const PROBE = 'playerone_test_risk_race';
+      const file = await readFile(new URL('../../../store/drizzle/0014_risk.sql', import.meta.url), 'utf8');
+      const block = file
+        .split('--> statement-breakpoint')
+        .find((s) => s.includes('CREATE ROLE playerone_risk'))!
+        .replaceAll('playerone_risk', PROBE);
+
+      const d = await db();
+      await d.execute(sql.raw(`drop role if exists ${PROBE}`));
+      // Two more connections: the file's own pool is one connection, and two
+      // transactions on it would serialise before they ever reached Postgres.
+      const a = await open(dbUrl(), { max: 1 });
+      const b = await open(dbUrl(), { max: 1 });
+      let release = (): void => {};
+      const held = new Promise<void>((r) => (release = r));
+      try {
+        // A creates the role and holds its transaction open, so B's view of
+        // pg_roles still has no such role when B runs the same block.
+        const first = a.transaction(async (tx) => {
+          await tx.execute(sql.raw(block));
+          await held;
+        });
+        await new Promise((r) => setTimeout(r, 250));
+        // B issues its CREATE ROLE and waits on the unique index for A.
+        const second = b.transaction(async (tx) => {
+          await tx.execute(sql.raw(block));
+        });
+        await new Promise((r) => setTimeout(r, 500));
+        release();
+        await first;
+        await second; // 23505 before the fix
+        const [n] = (await d.execute(
+          sql.raw(`select count(*)::int as n from pg_roles where rolname = '${PROBE}'`),
+        )) as unknown as { n: number }[];
+        expect(n!.n).toBe(1);
+      } finally {
+        release();
+        await a.close();
+        await b.close();
+        await d.execute(sql.raw(`drop role if exists ${PROBE}`));
+      }
     });
   });
 });
