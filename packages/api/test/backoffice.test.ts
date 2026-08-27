@@ -1695,6 +1695,18 @@ describe.skipIf(!hasDb())('the back office', () => {
       'payout_attempts_initial_status',
       'payout_export_rows_sealed',
       'payout_exports_complete',
+      // Raised by the risk engine's guards (0014): append-only evidence, a
+      // supersede-only catalogue, and the hold chain. The back office never
+      // writes risk tables. The risk routes read the open hold first and
+      // answer 409 through NoOpenHold before the chain guard can fire; the
+      // guard is the second lock, for raw SQL, and test/risk/schema.test.ts
+      // proves each name.
+      'risk_signals_supersede_only',
+      'risk_flags_append_only',
+      'risk_holds_append_only',
+      'risk_holds_already_open',
+      'risk_holds_clear_requires_open',
+      'risk_holds_clear_signals_check',
     ]);
 
     for (const name of [...declared.map((d) => d.name), ...raised]) {

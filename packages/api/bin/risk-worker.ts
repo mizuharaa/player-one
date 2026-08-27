@@ -1,8 +1,17 @@
-import { exit } from 'node:process';
+/**
+ * The risk worker: one `tick` (src/risk/worker.ts) every PLAYERONE_RISK_INTERVAL_MS
+ * (default 60 s), forever, until SIGINT/SIGTERM. `--once` runs a single tick,
+ * prints its report, and exits 0 (1 if any subject failed) — for a cron, and
+ * for proving the wiring against a real database.
+ *
+ *   DATABASE_URL=... node packages/api/bin/risk-worker.ts [--once]
+ */
+import { argv, exit } from 'node:process';
 import { open, redact } from '@playerone/store';
 import { riskConfigFromEnv } from '../src/risk/config.ts';
 import { RiskEngine } from '../src/risk/engine.ts';
 import { runRiskWorker } from '../src/risk/run.ts';
+import { tick, type TickResult } from '../src/risk/worker.ts';
 
 const env = process.env;
 const databaseUrl = env['DATABASE_URL'] ?? '';
@@ -15,14 +24,25 @@ const config = riskConfigFromEnv(env);
 const db = await open(databaseUrl, { max: Number(env['PLAYERONE_DB_POOL'] ?? 4) });
 const intervalMs = Number(env['PLAYERONE_RISK_INTERVAL_MS'] ?? 60_000);
 const engine = new RiskEngine(db, { mediaRoot: config.mediaRoot, holdsEnabled: config.holdsEnabled });
+const line = (report: TickResult): string => {
+  const total = report.evaluated.episodes + report.evaluated.collectors + report.evaluated.bills;
+  return `${report.finishedAt} risk evaluated ${total} (episodes ${report.evaluated.episodes}, collectors ${report.evaluated.collectors}, bills ${report.evaluated.bills}), skipped ${report.skipped}, failed ${report.failed.length}`;
+};
+
+if (argv.includes('--once')) {
+  const report = await tick(db, engine, { enabled: config.engineEnabled });
+  console.log(line(report));
+  for (const f of report.failed) console.error(`  ${f.subject}: ${f.error}`);
+  await db.close();
+  exit(report.failed.length === 0 ? 0 : 1);
+}
+
 const worker = runRiskWorker(db, engine, {
   enabled: config.engineEnabled,
   intervalMs,
   log: (report) => {
     const total = report.evaluated.episodes + report.evaluated.collectors + report.evaluated.bills;
-    if (total > 0 || report.failed.length > 0) {
-      console.log(`${report.finishedAt} risk evaluated ${total}, skipped ${report.skipped}, failed ${report.failed.length}`);
-    }
+    if (total > 0 || report.failed.length > 0) console.log(line(report));
   },
 });
 
