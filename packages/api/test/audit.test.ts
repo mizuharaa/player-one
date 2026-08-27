@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '@playerone/store';
-import { hashCredential, mutate, type Actor } from '../src/index.ts';
+import { hashCredential, mutate, type CounterActor } from '../src/index.ts';
 import { closeDb, db, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -18,7 +18,7 @@ useDatabase('audit');
 
 const uid = () => randomUUID();
 
-async function seed(): Promise<{ actor: Actor; centreId: string; taskId: string }> {
+async function seed(): Promise<{ actor: CounterActor; centreId: string; taskId: string }> {
   const d = await db();
   const centreId = uid();
   const deviceId = uid();

@@ -11,19 +11,32 @@ export class StoreUnreachableError extends Error {}
 /** The connection string convention for this repo. Nothing else reads it. */
 export const DATABASE_URL = (): string => process.env['DATABASE_URL'] ?? '';
 
+export type OpenOptions = {
+  /**
+   * Pool size. One by default, which is right for the CLI and wrong for a
+   * server.
+   *
+   * The default exists because ingest is one session at a time and a pool would
+   * only add ways for a partially-applied transaction to become somebody else's
+   * problem. The API is the opposite case: several reviewers claim from the
+   * queue at once, and on a single connection they queue behind each other —
+   * `for update skip locked` cannot skip a row when there is no second
+   * transaction to skip it. A caller that serves more than one person at a time
+   * has to say so.
+   */
+  max?: number;
+};
+
 /**
  * Opens a connection. Called only when --store, --list or --show is passed:
  * the core measurement path runs at upload centres with the link down and must
  * never need a database (spec §"Two callers, one engine").
- *
- * `max: 1` because ingest is one session at a time and a pool would only add
- * ways for a partially-applied transaction to be someone else's problem.
  */
-export async function open(url = DATABASE_URL()): Promise<Db> {
+export async function open(url = DATABASE_URL(), { max = 1 }: OpenOptions = {}): Promise<Db> {
   if (url === '') {
     throw new StoreUnreachableError('DATABASE_URL is not set; --store needs a Postgres to write to');
   }
-  const sql = postgres(url, { max: 1, onnotice: () => {} });
+  const sql = postgres(url, { max, onnotice: () => {} });
   const db: Db = Object.assign(drizzle(sql, { schema }), {
     close: () => sql.end({ timeout: 5 }),
   });

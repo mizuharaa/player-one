@@ -5,3 +5,14 @@ sample-data/
 # Sample sessions are evidence, not source. Hundreds of MB of MP4 per copy;
 # point PLAYERONE_SESSIONS at them instead.
 docs/sample_data/
+
+# Screenshot rounds are evidence, not source.
+.impeccable/review/
+apps/console/dist/
+
+# Extracted vendor SDKs and the kit they come from: hundreds of MB, not source.
+tools/
+docs/sdks/
+# OrbbecSDK writes this wherever it is run from.
+Log/
+__pycache__/

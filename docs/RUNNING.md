@@ -7,9 +7,10 @@ From a fresh clone, on any machine. Every command is run from the repo root.
 | | Why |
 |---|---|
 | **Node ≥ 22.18** | The repo runs `.ts` files directly, which needs native type stripping. `node -v` |
-| **pnpm 9** | Workspace. `npm i -g pnpm@9` |
+| **pnpm 9 or 11** | Workspace. `npm i -g pnpm@9`. On pnpm 11 the repo already carries what it needs: `allowBuilds: esbuild: true` in `pnpm-workspace.yaml` and `confirm-modules-purge=false` in `.npmrc`, without which install stops on an interactive prompt that has no TTY in CI. |
 | **ffmpeg** on PATH | `ffprobe` is the container-timing fallback when a PTS sidecar is unusable. Six tests fail without it, and an upload centre without it measures durations wrong. `ffprobe -version` |
 | **Postgres 16+** | Only for the store, the API and their tests. Everything else runs without one. |
+| **A Chromium** | Only for `apps/console/scripts/shots.mjs`, the screenshot round. `npx playwright install chromium` once. Nothing else needs a browser. |
 
 ## First run
 
@@ -23,8 +24,11 @@ pnpm test
 tests that need either skip themselves. That is deliberate: the ingest engine
 runs at upload centres with the link down, so it must never need a database.
 
-Expect roughly `148 passed, 85 skipped`. With a database and the sample corpus,
-`237 passed, 2 skipped`.
+Expect roughly `182 passed, 160 skipped`. With a database and the sample corpus,
+`342 passed, 2 skipped`.
+
+Some ingest tests shell out to `ffprobe` over real media and are slow on Windows;
+`--testTimeout=90000` if the default trips them.
 
 ## Adding a database
 
@@ -33,6 +37,13 @@ truncates every table and creates a database per test file.
 
 ```
 docker run -d --name playerone-pg -e POSTGRES_PASSWORD=playerone -p 5432:5432 postgres:16
+```
+
+That is the once-per-machine command. Every day after, the container already
+exists and `run` fails on the name — start it instead:
+
+```
+docker start playerone-pg
 ```
 
 Then point `DATABASE_URL` at it and apply the migrations:
@@ -52,9 +63,10 @@ pnpm test
 **A password with `@` or `:` in it must be percent-encoded** — `@` is `%40`.
 An unencoded one parses as part of the host and fails to connect.
 
-The suite creates `<database>_store`, `_spine`, `_api`, `_audit`, `_counter`
-and `_episodes` beside whatever `DATABASE_URL` names, one per test file, because
-vitest runs files in parallel and each truncates. Nothing else uses them.
+The suite creates `<database>_store`, `_spine`, `_api`, `_audit`, `_counter`,
+`_episodes`, `_review` and `_backoffice` beside whatever `DATABASE_URL` names, one per test
+file, because vitest runs files in parallel and each truncates. Nothing else uses
+them.
 
 ## Adding the sample sessions
 
@@ -109,14 +121,116 @@ bad argument, `3` measured fine but the store could not be written.
 
 ## The operator API
 
-`packages/api` is a Fastify app, built by `buildApi({ db, tokenSecret })`. There
-is no server entrypoint yet — the console slice adds it. Until then the tests
-and `packages/api/scripts/verify-e2e.mjs` are how it runs.
+`packages/api` is a Fastify app, built by `buildApi({ db, tokenSecret })`.
 
 Two credentials are required on every mutation: a machine token and an operator
 token. Seed a centre, a machine and an operator with `credential_hash` set from
 `hashCredential()`, then `POST /auth/machine` and `POST /auth/operator`.
 `packages/api/test/counter.test.ts` is the shortest worked example.
+
+## Running it
+
+```
+DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
+```
+
+| Variable | | |
+|---|---|---|
+| `DATABASE_URL` | required | |
+| `PLAYERONE_TOKEN_SECRET` | required | Fails closed. A secret invented at boot would sign tokens that stop verifying on the next restart, which shows up as reviewers being randomly signed out. |
+| `PLAYERONE_MEDIA_ROOT` | | The directory holding the imported `ego_*` folders. Without it the console runs and the stream route answers 503 saying so. |
+| `PLAYERONE_CURRENCY` | `VND` | What `tasks.unit_price` is denominated in. Configuration because there is no currency column — see the gaps in `docs/review.md`. |
+| `PLAYERONE_SETTLEMENT_CYCLE_DAYS` | `7` | SET-07's settlement cycle. Weekly is `[ASSUMED]` in the brief's §13.2 rather than decided, so it is a setting and not a constant. It only supplies the *end* of a period whose start the caller gave. |
+| `PLAYERONE_SECURE_COOKIES` | off | Turn on wherever there is TLS. Off by default because a `Secure` cookie is never sent over plain HTTP and the symptom is a sign-in that silently does nothing. |
+| `PLAYERONE_REVIEWER_MEDIA` | **off** | Whether a PLT-10 reviewer session may stream raw footage. Leave it off. Brief D11 records remote online playback of raw video as unresolved and escalated, and Part 7.3 says the Phase 1 arrangement is remote access and not data transfer — so a reviewer gets review metadata and no bytes until Legal signs the playback architecture. With it off a reviewer session is also refused the claim and the verdict with `451`, because a verdict on footage nobody watched is a payment on a review that did not happen. Counter operators are unaffected. Setting it to `1` without `PLAYERONE_SECURE_COOKIES=1` refuses to start: a twelve-hour bearer cookie must not cross the internet in clear. |
+| `PLAYERONE_DB_POOL` | `10` | A single connection serialises the claim queue: `for update skip locked` has nothing to skip. |
+| `HOST` / `PORT` | `127.0.0.1` / `8080` | |
+| `STORAGE_ENDPOINT` | | The S3-compatible endpoint of the cloud store (GreenNode, once the contract is signed). Unset, the upload routes answer 503 saying so and everything else runs. |
+| `STORAGE_BUCKET` / `STORAGE_KEY` / `STORAGE_SECRET` | | Required together with `STORAGE_ENDPOINT`; a partial set fails closed at boot naming what is missing. |
+| `REVIEW_VERIFICATION_GATE` | `local` | Which integrity check QR-02's review gate reads. `local` is the ADR 0001 deviation; `cloud` requires read-back-verified uploads and retires that ADR. Do not set `cloud` before the settlement question in the ADR's exit section is answered. |
+
+Then `http://127.0.0.1:8080/review`, which redirects to a sign-in form taking the
+same machine and operator credentials.
+
+## The back-office console
+
+A React 19 SPA in `apps/console`, talking to the API over `/v1` and `/api` with a
+cookie session. `DESIGN.md` at the repo root owns the visual system and
+`docs/adr/0002-back-office-is-a-react-spa.md` says why it is a built SPA rather
+than server-rendered markup. Read both before changing anything visual.
+
+Three shells, in this order:
+
+```
+# 1. a real queue to develop against
+DATABASE_URL=... node packages/api/scripts/seed-console.mjs
+
+# 2. the API. The seed prints the PLAYERONE_MEDIA_ROOT to paste here.
+DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=dev  PLAYERONE_MEDIA_ROOT=...  pnpm serve
+
+# 3. the console
+pnpm -F @playerone/console dev
+```
+
+Then <http://localhost:5173>, and sign in with `HCM-01` / `pw` and `op-1` / `pw`.
+
+`seed-console.mjs` **truncates every table**, so point it at a throwaway
+database. It puts six episodes through the real counter path and commits three
+verdicts through the real endpoints, so Home's approval rate, payable time and
+settled value are computed from rows the production code wrote rather than from
+rows a fixture invented. It makes its own footage with ffmpeg and therefore says
+nothing about PaXini's encoder — same caveat as `verify-review.mjs`.
+
+**Always go through the Vite dev server, never straight at `:8080`.** The session
+is two `HttpOnly`, `SameSite=Strict` cookies, so the browser only sends them to
+the origin that set them; Vite proxies `/api`, `/auth`, `/media`, `/whoami` and
+`/reference` through its own origin, and pointing the client at the API directly
+drops every cookie and looks like an endless redirect back to sign-in.
+
+### Seeing it
+
+```
+node apps/console/scripts/shots.mjs
+```
+
+Every screen at 1440 and 390, both themes, English and Chinese, into
+`.impeccable/review/` (gitignored). Run it before claiming a visual change works:
+a typecheck cannot see contrast, overflow, or an arc drawn from the wrong angle.
+
+### Tokens
+
+`packages/design/src/tokens.ts` is the only place a colour, radius, shadow or
+duration is written down. After editing it:
+
+```
+pnpm -F @playerone/design build:css
+```
+
+which regenerates the committed `packages/design/generated/tokens.css`. The same
+file also exports `nativeTheme()` for the React Native collector app, so a value
+added straight into a component is a value that app cannot have.
+
+## The review lane
+
+`docs/review.md` is the design record. Two scripts go with it:
+
+```
+DATABASE_URL=... node packages/api/scripts/verify-review.mjs
+```
+
+Drives the whole lane over a real socket — sign-in, cookies, byte ranges, a
+verdict, a replayed verdict — and makes its own footage with ffmpeg, so it needs
+no sample corpus. Truncates every table, so point it at a throwaway database.
+
+```
+pnpm moov docs/sample_data/**/*.mp4
+```
+
+Says whether each MP4 has its `moov` atom at the front. Seeking is one small
+range request when it is, and needs the tail of the file first when it is not —
+which is a remux in the import path (`ffmpeg -c copy -movflags +faststart`), never
+a UI fix. Exits non-zero if any file has it at the back. **The committed fixtures
+are 32-byte stubs and cannot answer this**; run it over the real corpus.
 
 ## Migrations
 
@@ -141,9 +255,16 @@ drizzle gets wrong here and that a generated file may need fixing for by hand:
 | `packages/contracts` | `EpisodeRecord` (zod), episode id and content fingerprint |
 | `packages/ingest` | the measurement engine and the CLI |
 | `packages/store` | Postgres schema, migrations, episode store, catalogues |
-| `packages/api` | operator API: auth, counter workflow, session resolver |
+| `packages/api` | operator API: auth, counter workflow, session resolver, review console |
+| `packages/api/assets` | the superseded server-rendered console's ES module and stylesheet |
+| `packages/design` | design tokens, once, for the console and the collector app |
+| `apps/console` | the back-office SPA: React 19, Vite, TanStack, Tailwind |
+| `DESIGN.md` | the visual system, recorded from the built console |
 | `fixtures/sessions` | 22 synthetic sessions, one per failure mode, committed |
 | `docs/episode-identity.md` | why the episode id is derived the way it is |
+| `docs/matching.md` | how an episode is attributed to a collection session |
+| `docs/review.md` | the review lane: the queue, the money, the screen |
+| `docs/adr/` | decisions that deviate from the brief, with their expiry conditions |
 | `docs/playerone-ingest-engine-spec.md` | the engine specification |
 
 The authoritative requirements document is `Player One — Engineering Brief

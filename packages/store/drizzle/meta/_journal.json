@@ -29,6 +29,97 @@
       "when": 1787304463271,
       "tag": "0003_session_handover",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787564322984,
+      "tag": "0004_review_lane",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787646292979,
+      "tag": "0005_settlement_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787646405302,
+      "tag": "0008_review_queues",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787648340226,
+      "tag": "0006_back_office_crud",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787664812423,
+      "tag": "0010_device_assignments",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787734740226,
+      "tag": "0007_back_office_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787981000000,
+      "tag": "0007_cloud_leg",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787995000000,
+      "tag": "0009_cloud_leg_gate",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788000000009,
+      "tag": "0009_reviewer_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788100000000,
+      "tag": "0011_bill_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788200000000,
+      "tag": "0012_payout",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1788210000000,
+      "tag": "0013_finance_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788300000000,
+      "tag": "0016_episode_clearing",
+      "breakpoints": true
     }
   ]
 }

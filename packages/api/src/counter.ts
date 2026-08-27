@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { schema, type Db } from '@playerone/store';
 import { z } from 'zod';
 import { mutate } from './audit.ts';
-import type { Actor } from './actor.ts';
+import type { CounterActor } from './actor.ts';
 
 /**
  * The counter workflow: a collector arrives with a TF card, the operator records
@@ -83,7 +83,13 @@ export function registerCounter(
   requireActor: (req: FastifyRequest, reply: Reply) => Promise<unknown>,
 ): void {
   const opts = { preHandler: requireActor };
-  const actorOf = (req: FastifyRequest): Actor => req.actor!;
+  /**
+   * The counter, always. A reviewer session is refused by the route guard on
+   * every path in this file, so both halves are present by the time anything
+   * here runs — `CounterActor` is that guarantee written down rather than
+   * re-checked.
+   */
+  const actorOf = (req: FastifyRequest): CounterActor => req.actor as CounterActor;
 
   app.post('/handovers', opts, async (req, reply) => {
     const body = HandoverBody.safeParse(req.body);

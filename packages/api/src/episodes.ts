@@ -1,10 +1,11 @@
+import { basename } from 'node:path';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { EpisodeRecord } from '@playerone/contracts';
+import { deriveEpisodeId, EpisodeRecord } from '@playerone/contracts';
 import { schema, storeEpisode, type Db } from '@playerone/store';
 import { mutate } from './audit.ts';
-import type { Actor } from './actor.ts';
+import type { CounterActor } from './actor.ts';
 import { resolveEpisode, resolverDefects, type Resolution } from './resolve.ts';
 
 /**
@@ -36,6 +37,18 @@ const ResolveBody = z.object({
   collection_session_id: z.string().uuid(),
   reason: z.string().min(1),
 });
+const ClearBody = z.object({
+  /**
+   * Client-generated, like every other counter mutation (counter.ts): the
+   * console keeps working with the link down and replays its queue, so the
+   * same decision arriving twice has to land once. `episode_clearings.id` is
+   * the primary key, which is the unique key that makes that true.
+   */
+  id: z.string().uuid(),
+  /** The delivery the operator judged authoritative. */
+  ingest_id: z.string().uuid(),
+  reason: z.string().trim().min(1),
+});
 
 export function registerEpisodes(
   app: FastifyInstance,
@@ -44,9 +57,15 @@ export function registerEpisodes(
   toleranceMs: number,
 ): void {
   const opts = { preHandler: requireActor };
+  /**
+   * The counter, always. A reviewer session is refused by the route guard on
+   * every path in this file, so both halves are present by the time anything
+   * here runs.
+   */
+  const actorOf = (req: FastifyRequest): CounterActor => req.actor as CounterActor;
 
   /** The batch, its handover, and the sessions declared against that handover. */
-  const context = async (batchId: string, actor: Actor) => {
+  const context = async (batchId: string, actor: CounterActor) => {
     const [batch] = await db
       .select()
       .from(schema.uploadBatches)
@@ -88,11 +107,51 @@ export function registerEpisodes(
         id: schema.collectionSessions.id,
         prepareTime: schema.collectionSessions.prepareTime,
         sessionOrigin: schema.collectionSessions.sessionOrigin,
+        /** Read only by the device-assignment crosscheck in `resolve.ts`. */
+        collectorId: schema.collectionSessions.collectorId,
       })
       .from(schema.collectionSessions)
       .where(eq(schema.collectionSessions.handoverId, batch.handoverId));
 
-    return { batch, handover, sessions };
+    /**
+     * The device's assignment periods, for the crosscheck the resolver cannot
+     * make on its own: `resolve.ts` is pure and may not read a database, so the
+     * lookup happens here and the periods travel in as data.
+     *
+     * One query per batch rather than per episode. An allotment runs about three
+     * months, so a device carries a handful of rows for its whole service life
+     * and filtering them in memory beats a query for every episode on the card.
+     *
+     * ponytail: keyed on the HANDOVER's device, the one an operator physically
+     * looked at when the card came across the counter, and not on the serial the
+     * episode's own manifest claims. When those two disagree, SERIAL-CONFLICT
+     * already records it against the ingest for a human. Keying on the episode's
+     * serial is the upgrade path and it needs every serial the fleet has emitted
+     * to exist as a `devices` row first, which at the pilot it does not.
+     */
+    const assignments = await db
+      .select({
+        collectorId: schema.deviceAssignments.collectorId,
+        validFrom: schema.deviceAssignments.validFrom,
+        validTo: schema.deviceAssignments.validTo,
+      })
+      .from(schema.deviceAssignments)
+      .where(eq(schema.deviceAssignments.deviceId, handover.deviceId));
+
+    /**
+     * A device with no custody history at all is a device nobody has
+     * recorded an assignment for yet — not a device with a gap in its record.
+     * On the upgrade path from 0004 the `devices.bound_collector_id` column
+     * 0010 seeds from is created empty, so every pilot device starts here, and
+     * running the crosscheck against an empty history would send the whole
+     * fleet's footage to the human queue on deploy day. `undefined` is the
+     * resolver's "not supplied" and switches the crosscheck off; the first
+     * bind (or a typed assignment) turns it on for that device from that
+     * instant — `assigneeAt` treats footage from before the earliest period as
+     * untracked too, so a backlog upload is not quarantined by the bind that
+     * came after it (F-33). From then on a gap is a gap.
+     */
+    return { batch, handover, sessions, assignments: assignments.length === 0 ? undefined : assignments };
   };
 
   app.post('/upload-batches/:id/episodes', opts, async (req, reply) => {
@@ -100,13 +159,35 @@ export function registerEpisodes(
     if (!body.success) {
       return reply.code(400).send({ error: 'invalid body', detail: body.error.issues.slice(0, 5) });
     }
-    const actor = req.actor!;
+    const actor = actorOf(req);
     const batchId = (req.params as { id: string }).id;
     const ctx = await context(batchId, actor);
     if (ctx === null) return reply.code(404).send({ error: 'no such batch on this machine' });
 
     const results = [];
     for (const record of body.data.episodes) {
+      /**
+       * The id is re-derived here, from the record's own basename, before the
+       * record is allowed to touch anything.
+       *
+       * `episodes.episode_id` is global — that is the point of deriving it from
+       * the basename (docs/episode-identity.md): a card at the counter and a
+       * cloud re-download of the same session are one episode and one payment.
+       * The cost of a global key is that a caller who could choose it could
+       * name somebody else's episode and, two transactions later, move it onto
+       * this machine's batch. The id is a pure function of the basename and the
+       * engine computes it with this same function, so a record that disagrees
+       * with itself is not a delivery to reconcile — it is refused.
+       */
+      const expected = deriveEpisodeId(basename(record.source.path));
+      if (record.episode_id !== expected) {
+        results.push({
+          episode_id: record.episode_id,
+          error: 'episode_id does not derive from the source basename',
+          expected_episode_id: expected,
+        });
+        continue;
+      }
       /**
        * The measurement is stored first, by the code that already owns that job.
        * `storeEpisode` runs its own transaction and handles the re-delivery cases
@@ -120,10 +201,13 @@ export function registerEpisodes(
        * buy atomicity between a safe state and a safer one.
        */
       const stored = await storeEpisode(db, record);
-      const resolution = resolveEpisode(record, ctx.sessions, {
-        toleranceMs,
-        latestPlausibleStartMs: Date.now() + FUTURE_START_SLACK_MS,
-      });
+      const resolution = resolveEpisode(
+        record,
+        ctx.sessions,
+        { toleranceMs, latestPlausibleStartMs: Date.now() + FUTURE_START_SLACK_MS },
+        [],
+        ctx.assignments,
+      );
       const defects = resolverDefects(record, ctx.handover, resolution.sessionId);
 
       await mutate(
@@ -222,7 +306,7 @@ export function registerEpisodes(
    * settlement report.
    */
   app.get('/upload-batches/:id/exceptions', opts, async (req, reply) => {
-    const actor = req.actor!;
+    const actor = actorOf(req);
     const batchId = (req.params as { id: string }).id;
     const ctx = await context(batchId, actor);
     if (ctx === null) return reply.code(404).send({ error: 'no such batch on this machine' });
@@ -270,7 +354,7 @@ export function registerEpisodes(
   app.post('/episodes/:id/resolve', opts, async (req, reply) => {
     const body = ResolveBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
-    const actor = req.actor!;
+    const actor = actorOf(req);
     const episodeId = (req.params as { id: string }).id;
 
     const [episode] = await db
@@ -302,22 +386,29 @@ export function registerEpisodes(
       return reply.code(409).send({ error: 'that session does not belong to this delivery' });
     }
 
+    /**
+     * `mutate` reads the event after the write callback resolves, so the
+     * callback can add what only the write knows: which reviews this
+     * re-attribution moved, and who lost them. A privacy handoff that says only
+     * "the session changed" is not reconstructable afterwards.
+     */
+    const event = {
+      action: 'episode.resolve_manual',
+      targetTable: 'episodes',
+      targetId: episodeId,
+      // What the machine suggested and what the human picked, so a dispute can
+      // see the difference without another column on episodes.
+      before: {
+        resolution_state: episode.resolutionState,
+        proposed_session_id: episode.collectionSessionId,
+      },
+      after: { collection_session_id: body.data.collection_session_id } as Record<string, unknown>,
+      reason: body.data.reason,
+    };
     await mutate(
       db,
       actor,
-      {
-        action: 'episode.resolve_manual',
-        targetTable: 'episodes',
-        targetId: episodeId,
-        // What the machine suggested and what the human picked, so a dispute can
-        // see the difference without another column on episodes.
-        before: {
-          resolution_state: episode.resolutionState,
-          proposed_session_id: episode.collectionSessionId,
-        },
-        after: { collection_session_id: body.data.collection_session_id },
-        reason: body.data.reason,
-      },
+      event,
       async (tx) => {
         const [row] = await tx
           .update(schema.episodes)
@@ -328,6 +419,34 @@ export function registerEpisodes(
           })
           .where(eq(schema.episodes.episodeId, episodeId))
           .returning();
+        /**
+         * QR-07. The review lane is derived from the session's two APP-17b
+         * declarations, and this endpoint is the one place a resolved episode
+         * can be pointed at a *different* session. A pending review keeps the
+         * lane it was materialised with, so without this an episode re-resolved
+         * onto a session that declares others in frame stays in the queue every
+         * reviewer sees.
+         *
+         * Upgrades only. A reviewer's own PRV-04 flag lives in the same column
+         * and is not this endpoint's to lift; the declaration is a floor, not
+         * the whole value.
+         */
+        const moved = (await tx.execute(sql`
+          update episode_reviews r
+             set queue = 'privacy', reviewer_ref = null, claimed_at = null,
+                 lease_expires_at = null, assignee_ref = null, updated_at = now()
+            from collection_sessions s
+           where r.episode_id = ${episodeId}
+             and r.review_state = 'pending'
+             and r.queue <> 'privacy'
+             and s.id = ${body.data.collection_session_id}
+             and (s.others_in_frame or s.sensitive_info_present)
+          returning r.id, r.reviewer_ref as displaced_reviewer_ref
+        `)) as unknown as { id: string; displaced_reviewer_ref: string | null }[];
+        if (moved.length > 0) {
+          event.after['quarantined_reviews'] = moved;
+          event.after['reason_code'] = 'CO-PRIVACY';
+        }
         return row;
       },
     );
@@ -340,7 +459,7 @@ export function registerEpisodes(
    * different endpoint and a different audit action.
    */
   app.post('/episodes/:id/confirm', opts, async (req, reply) => {
-    const actor = req.actor!;
+    const actor = actorOf(req);
     const episodeId = (req.params as { id: string }).id;
 
     const [episode] = await db
@@ -379,9 +498,194 @@ export function registerEpisodes(
     return reply.send({ episode_id: episodeId, already_confirmed: false });
   });
 
+  /**
+   * Clearing ONE episode out of a CHECKSUM-MISMATCH quarantine.
+   *
+   * A redelivery whose bytes differ writes a second ingest carrying
+   * CHECKSUM-MISMATCH, and the ingest spec (§6) keeps the episode out of review
+   * until somebody says which delivery is real. This is where they say it. The
+   * answer is a row in `episode_clearings` — who, when, why, from what — and a
+   * move of `latest_ingest_id` onto the delivery named. Nothing else changes:
+   * the other delivery's ingest, files and defects stay exactly as stored
+   * (Rule 6), and the review lane reads the clearing rather than an edit.
+   *
+   * Only the delivery conflict is cleared here. An episode with no session is
+   * a different quarantine with its own route (`/resolve`), and a machine
+   * proposal awaiting a human is `/confirm`; both already exist and this one
+   * does not repeat them. An episode can need two of these in turn.
+   *
+   * The counter only: the route guard refuses a reviewer session on every
+   * path in this file, so `actorOf` is safe here as everywhere above.
+   */
+  app.post('/episodes/:id/clear', opts, async (req, reply) => {
+    const body = ClearBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
+    const actor = actorOf(req);
+    const episodeId = (req.params as { id: string }).id;
+    const named = body.data.ingest_id;
+
+    /**
+     * SEC-02: an operator clears what arrived at their own centre. Same 404
+     * as an id that does not exist, so another centre's episodes cannot be
+     * enumerated from here either.
+     */
+    const [episode] = await db
+      .select({ episodeId: schema.episodes.episodeId })
+      .from(schema.episodes)
+      .innerJoin(schema.uploadBatches, eq(schema.uploadBatches.id, schema.episodes.uploadBatchId))
+      .innerJoin(schema.handovers, eq(schema.handovers.id, schema.uploadBatches.handoverId))
+      .where(
+        and(
+          eq(schema.episodes.episodeId, episodeId),
+          eq(schema.handovers.uploadCentreId, actor.operator.uploadCentreId),
+        ),
+      );
+    if (episode === undefined) return reply.code(404).send({ error: 'no such episode' });
+
+    const event = {
+      action: 'episode.clear',
+      targetTable: 'episodes',
+      targetId: episodeId,
+      before: {} as Record<string, unknown>,
+      after: {} as Record<string, unknown>,
+      reason: body.data.reason,
+    };
+    let refusal: string | null = null;
+    /** The clearing this id already names, when the request is a replay. */
+    let replayed: { id: string } | undefined;
+    /** A replay is the same decision: same episode, same delivery, same reason. Anything else under that id is a reused id. */
+    const sameDecision = (k: { episodeId: string; ingestId: string; reason: string }) =>
+      k.episodeId === episodeId && k.ingestId === named && k.reason === body.data.reason;
+    const written = await mutate(db, actor, event, async (tx) => {
+      /**
+       * Lock the episode first, then read the delivery under the lock. A
+       * redelivery landing mid-request moves `latest_ingest_id`, and the
+       * decision below is about the delivery that is latest NOW.
+       *
+       * `uncleared`: latest carries a CHECKSUM-MISMATCH that no clearing has
+       * yet answered.
+       */
+      const [row] = (await tx.execute(sql`
+        select e.latest_ingest_id as latest, i.state as from_state,
+               exists (select 1 from episode_defects d
+                        where d.ingest_id = e.latest_ingest_id and d.code = 'CHECKSUM-MISMATCH'
+                          and not exists (select 1 from episode_clearings k where k.ingest_id = d.ingest_id)) as uncleared
+          from episodes e
+          join episode_ingests i on i.ingest_id = e.latest_ingest_id
+         where e.episode_id = ${episodeId}
+           for update of e
+      `)) as unknown as { latest: string; from_state: string; uncleared: boolean }[];
+      if (row === undefined) {
+        refusal = 'episode_clearing_nothing_to_clear';
+        return undefined;
+      }
+      /**
+       * The replay check comes before every gate, because the gates read
+       * state the first request changed: the identical retry of a clear that
+       * moved latest onto A finds nothing to clear on A. Same-episode clears
+       * are serialised by the lock above, so this read is current.
+       */
+      const [prior] = await tx
+        .select()
+        .from(schema.episodeClearings)
+        .where(eq(schema.episodeClearings.id, body.data.id));
+      if (prior !== undefined) {
+        if (sameDecision(prior)) replayed = prior;
+        else refusal = 'episode_clearing_id_reused';
+        return undefined;
+      }
+      /**
+       * The named delivery must be one of this episode's. The composite FK
+       * `episode_clearings_delivery_fk` refuses anything else at the database;
+       * this read is what turns that into a sentence instead of a 500.
+       */
+      const [delivery] = await tx
+        .select({ ingestId: schema.episodeIngests.ingestId })
+        .from(schema.episodeIngests)
+        .where(and(eq(schema.episodeIngests.episodeId, episodeId), eq(schema.episodeIngests.ingestId, named)));
+      if (delivery === undefined) {
+        refusal = 'episode_clearing_foreign_delivery';
+        return undefined;
+      }
+      /**
+       * Anything to clear? A clear does two things: it answers the mismatch
+       * on the delivery it names, and it moves latest onto that delivery. It
+       * is a no-op only when neither happens — the named delivery is already
+       * latest and its mismatch (if it ever had one) is already answered.
+       * Asking only whether LATEST is mismatched, which this did, refused a
+       * correction in one direction: name A (never mismatched), look again,
+       * name B — B still carries an unanswered CHECKSUM-MISMATCH, but A was
+       * latest by then and clean.
+       */
+      if (named === row.latest && !row.uncleared) {
+        refusal = 'episode_clearing_nothing_to_clear';
+        return undefined;
+      }
+      /**
+       * A delivery that has already been reviewed and paid is not a choice
+       * that can be unmade here: naming a different one would materialise a
+       * second review for the same session and, through `settlements_review_key`
+       * being per review, a second payment. That is the dispute path (P2).
+       */
+      const [paid] = await tx
+        .select({ id: schema.episodeReviews.id })
+        .from(schema.episodeReviews)
+        .where(
+          and(
+            eq(schema.episodeReviews.episodeId, episodeId),
+            sql`${schema.episodeReviews.ingestId} <> ${named}`,
+            inArray(schema.episodeReviews.reviewState, ['pass', 'partial_pass']),
+          ),
+        );
+      if (paid !== undefined) {
+        refusal = 'episode_clearing_paid_on_other_delivery';
+        return undefined;
+      }
+
+      const [clearing] = await tx
+        .insert(schema.episodeClearings)
+        .values({
+          id: body.data.id,
+          episodeId,
+          ingestId: named,
+          priorLatestIngestId: row.latest,
+          fromState: row.from_state,
+          clearedBy: actor.operator.operatorId,
+          reason: body.data.reason,
+        })
+        // Only a concurrent clear of ANOTHER episode under this id gets here;
+        // same-episode ones queue on the lock and are caught as `prior`.
+        .onConflictDoNothing({ target: schema.episodeClearings.id })
+        .returning({ id: schema.episodeClearings.id });
+      if (clearing === undefined) {
+        refusal = 'episode_clearing_id_reused';
+        return undefined;
+      }
+      if (row.latest !== named) {
+        await tx
+          .update(schema.episodes)
+          .set({ latestIngestId: named })
+          .where(eq(schema.episodes.episodeId, episodeId));
+      }
+      event.before = { latest_ingest_id: row.latest, state: row.from_state };
+      event.after = { latest_ingest_id: named, clearing_id: clearing.id };
+      return clearing;
+    });
+    if (written === undefined && replayed === undefined) {
+      return reply.code(409).send({ error: 'refused', constraint: refusal ?? 'episode_clearing_nothing_to_clear' });
+    }
+    // A replay answers with the first clearing's id; nothing was written, no audit row either.
+    return reply.send({
+      episode_id: episodeId,
+      clearing_id: (written ?? replayed)!.id,
+      latest_ingest_id: named,
+      replayed: written === undefined,
+    });
+  });
+
   /** The status view: batches on this machine, newest first. */
   app.get('/upload-batches', opts, async (req, reply) => {
-    const actor = req.actor!;
+    const actor = actorOf(req);
     const status = (req.query as Record<string, string>)['status'];
     const rows = await db
       .select({

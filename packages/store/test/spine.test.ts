@@ -32,6 +32,8 @@ async function seedSpine() {
     centre: uid(),
     uploadDevice: uid(),
     operator: uid(),
+    /** 0013: only a finance operator on the audit trail may mark a settlement paid. */
+    finance: uid(),
     handover: uid(),
     batch: uid(),
     session: uid(),
@@ -66,7 +68,8 @@ async function seedSpine() {
   `);
   await d.execute(sql`
     insert into operators (id, upload_centre_id, external_ref, role)
-      values (${ids.operator}, ${ids.centre}, 'op-01', 'centre_operator');
+      values (${ids.operator}, ${ids.centre}, 'op-01', 'centre_operator'),
+             (${ids.finance}, ${ids.centre}, 'fin-01', 'finance');
   `);
   await d.execute(sql`
     insert into handovers (id, collector_id, device_id, tf_card_id, upload_centre_id, operator_id, handover_time)
@@ -165,6 +168,14 @@ describe.skipIf(!hasDb())('the identity spine', () => {
 
   // -- QR-03: effective duration cannot exceed measured ---------------------
 
+  /**
+   * Every insert below carries a `verdict_id` it does not otherwise care about.
+   * `episode_reviews_verdict_id_check` requires one on any row that is not
+   * pending: a decided review has to name the request that decided it, because
+   * that id is what makes a retried commit return the first answer rather than
+   * write a second review and a second payment. These tests are about other
+   * constraints; the column is here so they reach them.
+   */
   describe('QR-03: effective duration cannot exceed what was measured', () => {
     it('rejects an over-long effective duration in raw SQL, with no application in the path', async () => {
       const ids = await seedSpine();
@@ -175,8 +186,8 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const d = await db();
       await violates('episode_reviews_effective_le_measured_check', d.execute(sql`
           insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
-                                       effective_duration_s, review_state, reviewed_at)
-            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', '8.500001', 'partial_pass', now());
+                                       effective_duration_s, review_state, reviewed_at, verdict_id)
+            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', '8.500001', 'partial_pass', now(), ${uid()});
         `));
     });
 
@@ -189,8 +200,8 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const d = await db();
       await d.execute(sql`
         insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
-                                     effective_duration_s, review_state, reviewed_at)
-          values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now());
+                                     effective_duration_s, review_state, reviewed_at, verdict_id)
+          values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now(), ${uid()});
       `);
       const rows = await d.execute(sql`select count(*)::int as n from episode_reviews`);
       expect((rows as unknown as { n: number }[])[0]!.n).toBe(1);
@@ -207,8 +218,8 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const d = await db();
       await violates('episode_reviews_ingest_fk', d.execute(sql`
           insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
-                                       effective_duration_s, review_state, reviewed_at)
-            values (${uid()}, ${episodeId}, ${ingestId}, '9999.000000', '9000.000000', 'pass', now());
+                                       effective_duration_s, review_state, reviewed_at, verdict_id)
+            values (${uid()}, ${episodeId}, ${ingestId}, '9999.000000', '9000.000000', 'pass', now(), ${uid()});
         `));
     });
 
@@ -219,9 +230,73 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const d = await db();
       await violates('episode_reviews_ingest_fk', d.execute(sql`
           insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
-                                       effective_duration_s, review_state, reviewed_at)
-            values (${uid()}, ${a.episodeId}, ${b.ingestId}, '20.980044', '1.000000', 'pass', now());
+                                       effective_duration_s, review_state, reviewed_at, verdict_id)
+            values (${uid()}, ${a.episodeId}, ${b.ingestId}, '20.980044', '1.000000', 'pass', now(), ${uid()});
         `));
+    });
+
+    it('QR-05: bounds the priority below the API, not only inside it', async () => {
+      /**
+       * The queue is ordered by this column. One row carrying `2^31-1` sits at
+       * the head of every lane until somebody notices; one carrying the minimum
+       * is buried under everything that will ever arrive. The request parser
+       * bounds it too, and this is the half a `psql` session cannot skip.
+       */
+      const ids = await seedSpine();
+      const { episodeId, ingestId } = await seedEpisode({
+        sessionId: ids.session,
+        measured: '8.500000',
+      });
+      const d = await db();
+      await violates('episode_reviews_priority_range_check', d.execute(sql`
+          insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                       review_state, priority)
+            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', 'pending', 2147483647);
+        `));
+      // And a stopwatch cannot run backwards, for the same reason: it is the
+      // input to a number about a person's pace.
+      await violates('episode_reviews_time_to_verdict_check', d.execute(sql`
+          insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                       review_state, effective_duration_s, verdict_id,
+                                       reviewed_at, time_to_verdict_s)
+            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', 'pass', '8.500000',
+                    ${uid()}, now(), -1);
+        `));
+    });
+
+    it('QR-05: refuses an assignment to somebody who is not an operator', async () => {
+      /**
+       * An assignment is the one column on this row that can make an episode
+       * invisible to everybody at once: the queue offers an assigned review to
+       * its assignee and to nobody else, so a typed or stale id parks the
+       * footage forever with nothing to see. That has to be a foreign key —
+       * the id will be typed by a supervisor into a form, and nothing in the
+       * service can tell a wrong uuid from a right one.
+       */
+      const ids = await seedSpine();
+      const { episodeId, ingestId } = await seedEpisode({
+        sessionId: ids.session,
+        measured: '8.500000',
+      });
+      const d = await db();
+      await violates('episode_reviews_assignee_ref_operators_id_fk', d.execute(sql`
+          insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                       review_state, assignee_ref)
+            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', 'pending', ${uid()});
+        `));
+
+      // A real operator is accepted. The identity is `operators.id` because that
+      // is what a reviewer signs in with today; when reviewers get their own
+      // role the parent moves and this test moves with it.
+      await d.execute(sql`
+        insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                     review_state, assignee_ref)
+          values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', 'pending', ${ids.operator});
+      `);
+      const rows = (await d.execute(
+        sql`select count(*)::int as n from episode_reviews where assignee_ref = ${ids.operator}`,
+      )) as unknown as { n: number }[];
+      expect(rows[0]!.n).toBe(1);
     });
 
     it('requires a failed review to be worth nothing (§6.9)', async () => {
@@ -233,8 +308,8 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const d = await db();
       await violates('episode_reviews_fail_is_zero_check', d.execute(sql`
           insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
-                                       effective_duration_s, review_state, reviewed_at)
-            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', '4.000000', 'fail', now());
+                                       effective_duration_s, review_state, reviewed_at, verdict_id)
+            values (${uid()}, ${episodeId}, ${ingestId}, '8.500000', '4.000000', 'fail', now(), ${uid()});
         `));
     });
   });
@@ -271,8 +346,8 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const reviewId = uid();
       await d.execute(sql`
         insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
-                                     effective_duration_s, review_state, reviewed_at)
-          values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now());
+                                     effective_duration_s, review_state, reviewed_at, verdict_id)
+          values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now(), ${uid()});
       `);
       const bill = (id: string) => sql`
         insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
@@ -281,6 +356,348 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       `;
       await d.execute(bill(uid()));
       await violates('settlements_review_key', d.execute(bill(uid())));
+    });
+  });
+
+  // -- SET-05 / SET-06: the lifecycle, and the bill it ends on --------------
+
+  /**
+   * SET-05 gives five states. `settlements_state_check` says which values are
+   * legal; it cannot say which *changes* are, because a CHECK only ever sees the
+   * row in front of it and `manually_paid` is a legal value whichever row it is
+   * on. The edges are enforced by `settlements_transition_guard`, and these
+   * tests reach the trigger the way a psql session or a future service would --
+   * raw SQL, with no `settle.ts` in the path. That is the whole reason the guard
+   * is in the database and not in the endpoint that marks a bill paid.
+   */
+  describe('SET-05: a settlement moves forward, and nothing walks it back', () => {
+    /** A review with a settlement on it, in whatever state the test starts from. */
+    async function seedSettlement(state = 'pending_settlement') {
+      const ids = await seedSpine();
+      const { episodeId, ingestId } = await seedEpisode({
+        sessionId: ids.session,
+        measured: '8.500000',
+      });
+      const d = await db();
+      const reviewId = uid();
+      const settlementId = uid();
+      await d.execute(sql`
+        insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                     effective_duration_s, review_state, reviewed_at, verdict_id)
+          values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now(), ${uid()});
+      `);
+      await d.execute(sql`
+        insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+                                 amount, settlement_state)
+          values (${settlementId}, ${reviewId}, ${ids.task}, '1200.0000', '0.141667', '170.0000', ${state});
+      `);
+      return { ...ids, settlementId };
+    }
+
+    const move = async (settlementId: string, to: string): Promise<unknown> => {
+      const d = await db();
+      return d.execute(sql`
+        update settlements set settlement_state = ${to}, updated_at = now() where id = ${settlementId};
+      `);
+    };
+
+    /**
+     * The last edge, the way 0013 requires it to be walked: the settlement is
+     * on a bill, and the transaction that marks it paid carries the audit row
+     * of a finance operator who did not issue that bill
+     * (`settlements_paid_by_finance`, checked at commit against
+     * `audit_events`). A bare `move(id, 'manually_paid')` is refused, which
+     * `payout/domain/schema.test.ts` proves; this helper is the legal shape.
+     */
+    const pay = async (ids: Awaited<ReturnType<typeof seedSettlement>>): Promise<void> => {
+      const d = await db();
+      const billId = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${billId}, ${ids.settlementId});`);
+      await d.transaction(async (tx) => {
+        await tx.execute(sql`
+          update settlements set settlement_state = 'manually_paid', updated_at = now() where id = ${ids.settlementId};
+        `);
+        await tx.execute(sql`
+          insert into audit_events (action, target_table, target_id, actor_role, operator_id, upload_device_id, upload_centre_id)
+            values ('bill.pay', 'bills', ${billId}, 'operator', ${ids.finance}, ${ids.uploadDevice}, ${ids.centre});
+        `);
+      });
+    };
+
+    const stateOf = async (settlementId: string): Promise<string | undefined> => {
+      const d = await db();
+      const rows = (await d.execute(
+        sql`select settlement_state from settlements where id = ${settlementId}`,
+      )) as unknown as { settlement_state: string }[];
+      return rows[0]?.settlement_state;
+    };
+
+    it('refuses a settlement that is born already paid', async () => {
+      const ids = await seedSpine();
+      const { episodeId, ingestId } = await seedEpisode({
+        sessionId: ids.session,
+        measured: '8.500000',
+      });
+      const d = await db();
+      const reviewId = uid();
+      await d.execute(sql`
+        insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                     effective_duration_s, review_state, reviewed_at, verdict_id)
+          values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now(), ${uid()});
+      `);
+      // Without this every guarded edge is skippable by inserting the end state.
+      await violates(
+        'settlements_transition_check',
+        d.execute(sql`
+          insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+                                   amount, settlement_state)
+            values (${uid()}, ${reviewId}, ${ids.task}, '1200.0000', '0.141667', '170.0000', 'manually_paid');
+        `),
+      );
+    });
+
+    it('walks pending_settlement to bill_generated to manually_paid', async () => {
+      const ids = await seedSettlement();
+      const { settlementId } = ids;
+      await move(settlementId, 'bill_generated');
+      await pay(ids);
+      expect(await stateOf(settlementId)).toBe('manually_paid');
+    });
+
+    it('refuses manually_paid -> pending_review, which the state CHECK accepts', async () => {
+      const ids = await seedSettlement();
+      const { settlementId } = ids;
+      await move(settlementId, 'bill_generated');
+      await pay(ids);
+
+      // Both values satisfy settlements_state_check. The edge is what is
+      // illegal: a paid settlement that re-enters the queue is a second payment.
+      await violates('settlements_transition_check', move(settlementId, 'pending_review'));
+      await violates('settlements_transition_check', move(settlementId, 'pending_settlement'));
+      await violates('settlements_transition_check', move(settlementId, 'bill_generated'));
+      await violates('settlements_transition_check', move(settlementId, 'exception'));
+      expect(await stateOf(settlementId)).toBe('manually_paid');
+    });
+
+    it('refuses every other jump that skips or reverses the lane', async () => {
+      const illegal: [string, string][] = [
+        ['pending_review', 'bill_generated'],
+        ['pending_review', 'manually_paid'],
+        ['pending_settlement', 'pending_review'],
+        ['pending_settlement', 'manually_paid'],
+        ['bill_generated', 'pending_review'],
+        ['bill_generated', 'pending_settlement'],
+        ['exception', 'bill_generated'],
+        ['exception', 'manually_paid'],
+        ['exception', 'pending_review'],
+      ];
+      for (const [from, to] of illegal) {
+        await truncate();
+        const { settlementId } = await seedSettlement(
+          from === 'pending_review' ? 'pending_review' : 'pending_settlement',
+        );
+        if (from === 'bill_generated') await move(settlementId, 'bill_generated');
+        if (from === 'exception') await move(settlementId, 'exception');
+        await violates('settlements_transition_check', move(settlementId, to));
+        expect(await stateOf(settlementId)).toBe(from);
+      }
+    });
+
+    it('lets an exception go back to the queue, because that is the only way out', async () => {
+      const { settlementId } = await seedSettlement();
+      await move(settlementId, 'exception');
+      await move(settlementId, 'pending_settlement');
+      await move(settlementId, 'bill_generated');
+      expect(await stateOf(settlementId)).toBe('bill_generated');
+    });
+
+    it('refuses to change what a settlement is worth after it is written', async () => {
+      const { settlementId } = await seedSettlement();
+      const d = await db();
+      // `bills.total` is the sum of its lines and `bill_lines` stores no money of
+      // its own, so an editable amount would let an issued bill quietly stop
+      // adding up with nothing in the schema noticing.
+      await violates(
+        'settlements_amount_immutable_check',
+        d.execute(sql`update settlements set amount = '999.0000' where id = ${settlementId};`),
+      );
+      await violates(
+        'settlements_amount_immutable_check',
+        d.execute(sql`update settlements set unit_price = '2400.0000' where id = ${settlementId};`),
+      );
+      await violates(
+        'settlements_amount_immutable_check',
+        d.execute(
+          sql`update settlements set effective_minutes = '9.999999' where id = ${settlementId};`,
+        ),
+      );
+    });
+
+    it('cannot put one settlement on two bills', async () => {
+      const { settlementId, collector } = await seedSettlement();
+      const d = await db();
+      const billOne = uid();
+      const billTwo = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${billOne}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
+                 (${billTwo}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`
+        insert into bill_lines (bill_id, settlement_id) values (${billOne}, ${settlementId});
+      `);
+      // A second bill for the same work has nowhere to write the line.
+      await violates(
+        'bill_lines_settlement_key',
+        d.execute(sql`
+          insert into bill_lines (bill_id, settlement_id) values (${billTwo}, ${settlementId});
+        `),
+      );
+    });
+
+    it('freezes an issued bill, and only an issued one', async () => {
+      // 0011: a bill is evidence once it has a line. Its collector, period,
+      // currency and total are what finance was sent, and a raw-SQL edit after
+      // the fact is the tampering the trigger exists to refuse.
+      const { settlementId, collector } = await seedSettlement();
+      const d = await db();
+      const issued = uid();
+      const draft = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${issued}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
+                 (${draft}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${issued}, ${settlementId});`);
+      await violates(
+        'bills_issued_immutable',
+        d.execute(sql`update bills set total = '1.0000' where id = ${issued};`),
+      );
+      await violates(
+        'bills_issued_immutable',
+        d.execute(sql`update bills set period_end = '2026-09-01T00:00:00Z' where id = ${issued};`),
+      );
+      // A bill with no lines is not issued: the generator may still be writing it.
+      await d.execute(sql`update bills set total = '0.0000' where id = ${draft};`);
+    });
+
+    it('refuses a line that is another collector\'s work', async () => {
+      // 0011: bill_lines carries no collector, so without this a line from
+      // collector A's settlement could sit on collector B's bill and the export
+      // would pay B for A's minutes.
+      const { settlementId } = await seedSettlement();
+      const d = await db();
+      const other = uid();
+      const bill = uid();
+      await d.execute(sql`insert into collectors (id, external_ref, status) values (${other}, 'collector-0002', 'qualified');`);
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${bill}, ${other}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+      `);
+      await violates(
+        'bill_lines_owner_guard',
+        d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`),
+      );
+    });
+
+    it('never lets a line leave an issued bill', async () => {
+      // Bridge F-28. Deleting or re-pointing the last line would leave the
+      // frozen total standing over nothing, and the issued-bill guard reads
+      // "issued" as "has a line". A line is evidence: written once.
+      const { settlementId, collector } = await seedSettlement();
+      const d = await db();
+      const bill = uid();
+      const other = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${bill}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
+                 (${other}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`);
+      await violates(
+        'bill_lines_immutable',
+        d.execute(sql`delete from bill_lines where settlement_id = ${settlementId};`),
+      );
+      await violates(
+        'bill_lines_immutable',
+        d.execute(sql`update bill_lines set bill_id = ${other} where settlement_id = ${settlementId};`),
+      );
+    });
+
+    it('refuses a total its lines do not add up to', async () => {
+      // 0011, deferred to commit: the total is the sum of the lines. The bill
+      // may be written before its lines (the generator does), so the check runs
+      // when the transaction ends, over the finished bill.
+      const { settlementId, collector } = await seedSettlement();
+      const d = await db();
+      const bill = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${bill}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '1.0000');
+      `);
+      await violates(
+        'bills_total_matches_lines',
+        d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`),
+      );
+      // The same line on a bill that says 170.0000 is fine.
+      const right = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${right}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
+      `);
+      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${right}, ${settlementId});`);
+    });
+
+    it('cannot bill a rejected episode, which is worth nothing', async () => {
+      // SET-01 pays for pass and partial-pass reviews. The review lane still
+      // writes a settlement for a `fail`, worth 0.0000, because that row is the
+      // score of the review — but it is not a bill line, and the database is
+      // what says so rather than the generator's WHERE clause.
+      const ids = await seedSpine();
+      const { episodeId, ingestId } = await seedEpisode({
+        sessionId: ids.session,
+        measured: '8.500000',
+      });
+      const d = await db();
+      const reviewId = uid();
+      const settlementId = uid();
+      const billId = uid();
+      await d.execute(sql`
+        insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                     effective_duration_s, review_state, reviewed_at, verdict_id)
+          values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '0.000000', 'fail', now(), ${uid()});
+      `);
+      await d.execute(sql`
+        insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+                                 amount, settlement_state)
+          values (${settlementId}, ${reviewId}, ${ids.task}, '1200.0000', '0.000000', '0.0000', 'pending_settlement');
+      `);
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '0.0000');
+      `);
+      await violates(
+        'bill_lines_payable_check',
+        d.execute(sql`
+          insert into bill_lines (bill_id, settlement_id) values (${billId}, ${settlementId});
+        `),
+      );
+    });
+
+    it('refuses a second bill for the same collector and cycle', async () => {
+      const { collector } = await seedSettlement();
+      const d = await db();
+      const insert = (id: string) => sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${id}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+      `;
+      await d.execute(insert(uid()));
+      // SET-07's idempotency, with the generator bypassed entirely.
+      await violates('bills_collector_period_key', d.execute(insert(uid())));
     });
   });
 
@@ -325,6 +742,29 @@ describe.skipIf(!hasDb())('the identity spine', () => {
   it('UPL-06: a local cache cannot be cleaned before the cloud verified it', async () => {
     const ids = await seedSpine();
     const d = await db();
+
+    // Migrations 0007 and 0009 extend the gate: neither timestamp is a status an
+    // operator can assert, both are consequences of every episode on the batch
+    // passing byte read-back. An empty batch has nothing the cloud verified...
+    await violates('upload_batches_verify_needs_episodes', d.execute(sql`
+      update upload_batches set cloud_verified_at = now(), batch_status = 'verified'
+      where id = ${ids.batch};
+    `));
+
+    // ...and a batch with an unverified episode is not verified either.
+    const ep = await seedEpisode({ sessionId: ids.session, measured: '8.500000', batchId: ids.batch });
+    await violates('upload_batches_verify_needs_verified_episodes', d.execute(sql`
+      update upload_batches set cloud_verified_at = now(), batch_status = 'verified'
+      where id = ${ids.batch};
+    `));
+
+    await d.execute(sql`
+      update episodes set verification_state = 'verified' where episode_id = ${ep.episodeId};
+    `);
+
+    // With the episodes in order, the original CHECK is what still refuses a
+    // cleanup the cloud has not signed off: an upload centre's local copy is
+    // the only copy until then.
     await violates('upload_batches_cache_after_verify_check', d.execute(sql`
         update upload_batches set local_cache_cleaned_at = now() where id = ${ids.batch};
       `));
@@ -337,6 +777,70 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       update upload_batches set local_cache_cleaned_at = now(), batch_status = 'closed'
       where id = ${ids.batch};
     `);
+
+    // And cleaning reads the episodes NOW, not cloud_verified_at. That
+    // timestamp says a full verification passed once, which stays true;
+    // deleting the only local copy is a decision about the current bytes, so a
+    // batch whose episode has since failed re-verification is not cleanable
+    // even though it is still stamped verified.
+    await d.execute(sql`
+      update upload_batches set local_cache_cleaned_at = null where id = ${ids.batch};
+    `);
+    await d.execute(sql`
+      update episodes set verification_state = 'failed' where episode_id = ${ep.episodeId};
+    `);
+    await violates('upload_batches_verify_needs_verified_episodes', d.execute(sql`
+      update upload_batches set local_cache_cleaned_at = now(), batch_status = 'closed'
+      where id = ${ids.batch};
+    `));
+  });
+
+  // -- UPL-05: a verdict belongs to one delivery ---------------------------
+
+  it('UPL-05: a new ingest is unverified, whatever the last one scored', async () => {
+    const ids = await seedSpine();
+    const d = await db();
+    const ep = await seedEpisode({ sessionId: ids.session, measured: '8.500000', batchId: ids.batch });
+    const verificationOf = async () => {
+      const rows = (await d.execute(sql`
+        select verification_state from episodes where episode_id = ${ep.episodeId}
+      `)) as unknown as { verification_state: string }[];
+      return rows[0]!.verification_state;
+    };
+
+    await d.execute(sql`
+      update episodes set latest_ingest_id = ${ep.ingestId} where episode_id = ${ep.episodeId};
+    `);
+    await d.execute(sql`
+      update episodes set verification_state = 'verified' where episode_id = ${ep.episodeId};
+    `);
+    expect(await verificationOf()).toBe('verified');
+
+    // The card comes back with different bytes: a second ingest, and no cloud
+    // copy of it. The verdict is about the FIRST delivery's bytes and must not
+    // survive onto the second — otherwise QR-02's cloud gate admits an episode
+    // whose current bytes nobody has uploaded.
+    const second = uid();
+    await d.execute(sql`
+      insert into episode_ingests (ingest_id, episode_id, content_fingerprint, state, source_basename,
+                                   measured_duration_s, timing_source, timing_confidence, manifest_present,
+                                   engine_version, host, ingested_at, record_json)
+        values (${second}, ${ep.episodeId}, repeat('b', 64), 'ok', 'ego_AZER76400FE_20260813_072310',
+                '8.500000', 'pts_sidecar', 'exact', true, '0.3.1', 'test', now(), '{}'::jsonb);
+    `);
+    await d.execute(sql`
+      update episodes set latest_ingest_id = ${second}, ingest_count = 2
+      where episode_id = ${ep.episodeId};
+    `);
+    expect(await verificationOf()).toBe('pending');
+
+    // Raw SQL cannot smuggle the old verdict across either: the reset is a
+    // BEFORE trigger, so it wins over whatever the same statement sets.
+    await d.execute(sql`
+      update episodes set latest_ingest_id = ${ep.ingestId}, verification_state = 'verified'
+      where episode_id = ${ep.episodeId};
+    `);
+    expect(await verificationOf()).toBe('pending');
   });
 
   // -- UPL-07 --------------------------------------------------------------
@@ -374,6 +878,119 @@ describe.skipIf(!hasDb())('the identity spine', () => {
     expect(rows[0]!['task']).toBe(ids.task);
     expect(rows[0]!['collector']).toBe(ids.collector);
     expect(rows[0]!['device']).toBe(ids.device);
+  });
+
+  // -- device assignment ----------------------------------------------------
+
+  /**
+   * Daniel, 2026-08-25: one collector holds a headset for an allotted period,
+   * and at the end of it the credentials swap to the next collector. That is
+   * only a usable crosscheck if the periods cannot overlap — two collectors
+   * holding one device across one instant makes "who recorded this" ambiguous
+   * again, which is the question the table exists to answer.
+   *
+   * So the overlap rule is tested here, in SQL, with no API in the path: it has
+   * to hold against a psql session and a backfill script as well as against the
+   * routes in backoffice.ts.
+   */
+  describe('a device is assigned to one collector at a time', () => {
+    /** The second collector the whole slice turns on, plus a second device. */
+    const second = async (ids: { deviceType: string }) => {
+      const d = await db();
+      const collector = uid();
+      const device = uid();
+      await d.execute(sql`
+        insert into collectors (id, external_ref, status)
+          values (${collector}, 'collector-0002', 'qualified');
+      `);
+      await d.execute(sql`
+        insert into devices (id, device_type_id, hardware_serial, status)
+          values (${device}, ${ids.deviceType}, 'BZER99900AA', 'active');
+      `);
+      return { collector, device };
+    };
+
+    const assign = async (
+      deviceId: string,
+      collectorId: string,
+      from: string,
+      to: string | null,
+    ) => {
+      const d = await db();
+      return d.execute(sql`
+        insert into device_assignments (id, device_id, collector_id, valid_from, valid_to)
+          values (${uid()}, ${deviceId}, ${collectorId}, ${from}, ${to});
+      `);
+    };
+
+    it('refuses two closed periods that overlap', async () => {
+      const ids = await seedSpine();
+      const other = await second(ids);
+      await assign(ids.device, ids.collector, '2026-05-01T00:00:00Z', '2026-08-01T00:00:00Z');
+      await violates(
+        'device_assignments_no_overlap',
+        assign(ids.device, other.collector, '2026-07-01T00:00:00Z', '2026-10-01T00:00:00Z'),
+      );
+    });
+
+    it('refuses a closed period that a later open one reaches back into', async () => {
+      const ids = await seedSpine();
+      const other = await second(ids);
+      await assign(ids.device, ids.collector, '2026-05-01T00:00:00Z', '2026-08-01T00:00:00Z');
+      await violates(
+        'device_assignments_no_overlap',
+        assign(ids.device, other.collector, '2026-07-31T23:59:59Z', null),
+      );
+    });
+
+    it('refuses a second open period, because two open periods always overlap', async () => {
+      const ids = await seedSpine();
+      const other = await second(ids);
+      await assign(ids.device, ids.collector, '2026-05-01T00:00:00Z', null);
+      await violates(
+        'device_assignments_no_overlap',
+        assign(ids.device, other.collector, '2027-05-01T00:00:00Z', null),
+      );
+    });
+
+    it('refuses a period that ends before it starts, or lasts no time at all', async () => {
+      const ids = await seedSpine();
+      await violates(
+        'device_assignments_period_check',
+        assign(ids.device, ids.collector, '2026-08-01T00:00:00Z', '2026-05-01T00:00:00Z'),
+      );
+      await violates(
+        'device_assignments_period_check',
+        assign(ids.device, ids.collector, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
+      );
+    });
+
+    it('allows adjacent periods, because that is what a handover looks like', async () => {
+      const ids = await seedSpine();
+      const other = await second(ids);
+      const d = await db();
+      // The instant one allotment ends is the instant the next begins. A rule
+      // that refused this would force a gap in which the device belonged to
+      // nobody, and an episode recorded in that gap would resolve to no one.
+      await assign(ids.device, ids.collector, '2026-05-01T00:00:00Z', '2026-08-01T00:00:00Z');
+      await assign(ids.device, other.collector, '2026-08-01T00:00:00Z', null);
+
+      const rows = (await d.execute(sql`
+        select collector_id from device_assignments
+         where device_id = ${ids.device}
+           and tstzrange(valid_from, valid_to, '[)') @> '2026-08-01T00:00:00Z'::timestamptz
+      `)) as unknown as Record<string, string>[];
+      // The boundary instant belongs to the incoming collector, and to one only.
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!['collector_id']).toBe(other.collector);
+    });
+
+    it('scopes the rule to one device, so the fleet is not one queue', async () => {
+      const ids = await seedSpine();
+      const other = await second(ids);
+      await assign(ids.device, ids.collector, '2026-05-01T00:00:00Z', null);
+      await assign(other.device, other.collector, '2026-05-01T00:00:00Z', null);
+    });
   });
 });
 
@@ -413,7 +1030,18 @@ describe.skipIf(!hasDb())('the catalogues', () => {
     expect(blocking).not.toContain('STATS-STALE');
     expect(blocking).not.toContain('PTS-EMPTY');
     expect(blocking).not.toContain('TIMING-ESTIMATED');
-    expect(blocking).not.toContain('CHECKSUM-MISMATCH');
+
+    /**
+     * CHECKSUM-MISMATCH blocks. The ingest spec's defect table (§6) says
+     * quarantine — "does not enter the review queue, does not generate
+     * settlement, is never deleted" — because the bytes of one session changed
+     * between two deliveries and which one is real is an open question. The
+     * review-queue slice had tested the opposite; the integration follows the
+     * spec (bridge F-36, rebutted and withdrawn). Until a per-episode clearing
+     * route exists, a mismatched redelivery is unpayable — escalated, not
+     * decided here.
+     */
+    expect(blocking).toContain('CHECKSUM-MISMATCH');
 
     // Open question for the product owner, seeded permissive. If this flips,
     // it flips deliberately and this line is what says so.
@@ -450,5 +1078,92 @@ describe.skipIf(!hasDb())('the catalogues', () => {
       sql`select count(*)::int as n from defect_codes`,
     )) as unknown as { n: number }[];
     expect(rows[0]!.n).toBe(DEFECT_CATALOGUE.length);
+  });
+
+  /**
+   * §6.9's own note: build the reason codes configurable rather than hard-coded,
+   * because PaXini said on 13 Aug the in-the-wild standard does not exist yet
+   * and will be rewritten during the pilot.
+   *
+   * Configurable means an operator's UPDATE survives a restart. It did not: the
+   * boot-time seed upserted the labels back over it, which is the worse failure
+   * of the two — nothing errors, and the pilot's own tuning quietly reverts to
+   * whatever was compiled in.
+   */
+  it('leaves an operator edit alone, because the review standard is theirs to rewrite', async () => {
+    const d = await db();
+    await seedCatalogues(d);
+    await d.execute(sql`
+      update review_reason_codes
+         set label_en = 'Lens blocked by clothing', category = 'visual', active = false
+       where code = 'VQ-OCCLUSION'
+    `);
+
+    await seedCatalogues(d);
+
+    const rows = (await d.execute(sql`
+      select label_en, category, active from review_reason_codes where code = 'VQ-OCCLUSION'
+    `)) as unknown as { label_en: string; category: string; active: boolean }[];
+    expect(rows[0]!.label_en).toBe('Lens blocked by clothing');
+    expect(rows[0]!.category).toBe('visual');
+    // Retiring a code is how the taxonomy shrinks. The row stays, so the
+    // reviews already citing it still render.
+    expect(rows[0]!.active).toBe(false);
+
+    // A code the deployment does not have yet still arrives with a release.
+    const all = (await d.execute(
+      sql`select count(*)::int as n from review_reason_codes`,
+    )) as unknown as { n: number }[];
+    expect(all[0]!.n).toBe(REVIEW_REASON_CATALOGUE.length);
+  });
+
+  /**
+   * QR-01 and QR-04 both rest on a decided review still being able to name why.
+   * The taxonomy is editable, so the question is what an edit can do to the
+   * reviews that already cite it — and the answer has to be a foreign key,
+   * because the edit will be typed into psql by somebody who has never read
+   * this repository.
+   */
+  it('cannot orphan a past review, however the taxonomy is edited', async () => {
+    const d = await db();
+    await seedCatalogues(d);
+    const ids = await seedSpine();
+    const { episodeId, ingestId } = await seedEpisode({ sessionId: ids.session, measured: '60.000000' });
+    const reviewId = uid();
+    await d.execute(sql`
+      insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s, review_state,
+                                   effective_duration_s, verdict_id, reviewed_at)
+        values (${reviewId}, ${episodeId}, ${ingestId}, '60.000000', 'fail', 0, ${uid()}, now());
+    `);
+    await d.execute(sql`
+      insert into episode_review_reasons (review_id, code) values (${reviewId}, 'VQ-DARK');
+    `);
+
+    // Deactivating and relabelling: the picker loses the code, the verdict does not.
+    await d.execute(sql`
+      update review_reason_codes set active = false, label_en = 'Underexposed' where code = 'VQ-DARK'
+    `);
+    const joined = (await d.execute(sql`
+      select r.code, c.label_en, c.active
+        from episode_review_reasons r
+        join review_reason_codes c on c.code = r.code
+       where r.review_id = ${reviewId}
+    `)) as unknown as { code: string; label_en: string; active: boolean }[];
+    expect(joined).toHaveLength(1);
+    expect(joined[0]!.label_en).toBe('Underexposed');
+    expect(joined[0]!.active).toBe(false);
+
+    // Deleting it is the edit that would orphan the verdict, so the database
+    // refuses it. Not a rule in the service: this is a psql session.
+    await violates(
+      'episode_review_reasons_code_review_reason_codes_code_fk',
+      d.execute(sql`delete from review_reason_codes where code = 'VQ-DARK'`),
+    );
+
+    // Renaming the primary key is the same edit wearing a different hat.
+    await violates(
+      'episode_review_reasons_code_review_reason_codes_code_fk',
+      d.execute(sql`update review_reason_codes set code = 'VQ-UNDEREXPOSED' where code = 'VQ-DARK'`),
+    );
   });
 });

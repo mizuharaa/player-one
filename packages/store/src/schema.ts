@@ -94,6 +94,13 @@ export const episodes = pgTable(
       'episodes_upload_path_check',
       sql`${t.uploadPath} is null or ${t.uploadPath} in ('A', 'B', 'C')`,
     ),
+    /**
+     * The cloud read-back verdict, and a fact about ONE delivery's bytes.
+     * Migration 0009 carries the other half: a trigger resets this to
+     * 'pending' whenever `latest_ingest_id` moves, because a changed
+     * redelivery's bytes have never been uploaded and must not inherit the
+     * previous ingest's verdict.
+     */
     check(
       'episodes_verification_check',
       sql`${t.verificationState} in ('pending', 'verified', 'failed')`,
@@ -168,6 +175,8 @@ export const episodeIngests = pgTable(
      * episode (ING-17).
      */
     unique('episode_ingests_review_target_key').on(t.episodeId, t.ingestId, t.measuredDurationS),
+    /** The target of `episode_clearings_delivery_fk`: a clear must name a delivery of its own episode. */
+    unique('episode_ingests_delivery_key').on(t.episodeId, t.ingestId),
     check('episode_ingests_state_check', sql`${t.state} in ('ok', 'flagged', 'quarantined')`),
     check(
       'episode_ingests_timing_source_check',
@@ -250,6 +259,52 @@ export const episodeDefects = pgTable(
   ],
 );
 
+/**
+ * A person clearing ONE episode out of a CHECKSUM-MISMATCH quarantine by
+ * naming which delivery is the authoritative one. Migration 0016 says why it
+ * is shaped this way; the short version is Rule 6 — nothing modifies an
+ * earlier delivery's record, so the answer to "which bytes are real" is a new
+ * row here and a move of `episodes.latest_ingest_id`, and nothing else.
+ *
+ * Append-only: `episode_clearings_append_only` (0016) refuses UPDATE and
+ * DELETE. A second clear is a second row.
+ */
+export const episodeClearings = pgTable(
+  'episode_clearings',
+  {
+    id: uuid('id').primaryKey(),
+    episodeId: uuid('episode_id')
+      .notNull()
+      .references(() => episodes.episodeId),
+    /** The delivery named as authoritative. Bound to this episode by the composite FK below. */
+    ingestId: uuid('ingest_id').notNull(),
+    /** What `latest_ingest_id` was when the clear was made: the state cleared from. */
+    priorLatestIngestId: uuid('prior_latest_ingest_id')
+      .notNull()
+      .references(() => episodeIngests.ingestId),
+    fromState: text('from_state').notNull(),
+    clearedBy: uuid('cleared_by')
+      .notNull()
+      .references(() => operators.id),
+    clearedAt: timestamp('cleared_at', { withTimezone: true }).notNull().defaultNow(),
+    reason: text('reason').notNull(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.episodeId, t.ingestId],
+      foreignColumns: [episodeIngests.episodeId, episodeIngests.ingestId],
+      name: 'episode_clearings_delivery_fk',
+    }),
+    index('episode_clearings_episode_idx').on(t.episodeId, t.clearedAt.desc()),
+    index('episode_clearings_ingest_idx').on(t.ingestId),
+    check('episode_clearings_reason_check', sql`length(trim(${t.reason})) > 0`),
+    check(
+      'episode_clearings_from_state_check',
+      sql`${t.fromState} in ('ok', 'flagged', 'quarantined')`,
+    ),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // The identity spine (PLT-04)
 //
@@ -268,6 +323,17 @@ export const tasks = pgTable(
   {
     id: uuid('id').primaryKey(),
     name: text('name').notNull(),
+    /**
+     * APP-08: the task hall lists "type, unit price, target duration, current
+     * progress and claimable state", so type is the one thing BO-02 configures
+     * that this table did not carry.
+     *
+     * No CHECK, by the file's own rule: the collection taxonomy is PaXini's and
+     * grows — kitchen, assembly, retail — and an enum migration per new theme is
+     * a tax. Nullable because the rows that exist predate the column; the API
+     * requires it on create, so nothing new is written without one.
+     */
+    type: text('type'),
     /** Per effective minute. Never a float: this is multiplied into a payment. */
     unitPrice: numeric('unit_price', { precision: 12, scale: 4, mode: 'string' }).notNull(),
     targetEffectiveDurationS: numeric('target_effective_duration_s', {
@@ -281,7 +347,22 @@ export const tasks = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    /**
+     * BO-01's four verbs — create, edit, publish, take down — are three states
+     * and two legal moves. The CHECK below says which states exist; it cannot
+     * say which moves are legal, because a CHECK only ever sees the new row.
+     * `tasks_status_transition` (migration 0006) is the BEFORE UPDATE trigger
+     * that refuses `published -> draft` and anything out of `taken_down`, and
+     * it is at the database rather than in the route for the usual reason: a
+     * second writer must not be able to un-take-down a task by knowing SQL.
+     */
     check('tasks_status_check', sql`${t.status} in ('draft', 'published', 'taken_down')`),
+    /**
+     * Positive is all a CHECK can say. `tasks_capacity_below_live` (migration
+     * 0007) is the other half: a cap cannot be lowered under the claims already
+     * live on the task, which needs the count of other rows and the same task
+     * lock `task_claims_guard` takes.
+     */
     check('tasks_claimants_check', sql`${t.maxConcurrentClaimants} > 0`),
   ],
 );
@@ -292,6 +373,19 @@ export const collectors = pgTable(
     id: uuid('id').primaryKey(),
     externalRef: text('external_ref').notNull(),
     status: text('status').notNull(),
+    /**
+     * APP-04: "An exam follows training. Pass/fail is recorded." Both answers,
+     * so a fail is a recorded fact and not the absence of one — which matters
+     * because APP-05 refuses a claim on anything that is not 'pass', and
+     * "refused because they failed" and "refused because nobody examined them"
+     * are different conversations at a counter.
+     *
+     * ponytail: one result, not an attempts table. APP-07 (retake policy) is P2
+     * and undecided; when it lands, this becomes the latest row of
+     * `collector_exam_attempts` and the gate reads that instead.
+     */
+    examResult: text('exam_result'),
+    examDecidedAt: timestamp('exam_decided_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -300,6 +394,122 @@ export const collectors = pgTable(
     check(
       'collectors_status_check',
       sql`${t.status} in ('pending', 'qualified', 'suspended')`,
+    ),
+    check(
+      'collectors_exam_result_check',
+      sql`${t.examResult} is null or ${t.examResult} in ('pass', 'fail')`,
+    ),
+    /** A result without a date is not a record of anything. Both or neither. */
+    check(
+      'collectors_exam_decided_check',
+      sql`(${t.examResult} is null) = (${t.examDecidedAt} is null)`,
+    ),
+  ],
+);
+
+/**
+ * APP-02 and PRV-01: the six agreements, each with the version accepted and the
+ * moment it was accepted.
+ *
+ * A child table rather than twelve columns on `collectors`. The six names are a
+ * closed set today and the set is legal's to change — a seventh agreement is
+ * then one CHECK edit, not two more columns and every query rewritten. It also
+ * makes "which agreements is this collector missing?" a query rather than a
+ * hand-written twelve-way null test.
+ *
+ * The version is text, not a number: legal versions these as "2026-08-v2" and
+ * whatever they hand over is what has to be storable verbatim.
+ *
+ * The version is IN the key, which is what makes this append-only in fact and
+ * not only in intent. Keyed on `(collector_id, agreement)` alone, accepting a
+ * reissued privacy policy could only overwrite the acceptance of the old one —
+ * and the question a regulator asks is "what did this person agree to, and
+ * when", which needs both rows. So a new version is a new row, re-posting the
+ * same version is a no-op, and nothing here is ever updated in place.
+ *
+ * "Has this collector accepted all six?" is therefore `count(distinct
+ * agreement)`, not `count(*)` — which is exactly how `task_claims_guard` asks
+ * it, because PRODUCT.md gates claiming a task on all six.
+ *
+ * `collector_agreements_append_only` (migration 0006) refuses UPDATE and
+ * DELETE on this table. Append-only was the intent from the start; the trigger
+ * is what makes it true for writers that are not this API.
+ */
+export const collectorAgreements = pgTable(
+  'collector_agreements',
+  {
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    agreement: text('agreement').notNull(),
+    version: text('version').notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.collectorId, t.agreement, t.version] }),
+    check(
+      'collector_agreements_name_check',
+      sql`${t.agreement} in ('user', 'privacy', 'data_collection', 'commercial_use', 'manual_review', 'offline_settlement')`,
+    ),
+    check('collector_agreements_version_check', sql`length(trim(${t.version})) > 0`),
+  ],
+);
+
+/**
+ * APP-10 / BO-02: a collector holds a claim on a task, and a task at its
+ * maximum concurrent claimants is not claimable.
+ *
+ * The cap is a cross-row invariant, so it is not a CHECK — a CHECK sees one row
+ * and cannot count the others. It is not application code either: two counters
+ * both reading "4 of 5 taken" and both inserting is the classic overshoot, and
+ * no amount of care in one route protects against a second writer.
+ *
+ * `task_claims_guard` (migration 0006) takes `select ... for update` on the
+ * task row before counting, so two genuinely concurrent claims for the last
+ * slot serialise on that lock: the second one waits, then counts the first and
+ * is refused. It carries the eligibility gates in the same place for the same
+ * reason — a gate that lives in one route is a gate one route can forget.
+ *
+ * Three of them, which is what PRODUCT.md asks for: the exam pass (APP-05),
+ * `qualified` status, and all six agreements (APP-02 / PRV-01). Training is the
+ * fourth and is missing because nothing here records it yet.
+ *
+ * `released_at` rather than a delete: who held what, and until when, is the
+ * evidence behind a settlement dispute. `task_claims_history_immutable`
+ * (migration 0007) is what makes that true rather than customary — a claim row
+ * cannot be deleted, `claimed_at` cannot move, and a `released_at` already set
+ * cannot be rewritten. Releasing and re-claiming are still allowed, and the
+ * re-claim clears the gates again.
+ */
+export const taskClaims = pgTable(
+  'task_claims',
+  {
+    id: uuid('id').primaryKey(),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull().defaultNow(),
+    releasedAt: timestamp('released_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('task_claims_task_idx').on(t.taskId, t.releasedAt),
+    index('task_claims_collector_idx').on(t.collectorId),
+    /**
+     * One live claim per collector per task. Partial, so a released claim stays
+     * on the record and the same collector can claim the task again later.
+     */
+    uniqueIndex('task_claims_live_key')
+      .on(t.taskId, t.collectorId)
+      .where(sql`${t.releasedAt} is null`),
+    check(
+      'task_claims_released_after_check',
+      sql`${t.releasedAt} is null or ${t.releasedAt} >= ${t.claimedAt}`,
     ),
   ],
 );
@@ -330,12 +540,96 @@ export const devices = pgTable(
     hardwareSerial: text('hardware_serial').notNull(),
     firmwareVersion: text('firmware_version'),
     status: text('status').notNull(),
+    /**
+     * BO-04 / APP-14: who holds this device now. One column and not a bindings
+     * table, because §4.3 already forbids inferring a session's device from
+     * "whoever last had it" — the session records its own device, so this is
+     * only ever the *current* answer and history belongs to `audit_events`,
+     * where SEC-04 requires unbinding to appear anyway.
+     *
+     * ponytail: current-binding column. A bindings table earns its place when a
+     * device must be held by two collectors at once, which phase 1 forbids.
+     */
+    boundCollectorId: uuid('bound_collector_id').references(() => collectors.id),
+    boundAt: timestamp('bound_at', { withTimezone: true }),
+    /** BO-04's fault state, said out loud. `status = 'faulty'` is the flag; this is why. */
+    faultNote: text('fault_note'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex('devices_hardware_serial_key').on(t.hardwareSerial),
     check('devices_status_check', sql`${t.status} in ('active', 'faulty', 'retired')`),
+    /** A binding is always a binding *since* a moment, or it is not a binding. */
+    check(
+      'devices_bound_at_check',
+      sql`(${t.boundCollectorId} is null) = (${t.boundAt} is null)`,
+    ),
+    /**
+     * A retired device is off the fleet, so it cannot be in someone's hands. A
+     * faulty one deliberately still can: hardware fails while it is being worn,
+     * and a constraint that unbound it on the way in would erase who had it.
+     */
+    check(
+      'devices_retired_unbound_check',
+      sql`${t.status} <> 'retired' or ${t.boundCollectorId} is null`,
+    ),
+    index('devices_bound_collector_idx').on(t.boundCollectorId),
+  ],
+);
+
+/**
+ * BO-04's other half: who holds a device FOR A PERIOD, rather than who holds it
+ * at this moment.
+ *
+ * Daniel, from PaXini, 2026-08-25: one collector holds a given headset for an
+ * allotted period of about three months, and at the end of it the credentials
+ * swap to the next collector. So a device serial plus a recording start instant
+ * names a collector — which makes this a CROSSCHECK on payment attribution and
+ * not a replacement for one. The resolver's handover scoping is still the outer
+ * bound; `resolve.ts` says why, and this table only ever narrows what that scope
+ * already produced.
+ *
+ * `devices.bound_collector_id` is not this and does not become this. It is the
+ * current answer with no history and no instants, so it cannot say who held
+ * AZER76400FE on 13 August. Both stay: the column is what the counter reads when
+ * a card arrives, this table is what settlement replays six months later.
+ *
+ * THE invariant — two assignments of one device can never overlap in time — is
+ * `device_assignments_no_overlap` in migration 0010 and not in this file.
+ * Drizzle cannot express an EXCLUDE constraint, and no CHECK can see another
+ * row. Adjacent periods are deliberately legal: the range is half-open, so a
+ * handover at the instant the last period ends is one continuous custody chain
+ * and not an overlap.
+ */
+export const deviceAssignments = pgTable(
+  'device_assignments',
+  {
+    id: uuid('id').primaryKey(),
+    deviceId: uuid('device_id')
+      .notNull()
+      .references(() => devices.id),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    validFrom: timestamp('valid_from', { withTimezone: true }).notNull(),
+    /** Null is the open period: this collector holds the device now. */
+    validTo: timestamp('valid_to', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** A period ends after it starts, or it is not a period. */
+    check(
+      'device_assignments_period_check',
+      sql`${t.validTo} is null or ${t.validTo} > ${t.validFrom}`,
+    ),
+    /**
+     * Only the collector side. The exclusion constraint in 0010 is backed by a
+     * gist index on `(device_id, period)`, which already serves every lookup by
+     * device — a second btree index on the same column would be dead weight.
+     */
+    index('device_assignments_collector_idx').on(t.collectorId),
   ],
 );
 
@@ -535,13 +829,26 @@ export const uploadDevices = pgTable(
   ],
 );
 
+/**
+ * People who sign in. Two kinds, one table, told apart by `role`.
+ *
+ * PLT-10 wants PaXini's reviewers to reach in from China, scoped to review and
+ * fully logged. They are not standing at a VNG counter, so `upload_centre_id`
+ * cannot be mandatory for them — and a second `reviewers` table would mean a
+ * second credential store, a second login path, and a second nullable actor
+ * column on `audit_events` with a CHECK to say exactly one is set. The `role`
+ * column was already here and already `not null`; using it is the smaller and
+ * the more auditable change.
+ *
+ * `role` still has no CHECK: the value set is a back-office concern that grows,
+ * and the two constraints below are the ones that carry weight.
+ */
 export const operators = pgTable(
   'operators',
   {
     id: uuid('id').primaryKey(),
-    uploadCentreId: uuid('upload_centre_id')
-      .notNull()
-      .references(() => uploadCentres.id),
+    /** Null only for a reviewer — see `operators_centre_check`. */
+    uploadCentreId: uuid('upload_centre_id').references(() => uploadCentres.id),
     externalRef: text('external_ref').notNull(),
     role: text('role').notNull(),
     /** scrypt, `N$salt$hash`. Never a secret at rest, never logged. */
@@ -549,7 +856,28 @@ export const operators = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('operators_ref_key').on(t.uploadCentreId, t.externalRef)],
+  (t) => [
+    uniqueIndex('operators_ref_key').on(t.uploadCentreId, t.externalRef),
+    /**
+     * A reviewer's reference is unique on its own, because `operators_ref_key`
+     * cannot hold it: two rows with a null centre are distinct to a unique
+     * index no matter what the second column says, so without this a second
+     * `pax-01` would insert cleanly and `authenticateReviewer` would sign in
+     * whichever row came back first.
+     */
+    uniqueIndex('operators_reviewer_ref_key')
+      .on(t.externalRef)
+      .where(sql`role = 'reviewer'`),
+    /**
+     * Everyone but a reviewer belongs to a centre. Dropping `not null` to make
+     * room for reviewers must not quietly make it optional for the operators
+     * BO-11 / SEC-02 scope by centre.
+     */
+    check(
+      'operators_centre_check',
+      sql`${t.uploadCentreId} is not null or ${t.role} = 'reviewer'`,
+    ),
+  ],
 );
 
 /**
@@ -590,6 +918,15 @@ export const handovers = pgTable(
  * upload-batch lifecycle. The cache-cleanup gate (UPL-06) is a CHECK rather
  * than a procedure: an upload centre's local copy is the only copy until the
  * cloud says otherwise, so "cleaned before verified" must be unrepresentable.
+ *
+ * The other half of that gate lives in migrations 0007 and 0009, because
+ * drizzle cannot express a trigger: `upload_batches_cloud_verify_guard` refuses
+ * to set EITHER `cloud_verified_at` OR `local_cache_cleaned_at` unless the batch
+ * has at least one episode and every episode on it reads `verification_state = 'verified'`
+ * at that moment — the byte read-back verdict written by the upload leg
+ * (packages/api/src/upload.ts), never an ETag (spec ING-29). Both timestamps,
+ * because "verified once" is a fact that stays true while "safe to delete the
+ * only local copy" is a question about now.
  */
 export const uploadBatches = pgTable(
   'upload_batches',
@@ -720,8 +1057,92 @@ export const episodeReviews = pgTable(
       mode: 'string',
     }),
     reviewState: text('review_state').notNull(),
-    reviewerRef: text('reviewer_ref'),
+    /**
+     * QR-07. Which lane this review waits in.
+     *
+     * `privacy` is set when the collection session carries either APP-17b
+     * declaration — others in frame, or sensitive information — and by a
+     * reviewer or the back office flagging one mid-review (PRV-04, BO-15). A
+     * column and not a join, because the reviewer's flag has to be recordable
+     * *without* rewriting the collector's own declaration: those two booleans
+     * are what the collector said before recording, and a reviewer overwriting
+     * them would destroy the only evidence of what was declared.
+     *
+     * The lane is materialised at claim time from the declarations, so the
+     * derivation lives in one SQL expression in `review.ts` and this column is
+     * what the queue reads.
+     */
+    queue: text('queue').notNull().default('standard'),
+    /**
+     * QR-05. Higher goes first; ties break on how long the row has waited.
+     *
+     * Only rows that exist can be prioritised, which is a real consequence of a
+     * lazy queue: an episode nobody has claimed has no review row and therefore
+     * no priority. `POST /api/review/route/:episodeId` materialises the row, so
+     * prioritising an unseen episode is one request rather than a backfill.
+     */
+    priority: integer('priority').notNull().default(0),
+    /**
+     * QR-05. When set, only this reviewer is offered the row.
+     *
+     * Separate from `reviewer_ref`, which is a lease and moves on its own: an
+     * assignment is somebody's intent and survives the lease expiring. Nullable
+     * and null by default — the pilot queue is a pool and assignment is the
+     * exception.
+     *
+     * A foreign key and not free text. An assignment is the one column here
+     * that can make a row invisible to everybody — the queue offers an assigned
+     * review to its assignee and to nobody else — so a typed or stale id would
+     * park an episode forever with no error anywhere. `operators` is the right
+     * parent today because that is the identity a reviewer signs in with; see
+     * `reviewerOf` in `review.ts`.
+     */
+    assigneeRef: uuid('assignee_ref').references(() => operators.id),
+    /**
+     * Who holds this review. On a pending row that is the current leaseholder;
+     * on a decided row it is who decided. One column and not two, because a
+     * lease that expires and is re-claimed transfers both facts at once — the
+     * new claimant is the one who will decide — and two columns would raise a
+     * "which is authoritative" question that has no useful answer.
+     *
+     * A real foreign key, and `uuid` rather than `text` since PLT-10. It held
+     * an `operators.id` from the first day and always will — a PaXini reviewer
+     * and a VNG counter operator are both rows in that table — so leaving it as
+     * unconstrained text meant the one column naming who decided a payment
+     * could hold a string that matches nobody. Every verdict is money and this
+     * is the only record of who made it.
+     */
+    reviewerRef: uuid('reviewer_ref').references(() => operators.id),
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    /**
+     * The client's own id for one verdict attempt, and the whole of the
+     * idempotency guarantee. A reviewer double-taps commit, or the write times
+     * out and the browser retries: the second request carries the same id, the
+     * unique index below refuses the second insert, and the endpoint returns
+     * what the first one decided. Without it a retry is a second review row and
+     * — through `settlements_review_key` being per-review — a second payment.
+     *
+     * Nullable because a pending row has no verdict yet, and Postgres allows
+     * many nulls in a unique index. `episode_reviews_verdict_id_check` makes it
+     * mandatory the moment the row is decided.
+     */
+    verdictId: uuid('verdict_id'),
+    /** QR-04: free text the collector may be shown alongside the reason codes. */
+    reviewerNote: text('reviewer_note'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    /**
+     * When this claim stops being exclusive. A reviewer who closes the tab must
+     * not strand an episode, so the queue reclaims anything past its lease
+     * rather than waiting for a release that may never come.
+     */
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    /**
+     * Load to verdict, in seconds. Instrumentation, never money: reviewer
+     * throughput is the programme's capacity ceiling at 40,000 hours and this
+     * is the baseline to optimise against. Deliberately not `numeric(20,6)` —
+     * it is a stopwatch, not a measurement anything is paid on.
+     */
+    timeToVerdictS: numeric('time_to_verdict_s', { precision: 12, scale: 3, mode: 'string' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -736,9 +1157,81 @@ export const episodeReviews = pgTable(
       name: 'episode_reviews_ingest_fk',
     }),
     index('episode_reviews_episode_idx').on(t.episodeId),
+    /**
+     * One review per delivery, and the reason the queue needs no separate lock
+     * table: claiming is an insert, and a second reviewer racing for the same
+     * never-seen episode loses on this index rather than on application logic.
+     *
+     * A second delivery of the same session is a different `ingest_id` and so
+     * gets its own review — which is the point of binding a verdict to the
+     * exact bytes it judged. Re-reviewing one delivery is the dispute flow,
+     * which is P2 and deliberately not built; when it lands it needs a
+     * supersedes column here rather than a second row, or this index moves.
+     */
+    uniqueIndex('episode_reviews_delivery_key').on(t.episodeId, t.ingestId),
+    /**
+     * The idempotency guarantee, at the database. Two concurrent requests
+     * carrying the same `verdict_id` — a double-tap, or a retry racing the
+     * original — cannot both write: one commits and the other is rejected here,
+     * and the endpoint answers the loser with what the winner decided.
+     */
+    uniqueIndex('episode_reviews_verdict_key').on(t.verdictId),
+    /**
+     * The queue read, in one index: within a lane, pending rows in the order
+     * they are handed out.
+     *
+     * `lease_expires_at` used to sit where `queue` and `priority` now are. It
+     * never served the scan: the predicate that reclaims an expired lease is
+     * `reviewer_ref is null or lease_expires_at < now()`, an OR across two
+     * columns, which no btree can use as a key — it was always a filter, and
+     * holding second position stopped `created_at` from supplying the sort.
+     * Both `review_state` and `queue` are equality here, so the remaining two
+     * columns are the ORDER BY exactly.
+     */
+    index('episode_reviews_queue_idx').on(
+      t.reviewState,
+      t.queue,
+      t.priority.desc(),
+      t.createdAt,
+    ),
     check(
       'episode_reviews_state_check',
       sql`${t.reviewState} in ('pending', 'pass', 'partial_pass', 'fail')`,
+    ),
+    /** Two lanes and no third. A misspelt lane is an episode nobody is offered. */
+    check('episode_reviews_queue_check', sql`${t.queue} in ('standard', 'privacy')`),
+    /**
+     * QR-05, bounded at the database and not only in the request parser.
+     *
+     * The queue is ordered by this column, so one row with `2^31-1` on it sits
+     * at the head of every lane until somebody notices, and one with the
+     * minimum buries an episode under everything that will ever arrive. The
+     * API bounds it too; this is the half a `psql` session cannot skip.
+     */
+    check('episode_reviews_priority_range_check', sql`${t.priority} between -1000 and 1000`),
+    /**
+     * A stopwatch cannot run backwards. `time_to_verdict_s` feeds
+     * `/api/review/throughput`, which is a number about a person's pace, and a
+     * negative row there would divide the rate rather than adding to it.
+     */
+    check(
+      'episode_reviews_time_to_verdict_check',
+      sql`${t.timeToVerdictS} is null or ${t.timeToVerdictS} >= 0`,
+    ),
+    /**
+     * A decided review names the request that decided it. This is what makes
+     * the idempotency key load-bearing rather than advisory: a verdict written
+     * by a path that forgot to carry one cannot be inserted at all.
+     */
+    check(
+      'episode_reviews_verdict_id_check',
+      sql`${t.reviewState} = 'pending' or ${t.verdictId} is not null`,
+    ),
+    /** A claim is always a claim *until* a moment. An open-ended one strands the episode. */
+    check(
+      'episode_reviews_lease_check',
+      sql`${t.reviewerRef} is null
+          or (${t.claimedAt} is not null and ${t.leaseExpiresAt} is not null)`,
     ),
     /** QR-03, at the database, bypassable by nothing that speaks SQL. */
     check(
@@ -774,6 +1267,46 @@ export const episodeReviewReasons = pgTable(
       .references(() => reviewReasonCodes.code),
   },
   (t) => [primaryKey({ columns: [t.reviewId, t.code] })],
+);
+
+/**
+ * The segments a reviewer marked as useful, in episode-relative seconds.
+ *
+ * `effective_duration_s` on the review is their sum, and storing only the sum
+ * was the first design. It does not survive a dispute: a collector who is paid
+ * for 4 of 11 minutes will ask *which* 4, and "the reviewer typed 4" is not an
+ * answer anyone can check. These rows are what makes the number re-derivable
+ * from evidence rather than asserted.
+ *
+ * Always normalised before insert — clamped to the measured duration, sorted,
+ * overlaps merged — so the sum of these rows equals `effective_duration_s` by
+ * construction. That equality cannot be a CHECK because a CHECK cannot reach
+ * across rows, so it is a property of the one function that writes them and is
+ * tested there.
+ *
+ * `ordinal` rather than a surrogate key: the spans of a review are an ordered
+ * list, and the order is the reviewer's own reading of the footage.
+ */
+export const episodeReviewSpans = pgTable(
+  'episode_review_spans',
+  {
+    reviewId: uuid('review_id')
+      .notNull()
+      .references(() => episodeReviews.id),
+    ordinal: integer('ordinal').notNull(),
+    startS: numeric('start_s', { precision: 20, scale: 6, mode: 'string' }).notNull(),
+    endS: numeric('end_s', { precision: 20, scale: 6, mode: 'string' }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.reviewId, t.ordinal] }),
+    check('episode_review_spans_start_nonneg_check', sql`${t.startS} >= 0`),
+    /**
+     * Strictly greater: a zero-length span is not a shorter piece of footage,
+     * it is a marking mistake, and normalisation drops it before it reaches
+     * here. If one arrives, the write is wrong and should fail loudly.
+     */
+    check('episode_review_spans_ordered_check', sql`${t.endS} > ${t.startS}`),
+  ],
 );
 
 /**
@@ -821,6 +1354,80 @@ export const settlements = pgTable(
   ],
 );
 
+/**
+ * SET-06 / BO-08: what finance pays, for one collector, for one cycle.
+ *
+ * `settlements_state_check` says which states exist. It cannot say which
+ * *changes* are allowed, because a CHECK only ever sees the row in front of it
+ * — `manually_paid → pending_review` satisfies it in both directions. The
+ * ordering is enforced by `settlements_transition_guard`, a BEFORE INSERT OR
+ * UPDATE trigger written by hand in `0005_settlement_lifecycle.sql`; drizzle
+ * has no way to declare a trigger, so the migration is the source and this
+ * comment is the pointer to it.
+ *
+ * The period is a parameter, not a constant: weekly is `[ASSUMED]` in the
+ * brief's §13.2, so it is stored on every bill rather than implied by one.
+ *
+ * `total` is stored and is the sum of the line amounts. It is a denormalisation
+ * with a guard: the same trigger refuses any later change to a settlement's
+ * `amount`, so a bill's arithmetic cannot be invalidated after it is issued.
+ * That is also why `bill_lines` carries no money of its own — there is exactly
+ * one place each figure is written down.
+ */
+export const bills = pgTable(
+  'bills',
+  {
+    id: uuid('id').primaryKey(),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+    periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+    /** No column on `tasks` says this yet; see the known gaps in docs/review.md. */
+    currency: text('currency').notNull(),
+    total: numeric('total', { precision: 14, scale: 4, mode: 'string' }).notNull(),
+    generatedAt: timestamp('generated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /**
+     * SET-07's idempotency, as an index rather than as a check in the
+     * generator: re-running a cycle has nowhere to put a second bill, so a
+     * regeneration provably changes nothing even if it is issued by a cron that
+     * fired twice, by two operators at once, or straight from psql.
+     */
+    uniqueIndex('bills_collector_period_key').on(t.collectorId, t.periodStart, t.periodEnd),
+    check('bills_period_check', sql`${t.periodEnd} > ${t.periodStart}`),
+    check('bills_total_nonneg_check', sql`${t.total} >= 0`),
+  ],
+);
+
+/**
+ * One settlement on one bill. The primary key is the settlement alone, so a
+ * settlement that is already billed cannot be added to a second bill — double
+ * payment is unrepresentable rather than guarded against.
+ *
+ * SET-01 makes payable settlements out of pass and partial-pass reviews only.
+ * The review lane writes a settlement for a rejected episode too, worth 0.0000,
+ * because that row is the score of the review; `bill_lines_payable_guard` in
+ * `0005_settlement_lifecycle.sql` is what keeps it off a bill, so a refused
+ * episode cannot print a zero-value line.
+ */
+export const billLines = pgTable(
+  'bill_lines',
+  {
+    billId: uuid('bill_id')
+      .notNull()
+      .references(() => bills.id),
+    settlementId: uuid('settlement_id')
+      .notNull()
+      .references(() => settlements.id),
+  },
+  (t) => [
+    primaryKey({ name: 'bill_lines_settlement_key', columns: [t.settlementId] }),
+    index('bill_lines_bill_idx').on(t.billId),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Auth, audit and machine status (PLT-06/07/08, SEC-01/02/04/05)
 
@@ -843,6 +1450,20 @@ export const auditEvents = pgTable(
     operatorId: uuid('operator_id').references(() => operators.id),
     uploadDeviceId: uuid('upload_device_id').references(() => uploadDevices.id),
     uploadCentreId: uuid('upload_centre_id').references(() => uploadCentres.id),
+    /**
+     * Which kind of person `operator_id` names. PLT-10 asks for reviewer access
+     * that is *fully logged*, and "logged" is not the same as "distinguishable"
+     * — a reviewer's row and a counter operator's row both point into
+     * `operators`, so without this column the trail cannot answer "did anything
+     * a remote reviewer did touch this episode" without a join that a future
+     * schema change can silently break.
+     *
+     * It is also what keeps the attribution CHECK below enforceable. A reviewer
+     * has no upload device and no centre, so the old two-columns-not-null rule
+     * had to be relaxed; relaxing it on the strength of a value stored on the
+     * row itself keeps a counter mutation with a missing device unrepresentable.
+     */
+    actorRole: text('actor_role').notNull().default('operator'),
     before: jsonb('before'),
     after: jsonb('after'),
     reason: text('reason'),
@@ -850,11 +1471,28 @@ export const auditEvents = pgTable(
   (t) => [
     index('audit_events_target_idx').on(t.targetTable, t.targetId, t.occurredAt.desc()),
     index('audit_events_operator_idx').on(t.operatorId, t.occurredAt.desc()),
-    /** An unattributed audit row defeats the table. Logins are the one case with no actor yet. */
+    check('audit_events_actor_role_check', sql`${t.actorRole} in ('operator', 'reviewer')`),
+    /**
+     * An unattributed audit row defeats the table. Logins are the one case with
+     * no actor yet; a reviewer is the one case with a person and no machine.
+     *
+     * Two complete shapes and no overlap between them, rather than two "at
+     * least this much" predicates. A half-filled row — a reviewer carrying an
+     * upload device, an operator with no centre — would satisfy a loose check
+     * and still be evidence of something that did not happen, which is the one
+     * failure this table exists to prevent.
+     */
     check(
       'audit_events_attributed_check',
       sql`${t.action} like '%.login'
-          or (${t.operatorId} is not null and ${t.uploadDeviceId} is not null)`,
+          or (${t.actorRole} = 'reviewer'
+              and ${t.operatorId} is not null
+              and ${t.uploadDeviceId} is null
+              and ${t.uploadCentreId} is null)
+          or (${t.actorRole} = 'operator'
+              and ${t.operatorId} is not null
+              and ${t.uploadDeviceId} is not null
+              and ${t.uploadCentreId} is not null)`,
     ),
     /** Manual resolution overrides the machine on a money path. It says why. */
     check(
@@ -877,3 +1515,204 @@ export const uploadDeviceStatus = pgTable('upload_device_status', {
   lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// Payout (the §2.1 contract of the payout brief; migrations 0012 and 0013)
+
+/**
+ * Where a collector's money goes. Append-only history: a collector who fixes
+ * their details declares a new account, and the old row stops being current.
+ * `payout_accounts_append_only` (0012) refuses every other change and every
+ * delete, because what was declared and what ZaloPay answered is the evidence
+ * behind a name-mismatch flag.
+ *
+ * The full account number is never stored here — `account_no_last4` is for
+ * display. The brief places the full value in a secrets store that this repo
+ * does not have yet; see the payout handoff.
+ */
+export const payoutAccounts = pgTable(
+  'payout_accounts',
+  {
+    id: uuid('id').primaryKey(),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    method: text('method').notNull(),
+    /** WALLET only. */
+    phone: text('phone'),
+    /** BANK_* only. */
+    bankCode: text('bank_code'),
+    accountNoLast4: text('account_no_last4'),
+    /** What the collector typed. Never overwritten with ZaloPay's answer. */
+    declaredName: text('declared_name').notNull(),
+    /** What ZaloPay returned. */
+    verifiedName: text('verified_name'),
+    /** WALLET only, from verify-account; the transfer route needs it. */
+    mUId: text('m_u_id'),
+    verifyStatus: text('verify_status').notNull(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    isCurrent: boolean('is_current').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => operators.id),
+  },
+  (t) => [
+    /** Exactly one current account per collector. */
+    uniqueIndex('payout_accounts_current_key').on(t.collectorId).where(sql`${t.isCurrent}`),
+    index('payout_accounts_collector_idx').on(t.collectorId, t.createdAt.desc()),
+    check(
+      'payout_accounts_method_check',
+      sql`${t.method} in ('WALLET', 'BANK_ACCOUNT', 'BANK_CARD')`,
+    ),
+    check(
+      'payout_accounts_verify_status_check',
+      sql`${t.verifyStatus} in ('unverified', 'verified', 'name_mismatch', 'no_wallet', 'locked', 'kyc_limit', 'error')`,
+    ),
+    check(
+      'payout_accounts_route_check',
+      sql`(${t.method} = 'WALLET' and ${t.phone} is not null and ${t.bankCode} is null)
+          or (${t.method} <> 'WALLET' and ${t.bankCode} is not null and ${t.phone} is null and ${t.mUId} is null)`,
+    ),
+    check('payout_accounts_declared_name_check', sql`length(trim(${t.declaredName})) > 0`),
+    check(
+      'payout_accounts_last4_check',
+      sql`${t.accountNoLast4} is null or length(${t.accountNoLast4}) <= 4`,
+    ),
+    check(
+      'payout_accounts_verified_at_check',
+      sql`(${t.verifyStatus} = 'unverified') = (${t.verifiedAt} is null)`,
+    ),
+  ],
+);
+
+/**
+ * One row per (bill, attempt). `partner_order_id` is ZaloPay's server-side
+ * idempotency key (Part 0, F3) and is computed by `payout_attempts_guard`
+ * (0012) as `'PO-' || bill_id || '-' || attempt_seq`; the application never
+ * supplies it. The same trigger computes `attempt_seq`, refuses a new attempt
+ * while the last one is not `failed`, refuses an amount that is not the bill's
+ * whole-dong total, refuses an account that ZaloPay has not verified (in
+ * either mode), refuses a bank transfer outside ZaloPay's limits, holds
+ * the state machine's edges, writes evidence once, and refuses DELETE.
+ * `payout_attempts_pending_resolved` keeps `pending_zlp` for an operator with
+ * a typed reason, and `payout_attempts_by_finance` (0013) keeps every INSERT
+ * for the finance role.
+ *
+ * `amount_vnd` is whole dong as a bigint; `mode: 'number'` is safe because a
+ * payout above 2^53 dong is not a number this table will ever hold.
+ */
+export const payoutAttempts = pgTable(
+  'payout_attempts',
+  {
+    id: uuid('id').primaryKey(),
+    billId: uuid('bill_id')
+      .notNull()
+      .references(() => bills.id),
+    payoutAccountId: uuid('payout_account_id')
+      .notNull()
+      .references(() => payoutAccounts.id),
+    /** Computed by the trigger. Declared not-null because it is, once inserted. */
+    partnerOrderId: text('partner_order_id').notNull(),
+    /** Computed by the trigger. */
+    attemptSeq: integer('attempt_seq').notNull(),
+    amountVnd: bigint('amount_vnd', { mode: 'number' }).notNull(),
+    mode: text('mode').notNull(),
+    status: text('status').notNull(),
+    zlpOrderId: text('zlp_order_id'),
+    zpTransId: text('zp_trans_id'),
+    subReturnCode: integer('sub_return_code'),
+    /** Required when mode = 'manual'. */
+    manualReference: text('manual_reference'),
+    lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
+    pollCount: integer('poll_count').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+  },
+  (t) => [
+    unique('payout_attempts_partner_order_key').on(t.partnerOrderId),
+    unique('payout_attempts_bill_seq_key').on(t.billId, t.attemptSeq),
+    index('payout_attempts_polling_idx')
+      .on(t.status, t.lastPolledAt)
+      .where(sql`${t.status} in ('submitted', 'processing', 'unknown')`),
+    check('payout_attempts_amount_positive_check', sql`${t.amountVnd} > 0`),
+    check('payout_attempts_mode_check', sql`${t.mode} in ('manual', 'api')`),
+    check(
+      'payout_attempts_status_check',
+      sql`${t.status} in ('created', 'submitted', 'processing', 'pending_zlp', 'succeeded', 'failed', 'unknown')`,
+    ),
+    check(
+      'payout_attempts_manual_reference_check',
+      sql`${t.mode} <> 'manual' or length(trim(coalesce(${t.manualReference}, ''))) > 0`,
+    ),
+    check('payout_attempts_poll_count_check', sql`${t.pollCount} >= 0`),
+  ],
+);
+
+/**
+ * What the payout side tells the risk engine, and what its workers did.
+ * Append-only (`payout_events_append_only`, 0012). Agent C reads `kind` and
+ * `evidence`; the kinds this side writes are listed in
+ * `packages/api/src/payout/domain/events.ts`.
+ */
+export const payoutEvents = pgTable(
+  'payout_events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    kind: text('kind').notNull(),
+    collectorId: uuid('collector_id').references(() => collectors.id),
+    payoutAccountId: uuid('payout_account_id').references(() => payoutAccounts.id),
+    billId: uuid('bill_id').references(() => bills.id),
+    payoutAttemptId: uuid('payout_attempt_id').references(() => payoutAttempts.id),
+    evidence: jsonb('evidence').notNull().default(sql`'{}'::jsonb`),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('payout_events_collector_idx').on(t.collectorId, t.occurredAt.desc()),
+    index('payout_events_bill_idx').on(t.billId, t.occurredAt.desc()),
+    index('payout_events_kind_idx').on(t.kind, t.occurredAt.desc()),
+    check('payout_events_kind_check', sql`length(trim(${t.kind})) > 0`),
+  ],
+);
+
+/**
+ * Every export finance was handed, with the hash of the whole file, and one
+ * row per bill with the hash of its line — so the file that comes back can be
+ * proved to be the file that went out. Beside `bills` rather than on it,
+ * because `bills` is frozen by 0011 and is not this slice's table to widen.
+ * Append-only, and sealed: rows join an export only in the transaction that
+ * creates it (`payout_export_rows_sealed`), and the count must match at
+ * commit (`payout_exports_complete`).
+ */
+export const payoutExports = pgTable(
+  'payout_exports',
+  {
+    id: uuid('id').primaryKey(),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+    periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+    fileHash: text('file_hash').notNull(),
+    rowCount: integer('row_count').notNull(),
+    exportedAt: timestamp('exported_at', { withTimezone: true }).notNull().defaultNow(),
+    exportedBy: uuid('exported_by')
+      .notNull()
+      .references(() => operators.id),
+  },
+  (t) => [
+    index('payout_exports_period_idx').on(t.periodStart, t.periodEnd, t.exportedAt.desc()),
+    check('payout_exports_period_check', sql`${t.periodEnd} > ${t.periodStart}`),
+  ],
+);
+
+export const payoutExportRows = pgTable(
+  'payout_export_rows',
+  {
+    exportId: uuid('export_id')
+      .notNull()
+      .references(() => payoutExports.id),
+    billId: uuid('bill_id')
+      .notNull()
+      .references(() => bills.id),
+    rowHash: text('row_hash').notNull(),
+  },
+  (t) => [primaryKey({ name: 'payout_export_rows_pk', columns: [t.exportId, t.billId] })],
+);
