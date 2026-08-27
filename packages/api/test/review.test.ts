@@ -783,10 +783,53 @@ describe.skipIf(!hasDb())('the review lane', () => {
       const res = await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'good' });
       expect(res.statusCode, res.body).toBe(409);
       expect(res.json()).toEqual({ error: 'refused', constraint: 'session_claim_missing' });
+      /**
+       * A `bad` verdict is refused too. It pays nothing, but it still writes
+       * the 0.0000 settlement that is the review's score (settle.ts), and
+       * `settlements_claim_required` refuses that row without a claim. The
+       * refusal comes before any write in both cases.
+       */
+      const bad = await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'bad', reject_reasons: ['VQ-DARK'] });
+      expect(bad.statusCode, bad.body).toBe(409);
+      expect(bad.json()).toEqual({ error: 'refused', constraint: 'session_claim_missing' });
       const [n] = (await h.d.execute(sql`select count(*)::int as n from settlements`)) as unknown as { n: number }[];
       expect(n!.n).toBe(0);
       const [state] = (await h.d.execute(sql`select review_state from episode_reviews where episode_id = ${episodeId}`)) as unknown as { review_state: string }[];
       expect(state!.review_state).toBe('pending');
+
+      // The lease runs out. The episode is not offered to the next reviewer: a
+      // pending row whose session lost its claim is not claimable and not depth.
+      await h.d.execute(sql`update episode_reviews set lease_expires_at = now() - interval '1 second' where episode_id = ${episodeId}`);
+      expect((await claim(h, h.headers2)).statusCode).toBe(204);
+      const next = await h.send('GET', '/api/review/next', undefined, h.headers2);
+      expect(next.statusCode, next.body).toBe(204);
+    });
+
+    it('keeps footage whose session carries no claim out of the queue until the counter attaches one', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      // A session from before 0016: no claim, no snapshot. Nothing has been claimed yet.
+      await h.d.execute(sql`update collection_sessions set task_claim_id = null, unit_price = null, currency = null where id = ${h.session}`);
+
+      // Reviewers are never served footage they cannot act on.
+      expect((await claim(h)).statusCode).toBe(204);
+      expect((await h.send('GET', '/api/review/next')).statusCode).toBe(204);
+      const [rows] = (await h.d.execute(sql`select count(*)::int as n from episode_reviews`)) as unknown as { n: number }[];
+      expect(rows!.n).toBe(0);
+
+      // The path out is the one 0016's header names: the back office attaches
+      // the claim the collector actually held. Then the episode enters review.
+      await h.d.execute(sql`update collection_sessions set task_claim_id = ${h.claim}, unit_price = 1200, currency = 'VND' where id = ${h.session}`);
+      const claimed = await claim(h);
+      expect(claimed.statusCode, claimed.body).toBe(200);
+      const episodeId = claimed.json().episode_id;
+      const res = await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'bad', reject_reasons: ['VQ-DARK'] });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().amount).toBe('0.0000');
+      const [row] = (await h.d.execute(sql`
+        select s.amount, s.task_claim_id
+          from settlements s join episode_reviews r on r.id = s.episode_review_id
+         where r.episode_id = ${episodeId}`)) as unknown as Record<string, string>[];
+      expect(row).toEqual({ amount: '0.0000', task_claim_id: h.claim });
     });
 
     it('pays nothing for a rejection, and insists on a reason', async () => {

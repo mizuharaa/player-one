@@ -286,10 +286,25 @@ export function registerReview(
    * an episode with no session has no collector and no task, so there is
    * nobody to pay and no price to pay them at. Those stay in the counter's
    * quarantine queue until a human attaches them.
+   *
+   * The session must also carry its claim (0016). A session with none — a row
+   * from before that migration, or one written past the counter — has no
+   * price, and the verdict refuses it with `session_claim_missing` for every
+   * decision, because even a rejection writes the 0.0000 settlement that is
+   * the review's score and `settlements_claim_required` refuses that row. So
+   * such footage is not served at all: it sits with the counter until the
+   * back office attaches the claim the collector held (the UPDATE in
+   * 0016_claim_join.sql), and then enters review with a price.
    */
   const cloudGate = (options.verificationGate ?? 'local') === 'cloud';
   const eligible = sql`
     ${schema.episodes.resolutionState} = 'resolved'
+    and exists (
+      select 1
+        from collection_sessions cs
+       where cs.id = ${schema.episodes.collectionSessionId}
+         and cs.task_claim_id is not null
+    )
     and ${schema.episodeIngests.state} <> 'quarantined'
     and ${schema.episodeIngests.measuredDurationS} > 0
     and ${
