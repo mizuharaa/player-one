@@ -200,6 +200,14 @@ export async function loadBatch(
   return bills;
 }
 
+/** One bill, read the same way the batch reads it — live, not from any snapshot. */
+export async function loadBill(db: Db, billId: string, options: BatchOptions = {}): Promise<BatchBill | undefined> {
+  const [row] = (await db.execute(sql`select period_start from bills where id = ${billId}`)) as unknown as { period_start: Date | string }[];
+  if (row === undefined) return undefined;
+  const start = asDate(row.period_start);
+  return (await loadBatch(db, { start, end: new Date(start.getTime() + 1) }, options)).find((b) => b.id === billId);
+}
+
 export type Preflight = {
   period_start: string;
   period_end: string;
@@ -296,7 +304,8 @@ export type PayRefusal =
   | 'payout_attempts_bank_minimum'
   | 'payout_cap_exceeded'
   | 'payout_risk_hold'
-  | 'payout_already_paid';
+  | 'payout_already_paid'
+  | 'payout_attempts_previous_not_failed';
 
 export type PayOutcome =
   | { kind: 'sent'; attempt: AttemptRow; result: AttemptEvent['type'] }
@@ -386,8 +395,18 @@ export async function payBill(
   options: BatchOptions & { pauseMs?: number } = {},
 ): Promise<PayOutcome> {
   if (client === undefined) return { kind: 'refused', constraint: 'payout_no_client' };
+  // Live, not the caller's snapshot. A batch preflights every bill once and
+  // then sends for minutes; a hold raised, a payment recorded or an attempt
+  // opened on this bill since then is only seen if it is read again here,
+  // right before the attempt is created (bridge finding batch.ts:389). The
+  // paid and open-attempt halves are also SQL (payout_attempts_previous_not_failed);
+  // the hold half is only this read until the risk tables are in this schema.
+  const live = await loadBill(db, bill.id, options);
+  if (live === undefined) throw new Error(`bill ${bill.id} vanished before it could be paid`);
+  bill = live;
   const gate = await refusalFor(db, bill, options);
   if (gate !== null) return { kind: 'refused', constraint: gate };
+  if (bill.issues.includes('attempt_open')) return { kind: 'refused', constraint: 'payout_attempts_previous_not_failed' };
   const receiver = receiverOf(bill);
   if (typeof receiver === 'string') return { kind: 'refused', constraint: receiver };
 
@@ -456,16 +475,67 @@ async function mUIdOf(db: Db, accountId: string): Promise<string> {
 
 export type BatchRun = {
   preflight: Preflight;
-  sent: { billId: string; attemptId: string; status: string }[];
+  sent: { billId: string; attemptId: string; partnerOrderId: string; status: string; result: string }[];
+  /** Bills the run did not send, each with the name the console maps to a sentence. */
+  refused: { billId: string; collectorRef: string; constraint: string }[];
   stopped_at: { billId: string; constraint: string } | null;
+  /** Every payout_events ticket raised during this run, in order. */
+  tickets: { kind: string; billId: string | null; evidence: unknown; occurredAt: string }[];
 };
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
+ * `runBatch` threw after transfers may have left. Carries the report as far
+ * as it got, so the caller can record what was sent before it answers with
+ * the error; the attempts themselves are already committed, each in its own
+ * transaction, whatever happens to this object.
+ */
+export class BatchAborted extends Error {
+  readonly run: BatchRun;
+  constructor(run: BatchRun, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = 'BatchAborted';
+    this.run = run;
+  }
+}
+
+/** The name a bill's first issue maps to, without raising anything. Pure. */
+export function constraintForIssues(issues: readonly Issue[]): PayRefusal | null {
+  for (const issue of issues) {
+    switch (issue) {
+      case 'already_paid':
+        return 'payout_already_paid';
+      case 'attempt_open':
+        return 'payout_attempts_previous_not_failed';
+      case 'no_account':
+        return 'payout_account_missing';
+      case 'account_unverified':
+        return 'payout_account_unverified';
+      case 'total_fractional':
+        return 'payout_attempts_total_fractional';
+      case 'over_bank_ceiling':
+        return 'payout_attempts_bank_ceiling';
+      case 'under_bank_minimum':
+        return 'payout_attempts_bank_minimum';
+      case 'over_cap':
+        return 'payout_cap_exceeded';
+      case 'risk_hold':
+        return 'payout_risk_hold';
+    }
+  }
+  return null;
+}
+
+/**
  * Preflight, then one transfer at a time. A preflight that says no means zero
  * transfers, recorded as a ticket so the refusal is on the record; a bill that
  * refuses mid-batch stops the batch there.
+ *
+ * Safe to run twice: a second run finds every bill paid or holding an open
+ * attempt, so the preflight has nothing payable and nothing is sent — and if
+ * the preflight somehow disagreed, `payout_attempts_guard` would still refuse
+ * the second attempt. That case is not a ticket: there is nothing to refuse.
  */
 export async function runBatch(
   db: Db,
@@ -474,38 +544,82 @@ export async function runBatch(
   period: { start: Date; end: Date },
   options: BatchOptions & { pauseMs?: number } = {},
 ): Promise<BatchRun> {
+  const since = await lastEventId(db);
   const { billsDetail, ...pre } = await preflight(db, client, period, options);
+  const refused = billsDetail
+    .filter((b) => b.issues.length > 0)
+    .map((b) => ({ billId: b.id, collectorRef: b.collectorRef, constraint: constraintForIssues(b.issues) ?? 'payout_bill_not_payable' }));
   if (!pre.ok) {
-    await emitEvent(db, {
-      kind: 'TICKET.BATCH_REFUSED',
-      evidence: {
-        period_start: pre.period_start,
-        period_end: pre.period_end,
-        refusal: pre.refusal,
-        total_vnd: pre.total_vnd,
-        required_vnd: pre.required_vnd,
-        balance_vnd: pre.balance_vnd,
-      },
-    });
-    return { preflight: pre, sent: [], stopped_at: null };
+    if (pre.payable > 0) {
+      await emitEvent(db, {
+        kind: 'TICKET.BATCH_REFUSED',
+        evidence: {
+          period_start: pre.period_start,
+          period_end: pre.period_end,
+          refusal: pre.refusal,
+          total_vnd: pre.total_vnd,
+          required_vnd: pre.required_vnd,
+          balance_vnd: pre.balance_vnd,
+        },
+      });
+    }
+    return { preflight: pre, sent: [], refused, stopped_at: null, tickets: await ticketsSince(db, since) };
   }
-  const run: BatchRun = { preflight: pre, sent: [], stopped_at: null };
+  const run: BatchRun = { preflight: pre, sent: [], refused, stopped_at: null, tickets: [] };
   const pauseMs = options.pauseMs ?? 500;
-  for (const bill of billsDetail) {
-    if (bill.issues.length > 0) continue;
-    if (run.sent.length > 0 && pauseMs > 0) await sleep(pauseMs);
-    const outcome = await payBill(db, client, actor, bill, options);
-    if (outcome.kind === 'refused') {
-      run.stopped_at = { billId: bill.id, constraint: outcome.constraint };
-      break;
+  try {
+    for (const bill of billsDetail) {
+      if (bill.issues.length > 0) continue;
+      if (run.sent.length > 0 && pauseMs > 0) await sleep(pauseMs);
+      run.stopped_at = { billId: bill.id, constraint: 'payout_batch_aborted' };
+      const outcome = await payBill(db, client, actor, bill, options);
+      run.stopped_at = null;
+      if (outcome.kind === 'refused') {
+        run.stopped_at = { billId: bill.id, constraint: outcome.constraint };
+        run.refused.push({ billId: bill.id, collectorRef: bill.collectorRef, constraint: outcome.constraint });
+        break;
+      }
+      run.sent.push({
+        billId: bill.id,
+        attemptId: outcome.attempt.id,
+        partnerOrderId: outcome.attempt.partnerOrderId,
+        status: outcome.attempt.status,
+        result: outcome.result,
+      });
+      if (outcome.attempt.status === 'failed') {
+        run.stopped_at = { billId: bill.id, constraint: 'payout_transfer_rejected' };
+        run.refused.push({ billId: bill.id, collectorRef: bill.collectorRef, constraint: 'payout_transfer_rejected' });
+        break;
+      }
     }
-    run.sent.push({ billId: bill.id, attemptId: outcome.attempt.id, status: outcome.attempt.status });
-    if (outcome.attempt.status === 'failed') {
-      run.stopped_at = { billId: bill.id, constraint: 'payout_transfer_rejected' };
-      break;
-    }
+  } catch (err) {
+    // What was sent is sent and committed; stopped_at names the bill whose
+    // pay threw. Tickets are read on a best effort: the throw may be the
+    // database going away.
+    run.tickets = await ticketsSince(db, since).catch(() => []);
+    throw new BatchAborted(run, err);
   }
+  run.tickets = await ticketsSince(db, since);
   return run;
+}
+
+async function lastEventId(db: Db): Promise<number> {
+  const rows = (await db.execute(sql`select coalesce(max(id), 0)::int as id from payout_events`)) as unknown as { id: number }[];
+  return rows[0]?.id ?? 0;
+}
+
+async function ticketsSince(db: Db, since: number): Promise<BatchRun['tickets']> {
+  const rows = (await db.execute(sql`
+    select kind, bill_id, evidence, occurred_at from payout_events
+     where id > ${since} and kind like 'TICKET.%'
+     order by id
+  `)) as unknown as { kind: string; bill_id: string | null; evidence: unknown; occurred_at: Date | string }[];
+  return rows.map((r) => ({
+    kind: r.kind,
+    billId: r.bill_id,
+    evidence: r.evidence,
+    occurredAt: asDate(r.occurred_at).toISOString(),
+  }));
 }
 
 export { attemptById };

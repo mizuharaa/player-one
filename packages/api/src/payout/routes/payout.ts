@@ -13,7 +13,7 @@ import { buildExport, type ExportRow } from '../domain/export.ts';
 import { maskPhone } from '../domain/names.ts';
 import { IllegalTransition } from '../domain/state.ts';
 import { verifyDeclaration } from '../domain/verify.ts';
-import { loadBatch, payBill, preflight, refusalFor, type BatchBill } from '../worker/batch.ts';
+import { BatchAborted, loadBatch, loadBill, payBill, preflight, refusalFor, runBatch, type BatchBill, type BatchRun } from '../worker/batch.ts';
 
 /**
  * The payout routes (Agent B brief, BUILD 4). Every mutation goes through
@@ -124,6 +124,9 @@ export const PAYOUT_API_REFUSALS = new Set([
   'payout_accounts_id_reused',
   'payout_attempt_not_resolvable',
   'payout_bill_period_mismatch',
+  'payout_batch_running',
+  'payout_transfer_rejected',
+  'payout_bill_not_payable',
 ]);
 
 export function registerPayout(
@@ -570,6 +573,99 @@ export function registerPayout(
     });
   });
 
+  /**
+   * The batch, as one request (bridge review F-46: the console never loops
+   * pay in the browser). Preflight over the whole period, refuse all if the
+   * balance is short, then one transfer at a time, stopping at the first
+   * failure — `runBatch`, inside the request, and its report rendered.
+   *
+   * One run per period at a time. A transaction-scoped advisory lock keyed on
+   * the period is taken in a transaction that WRITES NOTHING and is held for
+   * the run; a second caller gets `false` and 409 `payout_batch_running`,
+   * immediately, rather than queueing behind the first and sending nothing
+   * an hour later. Transaction-scoped rather than session-scoped because the
+   * pool may hand the release to another connection. That holder is one
+   * connection for the run's duration while every write opens its own, so
+   * the pool must be at least two — `serve.ts` opens ten. A pool of one
+   * would wait forever here.
+   *
+   * The lock transaction writes nothing on purpose (bridge finding
+   * payout.ts:606): the run is not atomic, so nothing about it may be. The
+   * attempts commit one at a time inside `payBill`; the audit is two rows in
+   * their own transactions — `payout.batch_run.started` once the lock is
+   * held, and `payout.batch_run` with the report when the loop ends, whether
+   * it ended by itself or by a throw. A throw after transfer K therefore
+   * leaves attempts 1..K and both audit rows standing, and answers 500 with
+   * the partial report. A process that dies mid-loop leaves the started row
+   * with no report row, which is what "look at payout_attempts" means; the
+   * lock dies with the connection, so the next call is not 409 forever.
+   * A batch-run table with a running state and a heartbeat would say the
+   * same thing with a migration and a staleness rule; not worth it yet.
+   *
+   * Safe to call twice: the second run finds nothing payable and sends
+   * nothing, and `payout_attempts_guard` would refuse a second attempt if it
+   * did. Tested against the stub's transfer count.
+   */
+  app.post('/api/payout/batches/:period/run', finance, async (req, reply) => {
+    const period = periodOf(req);
+    if (typeof period === 'string') return reply.code(422).send({ error: period });
+    if (mode !== 'api') return refused(reply, 'payout_mode_manual');
+
+    const key = `payout_batch_run:${period.start.toISOString()}/${period.end.toISOString()}`;
+    const actor = actorOf(req);
+    const audit = (action: string, after: Record<string, unknown>) =>
+      mutate(db, actor, { action, targetTable: 'bills', targetId: key, after }, async () => true);
+    const periodJson = { period_start: period.start.toISOString(), period_end: period.end.toISOString() };
+
+    const outcome = await db.transaction(async (tx): Promise<'running' | { run: BatchRun; error: string | null }> => {
+      const [lock] = (await tx.execute(
+        sql`select pg_try_advisory_xact_lock(hashtext(${key})) as taken`,
+      )) as unknown as { taken: boolean }[];
+      if (lock?.taken !== true) return 'running';
+      await audit('payout.batch_run.started', periodJson);
+      let run: BatchRun;
+      let error: string | null = null;
+      try {
+        run = await runBatch(db, client, actor, period, batchOptions);
+      } catch (err) {
+        if (!(err instanceof BatchAborted)) throw err;
+        run = err.run;
+        error = err.message;
+      }
+      await audit('payout.batch_run', {
+        ...periodJson,
+        preflight_ok: run.preflight.ok,
+        refusal: run.preflight.refusal,
+        total_vnd: run.preflight.total_vnd,
+        balance_vnd: run.preflight.balance_vnd,
+        sent: run.sent.map((s) => ({ bill_id: s.billId, attempt_id: s.attemptId, status: s.status })),
+        refused: run.refused.map((r) => ({ bill_id: r.billId, constraint: r.constraint })),
+        stopped_at: run.stopped_at?.billId ?? null,
+        error,
+      });
+      return { run, error };
+    });
+    if (outcome === 'running') return refused(reply, 'payout_batch_running');
+    const { run, error } = outcome;
+    const report = {
+      ...periodJson,
+      mode,
+      preflight: run.preflight,
+      sent: run.sent.map((s) => ({
+        bill_id: s.billId,
+        attempt_id: s.attemptId,
+        partner_order_id: s.partnerOrderId,
+        status: s.status,
+        result: s.result,
+      })),
+      refused: run.refused.map((r) => ({ bill_id: r.billId, collector_ref: r.collectorRef, constraint: r.constraint })),
+      stopped_at: run.stopped_at?.billId ?? null,
+      tickets: run.tickets.map((t) => ({ kind: t.kind, bill_id: t.billId, evidence: t.evidence, occurred_at: t.occurredAt })),
+    };
+    if (error !== null) return reply.code(500).send({ error: 'payout_batch_aborted', message: error, ...report });
+    return reply.send(report);
+  });
+
   // -------------------------------------------------------------------------
   // Pay: the API rail (BUILD 4, 8)
 
@@ -578,13 +674,7 @@ export function registerPayout(
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     if (mode !== 'api') return refused(reply, 'payout_mode_manual');
 
-    const [bill] = await db.select({ periodStart: schema.bills.periodStart }).from(schema.bills).where(eq(schema.bills.id, id));
-    if (bill === undefined) return reply.code(404).send({ error: 'no such bill' });
-    const [loaded] = await loadBatch(
-      db,
-      { start: bill.periodStart, end: new Date(bill.periodStart.getTime() + 1) },
-      batchOptions,
-    ).then((all) => all.filter((b) => b.id === id));
+    const loaded = await loadBill(db, id, batchOptions);
     if (loaded === undefined) return reply.code(404).send({ error: 'no such bill' });
 
     const outcome = await guarded(() => payBill(db, client, actorOf(req), loaded, batchOptions));
@@ -623,9 +713,7 @@ export function registerPayout(
      * questions `payBill` asks. `refusalFor` is those questions, in one
      * place; the trigger asks the verification one again in SQL.
      */
-    const [loaded] = (
-      await loadBatch(db, { start: bill.periodStart, end: new Date(bill.periodStart.getTime() + 1) }, batchOptions)
-    ).filter((x) => x.id === id);
+    const loaded = await loadBill(db, id, batchOptions);
     if (loaded === undefined) return reply.code(404).send({ error: 'no such bill' });
     const gate = await refusalFor(db, loaded, batchOptions);
     if (gate !== null) return refused(reply, gate);
