@@ -512,6 +512,18 @@ review of the same delivery in the `second_review` lane, audited as
 `pending_settlement`, and both the bill generator and `bill_lines_dispute_guard`
 hold it back while the dispute is open.
 
+Two scope rules sit on that route. It is closed to a PaXini reviewer (403), and
+it is scoped to the operator's own upload centre: the review is looked up
+through `episodes → upload_batches → handovers`, and one that belongs to
+another centre gets the same 404 as an id that names nothing, which is what
+`/handovers/:id/sessions` and `/episodes/:id/resolve` already do (SEC-02).
+
+The "still unbilled" test is taken under a row lock. `review_disputes_guard`
+reads the settlement `FOR UPDATE` and the bill generator moves the settlement to
+`bill_generated` before it writes any bill line, so a dispute and a bill
+generation that meet on the same row serialise in either order: one of them
+waits, and then sees what the other did.
+
 The second review is an ordinary claim and verdict. `?queue=second_review`
 reuses the takeover statement and the lease; nothing is ever materialised into
 that lane, and the takeover skips the reviewer whose verdict is under challenge

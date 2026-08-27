@@ -290,15 +290,23 @@ export function registerSettle(
             .returning({ id: schema.bills.id });
           if (bill === undefined) return undefined;
 
-          await tx
-            .insert(schema.billLines)
-            .values(lines.map((l) => ({ billId, settlementId: l.settlementId })));
           /**
            * `pending_settlement` in the WHERE, not just in the SELECT that found
            * these rows: another generator may have billed them in between, and
            * then this update matches nothing, the count below disagrees, and the
            * transaction is rolled back rather than issuing a bill for lines
            * somebody else also issued.
+           *
+           * It runs BEFORE the lines are written, and the order is the point.
+           * This statement is where the settlement rows are locked, and
+           * `review_disputes_guard` (0016) locks the same row before it accepts
+           * a dispute. With the lines written first there was a window between
+           * them in which a dispute could commit — the line guard had already
+           * looked and seen none — and the bill went out for a settlement that
+           * was under dispute by the time it committed. Locking first closes it
+           * in both directions: a dispute that arrives now waits for this
+           * transaction and is then refused as billed, and a dispute that
+           * arrived earlier is seen by `bill_lines_dispute_guard` below.
            */
           const moved = await tx
             .update(schema.settlements)
@@ -316,6 +324,9 @@ export function registerSettle(
           if (moved.length !== lines.length) {
             throw new Error('a settlement on this bill was billed by someone else');
           }
+          await tx
+            .insert(schema.billLines)
+            .values(lines.map((l) => ({ billId, settlementId: l.settlementId })));
           return bill;
         },
       );

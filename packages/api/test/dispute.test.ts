@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { open } from '@playerone/store';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { closeDb, db, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 import { episodeRecord } from './fixtures.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -43,6 +44,8 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       opA: uid(),
       opA2: uid(),
       opB: uid(),
+      /** A PaXini reviewer: no centre, and no business raising a dispute. */
+      paxini: uid(),
       collector1: uid(),
       collector2: uid(),
       deviceType: uid(),
@@ -55,7 +58,7 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
     const hash = await hashCredential('pw');
     await d.execute(sql`insert into upload_centres (id, region, name, status) values (${ids.centreA}, 'HCM', 'District 7', 'active'), (${ids.centreB}, 'HAN', 'Cau Giay', 'active')`);
     await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash) values (${ids.machineA}, ${ids.centreA}, 'HCM-01', 'active', ${hash}), (${ids.machineB}, ${ids.centreB}, 'HAN-01', 'active', ${hash})`);
-    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.opA}, ${ids.centreA}, 'op-a', 'centre_operator', ${hash}), (${ids.opA2}, ${ids.centreA}, 'op-a2', 'centre_operator', ${hash}), (${ids.opB}, ${ids.centreB}, 'op-b', 'centre_operator', ${hash})`);
+    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.opA}, ${ids.centreA}, 'op-a', 'centre_operator', ${hash}), (${ids.opA2}, ${ids.centreA}, 'op-a2', 'centre_operator', ${hash}), (${ids.opB}, ${ids.centreB}, 'op-b', 'centre_operator', ${hash}), (${ids.paxini}, null, 'pax-01', 'reviewer', ${hash})`);
     await d.execute(sql`insert into collectors (id, external_ref, status) values (${ids.collector1}, 'c-0001', 'qualified'), (${ids.collector2}, 'c-0002', 'qualified')`);
     await d.execute(sql`insert into device_types (id, code, generation) values (${ids.deviceType}, 'ego_headset', 'gen1')`);
     await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status) values (${ids.device1}, ${ids.deviceType}, 'AZER76400FE', 'active'), (${ids.device2}, ${ids.deviceType}, 'BZER76400FF', 'active')`);
@@ -75,6 +78,16 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
     const A = await login('HCM-01', 'op-a');
     const A2 = await login('HCM-01', 'op-a2');
     const B = await login('HAN-01', 'op-b');
+
+    /**
+     * A reviewer signs in through the console's own route and carries only the
+     * one token it sets — no machine, no centre. Read out of the cookie rather
+     * than minted here, so the test fails if sign-in stops issuing one.
+     */
+    const session = await app.inject({ method: 'POST', url: '/api/session', payload: { external_ref: 'pax-01', operator_secret: 'pw' } });
+    expect(session.statusCode, session.body).toBe(200);
+    const cookie = [session.headers['set-cookie'] ?? []].flat().join(' | ');
+    const PAX: Headers = { authorization: `Bearer ${decodeURIComponent(/po_operator=([^;]+)/.exec(cookie)?.[1] ?? '')}` };
 
     const send = async (method: 'POST' | 'GET', url: string, payload?: unknown, who: Headers = A): Promise<LightMyRequestResponse> =>
       (await app.inject({ method, url, payload: payload as never, headers: who })) as unknown as LightMyRequestResponse;
@@ -122,7 +135,7 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       (await d.execute(sql`select id, settlement_state, amount, superseded_by from settlements where episode_review_id = ${reviewId}`)) as unknown as
         { id: string; settlement_state: string; amount: string; superseded_by: string | null }[];
 
-    return { d, app, ids, A, A2, B, send, episode1, episode2, claimIn, verdict, firstVerdicts, dispute, settlementsOf };
+    return { d, app, ids, A, A2, B, PAX, send, episode1, episode2, claimIn, verdict, firstVerdicts, dispute, settlementsOf };
   }
 
   const START = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -165,7 +178,7 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       const h = await harness();
       const reviewId = (await h.firstVerdicts()).get(h.episode1)!;
       expect((await h.dispute(reviewId)).statusCode).toBe(200);
-      const again = await h.dispute(reviewId, h.B);
+      const again = await h.dispute(reviewId, h.A2);
       expect(again.statusCode, again.body).toBe(409);
       expect(again.json()).toEqual({ error: 'refused', constraint: 'review_disputes_open_key' });
       const rows = (await h.d.execute(sql`select count(*)::int as n from review_disputes`)) as unknown as { n: number }[];
@@ -181,6 +194,23 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       expect(res.json().constraint).toBe('review_disputes_decided_check');
       expect((await h.dispute(uid())).statusCode).toBe(404);
       expect((await h.send('POST', '/api/review/dispute', { review_id: pending[0]!.id, reason: '' })).statusCode).toBe(400);
+      // The reviewer session the title names: a dispute is the centre's act.
+      const asReviewer = await h.dispute(pending[0]!.id, h.PAX);
+      expect(asReviewer.statusCode, asReviewer.body).toBe(403);
+      expect(asReviewer.json().error).toContain('upload centre');
+    });
+
+    it("refuses another centre's review with the same 404 as an id that names nothing (SEC-02)", async () => {
+      const h = await harness();
+      const reviews = await h.firstVerdicts();
+      // c-0001 handed in at HCM; op-b works at HAN.
+      const foreign = await h.dispute(reviews.get(h.episode1)!, h.B);
+      expect(foreign.statusCode, foreign.body).toBe(404);
+      expect(foreign.json()).toEqual({ error: 'no such review' });
+      const rows = (await h.d.execute(sql`select count(*)::int as n from review_disputes`)) as unknown as { n: number }[];
+      expect(rows[0]!.n).toBe(0);
+      // op-b's own centre's collector is still theirs to dispute for.
+      expect((await h.dispute(reviews.get(h.episode2)!, h.B)).statusCode).toBe(200);
     });
   });
 
@@ -194,6 +224,10 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       expect((await h.claimIn(null, h.A2)).statusCode).toBe(204);
       // The original reviewer asks for the lane by name and gets nothing.
       expect((await h.claimIn('second_review', h.A)).statusCode).toBe(204);
+      // And the peek says the same. A prefetch that warmed this reviewer's own
+      // verdict, for a claim that will always answer 204, is the two disagreeing.
+      expect((await h.send('GET', '/api/review/next?queue=second_review', undefined, h.A)).statusCode).toBe(204);
+      expect((await h.send('GET', '/api/review/next?queue=second_review', undefined, h.A2)).statusCode).toBe(200);
       // A colleague gets the disputed episode.
       const second = await h.claimIn('second_review', h.A2);
       expect(second.statusCode, second.body).toBe(200);
@@ -315,6 +349,46 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       await violates('review_disputes_reason_check', h.d.execute(sql`insert into review_disputes (id, review_id, raised_by, reason) values (${uid()}, ${r1}, ${h.ids.opB}, '  ')`));
     });
 
+    it('waits for a bill generation in flight on the settlement, then refuses', async () => {
+      const h = await harness();
+      const reviewId = (await h.firstVerdicts()).get(h.episode1)!;
+      // Two connections, as backoffice.test.ts does it: one pooled connection
+      // would serialise the two transactions before Postgres saw them.
+      const a = await open(dbUrl(), { max: 1 });
+      const b = await open(dbUrl(), { max: 1 });
+      try {
+        let updated: () => void = () => {};
+        let commit: () => void = () => {};
+        const firstUpdated = new Promise<void>((resolve) => (updated = resolve));
+        const held = new Promise<void>((resolve) => (commit = resolve));
+        const generator = a.transaction(async (tx) => {
+          await tx.execute(sql`update settlements set settlement_state = 'bill_generated', updated_at = now() where episode_review_id = ${reviewId}`);
+          updated();
+          await held;
+        });
+        await firstUpdated;
+
+        let settled = false;
+        const disputed = (async () =>
+          b.execute(sql`insert into review_disputes (id, review_id, raised_by, reason) values (${uid()}, ${reviewId}, ${h.ids.opA}, 'x')`))();
+        disputed.then(
+          () => (settled = true),
+          () => (settled = true),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        expect(settled, 'the dispute did not wait for the generator').toBe(false);
+
+        commit();
+        await generator;
+        await violates('review_disputes_unbilled_check', disputed);
+      } finally {
+        await a.close();
+        await b.close();
+      }
+      const rows = (await h.d.execute(sql`select count(*)::int as n from review_disputes`)) as unknown as { n: number }[];
+      expect(rows[0]!.n).toBe(0);
+    });
+
     it('a dispute is written once and closed once', async () => {
       const h = await harness();
       const reviewId = (await h.firstVerdicts()).get(h.episode1)!;
@@ -365,6 +439,10 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       await violates('settlements_superseded_immutable', h.d.execute(sql`update settlements set superseded_by = null where id = ${s1!.id}`));
       // 0005's way back out of exception is closed for a superseded row.
       await violates('settlements_superseded_state_check', h.d.execute(sql`update settlements set settlement_state = 'pending_settlement' where id = ${s1!.id}`));
+      // Nor can a row be BORN superseded: 0005 admits `pending_settlement` at insert, this guard does not.
+      await violates('settlements_superseded_state_check', h.d.execute(sql`
+        insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes, amount, settlement_state, superseded_by)
+        select ${uid()}, episode_review_id, task_id, unit_price, effective_minutes, amount, 'pending_settlement', ${s1!.id} from settlements where id = ${s2!.id}`));
     });
 
     it('a bill line is refused for a disputed or a superseded settlement', async () => {

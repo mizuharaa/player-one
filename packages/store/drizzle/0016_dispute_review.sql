@@ -100,7 +100,17 @@ BEGIN
   END IF;
   -- A bill is never revised (docs/review.md). Until it can be, a settlement
   -- already on one — or paid — cannot be reopened.
-  SELECT settlement_state INTO owed_state FROM settlements WHERE episode_review_id = NEW.review_id;
+  --
+  -- `FOR UPDATE`, for the same reason 0006's claim guard locks the task row.
+  -- READ COMMITTED answers a plain SELECT from a statement snapshot, so a bill
+  -- generation that had already written `bill_generated` but not yet committed
+  -- was invisible here and the dispute was accepted against a row being billed.
+  -- The lock makes the two serialise: whichever arrives second waits, then
+  -- reads what the first actually did. The generator takes the same lock before
+  -- it writes a bill line (settle.ts), so the wait happens in both orders.
+  SELECT settlement_state INTO owed_state
+    FROM settlements WHERE episode_review_id = NEW.review_id
+     FOR UPDATE;
   IF owed_state IS DISTINCT FROM 'pending_settlement' THEN
     RAISE EXCEPTION 'review_disputes_unbilled_check: the settlement for review % is %, and only a settlement still waiting to be billed can be disputed', NEW.review_id, coalesce(owed_state, 'absent')
       USING ERRCODE = 'check_violation', CONSTRAINT = 'review_disputes_unbilled_check';
@@ -154,9 +164,15 @@ CREATE TRIGGER episode_reviews_dispute_guard
 -- A superseded settlement is written once and parked in `exception` for good:
 -- 0005's `exception -> pending_settlement` edge is for a human returning a row
 -- to the queue, and this row must never return.
+--
+-- `BEFORE INSERT OR UPDATE`, not update only. On update alone a row could be
+-- BORN with `superseded_by` set and a state that is not `exception`: 0005's
+-- transition guard admits `pending_settlement` at insert and knows nothing
+-- about supersession, so nothing refused it. The immutability half stays an
+-- update-only rule because there is no OLD row at insert.
 CREATE FUNCTION settlements_supersede_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF OLD.superseded_by IS NOT NULL AND NEW.superseded_by IS DISTINCT FROM OLD.superseded_by THEN
+  IF TG_OP = 'UPDATE' AND OLD.superseded_by IS NOT NULL AND NEW.superseded_by IS DISTINCT FROM OLD.superseded_by THEN
     RAISE EXCEPTION 'settlements_superseded_immutable: settlement % is already superseded by %', OLD.id, OLD.superseded_by
       USING ERRCODE = 'check_violation', CONSTRAINT = 'settlements_superseded_immutable';
   END IF;
@@ -172,7 +188,7 @@ BEGIN
 END;
 $$;--> statement-breakpoint
 CREATE TRIGGER settlements_supersede_guard
-  BEFORE UPDATE ON settlements
+  BEFORE INSERT OR UPDATE ON settlements
   FOR EACH ROW EXECUTE FUNCTION settlements_supersede_guard();
 --> statement-breakpoint
 -- Neither a disputed settlement nor a superseded one reaches a bill. The

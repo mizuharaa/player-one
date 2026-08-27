@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { EpisodeRecord } from '@playerone/contracts';
@@ -64,6 +64,22 @@ export const LEASE_MS = 10 * 60 * 1000;
  * a pilot has, and a spare attempt costs one cheap statement.
  */
 const CLAIM_ATTEMPTS = 8;
+
+/**
+ * QR-08. The second verdict differed, and the settlement it was going to
+ * supersede is no longer waiting to be billed.
+ *
+ * It should be unreachable: the dispute guard proved `pending_settlement` under
+ * a row lock when the dispute was raised, `bill_lines_dispute_guard` has
+ * refused it a line ever since, and the bill generator takes the same lock
+ * before it writes one. It has a name anyway because the alternative is a 500
+ * on the one path that decides what a collector is paid, and a 500 tells the
+ * reviewer nothing and the operator less. The transaction rolls back either
+ * way — no verdict, no settlement, no audit row — and the second review stays
+ * pending, so the answer is a refusal that says what is wrong and not an
+ * "unexpected error".
+ */
+class BilledWhileDisputed extends Error {}
 
 /**
  * QR-07. Two lanes, and an episode is in exactly one of them.
@@ -399,6 +415,24 @@ export function registerReview(
     )`;
 
   /**
+   * QR-08: a second review is never offered to the reviewer whose verdict it
+   * re-examines. The database refuses the write too
+   * (`episode_reviews_second_reviewer_check`); this is what keeps the refusal
+   * out of the claim's own error path.
+   *
+   * Written once and asked by all three, because a peek, a depth and a claim
+   * that disagree about what is claimable are three numbers a reviewer cannot
+   * reconcile: the queue said one waiting, the prefetch warmed an episode, and
+   * the claim answered 204.
+   */
+  const notOwnSecondReview = (disputeId: SQL | string, reviewer: string) => sql`
+    not exists (
+      select 1 from review_disputes d
+        join episode_reviews o on o.id = d.review_id
+       where d.id = ${disputeId} and o.reviewer_ref = ${reviewer}
+    )`;
+
+  /**
    * Claims the next episode for this reviewer, in two statements and at most
    * `CLAIM_ATTEMPTS` tries.
    *
@@ -441,15 +475,7 @@ export function registerReview(
               and (r.assignee_ref is null or r.assignee_ref = ${reviewer})
               and (r.reviewer_ref is null or r.lease_expires_at < now())
               and ${stillEligible(sql`r.episode_id`, sql`r.ingest_id`)}
-              -- QR-08: a second review is never offered to the reviewer whose
-              -- verdict it re-examines. The database refuses the write too
-              -- (episode_reviews_second_reviewer_check); this is what keeps the
-              -- refusal out of the claim's own error path.
-              and not exists (
-                select 1 from review_disputes d
-                  join episode_reviews o on o.id = d.review_id
-                 where d.id = r.dispute_id and o.reviewer_ref = ${reviewer}
-              )
+              and ${notOwnSecondReview(sql`r.dispute_id`, reviewer)}
             order by r.priority desc, r.created_at
               for update skip locked
             limit 1
@@ -522,7 +548,12 @@ export function registerReview(
             and (pr.reviewer_ref is null or pr.lease_expires_at < now())
             -- Same re-check as the takeover: a pending row whose episode has
             -- since failed cloud verification is not claimable, so it is not depth.
-            and ${stillEligible(sql`pr.episode_id`, sql`pr.ingest_id`)})
+            and ${stillEligible(sql`pr.episode_id`, sql`pr.ingest_id`)}
+            -- And the same QR-08 exclusion as the takeover. Without it the
+            -- depth counted the second review of this reviewer's own verdict,
+            -- which the claim will never hand them: the number never reached
+            -- zero and the lane looked like it had work in it that it had not.
+            and ${notOwnSecondReview(sql`pr.dispute_id`, reviewer)})
       + (select count(*)
            from episodes
            join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
@@ -867,7 +898,11 @@ export function registerReview(
          and coalesce(r.assignee_ref, ${reviewer}) = ${reviewer}
          and (r.id is null
               or (r.review_state = 'pending'
-                  and (r.reviewer_ref is null or r.lease_expires_at < now())))
+                  and (r.reviewer_ref is null or r.lease_expires_at < now())
+                  -- The claim's QR-08 exclusion, so the peek names the episode
+                  -- the claim will actually hand over and not this reviewer's
+                  -- own verdict coming back at them.
+                  and ${notOwnSecondReview(sql`r.dispute_id`, reviewer)}))
        order by (r.id is null), coalesce(r.priority, 0) desc,
                 coalesce(r.created_at, episodes.first_seen_at)
        limit 1
@@ -1245,12 +1280,22 @@ export function registerReview(
      * first review and a pending second one, and the verdict is for the row
      * still waiting; with nothing pending, the decided row answers "already
      * reviewed" below as before.
+     *
+     * **This reviewer's** pending row before any other pending row. An episode
+     * can have two: a redelivery opens a pending first review on the new
+     * ingest while the second review of a dispute on the old one is still
+     * open, and they are usually held by different people. Picking whichever
+     * Postgres returned first would answer one of the two reviewers with
+     * "claimed by someone else" at random. Oldest first breaks the remaining
+     * tie, so the same request always resolves to the same row.
      */
     const rows = await db
       .select()
       .from(schema.episodeReviews)
-      .where(eq(schema.episodeReviews.episodeId, body.episode_id));
-    const review = rows.find((r) => r.reviewState === 'pending') ?? rows[0];
+      .where(eq(schema.episodeReviews.episodeId, body.episode_id))
+      .orderBy(asc(schema.episodeReviews.createdAt), asc(schema.episodeReviews.id));
+    const pending = rows.filter((r) => r.reviewState === 'pending');
+    const review = pending.find((r) => r.reviewerRef === reviewer) ?? pending[0] ?? rows[0];
     if (review === undefined) {
       return reply.code(404).send({ error: 'this episode has not been claimed for review' });
     }
@@ -1532,7 +1577,7 @@ export function registerReview(
                 returning s.id
               `)) as unknown as { id: string }[];
               if (parked.length !== 1) {
-                throw new Error('the disputed settlement was billed while the dispute was open');
+                throw new BilledWhileDisputed('the disputed settlement was billed while the dispute was open');
               }
               dispute.superseded_settlement_id = parked[0]!.id;
             }
@@ -1557,6 +1602,13 @@ export function registerReview(
         },
       );
     } catch (err) {
+      if (err instanceof BilledWhileDisputed) {
+        return reply.code(409).send({
+          error: 'not reviewable',
+          detail:
+            'the settlement under dispute was billed while the dispute was open, so this verdict cannot replace it; nothing was recorded',
+        });
+      }
       /**
        * Two requests carrying the same `verdict_id` reached the transaction
        * together. One committed; this one lost on the unique index. The correct
@@ -1652,6 +1704,39 @@ export function registerReview(
       return reply.code(403).send({ error: 'a dispute is raised at the upload centre, on the collector\'s behalf' });
     }
     const body = parsed.data;
+
+    /**
+     * SEC-02, the same rule and the same answer as `/handovers/:id/sessions`
+     * and `/episodes/:id/resolve`: a row that belongs to another centre is not
+     * refused, it does not exist. Without this an operator at any centre could
+     * reopen a verdict on a collector who never handed a card in to them, and
+     * hold that collector's bill back, from a screen that shows them nothing
+     * about the delivery.
+     *
+     * The centre comes from the delivery — `episodes.upload_batch_id` to the
+     * handover the card arrived on — because that is where a collector's
+     * relationship with a centre is written. It is deliberately not the
+     * reviewer's centre: a PaXini reviewer has none, and this route is closed
+     * to them anyway.
+     *
+     * An episode stored by the CLI has no batch and therefore no centre, so it
+     * cannot be disputed through this route. That is the same 404 and not a
+     * separate refusal: nothing in the pilot reaches review that way.
+     */
+    const [own] = await db
+      .select({ id: schema.episodeReviews.id })
+      .from(schema.episodeReviews)
+      .innerJoin(schema.episodes, eq(schema.episodes.episodeId, schema.episodeReviews.episodeId))
+      .innerJoin(schema.uploadBatches, eq(schema.uploadBatches.id, schema.episodes.uploadBatchId))
+      .innerJoin(schema.handovers, eq(schema.handovers.id, schema.uploadBatches.handoverId))
+      .where(
+        and(
+          eq(schema.episodeReviews.id, body.review_id),
+          eq(schema.handovers.uploadCentreId, actor.operator.uploadCentreId),
+        ),
+      );
+    if (own === undefined) return reply.code(404).send({ error: 'no such review' });
+
     const disputeId = randomUUID();
     const secondReviewId = randomUUID();
     const event = {
