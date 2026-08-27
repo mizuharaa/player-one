@@ -221,6 +221,28 @@ export function buildApi({
   const app = Fastify({ logger: false });
 
   /**
+   * HSTS, and only where TLS exists (SEC-09).
+   *
+   * `secureCookies` is already this repo's single "there is TLS in front of
+   * this process" signal — it is what the reviewer-media refusal above reads,
+   * and what `bin/serve.ts` sets from `PLAYERONE_SECURE_COOKIES`. So the header
+   * follows it rather than becoming a second switch that can disagree with the
+   * first.
+   *
+   * Not sent unconditionally, for two reasons. A browser ignores this header on
+   * a plain-HTTP response, so on a LAN centre it would be decoration. And if
+   * that centre ever puts one hostname behind TLS, a header it had been
+   * emitting all along would pin every other path on that host to HTTPS for a
+   * year, which is a centre-down event with no obvious cause. No `preload`: a
+   * preload list entry is a submission nobody here has made.
+   */
+  if (secureCookies) {
+    app.addHook('onRequest', async (_req, reply) => {
+      reply.header('strict-transport-security', 'max-age=31536000; includeSubDomains');
+    });
+  }
+
+  /**
    * The token from a header, or failing that from the session cookie.
    *
    * The header is checked first so a machine client's explicit credential
