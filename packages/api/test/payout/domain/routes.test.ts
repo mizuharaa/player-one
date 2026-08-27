@@ -788,6 +788,93 @@ describe.skipIf(!hasDb())('the payout routes', () => {
         await pooled.close();
       }
     });
+
+    it('re-reads the hold before each send: a hold raised after the preflight refuses that bill and stops there', async () => {
+      // Bridge finding [payout-domain] batch.ts:389. The hold on bill 2 is
+      // raised by the transfer of bill 1 — after the preflight read every bill
+      // clear, before bill 2's own send.
+      const heldBills = new Set<string>();
+      const risk: RiskReader = {
+        billSummary: async (billId) =>
+          heldBills.has(billId)
+            ? { subjectType: 'bill', subjectId: billId, score: 65, band: 'hold', flags: [] }
+            : null,
+      };
+      const stub = new StubZaloPay();
+      let bill2 = '';
+      stub.transfer = (i) => {
+        heldBills.add(bill2);
+        return { kind: 'accepted', zlpOrderId: `zlp-${i.partnerOrderId}`, status: 1 };
+      };
+      const pooled = await open(dbUrl(), { max: 8 });
+      try {
+        const h = await harness(apiMode(stub, { risk, holdsEnabled: true }), pooled);
+        const b = await seedBills(h.d, h.ids);
+        bill2 = b.bill2;
+        await seedAccount(h.d, h.ids, 1);
+        await seedAccount(h.d, h.ids, 2);
+        const res = await h.send('POST', url, h.finA);
+        expect(res.statusCode, res.body).toBe(200);
+        expect(res.json().preflight).toMatchObject({ ok: true, payable: 2, counts: { risk_hold: 0 } });
+        expect(res.json().sent).toEqual([expect.objectContaining({ bill_id: b.bill1, status: 'succeeded' })]);
+        expect(res.json().stopped_at).toBe(b.bill2);
+        expect(res.json().refused).toEqual([{ bill_id: b.bill2, collector_ref: 'c-0002', constraint: 'payout_risk_hold' }]);
+        expect(stub.calls.transferFund).toBe(1);
+        expect(await countOf(h.d, sql`select count(*) as n from payout_attempts where bill_id = ${b.bill2}`)).toBe(0);
+        await h.app.close();
+      } finally {
+        await pooled.close();
+      }
+    });
+
+    it('a throw after transfer K leaves attempts 1..K committed, the run audited as stopped, and a rerun resends nothing', async () => {
+      // Bridge finding [payout-domain] payout.ts:606. The second transfer
+      // throws (a lost connection): bill 1 was sent, bill 2 was marked
+      // submitted before the request left. Neither may be un-recorded.
+      const stub = new StubZaloPay();
+      stub.transfer = (i, nth) => {
+        if (nth === 2) throw new Error('socket hang up');
+        return { kind: 'accepted', zlpOrderId: `zlp-${i.partnerOrderId}`, status: 1 };
+      };
+      const pooled = await open(dbUrl(), { max: 8 });
+      try {
+        const h = await harness(apiMode(stub), pooled);
+        const { bill1, bill2 } = await seedBills(h.d, h.ids);
+        await seedAccount(h.d, h.ids, 1);
+        await seedAccount(h.d, h.ids, 2);
+        const res = await h.send('POST', url, h.finA);
+        expect(res.statusCode, res.body).toBe(500);
+        expect(res.json()).toMatchObject({ error: 'payout_batch_aborted', message: 'socket hang up', stopped_at: bill2 });
+        expect(res.json().sent).toEqual([expect.objectContaining({ bill_id: bill1, status: 'succeeded' })]);
+        expect(stub.calls.transferFund).toBe(2);
+
+        const attempts = await rows<{ bill_id: string; status: string }>(h.d, sql`select bill_id, status from payout_attempts order by created_at`);
+        expect(attempts).toEqual([
+          { bill_id: bill1, status: 'succeeded' },
+          { bill_id: bill2, status: 'submitted' },
+        ]);
+        const audits = await rows<{ action: string; after: Record<string, unknown> }>(
+          h.d,
+          sql`select action, after from audit_events where action like 'payout.batch_run%' order by id`,
+        );
+        expect(audits.map((a) => a.action)).toEqual(['payout.batch_run.started', 'payout.batch_run']);
+        expect(audits[1]!.after).toMatchObject({ stopped_at: bill2, error: 'socket hang up' });
+        expect((audits[1]!.after['sent'] as { bill_id: string }[]).map((s) => s.bill_id)).toEqual([bill1]);
+
+        // Again: bill 1 is paid, bill 2's attempt is open for the poller; nothing is resent.
+        const again = await h.send('POST', url, h.finA);
+        expect(again.statusCode, again.body).toBe(200);
+        expect(again.json()).toMatchObject({ sent: [], stopped_at: null });
+        expect((again.json().refused as { constraint: string }[]).map((r) => r.constraint).sort()).toEqual([
+          'payout_already_paid',
+          'payout_attempts_previous_not_failed',
+        ]);
+        expect(stub.calls.transferFund).toBe(2);
+        await h.app.close();
+      } finally {
+        await pooled.close();
+      }
+    });
   });
 
   // -------------------------------------------------------------------------
