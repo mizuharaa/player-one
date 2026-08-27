@@ -62,6 +62,8 @@ export function preflightGate(input: {
   const ageMs = input.now - input.fetchedAt;
   // Fails closed at the boundary: a snapshot exactly one window old is not
   // "younger than the window", so it is not authorisation material either.
+  // `>=` was decided in the handoff (CLAUDE.md, unfinished branches item 4);
+  // it is not an open question.
   if (ageMs < 0 || ageMs >= window) return { open: false, reason: 'expired', ageMs };
   if (input.snapshot.fingerprint !== input.batchFingerprint) return { open: false, reason: 'changed', ageMs };
   return { open: true, ageMs };

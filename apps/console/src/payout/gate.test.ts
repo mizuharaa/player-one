@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { PayoutBill } from '../lib/api.ts';
 import { batchFingerprint, gateReasonKey, preflightGate, PREFLIGHT_WINDOW_MS, type PreflightSnapshot } from './gate.ts';
 
 /**
- * The preflight gate at its boundaries, with a fake clock. Codex F-45: the
+ * The preflight gate at its boundaries. `now` is a parameter, so the
+ * boundary is plain arithmetic and needs no fake clock. Codex F-45: the
  * first cut unlocked payment whenever a preflight existed in the cache, and
  * a disabled observer could keep one resident indefinitely. The gate now
  * carries the snapshot's age and the batch it described, and this file is
@@ -65,27 +66,16 @@ describe('the preflight gate', () => {
     expect(gateReasonKey(gate)).toBeNull();
   });
 
-  it('closes at the window, live, with a fake clock: open one millisecond before five minutes, closed at five minutes', () => {
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(T0);
-      const bills = [bill()];
-      const fp = batchFingerprint(bills);
-      const at = () => preflightGate({ snapshot: snapshot(bills), fetchedAt: T0, batchFingerprint: fp, now: Date.now() });
-      expect(at().open).toBe(true);
-      vi.setSystemTime(T0 + PREFLIGHT_WINDOW_MS - 1);
-      expect(at().open).toBe(true);
-      vi.setSystemTime(T0 + PREFLIGHT_WINDOW_MS);
-      const late = at();
-      expect(late).toEqual({ open: false, reason: 'expired', ageMs: PREFLIGHT_WINDOW_MS });
-      expect(gateReasonKey(late)).toBe('settle.preflight.expired');
-    } finally {
-      vi.useRealTimers();
-    }
-    const at = (now: number) => preflightGate({ snapshot: snapshot([bill()]), fetchedAt: T0, batchFingerprint: batchFingerprint([bill()]), now });
-    const late = at(T0 + PREFLIGHT_WINDOW_MS + 1);
-    expect(late.open).toBe(false);
+  it('closes at the window: open one millisecond before five minutes, closed at five minutes', () => {
+    const bills = [bill()];
+    const fp = batchFingerprint(bills);
+    const at = (now: number) => preflightGate({ snapshot: snapshot(bills), fetchedAt: T0, batchFingerprint: fp, now });
+    expect(at(T0).open).toBe(true);
+    expect(at(T0 + PREFLIGHT_WINDOW_MS - 1).open).toBe(true);
+    const late = at(T0 + PREFLIGHT_WINDOW_MS);
+    expect(late).toEqual({ open: false, reason: 'expired', ageMs: PREFLIGHT_WINDOW_MS });
     expect(gateReasonKey(late)).toBe('settle.preflight.expired');
+    expect(at(T0 + PREFLIGHT_WINDOW_MS + 1).open).toBe(false);
     // A clock that went backwards is not a fresh preflight either.
     expect(at(T0 - 1).open).toBe(false);
   });

@@ -5,13 +5,13 @@
  * That module has no imports of its own — it is a flat map of dotted keys — and
  * keeping one catalogue is what stops an English word appearing in the middle
  * of a Chinese sentence at an upload centre. A test in `packages/api` asserts
- * both locales hold every key, so adding an English string without its Chinese
- * counterpart fails CI rather than shipping.
+ * every locale holds every key, so adding an English string without its
+ * counterparts fails CI rather than shipping.
  *
- * LOC-02 puts the back office in English and Chinese. Vietnamese is
- * deliberately absent: LOC-04 puts Vietnamese on what reaches the *collector* —
- * the reject reason codes — and those are catalogue rows in
- * `review_reason_codes` with a `label_vi`, not strings in this console.
+ * LOC-02 puts the back office in English and Chinese. Vietnamese was added
+ * with the payout console, because the finance operators who run a batch read
+ * Vietnamese; the collector-facing reject reason codes of LOC-04 stay
+ * catalogue rows in `review_reason_codes` with a `label_vi`, not strings here.
  *
  * The keys use dots, so i18next's default `keySeparator` would read
  * `queue.empty.title` as three levels of nesting into a flat object and find
