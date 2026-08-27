@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { DISCREPANCY_CODES } from '@playerone/contracts';
 import { DEFECT_CATALOGUE, REVIEW_REASON_CATALOGUE, seedCatalogues } from '../src/catalogue.ts';
-import { closeDb, db, hasDb, truncate, violates, useDatabase } from './db.ts';
+import { closeDb, db, hasDb, liveClaim, truncate, violates, useDatabase } from './db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('spine');
@@ -79,18 +79,20 @@ async function seedSpine() {
     insert into upload_batches (id, handover_id, upload_device_id, import_started_at, batch_status)
       values (${ids.batch}, ${ids.handover}, ${ids.uploadDevice}, now(), 'importing');
   `);
+  // 0016: the session is recorded under a live claim, and a settlement names it.
+  const claim = await liveClaim(d, ids.task, ids.collector);
   await d.execute(sql`
     insert into collection_sessions
       (id, handover_id, task_id, collector_id, scenario_id, others_in_frame,
-       sensitive_info_present, session_origin)
+       sensitive_info_present, session_origin, task_claim_id, unit_price, currency)
       values (${ids.session}, ${ids.handover}, ${ids.task}, ${ids.collector}, ${ids.scenario},
-              false, false, 'handover');
+              false, false, 'handover', ${claim}, '1200.0000', 'VND');
   `);
   await d.execute(sql`
     insert into collection_session_devices (collection_session_id, device_id, role)
       values (${ids.session}, ${ids.device}, 'headset');
   `);
-  return ids;
+  return { ...ids, claim };
 }
 
 /** An episode plus one ingest, in whatever resolution state the test wants. */
@@ -350,9 +352,9 @@ describe.skipIf(!hasDb())('the identity spine', () => {
           values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now(), ${uid()});
       `);
       const bill = (id: string) => sql`
-        insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+        insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes,
                                  amount, settlement_state)
-          values (${id}, ${reviewId}, ${ids.task}, '1200.0000', '0.141667', '170.0000', 'pending_settlement');
+          values (${id}, ${reviewId}, ${ids.task}, ${ids.claim}, '1200.0000', '0.141667', '170.0000', 'pending_settlement');
       `;
       await d.execute(bill(uid()));
       await violates('settlements_review_key', d.execute(bill(uid())));
@@ -387,9 +389,9 @@ describe.skipIf(!hasDb())('the identity spine', () => {
           values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now(), ${uid()});
       `);
       await d.execute(sql`
-        insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+        insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes,
                                  amount, settlement_state)
-          values (${settlementId}, ${reviewId}, ${ids.task}, '1200.0000', '0.141667', '170.0000', ${state});
+          values (${settlementId}, ${reviewId}, ${ids.task}, ${ids.claim}, '1200.0000', '0.141667', '170.0000', ${state});
       `);
       return { ...ids, settlementId };
     }
@@ -453,9 +455,9 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       await violates(
         'settlements_transition_check',
         d.execute(sql`
-          insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+          insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes,
                                    amount, settlement_state)
-            values (${uid()}, ${reviewId}, ${ids.task}, '1200.0000', '0.141667', '170.0000', 'manually_paid');
+            values (${uid()}, ${reviewId}, ${ids.task}, ${ids.claim}, '1200.0000', '0.141667', '170.0000', 'manually_paid');
         `),
       );
     });
@@ -672,9 +674,9 @@ describe.skipIf(!hasDb())('the identity spine', () => {
           values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '0.000000', 'fail', now(), ${uid()});
       `);
       await d.execute(sql`
-        insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+        insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes,
                                  amount, settlement_state)
-          values (${settlementId}, ${reviewId}, ${ids.task}, '1200.0000', '0.000000', '0.0000', 'pending_settlement');
+          values (${settlementId}, ${reviewId}, ${ids.task}, ${ids.claim}, '1200.0000', '0.000000', '0.0000', 'pending_settlement');
       `);
       await d.execute(sql`
         insert into bills (id, collector_id, period_start, period_end, currency, total)

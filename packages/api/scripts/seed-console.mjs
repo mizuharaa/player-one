@@ -88,6 +88,13 @@ await db.execute(sql`insert into device_types (id,code,generation) values (${id.
 await db.execute(sql`insert into devices (id,device_type_id,hardware_serial,status) values (${id.device},${id.dtype},'AZER76400FE','active')`);
 await db.execute(sql`insert into tasks (id,name,unit_price,max_concurrent_claimants,status) values (${id.task},'Housework',1200,5,'published')`);
 await db.execute(sql`insert into scenarios (id,code,privacy_risk_level) values (${id.scenario},'home','low')`);
+// 0016: the session below is recorded under a live claim, and the claim guard
+// (0006) wants the exam pass and all six agreements first.
+await db.execute(sql`update collectors set exam_result = 'pass', exam_decided_at = now() where id = ${id.collector}`);
+await db.execute(sql`insert into collector_agreements (collector_id, agreement, version, accepted_at)
+  select ${id.collector}, a, 'v1', now()
+    from unnest(array['user','privacy','data_collection','commercial_use','manual_review','offline_settlement']) as a`);
+await db.execute(sql`insert into task_claims (id, task_id, collector_id) values (${uid()}, ${id.task}, ${id.collector})`);
 
 const app = buildApi({ db, tokenSecret: 'k', mediaRoot: MEDIA_ROOT, currency: 'VND' });
 const tok = async (url, payload) => (await app.inject({ method: 'POST', url, payload })).json().token;

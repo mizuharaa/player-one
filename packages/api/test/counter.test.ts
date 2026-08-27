@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LightMyRequestResponse } from 'fastify';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { closeDb, db, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('counter');
@@ -49,7 +49,9 @@ async function seed() {
     values (${ids.task}, 'housework', 1200.0000, 5, 'published')`);
   await d.execute(sql`insert into scenarios (id, code, privacy_risk_level)
     values (${ids.scenario}, 'home', 'low')`);
-  return ids;
+  // A session is recorded under a live claim (0016); the counter refuses one without.
+  const claim = await liveClaim(d, ids.task, ids.collector);
+  return { ...ids, claim };
 }
 
 describe.skipIf(!hasDb())('the counter workflow', () => {
@@ -424,5 +426,111 @@ describe.skipIf(!hasDb())('the counter workflow', () => {
       expect(r['operator_id']).toBe(ids.operator);
       expect(r['upload_device_id']).toBe(ids.device);
     }
+  });
+
+  // -- the claim behind the session (APP-10, migration 0016) ----------------
+
+  describe('a session is recorded under a live claim', () => {
+    /** A second centre, operator, collector, device and card — the shape that hides a scoping bug. */
+    async function secondCentre(ids: Awaited<ReturnType<typeof seed>>) {
+      const d = await db();
+      const other = { centre: uid(), device: uid(), operator: uid(), collector: uid(), egoDevice: uid(), handover: uid() };
+      const hash = await hashCredential('pw');
+      await d.execute(sql`insert into upload_centres (id, region, name, status) values (${other.centre}, 'HAN', 'other', 'active')`);
+      await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash)
+        values (${other.device}, ${other.centre}, 'HAN-01', 'active', ${hash})`);
+      await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash)
+        values (${other.operator}, ${other.centre}, 'op-2', 'centre_operator', ${hash})`);
+      await d.execute(sql`insert into collectors (id, external_ref, status) values (${other.collector}, 'c-2', 'qualified')`);
+      await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status)
+        values (${other.egoDevice}, ${ids.deviceType}, 'AZER76400FF', 'active')`);
+      await d.execute(sql`insert into handovers (id, collector_id, device_id, tf_card_id, upload_centre_id, operator_id, handover_time)
+        values (${other.handover}, ${other.collector}, ${other.egoDevice}, 'CARD-2', ${other.centre}, ${other.operator}, now())`);
+
+      const app = buildApi({ db: d, tokenSecret: SECRET });
+      const m = await app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: 'HAN-01', secret: 'pw' } });
+      const o = await app.inject({ method: 'POST', url: '/auth/operator', payload: { external_ref: 'op-2', secret: 'pw' } });
+      const headers = { 'x-machine-token': `Bearer ${m.json().token}`, authorization: `Bearer ${o.json().token}` };
+      const post = async (url: string, payload: Record<string, unknown>) =>
+        (await app.inject({ method: 'POST', url, payload, headers })) as unknown as LightMyRequestResponse;
+      return { ...other, post };
+    }
+
+    const sessionBody = (ids: { task: string; scenario: string }) => ({
+      id: uid(),
+      task_id: ids.task,
+      scenario_id: ids.scenario,
+      others_in_frame: false,
+      sensitive_info_present: false,
+      prepare_time: '2026-08-21T07:00:00.000Z',
+    });
+
+    it('stamps the claim and the price onto the session, not the task’s current price', async () => {
+      const ids = await seed();
+      const c = await client();
+      const { sessionA } = await fullRun(c, ids);
+      const [row] = (await (await db()).execute(
+        sql`select task_claim_id, unit_price, currency from collection_sessions where id = ${sessionA}`,
+      )) as unknown as Record<string, string>[];
+      expect(row).toEqual({ task_claim_id: ids.claim, unit_price: '1200.0000', currency: 'VND' });
+    });
+
+    it('refuses a session for a collector with no claim on the task', async () => {
+      const ids = await seed();
+      const other = await secondCentre(ids);
+      // The task is claimed — by the FIRST collector. That is not this collector's claim.
+      const res = await other.post(`/handovers/${other.handover}/sessions`, sessionBody(ids));
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json()).toEqual({ error: 'refused', constraint: 'session_claim_missing' });
+      expect(await count('collection_sessions')).toBe(0);
+    });
+
+    it('refuses a session under a claim that has been released', async () => {
+      const ids = await seed();
+      const c = await client();
+      await (await db()).execute(sql`update task_claims set released_at = now() where id = ${ids.claim}`);
+      const handover = uid();
+      await c.post('/handovers', {
+        id: handover,
+        collector_id: ids.collector,
+        device_id: ids.egoDevice,
+        tf_card_id: 'CARD-0001',
+        handover_time: '2026-08-21T09:00:00.000Z',
+      });
+      const res = await c.post(`/handovers/${handover}/sessions`, sessionBody(ids));
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json()).toEqual({ error: 'refused', constraint: 'session_claim_released' });
+      expect(await count('collection_sessions')).toBe(0);
+    });
+
+    it('refuses a session against a task that has been taken down, even under a live claim', async () => {
+      const ids = await seed();
+      const c = await client();
+      await (await db()).execute(sql`update tasks set status = 'taken_down' where id = ${ids.task}`);
+      const handover = uid();
+      await c.post('/handovers', {
+        id: handover,
+        collector_id: ids.collector,
+        device_id: ids.egoDevice,
+        tf_card_id: 'CARD-0001',
+        handover_time: '2026-08-21T09:00:00.000Z',
+      });
+      const res = await c.post(`/handovers/${handover}/sessions`, sessionBody(ids));
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json()).toEqual({ error: 'refused', constraint: 'session_task_not_published' });
+    });
+
+    it('records the second collector’s session under their own claim at their own centre', async () => {
+      const ids = await seed();
+      const other = await secondCentre(ids);
+      const claim2 = await liveClaim(await db(), ids.task, other.collector);
+      const body = sessionBody(ids);
+      const res = await other.post(`/handovers/${other.handover}/sessions`, body);
+      expect(res.statusCode, res.body).toBe(201);
+      const [row] = (await (await db()).execute(
+        sql`select task_claim_id, collector_id from collection_sessions where id = ${body.id}`,
+      )) as unknown as Record<string, string>[];
+      expect(row).toEqual({ task_claim_id: claim2, collector_id: other.collector });
+    });
   });
 });

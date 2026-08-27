@@ -463,6 +463,14 @@ export const taskClaims = pgTable(
       'task_claims_released_after_check',
       sql`${t.releasedAt} is null or ${t.releasedAt} >= ${t.claimedAt}`,
     ),
+    /**
+     * Not uniqueness — `id` is the primary key. These are the targets of the
+     * composite foreign keys on `collection_sessions` and `settlements`
+     * (migration 0016), which is what lets "this claim is for this task and
+     * this collector" be checked by the database rather than by the route.
+     */
+    unique('task_claims_task_key').on(t.id, t.taskId),
+    unique('task_claims_pairing_key').on(t.id, t.taskId, t.collectorId),
   ],
 );
 
@@ -698,6 +706,25 @@ export const collectionSessions = pgTable(
      */
     handoverId: uuid('handover_id').references((): AnyPgColumn => handovers.id),
     /**
+     * The claim this session was recorded under (APP-10), and what that claim
+     * paid at the moment the session was declared — copied here so a task
+     * edited later cannot change what footage already recorded earns, and so
+     * the verdict never has to read `tasks` for a price.
+     *
+     * `collection_sessions_claim_fk` is composite on (claim, task, collector):
+     * a session cannot name another collector's claim, or a claim on another
+     * task. Whether the claim was LIVE when the session was declared is the
+     * counter's check (counter.ts), because "live at that moment" is about a
+     * time the schema does not hold.
+     *
+     * Nullable for rows from before migration 0016, which are never
+     * backfilled; the migration says why. A session with no claim has no
+     * price, and the verdict refuses it rather than guessing one.
+     */
+    taskClaimId: uuid('task_claim_id'),
+    unitPrice: numeric('unit_price', { precision: 12, scale: 4, mode: 'string' }),
+    currency: text('currency'),
+    /**
      * APP-17b. NOT NULL on purpose: these drive QR-07 review routing and PRV-07
      * authorisation checks, and "we did not ask" is not one of the answers.
      */
@@ -714,6 +741,18 @@ export const collectionSessions = pgTable(
     index('collection_sessions_collector_idx').on(t.collectorId),
     index('collection_sessions_task_idx').on(t.taskId),
     index('collection_sessions_handover_idx').on(t.handoverId),
+    index('collection_sessions_claim_idx').on(t.taskClaimId),
+    foreignKey({
+      columns: [t.taskClaimId, t.taskId, t.collectorId],
+      foreignColumns: [taskClaims.id, taskClaims.taskId, taskClaims.collectorId],
+      name: 'collection_sessions_claim_fk',
+    }),
+    /** A claim without its price, or a price without its claim, is half a record. */
+    check(
+      'collection_sessions_claim_snapshot_check',
+      sql`(${t.taskClaimId} is null) = (${t.unitPrice} is null)
+          and (${t.taskClaimId} is null) = (${t.currency} is null)`,
+    ),
     check(
       'collection_sessions_origin_check',
       sql`${t.sessionOrigin} in ('handover', 'app', 'backoffice')`,
@@ -1284,6 +1323,13 @@ export const settlements = pgTable(
     taskId: uuid('task_id')
       .notNull()
       .references(() => tasks.id),
+    /**
+     * The claim the reviewed footage was recorded under — the session's, not
+     * any claim on the task. Nullable only for rows from before migration
+     * 0016; `settlements_claim_guard` there refuses a new row without one, or
+     * with one that is not the session's, and freezes it afterwards.
+     */
+    taskClaimId: uuid('task_claim_id'),
     unitPrice: numeric('unit_price', { precision: 12, scale: 4, mode: 'string' }).notNull(),
     effectiveMinutes: numeric('effective_minutes', {
       precision: 20,
@@ -1298,6 +1344,12 @@ export const settlements = pgTable(
   (t) => [
     /** SET-04: one settlement per review, so a verdict cannot be billed twice. */
     uniqueIndex('settlements_review_key').on(t.episodeReviewId),
+    index('settlements_claim_idx').on(t.taskClaimId),
+    foreignKey({
+      columns: [t.taskClaimId, t.taskId],
+      foreignColumns: [taskClaims.id, taskClaims.taskId],
+      name: 'settlements_claim_fk',
+    }),
     check(
       'settlements_state_check',
       sql`${t.settlementState} in ('pending_review', 'pending_settlement', 'bill_generated', 'manually_paid', 'exception')`,

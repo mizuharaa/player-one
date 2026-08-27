@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { sql } from 'drizzle-orm';
 import { expect } from 'vitest';
@@ -105,6 +106,25 @@ export async function truncate(): Promise<void> {
 export async function closeDb(): Promise<void> {
   if (shared) await (await shared).close();
   shared = null;
+}
+
+/**
+ * A live claim by `collectorId` on `taskId`, with the collector made eligible
+ * on the way: exam pass and all six agreements, which `task_claims_guard`
+ * (0006) demands of every insert. Since migration 0016 a counter session and a
+ * settlement both have to name a claim, so every fixture that declares a
+ * session needs one of these first. Returns the claim id.
+ */
+export async function liveClaim(d: Db, taskId: string, collectorId: string): Promise<string> {
+  const id = randomUUID();
+  await d.execute(sql`update collectors set exam_result = 'pass', exam_decided_at = now()
+    where id = ${collectorId} and exam_result is null`);
+  await d.execute(sql`insert into collector_agreements (collector_id, agreement, version, accepted_at)
+    select ${collectorId}, a, 'v1', now()
+      from unnest(array['user', 'privacy', 'data_collection', 'commercial_use', 'manual_review', 'offline_settlement']) as a
+    on conflict do nothing`);
+  await d.execute(sql`insert into task_claims (id, task_id, collector_id) values (${id}, ${taskId}, ${collectorId})`);
+  return id;
 }
 
 /**

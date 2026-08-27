@@ -330,6 +330,12 @@ const en = {
   'bo.refused.device_assignments_device_id_devices_id_fk': 'That device no longer exists. Reload the list.',
   'bo.refused.device_assignments_collector_id_collectors_id_fk':
     'That collector no longer exists. Reload the list.',
+  'bo.refused.session_claim_missing':
+    'This collector holds no claim on that task, so nothing recorded for it can be paid. Claim the task first.',
+  'bo.refused.session_claim_released':
+    'This collector released their claim on that task. A new claim is needed before a session can be recorded.',
+  'bo.refused.session_task_not_published':
+    'That task has been taken down, so no new session can be recorded against it.',
   'bo.refused.unknown': 'The server refused that change.',
 
   'theme.toggle': 'Theme',
@@ -602,6 +608,9 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.device_assignments_id_reused': '该分配编号已属于其他设备或采集者。',
   'bo.refused.device_assignments_device_id_devices_id_fk': '该设备已不存在，请刷新列表。',
   'bo.refused.device_assignments_collector_id_collectors_id_fk': '该采集者已不存在，请刷新列表。',
+  'bo.refused.session_claim_missing': '该采集者未领取此任务，为其录制的内容无法结算。请先领取任务。',
+  'bo.refused.session_claim_released': '该采集者已释放对此任务的领取。需要重新领取后才能登记采集会话。',
+  'bo.refused.session_task_not_published': '该任务已下架，不能再登记新的采集会话。',
   'bo.refused.unknown': '服务端拒绝了该操作。',
 
   'theme.toggle': '主题',

@@ -4,7 +4,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { closeDb, db, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('episodes');
@@ -93,6 +93,7 @@ describe.skipIf(!hasDb())('episode submission and resolution', () => {
     await d.execute(sql`insert into device_types (id, code, generation) values (${ids.deviceType}, 'ego', 'g1')`);
     await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status) values (${ids.device}, ${ids.deviceType}, 'AZER76400FE', 'active')`);
     await d.execute(sql`insert into tasks (id, name, unit_price, max_concurrent_claimants, status) values (${ids.task}, 'housework', 1200, 5, 'published')`);
+    await liveClaim(d, ids.task, ids.collector);
     await d.execute(sql`insert into scenarios (id, code, privacy_risk_level) values (${ids.scenario}, 'home', 'low')`);
     /**
      * The device's allotted period: open, and starting a month before every

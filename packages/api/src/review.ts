@@ -589,7 +589,9 @@ export function registerReview(
             sessionOrigin: schema.collectionSessions.sessionOrigin,
             taskId: schema.tasks.id,
             taskName: schema.tasks.name,
-            unitPrice: schema.tasks.unitPrice,
+            /** What the verdict will pay: the session's snapshot. The task's price is only shown for a claimless legacy session. */
+            unitPrice: sql<string>`coalesce(${schema.collectionSessions.unitPrice}, ${schema.tasks.unitPrice})`,
+            currency: sql<string>`coalesce(${schema.collectionSessions.currency}, ${currency})`,
             collectorId: schema.collectors.id,
             collectorRef: schema.collectors.externalRef,
             scenarioCode: schema.scenarios.code,
@@ -660,7 +662,7 @@ export function registerReview(
               id: session.taskId,
               name: session.taskName,
               price_per_minute: session.unitPrice,
-              currency,
+              currency: session.currency,
             },
       collector:
         session === undefined
@@ -1282,14 +1284,24 @@ export function registerReview(
     const decision: Decision = body.decision;
     const effectiveSeconds = usefulSeconds(decision, spans, review.measuredDurationS);
 
+    /**
+     * The price comes from the SESSION's snapshot and the claim it names, never
+     * from `tasks`: what a recording earns was fixed when it was declared under
+     * a live claim (counter.ts), and a task edited or repriced since must not
+     * reach a verdict on footage that already exists.
+     */
     const [ownership] = await db
-      .select({ taskId: schema.tasks.id, unitPrice: schema.tasks.unitPrice })
+      .select({
+        taskId: schema.collectionSessions.taskId,
+        taskClaimId: schema.collectionSessions.taskClaimId,
+        unitPrice: schema.collectionSessions.unitPrice,
+        currency: schema.collectionSessions.currency,
+      })
       .from(schema.episodes)
       .innerJoin(
         schema.collectionSessions,
         eq(schema.collectionSessions.id, schema.episodes.collectionSessionId),
       )
-      .innerJoin(schema.tasks, eq(schema.tasks.id, schema.collectionSessions.taskId))
       .where(eq(schema.episodes.episodeId, body.episode_id));
     if (ownership === undefined) {
       // The eligibility filter should have kept this out of the queue. If it is
@@ -1298,7 +1310,20 @@ export function registerReview(
       // resolver refuses to make.
       return reply.code(409).send({ error: 'this episode has no task to be paid against' });
     }
-    const bill = settlementFor(ownership.unitPrice, effectiveSeconds);
+    if (ownership.taskClaimId === null || ownership.unitPrice === null || ownership.currency === null) {
+      /**
+       * A session from before migration 0016, or one written past the counter.
+       * Nobody was recorded as entitled to this footage and it has no price;
+       * `settlements_claim_guard` would refuse the row anyway, and this is the
+       * sentence instead of the 500. The migration names the path out.
+       */
+      return reply.code(409).send({ error: 'refused', constraint: 'session_claim_missing' });
+    }
+    // Plain consts: the narrowing above does not reach into the transaction closure.
+    const taskClaimId = ownership.taskClaimId;
+    const unitPrice = ownership.unitPrice;
+    const currency = ownership.currency;
+    const bill = settlementFor(unitPrice, effectiveSeconds);
 
     const decidedAt = new Date();
     /**
@@ -1341,7 +1366,7 @@ export function registerReview(
             effective_duration_s: effectiveSeconds,
             spans,
             reject_reasons: body.reject_reasons,
-            unit_price: ownership.unitPrice,
+            unit_price: unitPrice,
             currency,
             effective_minutes: bill.effectiveMinutes,
             amount: bill.amount,
@@ -1439,7 +1464,8 @@ export function registerReview(
             id: randomUUID(),
             episodeReviewId: review.id,
             taskId: ownership.taskId,
-            unitPrice: ownership.unitPrice,
+            taskClaimId: taskClaimId,
+            unitPrice: unitPrice,
             effectiveMinutes: bill.effectiveMinutes,
             amount: bill.amount,
             settlementState: 'pending_settlement',
@@ -1503,7 +1529,7 @@ export function registerReview(
       /** The authoritative figure. Whatever the client displayed was an estimate. */
       effective_duration_seconds: effectiveSeconds,
       spans,
-      unit_price: ownership.unitPrice,
+      unit_price: unitPrice,
       currency,
       effective_minutes: bill.effectiveMinutes,
       amount: bill.amount,
