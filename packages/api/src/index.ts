@@ -5,6 +5,7 @@ import { auditLogin } from './audit.ts';
 import { registerBackOffice } from './backoffice.ts';
 
 export { API_REFUSALS, REFUSALS } from './backoffice.ts';
+export { COUNTER_REFUSALS } from './counter.ts';
 import { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';
@@ -344,7 +345,7 @@ export function buildApi({
   const riskReader = { billSummary: (billId: string) => riskEngine.payoutSummary(billId) };
 
   registerBackOffice(app, db, requireActor);
-  registerCounter(app, db, requireActor);
+  registerCounter(app, db, requireActor, currency);
   registerEpisodes(app, db, requireActor, toleranceMs);
   registerUpload(app, db, requireActor, { objectStore, mediaRoot, uploadProgress });
   registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate, reviewerMediaEnabled });

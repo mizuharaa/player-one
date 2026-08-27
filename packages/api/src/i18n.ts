@@ -346,6 +346,12 @@ const en = {
     'That delivery does not belong to this episode. Name one of its own deliveries.',
   'bo.refused.episode_clearing_paid_on_other_delivery':
     'Another delivery of this episode has already been reviewed and paid. Choosing a different one is a dispute, not a clear.',
+  'bo.refused.session_claim_missing':
+    'This collector holds no claim on that task, so nothing recorded for it can be paid. Claim the task first.',
+  'bo.refused.session_claim_released':
+    'This collector released their claim on that task. A new claim is needed before a session can be recorded.',
+  'bo.refused.session_task_not_published':
+    'That task has been taken down, so no new session can be recorded against it.',
   'bo.refused.unknown': 'The server refused that change.',
 
   'theme.toggle': 'Theme',
@@ -988,6 +994,9 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.episode_clearing_foreign_delivery': '该交付不属于这个片段。请选择该片段自己的交付。',
   'bo.refused.episode_clearing_paid_on_other_delivery':
     '该片段的另一次交付已审核并结算。改选其他交付属于争议流程，不是清除。',
+  'bo.refused.session_claim_missing': '该采集者未领取此任务，为其录制的内容无法结算。请先领取任务。',
+  'bo.refused.session_claim_released': '该采集者已释放对此任务的领取。需要重新领取后才能登记采集会话。',
+  'bo.refused.session_task_not_published': '该任务已下架，不能再登记新的采集会话。',
   'bo.refused.unknown': '服务端拒绝了该操作。',
 
   'theme.toggle': '主题',
@@ -1576,6 +1585,12 @@ const vi: Record<MessageKey, string> = {
     'Lần giao đó không thuộc phân đoạn này. Hãy chọn một lần giao của chính nó.',
   'bo.refused.episode_clearing_paid_on_other_delivery':
     'Một lần giao khác của phân đoạn này đã được duyệt và trả tiền. Chọn lần giao khác là khiếu nại, không phải gỡ.',
+  'bo.refused.session_claim_missing':
+    'Cộng tác viên này chưa nhận nhiệm vụ đó, nên không thể trả tiền cho những gì đã ghi. Hãy nhận nhiệm vụ trước.',
+  'bo.refused.session_claim_released':
+    'Cộng tác viên này đã trả lại nhiệm vụ đó. Cần nhận lại nhiệm vụ trước khi ghi một phiên mới.',
+  'bo.refused.session_task_not_published':
+    'Nhiệm vụ đó đã được gỡ xuống, nên không thể ghi phiên mới cho nó.',
   'bo.refused.unknown': 'Máy chủ đã từ chối thay đổi đó.',
 
   'theme.toggle': 'Giao diện',

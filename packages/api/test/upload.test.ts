@@ -8,7 +8,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { contentFingerprint, deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential, objectKey, planParts, PART_SIZE, s3StoreFromEnv, transportInventory, type ObjectStore, type PutResult } from '../src/index.ts';
-import { closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
+import { closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('upload');
@@ -218,6 +218,8 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
       (${ids.deviceB}, ${ids.deviceType}, 'BZAR12345CD', 'active')`);
     await d.execute(sql`insert into tasks (id, name, unit_price, max_concurrent_claimants, status) values (${ids.task}, 'housework', 1200, 5, 'published')`);
     await d.execute(sql`insert into scenarios (id, code, privacy_risk_level) values (${ids.scenario}, 'home', 'low')`);
+    await liveClaim(d, ids.task, ids.collectorA);
+    await liveClaim(d, ids.task, ids.collectorB);
 
     const mediaRoot = await mkdtemp(join(tmpdir(), 'po-upload-media-'));
     const cloudRoot = await mkdtemp(join(tmpdir(), 'po-upload-cloud-'));

@@ -5,7 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential } from '../src/index.ts';
 import { ZERO, add, fromDecimal, mul, quantise } from '../src/money.ts';
-import { closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
+import { closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('settle');
@@ -131,6 +131,11 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
     // SET-08: two prices, so a bill total cannot be right by accident.
     await d.execute(sql`insert into tasks (id, name, unit_price, max_concurrent_claimants, status) values (${ids.taskHousework}, 'housework', 1200, 5, 'published'), (${ids.taskFactory}, 'factory', 900, 5, 'published')`);
     await d.execute(sql`insert into scenarios (id, code, privacy_risk_level) values (${ids.scenario}, 'home', 'low')`);
+    // Each collector holds each task, so any card below can declare either (0016).
+    for (const collector of [ids.collector1, ids.collector2]) {
+      await liveClaim(d, ids.taskHousework, collector);
+      await liveClaim(d, ids.taskFactory, collector);
+    }
 
     const app = buildApi({ db: d, tokenSecret: SECRET, settlementCycleDays: options.cycleDays });
     await app.ready();

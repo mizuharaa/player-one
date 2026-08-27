@@ -286,10 +286,25 @@ export function registerReview(
    * an episode with no session has no collector and no task, so there is
    * nobody to pay and no price to pay them at. Those stay in the counter's
    * quarantine queue until a human attaches them.
+   *
+   * The session must also carry its claim (0016). A session with none — a row
+   * from before that migration, or one written past the counter — has no
+   * price, and the verdict refuses it with `session_claim_missing` for every
+   * decision, because even a rejection writes the 0.0000 settlement that is
+   * the review's score and `settlements_claim_required` refuses that row. So
+   * such footage is not served at all: it sits with the counter until the
+   * back office attaches the claim the collector held (the UPDATE in
+   * 0016_claim_join.sql), and then enters review with a price.
    */
   const cloudGate = (options.verificationGate ?? 'local') === 'cloud';
   const eligible = sql`
     ${schema.episodes.resolutionState} = 'resolved'
+    and exists (
+      select 1
+        from collection_sessions cs
+       where cs.id = ${schema.episodes.collectionSessionId}
+         and cs.task_claim_id is not null
+    )
     and ${schema.episodeIngests.state} <> 'quarantined'
     and ${schema.episodeIngests.measuredDurationS} > 0
     and ${
@@ -599,7 +614,9 @@ export function registerReview(
             sessionOrigin: schema.collectionSessions.sessionOrigin,
             taskId: schema.tasks.id,
             taskName: schema.tasks.name,
-            unitPrice: schema.tasks.unitPrice,
+            /** What the verdict will pay: the session's snapshot. The task's price is only shown for a claimless legacy session. */
+            unitPrice: sql<string>`coalesce(${schema.collectionSessions.unitPrice}, ${schema.tasks.unitPrice})`,
+            currency: sql<string>`coalesce(${schema.collectionSessions.currency}, ${currency})`,
             collectorId: schema.collectors.id,
             collectorRef: schema.collectors.externalRef,
             scenarioCode: schema.scenarios.code,
@@ -670,7 +687,7 @@ export function registerReview(
               id: session.taskId,
               name: session.taskName,
               price_per_minute: session.unitPrice,
-              currency,
+              currency: session.currency,
             },
       collector:
         session === undefined
@@ -1303,14 +1320,24 @@ export function registerReview(
     const decision: Decision = body.decision;
     const effectiveSeconds = usefulSeconds(decision, spans, review.measuredDurationS);
 
+    /**
+     * The price comes from the SESSION's snapshot and the claim it names, never
+     * from `tasks`: what a recording earns was fixed when it was declared under
+     * a live claim (counter.ts), and a task edited or repriced since must not
+     * reach a verdict on footage that already exists.
+     */
     const [ownership] = await db
-      .select({ taskId: schema.tasks.id, unitPrice: schema.tasks.unitPrice })
+      .select({
+        taskId: schema.collectionSessions.taskId,
+        taskClaimId: schema.collectionSessions.taskClaimId,
+        unitPrice: schema.collectionSessions.unitPrice,
+        currency: schema.collectionSessions.currency,
+      })
       .from(schema.episodes)
       .innerJoin(
         schema.collectionSessions,
         eq(schema.collectionSessions.id, schema.episodes.collectionSessionId),
       )
-      .innerJoin(schema.tasks, eq(schema.tasks.id, schema.collectionSessions.taskId))
       .where(eq(schema.episodes.episodeId, body.episode_id));
     if (ownership === undefined) {
       // The eligibility filter should have kept this out of the queue. If it is
@@ -1319,7 +1346,20 @@ export function registerReview(
       // resolver refuses to make.
       return reply.code(409).send({ error: 'this episode has no task to be paid against' });
     }
-    const bill = settlementFor(ownership.unitPrice, effectiveSeconds);
+    if (ownership.taskClaimId === null || ownership.unitPrice === null || ownership.currency === null) {
+      /**
+       * A session from before migration 0016, or one written past the counter.
+       * Nobody was recorded as entitled to this footage and it has no price;
+       * `settlements_claim_guard` would refuse the row anyway, and this is the
+       * sentence instead of the 500. The migration names the path out.
+       */
+      return reply.code(409).send({ error: 'refused', constraint: 'session_claim_missing' });
+    }
+    // Plain consts: the narrowing above does not reach into the transaction closure.
+    const taskClaimId = ownership.taskClaimId;
+    const unitPrice = ownership.unitPrice;
+    const currency = ownership.currency;
+    const bill = settlementFor(unitPrice, effectiveSeconds);
 
     const decidedAt = new Date();
     /**
@@ -1362,7 +1402,7 @@ export function registerReview(
             effective_duration_s: effectiveSeconds,
             spans,
             reject_reasons: body.reject_reasons,
-            unit_price: ownership.unitPrice,
+            unit_price: unitPrice,
             currency,
             effective_minutes: bill.effectiveMinutes,
             amount: bill.amount,
@@ -1460,7 +1500,8 @@ export function registerReview(
             id: randomUUID(),
             episodeReviewId: review.id,
             taskId: ownership.taskId,
-            unitPrice: ownership.unitPrice,
+            taskClaimId: taskClaimId,
+            unitPrice: unitPrice,
             effectiveMinutes: bill.effectiveMinutes,
             amount: bill.amount,
             settlementState: 'pending_settlement',
@@ -1524,7 +1565,7 @@ export function registerReview(
       /** The authoritative figure. Whatever the client displayed was an estimate. */
       effective_duration_seconds: effectiveSeconds,
       spans,
-      unit_price: ownership.unitPrice,
+      unit_price: unitPrice,
       currency,
       effective_minutes: bill.effectiveMinutes,
       amount: bill.amount,

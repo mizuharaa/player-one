@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Db } from '@playerone/store';
 import { hashCredential } from '../../../src/credentials.ts';
+import { liveClaim } from '../../../../store/test/db.ts';
 
 /**
  * The payout fixture, in raw SQL, the way `spine.test.ts` seeds a settlement.
@@ -64,16 +65,19 @@ export async function seedPayout(d: Db) {
     const batch = uid();
     await d.execute(sql`insert into handovers (id, collector_id, device_id, tf_card_id, upload_centre_id, operator_id, handover_time) values (${handover}, ${collector}, ${device}, ${card}, ${centre}, ${operator}, now())`);
     await d.execute(sql`insert into upload_batches (id, handover_id, upload_device_id, import_started_at, batch_status) values (${batch}, ${handover}, ${machine}, now(), 'importing')`);
+    // Recorded under a live claim, with the price snapshotted (0016).
+    const claim = await liveClaim(d, ids.task, collector);
     await d.execute(sql`
-      insert into collection_sessions (id, handover_id, task_id, collector_id, scenario_id, others_in_frame, sensitive_info_present, session_origin)
-        values (${id}, ${handover}, ${ids.task}, ${collector}, ${ids.scenario}, false, false, 'handover')
+      insert into collection_sessions (id, handover_id, task_id, collector_id, scenario_id, others_in_frame, sensitive_info_present, session_origin,
+                                       task_claim_id, unit_price, currency)
+        values (${id}, ${handover}, ${ids.task}, ${collector}, ${ids.scenario}, false, false, 'handover', ${claim}, '1200.0000', 'VND')
     `);
     await d.execute(sql`insert into collection_session_devices (collection_session_id, device_id, role) values (${id}, ${device}, 'headset')`);
-    return { handover, batch };
+    return { handover, batch, claim };
   };
-  await session(ids.session1, ids.collector1, ids.device1, ids.centreA, ids.machineA, ids.opA, 'CARD-1');
-  await session(ids.session2, ids.collector2, ids.device2, ids.centreB, ids.machineB, ids.finB, 'CARD-2');
-  return ids;
+  const claim1 = (await session(ids.session1, ids.collector1, ids.device1, ids.centreA, ids.machineA, ids.opA, 'CARD-1')).claim;
+  const claim2 = (await session(ids.session2, ids.collector2, ids.device2, ids.centreB, ids.machineB, ids.finB, 'CARD-2')).claim;
+  return { ...ids, claim1, claim2 };
 }
 
 /** A reviewed episode with a settlement worth `amount`, already billed (`bill_generated`). */
@@ -106,8 +110,8 @@ export async function seedSettlement(
       values (${reviewId}, ${episodeId}, ${ingestId}, '60.000000', '60.000000', 'pass', now(), ${uid()})
   `);
   await d.execute(sql`
-    insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes, amount, settlement_state)
-      values (${settlementId}, ${reviewId}, ${ids.task}, '1200.0000', ${minutes}, ${amount}, 'pending_settlement')
+    insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes, amount, settlement_state)
+      values (${settlementId}, ${reviewId}, ${ids.task}, ${which === 1 ? ids.claim1 : ids.claim2}, '1200.0000', ${minutes}, ${amount}, 'pending_settlement')
   `);
   await d.execute(sql`update settlements set settlement_state = 'bill_generated', updated_at = now() where id = ${settlementId}`);
   return { settlementId, reviewId, episodeId };

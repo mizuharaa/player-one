@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LightMyRequestResponse } from 'fastify';
 import { open, schema } from '@playerone/store';
-import { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
+import { COUNTER_REFUSALS, PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
 import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
@@ -1670,6 +1670,9 @@ describe.skipIf(!hasDb())('the back office', () => {
       'collectors_pkey',
       'devices_pkey',
       'task_claims_pkey',
+      // Targets of the composite claim FKs (0016); `id` alone is already unique.
+      'task_claims_task_key',
+      'task_claims_pairing_key',
       'device_assignments_pkey',
       'collector_agreements_collector_id_agreement_version_pk',
       // The collector is written in the same transaction as its acceptances.
@@ -1679,6 +1682,11 @@ describe.skipIf(!hasDb())('the back office', () => {
       // batches; those routes have their own refusals and their own tests.
       'settlements_transition_check',
       'settlements_amount_immutable_check',
+      // 0016: the verdict refuses a claimless session by name before the row
+      // is written, and nothing updates a settlement's claim.
+      'settlements_claim_required',
+      'settlements_claim_matches_session',
+      'settlements_claim_immutable',
       'bill_lines_payable_check',
       'bills_issued_immutable',
       'bill_lines_owner_guard',
@@ -1754,6 +1762,8 @@ describe.skipIf(!hasDb())('the back office', () => {
       'task_claims_id_reused',
       'task_claims_released',
       'device_assignments_id_reused',
+      // The counter's own (0016): a session needs a live claim.
+      ...COUNTER_REFUSALS,
     ]) {
       const key = `bo.refused.${constraint}` as keyof typeof MESSAGES.en;
       expect(MESSAGES.en[key], `no English sentence for ${constraint}`).toBeTruthy();
