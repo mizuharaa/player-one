@@ -12,6 +12,10 @@ import { registerEpisodes } from './episodes.ts';
 import { registerMedia } from './media.ts';
 import { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
 import { registerPayout } from './payout/routes/payout.ts';
+import { seedRiskSignals } from './risk/catalogue.ts';
+import { riskConfigFromEnv, type RiskConfig } from './risk/config.ts';
+import { RiskEngine } from './risk/engine.ts';
+import { registerRisk } from './risk/routes.ts';
 import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
 import { registerReview } from './review.ts';
 import { registerSessionRoutes } from './session.ts';
@@ -149,6 +153,8 @@ export type ApiOptions = {
    * `assertPayoutBootInvariants`.
    */
   payout?: PayoutOptions;
+  /** Advisory risk evaluation and the reversible payout-hold switch. */
+  risk?: RiskConfig;
 };
 
 /** What a reviewer session may reach. Everything else answers 403. */
@@ -180,6 +186,7 @@ export function buildApi({
   uploadProgress,
   reviewerMediaEnabled = false,
   payout = payoutOptionsFromEnv(),
+  risk = riskConfigFromEnv(),
 }: ApiOptions): FastifyInstance {
   if (!tokenSecret) throw new Error('tokenSecret is required');
   /**
@@ -324,7 +331,16 @@ export function buildApi({
    * match whatever version is running. Nothing read them before this: they were
    * exported, tested, and never called outside the test suite.
    */
-  app.addHook('onReady', () => seedCatalogues(db));
+  app.addHook('onReady', async () => {
+    await seedCatalogues(db);
+    await seedRiskSignals(db);
+  });
+
+  const riskEngine = new RiskEngine(db, {
+    mediaRoot: risk.mediaRoot ?? mediaRoot,
+    holdsEnabled: risk.holdsEnabled,
+  });
+  const riskReader = { billSummary: (billId: string) => riskEngine.summary('bill', billId) };
 
   registerBackOffice(app, db, requireActor);
   registerCounter(app, db, requireActor);
@@ -332,7 +348,13 @@ export function buildApi({
   registerUpload(app, db, requireActor, { objectStore, mediaRoot, uploadProgress });
   registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate, reviewerMediaEnabled });
   registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays });
-  registerPayout(app, db, requireActor, { cycleDays: settlementCycleDays, ...payout });
+  registerPayout(app, db, requireActor, {
+    cycleDays: settlementCycleDays,
+    ...payout,
+    risk: payout.risk ?? riskReader,
+    holdsEnabled: payout.holdsEnabled ?? risk.holdsEnabled,
+  });
+  registerRisk(app, db, requireActor, riskEngine);
   registerMedia(app, db, requireActor, mediaRoot);
   registerConsole(app, db, { tokenSecret, secureCookies });
   /** The JSON sign-in the React console uses. Same credentials, same cookies. */

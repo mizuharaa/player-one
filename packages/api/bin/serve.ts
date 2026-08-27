@@ -17,6 +17,7 @@
 import { env, exit } from 'node:process';
 import { open, redact } from '@playerone/store';
 import { payoutOptionsFromEnv, buildApi, s3StoreFromEnv } from '../src/index.ts';
+import { riskConfigFromEnv } from '../src/risk/config.ts';
 import { zaloPayClientFromEnv } from '../src/payout/zalopay/client.ts';
 
 const required = (name: string): string => {
@@ -111,6 +112,7 @@ const app = buildApi({
    * `payout_no_client`; production without every credential throws by name.
    */
   payout: { ...payoutOptionsFromEnv(env), client: zaloPayClientFromEnv(env) ?? undefined },
+  risk: riskConfigFromEnv(env),
 });
 
 const shutdown = async (signal: string) => {

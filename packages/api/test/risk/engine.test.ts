@@ -6,6 +6,7 @@ import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { open, storeEpisode } from '@playerone/store';
 import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../../store/test/db.ts';
 import type { CounterActor } from '../../src/actor.ts';
+import { buildApi } from '../../src/index.ts';
 import { loadTuning, retuneSignal, seedRiskSignals } from '../../src/risk/catalogue.ts';
 import { RiskEngine, batchId, currentFlags } from '../../src/risk/engine.ts';
 import { billHold, clearHold, currentHolds } from '../../src/risk/holds.ts';
@@ -696,6 +697,19 @@ describe.skipIf(!hasDb())('the risk engine', () => {
       await app.ready();
       return app;
     }
+
+    it('mounts the risk surface through the production API assembly (F-50)', async () => {
+      const live = buildApi({
+        db: await db(),
+        tokenSecret: 'risk-route-registration-test',
+        payout: { mode: 'manual', zaloPayEnv: 'sandbox' },
+        risk: { engineEnabled: true, holdsEnabled: false, mediaRoot: undefined },
+      });
+      await live.ready();
+      expect(live.hasRoute({ method: 'GET', url: '/api/risk/holds' })).toBe(true);
+      expect(live.hasRoute({ method: 'POST', url: '/api/risk/evaluate/:type/:id' })).toBe(true);
+      await live.close();
+    });
 
     it('serves summaries with sentences in three languages, evaluates on demand, and clears holds for finance only', async () => {
       const a = await collector(w, 'c-0001');
