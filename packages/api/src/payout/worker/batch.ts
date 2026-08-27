@@ -296,7 +296,8 @@ export type PayRefusal =
   | 'payout_attempts_bank_minimum'
   | 'payout_cap_exceeded'
   | 'payout_risk_hold'
-  | 'payout_already_paid';
+  | 'payout_already_paid'
+  | 'payout_attempts_previous_not_failed';
 
 export type PayOutcome =
   | { kind: 'sent'; attempt: AttemptRow; result: AttemptEvent['type'] }

@@ -673,8 +673,9 @@ describe.skipIf(!hasDb())('the payout routes', () => {
         const { bill1, bill2 } = await seedBills(h.d, h.ids);
         await seedAccount(h.d, h.ids, 1);
         await seedAccount(h.d, h.ids, 2);
-        // A third bill the run must report and skip: no account.
-        const noAccount = await seedBill(h.d, h.ids, 1, { start: new Date(P1.start.getTime() + 1), end: P1.end }, ['1200.0000'], '1200.0000');
+        // A third bill the run must report and skip: a fractional total (the
+        // fixture has two collectors and both now have an account).
+        const fractional = await seedBill(h.d, h.ids, 1, { start: new Date(P1.start.getTime() + 1), end: P1.end }, ['170.0004'], '170.0004');
 
         const res = await h.send('POST', url, h.finA);
         expect(res.statusCode, res.body).toBe(200);
@@ -685,7 +686,7 @@ describe.skipIf(!hasDb())('the payout routes', () => {
           { bill_id: bill1, attempt_id: expect.any(String), partner_order_id: `PO-${bill1}-1`, status: 'succeeded', result: 'ACCEPTED' },
           { bill_id: bill2, attempt_id: expect.any(String), partner_order_id: `PO-${bill2}-1`, status: 'succeeded', result: 'ACCEPTED' },
         ]);
-        expect(body.refused).toEqual([{ bill_id: noAccount, collector_ref: 'c-0001', constraint: 'payout_account_missing' }]);
+        expect(body.refused).toEqual([{ bill_id: fractional, collector_ref: 'c-0001', constraint: 'payout_attempts_total_fractional' }]);
         expect(stub.transfers.map((t) => t.partnerOrderId)).toEqual([`PO-${bill1}-1`, `PO-${bill2}-1`]);
         const audits = await rows<{ target_id: string; after: Record<string, unknown> }>(h.d, sql`select target_id, after from audit_events where action = 'payout.batch_run'`);
         expect(audits).toHaveLength(1);
@@ -698,9 +699,9 @@ describe.skipIf(!hasDb())('the payout routes', () => {
         expect(again.json()).toMatchObject({ sent: [], stopped_at: null, tickets: [] });
         expect(again.json().preflight).toMatchObject({ ok: false, payable: 0 });
         expect((again.json().refused as { bill_id: string; constraint: string }[]).map((r) => r.constraint).sort()).toEqual([
-          'payout_account_missing',
           'payout_already_paid',
           'payout_already_paid',
+          'payout_attempts_total_fractional',
         ]);
         expect(stub.calls.transferFund).toBe(2);
         expect(await countOf(h.d, sql`select count(*) as n from payout_attempts`)).toBe(2);
