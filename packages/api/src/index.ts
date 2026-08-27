@@ -17,6 +17,7 @@ import { seedRiskSignals } from './risk/catalogue.ts';
 import { riskConfigFromEnv, type RiskConfig } from './risk/config.ts';
 import { RiskEngine } from './risk/engine.ts';
 import { registerRisk } from './risk/routes.ts';
+import { rateLimited, signInAttempt, signInLimiter } from './ratelimit.ts';
 import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
 import { registerReview } from './review.ts';
 import { registerSessionRoutes } from './session.ts';
@@ -51,6 +52,7 @@ export {
   type UploadProgress,
 } from './upload-worker.ts';
 export { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
+export { SIGN_IN_RATE_LIMITED, signInLimiter, type SignInLimiter } from './ratelimit.ts';
 export { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS } from './payout/routes/payout.ts';
 export { SETTLE_API_REFUSALS } from './settle.ts';
 export { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
@@ -280,12 +282,27 @@ export function buildApi({
     req.actor = { machine, operator: person };
   };
 
+  /**
+   * SEC-03, on the four routes that check a credential. The malformed-request
+   * 400 stays ahead of it: it costs nothing to answer, so it is not an attempt
+   * worth counting or recording.
+   */
+  const limiter = signInLimiter();
+
   app.post('/auth/machine', async (req, reply) => {
     const { machine_identifier, secret } = (req.body ?? {}) as Record<string, string>;
     if (!machine_identifier || !secret) return reply.code(400).send({ error: 'missing credentials' });
 
+    const attempt = signInAttempt(db, limiter, req.ip, 'machine.login_failed', [machine_identifier]);
+    const wait = await attempt.blocked();
+    if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
+
     const claims = await authenticateMachine(db, machine_identifier, secret);
-    if (claims === null) return reply.code(401).send({ error: 'invalid credentials' });
+    if (claims === null) {
+      await attempt.wrong();
+      return reply.code(401).send({ error: 'invalid credentials' });
+    }
+    attempt.ok();
     return { token: signToken(tokenSecret, claims), upload_centre_id: claims.uploadCentreId };
   });
 
@@ -293,8 +310,16 @@ export function buildApi({
     const { external_ref, secret } = (req.body ?? {}) as Record<string, string>;
     if (!external_ref || !secret) return reply.code(400).send({ error: 'missing credentials' });
 
+    const attempt = signInAttempt(db, limiter, req.ip, 'operator.login_failed', [external_ref]);
+    const wait = await attempt.blocked();
+    if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
+
     const claims = await authenticateOperator(db, external_ref, secret);
-    if (claims === null) return reply.code(401).send({ error: 'invalid credentials' });
+    if (claims === null) {
+      await attempt.wrong();
+      return reply.code(401).send({ error: 'invalid credentials' });
+    }
+    attempt.ok();
     return { token: signToken(tokenSecret, claims), upload_centre_id: claims.uploadCentreId };
   });
 
@@ -359,9 +384,11 @@ export function buildApi({
   });
   registerRisk(app, db, requireActor, riskEngine);
   registerMedia(app, db, requireActor, mediaRoot);
-  registerConsole(app, db, { tokenSecret, secureCookies });
+  // One limiter for all four sign-in routes, so a guesser cannot get a fresh
+  // budget by moving from the form to the JSON route.
+  registerConsole(app, db, { tokenSecret, secureCookies, limiter });
   /** The JSON sign-in the React console uses. Same credentials, same cookies. */
-  registerSessionRoutes(app, db, { tokenSecret, secureCookies });
+  registerSessionRoutes(app, db, { tokenSecret, secureCookies, limiter });
 
   /**
    * Who the caller is. Proves both-tokens and centre scope on its own, with no

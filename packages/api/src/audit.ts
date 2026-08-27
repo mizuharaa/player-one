@@ -106,14 +106,26 @@ export async function mutate<T>(
 /**
  * A login has no change to wrap and only half an actor — the machine has not
  * proved an operator yet, and vice versa. `audit_events_attributed_check`
- * exempts `%.login` for exactly this, and nothing else.
+ * exempts `%.login` for exactly this, and `%.login_failed` alongside it.
+ *
+ * A *failed* sign-in has no actor at all, and the reference it named may match
+ * no row anywhere, so it is recorded through the same function with none of the
+ * ids filled in: `source` says where the attempt came from, `outcome` says how
+ * it was refused, and `target_id` carries the reference that was typed. The
+ * secret is never a parameter here and must never become one.
  */
 export async function auditLogin(
   db: Db,
-  action: `${string}.login`,
+  action: `${string}.login` | `${string}.login_failed`,
   targetTable: string,
   targetId: string,
-  who: { operatorId?: string; uploadDeviceId?: string; uploadCentreId?: string },
+  who: {
+    operatorId?: string;
+    uploadDeviceId?: string;
+    uploadCentreId?: string;
+    source?: string;
+    outcome?: 'credentials' | 'rate_limited';
+  },
 ): Promise<void> {
   await db.insert(schema.auditEvents).values({
     action,

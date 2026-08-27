@@ -292,6 +292,13 @@ const en = {
     'The list of collectors did not load, so there is nobody to bind to. Nothing has been changed.',
 
   'bo.refused': 'Refused',
+  /**
+   * SEC-03. Read on the sign-in form, in the SPA and by a machine client, so it
+   * says what to do rather than what happened: the window expires on its own
+   * and there is nobody to ring.
+   */
+  'bo.refused.sign_in_rate_limited':
+    'Too many sign-in attempts were refused. Wait a few minutes and try again — the block clears by itself and nobody has to unlock anything.',
   'bo.refused.task_claims_capacity': 'That task already has as many claimants as it allows.',
   'bo.refused.task_claims_exam_gate':
     'That collector has not passed the exam, so they cannot claim a task.',
@@ -972,6 +979,8 @@ const zh: Record<MessageKey, string> = {
   'bo.device.rollFailed': '采集者列表未能加载，暂时无法绑定。没有任何内容被修改。',
 
   'bo.refused': '已拒绝',
+  'bo.refused.sign_in_rate_limited':
+    '登录尝试失败次数过多。请等待几分钟后重试——该限制会自动解除，无需任何人解锁。',
   'bo.refused.task_claims_capacity': '该任务的领取人数已达上限。',
   'bo.refused.task_claims_exam_gate': '该采集者尚未通过考试，不能领取任务。',
   'bo.refused.task_claims_published_gate': '只有已发布的任务才能被领取。',
@@ -1564,6 +1573,8 @@ const vi: Record<MessageKey, string> = {
     'Danh sách cộng tác viên không tải được, nên không có ai để gán. Chưa có gì bị thay đổi.',
 
   'bo.refused': 'Bị từ chối',
+  'bo.refused.sign_in_rate_limited':
+    'Quá nhiều lần đăng nhập bị từ chối. Hãy đợi vài phút rồi thử lại — giới hạn tự hết hạn, không ai cần mở khóa.',
   'bo.refused.task_claims_capacity': 'Nhiệm vụ đó đã đủ số người nhận cho phép.',
   'bo.refused.task_claims_exam_gate': 'Cộng tác viên đó chưa đạt bài kiểm tra nên không thể nhận nhiệm vụ.',
   'bo.refused.task_claims_published_gate': 'Chỉ nhiệm vụ đã đăng mới nhận được.',

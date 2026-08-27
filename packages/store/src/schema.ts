@@ -1625,7 +1625,9 @@ export const auditEvents = pgTable(
     check('audit_events_actor_role_check', sql`${t.actorRole} in ('operator', 'reviewer')`),
     /**
      * An unattributed audit row defeats the table. Logins are the one case with
-     * no actor yet; a reviewer is the one case with a person and no machine.
+     * no actor yet — a failed one (0017) has no actor at all and may name a
+     * reference that matches no row; a reviewer is the one case with a person
+     * and no machine.
      *
      * Two complete shapes and no overlap between them, rather than two "at
      * least this much" predicates. A half-filled row — a reviewer carrying an
@@ -1636,6 +1638,7 @@ export const auditEvents = pgTable(
     check(
       'audit_events_attributed_check',
       sql`${t.action} like '%.login'
+          or ${t.action} like '%.login_failed'
           or (${t.actorRole} = 'reviewer'
               and ${t.operatorId} is not null
               and ${t.uploadDeviceId} is null

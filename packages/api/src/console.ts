@@ -5,6 +5,7 @@ import type { Db } from '@playerone/store';
 import { clearCookie, MACHINE_COOKIE, OPERATOR_COOKIE, sessionCookie } from './cookies.ts';
 import { signToken } from './credentials.ts';
 import { HTML_LANG, MESSAGES, pickLocale, t, type Locale, type MessageKey } from './i18n.ts';
+import { SIGN_IN_RATE_LIMITED, signInAttempt, type SignInLimiter } from './ratelimit.ts';
 import { LEASE_MS } from './review.ts';
 import { authenticateMachine, authenticateOperator } from './session.ts';
 import { escapeHtml, page } from './shell.ts';
@@ -38,6 +39,7 @@ const ASSET_TYPES: Record<string, string> = {
 export type ConsoleOptions = {
   tokenSecret: string;
   secureCookies: boolean;
+  limiter: SignInLimiter;
 };
 
 export function registerConsole(app: FastifyInstance, db: Db, options: ConsoleOptions): void {
@@ -92,6 +94,21 @@ export function registerConsole(app: FastifyInstance, db: Db, options: ConsoleOp
   app.post('/review/login', async (req, reply) => {
     const locale = pickLocale(req.query, req.headers['accept-language']);
     const form = (req.body ?? {}) as Record<string, string>;
+
+    // SEC-03, the same limiter the JSON sign-in uses. The person sees the
+    // sentence on the form rather than a bare 429 they cannot read.
+    const attempt = signInAttempt(db, options.limiter, req.ip, 'operator.login_failed', [
+      form['external_ref'] ?? '',
+      form['machine_identifier'] ?? '',
+    ]);
+    const wait = await attempt.blocked();
+    if (wait !== null) {
+      return reply
+        .code(429)
+        .headers({ 'content-type': 'text/html; charset=utf-8', 'retry-after': String(wait) })
+        .send(loginPage(locale, SIGN_IN_RATE_LIMITED));
+    }
+
     const machine = await authenticateMachine(
       db,
       form['machine_identifier'] ?? '',
@@ -103,10 +120,12 @@ export function registerConsole(app: FastifyInstance, db: Db, options: ConsoleOp
       form['operator_secret'] ?? '',
     );
     if (machine === null || operator === null) {
+      await attempt.wrong();
       return reply.code(401).header('content-type', 'text/html; charset=utf-8').send(
         loginPage(locale, 'credentials'),
       );
     }
+    attempt.ok();
     /**
      * The same centre check the header path makes. Two valid credentials from
      * different centres is either a misconfigured machine or spliced
@@ -176,12 +195,19 @@ export function registerConsole(app: FastifyInstance, db: Db, options: ConsoleOp
 
 const loginPage = (locale: Locale, failed?: string): string => {
   const m = (key: MessageKey) => escapeHtml(t(locale, key));
+  /**
+   * The rate-limited sentence is the one the console reads off a refusal name,
+   * not a second copy under `login.*`: the form and the SPA say the same thing
+   * to the same person about the same event.
+   */
+  const reason: MessageKey =
+    failed === 'mismatch'
+      ? 'login.mismatch'
+      : failed === SIGN_IN_RATE_LIMITED
+        ? `bo.refused.${SIGN_IN_RATE_LIMITED}`
+        : 'login.failed';
   const error =
-    failed === undefined
-      ? ''
-      : `<p class="login-error" role="alert">${m(
-          failed === 'mismatch' ? 'login.mismatch' : 'login.failed',
-        )}</p>`;
+    failed === undefined ? '' : `<p class="login-error" role="alert">${m(reason)}</p>`;
   return page({
     locale,
     title: `${t(locale, 'app.name')} — ${t(locale, 'login.title')}`,

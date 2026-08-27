@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { schema, type Db } from '@playerone/store';
 import { auditLogin } from './audit.ts';
 import { clearCookie, MACHINE_COOKIE, OPERATOR_COOKIE, sessionCookie } from './cookies.ts';
+import { rateLimited, signInAttempt, type SignInLimiter } from './ratelimit.ts';
 import {
   signToken,
   verifyCredential,
@@ -138,7 +139,7 @@ export async function authenticateReviewer(
 export function registerSessionRoutes(
   app: FastifyInstance,
   db: Db,
-  options: { tokenSecret: string; secureCookies: boolean },
+  options: { tokenSecret: string; secureCookies: boolean; limiter: SignInLimiter },
 ): void {
   app.post('/api/session', async (req, reply) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -176,11 +177,32 @@ export function registerSessionRoutes(
     if (wanted !== '' && wanted !== 'operator' && wanted !== 'reviewer') {
       return reply.code(400).send({ error: 'unknown role' });
     }
+
+    /**
+     * SEC-03. Both references this form can name are counted, and the row is
+     * filed against the one the person typed for themselves. A reviewer chose
+     * "Reviewer" explicitly; anybody else is refused as an operator, which is
+     * also what the fall-through below does with a reviewer whose secret is
+     * wrong.
+     */
+    const attempt = signInAttempt(
+      db,
+      options.limiter,
+      req.ip,
+      wanted === 'reviewer' ? 'reviewer.login_failed' : 'operator.login_failed',
+      [str('external_ref'), str('machine_identifier')],
+    );
+    const wait = await attempt.blocked();
+    if (wait !== null) {
+      return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
+    }
+
     const reviewer =
       wanted === 'operator'
         ? null
         : await authenticateReviewer(db, str('external_ref'), str('operator_secret'));
     if (reviewer !== null) {
+      attempt.ok();
       return reply
         .headers({
           'set-cookie': [
@@ -196,6 +218,7 @@ export function registerSessionRoutes(
     }
 
     if (wanted === 'reviewer') {
+      await attempt.wrong();
       return reply.code(401).send({ error: 'credentials', reason: 'credentials' });
     }
 
@@ -208,8 +231,16 @@ export function registerSessionRoutes(
      * pick the language a message is read in.
      */
     if (machine === null || operator === null) {
+      await attempt.wrong();
       return reply.code(401).send({ error: 'credentials', reason: 'credentials' });
     }
+    /**
+     * Both credentials were right, so the counters for them are cleared even
+     * though the centre check below may still refuse the session: a
+     * misconfigured machine is not a guessing attempt, and counting it would
+     * lock out the operator who keeps trying at the counter it is standing on.
+     */
+    attempt.ok();
 
     /**
      * The same centre check the header path makes, for the same reason: two
