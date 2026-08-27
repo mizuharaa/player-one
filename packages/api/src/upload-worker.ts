@@ -151,6 +151,56 @@ const notFound = (err: unknown): boolean => {
   return e.name === 'NotFound' || e.name === 'NoSuchKey' || e.$metadata?.httpStatusCode === 404;
 };
 
+/**
+ * A transport failure, as opposed to an answer the server meant. No HTTP status
+ * at all means the socket died before one arrived; 5xx and 429 are the server
+ * asking to be asked again. A 403 from a bad signature is neither, and retrying
+ * it just spends the link three times.
+ */
+const retryableTransport = (err: unknown): boolean => {
+  const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+  if (status === undefined) return true;
+  return status >= 500 || status === 429;
+};
+
+export const UPLOAD_ATTEMPTS = 3;
+
+/**
+ * Retries a byte-carrying call, re-opening its body each time.
+ *
+ * The SDK will not do this for us. `@smithy/core`'s retry middleware refuses
+ * any request whose body is a `Readable` — a stream cannot be rewound, so
+ * replaying it would send a truncated body — and every call below passes
+ * `createReadStream`. Measured against MinIO with the socket killed half way
+ * through a 4 MB PutObject: with a stream body the server saw 1 attempt and the
+ * call threw, and with a Buffer body and the identical fault it saw 2 attempts
+ * and succeeded. `maxAttempts` therefore bought nothing on any call that moves
+ * bytes.
+ *
+ * The retry belongs here rather than at the two call sites because `send` is
+ * the only thing either of them does, and because the body has to be built
+ * fresh per attempt: `open` is a factory, never a value. The offsets a part
+ * re-opens at are already planned by `planParts`, which is what makes this
+ * cheap.
+ *
+ * ponytail: fixed 3 attempts and a doubling 200 ms backoff, which is the SDK's
+ * own default shape. A jittered or configurable policy is the upgrade path if a
+ * real link ever wants one.
+ */
+async function withRetry<T>(open: () => Promise<T>): Promise<T> {
+  let last: unknown;
+  for (let attempt = 1; attempt <= UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      return await open();
+    } catch (err) {
+      last = err;
+      if (!retryableTransport(err) || attempt === UPLOAD_ATTEMPTS) throw err;
+      await new Promise((r) => setTimeout(r, 200 * 2 ** (attempt - 1)));
+    }
+  }
+  throw last;
+}
+
 export class S3ObjectStore implements ObjectStore {
   private readonly client: S3Client;
   private readonly bucket: string;
@@ -188,14 +238,19 @@ export class S3ObjectStore implements ObjectStore {
     }
 
     if (size < PART_SIZE) {
-      await this.client.send(
-        new PutObjectCommand({
-          Bucket: this.bucket,
-          Key: key,
-          Body: size === 0 ? new Uint8Array(0) : createReadStream(localPath),
-          ContentLength: size,
-          Metadata: { sha256 },
-        }),
+      // The stream is opened inside the closure: each attempt needs its own,
+      // because a consumed one cannot be replayed. That is the whole reason
+      // the SDK refuses to retry these at all.
+      await withRetry(() =>
+        this.client.send(
+          new PutObjectCommand({
+            Bucket: this.bucket,
+            Key: key,
+            Body: size === 0 ? new Uint8Array(0) : createReadStream(localPath),
+            ContentLength: size,
+            Metadata: { sha256 },
+          }),
+        ),
       );
       return 'uploaded';
     }
@@ -221,15 +276,20 @@ export class S3ObjectStore implements ObjectStore {
         completed.push({ PartNumber: part.partNumber, ETag: have.etag });
         continue;
       }
-      const r = await this.client.send(
-        new UploadPartCommand({
-          Bucket: this.bucket,
-          Key: key,
-          UploadId: uploadId,
-          PartNumber: part.partNumber,
-          Body: createReadStream(localPath, { start: part.start, end: part.end - 1 }),
-          ContentLength: part.end - part.start,
-        }),
+      // Same reason as the simple put above, and cheaper here: the offsets to
+      // re-open at are already planned, so a retried part costs one part, not
+      // the whole file.
+      const r = await withRetry(() =>
+        this.client.send(
+          new UploadPartCommand({
+            Bucket: this.bucket,
+            Key: key,
+            UploadId: uploadId,
+            PartNumber: part.partNumber,
+            Body: createReadStream(localPath, { start: part.start, end: part.end - 1 }),
+            ContentLength: part.end - part.start,
+          }),
+        ),
       );
       completed.push({ PartNumber: part.partNumber, ETag: r.ETag! });
     }
