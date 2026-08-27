@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { PayoutBill } from '../lib/api.ts';
 import { batchFingerprint, gateReasonKey, preflightGate, PREFLIGHT_WINDOW_MS, type PreflightSnapshot } from './gate.ts';
 
@@ -65,13 +65,26 @@ describe('the preflight gate', () => {
     expect(gateReasonKey(gate)).toBeNull();
   });
 
-  it('closes at the window, live: open at five minutes, closed one millisecond later', () => {
-    const bills = [bill()];
-    const fp = batchFingerprint(bills);
-    const at = (now: number) => preflightGate({ snapshot: snapshot(bills), fetchedAt: T0, batchFingerprint: fp, now });
-    expect(at(T0 + PREFLIGHT_WINDOW_MS).open).toBe(true);
+  it('closes at the window, live, with a fake clock: open one millisecond before five minutes, closed at five minutes', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(T0);
+      const bills = [bill()];
+      const fp = batchFingerprint(bills);
+      const at = () => preflightGate({ snapshot: snapshot(bills), fetchedAt: T0, batchFingerprint: fp, now: Date.now() });
+      expect(at().open).toBe(true);
+      vi.setSystemTime(T0 + PREFLIGHT_WINDOW_MS - 1);
+      expect(at().open).toBe(true);
+      vi.setSystemTime(T0 + PREFLIGHT_WINDOW_MS);
+      const late = at();
+      expect(late).toEqual({ open: false, reason: 'expired', ageMs: PREFLIGHT_WINDOW_MS });
+      expect(gateReasonKey(late)).toBe('settle.preflight.expired');
+    } finally {
+      vi.useRealTimers();
+    }
+    const at = (now: number) => preflightGate({ snapshot: snapshot([bill()]), fetchedAt: T0, batchFingerprint: batchFingerprint([bill()]), now });
     const late = at(T0 + PREFLIGHT_WINDOW_MS + 1);
-    expect(late).toEqual({ open: false, reason: 'expired', ageMs: PREFLIGHT_WINDOW_MS + 1 });
+    expect(late.open).toBe(false);
     expect(gateReasonKey(late)).toBe('settle.preflight.expired');
     // A clock that went backwards is not a fresh preflight either.
     expect(at(T0 - 1).open).toBe(false);

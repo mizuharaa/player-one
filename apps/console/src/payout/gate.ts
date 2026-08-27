@@ -60,7 +60,9 @@ export function preflightGate(input: {
     return { open: false, reason: 'missing', ageMs: null };
   }
   const ageMs = input.now - input.fetchedAt;
-  if (ageMs < 0 || ageMs > window) return { open: false, reason: 'expired', ageMs };
+  // Fails closed at the boundary: a snapshot exactly one window old is not
+  // "younger than the window", so it is not authorisation material either.
+  if (ageMs < 0 || ageMs >= window) return { open: false, reason: 'expired', ageMs };
   if (input.snapshot.fingerprint !== input.batchFingerprint) return { open: false, reason: 'changed', ageMs };
   return { open: true, ageMs };
 }

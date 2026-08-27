@@ -691,9 +691,12 @@ const en = {
     'A settlement on this bill was already paid or moved to exception in between. Reload the bill.',
   'bo.refused.payout_mode_manual':
     'The server is in manual payout mode. Transfer the money yourself and record the reference here.',
+  'bo.refused.payout_batch_running': 'A run of this period is already in progress on the server. Wait for its report; nothing was sent twice.',
   'bo.refused.payout_no_client': 'No ZaloPay client is configured on this server, so no transfer can be sent.',
   'bo.refused.payout_account_missing': 'This collector has no current payout account.',
   'bo.refused.payout_account_unverified': 'The collector’s payout account is not verified. ZaloPay must confirm the name first.',
+  'bo.refused.payout_attempts_account_unverified':
+    'The database refused the attempt: the payout account is not verified. ZaloPay must confirm the name first.',
   'bo.refused.payout_bank_details_unavailable':
     'A bank transfer through the API needs the full account number, which this server does not keep. Pay it manually.',
   'bo.refused.payout_cap_exceeded': 'Above the per-collector cap for this period. A ticket was raised; the cap is never paid instead.',
@@ -1258,9 +1261,11 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.payout_accounts_append_only': '收款账户是申报记录，不能修改或删除。',
   'bo.refused.settlements_transition_check': '这张账单上的某条结算记录在此期间已被支付或移至异常。请刷新账单。',
   'bo.refused.payout_mode_manual': '服务端处于人工付款模式。请自行转账，并在此登记参考号。',
+  'bo.refused.payout_batch_running': '该周期的批次已在服务端执行中。请等待其报告；不会重复发送。',
   'bo.refused.payout_no_client': '本服务端未配置 ZaloPay 客户端，无法发送任何转账。',
   'bo.refused.payout_account_missing': '该采集者没有当前收款账户。',
   'bo.refused.payout_account_unverified': '该采集者的收款账户未经验证。必须先由 ZaloPay 确认姓名。',
+  'bo.refused.payout_attempts_account_unverified': '数据库拒绝了该付款尝试：收款账户未经验证。必须先由 ZaloPay 确认姓名。',
   'bo.refused.payout_bank_details_unavailable': '通过 API 进行银行转账需要完整账号，而本服务端不保存账号。请人工付款。',
   'bo.refused.payout_cap_exceeded': '超过本周期每位采集者的上限。已生成工单；绝不会改为支付上限金额。',
   'bo.refused.payout_risk_hold': '风险引擎已暂停这张账单。请先在风险标记页填写原因解除暂停。',
@@ -1885,9 +1890,11 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.settlements_transition_check':
     'Một khoản trên hóa đơn này đã được trả hoặc đã chuyển sang ngoại lệ trong lúc đó. Tải lại hóa đơn.',
   'bo.refused.payout_mode_manual': 'Máy chủ đang ở chế độ chi trả thủ công. Tự chuyển tiền và ghi mã tham chiếu tại đây.',
+  'bo.refused.payout_batch_running': 'Một lần chạy của kỳ này đang diễn ra trên máy chủ. Hãy chờ báo cáo; không có gì được gửi hai lần.',
   'bo.refused.payout_no_client': 'Máy chủ này chưa cấu hình máy khách ZaloPay, nên không gửi được lệnh chuyển nào.',
   'bo.refused.payout_account_missing': 'Cộng tác viên này không có tài khoản nhận tiền hiện tại.',
   'bo.refused.payout_account_unverified': 'Tài khoản nhận tiền của cộng tác viên chưa được xác minh. ZaloPay phải xác nhận tên trước.',
+  'bo.refused.payout_attempts_account_unverified': 'Cơ sở dữ liệu đã từ chối lần chi trả: tài khoản nhận tiền chưa được xác minh. ZaloPay phải xác nhận tên trước.',
   'bo.refused.payout_bank_details_unavailable':
     'Chuyển ngân hàng qua API cần số tài khoản đầy đủ, mà máy chủ này không lưu. Hãy chi trả thủ công.',
   'bo.refused.payout_cap_exceeded': 'Vượt hạn mức mỗi cộng tác viên trong kỳ này. Đã tạo phiếu; không bao giờ trả theo hạn mức thay thế.',

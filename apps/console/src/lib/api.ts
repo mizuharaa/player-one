@@ -555,9 +555,16 @@ export interface PayResult {
  * iterates `/pay` itself; it asks for the run and renders this.
  */
 export interface BatchRun {
+  period_start: string;
+  period_end: string;
+  mode: PayoutMode;
   preflight: Omit<PayoutPreflight, 'exceptions' | 'mode'>;
-  sent: { billId: string; attemptId: string; status: AttemptStatus }[];
-  stopped_at: { billId: string; constraint: string } | null;
+  sent: { bill_id: string; attempt_id: string; partner_order_id: string; status: AttemptStatus; result: string }[];
+  /** Every bill the run did not send, with the constraint name the catalogue maps to a sentence. */
+  refused: { bill_id: string; collector_ref: string; constraint: string }[];
+  /** The bill id the run stopped at, or null. Its constraint is in `refused`. */
+  stopped_at: string | null;
+  tickets: { kind: string; bill_id: string | null; evidence: unknown; occurred_at: string }[];
 }
 
 /**
@@ -606,10 +613,10 @@ export const payout = {
   /**
    * The API rail, the whole period, as ONE server-side run of `runBatch`.
    *
-   * PROPOSED SEAM — this route is not in the merged payout routes yet. The
-   * console is wired to it so the batch is never a loop in the browser; until
-   * the server mounts `POST /api/payout/batches/:period/run` (finance,
-   * audited, returning `BatchRun`), the answer is 404 and the screen says so.
+   * Served by `POST /api/payout/batches/:period/run` on feat/payout-domain
+   * (finance, audited, one run per period at a time — a second caller is
+   * refused 409 `payout_batch_running`). A server without it answers 404 and
+   * the screen says so.
    */
   runBatch: (periodStart: string) =>
     call<BatchRun>(`${batchPath(periodStart)}/run`, { method: 'POST' }),

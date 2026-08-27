@@ -395,20 +395,22 @@ function RunReport({ report, collectorOf }: { report: BatchRun; collectorOf: (bi
       {report.sent.length > 0 ? (
         <ol className="divide-y divide-[var(--border)] text-[0.875rem]">
           {report.sent.map((s) => (
-            <li key={s.billId} className="flex items-center justify-between gap-3 py-1.5">
-              <span className="num font-semibold">{collectorOf(s.billId)}</span>
+            <li key={s.bill_id} className="flex items-center justify-between gap-3 py-1.5">
+              <span className="num font-semibold">{collectorOf(s.bill_id)}</span>
               <span className="num text-[var(--muted-foreground)]">{t(`settle.attempt.${s.status}`)}</span>
             </li>
           ))}
         </ol>
       ) : null}
-      {report.stopped_at ? (
+      {report.stopped_at !== null ? (
         <div className="mt-3">
           <Problem
             title={t('bo.refused')}
             body={t('settle.batch.stopped', {
-              collector: collectorOf(report.stopped_at.billId),
-              reason: refusedConstraint(report.stopped_at.constraint),
+              collector: collectorOf(report.stopped_at),
+              reason: refusedConstraint(
+                report.refused.find((r) => r.bill_id === report.stopped_at)?.constraint ?? 'payout_transfer_rejected',
+              ),
             })}
           />
         </div>
