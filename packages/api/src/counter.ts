@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { schema, type Db } from '@playerone/store';
 import { z } from 'zod';
@@ -74,6 +74,21 @@ type Reply = {
 };
 
 /**
+ * The refusals the session route raises itself. A session is recorded under a
+ * claim (APP-10), and the claim has to be live for this collector on this task
+ * at this moment; none of that is a constraint the row can carry, because the
+ * row does not know when "now" was. Each name has a sentence in i18n.ts.
+ */
+export const COUNTER_REFUSALS = new Set([
+  /** No claim on this task by this collector, live or released. */
+  'session_claim_missing',
+  /** The collector held this task once and released it since. */
+  'session_claim_released',
+  /** The claim is live, but the task has been taken down. */
+  'session_task_not_published',
+]);
+
+/**
  * Registers the counter endpoints. `requireActor` is passed in rather than
  * re-derived so there is exactly one implementation of the both-tokens rule.
  */
@@ -81,6 +96,8 @@ export function registerCounter(
   app: FastifyInstance,
   db: Db,
   requireActor: (req: FastifyRequest, reply: Reply) => Promise<unknown>,
+  /** What `tasks.unit_price` is denominated in; snapshotted onto the session. See `ReviewOptions`. */
+  currency = 'VND',
 ): void {
   const opts = { preHandler: requireActor };
   /**
@@ -90,6 +107,9 @@ export function registerCounter(
    * re-checked.
    */
   const actorOf = (req: FastifyRequest): CounterActor => req.actor as CounterActor;
+  /** Same shape as the back office's refusals, so the console has one way to read them. */
+  const refuse = (reply: Reply, constraint: string) =>
+    reply.code(409).send({ error: 'refused', constraint });
 
   app.post('/handovers', opts, async (req, reply) => {
     const body = HandoverBody.safeParse(req.body);
@@ -172,6 +192,45 @@ export function registerCounter(
       );
     if (handover === undefined) return reply.code(404).send({ error: 'no such handover here' });
 
+    /**
+     * The claim this session is recorded under. A collector records against a
+     * task they hold (APP-10), and payment is that task's unit price — so the
+     * body names the task, and the claim is looked up, never trusted: the live
+     * claim by the handover's collector on that task, of which
+     * `task_claims_live_key` allows at most one. No live claim, no session.
+     *
+     * The price is copied onto the session here, so a later edit to the task
+     * cannot change what this recording earns; the verdict reads the copy.
+     * `tasks_price_frozen` already stops a published task's price moving, so
+     * today the copy equals the price at claim time; the copy is what makes
+     * that stay true when SET-09 repricing lands.
+     *
+     * A released claim is refused by name rather than folded into "missing":
+     * the two are different conversations at a counter, and the released one
+     * is the case where footage on the card may be real and unpayable.
+     */
+    const [claim] = await db
+      .select({
+        id: schema.taskClaims.id,
+        releasedAt: schema.taskClaims.releasedAt,
+        status: schema.tasks.status,
+        unitPrice: schema.tasks.unitPrice,
+      })
+      .from(schema.taskClaims)
+      .innerJoin(schema.tasks, eq(schema.tasks.id, schema.taskClaims.taskId))
+      .where(
+        and(
+          eq(schema.taskClaims.taskId, b.task_id),
+          eq(schema.taskClaims.collectorId, handover.collectorId),
+        ),
+      )
+      // DESC puts nulls first: the live one if there is one, else the latest released.
+      .orderBy(desc(schema.taskClaims.releasedAt))
+      .limit(1);
+    if (claim === undefined) return refuse(reply, 'session_claim_missing');
+    if (claim.releasedAt !== null) return refuse(reply, 'session_claim_released');
+    if (claim.status !== 'published') return refuse(reply, 'session_task_not_published');
+
     const written = await mutate(
       db,
       actor,
@@ -179,7 +238,7 @@ export function registerCounter(
         action: 'session.create',
         targetTable: 'collection_sessions',
         targetId: b.id,
-        after: { ...b, handover_id: handoverId },
+        after: { ...b, handover_id: handoverId, task_claim_id: claim.id, unit_price: claim.unitPrice, currency },
       },
       async (tx) => {
         const [row] = await tx
@@ -188,6 +247,9 @@ export function registerCounter(
             id: b.id,
             handoverId,
             taskId: b.task_id,
+            taskClaimId: claim.id,
+            unitPrice: claim.unitPrice,
+            currency,
             // The collector comes from the handover, not the body: one card, one
             // collector, already verified at the counter (PRD §11.3.1 rule 1).
             collectorId: handover.collectorId,

@@ -154,9 +154,10 @@ retires it. Rule 6's other half is *not* deviable and nothing in the lane bends
 it — **no TF card is cleared**, and no code path deletes source media. That is
 still a hard gate at acceptance.
 
-The **BO-09 cut** ADR is still owed (centres, machines and operators stay
-CLI/fixtures) with its trigger condition — second upload centre, or 500
-collectors, whichever first.
+The **BO-09 cut** (centres, machines and operators stay CLI/fixtures) is
+recorded in `docs/adr/0003-bo09-centres-machines-operators-stay-fixtures.md`
+with its trigger condition — second upload centre, or 500 collectors,
+whichever first.
 
 Daniel was sending the storage target, so the upload slice may no longer be
 blocked. **Ask.** It was meant to run in parallel, not after.
@@ -241,6 +242,13 @@ blocked. **Ask.** It was meant to run in parallel, not after.
   Postgres's 63-byte limit and they truncate into collisions — name long ones
   explicitly. And it emits every FK before other `ALTER`s, so a composite FK can
   precede the `UNIQUE` it targets; `0001` is hand-ordered and says so.
+- **Never edit an applied migration; append.** drizzle applies by the journal's
+  `when` and never re-runs a tag, so an edit to a journaled file reaches only
+  databases migrated after the edit. `0011` and `0012` were edited in place
+  (`e6624e5`, `a8b20c6`, `d84d60c`) and every database migrated before that
+  was silently missing `bill_lines_immutable`, `bills_total_matches_lines` and
+  the unverified-account refusal; `0016_replay_bill_and_payout_guards` replays
+  them idempotently, the way `0009_cloud_leg_gate` did for `0007`.
 - **Vitest runs test files in parallel and every database file truncates.** Each
   gets its own database via `useDatabase(name)` in
   `packages/store/test/db.ts`. An advisory lock was tried first and does not

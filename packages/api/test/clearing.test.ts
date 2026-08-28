@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { closeDb, db, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 import { episodeRecord } from './fixtures.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -90,6 +90,11 @@ describe.skipIf(!hasDb())('clearing a mismatched delivery', () => {
       expect(res.statusCode, res.body).toBeLessThan(300);
       return batch;
     };
+    // Since 0016_claim_join the counter refuses a session whose collector holds
+    // no live claim on the task (`session_claim_missing`), so both collectors
+    // take the work before any card is declared.
+    await liveClaim(d, ids.task, ids.collector);
+    await liveClaim(d, ids.task, ids.collector2);
     const batch = await card(headers, ids.collector, ids.device, 'CARD-1');
     const batch2 = await card(headers2, ids.collector2, ids.device2, 'CARD-2');
 

@@ -1,26 +1,34 @@
 /**
- * Every user-facing string in the back office, in both languages it has to be
+ * Every user-facing string in the back office, in every language it has to be
  * read in.
  *
  * LOC-02: PaXini's reviewers work in Chinese through phase 1, and they are the
- * people this screen is for. English is the default because VNG builds and
- * operates it. Vietnamese is deliberately absent here — LOC-04 puts Vietnamese
- * on what reaches the *collector*, which is the reject reason codes, and those
- * are localised as catalogue rows in `review_reason_codes` rather than as
- * strings in the console. A reviewer-facing Vietnamese console is not something
- * anybody has asked for and inventing one would be three columns to keep in
- * step instead of two.
+ * people the review screen is for. English is the default because VNG builds
+ * and operates it. Vietnamese was absent until the payout console: LOC-04 put
+ * Vietnamese on what reaches the *collector* — the reject reason codes, which
+ * are catalogue rows in `review_reason_codes` — and nobody had asked for a
+ * Vietnamese reviewer screen. The payout brief changed that: every risk flag
+ * must render as one plain sentence "in Vietnamese and English", and the
+ * finance operators who pay collectors are VNG staff in Ho Chi Minh City. A
+ * third column for some keys and not others would be a catalogue with holes,
+ * so `vi` holds every key, and the completeness test covers it like `zh`.
  *
  * The catalogue is a flat map of dotted keys rather than nested objects, and
- * both languages hold the same keys, which is what `assertComplete` below is
- * for: a missing Chinese string should fail a test, not surface as an English
- * word in the middle of a Chinese sentence at an upload centre.
+ * every language holds the same keys, which is what `missingKeys` below is
+ * for: a missing string should fail a test, not surface as an English word in
+ * the middle of a Chinese or Vietnamese sentence at an upload centre.
+ *
+ * The `risk.signal.*` entries are templates rather than sentences: `{name}`
+ * is filled from a flag's evidence by `render` in the risk engine
+ * (`risk/sentences.ts`) and by its twin in the console (`risk/sentences.ts`
+ * there). Single braces on purpose — i18next interpolates `{{ }}` and leaves
+ * these alone.
  *
  * The same object is rendered into the page and handed to the client module, so
  * there is one catalogue and not a server one and a browser one that drift.
  */
 
-export const LOCALES = ['en', 'zh'] as const;
+export const LOCALES = ['en', 'zh', 'vi'] as const;
 export type Locale = (typeof LOCALES)[number];
 
 export const DEFAULT_LOCALE: Locale = 'en';
@@ -284,6 +292,13 @@ const en = {
     'The list of collectors did not load, so there is nobody to bind to. Nothing has been changed.',
 
   'bo.refused': 'Refused',
+  /**
+   * SEC-03. Read on the sign-in form, in the SPA and by a machine client, so it
+   * says what to do rather than what happened: the window expires on its own
+   * and there is nobody to ring.
+   */
+  'bo.refused.sign_in_rate_limited':
+    'Too many sign-in attempts were refused. Wait a few minutes and try again — the block clears by itself and nobody has to unlock anything.',
   'bo.refused.task_claims_capacity': 'That task already has as many claimants as it allows.',
   'bo.refused.task_claims_exam_gate':
     'That collector has not passed the exam, so they cannot claim a task.',
@@ -338,11 +353,394 @@ const en = {
     'That delivery does not belong to this episode. Name one of its own deliveries.',
   'bo.refused.episode_clearing_paid_on_other_delivery':
     'Another delivery of this episode has already been reviewed and paid. Choosing a different one is a dispute, not a clear.',
+  'bo.refused.session_claim_missing':
+    'This collector holds no claim on that task, so nothing recorded for it can be paid. Claim the task first.',
+  'bo.refused.session_claim_released':
+    'This collector released their claim on that task. A new claim is needed before a session can be recorded.',
+  'bo.refused.session_task_not_published':
+    'That task has been taken down, so no new session can be recorded against it.',
+  'bo.refused.review_disputes_open_key': 'That verdict is already under dispute.',
+  'bo.refused.review_disputes_decided_check':
+    'That review has not been decided yet, so there is no outcome to challenge.',
+  'bo.refused.review_disputes_final_check':
+    'That verdict is itself a second review, and a second review is final.',
+  'bo.refused.review_disputes_unbilled_check':
+    'That verdict is already on a bill or paid, and a bill is never revised.',
   'bo.refused.unknown': 'The server refused that change.',
+  'bo.refused.settlements_not_in_exception': 'That settlement is not in exception, so there is nothing to release.',
+  'bo.refused.settle_export_bill_in_exception':
+    'A bill in this period has a line in exception. Its total would not match the lines in the file, so the export is held until the line is released.',
+  'bo.refused.payout_settlement_exception':
+    'A line on this bill is in exception. Release it before the bill can be paid.',
 
   'theme.toggle': 'Theme',
   'theme.light': 'Light',
   'theme.dark': 'Dark',
+
+  // ---------------------------------------------------------------------
+  // Settle and the payout console (SET-03 → SET-07; payout brief, Agent D).
+  // Four screens on one period: the bills, the preflight that has to be read
+  // before any payment, the flag review, and the attempts that need a person.
+
+  'settle.title': 'Settle',
+  'settle.intro':
+    'The bills of a period, what the wallet holds against them, what the engine has flagged, and the record of every payment. Every figure here is the server’s; nothing on this screen adds or rounds.',
+  'settle.period': 'Period starts',
+  'settle.period.hint': 'One settlement cycle from this day. Bills whose period starts inside it.',
+  'settle.period.apply': 'Open',
+  'settle.tab.bills': 'Bills',
+  'settle.tab.preflight': 'Preflight',
+  'settle.tab.flags': 'Flags',
+  'settle.tab.exceptions': 'Exceptions',
+  'settle.mode.manual': 'Manual payout: the operator transfers the money and records the reference here.',
+  'settle.mode.api': 'API payout: transfers are sent through ZaloPay from the preflight screen.',
+  'settle.readonly': 'Read only',
+  'settle.readonly.operator':
+    'This session does not hold the finance role. Every figure is visible; every payment action is disabled here and refused by the server.',
+  'settle.readonly.unknown':
+    'The finance role could not be confirmed for this session, so payment actions are disabled. Reload to ask again.',
+  'settle.readonly.refused': 'The server refused: this session does not hold the finance role. Nothing has been changed.',
+  'settle.failed': 'The request did not reach the server. Nothing has been changed.',
+  'settle.invalid': 'The server would not read that request. Nothing has been changed.',
+  'settle.gone': 'That bill or attempt no longer exists on the server. Reload the list.',
+  'settle.loadFailed': 'This period did not load.',
+  'settle.loadFailed.body': 'The settle screens read through the API. Nothing has been changed.',
+  'settle.empty': 'No bills in this period.',
+  'settle.empty.body': 'Bills are made from reviewed settlements. Generate the period, or pick another start day.',
+  'settle.generate': 'Generate bills',
+  'settle.generate.hint': 'Bills every settlement of the period that is waiting. Running it twice changes nothing.',
+  'settle.generate.result': '{{created}} bill(s) created; {{notPayable}} settlement(s) worth nothing were left off.',
+  'settle.export.payout': 'Export payout CSV',
+  'settle.export.payout.hint': 'Hashed row by row and as a file, and recorded. Finance only.',
+  'settle.export.lines': 'Export lines CSV',
+  'settle.col.collector': 'Collector',
+  'settle.col.minutes': 'Valid minutes',
+  'settle.col.gross': 'Gross',
+  'settle.col.withheld': 'Withheld',
+  'settle.col.net': 'Net',
+  'settle.col.band': 'Risk',
+  'settle.col.attempt': 'Payout',
+  'settle.col.open': 'Open',
+  'settle.sort': 'Sort by {{column}}',
+  'settle.withheld.note': 'The PIT withholding rate is not decided. The server reports 0 withheld and net equal to gross.',
+  'settle.asStored': 'As stored, in {{currency}}. Not rounded here.',
+  'settle.wholeVnd': 'Whole dong, as the database converted it.',
+  'settle.wholeVnd.none': 'No whole-dong figure: the total has a fractional part and nobody has decided how to round it.',
+  'settle.lines': '{{n}} line(s)',
+  'settle.attempt.none': 'No attempt',
+  'settle.attempt.created': 'Created',
+  'settle.attempt.submitted': 'Submitted',
+  'settle.attempt.processing': 'Processing',
+  'settle.attempt.pending_zlp': 'Pending at ZaloPay',
+  'settle.attempt.succeeded': 'Paid',
+  'settle.attempt.failed': 'Failed',
+  'settle.attempt.unknown': 'Unknown, polling',
+  'settle.method.WALLET': 'ZaloPay wallet',
+  'settle.method.BANK_ACCOUNT': 'Bank account',
+  'settle.method.BANK_CARD': 'Bank card',
+  'settle.verify.unverified': 'Not verified',
+  'settle.verify.verified': 'Verified',
+  'settle.verify.name_mismatch': 'Name mismatch',
+  'settle.verify.no_wallet': 'No wallet',
+  'settle.verify.locked': 'Wallet locked',
+  'settle.verify.kyc_limit': 'Receiving limit',
+  'settle.verify.error': 'Verification error',
+  'settle.issue.title': 'What stands between this bill and a transfer',
+  'settle.issue.none': 'Nothing. This bill can be paid.',
+  'settle.issue.no_account': 'The collector has declared no payout account.',
+  'settle.issue.account_unverified': 'The payout account is not verified by ZaloPay.',
+  'settle.issue.total_fractional': 'The total has a fractional part of a dong, and the rounding rule is not decided.',
+  'settle.issue.over_bank_ceiling': 'Above ZaloPay’s ceiling of 10,000,000 VND for one bank transfer.',
+  'settle.issue.under_bank_minimum': 'Below ZaloPay’s minimum of 2,000 VND for a bank transfer.',
+  'settle.issue.over_cap': 'Above the per-collector cap for this period.',
+  'settle.issue.risk_hold': 'The risk engine holds this bill.',
+  'settle.issue.attempt_open': 'An attempt is still open on this bill.',
+  'settle.issue.already_paid': 'This bill is already paid.',
+
+  'settle.preflight.intro':
+    'Read before any payment. What the batch would send, what the wallet holds, which accounts are unverified, and who the engine has flagged.',
+  'settle.preflight.balance': 'Wallet balance',
+  'settle.preflight.balance.none':
+    'Cannot be read: no ZaloPay client is configured on this server. The manual pilot pays from a bank, so this is expected.',
+  'settle.preflight.total': 'Batch total',
+  'settle.preflight.required': 'Required with margin',
+  'settle.preflight.required.hint': 'The total plus 5%, the margin the batch worker insists on.',
+  'settle.preflight.shortfall': 'Shortfall',
+  'settle.preflight.ok': 'The batch can be sent: {{payable}} of {{bills}} bill(s) are payable.',
+  'settle.preflight.refused': 'The batch is refused as a whole. Nothing will be sent.',
+  'settle.preflight.serverSaid': 'The server said',
+  'settle.preflight.ranAt': 'Preflight run at {{at}}',
+  'settle.preflight.rerun': 'Run again',
+  'settle.preflight.bands': 'Bills by risk band',
+  'settle.preflight.accounts': 'Payout accounts',
+  'settle.preflight.accounts.verified': 'Verified',
+  'settle.preflight.accounts.unverified': 'Not verified',
+  'settle.preflight.accounts.mismatch': 'Name mismatch',
+  'settle.preflight.accounts.missing': 'No account',
+  'settle.preflight.limits': 'Limits',
+  'settle.preflight.ceiling': 'Over the bank ceiling of {{ceiling}}',
+  'settle.preflight.cap': 'Over the cap of {{cap}}',
+  'settle.preflight.cap.none': 'No per-collector cap is configured. The value is an escalation.',
+  'settle.preflight.others': 'Also not payable',
+  'settle.preflight.anomalies': 'Highest risk first',
+  'settle.preflight.anomalies.hint':
+    'The {{n}} bill(s) with the highest risk score, with every flag in plain words. Open the flag review to act on one.',
+  'settle.preflight.anomalies.none': 'The engine has raised no flag on any bill in this period.',
+  'settle.preflight.continue.manual':
+    'Preflight seen. Open a bill from the list to record a manual payment; the payment controls stay locked until this screen has been read for the period.',
+  'settle.preflight.stale': 'The preflight for this period has not been run in this session. Run it before paying.',
+  'settle.preflight.expired': 'The preflight is older than five minutes. The balance, the holds and the anomaly list may have moved; run it again before paying.',
+  'settle.preflight.changed': 'The batch changed since the preflight ran — a payment, a declaration or a hold. Run it again before paying.',
+  'settle.preflight.open': 'Run the preflight',
+
+  'settle.batch.title': 'Send the batch',
+  'settle.batch.sentence': 'Send {{n}} transfer(s) totalling {{total}}.',
+  'settle.batch.serverLoop':
+    'One request. The server runs its own preflight again at that moment, sends one transfer at a time with a pause between, stops at the first refusal, and reports back. Nothing is sent from this browser.',
+  'settle.batch.notOnServer': 'This server has no batch-run route yet. The batch is a server-side loop by design; until the route exists nothing is sent from here.',
+  'settle.batch.refusedAtSend': 'The server’s own preflight refused the batch at send time: {{reason}} Zero transfers were sent and a ticket was raised.',
+  'settle.batch.retype': 'Retype the total, digits only, to confirm',
+  'settle.batch.retype.hint': 'Typed, not clicked. The figure is the preflight’s.',
+  'settle.batch.mismatch': 'That is not the batch total.',
+  'settle.batch.send': 'Send {{n}} transfer(s)',
+  'settle.batch.sending': 'Sending {{done}} of {{n}}',
+  'settle.batch.stopped':
+    'The batch stopped at {{collector}}: {{reason}} What was already sent stays sent; the poller finishes it.',
+  'settle.batch.done': 'All {{n}} transfer(s) were sent. The poller resolves their final status.',
+  'settle.batch.noneOk': 'The preflight refused the batch, or nothing in it is payable, so nothing can be sent.',
+
+  'settle.bill.back': 'All bills',
+  'settle.bill.notInPeriod': 'That bill is not in this period.',
+  'settle.bill.notInPeriod.body': 'Pick the period it belongs to, or open it from the list.',
+  'settle.bill.period': 'Period',
+  'settle.bill.total': 'Total',
+  'settle.bill.amount': 'Amount to pay',
+  'settle.bill.account': 'Payout account',
+  'settle.bill.account.none': 'This collector has declared no payout account. Nothing can be paid to nobody.',
+  'settle.bill.declared': 'Name declared',
+  'settle.bill.verified': 'Name on ZaloPay',
+  'settle.bill.verified.none': 'Not returned',
+  'settle.bill.phone': 'Phone',
+  'settle.bill.risk': 'Risk',
+  'settle.bill.risk.open': 'Open the flag review',
+  'settle.bill.attempt': 'Latest attempt',
+  'settle.bill.attempt.reference': 'Reference',
+  'settle.bill.attempt.order': 'Partner order',
+  'settle.bill.attempt.zlp': 'ZaloPay order',
+  'settle.bill.attempt.trans': 'ZaloPay transaction',
+  'settle.bill.attempt.sub': 'Sub code',
+  'settle.bill.attempt.polls': 'Polls',
+  'settle.bill.attempt.created': 'Created',
+  'settle.bill.attempt.settled': 'Settled',
+
+  'settle.pay.title': 'Record the payment',
+  'settle.pay.manual.intro':
+    'Transfer the amount yourself, in ZaloPay or at the bank, to the account above. Then come back and record the reference of that transfer. The database checks the amount against the bill.',
+  'settle.pay.api.intro':
+    'One transfer through ZaloPay for this bill, or a manual payment with its reference. The preflight has been read; the amount is retyped to confirm.',
+  'settle.pay.reference': 'Transaction reference',
+  'settle.pay.reference.hint': 'Required for a manual payment. The reference the bank or ZaloPay gave the transfer.',
+  'settle.pay.retype': 'Retype the amount, digits only',
+  'settle.pay.retype.hint': 'It must match the amount to pay. Typed, not clicked.',
+  'settle.pay.mismatch': 'That is not the amount on this bill.',
+  'settle.pay.markPaid': 'Record as paid',
+  'settle.pay.api.send': 'Send the transfer',
+  'settle.pay.done': 'Recorded. Attempt {{order}}, status: {{status}}.',
+  'settle.pay.sent': 'Sent. Attempt {{order}} is {{status}}; the poller resolves it.',
+  'settle.pay.rejected': 'ZaloPay rejected the transfer (sub code {{sub}}). A new attempt is needed.',
+  'settle.pay.alreadyPaid': 'This bill is paid. Nothing more can be recorded against it.',
+  'settle.pay.locked': 'Locked until the preflight has been read',
+
+  'settle.exceptions.intro': 'Every attempt that needs a person, and every bill that cannot be sent as it is.',
+  'settle.exceptions.empty': 'No exceptions in this period.',
+  'settle.exceptions.empty.body': 'Every attempt is terminal and every bill is inside the limits.',
+  'settle.exceptions.pending': 'Pending inside ZaloPay',
+  'settle.exceptions.pending.body':
+    'ZaloPay holds these transfers in its status 4. Retrying does not resolve it and nothing here retries: ZaloPay’s own team must fix the order. Resolve here only with the outcome ZaloPay confirms, and write down where it was confirmed.',
+  'settle.exceptions.polling': 'Still polling',
+  'settle.exceptions.polling.body':
+    'The answer to these transfers was lost or is still coming. The poller asks ZaloPay on a backoff and moves the attempt when it knows. An operator resolves one only when the polling is exhausted.',
+  'settle.exceptions.neverSent': 'Created, never sent',
+  'settle.exceptions.neverSent.body':
+    'The attempt row exists and the request never left. Nothing resends on a guess; resolve it as failed and pay again.',
+  'settle.exceptions.ceiling': 'Over the bank ceiling',
+  'settle.exceptions.ceiling.body':
+    'ZaloPay sends at most {{ceiling}} per bank transfer. A bill above it cannot go as one transfer, and splitting it is a money decision nobody has taken. Escalate; do not split.',
+  'settle.exceptions.cap': 'Over the cap',
+  'settle.exceptions.cap.body':
+    'Above the per-collector cap of {{cap}}. The batch refuses it by name and raises a ticket; it never pays the cap instead.',
+  'settle.exceptions.blocked': 'Not payable yet',
+  'settle.exceptions.blocked.body':
+    'Bills with something to fix before a transfer: no account, an unverified account, a fractional total, a risk hold.',
+  'settle.exceptions.opened': 'Opened {{elapsed}} ago',
+  'settle.exceptions.polls': '{{n}} poll(s), last at {{at}}',
+  'settle.exceptions.polls.none': 'Not polled yet',
+  'settle.exceptions.events': 'Events',
+  'settle.resolve.title': 'Resolve',
+  'settle.resolve.outcome': 'Outcome',
+  'settle.resolve.succeeded': 'Money moved',
+  'settle.resolve.failed': 'Money did not move',
+  'settle.resolve.reason': 'Reason',
+  'settle.resolve.reason.hint': 'Required. Where the outcome was confirmed and by whom. This is the permission.',
+  'settle.resolve.trans': 'ZaloPay transaction id, if it succeeded',
+  'settle.resolve.submit': 'Resolve the attempt',
+  'settle.resolve.done': 'Resolved: the attempt is now {{status}}.',
+  'settle.resolve.pollerWorking':
+    'The poller is still working on this attempt. Only a pending, exhausted or never-sent attempt is resolved by hand.',
+
+  // ---------------------------------------------------------------------
+  // The flag review (payout brief, Agent C §8 and Agent D BUILD 3). The
+  // `risk.signal.*` entries are templates filled from evidence — see the
+  // header of this file.
+
+  'risk.intro':
+    'Evidence first, verdict second. Every flag is one sentence with the number that caused it; a hold is cleared with a typed reason, and who cleared what stays on the record.',
+  'risk.score': 'Score',
+  'risk.points': '{{n}} pt',
+  'risk.flags': '{{n}} flag(s)',
+  'risk.open': 'Open',
+  'risk.empty': 'No flags in this period.',
+  'risk.empty.body': 'The engine has nothing to say about these bills, or is not running on this server.',
+  'risk.evidence': 'Evidence',
+  'risk.references': 'Recordings named',
+  'risk.proxy.none': 'No proxy clip is served by this server, and the raw footage is never shown here.',
+  'risk.threshold': 'threshold {{v}}, computed {{at}}',
+  'risk.holds.title': 'Hold trail',
+  'risk.holds.none': 'No hold is open on this bill.',
+  'risk.holds.notOnServer':
+    'The risk engine’s routes are not on this server. The flags shown come from the batch summary; the hold trail and the clear action need the engine.',
+  'risk.holds.open': 'Held since {{at}}',
+  'risk.holds.raised': 'Raised {{at}} on {{signals}}',
+  'risk.holds.cleared': 'Cleared {{at}} by {{who}}: {{verdict}} — {{reason}}',
+  'risk.clear.title': 'Clear the hold',
+  'risk.clear.verdict': 'Verdict',
+  'risk.clear.reason': 'Reason',
+  'risk.clear.reason.hint': 'At least ten characters. What you checked and why the bill may be paid.',
+  'risk.clear.submit': 'Clear with this reason',
+  'risk.clear.done': 'Cleared. The bill pays normally from here.',
+  'risk.actions.escalate': 'Escalate',
+  'risk.actions.hold': 'Hold',
+  'risk.actions.unavailable':
+    'Escalation and manual holds have no route on this server yet. The engine raises holds itself; clearing one is the action an operator has.',
+  'risk.band.clear': 'Clear',
+  'risk.band.notice': 'Notice',
+  'risk.band.review': 'Review',
+  'risk.band.hold': 'On hold',
+  'risk.severity.info': 'info',
+  'risk.severity.notice': 'notice',
+  'risk.severity.review': 'review',
+  'risk.severity.hold': 'hold',
+  'risk.verdict.false_positive': 'Checked, nothing wrong',
+  'risk.verdict.accepted': 'Risk accepted, pay anyway',
+  'risk.verdict.resolved': 'Cause fixed',
+
+  'risk.signal.META.EVALUATED': 'Evaluated with {findings} finding(s).',
+  'risk.signal.IDENT.NAME_MISMATCH': 'Name on ZaloPay is {verified_name}; the agreement says {declared_name}.',
+  'risk.signal.IDENT.PHONE_SHARED':
+    'Wallet phone {phone_masked} is also on the payout account of {count} other collector(s): {other_collector_refs}.',
+  'risk.signal.IDENT.ACCOUNT_SHARED':
+    'Bank account {bank_code} ···{account_no_last4} is also on the payout account of {count} other collector(s): {other_collector_refs}.',
+  'risk.signal.IDENT.MUID_SHARED':
+    'ZaloPay wallet {m_u_id_masked} is also on the payout account of {count} other collector(s): {other_collector_refs}.',
+  'risk.signal.IDENT.ACCOUNT_CHANGED_LATE':
+    'The payout account was changed on {changed_at}, {days_before_end} day(s) before the period ended on {period_end}.',
+  'risk.signal.IDENT.UNVERIFIED_KYC':
+    'ZaloPay reported on {verified_at} that this wallet has not completed identity verification (code {sub_return_code}).',
+  'risk.signal.IDENT.KYC_LIMIT_REPEATED':
+    'ZaloPay reported the receiving limit reached {occurrences} times (code {sub_return_code}); more than {max_occurrences} is unusual for one person.',
+  'risk.signal.IDENT.WALLET_LOCKED': 'ZaloPay reported on {verified_at} that this wallet is locked (code {sub_return_code}).',
+  'risk.signal.IDENT.NAME_UNCONFIRMED': 'ZaloPay returned no name to compare with {declared_name}; the declaration is unconfirmed.',
+  'risk.signal.IDENT.KYC_LIMIT': 'ZaloPay reported the wallet’s receiving limit reached (code {sub_return_code}).',
+  'risk.signal.IDENT.NO_WALLET': 'ZaloPay has no wallet for phone {phone_masked} (code {sub_return_code}).',
+  'risk.signal.IDENT.VERIFY_ERROR': 'ZaloPay could not verify the account (code {sub_return_code}).',
+  'risk.signal.VOL.HOURS_PER_DAY':
+    '{hours} hours of recording on {day} across {episodes} episode(s). The daily maximum is {max_hours} hours.',
+  'risk.signal.VOL.ABOVE_COHORT_P95':
+    '{episodes} episodes on {day}. 95 in 100 collector-days have {p95} or fewer ({cohort_days} collector-days compared).',
+  'risk.signal.VOL.STEP_CHANGE':
+    '{minutes} minutes on {day}. This collector’s usual day is {median_minutes} minutes, so this is {ratio}×.',
+  'risk.signal.VOL.NO_GAP': 'Episodes {episode_a} and {episode_b} overlap by {overlap_s} seconds. One person cannot record both at once.',
+  'risk.signal.VOL.NOCTURNAL':
+    '{night_minutes} of {total_minutes} minutes ({share_pct}) were recorded between {night_hours} on task type {task_type}. Night work is a real job; this is context.',
+  'risk.signal.CONT.MOOV_DAMAGED': 'The MP4 {file} fails the container check: {verdict}.',
+  'risk.signal.CONT.TIMING_TRUNCATED':
+    'The {stream} timestamp index stopped early: {pts_rows} rows against {media_packets} media packets. Typical of an interrupted recording.',
+  'risk.signal.CONT.TIMING_PACKET_DELTA':
+    'The {stream} timestamp index has {pts_rows} rows but the media has only {media_packets} packets: the video was cut or rewritten after its index.',
+  'risk.signal.CONT.IMU_CLOCK_DRIFT': 'The IMU clock is off: {clock_outlier_rows} rows carry a time nowhere near the session ({detail}).',
+  'risk.signal.CONT.PTS_MANIFEST_DELTA':
+    'The manifest claims {declared_s} s and the media measures {measured_s} s, a ratio of {ratio}. This device usually reads {baseline_ratio} ({baseline_episodes} episodes).',
+  'risk.signal.CONT.NEAR_DUPLICATE':
+    'The footage matches episode {other_episode_id} by collector {other_collector_ref} ({method}, {match_share_pct} of frames).',
+  'risk.signal.CONT.STATIC_SCENE':
+    'The picture changed very little across {frames} sampled frames: motion {motion_energy}, where normal footage is above {max_motion_energy}.',
+  'risk.signal.CONT.LOW_LUMA_VARIANCE':
+    '{dark_share_pct} of sampled frames are dark and {flat_share_pct} are flat (mean brightness {mean_luma} of 255). The lens may have been covered.',
+  'risk.signal.CONT.AUDIO_ABSENT': 'No usable audio ({reason}) on a task that expects sound ({task_type}).',
+  'risk.signal.CONT.FINGERPRINT': 'A frame fingerprint of {frames} frames was recorded for duplicate checks.',
+  'risk.signal.PROV.PRNU_MISMATCH':
+    'The sensor noise pattern of the footage correlates {correlation} with the fingerprint enrolled for device {device_serial}; a match is above {min_correlation}.',
+  'risk.signal.PROV.IMU_VIDEO_DECORR':
+    'Over {seconds} seconds the motion in the picture and the motion the IMU recorded correlate {correlation}; a real recording is above {min_correlation}.',
+  'risk.signal.PROV.ENCODER_MISMATCH': 'The file was not written the way firmware {firmware} writes files: {mismatches}.',
+  'risk.signal.PROV.SCREEN_RECAPTURE': 'The footage looks like a filmed screen: {cues} ({frames} frames checked).',
+  'risk.signal.PROV.SYNTHETIC_HEURISTIC':
+    'The footage has almost no sensor noise ({noise_floor}, cameras read above {max_noise_floor}). A weak cue on its own.',
+  'risk.signal.OPS.REVIEW_TOO_FAST':
+    'Reviewer {reviewer_ref} recorded a {verdict} verdict in {time_to_verdict_s} s on an episode that runs {measured_duration_s} s.',
+  'risk.signal.OPS.APPROVAL_OUTLIER':
+    'Reviewer {reviewer_ref} approved {approval_rate_pct} of {decided} episodes; the other {reviewers} reviewers approve {cohort_median_pct}.',
+  'risk.signal.OPS.SELF_DEALING': 'Operator {operator_ref} created this collector on {created_at} and also {paid_action} the bill on {paid_at}.',
+  'risk.signal.OPS.CONCENTRATION':
+    'Operator {operator_ref} handled {share_pct} of the {events} actions on this collector’s bills while {operators} operators were active.',
+
+  // ---------------------------------------------------------------------
+  // Payout refusals: `PAYOUT_REFUSALS` (constraints) and `PAYOUT_API_REFUSALS`
+  // (the routes' own) in `payout/routes/payout.ts`. A test asserts every name
+  // in both sets has a sentence in every locale.
+
+  'bo.refused.payout_attempts_previous_not_failed':
+    'This bill already has an attempt that has not failed. A new attempt is only possible after the previous one has failed.',
+  'bo.refused.payout_attempts_total_fractional':
+    'The bill total has a fractional part of a dong, and nobody has decided how to round it. It cannot be paid until they do.',
+  'bo.refused.payout_attempts_amount_check': 'The amount typed does not equal the bill total. Nothing was recorded.',
+  'bo.refused.payout_attempts_account_owner': 'That payout account belongs to a different collector.',
+  'bo.refused.payout_attempts_account_current': 'That payout account is no longer the collector’s current one. Reload the bill.',
+  'bo.refused.payout_attempts_bank_ceiling':
+    'Above ZaloPay’s ceiling of 10,000,000 VND for one bank transfer. It cannot go as one transfer, and splitting it is an escalation, not a button.',
+  'bo.refused.payout_attempts_bank_minimum': 'Below ZaloPay’s minimum of 2,000 VND for a bank transfer.',
+  'bo.refused.payout_attempts_transition_check': 'The attempt cannot move from its current state that way. Reload the list.',
+  'bo.refused.payout_attempts_succeeded_immutable': 'A succeeded attempt is final and cannot be changed.',
+  'bo.refused.payout_attempts_failed_terminal': 'A failed attempt is final. Paying again is a new attempt.',
+  'bo.refused.payout_attempts_pending_operator_only':
+    'An attempt pending inside ZaloPay is moved only by an operator with a typed reason. Nothing else moves it.',
+  'bo.refused.payout_attempts_manual_reference_check': 'A manual payment needs the transaction reference. None was recorded.',
+  'bo.refused.payout_finance_required': 'Only an operator with the finance role may pay or resolve. The server refused.',
+  'bo.refused.payout_separation_of_duty':
+    'The operator who created this collector or approved this bill may not be the one who pays it.',
+  'bo.refused.payout_accounts_current_key': 'The collector already has a current payout account. Reload and try again.',
+  'bo.refused.payout_accounts_append_only': 'A payout account is a record of a declaration and cannot be changed or removed.',
+  'bo.refused.settlements_transition_check':
+    'A settlement on this bill was already paid or moved to exception in between. Reload the bill.',
+  'bo.refused.payout_mode_manual':
+    'The server is in manual payout mode. Transfer the money yourself and record the reference here.',
+  'bo.refused.payout_batch_running': 'A run of this period is already in progress on the server. Wait for its report; nothing was sent twice.',
+  'bo.refused.payout_transfer_rejected': 'ZaloPay rejected the transfer. The run stopped at this bill; the attempt is recorded as failed and nothing after it was sent.',
+  'bo.refused.payout_bill_not_payable': 'Preflight found this bill is not payable. Open the bill for the reason; nothing was sent.',
+  'bo.refused.payout_no_client': 'No ZaloPay client is configured on this server, so no transfer can be sent.',
+  'bo.refused.payout_account_missing': 'This collector has no current payout account.',
+  'bo.refused.payout_account_unverified': 'The collector’s payout account is not verified. ZaloPay must confirm the name first.',
+  'bo.refused.payout_attempts_account_unverified':
+    'The database refused the attempt: the payout account is not verified. ZaloPay must confirm the name first.',
+  'bo.refused.payout_bank_details_unavailable':
+    'A bank transfer through the API needs the full account number, which this server does not keep. Pay it manually.',
+  'bo.refused.payout_cap_exceeded': 'Above the per-collector cap for this period. A ticket was raised; the cap is never paid instead.',
+  'bo.refused.payout_risk_hold': 'The risk engine holds this bill. Clear the hold with a reason in the flag review first.',
+  'bo.refused.payout_already_paid': 'This bill is already paid.',
+  'bo.refused.payout_accounts_id_reused': 'That account reference already names a different declaration.',
+  'bo.refused.payout_attempt_not_resolvable':
+    'This attempt cannot be resolved by hand in its current state. Only a pending, exhausted or never-sent attempt is.',
+  'bo.refused.payout_bill_period_mismatch': 'That bill belongs to a different period.',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -581,6 +979,8 @@ const zh: Record<MessageKey, string> = {
   'bo.device.rollFailed': '采集者列表未能加载，暂时无法绑定。没有任何内容被修改。',
 
   'bo.refused': '已拒绝',
+  'bo.refused.sign_in_rate_limited':
+    '登录尝试失败次数过多。请等待几分钟后重试——该限制会自动解除，无需任何人解锁。',
   'bo.refused.task_claims_capacity': '该任务的领取人数已达上限。',
   'bo.refused.task_claims_exam_gate': '该采集者尚未通过考试，不能领取任务。',
   'bo.refused.task_claims_published_gate': '只有已发布的任务才能被领取。',
@@ -615,14 +1015,983 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.episode_clearing_foreign_delivery': '该交付不属于这个片段。请选择该片段自己的交付。',
   'bo.refused.episode_clearing_paid_on_other_delivery':
     '该片段的另一次交付已审核并结算。改选其他交付属于争议流程，不是清除。',
+  'bo.refused.session_claim_missing': '该采集者未领取此任务，为其录制的内容无法结算。请先领取任务。',
+  'bo.refused.session_claim_released': '该采集者已释放对此任务的领取。需要重新领取后才能登记采集会话。',
+  'bo.refused.session_task_not_published': '该任务已下架，不能再登记新的采集会话。',
+  'bo.refused.review_disputes_open_key': '该审核结果已在申诉中。',
+  'bo.refused.review_disputes_decided_check': '该审核尚未给出结果，无可申诉的内容。',
+  'bo.refused.review_disputes_final_check': '该结果本身已是复审结果，复审为最终结论。',
+  'bo.refused.review_disputes_unbilled_check': '该结果已生成账单或已支付，账单不可修改。',
   'bo.refused.unknown': '服务端拒绝了该操作。',
+  'bo.refused.settlements_not_in_exception': '该结算记录不在异常状态，无需释放。',
+  'bo.refused.settle_export_bill_in_exception':
+    '本周期内有账单包含异常状态的明细。导出文件的合计与明细将无法对上，因此在释放该明细之前暂不导出。',
+  'bo.refused.payout_settlement_exception': '该账单中有一条结算记录处于异常状态。请先释放，账单才能支付。',
 
   'theme.toggle': '主题',
   'theme.light': '浅色',
   'theme.dark': '深色',
+
+  'settle.title': '结算',
+  'settle.intro': '某个周期的账单、钱包余额与之的对比、引擎标记的内容，以及每笔付款的记录。这里的每个数字都来自服务端；本页不做任何加总或取整。',
+  'settle.period': '周期起始日',
+  'settle.period.hint': '从这一天起一个结算周期。周期起始日落在其中的账单。',
+  'settle.period.apply': '打开',
+  'settle.tab.bills': '账单',
+  'settle.tab.preflight': '付款前检查',
+  'settle.tab.flags': '风险标记',
+  'settle.tab.exceptions': '异常',
+  'settle.mode.manual': '人工付款模式：由操作员自行转账，并在此登记交易参考号。',
+  'settle.mode.api': 'API 付款模式：在付款前检查页通过 ZaloPay 发送转账。',
+  'settle.readonly': '只读',
+  'settle.readonly.operator': '本会话没有财务角色。所有数字均可查看；所有付款操作在此禁用，服务端也会拒绝。',
+  'settle.readonly.unknown': '无法确认本会话的财务角色，付款操作已禁用。请刷新后重试。',
+  'settle.readonly.refused': '服务端拒绝：本会话没有财务角色。没有任何内容被修改。',
+  'settle.failed': '请求未送达服务端。没有任何内容被修改。',
+  'settle.invalid': '服务端无法读取该请求。没有任何内容被修改。',
+  'settle.gone': '该账单或付款尝试已不存在于服务端。请刷新列表。',
+  'settle.loadFailed': '该周期未能加载。',
+  'settle.loadFailed.body': '结算页面通过 API 读取数据。没有任何内容被修改。',
+  'settle.empty': '该周期没有账单。',
+  'settle.empty.body': '账单由已审核的结算记录生成。请生成该周期，或选择另一个起始日。',
+  'settle.generate': '生成账单',
+  'settle.generate.hint': '为该周期内所有待结算记录开具账单。重复执行不会产生变化。',
+  'settle.generate.result': '已创建 {{created}} 张账单；{{notPayable}} 条金额为零的结算记录未列入。',
+  'settle.export.payout': '导出付款 CSV',
+  'settle.export.payout.hint': '逐行及整体加哈希，并记录在案。仅限财务。',
+  'settle.export.lines': '导出明细 CSV',
+  'settle.col.collector': '采集者',
+  'settle.col.minutes': '有效分钟',
+  'settle.col.gross': '总额',
+  'settle.col.withheld': '代扣',
+  'settle.col.net': '实付',
+  'settle.col.band': '风险',
+  'settle.col.attempt': '付款状态',
+  'settle.col.open': '打开',
+  'settle.sort': '按{{column}}排序',
+  'settle.withheld.note': '个人所得税代扣比例尚未确定。服务端报告代扣为 0，实付等于总额。',
+  'settle.asStored': '按存储值显示，单位 {{currency}}。此处不取整。',
+  'settle.wholeVnd': '整数越南盾，由数据库换算。',
+  'settle.wholeVnd.none': '没有整数越南盾金额：总额带有小数部分，而取整规则尚未决定。',
+  'settle.lines': '{{n}} 条明细',
+  'settle.attempt.none': '尚无付款尝试',
+  'settle.attempt.created': '已创建',
+  'settle.attempt.submitted': '已提交',
+  'settle.attempt.processing': '处理中',
+  'settle.attempt.pending_zlp': 'ZaloPay 待处理',
+  'settle.attempt.succeeded': '已支付',
+  'settle.attempt.failed': '失败',
+  'settle.attempt.unknown': '未知，轮询中',
+  'settle.method.WALLET': 'ZaloPay 钱包',
+  'settle.method.BANK_ACCOUNT': '银行账户',
+  'settle.method.BANK_CARD': '银行卡',
+  'settle.verify.unverified': '未验证',
+  'settle.verify.verified': '已验证',
+  'settle.verify.name_mismatch': '姓名不符',
+  'settle.verify.no_wallet': '没有钱包',
+  'settle.verify.locked': '钱包已锁定',
+  'settle.verify.kyc_limit': '收款额度上限',
+  'settle.verify.error': '验证出错',
+  'settle.issue.title': '这张账单距离转账还差什么',
+  'settle.issue.none': '没有。这张账单可以支付。',
+  'settle.issue.no_account': '采集者尚未申报收款账户。',
+  'settle.issue.account_unverified': '收款账户尚未通过 ZaloPay 验证。',
+  'settle.issue.total_fractional': '总额带有小数部分，而取整规则尚未决定。',
+  'settle.issue.over_bank_ceiling': '超过 ZaloPay 单笔银行转账上限 10,000,000 越南盾。',
+  'settle.issue.under_bank_minimum': '低于 ZaloPay 银行转账最低金额 2,000 越南盾。',
+  'settle.issue.over_cap': '超过本周期每位采集者的上限。',
+  'settle.issue.risk_hold': '风险引擎已暂停这张账单的支付。',
+  'settle.issue.attempt_open': '这张账单还有一次付款尝试未完成。',
+  'settle.issue.already_paid': '这张账单已支付。',
+
+  'settle.preflight.intro': '付款前必读。本批次将发送的内容、钱包余额、哪些账户未验证，以及引擎标记了谁。',
+  'settle.preflight.balance': '钱包余额',
+  'settle.preflight.balance.none': '无法读取：本服务端未配置 ZaloPay 客户端。人工试点通过银行付款，这是预期情况。',
+  'settle.preflight.total': '批次总额',
+  'settle.preflight.required': '含余量的所需金额',
+  'settle.preflight.required.hint': '总额加 5%，这是批次程序坚持保留的余量。',
+  'settle.preflight.shortfall': '缺口',
+  'settle.preflight.ok': '本批次可以发送：{{bills}} 张账单中有 {{payable}} 张可支付。',
+  'settle.preflight.refused': '本批次被整体拒绝。不会发送任何转账。',
+  'settle.preflight.serverSaid': '服务端回复',
+  'settle.preflight.ranAt': '付款前检查执行于 {{at}}',
+  'settle.preflight.rerun': '重新执行',
+  'settle.preflight.bands': '按风险等级统计账单',
+  'settle.preflight.accounts': '收款账户',
+  'settle.preflight.accounts.verified': '已验证',
+  'settle.preflight.accounts.unverified': '未验证',
+  'settle.preflight.accounts.mismatch': '姓名不符',
+  'settle.preflight.accounts.missing': '没有账户',
+  'settle.preflight.limits': '限额',
+  'settle.preflight.ceiling': '超过银行转账上限 {{ceiling}}',
+  'settle.preflight.cap': '超过上限 {{cap}}',
+  'settle.preflight.cap.none': '未配置每位采集者的上限。该数值需要上报决定。',
+  'settle.preflight.others': '其他不可支付项',
+  'settle.preflight.anomalies': '风险最高者优先',
+  'settle.preflight.anomalies.hint': '风险评分最高的 {{n}} 张账单，每条标记都用通俗语句说明。打开风险标记页进行处理。',
+  'settle.preflight.anomalies.none': '引擎未对本周期任何账单发出标记。',
+  'settle.preflight.continue.manual': '付款前检查已阅。从列表中打开一张账单登记人工付款；在本周期的此页面被阅读之前，付款控件保持锁定。',
+  'settle.preflight.stale': '本会话尚未对该周期执行付款前检查。请先执行，再付款。',
+  'settle.preflight.expired': '付款前检查已超过五分钟。余额、暂停和异常列表可能已变化；请重新执行后再付款。',
+  'settle.preflight.changed': '自付款前检查以来批次已发生变化——有付款、申报或暂停。请重新执行后再付款。',
+  'settle.preflight.open': '执行付款前检查',
+
+  'settle.batch.title': '发送批次',
+  'settle.batch.sentence': '发送 {{n}} 笔转账，合计 {{total}}。',
+  'settle.batch.serverLoop': '只发一个请求。服务端在那一刻重新执行自己的付款前检查，逐笔发送并在两笔之间暂停，遇到第一次拒绝即停止，然后返回报告。本浏览器不会发送任何转账。',
+  'settle.batch.notOnServer': '本服务端尚无批次执行路由。按设计，批次是服务端的循环；在该路由存在之前，此处不会发送任何内容。',
+  'settle.batch.refusedAtSend': '服务端在发送时自行执行的付款前检查拒绝了批次：{{reason}} 未发送任何转账，并已生成工单。',
+  'settle.batch.retype': '重新输入总额（仅数字）以确认',
+  'settle.batch.retype.hint': '手动输入，而非点击。数字来自付款前检查。',
+  'settle.batch.mismatch': '这不是批次总额。',
+  'settle.batch.send': '发送 {{n}} 笔转账',
+  'settle.batch.sending': '正在发送第 {{done}} 笔，共 {{n}} 笔',
+  'settle.batch.stopped': '批次在 {{collector}} 处停止：{{reason}} 已发送的保持已发送；由轮询程序完成。',
+  'settle.batch.done': '全部 {{n}} 笔转账已发送。最终状态由轮询程序确定。',
+  'settle.batch.noneOk': '付款前检查拒绝了本批次，或其中没有可支付的账单，因此无法发送。',
+
+  'settle.bill.back': '全部账单',
+  'settle.bill.notInPeriod': '该账单不属于本周期。',
+  'settle.bill.notInPeriod.body': '请选择它所属的周期，或从列表中打开。',
+  'settle.bill.period': '周期',
+  'settle.bill.total': '总额',
+  'settle.bill.amount': '应付金额',
+  'settle.bill.account': '收款账户',
+  'settle.bill.account.none': '该采集者尚未申报收款账户。没有收款人就无法付款。',
+  'settle.bill.declared': '申报姓名',
+  'settle.bill.verified': 'ZaloPay 上的姓名',
+  'settle.bill.verified.none': '未返回',
+  'settle.bill.phone': '手机号',
+  'settle.bill.risk': '风险',
+  'settle.bill.risk.open': '打开风险标记页',
+  'settle.bill.attempt': '最近一次付款尝试',
+  'settle.bill.attempt.reference': '交易参考号',
+  'settle.bill.attempt.order': '合作方订单号',
+  'settle.bill.attempt.zlp': 'ZaloPay 订单号',
+  'settle.bill.attempt.trans': 'ZaloPay 交易号',
+  'settle.bill.attempt.sub': '子返回码',
+  'settle.bill.attempt.polls': '轮询次数',
+  'settle.bill.attempt.created': '创建时间',
+  'settle.bill.attempt.settled': '完成时间',
+
+  'settle.pay.title': '登记付款',
+  'settle.pay.manual.intro': '请自行通过 ZaloPay 或银行向上述账户转账。然后回到这里登记该笔转账的参考号。数据库会核对金额与账单是否一致。',
+  'settle.pay.api.intro': '为这张账单通过 ZaloPay 发送一笔转账，或登记一笔带参考号的人工付款。付款前检查已阅；金额需重新输入以确认。',
+  'settle.pay.reference': '交易参考号',
+  'settle.pay.reference.hint': '人工付款必填。银行或 ZaloPay 为该笔转账提供的参考号。',
+  'settle.pay.retype': '重新输入金额（仅数字）',
+  'settle.pay.retype.hint': '必须与应付金额一致。手动输入，而非点击确认。',
+  'settle.pay.mismatch': '这不是本账单的金额。',
+  'settle.pay.markPaid': '登记为已支付',
+  'settle.pay.api.send': '发送转账',
+  'settle.pay.done': '已登记。付款尝试 {{order}}，状态：{{status}}。',
+  'settle.pay.sent': '已发送。付款尝试 {{order}} 状态为 {{status}}；由轮询程序确定结果。',
+  'settle.pay.rejected': 'ZaloPay 拒绝了该转账（子返回码 {{sub}}）。需要新的付款尝试。',
+  'settle.pay.alreadyPaid': '这张账单已支付。不能再登记任何内容。',
+  'settle.pay.locked': '在阅读付款前检查之前保持锁定',
+
+  'settle.exceptions.intro': '所有需要人工处理的付款尝试，以及所有按现状无法发送的账单。',
+  'settle.exceptions.empty': '本周期没有异常。',
+  'settle.exceptions.empty.body': '所有付款尝试均已终结，所有账单均在限额之内。',
+  'settle.exceptions.pending': 'ZaloPay 内部待处理',
+  'settle.exceptions.pending.body': '这些转账处于 ZaloPay 的状态 4。重试无法解决，此处也不会重试：必须由 ZaloPay 自己的团队修复该订单。只有在 ZaloPay 确认结果后才在此处理，并写明是在哪里得到确认的。',
+  'settle.exceptions.polling': '轮询中',
+  'settle.exceptions.polling.body': '这些转账的回复丢失或仍在等待。轮询程序按退避间隔向 ZaloPay 查询，得知结果后推进状态。只有在轮询耗尽时才由操作员处理。',
+  'settle.exceptions.neverSent': '已创建，从未发送',
+  'settle.exceptions.neverSent.body': '付款尝试记录存在，但请求从未发出。系统不会凭猜测重发；请将其处理为失败，然后重新付款。',
+  'settle.exceptions.ceiling': '超过银行转账上限',
+  'settle.exceptions.ceiling.body': 'ZaloPay 每笔银行转账最多 {{ceiling}}。高于此金额的账单无法作为一笔转账发送，而拆分是尚未有人做出的资金决定。请上报，不要拆分。',
+  'settle.exceptions.cap': '超过上限',
+  'settle.exceptions.cap.body': '超过每位采集者上限 {{cap}}。批次会点名拒绝并生成工单；绝不会改为支付上限金额。',
+  'settle.exceptions.blocked': '暂不可支付',
+  'settle.exceptions.blocked.body': '转账前还有事项需要处理的账单：没有账户、账户未验证、总额带小数、风险暂停。',
+  'settle.exceptions.opened': '已开启 {{elapsed}}',
+  'settle.exceptions.polls': '已轮询 {{n}} 次，最近一次 {{at}}',
+  'settle.exceptions.polls.none': '尚未轮询',
+  'settle.exceptions.events': '事件',
+  'settle.resolve.title': '处理',
+  'settle.resolve.outcome': '结果',
+  'settle.resolve.succeeded': '资金已到账',
+  'settle.resolve.failed': '资金未到账',
+  'settle.resolve.reason': '原因',
+  'settle.resolve.reason.hint': '必填。结果在哪里、由谁确认。这就是授权依据。',
+  'settle.resolve.trans': 'ZaloPay 交易号（如已成功）',
+  'settle.resolve.submit': '处理该付款尝试',
+  'settle.resolve.done': '已处理：付款尝试现在为 {{status}}。',
+  'settle.resolve.pollerWorking': '轮询程序仍在处理该付款尝试。只有待处理、轮询耗尽或从未发送的尝试才能人工处理。',
+
+  'risk.intro': '先看证据，再下结论。每条标记是一句话，附带触发它的数字；暂停需填写原因才能解除，谁解除了什么会一直留在记录中。',
+  'risk.score': '评分',
+  'risk.points': '{{n}} 分',
+  'risk.flags': '{{n}} 条标记',
+  'risk.open': '打开',
+  'risk.empty': '本周期没有标记。',
+  'risk.empty.body': '引擎对这些账单没有发现，或者本服务端未运行引擎。',
+  'risk.evidence': '证据',
+  'risk.references': '涉及的录制',
+  'risk.proxy.none': '本服务端不提供代理片段，此处也从不展示原始素材。',
+  'risk.threshold': '阈值版本 {{v}}，计算于 {{at}}',
+  'risk.holds.title': '暂停记录',
+  'risk.holds.none': '这张账单没有未解除的暂停。',
+  'risk.holds.notOnServer': '本服务端未挂载风险引擎的路由。所示标记来自批次摘要；暂停记录和解除操作需要引擎。',
+  'risk.holds.open': '自 {{at}} 起暂停',
+  'risk.holds.raised': '于 {{at}} 因 {{signals}} 发起',
+  'risk.holds.cleared': '于 {{at}} 由 {{who}} 解除：{{verdict}} — {{reason}}',
+  'risk.clear.title': '解除暂停',
+  'risk.clear.verdict': '结论',
+  'risk.clear.reason': '原因',
+  'risk.clear.reason.hint': '至少十个字符。您核查了什么，以及为什么可以支付这张账单。',
+  'risk.clear.submit': '以此原因解除',
+  'risk.clear.done': '已解除。此后账单按正常流程支付。',
+  'risk.actions.escalate': '上报',
+  'risk.actions.hold': '暂停',
+  'risk.actions.unavailable': '本服务端尚无上报和人工暂停的路由。暂停由引擎自行发起；操作员能做的是解除。',
+  'risk.band.clear': '正常',
+  'risk.band.notice': '提示',
+  'risk.band.review': '需复核',
+  'risk.band.hold': '已暂停支付',
+  'risk.severity.info': '信息',
+  'risk.severity.notice': '提示',
+  'risk.severity.review': '复核',
+  'risk.severity.hold': '暂停',
+  'risk.verdict.false_positive': '已核查，无问题',
+  'risk.verdict.accepted': '接受风险，照常支付',
+  'risk.verdict.resolved': '原因已解决',
+
+  'risk.signal.META.EVALUATED': '已评估，发现 {findings} 项。',
+  'risk.signal.IDENT.NAME_MISMATCH': 'ZaloPay 上的姓名为 {verified_name}，协议上的姓名为 {declared_name}。',
+  'risk.signal.IDENT.PHONE_SHARED': '钱包手机号 {phone_masked} 同时出现在另外 {count} 位采集者的收款账户上：{other_collector_refs}。',
+  'risk.signal.IDENT.ACCOUNT_SHARED': '银行账户 {bank_code} ···{account_no_last4} 同时出现在另外 {count} 位采集者的收款账户上：{other_collector_refs}。',
+  'risk.signal.IDENT.MUID_SHARED': 'ZaloPay 钱包 {m_u_id_masked} 同时出现在另外 {count} 位采集者的收款账户上：{other_collector_refs}。',
+  'risk.signal.IDENT.ACCOUNT_CHANGED_LATE': '收款账户于 {changed_at} 更改，距结算周期 {period_end} 结束仅 {days_before_end} 天。',
+  'risk.signal.IDENT.UNVERIFIED_KYC': 'ZaloPay 于 {verified_at} 反馈该钱包尚未完成实名认证（代码 {sub_return_code}）。',
+  'risk.signal.IDENT.KYC_LIMIT_REPEATED': 'ZaloPay 反馈收款额度已达上限 {occurrences} 次（代码 {sub_return_code}）；一个人超过 {max_occurrences} 次并不常见。',
+  'risk.signal.IDENT.WALLET_LOCKED': 'ZaloPay 于 {verified_at} 反馈该钱包已被锁定（代码 {sub_return_code}）。',
+  'risk.signal.IDENT.NAME_UNCONFIRMED': 'ZaloPay 未返回可与 {declared_name} 比对的姓名；申报尚未得到确认。',
+  'risk.signal.IDENT.KYC_LIMIT': 'ZaloPay 反馈该钱包的收款额度已达上限（代码 {sub_return_code}）。',
+  'risk.signal.IDENT.NO_WALLET': 'ZaloPay 没有与手机号 {phone_masked} 对应的钱包（代码 {sub_return_code}）。',
+  'risk.signal.IDENT.VERIFY_ERROR': 'ZaloPay 无法验证该账户（代码 {sub_return_code}）。',
+  'risk.signal.VOL.HOURS_PER_DAY': '{day} 当天 {episodes} 个片段合计录制 {hours} 小时，每日上限为 {max_hours} 小时。',
+  'risk.signal.VOL.ABOVE_COHORT_P95': '{day} 当天录制了 {episodes} 个片段；100 个采集者日中有 95 个不超过 {p95} 个（共比较 {cohort_days} 个采集者日）。',
+  'risk.signal.VOL.STEP_CHANGE': '{day} 当天录制 {minutes} 分钟，该采集者平时每天约 {median_minutes} 分钟，为平时的 {ratio} 倍。',
+  'risk.signal.VOL.NO_GAP': '片段 {episode_a} 与 {episode_b} 在时间上重叠 {overlap_s} 秒，一个人无法同时录制两段。',
+  'risk.signal.VOL.NOCTURNAL': '任务类型 {task_type} 的 {total_minutes} 分钟中有 {night_minutes} 分钟（{share_pct}）录制于 {night_hours} 之间。夜班是正常工作，此项仅供参考。',
+  'risk.signal.CONT.MOOV_DAMAGED': 'MP4 文件 {file} 未通过容器检查：{verdict}。',
+  'risk.signal.CONT.TIMING_TRUNCATED': '{stream} 的时间戳索引提前结束：{pts_rows} 行，而媒体有 {media_packets} 个数据包。这是录制被中断的典型表现。',
+  'risk.signal.CONT.TIMING_PACKET_DELTA': '{stream} 的时间戳索引有 {pts_rows} 行，但媒体只有 {media_packets} 个数据包：视频在建立索引之后被截断或改写。',
+  'risk.signal.CONT.IMU_CLOCK_DRIFT': 'IMU 时钟异常：{clock_outlier_rows} 行的时间与本次会话相差甚远（{detail}）。',
+  'risk.signal.CONT.PTS_MANIFEST_DELTA': '清单声称 {declared_s} 秒，媒体实测 {measured_s} 秒，比值 {ratio}；该设备通常为 {baseline_ratio}（基于 {baseline_episodes} 个片段）。',
+  'risk.signal.CONT.NEAR_DUPLICATE': '画面与采集者 {other_collector_ref} 的片段 {other_episode_id} 相同（{method}，{match_share_pct} 的帧匹配）。',
+  'risk.signal.CONT.STATIC_SCENE': '{frames} 个抽样帧之间画面几乎没有变化：运动量 {motion_energy}，正常拍摄高于 {max_motion_energy}。',
+  'risk.signal.CONT.LOW_LUMA_VARIANCE': '{dark_share_pct} 的抽样帧过暗，{flat_share_pct} 的帧没有细节（平均亮度 {mean_luma}/255）。镜头可能被遮挡。',
+  'risk.signal.CONT.AUDIO_ABSENT': '没有可用的音频（{reason}），而任务类型 {task_type} 应当有声音。',
+  'risk.signal.CONT.FINGERPRINT': '已记录 {frames} 帧的画面指纹，用于重复检查。',
+  'risk.signal.PROV.PRNU_MISMATCH': '画面的传感器噪声模式与设备 {device_serial} 登记的指纹相关性为 {correlation}，匹配应高于 {min_correlation}。',
+  'risk.signal.PROV.IMU_VIDEO_DECORR': '在 {seconds} 秒内，画面中的运动与 IMU 记录的运动相关性为 {correlation}，真实录制应高于 {min_correlation}。',
+  'risk.signal.PROV.ENCODER_MISMATCH': '该文件的写入方式与固件 {firmware} 不同：{mismatches}。',
+  'risk.signal.PROV.SCREEN_RECAPTURE': '画面像是翻拍的屏幕：{cues}（检查了 {frames} 帧）。',
+  'risk.signal.PROV.SYNTHETIC_HEURISTIC': '画面几乎没有传感器噪声（{noise_floor}，相机通常高于 {max_noise_floor}）。单独看只是弱线索。',
+  'risk.signal.OPS.REVIEW_TOO_FAST': '审核员 {reviewer_ref} 用 {time_to_verdict_s} 秒给出了 {verdict} 结论，而该片段时长 {measured_duration_s} 秒。',
+  'risk.signal.OPS.APPROVAL_OUTLIER': '审核员 {reviewer_ref} 在 {decided} 个片段中通过了 {approval_rate_pct}，其他 {reviewers} 位审核员的通过率为 {cohort_median_pct}。',
+  'risk.signal.OPS.SELF_DEALING': '操作员 {operator_ref} 于 {created_at} 创建了该采集者，又于 {paid_at} 对账单执行了 {paid_action}。',
+  'risk.signal.OPS.CONCENTRATION': '在 {operators} 位操作员都在处理的情况下，操作员 {operator_ref} 处理了该采集者账单 {events} 次操作中的 {share_pct}。',
+
+  'bo.refused.payout_attempts_previous_not_failed': '这张账单已有一次未失败的付款尝试。只有在前一次尝试失败之后才能发起新的尝试。',
+  'bo.refused.payout_attempts_total_fractional': '账单总额带有小数部分，而取整规则尚未决定。在决定之前无法支付。',
+  'bo.refused.payout_attempts_amount_check': '输入的金额与账单总额不一致。没有登记任何内容。',
+  'bo.refused.payout_attempts_account_owner': '该收款账户属于另一位采集者。',
+  'bo.refused.payout_attempts_account_current': '该收款账户已不是采集者当前的账户。请刷新账单。',
+  'bo.refused.payout_attempts_bank_ceiling': '超过 ZaloPay 单笔银行转账上限 10,000,000 越南盾。无法作为一笔转账发送，拆分需要上报决定，而不是一个按钮。',
+  'bo.refused.payout_attempts_bank_minimum': '低于 ZaloPay 银行转账最低金额 2,000 越南盾。',
+  'bo.refused.payout_attempts_transition_check': '付款尝试不能以这种方式从当前状态转换。请刷新列表。',
+  'bo.refused.payout_attempts_succeeded_immutable': '已成功的付款尝试是最终状态，不能更改。',
+  'bo.refused.payout_attempts_failed_terminal': '已失败的付款尝试是最终状态。再次付款是一次新的尝试。',
+  'bo.refused.payout_attempts_pending_operator_only': '在 ZaloPay 内部待处理的付款尝试只能由操作员填写原因后推进。其他任何方式都不能推进它。',
+  'bo.refused.payout_attempts_manual_reference_check': '人工付款需要交易参考号。没有登记任何内容。',
+  'bo.refused.payout_finance_required': '只有具备财务角色的操作员才能付款或处理。服务端已拒绝。',
+  'bo.refused.payout_separation_of_duty': '创建该采集者或批准该账单的操作员不能是付款的操作员。',
+  'bo.refused.payout_accounts_current_key': '该采集者已有当前收款账户。请刷新后重试。',
+  'bo.refused.payout_accounts_append_only': '收款账户是申报记录，不能修改或删除。',
+  'bo.refused.settlements_transition_check': '这张账单上的某条结算记录在此期间已被支付或移至异常。请刷新账单。',
+  'bo.refused.payout_mode_manual': '服务端处于人工付款模式。请自行转账，并在此登记参考号。',
+  'bo.refused.payout_batch_running': '该周期的批次已在服务端执行中。请等待其报告；不会重复发送。',
+  'bo.refused.payout_transfer_rejected': 'ZaloPay 拒绝了该转账。批次在这张账单处停止；该尝试已记录为失败，其后的账单均未发送。',
+  'bo.refused.payout_bill_not_payable': '预检发现这张账单不可支付。请打开账单查看原因；没有发送任何转账。',
+  'bo.refused.payout_no_client': '本服务端未配置 ZaloPay 客户端，无法发送任何转账。',
+  'bo.refused.payout_account_missing': '该采集者没有当前收款账户。',
+  'bo.refused.payout_account_unverified': '该采集者的收款账户未经验证。必须先由 ZaloPay 确认姓名。',
+  'bo.refused.payout_attempts_account_unverified': '数据库拒绝了该付款尝试：收款账户未经验证。必须先由 ZaloPay 确认姓名。',
+  'bo.refused.payout_bank_details_unavailable': '通过 API 进行银行转账需要完整账号，而本服务端不保存账号。请人工付款。',
+  'bo.refused.payout_cap_exceeded': '超过本周期每位采集者的上限。已生成工单；绝不会改为支付上限金额。',
+  'bo.refused.payout_risk_hold': '风险引擎已暂停这张账单。请先在风险标记页填写原因解除暂停。',
+  'bo.refused.payout_already_paid': '这张账单已支付。',
+  'bo.refused.payout_accounts_id_reused': '该账户编号已属于另一条不同的申报。',
+  'bo.refused.payout_attempt_not_resolvable': '该付款尝试在当前状态下不能人工处理。只有待处理、轮询耗尽或从未发送的尝试才可以。',
+  'bo.refused.payout_bill_period_mismatch': '该账单属于另一个周期。',
 };
 
-export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { en, zh };
+const vi: Record<MessageKey, string> = {
+  'app.name': 'PlayerOne',
+  'app.review': 'Duyệt',
+  'app.signOut': 'Đăng xuất',
+  'app.language': 'Ngôn ngữ',
+
+  'login.title': 'Đăng nhập để duyệt',
+  'login.intro':
+    'Hai thông tin xác thực, như mọi nơi khác trong dịch vụ này: máy chứng minh địa điểm, nhân viên chứng minh danh tính.',
+  'login.machine': 'Mã máy',
+  'login.machineSecret': 'Khóa của máy',
+  'login.operator': 'Mã nhân viên',
+  'login.operatorSecret': 'Khóa của nhân viên',
+  'login.role': 'Đăng nhập với vai trò',
+  'login.roleCounter': 'Trung tâm tải lên',
+  'login.roleReviewer': 'Người duyệt',
+  'login.reviewer': 'Mã người duyệt',
+  'login.reviewerSecret': 'Khóa của người duyệt',
+  'login.reviewerIntro':
+    'Một thông tin xác thực. Người duyệt làm việc từ xa, không ở quầy, nên không cần chứng minh máy — và phiên chỉ vào được phần duyệt.',
+  'login.submit': 'Đăng nhập',
+  'login.failed': 'Thông tin xác thực không được chấp nhận.',
+  'login.mismatch': 'Máy và nhân viên thuộc hai trung tâm tải lên khác nhau.',
+
+  'queue.depth': 'Trong hàng đợi',
+  'queue.average': 'Trung bình mỗi kết luận',
+  'queue.empty.title': 'Không có gì để duyệt',
+  'queue.empty.body':
+    'Mọi phiên đã có chủ và qua kiểm tra toàn vẹn đều đã được kết luận. Tư liệu mới sẽ xuất hiện ở đây khi được nhập.',
+  'queue.refresh': 'Kiểm tra lại',
+
+  'meta.episode': 'Phiên',
+  'meta.folder': 'Thư mục trên thẻ',
+  'meta.task': 'Nhiệm vụ',
+  'meta.rate': 'Mỗi phút',
+  'meta.collector': 'Cộng tác viên',
+  'meta.scenario': 'Bối cảnh',
+  'meta.device': 'Thiết bị',
+  'meta.firmware': 'Firmware thiết bị',
+  'meta.measured': 'Đo được',
+  'meta.claimed': 'Thiết bị khai',
+  'meta.discrepancy': 'Chênh lệch',
+  'meta.recorded': 'Ghi lúc',
+  'meta.timing': 'Nguồn thời gian',
+  'meta.attribution': 'Quy chủ',
+  'meta.flags': 'Cờ',
+  'meta.declared': 'Cộng tác viên khai',
+  'meta.othersInFrame': 'Có người khác trong khung hình',
+  'meta.sensitive': 'Thông tin nhạy cảm',
+  'meta.yes': 'Có',
+  'meta.no': 'Không',
+  'meta.none': 'Không có',
+  'meta.unknown': 'Không rõ',
+  'meta.claimHint': 'Chỉ để tham khảo. Tệp khai báo của thiết bị thường ghi dài hơn thực tế.',
+  'meta.measuredHint': 'Kết luận được chấm dựa trên con số này.',
+
+  'player.play': 'Phát',
+  'player.pause': 'Tạm dừng',
+  'player.rate': 'Tốc độ',
+  'player.part': 'Phần',
+  'player.position': 'Vị trí phát',
+  'player.of': 'trên',
+  'player.loading': 'Đang tải tư liệu',
+
+  'mark.in': 'Đánh dấu đầu',
+  'mark.out': 'Đánh dấu cuối',
+  'mark.clear': 'Xóa đoạn',
+  'mark.pending': 'Đã đặt điểm đầu. Nhấn O để đóng đoạn.',
+  'mark.orphanOut': 'Nhấn I trước để mở một đoạn.',
+  'mark.spans': 'Các đoạn đã đánh dấu',
+  'mark.none': 'Chưa đánh dấu gì',
+  'mark.estimate': 'Ước tính phần dùng được',
+  'mark.estimateHint': 'Chỉ là ước tính. Con số của máy chủ quyết định khoản thanh toán.',
+  'mark.needsSpan': 'Kết luận đạt một phần cần ít nhất một đoạn được đánh dấu.',
+
+  'verdict.good': 'Đạt',
+  'verdict.partial': 'Đạt một phần',
+  'verdict.bad': 'Từ chối',
+  'verdict.commit': 'Ghi nhận và tiếp tục',
+  'verdict.note': 'Ghi chú (không bắt buộc)',
+  'verdict.reasons': 'Lý do',
+  'verdict.reasonsRequired': 'Từ chối phải nêu ít nhất một lý do.',
+  'verdict.committing': 'Đang ghi kết luận',
+
+  'state.leaseExpired.title': 'Phiên này đã được giao lại',
+  'state.leaseExpired.body':
+    'Lượt nhận đã hết hạn và người duyệt khác có thể đang giữ nó. Kết luận bạn đang chuẩn bị đã bị bỏ.',
+  'state.leaseExpired.action': 'Nhận phiên tiếp theo',
+  'state.playbackWithheld.title': 'Phiên này chưa mở để duyệt',
+  'state.playbackWithheld.body':
+    'Việc phát tư liệu gốc từ xa chưa được cho phép, nên ở đây chưa có gì để duyệt. Không phiên nào bị lấy khỏi hàng đợi, và không thể đưa kết luận khi chưa xem tư liệu. Màn hình này sẽ hoạt động ngay khi phương án phát được duyệt.',
+  'state.mediaFailed.title': 'Tư liệu không phát được',
+  'state.mediaFailed.body':
+    'Bản ghi có trong kho nhưng máy này không đọc được tệp. Đó là lỗi của máy này, không phải của bản ghi.',
+  'state.mediaFailed.action': 'Bỏ qua phiên này',
+  'state.writeFailed.title': 'Kết luận chưa được ghi',
+  'state.writeFailed.body':
+    'Lệnh ghi không đến được máy chủ. Chưa có gì được thanh toán và chưa chuyển sang phiên nào. Thử lại, hoặc trả phiên để nó quay về hàng đợi.',
+  'state.writeFailed.retry': 'Thử lại',
+  'state.writeFailed.release': 'Trả phiên',
+  'state.offline.title': 'Mất kết nối',
+  'state.offline.body': 'Không thể ghi kết luận khi máy này ngoại tuyến.',
+  'state.loadFailed.title': 'Không kết nối được hàng đợi',
+
+  'shortcuts.title': 'Bàn phím',
+  'shortcuts.show': 'Phím tắt',
+  'shortcuts.spaceKey': 'Phím cách',
+  'shortcuts.playPause': 'Phát hoặc tạm dừng',
+  'shortcuts.seek': 'Lùi hoặc tiến 5 giây',
+  'shortcuts.frame': 'Lùi hoặc tiến một khung hình',
+  'shortcuts.rate': 'Chậm hơn hoặc nhanh hơn',
+  'shortcuts.markIn': 'Đánh dấu đầu',
+  'shortcuts.markOut': 'Đánh dấu cuối',
+  'shortcuts.clear': 'Xóa đoạn dưới đầu phát',
+  'shortcuts.verdict': 'Đạt, đạt một phần, từ chối',
+  'shortcuts.commit': 'Ghi nhận và tiếp tục',
+  'shortcuts.help': 'Hiện hoặc ẩn bảng này',
+
+  'recent.title': 'Kết luận gần đây',
+  'recent.empty': 'Chưa có kết luận nào trong phiên làm việc này',
+
+  'nav.home': 'Trang chính',
+  'nav.counter': 'Quầy',
+  'nav.review': 'Duyệt',
+  'nav.episodes': 'Phiên ghi',
+  'nav.settle': 'Thanh toán',
+  'nav.pipeline': 'Tiến độ',
+  'nav.notBuilt': 'Chưa xây dựng',
+  'nav.notBuilt.body': 'Màn hình này đã có trong kế hoạch nhưng chưa được xây. Công việc nó mô tả hiện được làm bằng dòng lệnh.',
+
+  'home.greeting': 'Ca của bạn',
+  'home.reviewed': 'phiên đã duyệt',
+  'home.target': 'mục tiêu',
+  'home.start': 'Bắt đầu duyệt',
+  'home.payable': 'Thời lượng được trả hôm nay',
+  'home.approval': 'Tỷ lệ đạt',
+  'home.settled': 'Giá trị đã chốt',
+  'home.needsHuman': 'phiên cần người xử lý',
+  'home.needsHuman.body': 'Bộ quy chủ từ chối đoán ai đã ghi chúng.',
+  'home.needsHuman.open': 'Mở',
+  'home.queueEmpty': 'Hàng đợi trống. Cú không có gì để xem.',
+  'home.shiftEarly': 'Chim sớm',
+  'home.shiftDay': 'Ca ngày',
+  'home.shiftGolden': 'Giờ vàng',
+  'home.shiftNight': 'Cú đêm',
+
+  'pipeline.title': 'Những gì đã thực sự xây xong',
+  'pipeline.intro':
+    'Mọi năng lực mà bản yêu cầu nêu ra, và tình trạng thật của từng mục. Mục bị chặn ghi rõ thứ đang chặn nó.',
+  'pipeline.built': 'đã xây',
+  'pipeline.next': 'tiếp theo',
+  'pipeline.blocked': 'bị chặn',
+  'pipeline.capability': 'Năng lực',
+  'pipeline.requirement': 'Yêu cầu',
+  'pipeline.state': 'Trạng thái',
+  'pipeline.surface': 'Màn hình',
+  'pipeline.state.built': 'Đã xây',
+  'pipeline.state.partial': 'Một phần',
+  'pipeline.state.buildable': 'Có thể xây',
+  'pipeline.state.blocked': 'Bị chặn',
+  'pipeline.state.verified': 'Đã kiểm chứng',
+
+  'nav.backoffice': 'Hậu cần',
+
+  'bo.title': 'Hậu cần',
+  'bo.intro': 'Các nhiệm vụ cộng tác viên được trả tiền để ghi, những người ghi chúng, và thiết bị họ mang theo.',
+  'bo.tab.tasks': 'Nhiệm vụ',
+  'bo.tab.collectors': 'Cộng tác viên',
+  'bo.tab.devices': 'Thiết bị',
+  'bo.empty': 'Chưa có gì ở đây.',
+  'bo.loadFailed': 'Danh sách này không tải được.',
+  'bo.loadFailed.body': 'Hậu cần đọc dữ liệu qua API. Chưa có gì bị thay đổi.',
+  'bo.working': 'Đang xử lý',
+  'bo.edit': 'Sửa',
+  'bo.save': 'Lưu',
+  'bo.cancel': 'Hủy',
+
+  'bo.task.name': 'Nhiệm vụ',
+  'bo.task.type': 'Loại',
+  'bo.task.rate': 'Mỗi phút',
+  'bo.task.target': 'Thời lượng hiệu quả mục tiêu',
+  'bo.task.claimants': 'Đã nhận',
+  'bo.task.maxClaimants': 'Số người nhận đồng thời tối đa',
+  'bo.task.state': 'Trạng thái',
+  'bo.task.state.draft': 'Nháp',
+  'bo.task.state.published': 'Đã đăng',
+  'bo.task.state.taken_down': 'Đã gỡ',
+  'bo.task.publish': 'Đăng',
+  'bo.task.takeDown': 'Gỡ xuống',
+  'bo.task.new': 'Nhiệm vụ mới',
+  'bo.task.create': 'Tạo bản nháp',
+  'bo.task.priceFrozen':
+    'Đơn giá của nhiệm vụ đã đăng không thể sửa ở đây. Gỡ nhiệm vụ xuống và đăng một nhiệm vụ mới.',
+  'bo.task.priceNote':
+    'Đơn giá được lưu đúng như đã nhập và nhân vào mọi khoản thanh toán. Ở đây không làm tròn.',
+
+  'bo.collector.ref': 'Cộng tác viên',
+  'bo.collector.status': 'Tư cách',
+  'bo.collector.status.pending': 'Chờ xét',
+  'bo.collector.status.qualified': 'Đủ điều kiện',
+  'bo.collector.status.suspended': 'Tạm đình chỉ',
+  'bo.collector.exam': 'Bài kiểm tra',
+  'bo.collector.exam.pass': 'Đạt',
+  'bo.collector.exam.fail': 'Không đạt',
+  'bo.collector.exam.none': 'Chưa làm',
+  'bo.collector.agreements': 'Thỏa thuận',
+  'bo.collector.gate': 'Chưa đạt bài kiểm tra thì không nhận được nhiệm vụ. Máy chủ từ chối, không phải màn hình.',
+  'bo.collector.markPass': 'Ghi nhận đạt',
+  'bo.collector.markFail': 'Ghi nhận không đạt',
+  'bo.collector.clearExam': 'Xóa kết quả kiểm tra',
+  'bo.collector.new': 'Cộng tác viên mới',
+  'bo.collector.create': 'Thêm cộng tác viên',
+  'bo.collector.missing': 'Còn thiếu',
+  'bo.collector.recordAgreement': 'Ghi nhận chấp thuận',
+  'bo.collector.agreement': 'Thỏa thuận',
+  'bo.collector.version': 'Phiên bản đã chấp thuận',
+  'bo.collector.acceptedAt': 'Chấp thuận lúc',
+  'bo.collector.agreement.user': 'Thỏa thuận người dùng',
+  'bo.collector.agreement.privacy': 'Chính sách quyền riêng tư',
+  'bo.collector.agreement.data_collection': 'Thu thập dữ liệu',
+  'bo.collector.agreement.commercial_use': 'Sử dụng thương mại',
+  'bo.collector.agreement.manual_review': 'Duyệt thủ công',
+  'bo.collector.agreement.offline_settlement': 'Thanh toán ngoại tuyến',
+
+  'bo.device.serial': 'Số sê-ri',
+  'bo.device.type': 'Loại',
+  'bo.device.firmware': 'Firmware thiết bị',
+  'bo.device.state': 'Trạng thái',
+  'bo.device.state.active': 'Đang dùng',
+  'bo.device.state.faulty': 'Hỏng',
+  'bo.device.state.retired': 'Đã ngừng dùng',
+  'bo.device.holder': 'Gán cho',
+  'bo.device.unbound': 'Chưa ai',
+  'bo.device.bind': 'Gán',
+  'bo.device.unbind': 'Bỏ gán',
+  'bo.device.new': 'Thiết bị mới',
+  'bo.device.create': 'Thêm thiết bị',
+  'bo.device.faultNote': 'Ghi chú lỗi',
+  'bo.device.retireNote': 'Thiết bị đã ngừng dùng không thể còn trong tay ai. Bỏ gán trước.',
+  'bo.device.rollFailed':
+    'Danh sách cộng tác viên không tải được, nên không có ai để gán. Chưa có gì bị thay đổi.',
+
+  'bo.refused': 'Bị từ chối',
+  'bo.refused.sign_in_rate_limited':
+    'Quá nhiều lần đăng nhập bị từ chối. Hãy đợi vài phút rồi thử lại — giới hạn tự hết hạn, không ai cần mở khóa.',
+  'bo.refused.task_claims_capacity': 'Nhiệm vụ đó đã đủ số người nhận cho phép.',
+  'bo.refused.task_claims_exam_gate': 'Cộng tác viên đó chưa đạt bài kiểm tra nên không thể nhận nhiệm vụ.',
+  'bo.refused.task_claims_published_gate': 'Chỉ nhiệm vụ đã đăng mới nhận được.',
+  'bo.refused.task_claims_live_key': 'Cộng tác viên đó đã đang giữ nhiệm vụ này.',
+  'bo.refused.tasks_status_transition': 'Nhiệm vụ đi từ nháp, đã đăng, đã gỡ, và không bao giờ quay lại.',
+  'bo.refused.tasks_price_frozen':
+    'Đơn giá của nhiệm vụ đã đăng là điều người nhận đã đồng ý. Gỡ xuống và đăng một nhiệm vụ mới.',
+  'bo.refused.task_claims_qualified_gate': 'Cộng tác viên đó chưa đủ điều kiện nên không thể nhận nhiệm vụ.',
+  'bo.refused.task_claims_consent_gate': 'Cộng tác viên đó chưa chấp thuận đủ sáu thỏa thuận nên không thể nhận nhiệm vụ.',
+  'bo.refused.task_claims_id_reused': 'Mã nhận đó đã thuộc về một nhiệm vụ hoặc cộng tác viên khác.',
+  'bo.refused.collector_agreements_append_only': 'Một lần chấp thuận là bản ghi của một thời điểm và không thể sửa hay xóa.',
+  'bo.refused.devices_retired_unbound_check': 'Bỏ gán thiết bị trước khi ngừng dùng.',
+  'bo.refused.collectors_external_ref_key': 'Một cộng tác viên khác đã dùng mã đó.',
+  'bo.refused.devices_hardware_serial_key': 'Một thiết bị khác đã mang số sê-ri đó.',
+  'bo.refused.device_already_bound': 'Thiết bị đó đang gán cho người khác. Bỏ gán trước.',
+  'bo.refused.task_claims_released': 'Lượt nhận đó đã được trả. Nhận lại nhiệm vụ là một lượt nhận mới, với mã mới.',
+  'bo.refused.task_claims_history_immutable':
+    'Thời điểm bắt đầu và kết thúc một lượt nhận là chứng cứ thanh toán và không thể sửa hay xóa.',
+  'bo.refused.task_claims_identity_immutable':
+    'Một lượt nhận không thể chuyển sang nhiệm vụ hoặc cộng tác viên khác. Trả nó và tạo lượt mới.',
+  'bo.refused.tasks_capacity_below_live':
+    'Số cộng tác viên đang giữ nhiệm vụ này nhiều hơn giới hạn mới. Trả bớt một số lượt nhận trước.',
+  'bo.refused.tasks_id_reused': 'Mã đó đã đặt tên cho một nhiệm vụ với điều khoản khác.',
+  'bo.refused.collectors_id_reused': 'Mã đó đã đặt tên cho một cộng tác viên khác.',
+  'bo.refused.devices_id_reused': 'Mã đó đã đặt tên cho một thiết bị khác.',
+  'bo.refused.task_claims_task_id_tasks_id_fk': 'Nhiệm vụ đó không còn tồn tại. Tải lại danh sách.',
+  'bo.refused.task_claims_collector_id_collectors_id_fk': 'Cộng tác viên đó không còn tồn tại. Tải lại danh sách.',
+  'bo.refused.devices_bound_collector_id_collectors_id_fk': 'Cộng tác viên đó không còn tồn tại. Tải lại danh sách.',
+  'bo.refused.devices_device_type_id_device_types_id_fk': 'Loại thiết bị đó không còn tồn tại. Tải lại danh sách.',
+  'bo.refused.device_assignments_no_overlap': 'Thiết bị đó đã được giao cho người khác trong một phần của khoảng thời gian đó.',
+  'bo.refused.device_assignments_id_reused': 'Mã giao đó đã thuộc về một thiết bị hoặc cộng tác viên khác.',
+  'bo.refused.device_assignments_device_id_devices_id_fk': 'Thiết bị đó không còn tồn tại. Tải lại danh sách.',
+  'bo.refused.device_assignments_collector_id_collectors_id_fk': 'Cộng tác viên đó không còn tồn tại. Tải lại danh sách.',
+  'bo.refused.episode_clearing_nothing_to_clear':
+    'Lần giao đó đã là lần hiện tại và không còn sai lệch checksum nào chưa xử lý, nên không có gì để gỡ.',
+  'bo.refused.episode_clearing_id_reused':
+    'Mã gỡ đó đã thuộc về một quyết định khác. Hãy gửi một mã mới.',
+  'bo.refused.episode_clearing_foreign_delivery':
+    'Lần giao đó không thuộc phân đoạn này. Hãy chọn một lần giao của chính nó.',
+  'bo.refused.episode_clearing_paid_on_other_delivery':
+    'Một lần giao khác của phân đoạn này đã được duyệt và trả tiền. Chọn lần giao khác là khiếu nại, không phải gỡ.',
+  'bo.refused.session_claim_missing':
+    'Cộng tác viên này chưa nhận nhiệm vụ đó, nên không thể trả tiền cho những gì đã ghi. Hãy nhận nhiệm vụ trước.',
+  'bo.refused.session_claim_released':
+    'Cộng tác viên này đã trả lại nhiệm vụ đó. Cần nhận lại nhiệm vụ trước khi ghi một phiên mới.',
+  'bo.refused.session_task_not_published':
+    'Nhiệm vụ đó đã được gỡ xuống, nên không thể ghi phiên mới cho nó.',
+  'bo.refused.unknown': 'Máy chủ đã từ chối thay đổi đó.',
+
+  'theme.toggle': 'Giao diện',
+  'theme.light': 'Sáng',
+  'theme.dark': 'Tối',
+
+  'settle.title': 'Thanh toán',
+  'settle.intro':
+    'Các hóa đơn của một kỳ, số dư ví so với chúng, những gì bộ máy rủi ro đã gắn cờ, và bản ghi của từng khoản chi. Mọi con số ở đây là của máy chủ; màn hình này không cộng và không làm tròn gì cả.',
+  'settle.period': 'Kỳ bắt đầu từ',
+  'settle.period.hint': 'Một chu kỳ thanh toán tính từ ngày này. Những hóa đơn có kỳ bắt đầu nằm trong đó.',
+  'settle.period.apply': 'Mở',
+  'settle.tab.bills': 'Hóa đơn',
+  'settle.tab.preflight': 'Kiểm tra trước khi chi',
+  'settle.tab.flags': 'Cờ rủi ro',
+  'settle.tab.exceptions': 'Ngoại lệ',
+  'settle.mode.manual': 'Chi trả thủ công: nhân viên tự chuyển tiền và ghi mã tham chiếu tại đây.',
+  'settle.mode.api': 'Chi trả qua API: các lệnh chuyển được gửi qua ZaloPay từ màn hình kiểm tra trước khi chi.',
+  'settle.readonly': 'Chỉ xem',
+  'settle.readonly.operator':
+    'Phiên này không có vai trò tài chính. Mọi con số đều xem được; mọi thao tác chi trả bị vô hiệu ở đây và bị máy chủ từ chối.',
+  'settle.readonly.unknown':
+    'Không xác nhận được vai trò tài chính của phiên này, nên các thao tác chi trả bị vô hiệu. Tải lại để hỏi lại.',
+  'settle.readonly.refused': 'Máy chủ từ chối: phiên này không có vai trò tài chính. Chưa có gì bị thay đổi.',
+  'settle.failed': 'Yêu cầu không đến được máy chủ. Chưa có gì bị thay đổi.',
+  'settle.invalid': 'Máy chủ không đọc được yêu cầu đó. Chưa có gì bị thay đổi.',
+  'settle.gone': 'Hóa đơn hoặc lần chi đó không còn trên máy chủ. Tải lại danh sách.',
+  'settle.loadFailed': 'Kỳ này không tải được.',
+  'settle.loadFailed.body': 'Các màn hình thanh toán đọc dữ liệu qua API. Chưa có gì bị thay đổi.',
+  'settle.empty': 'Kỳ này không có hóa đơn.',
+  'settle.empty.body': 'Hóa đơn được lập từ các khoản đã duyệt. Hãy lập hóa đơn cho kỳ này, hoặc chọn ngày bắt đầu khác.',
+  'settle.generate': 'Lập hóa đơn',
+  'settle.generate.hint': 'Lập hóa đơn cho mọi khoản đang chờ trong kỳ. Chạy hai lần không thay đổi gì.',
+  'settle.generate.result': 'Đã lập {{created}} hóa đơn; {{notPayable}} khoản có giá trị bằng không được để ngoài.',
+  'settle.export.payout': 'Xuất CSV chi trả',
+  'settle.export.payout.hint': 'Băm từng dòng và cả tệp, có ghi nhận. Chỉ dành cho tài chính.',
+  'settle.export.lines': 'Xuất CSV chi tiết',
+  'settle.col.collector': 'Cộng tác viên',
+  'settle.col.minutes': 'Phút hợp lệ',
+  'settle.col.gross': 'Tổng',
+  'settle.col.withheld': 'Khấu trừ',
+  'settle.col.net': 'Thực nhận',
+  'settle.col.band': 'Rủi ro',
+  'settle.col.attempt': 'Chi trả',
+  'settle.col.open': 'Mở',
+  'settle.sort': 'Sắp xếp theo {{column}}',
+  'settle.withheld.note': 'Tỷ lệ khấu trừ thuế TNCN chưa được quyết định. Máy chủ báo khấu trừ 0 và thực nhận bằng tổng.',
+  'settle.asStored': 'Đúng như đã lưu, đơn vị {{currency}}. Không làm tròn ở đây.',
+  'settle.wholeVnd': 'Số đồng chẵn, do cơ sở dữ liệu quy đổi.',
+  'settle.wholeVnd.none': 'Không có số đồng chẵn: tổng có phần lẻ và chưa ai quyết định cách làm tròn.',
+  'settle.lines': '{{n}} dòng',
+  'settle.attempt.none': 'Chưa có lần chi',
+  'settle.attempt.created': 'Đã tạo',
+  'settle.attempt.submitted': 'Đã gửi',
+  'settle.attempt.processing': 'Đang xử lý',
+  'settle.attempt.pending_zlp': 'Treo tại ZaloPay',
+  'settle.attempt.succeeded': 'Đã trả',
+  'settle.attempt.failed': 'Thất bại',
+  'settle.attempt.unknown': 'Chưa rõ, đang hỏi lại',
+  'settle.method.WALLET': 'Ví ZaloPay',
+  'settle.method.BANK_ACCOUNT': 'Tài khoản ngân hàng',
+  'settle.method.BANK_CARD': 'Thẻ ngân hàng',
+  'settle.verify.unverified': 'Chưa xác minh',
+  'settle.verify.verified': 'Đã xác minh',
+  'settle.verify.name_mismatch': 'Tên không khớp',
+  'settle.verify.no_wallet': 'Không có ví',
+  'settle.verify.locked': 'Ví bị khóa',
+  'settle.verify.kyc_limit': 'Chạm hạn mức nhận',
+  'settle.verify.error': 'Lỗi xác minh',
+  'settle.issue.title': 'Điều gì đang chặn hóa đơn này trước một lệnh chuyển',
+  'settle.issue.none': 'Không có gì. Hóa đơn này có thể chi trả.',
+  'settle.issue.no_account': 'Cộng tác viên chưa khai tài khoản nhận tiền.',
+  'settle.issue.account_unverified': 'Tài khoản nhận tiền chưa được ZaloPay xác minh.',
+  'settle.issue.total_fractional': 'Tổng có phần lẻ của một đồng, và quy tắc làm tròn chưa được quyết định.',
+  'settle.issue.over_bank_ceiling': 'Vượt trần 10.000.000 VND của ZaloPay cho một lệnh chuyển ngân hàng.',
+  'settle.issue.under_bank_minimum': 'Dưới mức tối thiểu 2.000 VND của ZaloPay cho một lệnh chuyển ngân hàng.',
+  'settle.issue.over_cap': 'Vượt hạn mức mỗi cộng tác viên trong kỳ này.',
+  'settle.issue.risk_hold': 'Bộ máy rủi ro đang giữ hóa đơn này.',
+  'settle.issue.attempt_open': 'Hóa đơn này còn một lần chi chưa kết thúc.',
+  'settle.issue.already_paid': 'Hóa đơn này đã được trả.',
+
+  'settle.preflight.intro':
+    'Đọc trước mọi khoản chi. Lô này sẽ gửi gì, ví đang có bao nhiêu, tài khoản nào chưa xác minh, và bộ máy rủi ro đã gắn cờ ai.',
+  'settle.preflight.balance': 'Số dư ví',
+  'settle.preflight.balance.none':
+    'Không đọc được: máy chủ này chưa cấu hình máy khách ZaloPay. Thí điểm thủ công chi từ ngân hàng, nên điều này là bình thường.',
+  'settle.preflight.total': 'Tổng của lô',
+  'settle.preflight.required': 'Cần có, gồm biên dự phòng',
+  'settle.preflight.required.hint': 'Tổng cộng thêm 5%, biên dự phòng mà bộ xử lý lô yêu cầu.',
+  'settle.preflight.shortfall': 'Thiếu hụt',
+  'settle.preflight.ok': 'Lô này có thể gửi: {{payable}} trên {{bills}} hóa đơn có thể chi trả.',
+  'settle.preflight.refused': 'Cả lô bị từ chối. Sẽ không gửi gì.',
+  'settle.preflight.serverSaid': 'Máy chủ trả lời',
+  'settle.preflight.ranAt': 'Kiểm tra lúc {{at}}',
+  'settle.preflight.rerun': 'Chạy lại',
+  'settle.preflight.bands': 'Hóa đơn theo mức rủi ro',
+  'settle.preflight.accounts': 'Tài khoản nhận tiền',
+  'settle.preflight.accounts.verified': 'Đã xác minh',
+  'settle.preflight.accounts.unverified': 'Chưa xác minh',
+  'settle.preflight.accounts.mismatch': 'Tên không khớp',
+  'settle.preflight.accounts.missing': 'Không có tài khoản',
+  'settle.preflight.limits': 'Giới hạn',
+  'settle.preflight.ceiling': 'Vượt trần chuyển ngân hàng {{ceiling}}',
+  'settle.preflight.cap': 'Vượt hạn mức {{cap}}',
+  'settle.preflight.cap.none': 'Chưa cấu hình hạn mức mỗi cộng tác viên. Giá trị này cần được trình lên quyết định.',
+  'settle.preflight.others': 'Cũng chưa chi trả được',
+  'settle.preflight.anomalies': 'Rủi ro cao nhất trước',
+  'settle.preflight.anomalies.hint':
+    '{{n}} hóa đơn có điểm rủi ro cao nhất, với từng cờ viết bằng lời thường. Mở màn hình cờ rủi ro để xử lý.',
+  'settle.preflight.anomalies.none': 'Bộ máy rủi ro không gắn cờ hóa đơn nào trong kỳ này.',
+  'settle.preflight.continue.manual':
+    'Đã đọc kiểm tra. Mở một hóa đơn từ danh sách để ghi khoản chi thủ công; các nút chi trả bị khóa cho đến khi màn hình này đã được đọc cho kỳ đó.',
+  'settle.preflight.stale': 'Phiên này chưa chạy kiểm tra trước khi chi cho kỳ này. Hãy chạy trước khi chi trả.',
+  'settle.preflight.expired': 'Kiểm tra đã quá năm phút. Số dư, các lệnh giữ và danh sách bất thường có thể đã thay đổi; chạy lại trước khi chi trả.',
+  'settle.preflight.changed': 'Lô đã thay đổi kể từ khi kiểm tra chạy — một khoản chi, một lời khai hoặc một lệnh giữ. Chạy lại trước khi chi trả.',
+  'settle.preflight.open': 'Chạy kiểm tra',
+
+  'settle.batch.title': 'Gửi lô',
+  'settle.batch.sentence': 'Gửi {{n}} lệnh chuyển, tổng cộng {{total}}.',
+  'settle.batch.serverLoop':
+    'Một yêu cầu duy nhất. Máy chủ tự chạy lại kiểm tra ngay lúc đó, gửi từng lệnh một có nghỉ giữa các lệnh, dừng ở lần từ chối đầu tiên, và báo cáo lại. Trình duyệt này không gửi gì cả.',
+  'settle.batch.notOnServer': 'Máy chủ này chưa có tuyến chạy lô. Theo thiết kế, lô là một vòng lặp phía máy chủ; cho đến khi tuyến đó tồn tại, không gửi gì từ đây.',
+  'settle.batch.refusedAtSend': 'Kiểm tra của chính máy chủ đã từ chối lô lúc gửi: {{reason}} Không lệnh chuyển nào được gửi và một phiếu đã được tạo.',
+  'settle.batch.retype': 'Gõ lại tổng, chỉ chữ số, để xác nhận',
+  'settle.batch.retype.hint': 'Gõ, không bấm. Con số là của kiểm tra trước khi chi.',
+  'settle.batch.mismatch': 'Đó không phải tổng của lô.',
+  'settle.batch.send': 'Gửi {{n}} lệnh chuyển',
+  'settle.batch.sending': 'Đang gửi {{done}} trên {{n}}',
+  'settle.batch.stopped': 'Lô dừng tại {{collector}}: {{reason}} Những gì đã gửi vẫn là đã gửi; bộ hỏi lại sẽ hoàn tất chúng.',
+  'settle.batch.done': 'Đã gửi đủ {{n}} lệnh chuyển. Bộ hỏi lại sẽ xác định trạng thái cuối.',
+  'settle.batch.noneOk': 'Kiểm tra đã từ chối lô, hoặc trong lô không có gì chi trả được, nên không thể gửi.',
+
+  'settle.bill.back': 'Tất cả hóa đơn',
+  'settle.bill.notInPeriod': 'Hóa đơn đó không thuộc kỳ này.',
+  'settle.bill.notInPeriod.body': 'Chọn kỳ mà nó thuộc về, hoặc mở từ danh sách.',
+  'settle.bill.period': 'Kỳ',
+  'settle.bill.total': 'Tổng',
+  'settle.bill.amount': 'Số tiền phải trả',
+  'settle.bill.account': 'Tài khoản nhận tiền',
+  'settle.bill.account.none': 'Cộng tác viên này chưa khai tài khoản nhận tiền. Không thể trả cho ai cả.',
+  'settle.bill.declared': 'Tên đã khai',
+  'settle.bill.verified': 'Tên trên ZaloPay',
+  'settle.bill.verified.none': 'Không trả về',
+  'settle.bill.phone': 'Điện thoại',
+  'settle.bill.risk': 'Rủi ro',
+  'settle.bill.risk.open': 'Mở màn hình cờ rủi ro',
+  'settle.bill.attempt': 'Lần chi gần nhất',
+  'settle.bill.attempt.reference': 'Mã tham chiếu',
+  'settle.bill.attempt.order': 'Mã đơn của đối tác',
+  'settle.bill.attempt.zlp': 'Mã đơn ZaloPay',
+  'settle.bill.attempt.trans': 'Mã giao dịch ZaloPay',
+  'settle.bill.attempt.sub': 'Mã phụ',
+  'settle.bill.attempt.polls': 'Số lần hỏi lại',
+  'settle.bill.attempt.created': 'Tạo lúc',
+  'settle.bill.attempt.settled': 'Hoàn tất lúc',
+
+  'settle.pay.title': 'Ghi nhận khoản chi',
+  'settle.pay.manual.intro':
+    'Tự chuyển số tiền, qua ZaloPay hoặc tại ngân hàng, vào tài khoản ở trên. Rồi quay lại và ghi mã tham chiếu của lệnh chuyển đó. Cơ sở dữ liệu đối chiếu số tiền với hóa đơn.',
+  'settle.pay.api.intro':
+    'Một lệnh chuyển qua ZaloPay cho hóa đơn này, hoặc một khoản chi thủ công kèm mã tham chiếu. Kiểm tra đã được đọc; số tiền được gõ lại để xác nhận.',
+  'settle.pay.reference': 'Mã tham chiếu giao dịch',
+  'settle.pay.reference.hint': 'Bắt buộc với khoản chi thủ công. Mã mà ngân hàng hoặc ZaloPay cấp cho lệnh chuyển.',
+  'settle.pay.retype': 'Gõ lại số tiền, chỉ chữ số',
+  'settle.pay.retype.hint': 'Phải khớp với số tiền phải trả. Gõ, không bấm.',
+  'settle.pay.mismatch': 'Đó không phải số tiền trên hóa đơn này.',
+  'settle.pay.markPaid': 'Ghi nhận đã trả',
+  'settle.pay.api.send': 'Gửi lệnh chuyển',
+  'settle.pay.done': 'Đã ghi nhận. Lần chi {{order}}, trạng thái: {{status}}.',
+  'settle.pay.sent': 'Đã gửi. Lần chi {{order}} đang {{status}}; bộ hỏi lại sẽ xác định kết quả.',
+  'settle.pay.rejected': 'ZaloPay từ chối lệnh chuyển (mã phụ {{sub}}). Cần một lần chi mới.',
+  'settle.pay.alreadyPaid': 'Hóa đơn này đã được trả. Không thể ghi thêm gì.',
+  'settle.pay.locked': 'Khóa cho đến khi kiểm tra trước khi chi đã được đọc',
+
+  'settle.exceptions.intro': 'Mọi lần chi cần đến con người, và mọi hóa đơn không thể gửi như hiện trạng.',
+  'settle.exceptions.empty': 'Kỳ này không có ngoại lệ.',
+  'settle.exceptions.empty.body': 'Mọi lần chi đã kết thúc và mọi hóa đơn nằm trong giới hạn.',
+  'settle.exceptions.pending': 'Treo bên trong ZaloPay',
+  'settle.exceptions.pending.body':
+    'ZaloPay giữ các lệnh chuyển này ở trạng thái 4. Thử lại không giải quyết được và ở đây không thử lại: đội của chính ZaloPay phải sửa đơn. Chỉ xử lý ở đây với kết quả mà ZaloPay xác nhận, và ghi rõ xác nhận ở đâu.',
+  'settle.exceptions.polling': 'Vẫn đang hỏi lại',
+  'settle.exceptions.polling.body':
+    'Câu trả lời cho các lệnh chuyển này đã mất hoặc còn đang đến. Bộ hỏi lại hỏi ZaloPay theo lịch giãn dần và chuyển trạng thái khi biết kết quả. Nhân viên chỉ xử lý khi việc hỏi lại đã cạn.',
+  'settle.exceptions.neverSent': 'Đã tạo, chưa từng gửi',
+  'settle.exceptions.neverSent.body':
+    'Dòng lần chi tồn tại nhưng yêu cầu chưa bao giờ đi. Không gửi lại theo phỏng đoán; xử lý là thất bại rồi chi lại.',
+  'settle.exceptions.ceiling': 'Vượt trần chuyển ngân hàng',
+  'settle.exceptions.ceiling.body':
+    'ZaloPay gửi tối đa {{ceiling}} cho mỗi lệnh chuyển ngân hàng. Hóa đơn cao hơn không thể đi trong một lệnh, và việc chia nhỏ là quyết định về tiền mà chưa ai đưa ra. Trình lên; không chia.',
+  'settle.exceptions.cap': 'Vượt hạn mức',
+  'settle.exceptions.cap.body':
+    'Vượt hạn mức mỗi cộng tác viên {{cap}}. Lô từ chối đích danh và tạo phiếu; không bao giờ trả theo hạn mức thay thế.',
+  'settle.exceptions.blocked': 'Chưa chi trả được',
+  'settle.exceptions.blocked.body':
+    'Hóa đơn còn việc phải sửa trước một lệnh chuyển: không có tài khoản, tài khoản chưa xác minh, tổng có phần lẻ, đang bị giữ vì rủi ro.',
+  'settle.exceptions.opened': 'Mở từ {{elapsed}} trước',
+  'settle.exceptions.polls': '{{n}} lần hỏi, lần cuối lúc {{at}}',
+  'settle.exceptions.polls.none': 'Chưa hỏi lại lần nào',
+  'settle.exceptions.events': 'Sự kiện',
+  'settle.resolve.title': 'Xử lý',
+  'settle.resolve.outcome': 'Kết quả',
+  'settle.resolve.succeeded': 'Tiền đã đi',
+  'settle.resolve.failed': 'Tiền không đi',
+  'settle.resolve.reason': 'Lý do',
+  'settle.resolve.reason.hint': 'Bắt buộc. Kết quả được xác nhận ở đâu và bởi ai. Đây chính là sự cho phép.',
+  'settle.resolve.trans': 'Mã giao dịch ZaloPay, nếu thành công',
+  'settle.resolve.submit': 'Xử lý lần chi',
+  'settle.resolve.done': 'Đã xử lý: lần chi giờ là {{status}}.',
+  'settle.resolve.pollerWorking':
+    'Bộ hỏi lại vẫn đang làm việc với lần chi này. Chỉ lần chi đang treo, đã cạn hỏi lại hoặc chưa từng gửi mới được xử lý bằng tay.',
+
+  'risk.intro':
+    'Chứng cứ trước, kết luận sau. Mỗi cờ là một câu kèm con số gây ra nó; lệnh giữ được gỡ bằng một lý do gõ tay, và ai đã gỡ gì luôn nằm trong hồ sơ.',
+  'risk.score': 'Điểm',
+  'risk.points': '{{n}} điểm',
+  'risk.flags': '{{n}} cờ',
+  'risk.open': 'Mở',
+  'risk.empty': 'Kỳ này không có cờ.',
+  'risk.empty.body': 'Bộ máy rủi ro không có gì để nói về các hóa đơn này, hoặc không chạy trên máy chủ này.',
+  'risk.evidence': 'Chứng cứ',
+  'risk.references': 'Các phiên được nêu tên',
+  'risk.proxy.none': 'Máy chủ này không cung cấp đoạn xem thử, và tư liệu gốc không bao giờ hiện ở đây.',
+  'risk.threshold': 'ngưỡng {{v}}, tính lúc {{at}}',
+  'risk.holds.title': 'Lịch sử giữ',
+  'risk.holds.none': 'Hóa đơn này không có lệnh giữ đang mở.',
+  'risk.holds.notOnServer':
+    'Các tuyến của bộ máy rủi ro không có trên máy chủ này. Các cờ hiển thị lấy từ tóm tắt lô; lịch sử giữ và thao tác gỡ cần đến bộ máy.',
+  'risk.holds.open': 'Giữ từ {{at}}',
+  'risk.holds.raised': 'Đặt lúc {{at}} vì {{signals}}',
+  'risk.holds.cleared': 'Gỡ lúc {{at}} bởi {{who}}: {{verdict}} — {{reason}}',
+  'risk.clear.title': 'Gỡ lệnh giữ',
+  'risk.clear.verdict': 'Kết luận',
+  'risk.clear.reason': 'Lý do',
+  'risk.clear.reason.hint': 'Ít nhất mười ký tự. Bạn đã kiểm tra gì và vì sao hóa đơn có thể được trả.',
+  'risk.clear.submit': 'Gỡ với lý do này',
+  'risk.clear.done': 'Đã gỡ. Từ đây hóa đơn được trả bình thường.',
+  'risk.actions.escalate': 'Trình lên',
+  'risk.actions.hold': 'Giữ',
+  'risk.actions.unavailable':
+    'Trình lên và giữ bằng tay chưa có tuyến trên máy chủ này. Bộ máy tự đặt lệnh giữ; gỡ nó là thao tác mà nhân viên có.',
+  'risk.band.clear': 'Bình thường',
+  'risk.band.notice': 'Lưu ý',
+  'risk.band.review': 'Cần xem xét',
+  'risk.band.hold': 'Tạm giữ thanh toán',
+  'risk.severity.info': 'thông tin',
+  'risk.severity.notice': 'lưu ý',
+  'risk.severity.review': 'xem xét',
+  'risk.severity.hold': 'giữ',
+  'risk.verdict.false_positive': 'Đã kiểm tra, không có vấn đề',
+  'risk.verdict.accepted': 'Chấp nhận rủi ro, vẫn thanh toán',
+  'risk.verdict.resolved': 'Đã khắc phục nguyên nhân',
+
+  'risk.signal.META.EVALUATED': 'Đã đánh giá, phát hiện {findings} điểm.',
+  'risk.signal.IDENT.NAME_MISMATCH': 'Tên trên ZaloPay là {verified_name}; tên trong thỏa thuận là {declared_name}.',
+  'risk.signal.IDENT.PHONE_SHARED':
+    'Số điện thoại ví {phone_masked} cũng nằm trên tài khoản nhận tiền của {count} cộng tác viên khác: {other_collector_refs}.',
+  'risk.signal.IDENT.ACCOUNT_SHARED':
+    'Tài khoản ngân hàng {bank_code} ···{account_no_last4} cũng nằm trên tài khoản nhận tiền của {count} cộng tác viên khác: {other_collector_refs}.',
+  'risk.signal.IDENT.MUID_SHARED':
+    'Ví ZaloPay {m_u_id_masked} cũng nằm trên tài khoản nhận tiền của {count} cộng tác viên khác: {other_collector_refs}.',
+  'risk.signal.IDENT.ACCOUNT_CHANGED_LATE':
+    'Tài khoản nhận tiền được thay đổi vào {changed_at}, chỉ {days_before_end} ngày trước khi kỳ thanh toán kết thúc vào {period_end}.',
+  'risk.signal.IDENT.UNVERIFIED_KYC':
+    'ZaloPay báo vào {verified_at} rằng ví này chưa hoàn tất xác minh danh tính (mã {sub_return_code}).',
+  'risk.signal.IDENT.KYC_LIMIT_REPEATED':
+    'ZaloPay báo ví đã chạm hạn mức nhận tiền {occurrences} lần (mã {sub_return_code}); quá {max_occurrences} lần là bất thường với một người.',
+  'risk.signal.IDENT.WALLET_LOCKED': 'ZaloPay báo vào {verified_at} rằng ví này đã bị khóa (mã {sub_return_code}).',
+  'risk.signal.IDENT.NAME_UNCONFIRMED': 'ZaloPay không trả về tên nào để so với {declared_name}; lời khai chưa được xác nhận.',
+  'risk.signal.IDENT.KYC_LIMIT': 'ZaloPay báo ví đã chạm hạn mức nhận tiền (mã {sub_return_code}).',
+  'risk.signal.IDENT.NO_WALLET': 'ZaloPay không có ví cho số điện thoại {phone_masked} (mã {sub_return_code}).',
+  'risk.signal.IDENT.VERIFY_ERROR': 'ZaloPay không xác minh được tài khoản (mã {sub_return_code}).',
+  'risk.signal.VOL.HOURS_PER_DAY':
+    '{hours} giờ ghi hình trong ngày {day} qua {episodes} phiên. Mức tối đa mỗi ngày là {max_hours} giờ.',
+  'risk.signal.VOL.ABOVE_COHORT_P95':
+    '{episodes} phiên trong ngày {day}. 95 trên 100 ngày làm việc của các cộng tác viên có {p95} phiên trở xuống (so sánh {cohort_days} ngày).',
+  'risk.signal.VOL.STEP_CHANGE':
+    '{minutes} phút trong ngày {day}. Một ngày bình thường của cộng tác viên này là {median_minutes} phút, tức gấp {ratio} lần.',
+  'risk.signal.VOL.NO_GAP':
+    'Phiên {episode_a} và phiên {episode_b} trùng nhau {overlap_s} giây. Một người không thể ghi hai phiên cùng lúc.',
+  'risk.signal.VOL.NOCTURNAL':
+    '{night_minutes} trên {total_minutes} phút ({share_pct}) được ghi trong khoảng {night_hours} cho loại nhiệm vụ {task_type}. Làm đêm là công việc bình thường; đây chỉ là thông tin thêm.',
+  'risk.signal.CONT.MOOV_DAMAGED': 'Tệp MP4 {file} không đạt kiểm tra cấu trúc: {verdict}.',
+  'risk.signal.CONT.TIMING_TRUNCATED':
+    'Chỉ mục thời gian của {stream} dừng sớm: {pts_rows} dòng so với {media_packets} gói dữ liệu. Thường gặp khi ghi hình bị ngắt.',
+  'risk.signal.CONT.TIMING_PACKET_DELTA':
+    'Chỉ mục thời gian của {stream} có {pts_rows} dòng nhưng video chỉ có {media_packets} gói: video đã bị cắt hoặc ghi lại sau khi tạo chỉ mục.',
+  'risk.signal.CONT.IMU_CLOCK_DRIFT':
+    'Đồng hồ IMU bị lệch: {clock_outlier_rows} dòng mang thời gian cách xa phiên ghi ({detail}).',
+  'risk.signal.CONT.PTS_MANIFEST_DELTA':
+    'Tệp khai báo ghi {declared_s} giây, đo thực tế được {measured_s} giây, tỷ lệ {ratio}. Thiết bị này thường cho {baseline_ratio} ({baseline_episodes} phiên).',
+  'risk.signal.CONT.NEAR_DUPLICATE':
+    'Nội dung trùng với phiên {other_episode_id} của cộng tác viên {other_collector_ref} ({method}, {match_share_pct} số khung hình khớp).',
+  'risk.signal.CONT.STATIC_SCENE':
+    'Hình ảnh gần như không thay đổi qua {frames} khung hình mẫu: mức chuyển động {motion_energy}, ghi hình bình thường cao hơn {max_motion_energy}.',
+  'risk.signal.CONT.LOW_LUMA_VARIANCE':
+    '{dark_share_pct} khung hình mẫu bị tối và {flat_share_pct} không có chi tiết (độ sáng trung bình {mean_luma}/255). Ống kính có thể đã bị che.',
+  'risk.signal.CONT.AUDIO_ABSENT': 'Không có âm thanh dùng được ({reason}) trong khi loại nhiệm vụ {task_type} cần có tiếng.',
+  'risk.signal.CONT.FINGERPRINT': 'Đã lưu dấu vân khung hình của {frames} khung để đối chiếu trùng lặp.',
+  'risk.signal.PROV.PRNU_MISMATCH':
+    'Mẫu nhiễu cảm biến của video tương quan {correlation} với dấu vân đã đăng ký cho thiết bị {device_serial}; khớp phải trên {min_correlation}.',
+  'risk.signal.PROV.IMU_VIDEO_DECORR':
+    'Trong {seconds} giây, chuyển động trong hình và chuyển động IMU ghi được tương quan {correlation}; ghi hình thật phải trên {min_correlation}.',
+  'risk.signal.PROV.ENCODER_MISMATCH': 'Tệp không được ghi theo cách firmware {firmware} ghi tệp: {mismatches}.',
+  'risk.signal.PROV.SCREEN_RECAPTURE': 'Video giống như quay lại từ màn hình: {cues} (đã kiểm tra {frames} khung hình).',
+  'risk.signal.PROV.SYNTHETIC_HEURISTIC':
+    'Video gần như không có nhiễu cảm biến ({noise_floor}, máy quay thường trên {max_noise_floor}). Chỉ là dấu hiệu yếu nếu đứng một mình.',
+  'risk.signal.OPS.REVIEW_TOO_FAST':
+    'Người duyệt {reviewer_ref} đưa ra kết luận {verdict} trong {time_to_verdict_s} giây cho phiên dài {measured_duration_s} giây.',
+  'risk.signal.OPS.APPROVAL_OUTLIER':
+    'Người duyệt {reviewer_ref} chấp thuận {approval_rate_pct} trong {decided} phiên; {reviewers} người duyệt khác chấp thuận {cohort_median_pct}.',
+  'risk.signal.OPS.SELF_DEALING':
+    'Nhân viên {operator_ref} đã tạo cộng tác viên này vào {created_at} và cũng thực hiện {paid_action} cho hóa đơn vào {paid_at}.',
+  'risk.signal.OPS.CONCENTRATION':
+    'Nhân viên {operator_ref} xử lý {share_pct} trong {events} thao tác trên hóa đơn của cộng tác viên này trong khi có {operators} nhân viên cùng làm.',
+
+  'bo.refused.payout_attempts_previous_not_failed':
+    'Hóa đơn này đã có một lần chi chưa thất bại. Chỉ có thể tạo lần chi mới sau khi lần trước đã thất bại.',
+  'bo.refused.payout_attempts_total_fractional':
+    'Tổng hóa đơn có phần lẻ của một đồng, và chưa ai quyết định cách làm tròn. Không thể trả cho đến khi có quyết định.',
+  'bo.refused.payout_attempts_amount_check': 'Số tiền đã gõ không bằng tổng hóa đơn. Chưa ghi nhận gì.',
+  'bo.refused.payout_attempts_account_owner': 'Tài khoản nhận tiền đó thuộc về một cộng tác viên khác.',
+  'bo.refused.payout_attempts_account_current': 'Tài khoản nhận tiền đó không còn là tài khoản hiện tại của cộng tác viên. Tải lại hóa đơn.',
+  'bo.refused.payout_attempts_bank_ceiling':
+    'Vượt trần 10.000.000 VND của ZaloPay cho một lệnh chuyển ngân hàng. Không thể đi trong một lệnh, và việc chia nhỏ phải được trình lên, không phải một cái nút.',
+  'bo.refused.payout_attempts_bank_minimum': 'Dưới mức tối thiểu 2.000 VND của ZaloPay cho một lệnh chuyển ngân hàng.',
+  'bo.refused.payout_attempts_transition_check': 'Lần chi không thể chuyển từ trạng thái hiện tại theo cách đó. Tải lại danh sách.',
+  'bo.refused.payout_attempts_succeeded_immutable': 'Lần chi đã thành công là cuối cùng và không thể thay đổi.',
+  'bo.refused.payout_attempts_failed_terminal': 'Lần chi đã thất bại là cuối cùng. Trả lại là một lần chi mới.',
+  'bo.refused.payout_attempts_pending_operator_only':
+    'Lần chi đang treo bên trong ZaloPay chỉ được chuyển bởi nhân viên với lý do gõ tay. Không gì khác chuyển được nó.',
+  'bo.refused.payout_attempts_manual_reference_check': 'Khoản chi thủ công cần mã tham chiếu giao dịch. Chưa ghi nhận gì.',
+  'bo.refused.payout_finance_required': 'Chỉ nhân viên có vai trò tài chính mới được chi trả hoặc xử lý. Máy chủ đã từ chối.',
+  'bo.refused.payout_separation_of_duty':
+    'Nhân viên đã tạo cộng tác viên này hoặc đã duyệt hóa đơn này không được là người chi trả nó.',
+  'bo.refused.payout_accounts_current_key': 'Cộng tác viên đã có tài khoản nhận tiền hiện tại. Tải lại và thử lại.',
+  'bo.refused.payout_accounts_append_only': 'Tài khoản nhận tiền là bản ghi của một lời khai và không thể sửa hay xóa.',
+  'bo.refused.settlements_transition_check':
+    'Một khoản trên hóa đơn này đã được trả hoặc đã chuyển sang ngoại lệ trong lúc đó. Tải lại hóa đơn.',
+  'bo.refused.settlements_not_in_exception': 'Khoản này không ở trạng thái ngoại lệ, nên không có gì để giải phóng.',
+  'bo.refused.review_disputes_open_key': 'Kết quả duyệt này đã đang được khiếu nại.',
+  'bo.refused.review_disputes_decided_check':
+    'Lần duyệt này chưa có kết quả, nên chưa có gì để khiếu nại.',
+  'bo.refused.review_disputes_final_check':
+    'Kết quả này chính là kết quả duyệt lần hai, và duyệt lần hai là kết luận cuối cùng.',
+  'bo.refused.review_disputes_unbilled_check':
+    'Kết quả này đã lên hóa đơn hoặc đã được chi trả, và hóa đơn không bao giờ được sửa.',
+  'bo.refused.settle_export_bill_in_exception':
+    'Một hóa đơn trong kỳ này có khoản đang ở ngoại lệ. Tổng của nó sẽ không khớp với các dòng trong tệp, nên bản xuất được giữ lại cho đến khi khoản đó được giải phóng.',
+  'bo.refused.payout_settlement_exception':
+    'Một khoản trên hóa đơn này đang ở ngoại lệ. Giải phóng nó trước khi hóa đơn có thể được chi trả.',
+  'bo.refused.payout_mode_manual': 'Máy chủ đang ở chế độ chi trả thủ công. Tự chuyển tiền và ghi mã tham chiếu tại đây.',
+  'bo.refused.payout_batch_running': 'Một lần chạy của kỳ này đang diễn ra trên máy chủ. Hãy chờ báo cáo; không có gì được gửi hai lần.',
+  'bo.refused.payout_transfer_rejected': 'ZaloPay đã từ chối lệnh chuyển. Lần chạy dừng ở hóa đơn này; lần chi được ghi là thất bại và không hóa đơn nào sau đó được gửi.',
+  'bo.refused.payout_bill_not_payable': 'Kiểm tra trước cho thấy hóa đơn này không thể chi trả. Mở hóa đơn để xem lý do; chưa gửi gì.',
+  'bo.refused.payout_no_client': 'Máy chủ này chưa cấu hình máy khách ZaloPay, nên không gửi được lệnh chuyển nào.',
+  'bo.refused.payout_account_missing': 'Cộng tác viên này không có tài khoản nhận tiền hiện tại.',
+  'bo.refused.payout_account_unverified': 'Tài khoản nhận tiền của cộng tác viên chưa được xác minh. ZaloPay phải xác nhận tên trước.',
+  'bo.refused.payout_attempts_account_unverified': 'Cơ sở dữ liệu đã từ chối lần chi trả: tài khoản nhận tiền chưa được xác minh. ZaloPay phải xác nhận tên trước.',
+  'bo.refused.payout_bank_details_unavailable':
+    'Chuyển ngân hàng qua API cần số tài khoản đầy đủ, mà máy chủ này không lưu. Hãy chi trả thủ công.',
+  'bo.refused.payout_cap_exceeded': 'Vượt hạn mức mỗi cộng tác viên trong kỳ này. Đã tạo phiếu; không bao giờ trả theo hạn mức thay thế.',
+  'bo.refused.payout_risk_hold': 'Bộ máy rủi ro đang giữ hóa đơn này. Gỡ lệnh giữ với lý do ở màn hình cờ rủi ro trước.',
+  'bo.refused.payout_already_paid': 'Hóa đơn này đã được trả.',
+  'bo.refused.payout_accounts_id_reused': 'Mã tài khoản đó đã đặt tên cho một lời khai khác.',
+  'bo.refused.payout_attempt_not_resolvable':
+    'Lần chi này không thể xử lý bằng tay ở trạng thái hiện tại. Chỉ lần chi đang treo, đã cạn hỏi lại hoặc chưa từng gửi mới được.',
+  'bo.refused.payout_bill_period_mismatch': 'Hóa đơn đó thuộc một kỳ khác.',
+};
+
+export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { en, zh, vi };
 
 /** Every locale holds every key. Asserted by a test, not hoped for. */
 export function missingKeys(locale: Locale): MessageKey[] {
@@ -650,6 +2019,7 @@ export function pickLocale(query: unknown, acceptLanguage: string | undefined): 
     for (const part of acceptLanguage.split(',')) {
       const tag = part.split(';')[0]?.trim().toLowerCase() ?? '';
       if (tag.startsWith('zh')) return 'zh';
+      if (tag.startsWith('vi')) return 'vi';
       if (tag.startsWith('en')) return 'en';
     }
   }
@@ -657,6 +2027,6 @@ export function pickLocale(query: unknown, acceptLanguage: string | undefined): 
 }
 
 /** The `lang` attribute for the document. Not the same string as the locale key. */
-export const HTML_LANG: Record<Locale, string> = { en: 'en', zh: 'zh-Hans' };
+export const HTML_LANG: Record<Locale, string> = { en: 'en', zh: 'zh-Hans', vi: 'vi' };
 
 export const t = (locale: Locale, key: MessageKey): string => MESSAGES[locale][key];

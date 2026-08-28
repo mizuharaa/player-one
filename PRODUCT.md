@@ -176,8 +176,9 @@ verdict writes. Migrations 0000–0004.
   configuration rather than data.
 - `collectors` has no display name; the console shows an external reference.
 - The **BO-09 cut** — upload centres, machines and operators stay CLI/fixtures —
-  still owes an ADR with its trigger condition (second centre, or 500 collectors,
-  whichever comes first).
+  is recorded in `docs/adr/0003-bo09-centres-machines-operators-stay-fixtures.md`
+  with its trigger condition (second centre, or 500 collectors, whichever comes
+  first).
 - Dispute and second review are P2 and deliberately not built.
 
 **Terminology.** Requirement IDs are the shared vocabulary between the brief, the

@@ -11,8 +11,18 @@ docs/sample_data/
 apps/console/dist/
 
 # Extracted vendor SDKs and the kit they come from: hundreds of MB, not source.
-tools/
+tools/*
+# The risk engine's media analysers are source, and the one thing under tools/ that is.
+!tools/analysers/
 docs/sdks/
 # OrbbecSDK writes this wherever it is run from.
 Log/
 __pycache__/
+
+# Secrets. The database password and the ZaloPay credentials
+# (PLAYERONE_ZALOPAY_APP_ID, _KEY1, _PUBLIC_KEY, _PAYMENT_ID) are read from the
+# environment and live in an untracked .env.local on each machine. This pattern
+# is what keeps them out of a public repository.
+.env
+.env.*
+!.env.example

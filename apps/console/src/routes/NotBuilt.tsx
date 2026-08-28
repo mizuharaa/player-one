@@ -28,7 +28,7 @@ const DETAIL: Record<
       'Recording a card handover, reconstructing what was recorded against a declared task, and importing the card on a fixed machine.',
     requirements: 'BO-09 · BO-10 · PLT-05 · UPL-08',
     today:
-      'The whole counter workflow exists as API endpoints and is driven by the ingest CLI. `pnpm ingest` imports a card; the handover and session endpoints are exercised by a machine client. The BO-09 cut is deliberate and owes an ADR naming its trigger — a second centre, or 500 collectors, whichever comes first.',
+      'The whole counter workflow exists as API endpoints and is driven by the ingest CLI. `pnpm ingest` imports a card; the handover and session endpoints are exercised by a machine client. The BO-09 cut is deliberate; ADR 0003 records it and its trigger — a second centre, or 500 collectors, whichever comes first.',
   },
   episodes: {
     titleKey: 'nav.episodes',

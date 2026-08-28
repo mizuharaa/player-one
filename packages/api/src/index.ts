@@ -5,6 +5,7 @@ import { auditLogin } from './audit.ts';
 import { registerBackOffice } from './backoffice.ts';
 
 export { API_REFUSALS, REFUSALS } from './backoffice.ts';
+export { COUNTER_REFUSALS } from './counter.ts';
 import { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';
@@ -12,6 +13,11 @@ import { registerEpisodes } from './episodes.ts';
 import { registerMedia } from './media.ts';
 import { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
 import { registerPayout } from './payout/routes/payout.ts';
+import { seedRiskSignals } from './risk/catalogue.ts';
+import { riskConfigFromEnv, type RiskConfig } from './risk/config.ts';
+import { RiskEngine } from './risk/engine.ts';
+import { registerRisk } from './risk/routes.ts';
+import { rateLimited, signInAttempt, signInLimiter } from './ratelimit.ts';
 import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
 import { registerReview } from './review.ts';
 import { registerSessionRoutes } from './session.ts';
@@ -46,7 +52,9 @@ export {
   type UploadProgress,
 } from './upload-worker.ts';
 export { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
+export { SIGN_IN_RATE_LIMITED, signInLimiter, type SignInLimiter } from './ratelimit.ts';
 export { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS } from './payout/routes/payout.ts';
+export { SETTLE_API_REFUSALS } from './settle.ts';
 export { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
 export type { ZaloPayClient } from './payout/domain/client-contract.ts';
 export type { RiskReader, RiskSummary, Flag } from './payout/domain/risk.ts';
@@ -149,6 +157,8 @@ export type ApiOptions = {
    * `assertPayoutBootInvariants`.
    */
   payout?: PayoutOptions;
+  /** Advisory risk evaluation and the reversible payout-hold switch. */
+  risk?: RiskConfig;
 };
 
 /** What a reviewer session may reach. Everything else answers 403. */
@@ -180,6 +190,7 @@ export function buildApi({
   uploadProgress,
   reviewerMediaEnabled = false,
   payout = payoutOptionsFromEnv(),
+  risk = riskConfigFromEnv(),
 }: ApiOptions): FastifyInstance {
   if (!tokenSecret) throw new Error('tokenSecret is required');
   /**
@@ -271,12 +282,29 @@ export function buildApi({
     req.actor = { machine, operator: person };
   };
 
+  /**
+   * SEC-03, on the four routes that check a credential. The malformed-request
+   * 400 stays ahead of it: it costs nothing to answer, so it is not an attempt
+   * worth counting or recording.
+   */
+  const limiter = signInLimiter();
+
   app.post('/auth/machine', async (req, reply) => {
     const { machine_identifier, secret } = (req.body ?? {}) as Record<string, string>;
     if (!machine_identifier || !secret) return reply.code(400).send({ error: 'missing credentials' });
 
+    const attempt = signInAttempt(db, limiter, req.ip, 'machine.login_failed', [
+      { id: machine_identifier, kind: 'machine' },
+    ]);
+    const wait = await attempt.blocked();
+    if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
+
     const claims = await authenticateMachine(db, machine_identifier, secret);
-    if (claims === null) return reply.code(401).send({ error: 'invalid credentials' });
+    if (claims === null) {
+      await attempt.wrong();
+      return reply.code(401).send({ error: 'invalid credentials' });
+    }
+    attempt.ok();
     return { token: signToken(tokenSecret, claims), upload_centre_id: claims.uploadCentreId };
   });
 
@@ -284,8 +312,18 @@ export function buildApi({
     const { external_ref, secret } = (req.body ?? {}) as Record<string, string>;
     if (!external_ref || !secret) return reply.code(400).send({ error: 'missing credentials' });
 
+    const attempt = signInAttempt(db, limiter, req.ip, 'operator.login_failed', [
+      { id: external_ref, kind: 'operator' },
+    ]);
+    const wait = await attempt.blocked();
+    if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
+
     const claims = await authenticateOperator(db, external_ref, secret);
-    if (claims === null) return reply.code(401).send({ error: 'invalid credentials' });
+    if (claims === null) {
+      await attempt.wrong();
+      return reply.code(401).send({ error: 'invalid credentials' });
+    }
+    attempt.ok();
     return { token: signToken(tokenSecret, claims), upload_centre_id: claims.uploadCentreId };
   });
 
@@ -324,19 +362,37 @@ export function buildApi({
    * match whatever version is running. Nothing read them before this: they were
    * exported, tested, and never called outside the test suite.
    */
-  app.addHook('onReady', () => seedCatalogues(db));
+  app.addHook('onReady', async () => {
+    await seedCatalogues(db);
+    await seedRiskSignals(db);
+  });
+
+  const riskEngine = new RiskEngine(db, {
+    mediaRoot: risk.mediaRoot ?? mediaRoot,
+    holdsEnabled: risk.holdsEnabled,
+  });
+  // The band the payout side reads means "there is a live hold", not "the score is in the hold band".
+  const riskReader = { billSummary: (billId: string) => riskEngine.payoutSummary(billId) };
 
   registerBackOffice(app, db, requireActor);
-  registerCounter(app, db, requireActor);
+  registerCounter(app, db, requireActor, currency);
   registerEpisodes(app, db, requireActor, toleranceMs);
   registerUpload(app, db, requireActor, { objectStore, mediaRoot, uploadProgress });
   registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate, reviewerMediaEnabled });
   registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays });
-  registerPayout(app, db, requireActor, { cycleDays: settlementCycleDays, ...payout });
+  registerPayout(app, db, requireActor, {
+    cycleDays: settlementCycleDays,
+    ...payout,
+    risk: payout.risk ?? riskReader,
+    holdsEnabled: payout.holdsEnabled ?? risk.holdsEnabled,
+  });
+  registerRisk(app, db, requireActor, riskEngine);
   registerMedia(app, db, requireActor, mediaRoot);
-  registerConsole(app, db, { tokenSecret, secureCookies });
+  // One limiter for all four sign-in routes, so a guesser cannot get a fresh
+  // budget by moving from the form to the JSON route.
+  registerConsole(app, db, { tokenSecret, secureCookies, limiter });
   /** The JSON sign-in the React console uses. Same credentials, same cookies. */
-  registerSessionRoutes(app, db, { tokenSecret, secureCookies });
+  registerSessionRoutes(app, db, { tokenSecret, secureCookies, limiter });
 
   /**
    * Who the caller is. Proves both-tokens and centre scope on its own, with no

@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LightMyRequestResponse } from 'fastify';
 import { open, schema } from '@playerone/store';
-import { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
+import { COUNTER_REFUSALS, PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, SETTLE_API_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
 import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
@@ -1614,7 +1614,7 @@ describe.skipIf(!hasDb())('the back office', () => {
      * two boxes: something a person can trip by asking for what the rules
      * refuse, or something that means this code is wrong.
      */
-    const TABLES = ['tasks', 'task_claims', 'collectors', 'collector_agreements', 'devices', 'device_assignments'];
+    const TABLES = ['tasks', 'task_claims', 'collectors', 'collector_agreements', 'devices', 'device_assignments', 'review_disputes'];
     const list = TABLES.map((t) => `'${t}'`).join(', ');
 
     const declared = await rows<{ name: string }>(sql`
@@ -1670,6 +1670,9 @@ describe.skipIf(!hasDb())('the back office', () => {
       'collectors_pkey',
       'devices_pkey',
       'task_claims_pkey',
+      // Targets of the composite claim FKs (0016); `id` alone is already unique.
+      'task_claims_task_key',
+      'task_claims_pairing_key',
       'device_assignments_pkey',
       'collector_agreements_collector_id_agreement_version_pk',
       // The collector is written in the same transaction as its acceptances.
@@ -1679,11 +1682,21 @@ describe.skipIf(!hasDb())('the back office', () => {
       // batches; those routes have their own refusals and their own tests.
       'settlements_transition_check',
       'settlements_amount_immutable_check',
+      // 0016: the verdict refuses a claimless session by name before the row
+      // is written, and nothing updates a settlement's claim.
+      'settlements_claim_required',
+      'settlements_claim_matches_session',
+      'settlements_claim_immutable',
       'bill_lines_payable_check',
       'bills_issued_immutable',
       'bill_lines_owner_guard',
       'bills_total_matches_lines',
       'bill_lines_immutable',
+      // 0016: the settle routes write `exception_from_state` from the row they
+      // read, and the generator never bills a parked row; only raw SQL can
+      // trip either, and spine.test.ts proves both.
+      'settlements_exception_from_check',
+      'bill_lines_exception_check',
       'upload_batches_verify_needs_episodes',
       'upload_batches_verify_needs_verified_episodes',
       // Raised by the payout lane's tamper guards (0012/0013): append-only,
@@ -1700,6 +1713,52 @@ describe.skipIf(!hasDb())('the back office', () => {
       // updates or deletes a clearing; raw SQL is the only caller, and
       // clearing.test.ts proves it fires.
       'episode_clearings_append_only',
+      // Raised by the reconciliation tables' guards (0015): runs and lines are
+      // append-only evidence, a run is sealed when finished, a line is born
+      // open, and only a finance operator with an audited reason resolves
+      // one. No route writes these tables yet — `resolveLine` is called from
+      // tests only — so raw SQL is the only caller, and recon.test.ts proves
+      // each. When the exceptions screen lands, `recon_lines_resolved_by_operator`
+      // becomes a person's refusal and moves to a refusal set with a sentence.
+      'recon_runs_append_only',
+      'recon_runs_sealed',
+      'recon_lines_append_only',
+      'recon_lines_resolved_by_operator',
+      'recon_lines_born_open',
+      // Raised by the risk engine's guards (0014): append-only evidence, a
+      // supersede-only catalogue, and the hold chain. The back office never
+      // writes risk tables. The risk routes read the open hold first and
+      // answer 409 through NoOpenHold before the chain guard can fire; the
+      // guard is the second lock, for raw SQL, and test/risk/schema.test.ts
+      // proves each name.
+      'risk_signals_supersede_only',
+      'risk_flags_append_only',
+      'risk_holds_append_only',
+      'risk_holds_already_open',
+      'risk_holds_clear_requires_open',
+      'risk_holds_clear_signals_check',
+      // Raised by the dispute path's tamper guards (0016). The four a person
+      // can trip through `POST /api/review/dispute` are in REFUSALS; these are
+      // reachable only from raw SQL, and dispute.test.ts proves each.
+      'review_disputes_append_only',
+      // The dispute row's own shape: the route mints the id, copies the
+      // operator from the verified token, and zod refuses a blank reason;
+      // outcome and resolved_at are written as a pair by the verdict.
+      'review_disputes_pkey',
+      'review_disputes_raised_by_operators_id_fk',
+      'review_disputes_reason_check',
+      'review_disputes_outcome_check',
+      'review_disputes_resolved_check',
+      // A review id that names nothing: the route answers 404 on this one.
+      'review_disputes_review_id_episode_reviews_id_fk',
+      'episode_reviews_dispute_immutable',
+      'episode_reviews_dispute_open_check',
+      'episode_reviews_dispute_delivery_check',
+      'episode_reviews_second_reviewer_check',
+      'settlements_superseded_immutable',
+      'settlements_superseded_state_check',
+      'bill_lines_superseded_check',
+      'bill_lines_disputed_check',
     ]);
 
     for (const name of [...declared.map((d) => d.name), ...raised]) {
@@ -1717,9 +1776,15 @@ describe.skipIf(!hasDb())('the back office', () => {
     for (const name of REFUSALS) {
       expect(real.has(name), `${name} is mapped but no constraint by that name exists`).toBe(true);
     }
+    for (const name of INTERNAL) {
+      expect(real.has(name), `${name} is declared unreachable but no constraint by that name exists`).toBe(true);
+    }
 
     // The ones the API raises itself, which are not database constraints.
+    // `SETTLE_API_REFUSALS` is the settle lane's own list, spread in rather
+    // than copied, so a refusal added there without a sentence fails here.
     for (const constraint of [
+      ...SETTLE_API_REFUSALS,
       'device_already_bound',
       'tasks_id_reused',
       'collectors_id_reused',
@@ -1727,6 +1792,8 @@ describe.skipIf(!hasDb())('the back office', () => {
       'task_claims_id_reused',
       'task_claims_released',
       'device_assignments_id_reused',
+      // The counter's own (0016): a session needs a live claim.
+      ...COUNTER_REFUSALS,
     ]) {
       const key = `bo.refused.${constraint}` as keyof typeof MESSAGES.en;
       expect(MESSAGES.en[key], `no English sentence for ${constraint}`).toBeTruthy();

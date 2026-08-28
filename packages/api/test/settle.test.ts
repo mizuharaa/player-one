@@ -5,7 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential } from '../src/index.ts';
 import { ZERO, add, fromDecimal, mul, quantise } from '../src/money.ts';
-import { closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
+import { closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('settle');
@@ -124,13 +124,18 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
     const hash = await hashCredential('pw');
     await d.execute(sql`insert into upload_centres (id, region, name, status) values (${ids.centreA}, 'HCM', 'District 7', 'active'), (${ids.centreB}, 'HAN', 'Cau Giay', 'active')`);
     await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash) values (${ids.machineA}, ${ids.centreA}, 'HCM-01', 'active', ${hash}), (${ids.machineB}, ${ids.centreB}, 'HAN-01', 'active', ${hash})`);
-    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.operatorA}, ${ids.centreA}, 'op-hcm', 'centre_operator', ${hash}), (${ids.operatorB}, ${ids.centreB}, 'op-han', 'centre_operator', ${hash}), (${ids.financeA}, ${ids.centreA}, 'fin-hcm', 'finance', ${hash})`);
+    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.operatorA}, ${ids.centreA}, 'op-hcm', 'centre_operator', ${hash}), (${ids.operatorB}, ${ids.centreB}, 'op-han', 'centre_operator', ${hash}), (${ids.financeA}, ${ids.centreA}, 'fin-hcm', 'finance', ${hash}), (${uid()}, null, 'pax-01', 'reviewer', ${hash})`);
     await d.execute(sql`insert into collectors (id, external_ref, status) values (${ids.collector1}, 'c-0001', 'qualified'), (${ids.collector2}, 'c-0002', 'qualified')`);
     await d.execute(sql`insert into device_types (id, code, generation) values (${ids.deviceType}, 'ego_headset', 'gen1')`);
     await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status) values (${ids.device1}, ${ids.deviceType}, 'AZER76400FE', 'active'), (${ids.device2}, ${ids.deviceType}, 'AZER76400FF', 'active')`);
     // SET-08: two prices, so a bill total cannot be right by accident.
     await d.execute(sql`insert into tasks (id, name, unit_price, max_concurrent_claimants, status) values (${ids.taskHousework}, 'housework', 1200, 5, 'published'), (${ids.taskFactory}, 'factory', 900, 5, 'published')`);
     await d.execute(sql`insert into scenarios (id, code, privacy_risk_level) values (${ids.scenario}, 'home', 'low')`);
+    // Each collector holds each task, so any card below can declare either (0016).
+    for (const collector of [ids.collector1, ids.collector2]) {
+      await liveClaim(d, ids.taskHousework, collector);
+      await liveClaim(d, ids.taskFactory, collector);
+    }
 
     const app = buildApi({ db: d, tokenSecret: SECRET, settlementCycleDays: options.cycleDays });
     await app.ready();
@@ -152,6 +157,18 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
      * it paid — that is the separation of duty, and it holds here too.
      */
     const headersF = await login('HCM-01', 'fin-hcm');
+    /** A PaXini reviewer, signed in the way the console does it; scoped to `/api/review/`. */
+    const headersR = await (async () => {
+      const session = await app.inject({
+        method: 'POST',
+        url: '/api/session',
+        payload: { role: 'reviewer', external_ref: 'pax-01', operator_secret: 'pw' },
+      });
+      expect(session.statusCode, session.body).toBe(200);
+      const setCookie = [session.headers['set-cookie'] ?? []].flat().join(' | ');
+      const token = /po_operator=([^;]+)/.exec(setCookie)?.[1] ?? '';
+      return { authorization: `Bearer ${decodeURIComponent(token)}` };
+    })();
 
     const send = async (
       method: 'POST' | 'GET',
@@ -243,7 +260,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       }
     }
 
-    return { d, app, ids, headersA, headersB, headersF, send, expected };
+    return { d, app, ids, headersA, headersB, headersF, headersR, send, expected };
   }
 
   /**
@@ -467,6 +484,310 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
   });
 
   // -------------------------------------------------------------------------
+
+  describe('SET-05: exception, and the way back', () => {
+    type Row = { id: string; settlement_state: string; amount: string };
+    const settlements = async (h: Awaited<ReturnType<typeof harness>>): Promise<Row[]> =>
+      (await h.d.execute(sql`select id, settlement_state, amount::text as amount from settlements order by created_at, id`)) as unknown as Row[];
+    const events = async (h: Awaited<ReturnType<typeof harness>>, action: string): Promise<number> => {
+      const rows = (await h.d.execute(sql`select count(*)::int as n from audit_events where action = ${action}`)) as unknown as { n: number }[];
+      return rows[0]!.n;
+    };
+
+    it('parks a queued settlement with a reason, and generating the cycle leaves it out and counts it', async () => {
+      const h = await harness();
+      const [first] = await settlements(h);
+      const parked = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, {
+        reason: 'wrong_collector',
+        note: 'card CARD-1 was carried by c-0002 that week',
+      });
+      expect(parked.statusCode, parked.body).toBe(200);
+      expect(parked.json()).toEqual({
+        id: first!.id,
+        amount: first!.amount,
+        settlement_state: 'exception',
+        exception_from_state: 'pending_settlement',
+        exception_reason: 'wrong_collector',
+        exception_note: 'card CARD-1 was carried by c-0002 that week',
+      });
+
+      const res = await h.send('POST', '/api/settle/bills', period());
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().exception).toBe(1);
+      expect(res.json().created).toBe(2);
+      const lines = (await h.d.execute(sql`select count(*)::int as n from bill_lines`)) as unknown as { n: number }[];
+      expect(lines[0]!.n).toBe(3);
+      expect((res.json().bills as { exceptions: number }[]).map((b) => b.exceptions)).toEqual([0, 0]);
+      expect((await h.send('GET', `/api/settle/bills?period_start=${encodeURIComponent(period().period_start)}`)).json().exception).toBe(1);
+
+      // The event says who, what and why, in the same transaction as the move.
+      const [event] = (await h.d.execute(sql`
+        select operator_id::text as operator_id, reason, before, after from audit_events where action = 'settlement.exception'
+      `)) as unknown as { operator_id: string; reason: string; before: unknown; after: unknown }[];
+      expect(event!.operator_id).toBe(h.ids.operatorA);
+      expect(event!.reason).toBe('wrong_collector');
+      expect(event!.before).toEqual({ settlement_state: 'pending_settlement' });
+      expect(event!.after).toMatchObject({ settlement_state: 'exception', exception_from_state: 'pending_settlement' });
+    });
+
+    it('is idempotent: the same request twice is one event, and a release twice is one event', async () => {
+      const h = await harness({ each: 1 });
+      const [first] = await settlements(h);
+      const body = { reason: 'disputed', note: 'PaXini disputed the effective minutes' };
+      const once = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, body);
+      const twice = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, body);
+      expect(once.statusCode).toBe(200);
+      expect(twice.statusCode).toBe(200);
+      expect(twice.json()).toEqual(once.json());
+      expect(await events(h, 'settlement.exception')).toBe(1);
+      // A different reason on a parked row does not overwrite the first one.
+      const other = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, { reason: 'duplicate', note: 'second thoughts' });
+      expect(other.json().exception_reason).toBe('disputed');
+      expect(await events(h, 'settlement.exception')).toBe(1);
+
+      const released = await h.send('POST', `/api/settle/settlements/${first!.id}/release`, { note: 'resolved with PaXini' });
+      expect(released.statusCode, released.body).toBe(200);
+      expect(released.json()).toEqual({
+        id: first!.id,
+        amount: first!.amount,
+        settlement_state: 'pending_settlement',
+        exception_from_state: null,
+        exception_reason: null,
+        exception_note: null,
+      });
+      const again = await h.send('POST', `/api/settle/settlements/${first!.id}/release`);
+      expect(again.statusCode).toBe(409);
+      expect(again.json().constraint).toBe('settlements_not_in_exception');
+      expect(await events(h, 'settlement.release')).toBe(1);
+    });
+
+    it('validates the reason, the id and the actor', async () => {
+      const h = await harness({ each: 1 });
+      const [first] = await settlements(h);
+      const url = `/api/settle/settlements/${first!.id}/exception`;
+      expect((await h.send('POST', url, {})).statusCode).toBe(400);
+      expect((await h.send('POST', url, { reason: 'because', note: 'n' })).statusCode).toBe(400);
+      // The reason code AND the sentence are both required: SET-05's slice asks
+      // for a code to count on and free text for whoever has to undo this.
+      expect((await h.send('POST', url, { reason: 'disputed' })).statusCode).toBe(400);
+      // `superseded` is reserved for the dispute lane's own SQL and no route
+      // may write it: a row parked under it can never be released.
+      expect((await h.send('POST', url, { reason: 'superseded', note: 'n' })).statusCode).toBe(400);
+      expect((await h.send('POST', url, { reason: 'disputed', note: '   ' })).statusCode).toBe(400);
+      expect((await h.send('POST', url, { reason: 'disputed', note: 'x'.repeat(2001) })).statusCode).toBe(400);
+      expect((await h.send('POST', '/api/settle/settlements/not-a-uuid/exception', { reason: 'disputed', note: 'n' })).statusCode).toBe(400);
+      expect((await h.send('POST', `/api/settle/settlements/${uid()}/exception`, { reason: 'disputed', note: 'n' })).statusCode).toBe(404);
+      expect((await h.send('POST', `/api/settle/settlements/${uid()}/release`)).statusCode).toBe(404);
+      // A reviewer session is scoped to review (PLT-10) and never reaches settlement.
+      expect((await h.send('POST', url, { reason: 'disputed', note: 'n' }, h.headersR)).statusCode).toBe(403);
+      expect((await h.send('POST', `/api/settle/settlements/${first!.id}/release`, {}, h.headersR)).statusCode).toBe(403);
+      // Nothing above moved the row or wrote an event.
+      expect((await settlements(h))[0]!.settlement_state).toBe('pending_settlement');
+      expect(await events(h, 'settlement.exception')).toBe(0);
+      // Finance may park too; a centre operator at the other centre may as well.
+      expect((await h.send('POST', url, { reason: 'manual_hold', note: 'finance hold pending the ZaloPay reconciliation' }, h.headersF)).statusCode).toBe(200);
+      expect((await h.send('POST', `/api/settle/settlements/${first!.id}/release`, {}, h.headersB)).statusCode).toBe(200);
+    });
+
+    it('parks a billed line: the bill keeps it, shows it, and cannot be paid until it is released', async () => {
+      const h = await harness({ each: 1 });
+      const generated = await h.send('POST', '/api/settle/bills', period());
+      const bill = (generated.json().bills as { id: string; collector_ref: string; total: string }[]).find((b) => b.collector_ref === 'c-0001')!;
+      const [line] = (await h.send('GET', `/api/settle/bills/${bill.id}`)).json().lines as { settlement_id: string }[];
+
+      const parked = await h.send('POST', `/api/settle/settlements/${line!.settlement_id}/exception`, { reason: 'duplicate', note: 'same footage already paid on last week’s bill' });
+      expect(parked.statusCode, parked.body).toBe(200);
+      expect(parked.json().exception_from_state).toBe('bill_generated');
+
+      const detail = (await h.send('GET', `/api/settle/bills/${bill.id}`)).json();
+      expect(detail.exceptions).toBe(1);
+      expect(detail.paid).toBe(false);
+      expect(detail.total).toBe(bill.total);
+      expect(detail.lines).toHaveLength(1);
+      expect(detail.lines[0].settlement_state).toBe('exception');
+      const listed = (await h.send('GET', `/api/settle/bills?period_start=${encodeURIComponent(period().period_start)}`)).json();
+      expect((listed.bills as { id: string; exceptions: number }[]).find((b) => b.id === bill.id)!.exceptions).toBe(1);
+      // SET-05: a parked line cannot be billed, paid OR exported. The line is
+      // excluded from the file, and because it is still inside the bill's
+      // stored total the export then refuses that bill by name rather than
+      // handing finance a file whose lines do not add up to its own total
+      // column. Both halves are here: the excluded row is worth the whole
+      // bill, so `exported_total` is zero against a non-zero `total`.
+      const exported = await h.send('GET', `/api/settle/export.csv?period_start=${encodeURIComponent(period().period_start)}`);
+      expect(exported.statusCode, exported.body).toBe(409);
+      expect(exported.json().constraint).toBe('settle_export_bill_in_exception');
+      expect(exported.json().bills).toEqual([
+        {
+          id: bill.id,
+          collector_ref: bill.collector_ref,
+          total: bill.total,
+          exported_total: '0.0000',
+          excluded_lines: 1,
+        },
+      ]);
+      // Not one byte of CSV, so the parked settlement cannot be in it.
+      expect(exported.body).not.toContain(line!.settlement_id);
+
+      // The manual rail refuses by name, before it asks about the account or the total.
+      const pay = await h.send('POST', `/api/payout/bills/${bill.id}/mark-paid`, { manual_reference: 'TX-1', amount_vnd: 320 }, h.headersF);
+      expect(pay.statusCode, pay.body).toBe(409);
+      expect(pay.json().constraint).toBe('payout_settlement_exception');
+      expect(await events(h, 'bill.mark_paid')).toBe(0);
+      // What the collector's own income screen is told (APP-33/34). `approved`
+      // is printed as "Đã duyệt, chờ chi trả" — approved, awaiting payment —
+      // and neither rail will pay this bill, so it must not say that. It falls
+      // into the existing neutral `on_hold` bucket, and the response carries no
+      // reason code and no note: the reason may name another collector and the
+      // note is internal evidence.
+      const income = await h.send('GET', `/api/payout/collectors/${h.ids.collector1}/income`, undefined, h.headersF);
+      expect(income.statusCode, income.body).toBe(200);
+      const shown = (income.json().periods as { bill_id: string | null; status: string }[]).find((p) => p.bill_id === bill.id)!;
+      expect(shown.status).toBe('on_hold');
+      expect(income.body).not.toContain('duplicate');
+      expect(income.body).not.toContain('exception');
+      expect(income.body).not.toContain('same footage already paid');
+
+      // And the preflight lists it as an issue rather than a payable bill.
+      const preflight = await h.send('POST', `/api/payout/batches/${encodeURIComponent(period().period_start)}/preflight`, {}, h.headersF);
+      expect(preflight.statusCode, preflight.body).toBe(200);
+      expect(preflight.json().counts.line_in_exception).toBe(1);
+      expect((preflight.json().exceptions as { id: string; issues: string[] }[]).find((b) => b.id === bill.id)!.issues).toContain('line_in_exception');
+
+      // Released: back onto the bill, not into the queue, and the cycle does not re-bill it.
+      const released = await h.send('POST', `/api/settle/settlements/${line!.settlement_id}/release`);
+      expect(released.json().settlement_state).toBe('bill_generated');
+      expect((await h.send('POST', '/api/settle/bills', period())).json().created).toBe(0);
+      expect((await h.send('GET', `/api/settle/bills/${bill.id}`)).json().exceptions).toBe(0);
+      // Released, the same screen goes back to saying the money is approved.
+      const reopenedIncome = await h.send('GET', `/api/payout/collectors/${h.ids.collector1}/income`, undefined, h.headersF);
+      expect((reopenedIncome.json().periods as { bill_id: string | null; status: string }[]).find((p) => p.bill_id === bill.id)!.status).toBe('approved');
+
+      const after = await h.send('POST', `/api/payout/bills/${bill.id}/mark-paid`, { manual_reference: 'TX-1', amount_vnd: 320 }, h.headersF);
+      expect(after.json().constraint).not.toBe('payout_settlement_exception');
+
+      // And with nothing parked the export runs again, with the line back in
+      // it and its own arithmetic unchanged.
+      const reopened = await h.send('GET', `/api/settle/export.csv?period_start=${encodeURIComponent(period().period_start)}`);
+      expect(reopened.statusCode, reopened.body).toBe(200);
+      const csv = parseCsv(reopened.body);
+      const header = csv[0]!;
+      const row = csv.slice(1).find((r) => r[header.indexOf('bill_id')] === bill.id)!;
+      expect(row![header.indexOf('settlement_state')]).toBe('bill_generated');
+      expect(row![header.indexOf('amount')]).toBe(bill.total);
+    });
+
+    it('a row released after its collector was billed is deferred, counted, and billed by the NEXT cycle', async () => {
+      /**
+       * The scenario the summary used to answer `200 {created: 0}` for, walked
+       * end to end.
+       *
+       * Park a queued settlement, run the cycle so the collector's bill for the
+       * period goes out without it, release it back to `pending_settlement`,
+       * and run the same period again. `bills_collector_period_key` has nowhere
+       * to put a second bill for that collector and period, so the insert
+       * conflicts and `mutate` writes nothing — and before this the answer was
+       * byte-identical to a period in which nothing at all was owed.
+       *
+       * Daniel's decision: the money rolls into the next cycle and there is no
+       * supplementary bill. So the re-run says who is owed and how much is
+       * waiting, and the next cycle actually pays it — exactly once. That last
+       * half only works because `settleable` has no start date; with one, this
+       * row's `created_at` sat inside a period already billed and outside every
+       * later one, and no cycle would ever have found it again.
+       */
+      const h = await harness();
+      const [first] = await settlements(h);
+      const parked = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, {
+        reason: 'wrong_collector',
+        note: 'checking whose card this was before it goes on a bill',
+      });
+      expect(parked.statusCode, parked.body).toBe(200);
+      expect(parked.json().exception_from_state).toBe('pending_settlement');
+
+      const generated = await h.send('POST', '/api/settle/bills', period());
+      expect(generated.json().created).toBe(2);
+      expect(generated.json().deferred_to_next_period).toEqual({ settlements: 0, collector_refs: [] });
+      // The parked row's collector was billed for the period, one line short.
+      const short = (generated.json().bills as { id: string; collector_ref: string; lines: number }[]).find((b) => b.lines === 1)!;
+      expect(short).toBeDefined();
+
+      const released = await h.send('POST', `/api/settle/settlements/${first!.id}/release`, { note: 'it was the right collector after all' });
+      expect(released.json().settlement_state).toBe('pending_settlement');
+
+      const again = await h.send('POST', '/api/settle/bills', period());
+      expect(again.statusCode, again.body).toBe(200);
+      const body = again.json();
+      // The money is owed, and the answer names whose it is instead of reading
+      // like an empty period. `not_payable` counts zero-amount rows and
+      // `exception` counts still-parked ones: neither can see this row.
+      expect(body.deferred_to_next_period).toEqual({ settlements: 1, collector_refs: [short.collector_ref] });
+      expect(body.created).toBe(0);
+      expect(body.not_payable).toBe(0);
+      expect(body.exception).toBe(0);
+
+      // And nothing was written by the re-run: no second bill, no line, no event.
+      const state = (await h.d.execute(sql`
+        select (select count(*) from bills)::int as bills,
+               (select count(*) from bill_lines)::int as lines,
+               (select settlement_state from settlements where id = ${first!.id}) as state,
+               (select count(*) from bill_lines where settlement_id = ${first!.id})::int as billed
+      `)) as unknown as { bills: number; lines: number; state: string; billed: number }[];
+      expect(state[0]).toMatchObject({ bills: 2, lines: 3, state: 'pending_settlement', billed: 0 });
+      expect(await events(h, 'bill.generate')).toBe(2);
+
+      // The next cycle bills it, on its own bill, for exactly what it is worth.
+      const nextStart = new Date(START.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const next = await h.send('POST', '/api/settle/bills', { period_start: nextStart });
+      expect(next.statusCode, next.body).toBe(200);
+      expect(next.json().created).toBe(1);
+      expect(next.json().deferred_to_next_period).toEqual({ settlements: 0, collector_refs: [] });
+      // `billsIn` windows on the bill's own period_start, so this list is the
+      // new period's bills only: one, for the collector who was owed.
+      const nextBills = next.json().bills as { id: string; collector_ref: string; total: string; lines: number }[];
+      expect(nextBills).toHaveLength(1);
+      const arrears = nextBills[0]!;
+      expect(arrears.collector_ref).toBe(short.collector_ref);
+      expect(arrears.id).not.toBe(short.id);
+      expect(arrears.lines).toBe(1);
+      expect(arrears.total).toBe(first!.amount);
+
+      // Exactly once: one line, on the new bill, and the row has moved on.
+      const billed = (await h.d.execute(sql`
+        select bill_id::text as bill_id from bill_lines where settlement_id = ${first!.id}
+      `)) as unknown as { bill_id: string }[];
+      expect(billed).toHaveLength(1);
+      expect(billed[0]!.bill_id).toBe(arrears.id);
+      expect((await settlements(h)).find((s) => s.id === first!.id)!.settlement_state).toBe('bill_generated');
+
+      // And running the next cycle a second time still changes nothing.
+      const twice = await h.send('POST', '/api/settle/bills', { period_start: nextStart });
+      expect(twice.json().created).toBe(0);
+      expect(twice.json().deferred_to_next_period).toEqual({ settlements: 0, collector_refs: [] });
+      expect(await events(h, 'bill.generate')).toBe(3);
+    });
+
+    it('refuses to park a paid settlement, because paid is final', async () => {
+      const h = await harness({ each: 1 });
+      const [first] = await settlements(h);
+      // Paid the way 0013 requires: a finance operator who did not issue the
+      // bill, in the same transaction as the move. Straight SQL, so the row is
+      // `manually_paid` without a payout account in the fixture.
+      await h.send('POST', '/api/settle/bills', period());
+      const [bill] = (await h.d.execute(sql`select bill_id::text as bill_id from bill_lines where settlement_id = ${first!.id}`)) as unknown as { bill_id: string }[];
+      await h.d.transaction(async (tx) => {
+        await tx.execute(sql`update settlements set settlement_state = 'manually_paid', updated_at = now() where id = ${first!.id}`);
+        await tx.execute(sql`
+          insert into audit_events (action, target_table, target_id, actor_role, operator_id, upload_device_id, upload_centre_id)
+            values ('bill.pay', 'bills', ${bill!.bill_id}, 'operator', ${h.ids.financeA}, ${h.ids.machineA}, ${h.ids.centreA})
+        `);
+      });
+      const res = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, { reason: 'disputed', note: 'too late, it is paid' });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().constraint).toBe('settlements_transition_check');
+      expect((await settlements(h)).find((s) => s.id === first!.id)!.settlement_state).toBe('manually_paid');
+      expect(await events(h, 'settlement.exception')).toBe(0);
+    });
+  });
 
   // -------------------------------------------------------------------------
 

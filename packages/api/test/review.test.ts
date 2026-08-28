@@ -8,7 +8,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { EpisodeRecord } from '@playerone/contracts';
 import { open, type Db } from '@playerone/store';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { DB_URL, closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
+import { DB_URL, closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 import { episodeRecord } from './fixtures.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -89,6 +89,8 @@ describe.skipIf(!hasDb())('the review lane', () => {
     await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status) values (${ids.device}, ${ids.deviceType}, 'AZER76400FE', 'active')`);
     await d.execute(sql`insert into tasks (id, name, unit_price, max_concurrent_claimants, status) values (${ids.task}, 'housework', 1200, 5, 'published')`);
     await d.execute(sql`insert into scenarios (id, code, privacy_risk_level) values (${ids.scenario}, 'home', 'low')`);
+    /** The claim the session below is recorded under (0016); the verdict pays its snapshot. */
+    const claim = await liveClaim(d, ids.task, ids.collector);
     /**
      * The device's allotted period, open, starting a month before T. The
      * resolver crosschecks each candidate session against who held the device
@@ -168,6 +170,7 @@ describe.skipIf(!hasDb())('the review lane', () => {
       await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.operator3}, ${ids.centre2}, 'op3', 'centre_operator', ${hash})`);
       await d.execute(sql`insert into collectors (id, external_ref, status) values (${ids.collector2}, 'c2', 'qualified')`);
       await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status) values (${ids.device2}, ${ids.deviceType}, ${SERIAL_2}, 'active')`);
+      await liveClaim(d, ids.task, ids.collector2);
 
       const headers3: Record<string, string> = await login('op3', 'M2');
       const handover2 = uid();
@@ -203,7 +206,7 @@ describe.skipIf(!hasDb())('the review lane', () => {
       privacyIds = (flagged.json().episodes as { episode_id: string }[]).map((e) => e.episode_id);
     }
 
-    return { d, app, ids, headers, headers2, send, handover, batch, session, episodeIds, privacyIds };
+    return { d, app, ids, claim, headers, headers2, send, handover, batch, session, episodeIds, privacyIds };
   }
 
   const claim = async (h: Awaited<ReturnType<typeof harness>>, who?: Record<string, string>) =>
@@ -742,6 +745,91 @@ describe.skipIf(!hasDb())('the review lane', () => {
       expect(body.effective_duration_seconds).toBe('60.000000');
       expect(body.effective_minutes).toBe('1.000000');
       expect(body.amount).toBe('1200.0000');
+    });
+
+    it('pays the price snapshotted on the session, not the task’s price at verdict time', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const episodeId = (await claim(h)).json().episode_id;
+
+      /**
+       * `tasks_price_frozen` refuses this on a published task today, so the
+       * only writer that can do it is one that does not go through the
+       * trigger — a future SET-09 repricing, or a psql session. Either way the
+       * recording was declared at 1200 and 1200 is what it earns.
+       */
+      await h.d.execute(sql`alter table tasks disable trigger tasks_price_frozen`);
+      await h.d.execute(sql`update tasks set unit_price = 1 where id = ${h.ids.task}`);
+      await h.d.execute(sql`alter table tasks enable trigger tasks_price_frozen`);
+
+      const res = await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'good' });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().unit_price).toBe('1200.0000');
+      expect(res.json().amount).toBe('1200.0000');
+
+      const [row] = (await h.d.execute(sql`
+        select s.unit_price, s.amount, s.task_claim_id
+          from settlements s join episode_reviews r on r.id = s.episode_review_id
+         where r.episode_id = ${episodeId}`)) as unknown as Record<string, string>[];
+      // The settlement names the claim the footage was recorded under.
+      expect(row).toEqual({ unit_price: '1200.0000', amount: '1200.0000', task_claim_id: h.claim });
+    });
+
+    it('refuses a verdict on footage whose session carries no claim, and writes nothing', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const episodeId = (await claim(h)).json().episode_id;
+      // A session from before 0016: no claim, no snapshot.
+      await h.d.execute(sql`update collection_sessions set task_claim_id = null, unit_price = null, currency = null where id = ${h.session}`);
+
+      const res = await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'good' });
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json()).toEqual({ error: 'refused', constraint: 'session_claim_missing' });
+      /**
+       * A `bad` verdict is refused too. It pays nothing, but it still writes
+       * the 0.0000 settlement that is the review's score (settle.ts), and
+       * `settlements_claim_required` refuses that row without a claim. The
+       * refusal comes before any write in both cases.
+       */
+      const bad = await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'bad', reject_reasons: ['VQ-DARK'] });
+      expect(bad.statusCode, bad.body).toBe(409);
+      expect(bad.json()).toEqual({ error: 'refused', constraint: 'session_claim_missing' });
+      const [n] = (await h.d.execute(sql`select count(*)::int as n from settlements`)) as unknown as { n: number }[];
+      expect(n!.n).toBe(0);
+      const [state] = (await h.d.execute(sql`select review_state from episode_reviews where episode_id = ${episodeId}`)) as unknown as { review_state: string }[];
+      expect(state!.review_state).toBe('pending');
+
+      // The lease runs out. The episode is not offered to the next reviewer: a
+      // pending row whose session lost its claim is not claimable and not depth.
+      await h.d.execute(sql`update episode_reviews set lease_expires_at = now() - interval '1 second' where episode_id = ${episodeId}`);
+      expect((await claim(h, h.headers2)).statusCode).toBe(204);
+      const next = await h.send('GET', '/api/review/next', undefined, h.headers2);
+      expect(next.statusCode, next.body).toBe(204);
+    });
+
+    it('keeps footage whose session carries no claim out of the queue until the counter attaches one', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      // A session from before 0016: no claim, no snapshot. Nothing has been claimed yet.
+      await h.d.execute(sql`update collection_sessions set task_claim_id = null, unit_price = null, currency = null where id = ${h.session}`);
+
+      // Reviewers are never served footage they cannot act on.
+      expect((await claim(h)).statusCode).toBe(204);
+      expect((await h.send('GET', '/api/review/next')).statusCode).toBe(204);
+      const [rows] = (await h.d.execute(sql`select count(*)::int as n from episode_reviews`)) as unknown as { n: number }[];
+      expect(rows!.n).toBe(0);
+
+      // The path out is the one 0016's header names: the back office attaches
+      // the claim the collector actually held. Then the episode enters review.
+      await h.d.execute(sql`update collection_sessions set task_claim_id = ${h.claim}, unit_price = 1200, currency = 'VND' where id = ${h.session}`);
+      const claimed = await claim(h);
+      expect(claimed.statusCode, claimed.body).toBe(200);
+      const episodeId = claimed.json().episode_id;
+      const res = await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'bad', reject_reasons: ['VQ-DARK'] });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().amount).toBe('0.0000');
+      const [row] = (await h.d.execute(sql`
+        select s.amount, s.task_claim_id
+          from settlements s join episode_reviews r on r.id = s.episode_review_id
+         where r.episode_id = ${episodeId}`)) as unknown as Record<string, string>[];
+      expect(row).toEqual({ amount: '0.0000', task_claim_id: h.claim });
     });
 
     it('pays nothing for a rejection, and insists on a reason', async () => {

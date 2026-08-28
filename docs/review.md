@@ -519,10 +519,99 @@ the *end* of a period whose start the caller gave.
   `fail`, which would change what `settlements_review_key` and the console's
   settled-value sum mean. That is a decision, not a defect to patch quietly.
 - **A bill is never revised.** There is no credit note and no way to take a line
-  off an issued bill; a settlement that turns out to be wrong goes to
-  `exception`, and the bill it is on shows as unpaid for ever. That is honest and
-  it is not a workflow. It needs one when the dispute path (QR-08) lands.
-- **Dispute and second review are P2** and deliberately not built.
-  `episode_reviews_delivery_key` is one review per delivery; when the dispute
-  flow lands it needs a supersedes column rather than a second row, or that index
-  moves.
+  off an issued bill. What exists (0016) is `exception`: an operator parks a
+  settlement with a reason code and a note (`POST
+  /api/settle/settlements/:id/exception`), from any state but `manually_paid`,
+  and releases it (`.../release`) back to the state it was parked from — the
+  trigger stores `exception_from_state` and allows no other exit. A line parked
+  off an issued bill stays on that bill, the bill's total still adds up, the
+  bill lists it under `exceptions`, and the payout lane refuses to pay the bill
+  (`payout_settlement_exception`) until it is released. A parked row cannot be
+  billed (`bill_lines_exception_check`). That is a place to hold a wrong line.
+  It is still not a correction on its own; the correction is the dispute path
+  below, which uses it as the place the superseded row goes.
+- **A released settlement rolls into the next cycle, and there is never a
+  supplementary bill.** Decided 2026-08-27. A settlement parked in `exception`
+  while its period's cycle ran, and released afterwards, cannot go on that
+  period's bill: `bills_collector_period_key` has nowhere to put a second bill
+  for the same collector and period. Relaxing that key was the alternative and
+  was rejected — it is the constraint that makes "one bill per collector per
+  period" checkable by hand when an invoice is disputed, and that is a money
+  invariant. So two things hold instead. `settleable`
+  (`packages/api/src/settle.ts`) windows on the period's **end only**: a cycle
+  bills everything still `pending_settlement` up to its end date, not only what
+  became owed inside its own seven days, so a released row lands on the next
+  bill as an arrear line. And the re-run of the already-billed period reports
+  `deferred_to_next_period: { settlements, collector_refs }` instead of
+  answering `created: 0` as if nothing were owed. The old start-of-window was a
+  real trap and not only a reporting one: a released row's `created_at` sat
+  inside a period already billed and outside every later window, so no cycle
+  would have found it again — money owed and unreachable by any route.
+  Two consequences to know about. A bill can carry a line whose `reviewed_at`
+  predates its own period; the export prints `reviewed_at` per line, so the
+  file still says when the work was done. And `not_payable` (a rejected
+  episode's zero-value settlement) is now a running backlog count rather than a
+  one-period one, because those rows are still `pending_settlement` and every
+  later cycle finds them too — which is the same unresolved thing the bullet
+  above describes, counted every week instead of once.
+- **The CSV export excludes parked lines, and refuses any bill whose printed
+  lines then stop matching its printed total.** SET-05 says a parked settlement
+  cannot be billed, paid **or exported**; SET-06 fixes the column list and the
+  format, and neither changes — only which rows are in the file. Because a
+  parked line stays on its bill and inside the bill's stored `total`, excluding
+  it always leaves that bill's rows summing to less than the total it is filed
+  under. The export sums what it is about to print, compares it with the bill,
+  and on any difference answers 409 `settle_export_bill_in_exception` naming
+  the bill, its collector, both totals and how many lines were held back
+  (`packages/api/src/settle.ts`, the export route). Finance is never handed a
+  file that silently does not add up. It is a whole-response refusal because a
+  CSV cannot be half-sent; release the line and the export runs.
+- **A superseded settlement is parked and stays parked.** 0016 reserves the
+  exception reason `superseded` for the dispute path: a settlement a second
+  review has rewritten is parked like any other row — it names the state it came
+  from and its reason — but the transition guard gives it no way out, because
+  releasing it would put the same footage on a bill twice. No operator route can
+  write that reason; it is the dispute lane's own SQL, and that UPDATE must set
+  `exception_from_state` and `exception_reason = 'superseded'` alongside
+  `settlement_state = 'exception'` or the shape CHECK refuses it.
+
+## Dispute and second review (QR-08)
+
+`POST /api/review/dispute` takes a decided review's id and the collector's
+reason, typed by an operator — the pilot has no collector login. One
+transaction writes an append-only `review_disputes` row and a pending second
+review of the same delivery in the `second_review` lane, audited as
+`review.dispute`. It moves nothing in money: the original settlement stays
+`pending_settlement`, and both the bill generator and `bill_lines_dispute_guard`
+hold it back while the dispute is open.
+
+Two scope rules sit on that route. It is closed to a PaXini reviewer (403), and
+it is scoped to the operator's own upload centre: the review is looked up
+through `episodes → upload_batches → handovers`, and one that belongs to
+another centre gets the same 404 as an id that names nothing, which is what
+`/handovers/:id/sessions` and `/episodes/:id/resolve` already do (SEC-02).
+
+The "still unbilled" test is taken under a row lock. `review_disputes_guard`
+reads the settlement `FOR UPDATE` and the bill generator moves the settlement to
+`bill_generated` before it writes any bill line, so a dispute and a bill
+generation that meet on the same row serialise in either order: one of them
+waits, and then sees what the other did.
+
+The second review is an ordinary claim and verdict. `?queue=second_review`
+reuses the takeover statement and the lease; nothing is ever materialised into
+that lane, and the takeover skips the reviewer whose verdict is under challenge
+(`episode_reviews_second_reviewer_check` refuses the write as well). The
+verdict decides the money in its own transaction: the same outcome and the same
+effective seconds closes the dispute `upheld` and writes no second settlement;
+anything else writes one from the second verdict, parks the original in
+`exception` with `superseded_by` pointing at it (`settlements_supersede_guard`
+pins it there — 0005's way back out of `exception` is closed for a superseded
+row), and closes the dispute `overturned`. Every guard is in `0016_dispute_review.sql`
+and tested in raw SQL in `packages/api/test/dispute.test.ts`.
+
+`episode_reviews_delivery_key` moved for this: it is now one review per
+delivery *where `dispute_id is null`*, and `episode_reviews_dispute_key` is one
+second review per dispute. A second review is final — disputing one is refused
+(`review_disputes_final_check`) — so the chain is two rows long at most.
+
+No console screen yet.

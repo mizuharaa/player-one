@@ -18,6 +18,12 @@ import { PipelineScreen } from './routes/Pipeline.tsx';
 import { LoginScreen } from './routes/Login.tsx';
 import { NotBuiltScreen } from './routes/NotBuilt.tsx';
 import { BackOfficeScreen } from './routes/BackOffice.tsx';
+import { SettleScreen } from './payout/SettleScreen.tsx';
+import { PreflightScreen } from './payout/PreflightScreen.tsx';
+import { BillScreen } from './payout/BillScreen.tsx';
+import { ExceptionsScreen } from './payout/ExceptionsScreen.tsx';
+import { RiskScreen } from './risk/RiskScreen.tsx';
+import { periodSearch, riskSearch } from './payout/period.ts';
 
 const rootRoute = createRootRoute({ component: Outlet });
 
@@ -102,11 +108,53 @@ const episodesRoute = createRoute({
   component: () => <NotBuiltScreen surface="episodes" />,
 });
 
+/**
+ * Settle and the payout console (SET-03 → SET-07, the payout brief's Agent D).
+ *
+ * Four screens and one seam: the period travels in `?period=` on every one of
+ * them, validated by `periodSearch` so a link opens the same batch for whoever
+ * follows it. The order below is the order an operator works in — the bills,
+ * the preflight that has to be read before any payment, the flags, and the
+ * attempts that need a person.
+ */
 const settleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settle',
   beforeLoad: requireSession,
-  component: () => <NotBuiltScreen surface="settle" />,
+  validateSearch: periodSearch,
+  component: SettleScreen,
+});
+
+const preflightRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settle/preflight',
+  beforeLoad: requireSession,
+  validateSearch: periodSearch,
+  component: PreflightScreen,
+});
+
+const billRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settle/bills/$billId',
+  beforeLoad: requireSession,
+  validateSearch: periodSearch,
+  component: BillScreen,
+});
+
+const exceptionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settle/exceptions',
+  beforeLoad: requireSession,
+  validateSearch: periodSearch,
+  component: ExceptionsScreen,
+});
+
+const riskRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/risk',
+  beforeLoad: requireSession,
+  validateSearch: riskSearch,
+  component: RiskScreen,
 });
 
 const routeTree = rootRoute.addChildren([
@@ -118,6 +166,10 @@ const routeTree = rootRoute.addChildren([
   counterRoute,
   episodesRoute,
   settleRoute,
+  preflightRoute,
+  billRoute,
+  exceptionsRoute,
+  riskRoute,
 ]);
 
 export const router = createRouter({ routeTree, defaultPreload: 'intent' });

@@ -31,7 +31,7 @@ import { LocaleSwitch } from '../components/shell/LocaleSwitch.tsx';
 import { ThemeSwitch } from '../components/shell/ThemeSwitch.tsx';
 import { cn } from '../lib/cn.ts';
 
-type Failure = 'credentials' | 'mismatch' | 'network' | null;
+type Failure = 'credentials' | 'mismatch' | 'network' | 'sign_in_rate_limited' | null;
 
 export function LoginScreen() {
   const { t } = useTranslation();
@@ -62,7 +62,14 @@ export function LoginScreen() {
         return;
       }
       const body = (await res.json().catch(() => ({}))) as { reason?: string };
-      setFailure(body.reason === 'mismatch' ? 'mismatch' : 'credentials');
+      // SEC-03: a 429 is a refusal with a name, and the person gets the
+      // sentence that says the wait ends by itself — not "wrong password",
+      // which is what they would otherwise read after typing a right one.
+      setFailure(
+        body.reason === 'mismatch' || body.reason === 'sign_in_rate_limited'
+          ? body.reason
+          : 'credentials',
+      );
     } catch {
       /* The LAN dropped, or the API is not running. Say which is possible. */
       setFailure('network');
@@ -173,9 +180,11 @@ export function LoginScreen() {
               >
                 {failure === 'mismatch'
                   ? t('login.mismatch')
-                  : failure === 'network'
-                    ? 'The service did not answer. Check the machine is on the centre network and try again.'
-                    : t('login.failed')}
+                  : failure === 'sign_in_rate_limited'
+                    ? t('bo.refused.sign_in_rate_limited')
+                    : failure === 'network'
+                      ? 'The service did not answer. Check the machine is on the centre network and try again.'
+                      : t('login.failed')}
               </p>
             ) : null}
 

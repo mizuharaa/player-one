@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { DISCREPANCY_CODES } from '@playerone/contracts';
 import { DEFECT_CATALOGUE, REVIEW_REASON_CATALOGUE, seedCatalogues } from '../src/catalogue.ts';
-import { closeDb, db, hasDb, truncate, violates, useDatabase } from './db.ts';
+import { closeDb, db, hasDb, liveClaim, truncate, violates, useDatabase } from './db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('spine');
@@ -79,18 +79,20 @@ async function seedSpine() {
     insert into upload_batches (id, handover_id, upload_device_id, import_started_at, batch_status)
       values (${ids.batch}, ${ids.handover}, ${ids.uploadDevice}, now(), 'importing');
   `);
+  // 0016: the session is recorded under a live claim, and a settlement names it.
+  const claim = await liveClaim(d, ids.task, ids.collector);
   await d.execute(sql`
     insert into collection_sessions
       (id, handover_id, task_id, collector_id, scenario_id, others_in_frame,
-       sensitive_info_present, session_origin)
+       sensitive_info_present, session_origin, task_claim_id, unit_price, currency)
       values (${ids.session}, ${ids.handover}, ${ids.task}, ${ids.collector}, ${ids.scenario},
-              false, false, 'handover');
+              false, false, 'handover', ${claim}, '1200.0000', 'VND');
   `);
   await d.execute(sql`
     insert into collection_session_devices (collection_session_id, device_id, role)
       values (${ids.session}, ${ids.device}, 'headset');
   `);
-  return ids;
+  return { ...ids, claim };
 }
 
 /** An episode plus one ingest, in whatever resolution state the test wants. */
@@ -350,9 +352,9 @@ describe.skipIf(!hasDb())('the identity spine', () => {
           values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now(), ${uid()});
       `);
       const bill = (id: string) => sql`
-        insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+        insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes,
                                  amount, settlement_state)
-          values (${id}, ${reviewId}, ${ids.task}, '1200.0000', '0.141667', '170.0000', 'pending_settlement');
+          values (${id}, ${reviewId}, ${ids.task}, ${ids.claim}, '1200.0000', '0.141667', '170.0000', 'pending_settlement');
       `;
       await d.execute(bill(uid()));
       await violates('settlements_review_key', d.execute(bill(uid())));
@@ -387,9 +389,9 @@ describe.skipIf(!hasDb())('the identity spine', () => {
           values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '8.500000', 'pass', now(), ${uid()});
       `);
       await d.execute(sql`
-        insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+        insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes,
                                  amount, settlement_state)
-          values (${settlementId}, ${reviewId}, ${ids.task}, '1200.0000', '0.141667', '170.0000', ${state});
+          values (${settlementId}, ${reviewId}, ${ids.task}, ${ids.claim}, '1200.0000', '0.141667', '170.0000', ${state});
       `);
       return { ...ids, settlementId };
     }
@@ -428,6 +430,21 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       });
     };
 
+    /**
+     * Into `exception`, the legal shape (0016): the row names the state it is
+     * parked from and a reason. A bare `move(id, 'exception')` is refused,
+     * which is proved below.
+     */
+    const park = async (settlementId: string, from: string, reason = 'disputed'): Promise<unknown> => {
+      const d = await db();
+      return d.execute(sql`
+        update settlements
+           set settlement_state = 'exception', exception_from_state = ${from},
+               exception_reason = ${reason}, exception_note = 'raw', updated_at = now()
+         where id = ${settlementId};
+      `);
+    };
+
     const stateOf = async (settlementId: string): Promise<string | undefined> => {
       const d = await db();
       const rows = (await d.execute(
@@ -453,9 +470,9 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       await violates(
         'settlements_transition_check',
         d.execute(sql`
-          insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+          insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes,
                                    amount, settlement_state)
-            values (${uid()}, ${reviewId}, ${ids.task}, '1200.0000', '0.141667', '170.0000', 'manually_paid');
+            values (${uid()}, ${reviewId}, ${ids.task}, ${ids.claim}, '1200.0000', '0.141667', '170.0000', 'manually_paid');
         `),
       );
     });
@@ -501,7 +518,7 @@ describe.skipIf(!hasDb())('the identity spine', () => {
           from === 'pending_review' ? 'pending_review' : 'pending_settlement',
         );
         if (from === 'bill_generated') await move(settlementId, 'bill_generated');
-        if (from === 'exception') await move(settlementId, 'exception');
+        if (from === 'exception') await park(settlementId, 'pending_settlement');
         await violates('settlements_transition_check', move(settlementId, to));
         expect(await stateOf(settlementId)).toBe(from);
       }
@@ -509,10 +526,186 @@ describe.skipIf(!hasDb())('the identity spine', () => {
 
     it('lets an exception go back to the queue, because that is the only way out', async () => {
       const { settlementId } = await seedSettlement();
-      await move(settlementId, 'exception');
+      await park(settlementId, 'pending_settlement');
       await move(settlementId, 'pending_settlement');
       await move(settlementId, 'bill_generated');
       expect(await stateOf(settlementId)).toBe('bill_generated');
+    });
+
+    /**
+     * 0016: `exception` from every state that is not final, and back only to
+     * the state it came from. Raw SQL, because the route sets the origin from
+     * the row it read and could never trip these on its own.
+     */
+    describe('SET-05: exception remembers where it came from', () => {
+      const parkedRow = async (settlementId: string) => {
+        const d = await db();
+        const rows = (await d.execute(sql`
+          select settlement_state, exception_from_state, exception_reason, exception_note
+            from settlements where id = ${settlementId}
+        `)) as unknown as Record<string, string | null>[];
+        return rows[0]!;
+      };
+
+      it('is reachable from pending_review, pending_settlement and bill_generated, and returns to each', async () => {
+        for (const from of ['pending_review', 'pending_settlement', 'bill_generated']) {
+          await truncate();
+          const { settlementId } = await seedSettlement(from === 'pending_review' ? 'pending_review' : 'pending_settlement');
+          if (from === 'bill_generated') await move(settlementId, 'bill_generated');
+          await park(settlementId, from);
+          expect(await parkedRow(settlementId)).toEqual({
+            settlement_state: 'exception',
+            exception_from_state: from,
+            exception_reason: 'disputed',
+            exception_note: 'raw',
+          });
+          // Anywhere but home is refused, whatever the state CHECK thinks of it.
+          for (const to of ['pending_review', 'pending_settlement', 'bill_generated', 'manually_paid']) {
+            if (to === from) continue;
+            await violates('settlements_transition_check', move(settlementId, to));
+          }
+          await move(settlementId, from);
+          expect(await parkedRow(settlementId)).toEqual({
+            settlement_state: from,
+            exception_from_state: null,
+            exception_reason: null,
+            exception_note: null,
+          });
+        }
+      });
+
+      it('refuses a parked row that does not say where it came from, or lies about it', async () => {
+        const { settlementId } = await seedSettlement();
+        const d = await db();
+        // No origin: the BEFORE trigger compares first, and finds nothing.
+        await violates('settlements_exception_from_check', move(settlementId, 'exception'));
+        // An origin but no reason: the trigger is satisfied, the shape CHECK is not.
+        await violates(
+          'settlements_exception_shape_check',
+          d.execute(sql`update settlements set settlement_state = 'exception', exception_from_state = 'pending_settlement' where id = ${settlementId}`),
+        );
+        // An origin that is not the state the row is actually in.
+        await violates('settlements_exception_from_check', park(settlementId, 'bill_generated'));
+        // A reason outside the four the brief names.
+        await violates('settlements_exception_reason_check', park(settlementId, 'pending_settlement', 'because'));
+        expect(await stateOf(settlementId)).toBe('pending_settlement');
+      });
+
+      it('keeps origin and reason off a row that is not parked, and frozen on one that is', async () => {
+        const { settlementId } = await seedSettlement();
+        const d = await db();
+        // A reason on a row that is not parked: the trigger's "written once"
+        // rule sees the change before the shape CHECK sees the row.
+        await violates(
+          'settlements_exception_from_check',
+          d.execute(sql`update settlements set exception_reason = 'disputed' where id = ${settlementId}`),
+        );
+        await park(settlementId, 'pending_settlement');
+        await violates(
+          'settlements_exception_from_check',
+          d.execute(sql`update settlements set exception_reason = 'duplicate' where id = ${settlementId}`),
+        );
+        await violates(
+          'settlements_exception_from_check',
+          d.execute(sql`update settlements set exception_from_state = 'bill_generated' where id = ${settlementId}`),
+        );
+        await violates(
+          'settlements_exception_from_check',
+          d.execute(sql`update settlements set exception_note = 'edited' where id = ${settlementId}`),
+        );
+        expect((await parkedRow(settlementId))['exception_reason']).toBe('disputed');
+      });
+
+      it('cannot be billed while parked, and cannot be paid', async () => {
+        const ids = await seedSettlement();
+        await park(ids.settlementId, 'pending_settlement');
+        const d = await db();
+        const billId = uid();
+        await d.execute(sql`
+          insert into bills (id, collector_id, period_start, period_end, currency, total)
+            values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+        `);
+        await violates(
+          'bill_lines_exception_check',
+          d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${billId}, ${ids.settlementId})`),
+        );
+        await violates('settlements_transition_check', move(ids.settlementId, 'manually_paid'));
+      });
+
+      it('parked off an issued bill, the line stays and the bill still adds up', async () => {
+        const ids = await seedSettlement();
+        await move(ids.settlementId, 'bill_generated');
+        const d = await db();
+        const billId = uid();
+        await d.execute(sql`
+          insert into bills (id, collector_id, period_start, period_end, currency, total)
+            values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+        `);
+        await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${billId}, ${ids.settlementId});`);
+        await park(ids.settlementId, 'bill_generated', 'wrong_collector');
+
+        // The line is evidence and the amount is frozen, so the total check
+        // (0011) has nothing to disagree with; the line cannot be walked off.
+        const lines = (await d.execute(sql`select count(*)::int as n from bill_lines where bill_id = ${billId}`)) as unknown as { n: number }[];
+        expect(lines[0]!.n).toBe(1);
+        await violates('bill_lines_immutable', d.execute(sql`delete from bill_lines where settlement_id = ${ids.settlementId}`));
+        await violates('bills_issued_immutable', d.execute(sql`update bills set total = '0.0000' where id = ${billId}`));
+        // Paying it is not an edge; releasing it is, and only to the bill.
+        await violates('settlements_transition_check', move(ids.settlementId, 'manually_paid'));
+        await violates('settlements_transition_check', move(ids.settlementId, 'pending_settlement'));
+        await move(ids.settlementId, 'bill_generated');
+        // Then paid the way 0013 requires, on THIS bill (a second bill for the
+        // same collector and period has nowhere to go).
+        await d.transaction(async (tx) => {
+          await tx.execute(sql`update settlements set settlement_state = 'manually_paid', updated_at = now() where id = ${ids.settlementId};`);
+          await tx.execute(sql`
+            insert into audit_events (action, target_table, target_id, actor_role, operator_id, upload_device_id, upload_centre_id)
+              values ('bill.pay', 'bills', ${billId}, 'operator', ${ids.finance}, ${ids.uploadDevice}, ${ids.centre});
+          `);
+        });
+        expect(await stateOf(ids.settlementId)).toBe('manually_paid');
+      });
+
+      /**
+       * The reserved reason. A second review that overturns the first one
+       * writes a replacement settlement and parks the original; that row is a
+       * parked row like any other — it names its origin and its reason — but it
+       * has no way back, because the money it stands for has been rewritten and
+       * releasing it would put the same footage on a bill twice.
+       *
+       * This is the shape `feat/dispute-review` has to write. That branch's
+       * `settlements_supersede_guard` says the same thing from the other side
+       * (`superseded_by IS NOT NULL` pins the state); with both migrations
+       * applied the two rules agree instead of contradicting each other, which
+       * they did while a supersede wrote no origin and no reason at all.
+       */
+      it('admits a superseded park, and gives it no way out', async () => {
+        const ids = await seedSettlement();
+        const d = await db();
+        await park(ids.settlementId, 'pending_settlement', 'superseded');
+        expect(await parkedRow(ids.settlementId)).toEqual({
+          settlement_state: 'exception',
+          exception_from_state: 'pending_settlement',
+          exception_reason: 'superseded',
+          exception_note: 'raw',
+        });
+        // Not even home. Every other reason releases to its origin; this one
+        // releases nowhere.
+        for (const to of ['pending_review', 'pending_settlement', 'bill_generated', 'manually_paid']) {
+          await violates('settlements_transition_check', move(ids.settlementId, to));
+        }
+        // And it is a parked row for every other purpose: still unbillable.
+        const billId = uid();
+        await d.execute(sql`
+          insert into bills (id, collector_id, period_start, period_end, currency, total)
+            values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+        `);
+        await violates(
+          'bill_lines_exception_check',
+          d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${billId}, ${ids.settlementId})`),
+        );
+        expect(await stateOf(ids.settlementId)).toBe('exception');
+      });
     });
 
     it('refuses to change what a settlement is worth after it is written', async () => {
@@ -672,9 +865,9 @@ describe.skipIf(!hasDb())('the identity spine', () => {
           values (${reviewId}, ${episodeId}, ${ingestId}, '8.500000', '0.000000', 'fail', now(), ${uid()});
       `);
       await d.execute(sql`
-        insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes,
+        insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes,
                                  amount, settlement_state)
-          values (${settlementId}, ${reviewId}, ${ids.task}, '1200.0000', '0.000000', '0.0000', 'pending_settlement');
+          values (${settlementId}, ${reviewId}, ${ids.task}, ${ids.claim}, '1200.0000', '0.000000', '0.0000', 'pending_settlement');
       `);
       await d.execute(sql`
         insert into bills (id, collector_id, period_start, period_end, currency, total)

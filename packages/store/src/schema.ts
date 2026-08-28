@@ -511,6 +511,14 @@ export const taskClaims = pgTable(
       'task_claims_released_after_check',
       sql`${t.releasedAt} is null or ${t.releasedAt} >= ${t.claimedAt}`,
     ),
+    /**
+     * Not uniqueness — `id` is the primary key. These are the targets of the
+     * composite foreign keys on `collection_sessions` and `settlements`
+     * (migration 0016), which is what lets "this claim is for this task and
+     * this collector" be checked by the database rather than by the route.
+     */
+    unique('task_claims_task_key').on(t.id, t.taskId),
+    unique('task_claims_pairing_key').on(t.id, t.taskId, t.collectorId),
   ],
 );
 
@@ -746,6 +754,25 @@ export const collectionSessions = pgTable(
      */
     handoverId: uuid('handover_id').references((): AnyPgColumn => handovers.id),
     /**
+     * The claim this session was recorded under (APP-10), and what that claim
+     * paid at the moment the session was declared — copied here so a task
+     * edited later cannot change what footage already recorded earns, and so
+     * the verdict never has to read `tasks` for a price.
+     *
+     * `collection_sessions_claim_fk` is composite on (claim, task, collector):
+     * a session cannot name another collector's claim, or a claim on another
+     * task. Whether the claim was LIVE when the session was declared is the
+     * counter's check (counter.ts), because "live at that moment" is about a
+     * time the schema does not hold.
+     *
+     * Nullable for rows from before migration 0016, which are never
+     * backfilled; the migration says why. A session with no claim has no
+     * price, and the verdict refuses it rather than guessing one.
+     */
+    taskClaimId: uuid('task_claim_id'),
+    unitPrice: numeric('unit_price', { precision: 12, scale: 4, mode: 'string' }),
+    currency: text('currency'),
+    /**
      * APP-17b. NOT NULL on purpose: these drive QR-07 review routing and PRV-07
      * authorisation checks, and "we did not ask" is not one of the answers.
      */
@@ -762,6 +789,18 @@ export const collectionSessions = pgTable(
     index('collection_sessions_collector_idx').on(t.collectorId),
     index('collection_sessions_task_idx').on(t.taskId),
     index('collection_sessions_handover_idx').on(t.handoverId),
+    index('collection_sessions_claim_idx').on(t.taskClaimId),
+    foreignKey({
+      columns: [t.taskClaimId, t.taskId, t.collectorId],
+      foreignColumns: [taskClaims.id, taskClaims.taskId, taskClaims.collectorId],
+      name: 'collection_sessions_claim_fk',
+    }),
+    /** A claim without its price, or a price without its claim, is half a record. */
+    check(
+      'collection_sessions_claim_snapshot_check',
+      sql`(${t.taskClaimId} is null) = (${t.unitPrice} is null)
+          and (${t.taskClaimId} is null) = (${t.currency} is null)`,
+    ),
     check(
       'collection_sessions_origin_check',
       sql`${t.sessionOrigin} in ('handover', 'app', 'backoffice')`,
@@ -1020,6 +1059,49 @@ export const reviewReasonCodes = pgTable(
 );
 
 /**
+ * QR-08. A collector challenging a verdict, raised by an operator on their
+ * behalf — the pilot has no collector login.
+ *
+ * Append-only: written once, closed once (`review_disputes_guard`, 0016).
+ * Raising one moves nothing in money. It is answered by a second review row
+ * carrying `dispute_id`, and the outcome is written here when that verdict
+ * lands: `upheld` when it agrees and the original settlement stands,
+ * `overturned` when it differs and the original is superseded.
+ *
+ * What may be disputed is a database rule, not a route's: a decided review
+ * that is not itself a second review, whose settlement is still
+ * `pending_settlement`. A bill is never revised, so a billed or paid
+ * settlement cannot be reopened until that workflow exists.
+ */
+export const reviewDisputes = pgTable(
+  'review_disputes',
+  {
+    id: uuid('id').primaryKey(),
+    reviewId: uuid('review_id')
+      .notNull()
+      .references((): AnyPgColumn => episodeReviews.id),
+    raisedBy: uuid('raised_by')
+      .notNull()
+      .references(() => operators.id),
+    reason: text('reason').notNull(),
+    raisedAt: timestamp('raised_at', { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    outcome: text('outcome'),
+  },
+  (t) => [
+    /** One OPEN dispute per review. */
+    uniqueIndex('review_disputes_open_key').on(t.reviewId).where(sql`${t.resolvedAt} is null`),
+    index('review_disputes_review_idx').on(t.reviewId),
+    check('review_disputes_reason_check', sql`length(btrim(${t.reason})) > 0`),
+    check(
+      'review_disputes_outcome_check',
+      sql`${t.outcome} is null or ${t.outcome} in ('upheld', 'overturned')`,
+    ),
+    check('review_disputes_resolved_check', sql`(${t.resolvedAt} is null) = (${t.outcome} is null)`),
+  ],
+);
+
+/**
  * The reviewer's verdict, and the reason QR-03 is enforceable at all.
  *
  * `effective_duration_s <= measured_duration_s` has to be a CHECK, and a CHECK
@@ -1143,10 +1225,22 @@ export const episodeReviews = pgTable(
      * it is a stopwatch, not a measurement anything is paid on.
      */
     timeToVerdictS: numeric('time_to_verdict_s', { precision: 12, scale: 3, mode: 'string' }),
+    /**
+     * QR-08. Set on a second review and on nothing else: the dispute this row
+     * answers. `episode_reviews_dispute_guard` (0016) makes it an OPEN dispute
+     * on the same delivery, held by anyone but the reviewer under challenge,
+     * and written once.
+     */
+    disputeId: uuid('dispute_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      columns: [t.disputeId],
+      foreignColumns: [reviewDisputes.id],
+      name: 'episode_reviews_dispute_id_review_disputes_id_fk',
+    }),
     foreignKey({
       columns: [t.episodeId, t.ingestId, t.measuredDurationS],
       foreignColumns: [
@@ -1164,11 +1258,16 @@ export const episodeReviews = pgTable(
      *
      * A second delivery of the same session is a different `ingest_id` and so
      * gets its own review — which is the point of binding a verdict to the
-     * exact bytes it judged. Re-reviewing one delivery is the dispute flow,
-     * which is P2 and deliberately not built; when it lands it needs a
-     * supersedes column here rather than a second row, or this index moves.
+     * exact bytes it judged. Re-reviewing one delivery is the dispute flow
+     * (QR-08, 0016): the second review is a second row carrying `dispute_id`,
+     * so this index is partial — one review per delivery that is NOT a second
+     * review — and `episode_reviews_dispute_key` is one second review per
+     * dispute. The `on conflict` targets in review.ts carry the predicate.
      */
-    uniqueIndex('episode_reviews_delivery_key').on(t.episodeId, t.ingestId),
+    uniqueIndex('episode_reviews_delivery_key')
+      .on(t.episodeId, t.ingestId)
+      .where(sql`${t.disputeId} is null`),
+    uniqueIndex('episode_reviews_dispute_key').on(t.disputeId),
     /**
      * The idempotency guarantee, at the database. Two concurrent requests
      * carrying the same `verdict_id` — a double-tap, or a retry racing the
@@ -1198,8 +1297,14 @@ export const episodeReviews = pgTable(
       'episode_reviews_state_check',
       sql`${t.reviewState} in ('pending', 'pass', 'partial_pass', 'fail')`,
     ),
-    /** Two lanes and no third. A misspelt lane is an episode nobody is offered. */
-    check('episode_reviews_queue_check', sql`${t.queue} in ('standard', 'privacy')`),
+    /**
+     * Two lanes, and the second-review lane (QR-08). A misspelt lane is an
+     * episode nobody is offered.
+     */
+    check(
+      'episode_reviews_queue_check',
+      sql`${t.queue} in ('standard', 'privacy', 'second_review')`,
+    ),
     /**
      * QR-05, bounded at the database and not only in the request parser.
      *
@@ -1332,6 +1437,13 @@ export const settlements = pgTable(
     taskId: uuid('task_id')
       .notNull()
       .references(() => tasks.id),
+    /**
+     * The claim the reviewed footage was recorded under — the session's, not
+     * any claim on the task. Nullable only for rows from before migration
+     * 0016; `settlements_claim_guard` there refuses a new row without one, or
+     * with one that is not the session's, and freezes it afterwards.
+     */
+    taskClaimId: uuid('task_claim_id'),
     unitPrice: numeric('unit_price', { precision: 12, scale: 4, mode: 'string' }).notNull(),
     effectiveMinutes: numeric('effective_minutes', {
       precision: 20,
@@ -1340,17 +1452,56 @@ export const settlements = pgTable(
     }).notNull(),
     amount: numeric('amount', { precision: 14, scale: 4, mode: 'string' }).notNull(),
     settlementState: text('settlement_state').notNull(),
+    /**
+     * Set while `settlement_state = 'exception'` and null otherwise (0016).
+     * `exception_from_state` is the state the row was parked from and the only
+     * state it can return to; the trigger checks it against OLD on the way in.
+     */
+    exceptionFromState: text('exception_from_state'),
+    exceptionReason: text('exception_reason'),
+    exceptionNote: text('exception_note'),
+    /**
+     * QR-08. Set when a second verdict differed: the settlement written from
+     * that verdict, which is the one that gets billed. A row with this set
+     * sits in `exception` for good — parked from its own state with reason
+     * `superseded`, which has no release edge — and `bill_lines_dispute_guard`
+     * refuses it a line. Both in 0016.
+     */
+    supersededBy: uuid('superseded_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      columns: [t.supersededBy],
+      foreignColumns: [t.id],
+      name: 'settlements_superseded_by_settlements_id_fk',
+    }),
     /** SET-04: one settlement per review, so a verdict cannot be billed twice. */
     uniqueIndex('settlements_review_key').on(t.episodeReviewId),
+    index('settlements_claim_idx').on(t.taskClaimId),
+    foreignKey({
+      columns: [t.taskClaimId, t.taskId],
+      foreignColumns: [taskClaims.id, taskClaims.taskId],
+      name: 'settlements_claim_fk',
+    }),
+    uniqueIndex('settlements_superseded_by_key').on(t.supersededBy),
     check(
       'settlements_state_check',
       sql`${t.settlementState} in ('pending_review', 'pending_settlement', 'bill_generated', 'manually_paid', 'exception')`,
     ),
     check('settlements_amount_nonneg_check', sql`${t.amount} >= 0`),
+    check(
+      'settlements_exception_reason_check',
+      // `superseded` is reserved for a second review that rewrites a
+      // settlement (0016's header). No route may write it, and the transition
+      // guard gives a row parked under it no way back.
+      sql`${t.exceptionReason} is null or ${t.exceptionReason} in ('disputed', 'duplicate', 'wrong_collector', 'manual_hold', 'superseded')`,
+    ),
+    check(
+      'settlements_exception_shape_check',
+      sql`case when ${t.settlementState} = 'exception' then ${t.exceptionFromState} is not null and ${t.exceptionReason} is not null else ${t.exceptionFromState} is null and ${t.exceptionReason} is null and ${t.exceptionNote} is null end`,
+    ),
   ],
 );
 
@@ -1474,7 +1625,9 @@ export const auditEvents = pgTable(
     check('audit_events_actor_role_check', sql`${t.actorRole} in ('operator', 'reviewer')`),
     /**
      * An unattributed audit row defeats the table. Logins are the one case with
-     * no actor yet; a reviewer is the one case with a person and no machine.
+     * no actor yet — a failed one (0017) has no actor at all and may name a
+     * reference that matches no row; a reviewer is the one case with a person
+     * and no machine.
      *
      * Two complete shapes and no overlap between them, rather than two "at
      * least this much" predicates. A half-filled row — a reviewer carrying an
@@ -1485,6 +1638,7 @@ export const auditEvents = pgTable(
     check(
       'audit_events_attributed_check',
       sql`${t.action} like '%.login'
+          or ${t.action} like '%.login_failed'
           or (${t.actorRole} = 'reviewer'
               and ${t.operatorId} is not null
               and ${t.uploadDeviceId} is null
@@ -1715,4 +1869,249 @@ export const payoutExportRows = pgTable(
     rowHash: text('row_hash').notNull(),
   },
   (t) => [primaryKey({ name: 'payout_export_rows_pk', columns: [t.exportId, t.billId] })],
+);
+
+// ---------------------------------------------------------------------------
+// Reconciliation (Agent F of the payout brief; migration 0015)
+
+/**
+ * One row per time this system asked whether the other side agrees with its
+ * ledger: the daily query-txn run (`zalopay`), a bank or wallet statement
+ * matched against manual attempts (`statement`), what the API rail would have
+ * sent while the mode is manual (`shadow`), and that intention diffed against
+ * what was actually paid (`shadow_diff`). Started once, finished once, never
+ * deleted (`recon_runs_sealed`, 0015).
+ */
+export const reconRuns = pgTable(
+  'recon_runs',
+  {
+    id: uuid('id').primaryKey(),
+    /** The window as a label, `2026-08-17/2026-08-24`; the bounds are beside it. */
+    period: text('period').notNull(),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+    periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+    source: text('source').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    summary: jsonb('summary').notNull().default(sql`'{}'::jsonb`),
+  },
+  (t) => [
+    index('recon_runs_source_idx').on(t.source, t.startedAt.desc()),
+    check('recon_runs_source_check', sql`${t.source} in ('zalopay', 'statement', 'shadow', 'shadow_diff')`),
+    check('recon_runs_period_check', sql`${t.periodEnd} > ${t.periodStart}`),
+    check('recon_runs_finished_check', sql`${t.finishedAt} is null or ${t.finishedAt} >= ${t.startedAt}`),
+  ],
+);
+
+/**
+ * One discrepancy. What we say, what they say, and which of the eight kinds
+ * it is. Written once (`recon_lines_append_only`); the one edit it ever takes
+ * is its resolution, by an operator with the finance role and a typed reason,
+ * proved against the audit trail at commit (`recon_lines_resolved_by_operator`).
+ * No run, poll or script resolves a line — that is the whole point of the
+ * table.
+ */
+export const reconLines = pgTable(
+  'recon_lines',
+  {
+    id: uuid('id').primaryKey(),
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => reconRuns.id),
+    /** Null for a statement line that matched nothing of ours. */
+    billId: uuid('bill_id').references(() => bills.id),
+    payoutAttemptId: uuid('payout_attempt_id').references(() => payoutAttempts.id),
+    partnerOrderId: text('partner_order_id'),
+    /** The other side's name for it: a zlp order id, or a statement reference. */
+    reference: text('reference'),
+    ourStatus: text('our_status'),
+    theirStatus: text('their_status'),
+    ourAmount: bigint('our_amount', { mode: 'number' }),
+    theirAmount: bigint('their_amount', { mode: 'number' }),
+    /** When the other side says it happened: the statement line's date. Null for the ZaloPay kinds. */
+    theirAt: timestamp('their_at', { withTimezone: true }),
+    discrepancyKind: text('discrepancy_kind').notNull(),
+    detail: jsonb('detail').notNull().default(sql`'{}'::jsonb`),
+    raisedAt: timestamp('raised_at', { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolvedBy: uuid('resolved_by').references(() => operators.id),
+    resolveReason: text('resolve_reason'),
+  },
+  (t) => [
+    index('recon_lines_run_idx').on(t.runId),
+    index('recon_lines_bill_idx').on(t.billId, t.raisedAt.desc()),
+    index('recon_lines_open_idx')
+      .on(t.discrepancyKind, t.raisedAt.desc())
+      .where(sql`${t.resolvedAt} is null`),
+    /**
+     * One open line per discrepancy, held by the database so two runs at
+     * once cannot raise and ticket it twice (F-44). The migration declares
+     * it `NULLS NOT DISTINCT`, which drizzle cannot express on an index;
+     * 0015/0016 are hand-written and are the authority. `their_amount` and
+     * `their_at` are in the key so two statement lines under one bank
+     * reference stay two discrepancies (0016).
+     */
+    uniqueIndex('recon_lines_open_key')
+      .on(t.discrepancyKind, t.payoutAttemptId, t.billId, t.partnerOrderId, t.reference, t.theirAmount, t.theirAt)
+      .where(sql`${t.resolvedAt} is null`),
+    check(
+      'recon_lines_kind_check',
+      sql`${t.discrepancyKind} in ('WE_SAY_PAID_THEY_DONT', 'THEY_SAY_PAID_WE_DONT', 'AMOUNT_MISMATCH', 'ORPHAN_AT_ZLP', 'STALE_PROCESSING', 'STUCK_PENDING', 'SHADOW_UNPAID', 'SHADOW_UNINTENDED')`,
+    ),
+    /** All three or none, spelled out: an open line carries no reason (F-43). */
+    check(
+      'recon_lines_resolution_check',
+      sql`(${t.resolvedAt} is null and ${t.resolvedBy} is null and ${t.resolveReason} is null)
+          or (${t.resolvedAt} is not null and ${t.resolvedBy} is not null and length(trim(coalesce(${t.resolveReason}, ''))) > 0)`,
+    ),
+    check(
+      'recon_lines_amount_check',
+      sql`(${t.ourAmount} is null or ${t.ourAmount} >= 0) and (${t.theirAmount} is null or ${t.theirAmount} >= 0)`,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// The risk engine (migration 0014). Advisory, explainable, append-only,
+// versioned. It writes these three tables and nothing else; it never writes
+// bills, bill_lines, settlements, payout_attempts or collectors, and the
+// `playerone_risk` role created in 0014 is what makes that a property of the
+// database rather than of one process. The triggers, the two views and the
+// role are in `0014_risk.sql`; drizzle cannot express any of them.
+
+/**
+ * The signal catalogue, versioned by row. One current row per signal
+ * (`risk_signals_current_key`, partial on `superseded_at is null`); a retune
+ * supersedes the row and inserts a new `threshold_version`, never edits in
+ * place (`risk_signals_supersede_only`). Bands are rows too, family 'BAND',
+ * with the band's lower edge in `default_points`.
+ */
+export const riskSignals = pgTable(
+  'risk_signals',
+  {
+    signalId: text('signal_id').notNull(),
+    thresholdVersion: text('threshold_version').notNull(),
+    family: text('family').notNull(),
+    description: text('description').notNull(),
+    defaultPoints: integer('default_points').notNull(),
+    defaultSeverity: text('default_severity').notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    /** Every threshold a detector reads. On the row a flag cites, forever. */
+    params: jsonb('params').notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    supersededAt: timestamp('superseded_at', { withTimezone: true }),
+  },
+  (t) => [
+    primaryKey({ name: 'risk_signals_pkey', columns: [t.signalId, t.thresholdVersion] }),
+    uniqueIndex('risk_signals_current_key')
+      .on(t.signalId)
+      .where(sql`${t.supersededAt} is null`),
+    check(
+      'risk_signals_family_check',
+      sql`${t.family} in ('IDENT', 'VOL', 'CONT', 'PROV', 'OPS', 'BAND', 'META')`,
+    ),
+    check(
+      'risk_signals_severity_check',
+      sql`${t.defaultSeverity} in ('info', 'notice', 'review', 'hold')`,
+    ),
+    check('risk_signals_points_check', sql`${t.defaultPoints} between 0 and 100`),
+    check('risk_signals_id_shape_check', sql`${t.signalId} ~ '^[A-Z]+\\.[A-Z0-9_]+$'`),
+    check('risk_signals_version_check', sql`length(trim(${t.thresholdVersion})) > 0`),
+    /** The lowest-weight signal is capped at the catalogue; no retune lifts it. */
+    check(
+      'risk_signals_synthetic_cap_check',
+      sql`${t.signalId} <> 'PROV.SYNTHETIC_HEURISTIC' or ${t.defaultSeverity} in ('info', 'notice')`,
+    ),
+  ],
+);
+
+/**
+ * One finding, from one evaluation run, about one subject. Never edited
+ * (`risk_flags_append_only`). `run_id` groups a run; every run also writes a
+ * META.EVALUATED row so the latest run is identifiable even when it found
+ * nothing, which is how a flag falls away. The composite FK to `risk_signals`
+ * is the explainability guarantee: the exact points and thresholds that judged
+ * this flag are reachable from the row for as long as the row exists.
+ */
+export const riskFlags = pgTable(
+  'risk_flags',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    /** Insertion order: what "the latest run" means. `computed_at` is the engine's clock, for the explanation. */
+    seq: bigint('seq', { mode: 'number' }).generatedAlwaysAsIdentity(),
+    runId: uuid('run_id').notNull(),
+    subjectType: text('subject_type').notNull(),
+    /** text: collectors, episodes and bills are uuids; a batch is a period. */
+    subjectId: text('subject_id').notNull(),
+    signalId: text('signal_id').notNull(),
+    thresholdVersion: text('threshold_version').notNull(),
+    points: integer('points').notNull(),
+    severity: text('severity').notNull(),
+    /** Human-readable in the console: the numbers the sentence is built from. */
+    evidence: jsonb('evidence').notNull(),
+    computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.signalId, t.thresholdVersion],
+      foreignColumns: [riskSignals.signalId, riskSignals.thresholdVersion],
+      name: 'risk_flags_signal_fk',
+    }),
+    index('risk_flags_subject_idx').on(t.subjectType, t.subjectId, t.seq.desc()),
+    index('risk_flags_run_idx').on(t.runId),
+    index('risk_flags_signal_idx').on(t.signalId, t.computedAt.desc()),
+    check(
+      'risk_flags_subject_type_check',
+      sql`${t.subjectType} in ('collector', 'episode', 'bill', 'batch')`,
+    ),
+    check('risk_flags_severity_check', sql`${t.severity} in ('info', 'notice', 'review', 'hold')`),
+    check('risk_flags_points_check', sql`${t.points} between 0 and 100`),
+    check('risk_flags_evidence_object_check', sql`jsonb_typeof(${t.evidence}) = 'object'`),
+    check(
+      'risk_flags_synthetic_cap_check',
+      sql`${t.signalId} <> 'PROV.SYNTHETIC_HEURISTIC' or ${t.severity} in ('info', 'notice')`,
+    ),
+  ],
+);
+
+/**
+ * A reversible hold on a bill, as a chain of rows: a raise, then a clear that
+ * copies the raise's identity and adds who, when, a typed reason and a
+ * verdict. `risk_holds_chain_guard` (0014) refuses a clear with no open hold
+ * and a second open hold over one already open; `risk_holds_append_only`
+ * refuses UPDATE and DELETE. `risk_current_holds` is the view the payout side
+ * reads. `signal_ids` is what the operator saw when they cleared it, and the
+ * engine re-holds only on a signal that was not in it.
+ */
+export const riskHolds = pgTable(
+  'risk_holds',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    billId: uuid('bill_id')
+      .notNull()
+      .references(() => bills.id),
+    raisedByFlag: uuid('raised_by_flag')
+      .notNull()
+      .references(() => riskFlags.id),
+    raisedAt: timestamp('raised_at', { withTimezone: true }).notNull().defaultNow(),
+    signalIds: text('signal_ids').array().notNull(),
+    clearedAt: timestamp('cleared_at', { withTimezone: true }),
+    clearedBy: uuid('cleared_by').references(() => operators.id),
+    clearReason: text('clear_reason'),
+    /** What the false-positive report counts: only 'false_positive' is a mark against the thresholds. */
+    clearVerdict: text('clear_verdict'),
+  },
+  (t) => [
+    index('risk_holds_bill_idx').on(t.billId, t.raisedAt.desc(), t.clearedAt.desc().nullsLast()),
+    /** A set: at least one signal, none twice. The chain guard in 0014 makes a clear carry the raise's set exactly. */
+    check('risk_holds_signal_ids_check', sql`risk_is_signal_set(${t.signalIds})`),
+    check(
+      'risk_holds_clear_shape_check',
+      sql`(${t.clearedAt} is null and ${t.clearedBy} is null and ${t.clearReason} is null and ${t.clearVerdict} is null)
+          or (${t.clearedAt} is not null and ${t.clearedBy} is not null
+              and length(trim(${t.clearReason})) >= 10
+              and ${t.clearVerdict} in ('false_positive', 'accepted', 'resolved')
+              and ${t.clearedAt} >= ${t.raisedAt})`,
+    ),
+  ],
 );
