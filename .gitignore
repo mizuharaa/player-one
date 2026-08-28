@@ -19,6 +19,12 @@ docs/sdks/
 Log/
 __pycache__/
 
+# The Codex/Claude coordination ledger. Its own protocol says it is a live
+# channel and must never be committed, but nothing enforced that until now: it
+# is ~350 KB of findings, agent reports and superseded instructions, and one
+# careless `git add -A` would put all of it in the history of a public repo.
+CODEX_BRIDGE.md
+
 # Secrets. The database password and the ZaloPay credentials
 # (PLAYERONE_ZALOPAY_APP_ID, _KEY1, _PUBLIC_KEY, _PAYMENT_ID) are read from the
 # environment and live in an untracked .env.local on each machine. This pattern
