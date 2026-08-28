@@ -121,7 +121,7 @@ export function PreflightScreen() {
   };
   const ranked = [...bills].sort((a, b) => b.risk.score - a.risk.score).slice(0, 20);
   const flagged = ranked.filter((b) => b.risk.flags.length > 0);
-  const others = (['attempt_open', 'already_paid', 'no_account', 'account_unverified', 'under_bank_minimum', 'risk_hold'] as const).filter(
+  const others = (['attempt_open', 'already_paid', 'no_account', 'account_unverified', 'under_bank_minimum', 'under_one_dong', 'risk_hold'] as const).filter(
     (k) => p.counts[k] > 0,
   );
 

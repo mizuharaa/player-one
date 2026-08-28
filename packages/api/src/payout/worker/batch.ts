@@ -59,6 +59,8 @@ export type Issue =
   | 'account_unverified'
   | 'over_bank_ceiling'
   | 'under_bank_minimum'
+  /** The whole bill is worth less than one dong, so there is nothing to send. */
+  | 'under_one_dong'
   | 'over_cap'
   | 'risk_hold'
   | 'attempt_open'
@@ -115,6 +117,12 @@ export function issuesOf(
   }
   if (bill.account === null) issues.push('no_account');
   else if (bill.account.verifyStatus !== 'verified') issues.push('account_unverified');
+  // Before the rail's own limits, because it is not about the rail: the floor
+  // of a sub-dong total is 0, and `payout_attempts_amount_positive_check`
+  // (0012) refuses an attempt for nothing. Listed here so preflight names the
+  // bill and skips it; without this the insert throws mid-run and the whole
+  // period's batch aborts, leaving every other collector on it unpaid.
+  if (bill.amountVnd < 1) issues.push('under_one_dong');
   const bank = bill.account !== null && bill.account.method !== 'WALLET';
   if (bank && bill.amountVnd > BANK_CEILING_VND) issues.push('over_bank_ceiling');
   if (bank && bill.amountVnd < BANK_MINIMUM_VND) issues.push('under_bank_minimum');
@@ -243,7 +251,7 @@ export async function preflight(
 ): Promise<Preflight & { billsDetail: BatchBill[] }> {
   const bills = await loadBatch(db, period, options);
   const counts = Object.fromEntries(
-    (['no_account', 'account_unverified', 'over_bank_ceiling', 'under_bank_minimum', 'over_cap', 'risk_hold', 'attempt_open', 'already_paid', 'line_in_exception'] as Issue[]).map((i) => [i, 0]),
+    (['no_account', 'account_unverified', 'over_bank_ceiling', 'under_bank_minimum', 'under_one_dong', 'over_cap', 'risk_hold', 'attempt_open', 'already_paid', 'line_in_exception'] as Issue[]).map((i) => [i, 0]),
   ) as Record<Issue, number>;
   const bands: Record<RiskSummary['band'], number> = { clear: 0, notice: 0, review: 0, hold: 0 };
   let payable = 0;
@@ -307,6 +315,8 @@ export type PayRefusal =
   | 'payout_bank_details_unavailable'
   | 'payout_attempts_bank_ceiling'
   | 'payout_attempts_bank_minimum'
+  /** The database's own name for an attempt of 0 VND, reused before the insert. */
+  | 'payout_attempts_amount_positive_check'
   | 'payout_cap_exceeded'
   | 'payout_risk_hold'
   | 'payout_already_paid'
@@ -372,6 +382,8 @@ export async function refusalFor(
         return 'payout_attempts_bank_ceiling';
       case 'under_bank_minimum':
         return 'payout_attempts_bank_minimum';
+      case 'under_one_dong':
+        return 'payout_attempts_amount_positive_check';
       case 'risk_hold':
         return 'payout_risk_hold';
       case 'over_cap':
@@ -525,6 +537,8 @@ export function constraintForIssues(issues: readonly Issue[]): PayRefusal | null
         return 'payout_attempts_bank_ceiling';
       case 'under_bank_minimum':
         return 'payout_attempts_bank_minimum';
+      case 'under_one_dong':
+        return 'payout_attempts_amount_positive_check';
       case 'over_cap':
         return 'payout_cap_exceeded';
       case 'risk_hold':

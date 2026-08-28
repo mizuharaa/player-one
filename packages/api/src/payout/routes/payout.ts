@@ -90,6 +90,12 @@ export const PAYOUT_REFUSALS = new Set([
   // payout_attempts_guard (0012)
   'payout_attempts_previous_not_failed',
   'payout_attempts_amount_check',
+  // payout_attempts_amount_positive_check (0012), a table CHECK rather than the
+  // trigger. Reachable from a route since the floor rule: a bill worth less
+  // than one dong floors to 0, and 0 is not a payment. `issuesOf` names it in
+  // preflight now, and this entry is what turns the database's own refusal
+  // into a 409 if anything still reaches the insert.
+  'payout_attempts_amount_positive_check',
   'payout_attempts_account_owner',
   'payout_attempts_account_current',
   'payout_attempts_account_unverified',

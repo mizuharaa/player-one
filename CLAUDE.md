@@ -215,7 +215,20 @@ blocked. **Ask.** It was meant to run in parallel, not after.
   says the total IS the sum of the lines, and a floored total is not. So the
   bill keeps its exact figure and only the attempt's `amount_vnd` is whole. The
   refusal `payout_attempts_total_fractional` is retired; a wrong figure is now
-  `payout_attempts_amount_check`.
+  `payout_attempts_amount_check`. **A bill worth less than one dong floors to
+  0, which is not a payment**: `issuesOf` gives it the issue `under_one_dong`
+  and preflight refuses it by name, `payout_attempts_amount_positive_check`.
+  That name is the table CHECK in 0012, reused before the insert on purpose —
+  when the issue was missing, the insert threw mid-run and `runBatch` turned it
+  into `BatchAborted`, which stopped the whole period and left every other
+  collector on it unpaid.
+- **A test for a rounding rule has to separate that rule from its
+  alternatives.** `640.0008` gives 640 under floor AND under half-away, so a
+  test written on it is green with the floor removed and proves nothing. Use a
+  figure whose fractional part is at least a half — `679.9992` (679 vs 680),
+  `6799.9920` (6799 vs 6800). Three of the four tests in
+  `payout/integration/round-down.test.ts` were on `640.0008` and were measured
+  passing with the rule disabled; they are on 17-second episodes now.
 - **Auto session matching by time applies only to `session_origin = 'app'`.**
   A handover-origin `prepare_time` is what an operator typed from what a
   collector remembered; matching a microsecond PTS start against it and paying

@@ -579,6 +579,7 @@ const en = {
   'settle.issue.account_unverified': 'The payout account is not verified by ZaloPay.',
   'settle.issue.over_bank_ceiling': 'Above ZaloPay’s ceiling of 10,000,000 VND for one bank transfer.',
   'settle.issue.under_bank_minimum': 'Below ZaloPay’s minimum of 2,000 VND for a bank transfer.',
+  'settle.issue.under_one_dong': 'The whole bill is worth less than one dong, so rounded down there is nothing to transfer.',
   'settle.issue.over_cap': 'Above the per-collector cap for this period.',
   'settle.issue.risk_hold': 'The risk engine holds this bill.',
   'settle.issue.attempt_open': 'An attempt is still open on this bill.',
@@ -834,6 +835,8 @@ const en = {
   'bo.refused.payout_attempts_bank_ceiling':
     'Above ZaloPay’s ceiling of 10,000,000 VND for one bank transfer. It cannot go as one transfer, and splitting it is an escalation, not a button.',
   'bo.refused.payout_attempts_bank_minimum': 'Below ZaloPay’s minimum of 2,000 VND for a bank transfer.',
+  'bo.refused.payout_attempts_amount_positive_check':
+    'This bill totals less than one dong, so rounded down it is 0 VND, and a payment of nothing is not recorded. Nothing was sent.',
   'bo.refused.payout_attempts_transition_check': 'The attempt cannot move from its current state that way. Reload the list.',
   'bo.refused.payout_attempts_succeeded_immutable': 'A succeeded attempt is final and cannot be changed.',
   'bo.refused.payout_attempts_failed_terminal': 'A failed attempt is final. Paying again is a new attempt.',
@@ -1281,6 +1284,7 @@ const zh: Record<MessageKey, string> = {
   'settle.issue.account_unverified': '收款账户尚未通过 ZaloPay 验证。',
   'settle.issue.over_bank_ceiling': '超过 ZaloPay 单笔银行转账上限 10,000,000 越南盾。',
   'settle.issue.under_bank_minimum': '低于 ZaloPay 银行转账最低金额 2,000 越南盾。',
+  'settle.issue.under_one_dong': '整张账单不足一越南盾，向下取整后没有可转账的金额。',
   'settle.issue.over_cap': '超过本周期每位采集者的上限。',
   'settle.issue.risk_hold': '风险引擎已暂停这张账单的支付。',
   'settle.issue.attempt_open': '这张账单还有一次付款尝试未完成。',
@@ -1484,6 +1488,7 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.payout_attempts_account_current': '该收款账户已不是采集者当前的账户。请刷新账单。',
   'bo.refused.payout_attempts_bank_ceiling': '超过 ZaloPay 单笔银行转账上限 10,000,000 越南盾。无法作为一笔转账发送，拆分需要上报决定，而不是一个按钮。',
   'bo.refused.payout_attempts_bank_minimum': '低于 ZaloPay 银行转账最低金额 2,000 越南盾。',
+  'bo.refused.payout_attempts_amount_positive_check': '这张账单总额不足一越南盾，向下取整后为 0 越南盾，金额为零的付款不会被记录。没有发送任何款项。',
   'bo.refused.payout_attempts_transition_check': '付款尝试不能以这种方式从当前状态转换。请刷新列表。',
   'bo.refused.payout_attempts_succeeded_immutable': '已成功的付款尝试是最终状态，不能更改。',
   'bo.refused.payout_attempts_failed_terminal': '已失败的付款尝试是最终状态。再次付款是一次新的尝试。',
@@ -1940,6 +1945,7 @@ const vi: Record<MessageKey, string> = {
   'settle.issue.account_unverified': 'Tài khoản nhận tiền chưa được ZaloPay xác minh.',
   'settle.issue.over_bank_ceiling': 'Vượt trần 10.000.000 VND của ZaloPay cho một lệnh chuyển ngân hàng.',
   'settle.issue.under_bank_minimum': 'Dưới mức tối thiểu 2.000 VND của ZaloPay cho một lệnh chuyển ngân hàng.',
+  'settle.issue.under_one_dong': 'Cả hóa đơn trị giá chưa tới một đồng, nên làm tròn xuống thì không còn gì để chuyển.',
   'settle.issue.over_cap': 'Vượt hạn mức mỗi cộng tác viên trong kỳ này.',
   'settle.issue.risk_hold': 'Bộ máy rủi ro đang giữ hóa đơn này.',
   'settle.issue.attempt_open': 'Hóa đơn này còn một lần chi chưa kết thúc.',
@@ -2187,6 +2193,8 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.payout_attempts_bank_ceiling':
     'Vượt trần 10.000.000 VND của ZaloPay cho một lệnh chuyển ngân hàng. Không thể đi trong một lệnh, và việc chia nhỏ phải được trình lên, không phải một cái nút.',
   'bo.refused.payout_attempts_bank_minimum': 'Dưới mức tối thiểu 2.000 VND của ZaloPay cho một lệnh chuyển ngân hàng.',
+  'bo.refused.payout_attempts_amount_positive_check':
+    'Hóa đơn này có tổng chưa tới một đồng, nên làm tròn xuống là 0 VND, và một khoản thanh toán bằng không thì không được ghi nhận. Không có gì được gửi đi.',
   'bo.refused.payout_attempts_transition_check': 'Lần chi không thể chuyển từ trạng thái hiện tại theo cách đó. Tải lại danh sách.',
   'bo.refused.payout_attempts_succeeded_immutable': 'Lần chi đã thành công là cuối cùng và không thể thay đổi.',
   'bo.refused.payout_attempts_failed_terminal': 'Lần chi đã thất bại là cuối cùng. Trả lại là một lần chi mới.',

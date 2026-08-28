@@ -34,7 +34,7 @@ import { refusalKey } from './refusals.ts';
 import { readOnlyReason, useFinanceRole } from './role.ts';
 
 const POLLING = new Set(['submitted', 'processing', 'unknown']);
-const BLOCKING = new Set(['no_account', 'account_unverified', 'under_bank_minimum', 'risk_hold']);
+const BLOCKING = new Set(['no_account', 'account_unverified', 'under_bank_minimum', 'under_one_dong', 'risk_hold']);
 
 export function ExceptionsScreen() {
   const { t, i18n } = useTranslation();

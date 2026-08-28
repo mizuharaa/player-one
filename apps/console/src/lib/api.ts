@@ -477,6 +477,7 @@ export type PayoutIssue =
   | 'account_unverified'
   | 'over_bank_ceiling'
   | 'under_bank_minimum'
+  | 'under_one_dong'
   | 'over_cap'
   | 'risk_hold'
   | 'attempt_open'
