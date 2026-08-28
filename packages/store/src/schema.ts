@@ -2008,7 +2008,7 @@ export const riskSignals = pgTable(
       .where(sql`${t.supersededAt} is null`),
     check(
       'risk_signals_family_check',
-      sql`${t.family} in ('IDENT', 'VOL', 'CONT', 'PROV', 'OPS', 'BAND', 'META')`,
+      sql`${t.family} in ('IDENT', 'VOL', 'CONT', 'PROV', 'OPS', 'HIST', 'BAND', 'META')`,
     ),
     check(
       'risk_signals_severity_check',

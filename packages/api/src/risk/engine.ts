@@ -4,6 +4,8 @@ import type { Db } from '@playerone/store';
 import type { PrnuEnrolmentSource } from '../../../../tools/analysers/prnu.ts';
 import { EVALUATED_SIGNAL, bandsFrom, loadTuning, seedRiskSignals } from './catalogue.ts';
 import { contentSignals, type MediaFacts } from './detectors/content.ts';
+import { deliverySignals } from './detectors/delivery.ts';
+import { historySignals } from './detectors/history.ts';
 import { identChangedLate, identSignals } from './detectors/ident.ts';
 import { approvalOutliers, concentration, reviewTooFast, selfDealing } from './detectors/ops.ts';
 import { provenanceSignals } from './detectors/provenance.ts';
@@ -17,9 +19,11 @@ import {
   billFactsFor,
   cohortDayCounts,
   concentrationInputFor,
+  deliveryFactsFor,
   duplicatePeersFor,
   episodeFactsFor,
   episodeSlicesOf,
+  historyFor,
   identInputFor,
   payoutAccountsOf,
   reviewFactFor,
@@ -60,6 +64,27 @@ export type RiskEngineOptions = {
   windowDays?: number;
   now?: () => Date;
 };
+
+/**
+ * The bands whose bills must reach a person before money moves.
+ *
+ * It was 'hold' alone. A bill in the 'review' band — a near-duplicate, a
+ * substituted media file, a collector with a pattern — was paid with nobody
+ * looking at it, because the only thing that ever produced an operator-visible
+ * row was a hold. The band said "a human should decide" and no human was
+ * asked.
+ *
+ * Including 'review' does NOT withhold money silently, which is the thing that
+ * would be wrong. It writes a `risk_holds` row, which puts the bill in the
+ * queue (`queue.ts`) with every flag, its evidence and its sentence, where an
+ * operator clears it with a typed reason and a verdict and it pays. Wrongly
+ * flagged has a path: 'false_positive', one clear, and the false-positive
+ * report counts it against the thresholds that caused it.
+ *
+ * And it is still off unless PLAYERONE_RISK_HOLD is set. `holdsEnabled` gates
+ * everything below, exactly as before.
+ */
+export const NEEDS_OPERATOR: readonly RiskSummary['band'][] = ['review', 'hold'];
 
 export class RiskBusy extends Error {
   constructor(subjectType: SubjectType, subjectId: string, why: 'in_progress' | 'superseded' = 'in_progress') {
@@ -163,6 +188,8 @@ export class RiskEngine {
     const cohort = await cohortDayCounts(this.db, from, to, offset);
     findings.push(...volumeSignals({ collectorId, episodes, cohortDayCounts: cohort }, tuning));
 
+    findings.push(...historySignals(await historyFor(this.db, collectorId, from, to), tuning));
+
     const conc = tuning.get('OPS.CONCENTRATION');
     if (conc?.enabled) {
       const input = await concentrationInputFor(this.db, collectorId, from, to, strListParam(conc, 'actions'));
@@ -197,6 +224,12 @@ export class RiskEngine {
     const peers = await duplicatePeersFor(this.db, ep, { frames: media?.frames?.count ?? null });
     findings.push(...contentSignals(ep, peers, baseline, media, tuning));
     findings.push(...provenanceSignals(ep, media, tuning));
+
+    // How the episode ARRIVED, from the delivery rows the store already wrote.
+    // Needs no media and no analyser, so it still runs at an upload centre
+    // whose footage has moved on.
+    const delivery = await deliveryFactsFor(this.db, episodeId);
+    if (delivery !== null) findings.push(...deliverySignals(delivery, this.o.now(), tuning));
 
     const review = await reviewFactFor(this.db, episodeId);
     if (review !== null) findings.push(...reviewTooFast(review, tuning));
@@ -258,12 +291,15 @@ export class RiskEngine {
    * the signals showing now; otherwise the score band, capped at 'review',
    * because a score in the hold band whose hold an operator cleared is a bill
    * that person decided to pay. The flags and the score are the summary's.
+   *
+   * `NEEDS_OPERATOR` is the one thing that changed: a 'review' bill waits for
+   * a person the same way a 'hold' bill does, and is released the same way.
    */
   async payoutSummary(billId: string): Promise<RiskSummary & { evaluatedAt: string | null }> {
     const s = await this.summary('bill', billId);
     const decision = await holdDecision(this.db, billId, s.flags.map((f) => f.signalId));
     if (decision === 'already_open') return { ...s, band: 'hold' };
-    if (s.band !== 'hold') return s;
+    if (!NEEDS_OPERATOR.includes(s.band)) return s;
     return { ...s, band: decision === 'raise' ? 'hold' : 'review' };
   }
 
@@ -352,7 +388,7 @@ export class RiskEngine {
         const carried = await this.carriedFlags(tx, bill.collectorId, bill.episodeIds);
         const flags = rollup([{ subjectType: 'bill', subjectId, flags: own }, ...carried]);
         summary = summarise('bill', subjectId, flags, bands);
-        if (summary.band === 'hold') {
+        if (NEEDS_OPERATOR.includes(summary.band)) {
           if (!this.o.holdsEnabled) {
             hold = { raised: false, reason: 'holds_disabled', holdId: null };
           } else {
