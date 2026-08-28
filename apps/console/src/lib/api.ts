@@ -247,6 +247,13 @@ export interface BoAgreement {
   accepted_at: string;
 }
 
+/** The masked view of a collector's current payout account. `null` is the state that matters. */
+export interface BoPayoutAccount {
+  method: 'WALLET' | 'BANK_ACCOUNT' | 'BANK_CARD';
+  verify_status: string;
+  phone_masked: string;
+}
+
 export interface BoCollector {
   id: string;
   external_ref: string;
@@ -254,6 +261,30 @@ export interface BoCollector {
   exam_result: 'pass' | 'fail' | null;
   exam_decided_at: string | null;
   agreements: BoAgreement[];
+  /** `null` means nobody has declared one, which is why this collector cannot be paid. */
+  payout_account: BoPayoutAccount | null;
+}
+
+/** What the counter declares on a collector's behalf. The full number is sent and not stored. */
+export interface BoPayoutDeclaration {
+  id: string;
+  method: BoPayoutAccount['method'];
+  declared_name: string;
+  phone?: string;
+  bank_code?: string;
+  account_no?: string;
+}
+
+export interface BoPayoutDeclared {
+  id: string;
+  replayed: boolean;
+  verify_status: string;
+  declared_name: string;
+  verified_name: string | null;
+  account_no_last4: string | null;
+  phone_masked: string;
+  onboarding_url: string | null;
+  reform_url: string | null;
 }
 
 export interface BoDevice {
@@ -316,6 +347,17 @@ export const backOffice = {
       agreements?: BoAgreement[];
     },
   ) => patch(`/api/collectors/${id}`, body),
+  /**
+   * The counter's payout declaration. On the payout lane by URL, but it is a
+   * counter route — any operator session, scoped to their own centre — and the
+   * back office is the only screen that calls it, so its client lives here
+   * beside the rest of that screen rather than in `payout`, which is finance's.
+   */
+  declarePayoutAccount: (collectorId: string, body: BoPayoutDeclaration) =>
+    call<BoPayoutDeclared>(`/api/payout/collectors/${collectorId}/accounts`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   devices: () =>
     call<{ devices: BoDevice[]; device_types: { id: string; code: string }[] }>('/api/devices'),

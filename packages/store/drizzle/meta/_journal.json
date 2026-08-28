@@ -218,6 +218,13 @@
       "when": 1788530000000,
       "tag": "0018_episode_park",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788540000000,
+      "tag": "0018_payout_account_declarer",
+      "breakpoints": true
     }
   ]
 }

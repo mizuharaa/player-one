@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { schema, type Db } from '@playerone/store';
@@ -11,7 +11,7 @@ import { assertPayoutBootInvariants, type PayoutOptions } from '../domain/config
 import { emitEvent } from '../domain/events.ts';
 import { buildExport, type ExportRow } from '../domain/export.ts';
 import { maskPhone } from '../domain/names.ts';
-import { IllegalTransition } from '../domain/state.ts';
+import { IllegalTransition, TERMINAL } from '../domain/state.ts';
 import { verifyDeclaration } from '../domain/verify.ts';
 import { BatchAborted, loadBatch, loadBill, payBill, preflight, refusalFor, runBatch, type BatchBill, type BatchRun } from '../worker/batch.ts';
 
@@ -123,6 +123,12 @@ export const PAYOUT_API_REFUSALS = new Set([
   'payout_already_paid',
   'payout_settlement_exception',
   'payout_accounts_id_reused',
+  /** A declaration the route would not store: bad shape, or a wallet with no phone. */
+  'payout_account_declaration_invalid',
+  /** An attempt for this collector is open, so the destination may not move under it. */
+  'payout_account_locked_while_paying',
+  /** The counter route only: this collector has handed nothing in at this centre. */
+  'payout_account_not_this_centre',
   'payout_attempt_not_resolvable',
   'payout_bill_period_mismatch',
   'payout_batch_running',
@@ -162,6 +168,14 @@ export function registerPayout(
    * list to keep.
    */
   const finance = { preHandler: [requireActor, requireFinance] };
+  /**
+   * The counter operator's own guard: any operator session, no finance role.
+   * Exactly one route uses it — declaring a collector's payout account at the
+   * counter — and that route scopes itself to the operator's centre and hands
+   * back only masked forms, which is why it is not on the finance list with
+   * everything else on this lane.
+   */
+  const counter = { preHandler: requireActor };
 
   async function guarded<T>(
     run: () => Promise<T | undefined>,
@@ -293,10 +307,46 @@ export function registerPayout(
     };
   };
 
-  app.post('/api/payout/accounts', finance, async (req, reply) => {
-    const body = AccountBody.safeParse(req.body);
-    if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
-    const b = body.data;
+  /**
+   * Is money already moving to this collector?
+   *
+   * `payout_accounts_current_key` allows one current account, so declaring a
+   * new one silently demotes the account an open attempt is paying. Nothing
+   * about the transfer changes — ZaloPay has the old destination — but the
+   * screen would then show the new one, which is the console telling an
+   * operator that money in flight is going somewhere it is not. Refused by
+   * name on BOTH routes: the finance route can do it today, and moving the
+   * declaration to the counter without this guard would only widen it.
+   *
+   * Open is "not terminal", from the same `TERMINAL` the state machine uses,
+   * so an attempt parked in `pending_zlp` locks the declaration until an
+   * operator resolves it. That is the intended order: say what happened to the
+   * payment first, then change where the next one goes.
+   */
+  const payingNow = async (collectorId: string): Promise<boolean> => {
+    const held = (await db.execute(sql`
+      select 1 from payout_attempts a
+        join bills b on b.id = a.bill_id
+       where b.collector_id = ${collectorId}
+         and a.status not in (${sql.join([...TERMINAL].map((s) => sql`${s}`), sql`, `)})
+       limit 1
+    `)) as unknown as unknown[];
+    return held.length > 0;
+  };
+
+  type Declared =
+    | { kind: 'refused'; constraint: string }
+    | { kind: 'replayed'; body: Record<string, unknown> }
+    | { kind: 'created'; body: Record<string, unknown> };
+
+  /**
+   * Declaring an account, once, for both callers: the finance route below and
+   * the counter route under `/collectors/:id/accounts`. One body, because the
+   * two differ in who may call them and in where the collector id comes from,
+   * and in nothing else — a second copy of the replay rules and the verify
+   * ordering is a second copy that goes stale.
+   */
+  const declareAccount = async (actor: Actor, b: AccountInput): Promise<Declared> => {
     const last4 = b.account_no === undefined ? null : b.account_no.slice(-4);
 
     /**
@@ -312,9 +362,12 @@ export function registerPayout(
      */
     const existing = await db.select().from(schema.payoutAccounts).where(eq(schema.payoutAccounts.id, b.id));
     if (existing[0] !== undefined) {
-      if (!sameDeclaration(existing[0], b, last4)) return refused(reply, 'payout_accounts_id_reused');
-      return reply.code(200).send(await replayed(existing[0]));
+      if (!sameDeclaration(existing[0], b, last4)) return { kind: 'refused', constraint: 'payout_accounts_id_reused' };
+      return { kind: 'replayed', body: await replayed(existing[0]) };
     }
+
+    /** Checked after the replay, so a retry of a lost reply is still a replay and not a refusal. */
+    if (await payingNow(b.collector_id)) return { kind: 'refused', constraint: 'payout_account_locked_while_paying' };
 
     /**
      * Verify BEFORE the transaction, so the outcome is written once with the
@@ -346,7 +399,7 @@ export function registerPayout(
     const attempt = await guarded(() =>
       mutate(
         db,
-        actorOf(req),
+        actor,
         { action: 'payout_account.declare', targetTable: 'payout_accounts', targetId: b.id, after },
         async (tx) => {
           const taken = await tx
@@ -378,7 +431,7 @@ export function registerPayout(
               verifyStatus: outcome.status,
               verifiedAt,
               isCurrent: true,
-              createdBy: (actorOf(req) as CounterActor).operator.operatorId,
+              createdBy: (actor as CounterActor).operator.operatorId,
             })
             .returning();
           if (row === undefined) return undefined;
@@ -402,7 +455,7 @@ export function registerPayout(
         },
       ),
     );
-    if (!attempt.ok) return refused(reply, attempt.constraint);
+    if (!attempt.ok) return { kind: 'refused', constraint: attempt.constraint };
     if (attempt.value === undefined) {
       /**
        * Nothing was written because the id landed between the read above and
@@ -410,8 +463,10 @@ export function registerPayout(
        * above: the same declaration is a replay, anything else is refused.
        */
       const [held] = await db.select().from(schema.payoutAccounts).where(eq(schema.payoutAccounts.id, b.id));
-      if (held === undefined || !sameDeclaration(held, b, last4)) return refused(reply, 'payout_accounts_id_reused');
-      return reply.code(200).send(await replayed(held));
+      if (held === undefined || !sameDeclaration(held, b, last4)) {
+        return { kind: 'refused', constraint: 'payout_accounts_id_reused' };
+      }
+      return { kind: 'replayed', body: await replayed(held) };
     }
     /**
      * The shape the collector app (Agent E) reads: the status, both names side
@@ -419,19 +474,88 @@ export function registerPayout(
      * ZaloPay page to open when there is one — `onboarding_url` for -101,
      * `reform_url` for -406. Never a dead end, never a full identifier.
      */
-    return reply.code(201).send({
-      id: b.id,
-      replayed: false,
-      method: b.method,
-      verify_status: outcome.status,
-      declared_name: b.declared_name,
-      verified_name: outcome.verifiedName,
-      account_no_last4: last4,
-      phone_masked: after.phone_masked,
-      onboarding_url: outcome.subCode === -101 ? outcome.redirectUrl : null,
-      reform_url: outcome.subCode === -406 ? outcome.redirectUrl : null,
-      sub_return_code: outcome.subCode,
-    });
+    return {
+      kind: 'created',
+      body: {
+        id: b.id,
+        replayed: false,
+        method: b.method,
+        verify_status: outcome.status,
+        declared_name: b.declared_name,
+        verified_name: outcome.verifiedName,
+        account_no_last4: last4,
+        phone_masked: after.phone_masked,
+        onboarding_url: outcome.subCode === -101 ? outcome.redirectUrl : null,
+        reform_url: outcome.subCode === -406 ? outcome.redirectUrl : null,
+        sub_return_code: outcome.subCode,
+      },
+    };
+  };
+
+  const sendDeclared = (reply: Reply, out: Declared) =>
+    out.kind === 'refused'
+      ? refused(reply, out.constraint)
+      : reply.code(out.kind === 'created' ? 201 : 200).send(out.body);
+
+  app.post('/api/payout/accounts', finance, async (req, reply) => {
+    const body = AccountBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
+    return sendDeclared(reply, await declareAccount(actorOf(req), body.data));
+  });
+
+  /**
+   * The counter's declaration (WAVE 1). The operator declares the account at
+   * the counter on the collector's behalf, exactly as they already create the
+   * handover and the session.
+   *
+   * Why not a collector-facing route: there is no collector credential in this
+   * service — every `APP-*` item is blocked on PaXini — so a route "for the
+   * collector" would have nothing to authenticate and would be an operator
+   * route wearing a different name. The measured consequence of leaving
+   * declaration finance-only is a collector approved and awaiting payment for
+   * ever, with nobody in the room able to fix it.
+   *
+   * Scope, the same shape as `/handovers/:id/sessions` and
+   * `/episodes/:id/resolve`: the collector must have handed a card in at THIS
+   * centre. A collector has no centre of their own (`collectors` carries no
+   * `upload_centre_id`), and the handover is what puts a person in front of an
+   * operator. Anyone else is `payout_account_not_this_centre`, which is also
+   * the answer for a collector id that exists nowhere — the two are the same
+   * fact to an operator, and telling them apart would say whether a stranger's
+   * id is real.
+   *
+   * The collector comes from the path and never from the body, the same rule
+   * `counter.ts` states for the centre: a console that asks to declare
+   * somebody else's account is not refused a field, it is simply not consulted.
+   */
+  app.post('/api/payout/collectors/:id/accounts', counter, async (req, reply) => {
+    const id = pathId(req);
+    if (id === null) return reply.code(400).send({ error: 'invalid id' });
+    const actor = actorOf(req) as CounterActor;
+
+    const [seen] = await db
+      .select({ id: schema.handovers.id })
+      .from(schema.handovers)
+      .where(
+        and(
+          eq(schema.handovers.collectorId, id),
+          eq(schema.handovers.uploadCentreId, actor.operator.uploadCentreId),
+        ),
+      )
+      .limit(1);
+    if (seen === undefined) return refused(reply, 'payout_account_not_this_centre');
+
+    /**
+     * A named refusal rather than the 400 the finance route answers. This one
+     * is typed by a person at a counter, and `payout_account_declaration_invalid`
+     * is a sentence in their language; a list of Zod issues is not. Only the
+     * constraint is sent, because the console reads `detail ?? constraint` and
+     * a detail would shadow the name.
+     */
+    const body = AccountBody.safeParse({ ...(req.body as Record<string, unknown>), collector_id: id });
+    if (!body.success) return refused(reply, 'payout_account_declaration_invalid');
+
+    return sendDeclared(reply, await declareAccount(actor, body.data));
   });
 
   /**

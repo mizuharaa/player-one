@@ -324,6 +324,27 @@ const en = {
   'bo.collector.agreement.commercial_use': 'Commercial use',
   'bo.collector.agreement.manual_review': 'Manual review',
   'bo.collector.agreement.offline_settlement': 'Offline settlement',
+  /**
+   * The payout account, on the collectors tab. A collector with none is
+   * approved and then waits for ever, so "not declared" is a state the screen
+   * has to name rather than leave blank.
+   */
+  'bo.collector.payout': 'Payout account',
+  'bo.collector.payout.none': 'Not declared',
+  'bo.collector.payout.declare': 'Declare account',
+  'bo.collector.payout.redeclare': 'Replace account',
+  'bo.collector.payout.method': 'Method',
+  'bo.collector.payout.method.WALLET': 'ZaloPay wallet',
+  'bo.collector.payout.method.BANK_ACCOUNT': 'Bank account',
+  'bo.collector.payout.method.BANK_CARD': 'Bank card',
+  'bo.collector.payout.holder': 'Name on the account',
+  'bo.collector.payout.phone': 'Mobile number',
+  'bo.collector.payout.bankCode': 'Bank code',
+  'bo.collector.payout.accountNo': 'Account or card number',
+  'bo.collector.payout.note':
+    'Type what the collector shows you. The number is sent to ZaloPay to confirm the name and is not stored: only the last four digits are kept.',
+  'bo.collector.payout.declared': 'Declared. ZaloPay answered:',
+  'bo.collector.payout.open': 'Open the ZaloPay page the collector needs',
 
   'bo.device.serial': 'Serial',
   'bo.device.type': 'Type',
@@ -797,7 +818,7 @@ const en = {
   'bo.refused.payout_attempts_manual_reference_check': 'A manual payment needs the transaction reference. None was recorded.',
   'bo.refused.payout_finance_required': 'Only an operator with the finance role may pay or resolve. The server refused.',
   'bo.refused.payout_separation_of_duty':
-    'The operator who created this collector or approved this bill may not be the one who pays it.',
+    'The operator who created this collector, approved this bill, or declared the payout account may not be the one who pays it.',
   'bo.refused.payout_accounts_current_key': 'The collector already has a current payout account. Reload and try again.',
   'bo.refused.payout_accounts_append_only': 'A payout account is a record of a declaration and cannot be changed or removed.',
   'bo.refused.settlements_transition_check':
@@ -818,6 +839,12 @@ const en = {
   'bo.refused.payout_risk_hold': 'The risk engine holds this bill. Clear the hold with a reason in the flag review first.',
   'bo.refused.payout_already_paid': 'This bill is already paid.',
   'bo.refused.payout_accounts_id_reused': 'That account reference already names a different declaration.',
+  'bo.refused.payout_account_declaration_invalid':
+    'That declaration cannot be stored. A wallet needs a Vietnamese mobile number of ten digits starting with 0; a bank route needs a bank code and an account number.',
+  'bo.refused.payout_account_locked_while_paying':
+    'A payment to this collector is still open, so the account cannot be changed. Finish or resolve that payment first.',
+  'bo.refused.payout_account_not_this_centre':
+    'This collector has handed nothing in at this centre, so this counter cannot declare their account.',
   'bo.refused.payout_attempt_not_resolvable':
     'This attempt cannot be resolved by hand in its current state. Only a pending, exhausted or never-sent attempt is.',
   'bo.refused.payout_bill_period_mismatch': 'That bill belongs to a different period.',
@@ -1049,6 +1076,21 @@ const zh: Record<MessageKey, string> = {
   'bo.collector.agreement.commercial_use': '商业使用协议',
   'bo.collector.agreement.manual_review': '人工审核协议',
   'bo.collector.agreement.offline_settlement': '线下结算协议',
+  'bo.collector.payout': '收款账户',
+  'bo.collector.payout.none': '未申报',
+  'bo.collector.payout.declare': '申报账户',
+  'bo.collector.payout.redeclare': '更换账户',
+  'bo.collector.payout.method': '收款方式',
+  'bo.collector.payout.method.WALLET': 'ZaloPay 钱包',
+  'bo.collector.payout.method.BANK_ACCOUNT': '银行账户',
+  'bo.collector.payout.method.BANK_CARD': '银行卡',
+  'bo.collector.payout.holder': '账户姓名',
+  'bo.collector.payout.phone': '手机号',
+  'bo.collector.payout.bankCode': '银行代码',
+  'bo.collector.payout.accountNo': '账号或卡号',
+  'bo.collector.payout.note': '按采集者出示的内容填写。号码会发送给 ZaloPay 以确认姓名，本系统不保存：只保留后四位。',
+  'bo.collector.payout.declared': '已申报。ZaloPay 的答复：',
+  'bo.collector.payout.open': '打开采集者需要的 ZaloPay 页面',
 
   'bo.device.serial': '序列号',
   'bo.device.type': '型号',
@@ -1416,7 +1458,7 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.payout_attempts_pending_operator_only': '在 ZaloPay 内部待处理的付款尝试只能由操作员填写原因后推进。其他任何方式都不能推进它。',
   'bo.refused.payout_attempts_manual_reference_check': '人工付款需要交易参考号。没有登记任何内容。',
   'bo.refused.payout_finance_required': '只有具备财务角色的操作员才能付款或处理。服务端已拒绝。',
-  'bo.refused.payout_separation_of_duty': '创建该采集者或批准该账单的操作员不能是付款的操作员。',
+  'bo.refused.payout_separation_of_duty': '创建该采集者、批准该账单或申报该收款账户的操作员不能是付款的操作员。',
   'bo.refused.payout_accounts_current_key': '该采集者已有当前收款账户。请刷新后重试。',
   'bo.refused.payout_accounts_append_only': '收款账户是申报记录，不能修改或删除。',
   'bo.refused.settlements_transition_check': '这张账单上的某条结算记录在此期间已被支付或移至异常。请刷新账单。',
@@ -1433,6 +1475,10 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.payout_risk_hold': '风险引擎已暂停这张账单。请先在风险标记页填写原因解除暂停。',
   'bo.refused.payout_already_paid': '这张账单已支付。',
   'bo.refused.payout_accounts_id_reused': '该账户编号已属于另一条不同的申报。',
+  'bo.refused.payout_account_declaration_invalid':
+    '该申报无法保存。钱包需要以 0 开头的十位越南手机号；银行方式需要银行代码和账号。',
+  'bo.refused.payout_account_locked_while_paying': '对该采集者的一笔付款仍未结束，因此不能更改账户。请先完成或处理该笔付款。',
+  'bo.refused.payout_account_not_this_centre': '该采集者未在本中心交付过任何素材，因此本柜台不能申报其账户。',
   'bo.refused.payout_attempt_not_resolvable': '该付款尝试在当前状态下不能人工处理。只有待处理、轮询耗尽或从未发送的尝试才可以。',
   'bo.refused.payout_bill_period_mismatch': '该账单属于另一个周期。',
 };
@@ -1670,6 +1716,22 @@ const vi: Record<MessageKey, string> = {
   'bo.collector.agreement.commercial_use': 'Sử dụng thương mại',
   'bo.collector.agreement.manual_review': 'Duyệt thủ công',
   'bo.collector.agreement.offline_settlement': 'Thanh toán ngoại tuyến',
+  'bo.collector.payout': 'Tài khoản nhận tiền',
+  'bo.collector.payout.none': 'Chưa khai',
+  'bo.collector.payout.declare': 'Khai tài khoản',
+  'bo.collector.payout.redeclare': 'Đổi tài khoản',
+  'bo.collector.payout.method': 'Hình thức',
+  'bo.collector.payout.method.WALLET': 'Ví ZaloPay',
+  'bo.collector.payout.method.BANK_ACCOUNT': 'Tài khoản ngân hàng',
+  'bo.collector.payout.method.BANK_CARD': 'Thẻ ngân hàng',
+  'bo.collector.payout.holder': 'Tên trên tài khoản',
+  'bo.collector.payout.phone': 'Số di động',
+  'bo.collector.payout.bankCode': 'Mã ngân hàng',
+  'bo.collector.payout.accountNo': 'Số tài khoản hoặc số thẻ',
+  'bo.collector.payout.note':
+    'Gõ đúng những gì cộng tác viên đưa cho bạn. Số này được gửi cho ZaloPay để xác nhận tên và không được lưu: chỉ giữ bốn chữ số cuối.',
+  'bo.collector.payout.declared': 'Đã khai. ZaloPay trả lời:',
+  'bo.collector.payout.open': 'Mở trang ZaloPay mà cộng tác viên cần',
 
   'bo.device.serial': 'Số sê-ri',
   'bo.device.type': 'Loại',
@@ -2091,7 +2153,7 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.payout_attempts_manual_reference_check': 'Khoản chi thủ công cần mã tham chiếu giao dịch. Chưa ghi nhận gì.',
   'bo.refused.payout_finance_required': 'Chỉ nhân viên có vai trò tài chính mới được chi trả hoặc xử lý. Máy chủ đã từ chối.',
   'bo.refused.payout_separation_of_duty':
-    'Nhân viên đã tạo cộng tác viên này hoặc đã duyệt hóa đơn này không được là người chi trả nó.',
+    'Nhân viên đã tạo cộng tác viên này, đã duyệt hóa đơn này, hoặc đã khai tài khoản nhận tiền không được là người chi trả nó.',
   'bo.refused.payout_accounts_current_key': 'Cộng tác viên đã có tài khoản nhận tiền hiện tại. Tải lại và thử lại.',
   'bo.refused.payout_accounts_append_only': 'Tài khoản nhận tiền là bản ghi của một lời khai và không thể sửa hay xóa.',
   'bo.refused.settlements_transition_check':
@@ -2126,6 +2188,12 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.payout_risk_hold': 'Bộ máy rủi ro đang giữ hóa đơn này. Gỡ lệnh giữ với lý do ở màn hình cờ rủi ro trước.',
   'bo.refused.payout_already_paid': 'Hóa đơn này đã được trả.',
   'bo.refused.payout_accounts_id_reused': 'Mã tài khoản đó đã đặt tên cho một lời khai khác.',
+  'bo.refused.payout_account_declaration_invalid':
+    'Lời khai đó không lưu được. Ví cần số di động Việt Nam mười chữ số bắt đầu bằng 0; đường ngân hàng cần mã ngân hàng và số tài khoản.',
+  'bo.refused.payout_account_locked_while_paying':
+    'Một khoản chi cho cộng tác viên này vẫn đang mở, nên không đổi được tài khoản. Hãy hoàn tất hoặc xử lý khoản chi đó trước.',
+  'bo.refused.payout_account_not_this_centre':
+    'Cộng tác viên này chưa nộp gì tại trung tâm này, nên quầy này không khai được tài khoản của họ.',
   'bo.refused.payout_attempt_not_resolvable':
     'Lần chi này không thể xử lý bằng tay ở trạng thái hiện tại. Chỉ lần chi đang treo, đã cạn hỏi lại hoặc chưa từng gửi mới được.',
   'bo.refused.payout_bill_period_mismatch': 'Hóa đơn đó thuộc một kỳ khác.',
