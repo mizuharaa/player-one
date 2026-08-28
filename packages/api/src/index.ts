@@ -39,6 +39,7 @@ export {
   objectKey,
   planParts,
   PART_SIZE,
+  READBACK_STALLS,
   S3ObjectStore,
   s3StoreFromEnv,
   transportInventory,
@@ -119,8 +120,9 @@ export type ApiOptions = {
   verificationGate?: 'local' | 'cloud';
   /**
    * Where the upload centre remembers what it has already transported
-   * (PRODUCT.md:34). Defaults to `noProgress`, which remembers nothing and is
-   * correct — see `UploadProgress`.
+   * (PRODUCT.md:34). Defaults to `verificationReceipts`, this database's own
+   * table: remembering nothing is still correct, but it costs a full re-read of
+   * every object on every re-run — see `UploadProgress` and migration 0020.
    */
   uploadProgress?: UploadProgress;
   /**

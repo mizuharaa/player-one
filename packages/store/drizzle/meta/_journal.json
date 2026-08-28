@@ -183,6 +183,13 @@
       "when": 1788480000000,
       "tag": "0016_dispute_review",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788703000000,
+      "tag": "0020_cloud_verification_receipts",
+      "breakpoints": true
     }
   ]
 }
