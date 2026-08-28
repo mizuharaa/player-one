@@ -110,8 +110,7 @@ ordered by `when`, and tags with the same numeric prefix (`0007_*`,
 Then: one full run with a database, a rewrite of this section, one PR.
 
 **Decisions Daniel has to make before any real payout, in order:**
-whole-dong rounding of fractional bill totals (every review-lane bill is
-fractional today, e.g. 320.0004 VND, and the domain refuses an attempt on one);
+(whole-dong rounding was decided on 2026-08-27 — down — and is built);
 non-verified payout accounts are refused on BOTH rails by SQL, so with no
 live ZaloPay verification nobody is payable — gate G3, override is an
 escalation; ZaloPay's wallet verification returns no holder name, so
@@ -196,10 +195,27 @@ blocked. **Ask.** It was meant to run in parallel, not after.
   product is `320.0000`. Deliberate and pinned by a test: `unit_price ×
   effective_minutes` must reproduce `amount`, because that is the first thing
   checked when an invoice is disputed. Do not "fix" it.
-- **Rounding lives in exactly one function**, `quantise` in `packages/api/src/money.ts`,
-  and the rule is half away from zero. Everything feeding it converts exactly —
-  including a float64 span boundary, which becomes the rational it actually is.
-  A second rounding site anywhere in that file voids the guarantee.
+- **Rounding lives in exactly one function**, `quantise` in `packages/api/src/money.ts`.
+  Everything feeding it converts exactly — including a float64 span boundary,
+  which becomes the rational it actually is. A second rounding site anywhere in
+  that file voids the guarantee. `quantise` takes a rule, and there are two:
+  `half-away` is the default and everything on the review side uses it;
+  `floor` is used by exactly one caller, `wholeVnd`. Two rules, still one
+  function — which rule applies is a caller's decision, where the arithmetic
+  happens is not.
+- **A bill total is paid rounded DOWN** (Daniel, 2026-08-27). Down, not
+  half-away-from-zero and not up: the platform never pays a collector more than
+  the reviewed footage was worth. The floor is taken in `wholeVnd`
+  (`packages/api/src/payout/domain/attempts.ts`) and by `payout_attempts_guard`
+  in migration `0018`, and nowhere else. **Not on the line** — a line's amount
+  has to stay reproducible from its own `unit_price × effective_minutes`, and
+  flooring each line charges the loss per line: twenty 17-second lines of
+  `339.9996` lose 19.992 dong that way against 0.992 dong for one floor on the
+  total. **Not on `bills.total`** either — `bills_total_matches_lines` (0011)
+  says the total IS the sum of the lines, and a floored total is not. So the
+  bill keeps its exact figure and only the attempt's `amount_vnd` is whole. The
+  refusal `payout_attempts_total_fractional` is retired; a wrong figure is now
+  `payout_attempts_amount_check`.
 - **Auto session matching by time applies only to `session_origin = 'app'`.**
   A handover-origin `prepare_time` is what an operator typed from what a
   collector remembered; matching a microsecond PTS start against it and paying

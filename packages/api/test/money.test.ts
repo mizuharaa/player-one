@@ -58,6 +58,28 @@ describe('quantise, the one rounding function', () => {
     expect(() => quantise(rational(1n), -1)).toThrow(RangeError);
     expect(() => quantise(rational(1n), 1.5)).toThrow(RangeError);
   });
+
+  /**
+   * The second rule, for the one value that uses it: the whole dong a bill is
+   * paid in. Down means towards negative infinity, not towards zero — the two
+   * differ below zero, and a bill total cannot be negative but a function that
+   * says "floor" and truncates instead is a trap for whoever calls it next.
+   */
+  it('floors towards negative infinity, not towards zero', () => {
+    expect(quantise(fromDecimal('640.0008'), 0, 'floor')).toBe('640');
+    expect(quantise(fromDecimal('640.9999'), 0, 'floor')).toBe('640');
+    expect(quantise(fromDecimal('640.0000'), 0, 'floor')).toBe('640');
+    expect(quantise(fromDecimal('-0.0001'), 0, 'floor')).toBe('-1');
+    expect(quantise(fromDecimal('-1.0000'), 0, 'floor')).toBe('-1');
+    // Half away from zero is the default and is unchanged by any of this.
+    expect(quantise(fromDecimal('640.9999'), 0)).toBe('641');
+    expect(quantise(rational(1n, 2n), 0)).toBe('1');
+  });
+
+  it('floors at any scale, not only whole numbers', () => {
+    expect(quantise(rational(2n, 3n), 4, 'floor')).toBe('0.6666');
+    expect(quantise(rational(2n, 3n), 4)).toBe('0.6667');
+  });
 });
 
 describe('exact conversion in, so quantise is the only rounding', () => {

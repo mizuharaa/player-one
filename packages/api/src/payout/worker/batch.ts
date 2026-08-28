@@ -57,7 +57,6 @@ export const BALANCE_MARGIN = 1.05;
 export type Issue =
   | 'no_account'
   | 'account_unverified'
-  | 'total_fractional'
   | 'over_bank_ceiling'
   | 'under_bank_minimum'
   | 'over_cap'
@@ -76,8 +75,8 @@ export type BatchBill = {
   currency: string;
   /** As stored: numeric(14,4) text. */
   total: string;
-  /** Whole dong, or null when the total is fractional. */
-  amountVnd: number | null;
+  /** What a transfer would move: the total rounded down to whole dong (`wholeVnd`). */
+  amountVnd: number;
   lineCount: number;
   /** All settlements manually_paid (SET-03), or a succeeded attempt exists. */
   paid: boolean;
@@ -116,13 +115,10 @@ export function issuesOf(
   }
   if (bill.account === null) issues.push('no_account');
   else if (bill.account.verifyStatus !== 'verified') issues.push('account_unverified');
-  if (bill.amountVnd === null) issues.push('total_fractional');
-  else {
-    const bank = bill.account !== null && bill.account.method !== 'WALLET';
-    if (bank && bill.amountVnd > BANK_CEILING_VND) issues.push('over_bank_ceiling');
-    if (bank && bill.amountVnd < BANK_MINIMUM_VND) issues.push('under_bank_minimum');
-    if (options.capVnd !== undefined && bill.amountVnd > options.capVnd) issues.push('over_cap');
-  }
+  const bank = bill.account !== null && bill.account.method !== 'WALLET';
+  if (bank && bill.amountVnd > BANK_CEILING_VND) issues.push('over_bank_ceiling');
+  if (bank && bill.amountVnd < BANK_MINIMUM_VND) issues.push('under_bank_minimum');
+  if (options.capVnd !== undefined && bill.amountVnd > options.capVnd) issues.push('over_cap');
   if (options.holdsEnabled === true && bill.risk.band === 'hold') issues.push('risk_hold');
   return issues;
 }
@@ -247,7 +243,7 @@ export async function preflight(
 ): Promise<Preflight & { billsDetail: BatchBill[] }> {
   const bills = await loadBatch(db, period, options);
   const counts = Object.fromEntries(
-    (['no_account', 'account_unverified', 'total_fractional', 'over_bank_ceiling', 'under_bank_minimum', 'over_cap', 'risk_hold', 'attempt_open', 'already_paid', 'line_in_exception'] as Issue[]).map((i) => [i, 0]),
+    (['no_account', 'account_unverified', 'over_bank_ceiling', 'under_bank_minimum', 'over_cap', 'risk_hold', 'attempt_open', 'already_paid', 'line_in_exception'] as Issue[]).map((i) => [i, 0]),
   ) as Record<Issue, number>;
   const bands: Record<RiskSummary['band'], number> = { clear: 0, notice: 0, review: 0, hold: 0 };
   let payable = 0;
@@ -255,7 +251,7 @@ export async function preflight(
   for (const b of bills) {
     bands[b.risk.band] += 1;
     for (const i of b.issues) counts[i] += 1;
-    if (b.issues.length === 0 && b.amountVnd !== null) {
+    if (b.issues.length === 0) {
       payable += 1;
       total += b.amountVnd;
     }
@@ -309,7 +305,6 @@ export type PayRefusal =
   | 'payout_account_missing'
   | 'payout_account_unverified'
   | 'payout_bank_details_unavailable'
-  | 'payout_attempts_total_fractional'
   | 'payout_attempts_bank_ceiling'
   | 'payout_attempts_bank_minimum'
   | 'payout_cap_exceeded'
@@ -365,9 +360,8 @@ export async function refusalFor(
   options: Pick<BatchOptions, 'capVnd'>,
 ): Promise<PayRefusal | null> {
   if (bill.paid) return 'payout_already_paid';
-  // Before the arithmetic: a parked line is a question about the bill, not its total.
+  // Before the limits: a parked line is a question about the bill, not its total.
   if (bill.inException) return 'payout_settlement_exception';
-  if (bill.amountVnd === null) return 'payout_attempts_total_fractional';
   for (const issue of bill.issues) {
     switch (issue) {
       case 'no_account':
@@ -527,8 +521,6 @@ export function constraintForIssues(issues: readonly Issue[]): PayRefusal | null
         return 'payout_account_missing';
       case 'account_unverified':
         return 'payout_account_unverified';
-      case 'total_fractional':
-        return 'payout_attempts_total_fractional';
       case 'over_bank_ceiling':
         return 'payout_attempts_bank_ceiling';
       case 'under_bank_minimum':

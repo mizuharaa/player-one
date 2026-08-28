@@ -451,24 +451,22 @@ describe.skipIf(!hasDb())('the edge-case suite, E01–E29, over a real socket to
       }
     });
 
-    it('E15 a fractional total (170.0004) has no whole-dong amount: refused by the route, the database and the batch, until the rounding rule is decided', async () => {
+    it('E15 a fractional total (170.0004) is paid at its floor, 170, and 171 is refused by the database', async () => {
       const h = await harness();
       try {
         const account1 = await seedAccount(h.d, h.ids, 1);
         const fractional = await seedFractionalBill(h.d, h.ids);
-        const res = await pay(h, fractional);
-        expect(res.statusCode).toBe(409);
-        expect(res.json().constraint).toBe('payout_attempts_total_fractional');
-        for (const guess of [170, 171]) {
-          await violates('payout_attempts_total_fractional', insertAttemptAs(h.d, h.ids, h.ids.finA, { billId: fractional, accountId: account1, amountVnd: guess }));
-        }
+        // Up is the direction that pays more than the review was worth.
+        await violates('payout_attempts_amount_check', insertAttemptAs(h.d, h.ids, h.ids.finA, { billId: fractional, accountId: account1, amountVnd: 171 }));
         const view = await h.send('GET', `/api/payout/batches/${P0.start.toISOString()}`, h.opA);
-        expect((view.json().bills as { id: string; issues: string[]; amount_vnd: unknown }[]).find((b) => b.id === fractional)).toMatchObject({ issues: ['total_fractional'], amount_vnd: null });
-        const run = await runBatch(h.d, h.client, h.actor('finA'), P0, { pauseMs: 0 });
-        expect(run.preflight.counts.total_fractional).toBe(1);
-        expect(run.sent).toEqual([]);
-        expect(await attemptCount(h.d)).toBe(0);
-        expect(transfers(h)).toHaveLength(0);
+        expect((view.json().bills as { id: string; issues: string[]; amount_vnd: unknown }[]).find((b) => b.id === fractional)).toMatchObject({ issues: [], amount_vnd: 170 });
+        const res = await pay(h, fractional);
+        expect(res.statusCode, res.body).toBe(201);
+        expect(transfers(h)).toHaveLength(1);
+        expect(transfers(h)[0]!.body['amount']).toBe(170);
+        expect(await attemptCount(h.d)).toBe(1);
+        // The bill keeps its exact figure; only the transfer is whole dong.
+        expect((await rows<{ t: string }>(h.d, sql`select total::text as t from bills where id = ${fractional}`))[0]!.t).toBe('170.0004');
       } finally {
         await h.close();
       }

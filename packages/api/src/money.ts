@@ -112,20 +112,33 @@ export function fromNumber(x: number): Rational {
 }
 
 /**
- * The one rounding function.
+ * The two rules this module rounds by. Two rules, still one function: which
+ * rule applies is a caller's decision, and where the arithmetic happens is not.
  *
- * **Rule: half away from zero.** A value exactly halfway between two
- * representable results goes to the one with the larger magnitude — 0.5 to 1,
- * −0.5 to −1. Not banker's rounding, which would be defensible statistically
- * and indefensible to a collector who noticed that two identical reviews were
- * paid differently. Not truncation, which silently favours the platform on
- * every single episode.
+ * `half-away` — a value exactly halfway between two representable results goes
+ * to the one with the larger magnitude, 0.5 to 1 and −0.5 to −1. Not banker's
+ * rounding, which would be defensible statistically and indefensible to a
+ * collector who noticed that two identical reviews were paid differently. This
+ * is the default and everything on the review side uses it.
+ *
+ * `floor` — towards negative infinity. Daniel took this decision on 2026-08-27
+ * for one value only: the whole number of dong a bill is paid in. A transfer
+ * moves whole dong and a bill total does not land on one, so somebody has to
+ * lose the fraction, and the platform is not allowed to pay a collector more
+ * than the reviewed footage was worth. Applied ONCE per bill, to the total, so
+ * the loss is under one dong per bill however many lines it has. It is not
+ * applied to a line: see `settlementFor`.
+ */
+export type Rounding = 'half-away' | 'floor';
+
+/**
+ * The one rounding function.
  *
  * Returns a decimal string with exactly `decimals` places, ready for a
  * `numeric` column. Never a number: handing this back as a float would undo the
  * entire module on the last hop.
  */
-export function quantise(value: Rational, decimals: number): string {
+export function quantise(value: Rational, decimals: number, rule: Rounding = 'half-away'): string {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 30) {
     throw new RangeError(`decimals out of range: ${decimals}`);
   }
@@ -138,9 +151,19 @@ export function quantise(value: Rational, decimals: number): string {
   const q = scaled / value.d;
   const r = scaled % value.d;
 
-  // 2r >= d is "the discarded part is at least a half", with no division and so
-  // no rounding of its own.
-  const rounded = 2n * r >= value.d ? q + 1n : q;
+  // Both branches work on the MAGNITUDE, which the sign is put back on below.
+  // `2r >= d` is "the discarded part is at least a half", with no division and
+  // so no rounding of its own. For `floor`, a positive value drops its
+  // remainder and a negative one grows in magnitude, which is what towards
+  // negative infinity means on either side of zero.
+  const rounded =
+    rule === 'floor'
+      ? negative && r !== 0n
+        ? q + 1n
+        : q
+      : 2n * r >= value.d
+        ? q + 1n
+        : q;
 
   const whole = rounded / scale;
   const frac = rounded % scale;
@@ -313,6 +336,14 @@ export const MONEY_SCALE = 4;
  * Both scales match the columns they land in — `settlements.effective_minutes`
  * is numeric(20,6) and `settlements.amount` is numeric(14,4) — so nothing
  * rounds a second time on the way into Postgres.
+ *
+ * **The line is not floored, and the round-down decision does not reach here.**
+ * A line amount has to be reproducible from the line's own price and minutes,
+ * which is the first thing checked when an invoice is disputed, and `floor` of
+ * the product is not that product. Flooring here would also charge the loss per
+ * line rather than per bill: at 1,200 a minute a 17-second line is `339.9996`,
+ * so twenty of them lose 19.992 dong flooring each and 0.992 dong flooring the
+ * total once. The floor belongs on the total, in `wholeVnd`.
  */
 export function settlementFor(
   unitPrice: string,

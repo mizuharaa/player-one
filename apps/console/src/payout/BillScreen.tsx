@@ -91,7 +91,7 @@ export function BillScreen() {
                   label={t('settle.bill.amount')}
                   value={vnd(bill.amount_vnd, locale)}
                   tone="data"
-                  hint={bill.amount_vnd === null ? t('settle.wholeVnd.none') : t('settle.wholeVnd')}
+                  hint={t('settle.wholeVnd')}
                 />
                 <Fig label={t('settle.col.attempt')} value={<AttemptPill status={bill.attempt?.status ?? null} />} hint={t('settle.lines', { n: count(bill.lines, locale) })} />
               </div>
@@ -227,9 +227,7 @@ function PaymentPanel({
         ? t(gateKey)
         : bill.paid
           ? t('settle.pay.alreadyPaid')
-          : bill.amount_vnd === null
-            ? t('settle.wholeVnd.none')
-            : null;
+          : null;
   /** The API rail additionally needs the snapshot to have said the wallet covers the batch. */
   const apiInert = inert ?? (!preflightOk ? t('settle.batch.noneOk') : null);
 

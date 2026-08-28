@@ -424,8 +424,7 @@ const en = {
   'settle.sort': 'Sort by {{column}}',
   'settle.withheld.note': 'The PIT withholding rate is not decided. The server reports 0 withheld and net equal to gross.',
   'settle.asStored': 'As stored, in {{currency}}. Not rounded here.',
-  'settle.wholeVnd': 'Whole dong, as the database converted it.',
-  'settle.wholeVnd.none': 'No whole-dong figure: the total has a fractional part and nobody has decided how to round it.',
+  'settle.wholeVnd': 'Whole dong. The total is rounded down; the collector loses under one dong per bill.',
   'settle.lines': '{{n}} line(s)',
   'settle.attempt.none': 'No attempt',
   'settle.attempt.created': 'Created',
@@ -449,7 +448,6 @@ const en = {
   'settle.issue.none': 'Nothing. This bill can be paid.',
   'settle.issue.no_account': 'The collector has declared no payout account.',
   'settle.issue.account_unverified': 'The payout account is not verified by ZaloPay.',
-  'settle.issue.total_fractional': 'The total has a fractional part of a dong, and the rounding rule is not decided.',
   'settle.issue.over_bank_ceiling': 'Above ZaloPay’s ceiling of 10,000,000 VND for one bank transfer.',
   'settle.issue.under_bank_minimum': 'Below ZaloPay’s minimum of 2,000 VND for a bank transfer.',
   'settle.issue.over_cap': 'Above the per-collector cap for this period.',
@@ -571,7 +569,7 @@ const en = {
     'Above the per-collector cap of {{cap}}. The batch refuses it by name and raises a ticket; it never pays the cap instead.',
   'settle.exceptions.blocked': 'Not payable yet',
   'settle.exceptions.blocked.body':
-    'Bills with something to fix before a transfer: no account, an unverified account, a fractional total, a risk hold.',
+    'Bills with something to fix before a transfer: no account, an unverified account, a risk hold.',
   'settle.exceptions.opened': 'Opened {{elapsed}} ago',
   'settle.exceptions.polls': '{{n}} poll(s), last at {{at}}',
   'settle.exceptions.polls.none': 'Not polled yet',
@@ -701,9 +699,7 @@ const en = {
 
   'bo.refused.payout_attempts_previous_not_failed':
     'This bill already has an attempt that has not failed. A new attempt is only possible after the previous one has failed.',
-  'bo.refused.payout_attempts_total_fractional':
-    'The bill total has a fractional part of a dong, and nobody has decided how to round it. It cannot be paid until they do.',
-  'bo.refused.payout_attempts_amount_check': 'The amount typed does not equal the bill total. Nothing was recorded.',
+  'bo.refused.payout_attempts_amount_check': 'The amount typed does not equal the bill total rounded down to whole dong. Nothing was recorded.',
   'bo.refused.payout_attempts_account_owner': 'That payout account belongs to a different collector.',
   'bo.refused.payout_attempts_account_current': 'That payout account is no longer the collector’s current one. Reload the bill.',
   'bo.refused.payout_attempts_bank_ceiling':
@@ -1071,8 +1067,7 @@ const zh: Record<MessageKey, string> = {
   'settle.sort': '按{{column}}排序',
   'settle.withheld.note': '个人所得税代扣比例尚未确定。服务端报告代扣为 0，实付等于总额。',
   'settle.asStored': '按存储值显示，单位 {{currency}}。此处不取整。',
-  'settle.wholeVnd': '整数越南盾，由数据库换算。',
-  'settle.wholeVnd.none': '没有整数越南盾金额：总额带有小数部分，而取整规则尚未决定。',
+  'settle.wholeVnd': '整数越南盾。总额向下取整；每张账单采集者最多损失不到一盾。',
   'settle.lines': '{{n}} 条明细',
   'settle.attempt.none': '尚无付款尝试',
   'settle.attempt.created': '已创建',
@@ -1096,7 +1091,6 @@ const zh: Record<MessageKey, string> = {
   'settle.issue.none': '没有。这张账单可以支付。',
   'settle.issue.no_account': '采集者尚未申报收款账户。',
   'settle.issue.account_unverified': '收款账户尚未通过 ZaloPay 验证。',
-  'settle.issue.total_fractional': '总额带有小数部分，而取整规则尚未决定。',
   'settle.issue.over_bank_ceiling': '超过 ZaloPay 单笔银行转账上限 10,000,000 越南盾。',
   'settle.issue.under_bank_minimum': '低于 ZaloPay 银行转账最低金额 2,000 越南盾。',
   'settle.issue.over_cap': '超过本周期每位采集者的上限。',
@@ -1297,7 +1291,6 @@ const zh: Record<MessageKey, string> = {
   'risk.signal.OPS.CONCENTRATION': '在 {operators} 位操作员都在处理的情况下，操作员 {operator_ref} 处理了该采集者账单 {events} 次操作中的 {share_pct}。',
 
   'bo.refused.payout_attempts_previous_not_failed': '这张账单已有一次未失败的付款尝试。只有在前一次尝试失败之后才能发起新的尝试。',
-  'bo.refused.payout_attempts_total_fractional': '账单总额带有小数部分，而取整规则尚未决定。在决定之前无法支付。',
   'bo.refused.payout_attempts_amount_check': '输入的金额与账单总额不一致。没有登记任何内容。',
   'bo.refused.payout_attempts_account_owner': '该收款账户属于另一位采集者。',
   'bo.refused.payout_attempts_account_current': '该收款账户已不是采集者当前的账户。请刷新账单。',
@@ -1670,8 +1663,7 @@ const vi: Record<MessageKey, string> = {
   'settle.sort': 'Sắp xếp theo {{column}}',
   'settle.withheld.note': 'Tỷ lệ khấu trừ thuế TNCN chưa được quyết định. Máy chủ báo khấu trừ 0 và thực nhận bằng tổng.',
   'settle.asStored': 'Đúng như đã lưu, đơn vị {{currency}}. Không làm tròn ở đây.',
-  'settle.wholeVnd': 'Số đồng chẵn, do cơ sở dữ liệu quy đổi.',
-  'settle.wholeVnd.none': 'Không có số đồng chẵn: tổng có phần lẻ và chưa ai quyết định cách làm tròn.',
+  'settle.wholeVnd': 'Số đồng chẵn. Tổng được làm tròn xuống; mỗi hóa đơn cộng tác viên mất chưa tới một đồng.',
   'settle.lines': '{{n}} dòng',
   'settle.attempt.none': 'Chưa có lần chi',
   'settle.attempt.created': 'Đã tạo',
@@ -1695,7 +1687,6 @@ const vi: Record<MessageKey, string> = {
   'settle.issue.none': 'Không có gì. Hóa đơn này có thể chi trả.',
   'settle.issue.no_account': 'Cộng tác viên chưa khai tài khoản nhận tiền.',
   'settle.issue.account_unverified': 'Tài khoản nhận tiền chưa được ZaloPay xác minh.',
-  'settle.issue.total_fractional': 'Tổng có phần lẻ của một đồng, và quy tắc làm tròn chưa được quyết định.',
   'settle.issue.over_bank_ceiling': 'Vượt trần 10.000.000 VND của ZaloPay cho một lệnh chuyển ngân hàng.',
   'settle.issue.under_bank_minimum': 'Dưới mức tối thiểu 2.000 VND của ZaloPay cho một lệnh chuyển ngân hàng.',
   'settle.issue.over_cap': 'Vượt hạn mức mỗi cộng tác viên trong kỳ này.',
@@ -1939,8 +1930,6 @@ const vi: Record<MessageKey, string> = {
 
   'bo.refused.payout_attempts_previous_not_failed':
     'Hóa đơn này đã có một lần chi chưa thất bại. Chỉ có thể tạo lần chi mới sau khi lần trước đã thất bại.',
-  'bo.refused.payout_attempts_total_fractional':
-    'Tổng hóa đơn có phần lẻ của một đồng, và chưa ai quyết định cách làm tròn. Không thể trả cho đến khi có quyết định.',
   'bo.refused.payout_attempts_amount_check': 'Số tiền đã gõ không bằng tổng hóa đơn. Chưa ghi nhận gì.',
   'bo.refused.payout_attempts_account_owner': 'Tài khoản nhận tiền đó thuộc về một cộng tác viên khác.',
   'bo.refused.payout_attempts_account_current': 'Tài khoản nhận tiền đó không còn là tài khoản hiện tại của cộng tác viên. Tải lại hóa đơn.',

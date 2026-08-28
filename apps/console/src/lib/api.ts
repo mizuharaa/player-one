@@ -390,7 +390,6 @@ export type PayoutMode = 'manual' | 'api';
 export type PayoutIssue =
   | 'no_account'
   | 'account_unverified'
-  | 'total_fractional'
   | 'over_bank_ceiling'
   | 'under_bank_minimum'
   | 'over_cap'
@@ -460,8 +459,8 @@ export interface PayoutBill {
   period_end: string;
   currency: string;
   total: Decimal;
-  /** Whole dong, or null when the total has a fractional part nobody has decided how to round. */
-  amount_vnd: number | null;
+  /** What a transfer moves: the total rounded down to whole dong. */
+  amount_vnd: number;
   lines: number;
   paid: boolean;
   account: PayoutAccountSummary | null;

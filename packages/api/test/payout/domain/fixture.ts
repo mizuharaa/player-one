@@ -14,9 +14,9 @@ import { liveClaim } from '../../../../store/test/db.ts';
  *
  * Amounts are whole dong on purpose: one minute at 1,200/min is `1200.0000`,
  * so a bill of two lines is `2400.0000` and converts to an attempt of 2,400
- * VND without anybody deciding a rounding rule. The one fractional bill
- * (`170.0004`, the review lane's own 8.5 s case) exists to prove that nothing
- * converts it.
+ * VND with no rounding at all, which keeps most cases arithmetically boring.
+ * The one fractional bill (`170.0004`, the review lane's own 8.5 s case) exists
+ * to prove the round-down rule: it pays 170, and 171 is refused.
  */
 
 export const uid = (): string => randomUUID();
@@ -75,9 +75,12 @@ export async function seedPayout(d: Db) {
     await d.execute(sql`insert into collection_session_devices (collection_session_id, device_id, role) values (${id}, ${device}, 'headset')`);
     return { handover, batch, claim };
   };
-  const claim1 = (await session(ids.session1, ids.collector1, ids.device1, ids.centreA, ids.machineA, ids.opA, 'CARD-1')).claim;
-  const claim2 = (await session(ids.session2, ids.collector2, ids.device2, ids.centreB, ids.machineB, ids.finB, 'CARD-2')).claim;
-  return { ...ids, claim1, claim2 };
+  const one = await session(ids.session1, ids.collector1, ids.device1, ids.centreA, ids.machineA, ids.opA, 'CARD-1');
+  const two = await session(ids.session2, ids.collector2, ids.device2, ids.centreB, ids.machineB, ids.finB, 'CARD-2');
+  // The batch ids are returned so a test can push episodes through the real
+  // ingest route instead of writing settlements in SQL; `round-down.test.ts`
+  // needs a bill that a reviewer actually produced.
+  return { ...ids, claim1: one.claim, claim2: two.claim, batch1: one.batch, batch2: two.batch };
 }
 
 /** A reviewed episode with a settlement worth `amount`, already billed (`bill_generated`). */
