@@ -134,6 +134,21 @@ import type { Db } from '@playerone/store';
  * counter is measuring a whole province. When that lands, the source axis has to
  * become the device or the collector, and the read routes above need their
  * window capped. This file is where that decision goes.
+ *
+ * The first two of those routes have landed: `POST /auth/collector/request-code`
+ * and `POST /auth/collector/verify`. Their personal axis is the phone number, on
+ * the ten, which is the axis that matters — it is the one an attacker guessing
+ * codes is held down by, and it works the same wherever they call from. The
+ * address axis is unchanged and still on the thirty, which is right for a pilot
+ * of about twenty phones and wrong at five hundred behind one carrier: thirty
+ * wrong codes anywhere on that carrier would refuse everybody else on it for up
+ * to five minutes.
+ *
+ * ponytail: left as it is, because the pilot cannot reach it and every softening
+ * of the address axis is a hole in the distributed case. The upgrade when the
+ * fleet grows is to key the source axis for the collector routes on the app
+ * installation rather than the socket, which needs a device identifier the app
+ * does not send yet.
  */
 
 /** How long a counter lives once it is opened. */
@@ -188,7 +203,26 @@ type Counter = { failures: number; expiresAt: number; refused: boolean };
  * counter they are standing at. The kind picks the budget, and it picks the
  * table the audit row is filed against.
  */
-export type SignInRef = { id: string; kind: 'operator' | 'machine' };
+export type SignInRef = { id: string; kind: 'operator' | 'machine' | 'collector' };
+
+/**
+ * The key prefix each kind counts under. They are separate namespaces on
+ * purpose: a phone number and an operator reference are different strings in
+ * different tables, and one budget shared between them would let an attack on
+ * either lock out the other.
+ */
+const PREFIX: Record<SignInRef['kind'], string> = {
+  operator: 'ref',
+  machine: 'mach',
+  collector: 'tel',
+};
+
+/**
+ * Whether a key names something a whole counter shares rather than one person.
+ * Shared keys carry the bigger budget and a correct password does not clear
+ * them — see `succeeded`.
+ */
+const isShared = (key: string): boolean => key.startsWith('ip:') || key.startsWith('mach:');
 
 export type SignInLimiter = {
   /**
@@ -255,11 +289,11 @@ export function signInLimiter(now: () => number = Date.now): SignInLimiter {
     ...new Set(
       refs
         .filter((r) => r.id !== '')
-        .map((r) => `${r.kind === 'machine' ? 'mach' : 'ref'}:${r.id.slice(0, REF_MAX)}`),
+        .map((r) => `${PREFIX[r.kind]}:${r.id.slice(0, REF_MAX)}`),
     ),
   ];
 
-  const limitOf = (key: string): number => (key.startsWith('ref:') ? PER_CREDENTIAL : PER_SHARED);
+  const limitOf = (key: string): number => (isShared(key) ? PER_SHARED : PER_CREDENTIAL);
 
   /** The counter for `key`, or nothing when it never existed or has expired. */
   const live = (key: string): Counter | undefined => {
@@ -323,7 +357,7 @@ export function signInLimiter(now: () => number = Date.now): SignInLimiter {
         // password proves who is typing and says nothing about where from, and
         // clearing a shared counter would let one valid account wipe the count
         // for every guess sprayed from the same counter PC.
-        if (key.startsWith('ref:')) counters.delete(key);
+        if (!isShared(key)) counters.delete(key);
         else {
           const counter = live(key);
           if (counter === undefined) continue;
@@ -371,7 +405,12 @@ export function signInAttempt(
   const attacked = refs.find((ref) => ref.id !== '');
   const machine = attacked?.kind === 'machine';
   const filed = machine ? 'machine.login_failed' : action;
-  const table = machine ? 'upload_devices' : 'operators';
+  const table =
+    attacked?.kind === 'machine'
+      ? 'upload_devices'
+      : attacked?.kind === 'collector'
+        ? 'collectors'
+        : 'operators';
   const target = (attacked?.id ?? '').slice(0, REF_MAX);
 
   return {

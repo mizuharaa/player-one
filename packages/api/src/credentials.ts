@@ -62,7 +62,24 @@ export type OperatorClaims = { kind: 'operator'; operatorId: string; uploadCentr
  * foreign key and `episode_reviews.reviewer_ref` keeps holding one kind of value.
  */
 export type ReviewerClaims = { kind: 'reviewer'; reviewerId: string };
-export type Claims = MachineClaims | OperatorClaims | ReviewerClaims;
+/**
+ * APP-01 / SEC-01. A fourth kind, separate for the same reason the third one is.
+ *
+ * Every counter route scopes its query on `uploadCentreId` read off the operator
+ * token, and a collector belongs to no upload centre — they belong to a phone.
+ * Sharing `OperatorClaims` and leaving the centre undefined would make those
+ * routes compile against a collector and refuse them only at run time, if
+ * somebody remembered the guard. A separate kind makes them unreachable to the
+ * type, so `episodes.ts` cannot start reading `uploadCentreId` off a collector
+ * however hard it tries.
+ *
+ * `epoch` is `collectors.token_epoch` as it stood at sign-in, and it is checked
+ * against the row on every request. It is in the claims and not looked up alone
+ * because the check has to compare two values: what the token was issued under,
+ * and what the row says now.
+ */
+export type CollectorClaims = { kind: 'collector'; collectorId: string; epoch: number };
+export type Claims = MachineClaims | OperatorClaims | ReviewerClaims | CollectorClaims;
 
 /**
  * The centre is baked into both tokens at issue time and is never taken from the
@@ -70,9 +87,30 @@ export type Claims = MachineClaims | OperatorClaims | ReviewerClaims;
  * a caller cannot name a centre it was not issued for.
  */
 const TOKEN_TTL_S = 12 * 60 * 60; // one shift
+/**
+ * Thirty days for a collector, and it is not the operator's twelve hours by
+ * oversight.
+ *
+ * An operator's session ends with a shift: they are at a counter, they sign in
+ * at the start of it, and a stale token on a shared upload-centre PC is a real
+ * exposure. A collector holds a phone that is theirs, they sign in from their
+ * own device, and the only way back in is a code sent by SMS — so a twelve-hour
+ * token means a collector who opens the app on the way to work waits for an SMS
+ * first, every day, and pays for the message. Thirty days is what makes the
+ * app usable at all.
+ *
+ * What pays for the longer window is `token_epoch`. An operator token cannot be
+ * revoked before it expires and its twelve hours are the bound; a collector
+ * token can be revoked in one UPDATE, on every device at once, so the length of
+ * the window is no longer the only control over a lost phone.
+ */
+const COLLECTOR_TOKEN_TTL_S = 30 * 24 * 60 * 60;
+
+const ttlOf = (claims: Claims): number =>
+  claims.kind === 'collector' ? COLLECTOR_TOKEN_TTL_S : TOKEN_TTL_S;
 
 export function signToken(secret: string, claims: Claims, nowS = Math.floor(Date.now() / 1e3)): string {
-  const body = Buffer.from(JSON.stringify({ ...claims, exp: nowS + TOKEN_TTL_S })).toString(
+  const body = Buffer.from(JSON.stringify({ ...claims, exp: nowS + ttlOf(claims) })).toString(
     'base64url',
   );
   return `${body}.${createHmac('sha256', secret).update(body).digest('base64url')}`;
@@ -105,5 +143,9 @@ export function verifyToken(
   if (c.kind === 'machine' && c.uploadDeviceId && c.uploadCentreId) return c;
   if (c.kind === 'operator' && c.operatorId && c.uploadCentreId) return c;
   if (c.kind === 'reviewer' && c.reviewerId) return c;
+  // The epoch is required, and `0` is not a stand-in for "absent": the column
+  // starts at 1, so a token claiming epoch 0 matches no row and is refused a
+  // moment later anyway. Checking the type here keeps that a shape failure.
+  if (c.kind === 'collector' && c.collectorId && typeof c.epoch === 'number') return c;
   return null;
 }

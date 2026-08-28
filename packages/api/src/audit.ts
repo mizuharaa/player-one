@@ -123,6 +123,14 @@ export async function auditLogin(
     operatorId?: string;
     uploadDeviceId?: string;
     uploadCentreId?: string;
+    /**
+     * A collector, and deliberately not a column. `operator_id` has a foreign
+     * key into `operators` and a collector is not one; putting the id there
+     * would either fail the key or, worse, match an unrelated operator. The id
+     * is the row's `target_id` — the table it is filed against is `collectors` —
+     * and this repeats it in `after` so the row reads the same as every other.
+     */
+    collectorId?: string;
     source?: string;
     outcome?: 'credentials' | 'rate_limited';
   },
@@ -132,8 +140,15 @@ export async function auditLogin(
     targetTable,
     targetId,
     // From the action, not a fourth argument: `reviewer.login` is the only
-    // login a reviewer can perform, so a caller cannot get the pair wrong.
-    actorRole: action.startsWith('reviewer.') ? 'reviewer' : 'operator',
+    // login a reviewer can perform, so a caller cannot get the pair wrong. The
+    // same holds for `collector.login` — 0018 added that role for exactly these
+    // two rows and `audit_events_attributed_check` refuses every other shape
+    // carrying it.
+    actorRole: action.startsWith('reviewer.')
+      ? 'reviewer'
+      : action.startsWith('collector.')
+        ? 'collector'
+        : 'operator',
     operatorId: who.operatorId ?? null,
     uploadDeviceId: who.uploadDeviceId ?? null,
     // Null for a reviewer: PaXini staff belong to no upload centre.
