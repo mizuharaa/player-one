@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cp, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { eq } from 'drizzle-orm';
+import type { EpisodeRecord } from '@playerone/contracts';
 import { ingestSession } from '../../ingest/src/ingest.ts';
 import {
   defectsOf,
@@ -159,6 +160,115 @@ describe.skipIf(!hasDb())('the episode store', () => {
     expect(r.mismatch!.changed).toEqual([]);
 
     await c.cleanup();
+  });
+
+  it('a stale fingerprint over changed bytes is a mismatch, not a duplicate', async () => {
+    const c = await copyOf('delivery-a');
+    const before = await withCache(() => ingestSession(c.dir));
+    const first = await storeEpisode(await db(), before.record);
+
+    const victim = `${STEM}_camera_left_part0001.mp4`;
+    const bytes = await readFile(join(c.dir, victim));
+    bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 0xff;
+    await writeFile(join(c.dir, victim), bytes);
+    const after = await withCache(() => ingestSession(c.dir));
+
+    /**
+     * The delivery a compromised or buggy client would send: real changed
+     * bytes, and the fingerprint of the delivery before them. Deciding on the
+     * fingerprint alone read this as "seen it, nothing to do" — no second
+     * ingest row and no CHECKSUM-MISMATCH, which is the one defect that exists
+     * to notice exactly this.
+     */
+    const stale = { ...after.record, content_fingerprint: before.record.content_fingerprint };
+    expect(stale.content_fingerprint).not.toBe(after.record.content_fingerprint);
+
+    const r = await storeEpisode(await db(), stale);
+
+    expect(r.outcome).toBe('mismatch');
+    expect(r.ingestId).not.toBe(first.ingestId);
+    expect(await ingestsOf(await db(), r.episodeId)).toHaveLength(2);
+    expect(r.mismatch!.changed.map((x) => x.relative_path)).toEqual([victim]);
+    expect((await defectsOf(await db(), r.ingestId!)).map((d) => d.code)).toContain(
+      'CHECKSUM-MISMATCH',
+    );
+
+    await c.cleanup();
+  });
+
+  // -- what the client asserts is not what is stored -------------------------
+
+  it('a record asserting `ok` beside a quarantine discrepancy is stored quarantined', async () => {
+    const { record } = await withCache(async () => ingestSession(await fixture('delivery-a')));
+    /**
+     * CALIB-MISSING is quarantine severity and is deliberately NOT a blocking
+     * code, so the `state` column is the only thing keeping it out of review.
+     * Asserting `ok` beside it was enough to make quarantine advice.
+     */
+    const lying = {
+      ...record,
+      state: 'ok' as const,
+      discrepancies: [
+        ...record.discrepancies.filter((d) => d.severity !== 'quarantine'),
+        { code: 'CALIB-MISSING' as const, severity: 'quarantine' as const, detail: 'imu MISSING' },
+      ],
+    };
+
+    const r = await storeEpisode(await db(), lying);
+
+    expect(r.record.state).toBe('quarantined');
+    const [row] = await (await db())
+      .select()
+      .from(episodeIngests)
+      .where(eq(episodeIngests.ingestId, r.ingestId!));
+    expect(row!.state).toBe('quarantined');
+    expect((row!.recordJson as EpisodeRecord).state).toBe('quarantined');
+    // The discrepancies themselves are evidence and are stored verbatim.
+    expect((await defectsOf(await db(), r.ingestId!)).map((d) => d.code)).toContain('CALIB-MISSING');
+  });
+
+  it('a duration longer than the record’s own window raises DUR-EXCEEDS-WINDOW', async () => {
+    const { record } = await withCache(async () => ingestSession(await fixture('delivery-a')));
+    const window =
+      Number(BigInt(record.timing.usable_end_us!) - BigInt(record.timing.usable_start_us!)) / 1e6;
+    expect(window).toBeGreaterThan(0);
+
+    // One day of media claimed inside a window of a few seconds.
+    const lying = {
+      ...record,
+      state: 'ok' as const,
+      discrepancies: [],
+      timing: { ...record.timing, raw_duration_s: 86400 },
+    };
+    const r = await storeEpisode(await db(), lying);
+
+    const defect = (await defectsOf(await db(), r.ingestId!)).find(
+      (d) => d.code === 'DUR-EXCEEDS-WINDOW',
+    );
+    expect(defect?.severity).toBe('quarantine');
+    expect((defect?.payload as { detail: string }).detail).toContain('86400.000000');
+    expect(r.record.state).toBe('quarantined');
+
+    const [row] = await (await db())
+      .select()
+      .from(episodeIngests)
+      .where(eq(episodeIngests.ingestId, r.ingestId!));
+    expect(row!.state).toBe('quarantined');
+    // The claimed number is still stored: ING-17, a bad measurement never
+    // blocks the delivery, and the column was widened so it never has to.
+    expect(row!.measuredDurationS).toBe('86400.000000');
+  });
+
+  it('a duration shorter than the window is a session with gaps, and passes', async () => {
+    const { record } = await withCache(async () => ingestSession(await fixture('delivery-a')));
+    const half = {
+      ...record,
+      timing: { ...record.timing, raw_duration_s: record.timing.raw_duration_s / 2 },
+    };
+    const r = await storeEpisode(await db(), half);
+
+    expect(r.record.discrepancies.map((d) => d.code)).not.toContain('DUR-EXCEEDS-WINDOW');
+    expect(r.record.state).toBe(record.state);
   });
 
   // -- persistence ----------------------------------------------------------

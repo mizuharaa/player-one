@@ -325,6 +325,74 @@ describe.skipIf(!hasDb())('the review lane', () => {
                             resolution_method = null`);
       expect((await claim(h)).statusCode).toBe(204);
     });
+
+    /**
+     * The three things the platform used to take the client's word for, each
+     * one on its own, each one measured through this route because this route
+     * is where the number a collector is paid on is handed out.
+     *
+     * `state` and `discrepancies` arrive on the same document, so a client that
+     * chose both could carry a quarantine defect and assert `ok` beside it, and
+     * eligibility read exactly the field it had asserted. The store derives the
+     * state from the discrepancies now, so the two can no longer disagree.
+     */
+    it('does not offer an episode that asserts `ok` beside a quarantine discrepancy', async () => {
+      const bad = record({});
+      const h = await harness({
+        episodes: [
+          {
+            ...bad,
+            state: 'ok',
+            // Quarantine severity, and deliberately NOT a blocking code, so the
+            // state column is the only thing that keeps it out of the queue.
+            discrepancies: [
+              { code: 'CALIB-MISSING', severity: 'quarantine', detail: 'imu MISSING' },
+            ],
+          },
+        ],
+      });
+      expect((await claim(h)).statusCode).toBe(204);
+    });
+
+    it('does not offer an episode that asserts `ok` beside CHECKSUM-MISMATCH', async () => {
+      const bad = record({});
+      const h = await harness({
+        episodes: [
+          {
+            ...bad,
+            state: 'ok',
+            discrepancies: [
+              { code: 'CHECKSUM-MISMATCH', severity: 'flag', detail: '1 changed against ingest 0' },
+            ],
+          },
+        ],
+      });
+      expect((await claim(h)).statusCode).toBe(204);
+    });
+
+    /**
+     * The record carries `usable_start_us`, `usable_end_us` and a span for
+     * every stream, and nothing on the server had ever compared its claimed
+     * duration against any of them. A day of media inside a hundred-second
+     * window is 1,440 billed minutes at a price of 1200, which is 1,728,000
+     * VND on one episode.
+     */
+    it('does not offer an episode claiming more duration than its own window holds', async () => {
+      const bad = record({ measured: 100 });
+      const h = await harness({
+        episodes: [{ ...bad, timing: { ...bad.timing, raw_duration_s: 86400 } }],
+      });
+      expect((await claim(h)).statusCode).toBe(204);
+
+      // Stored, not refused: ING-17 says a bad measurement never blocks the
+      // delivery. It is quarantined, which is a question for a person.
+      const rows = (await h.d.execute(
+        sql`select state, measured_duration_s from episode_ingests`,
+      )) as unknown as { state: string; measured_duration_s: string }[];
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.state).toBe('quarantined');
+      expect(rows[0]!.measured_duration_s).toBe('86400.000000');
+    });
   });
 
   // -------------------------------------------------------------------------
