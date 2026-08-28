@@ -1,9 +1,9 @@
 # ADR 0004 — SEC-06 is disk encryption on the centre PC, not encryption in the application
 
-**Status** Accepted as the mechanism. **Not delivered**: the deployment step
-below has no named owner and no date, and this ADR cannot supply either. It is
-an operations task, and until somebody's name is on it SEC-06 is open.
-**Date** 2026-08-27
+**Status** Accepted as the mechanism. **Owner assigned, not yet delivered**:
+Alois owns the deployment step below. It is an operations task, and SEC-06
+stays open until the acceptance check has been run on the centre PC.
+**Date** 2026-08-27; owner named 2026-08-28
 **Affects** SEC-06 (P0); SEC-09's "encryption at rest" half; UPL-03 and UPL-06;
 brief §4.4's upload-batch pipeline stage *"Encrypted local cache"*
 
@@ -125,7 +125,7 @@ manage-bde -protectors -get D: > recovery-D.txt
 
 ## Owner
 
-**Unassigned, and that is the open item.** This belongs to whoever provisions
+**Alois**, named by Daniel on 2026-08-28. This belongs to whoever provisions
 and hands over the centre PC — VNG PT Lab operations, not this codebase. The
 platform team cannot do it, cannot verify it remotely, and cannot make the
 software depend on it (see "Alternatives considered").
@@ -136,8 +136,9 @@ today. At 500 collectors and a second centre it is a provisioning checklist
 item, and it is much cheaper to write that checklist now than to retro-encrypt
 a disk with 40 TB on it.
 
-This ADR is not "done" until this section names a person and a date. Nothing in
-the repository will tell you whether it has been done.
+This section now names a person. It is still not "done" until the acceptance
+check below has been run on the real machine and the result recorded here.
+Nothing in the repository will tell you whether it has been done.
 
 ## The acceptance check
 
