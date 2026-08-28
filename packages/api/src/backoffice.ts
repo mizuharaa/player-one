@@ -5,6 +5,7 @@ import { schema, type Db } from '@playerone/store';
 import { z } from 'zod';
 import { mutate } from './audit.ts';
 import type { Actor } from './actor.ts';
+import { maskPhone } from './payout/domain/names.ts';
 
 /**
  * The back office: tasks, collectors and devices (BO-01 → BO-04).
@@ -604,17 +605,53 @@ export function registerBackOffice(
       byCollector.set(a.collectorId, list);
     }
 
+    /**
+     * The current payout account, or nothing.
+     *
+     * A collector with no declared account is approved and then waits for
+     * ever: no rail will pay them and no screen said so. This is the screen
+     * that says so, which is why it is `null` rather than an omitted field —
+     * "nobody has declared one" is the state an operator has to be able to
+     * find, and an absent key reads as an absent feature.
+     *
+     * Masked forms only, and no bank code or last four. This list is the whole
+     * roll and is not scoped to a centre, so it says whether a collector can
+     * be paid and not what their account is; `/api/payout/collectors/:id/accounts`
+     * is where the detail lives, behind the finance role.
+     */
+    const accounts = await db
+      .select({
+        collectorId: schema.payoutAccounts.collectorId,
+        method: schema.payoutAccounts.method,
+        verifyStatus: schema.payoutAccounts.verifyStatus,
+        phone: schema.payoutAccounts.phone,
+      })
+      .from(schema.payoutAccounts)
+      .where(eq(schema.payoutAccounts.isCurrent, true));
+    const current = new Map(accounts.map((a) => [a.collectorId, a]));
+
     return {
       /** The six PRV-01 expects, so the console can name the missing ones. */
       required_agreements: AGREEMENTS,
-      collectors: rows.map((c) => ({
-        ...c,
-        agreements: (byCollector.get(c.id) ?? []).map((a) => ({
-          agreement: a.agreement,
-          version: a.version,
-          accepted_at: a.acceptedAt,
-        })),
-      })),
+      collectors: rows.map((c) => {
+        const account = current.get(c.id);
+        return {
+          ...c,
+          agreements: (byCollector.get(c.id) ?? []).map((a) => ({
+            agreement: a.agreement,
+            version: a.version,
+            accepted_at: a.acceptedAt,
+          })),
+          payout_account:
+            account === undefined
+              ? null
+              : {
+                  method: account.method,
+                  verify_status: account.verifyStatus,
+                  phone_masked: maskPhone(account.phone),
+                },
+        };
+      }),
     };
   });
 

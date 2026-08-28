@@ -35,6 +35,8 @@ import {
   type BoAgreement,
   type BoCollector,
   type BoDevice,
+  type BoPayoutDeclaration,
+  type BoPayoutDeclared,
   type BoTask,
 } from '../lib/api.ts';
 
@@ -398,6 +400,8 @@ function Collectors({ onRefused }: { onRefused: (key: string | null) => void }) 
   const client = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [consenting, setConsenting] = useState<string | null>(null);
+  const [declaring, setDeclaring] = useState<string | null>(null);
+  const [declared, setDeclared] = useState<{ collectorId: string; result: BoPayoutDeclared } | null>(null);
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
 
   const { data, isPending, error } = useQuery({
@@ -426,6 +430,23 @@ function Collectors({ onRefused }: { onRefused: (key: string | null) => void }) 
     onSuccess: () => {
       setCreating(false);
       setRequestId(crypto.randomUUID());
+      done();
+    },
+    onError: failed,
+  });
+
+  /**
+   * The counter's payout declaration. The answer is kept and shown rather than
+   * only refreshing the row: ZaloPay may say "no wallet" or "past the KYC
+   * limit" and hand back a page the collector has to open, and the collector is
+   * standing at the counter for exactly as long as this reply takes.
+   */
+  const declare = useMutation({
+    mutationFn: ({ collectorId, ...body }: { collectorId: string } & BoPayoutDeclaration) =>
+      backOffice.declarePayoutAccount(collectorId, body),
+    onSuccess: (result, sent) => {
+      setDeclaring(null);
+      if (result !== null) setDeclared({ collectorId: sent.collectorId, result });
       done();
     },
     onError: failed,
@@ -507,6 +528,7 @@ function Collectors({ onRefused }: { onRefused: (key: string | null) => void }) 
             t('bo.collector.status'),
             t('bo.collector.exam'),
             t('bo.collector.agreements'),
+            t('bo.collector.payout'),
             '',
           ]}
         >
@@ -557,7 +579,42 @@ function Collectors({ onRefused }: { onRefused: (key: string | null) => void }) 
                       </span>
                     ) : null}
                   </Td>
+                  {/*
+                    The whole point of the column: a collector with no account
+                    is approved and then never paid, and this is where an
+                    operator finds them. `reject` tone, because it is the one
+                    state on this row that stops money.
+                  */}
+                  <Td>
+                    {c.payout_account === null ? (
+                      <Pill tone="reject">{t('bo.collector.payout.none')}</Pill>
+                    ) : (
+                      <>
+                        <Pill tone={c.payout_account.verify_status === 'verified' ? 'pass' : 'partial'}>
+                          {t(`settle.verify.${c.payout_account.verify_status}`)}
+                        </Pill>
+                        <span className="num ml-2 text-[0.8125rem] text-[var(--muted-foreground)]">
+                          {c.payout_account.phone_masked ||
+                            t(`bo.collector.payout.method.${c.payout_account.method}`)}
+                        </span>
+                      </>
+                    )}
+                  </Td>
                   <Td className="space-x-2 whitespace-nowrap text-right">
+                    <Button
+                      size="sm"
+                      variant={c.payout_account === null ? 'secondary' : 'ghost'}
+                      onClick={() => {
+                        setDeclared(null);
+                        setDeclaring(declaring === c.id ? null : c.id);
+                      }}
+                    >
+                      {declaring === c.id
+                        ? t('bo.cancel')
+                        : c.payout_account === null
+                          ? t('bo.collector.payout.declare')
+                          : t('bo.collector.payout.redeclare')}
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -608,8 +665,41 @@ function Collectors({ onRefused }: { onRefused: (key: string | null) => void }) 
                   </Td>
                 </tr>
 
+                {declaring === c.id ? (
+                  <EditRow span={6}>
+                    <PayoutDeclaration
+                      busy={declare.isPending}
+                      onSubmit={(body) => declare.mutate({ collectorId: c.id, ...body })}
+                    />
+                  </EditRow>
+                ) : null}
+
+                {declared?.collectorId === c.id ? (
+                  <EditRow span={6}>
+                    <p className="text-[0.875rem] leading-relaxed">
+                      {t('bo.collector.payout.declared')}{' '}
+                      <span className="font-semibold">{t(`settle.verify.${declared.result.verify_status}`)}</span>
+                    </p>
+                    {/*
+                      -101 and -406 are the two answers a collector can act on,
+                      and the page is the only way they can. Shown as a link
+                      rather than opened: the operator decides when.
+                    */}
+                    {(declared.result.onboarding_url ?? declared.result.reform_url) !== null ? (
+                      <a
+                        className="mt-2 inline-block text-[0.875rem] font-semibold underline"
+                        href={(declared.result.onboarding_url ?? declared.result.reform_url)!}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                      >
+                        {t('bo.collector.payout.open')}
+                      </a>
+                    ) : null}
+                  </EditRow>
+                ) : null}
+
                 {consenting === c.id ? (
-                  <EditRow span={5}>
+                  <EditRow span={6}>
                     <form
                       className="grid gap-4 sm:grid-cols-3"
                       onSubmit={(e) => {
@@ -666,6 +756,95 @@ function Collectors({ onRefused }: { onRefused: (key: string | null) => void }) 
         {t('bo.collector.gate')}
       </p>
     </>
+  );
+}
+
+/**
+ * The declaration form the operator fills in with the collector in front of
+ * them.
+ *
+ * The id is minted once per open form, for the same reason every other create
+ * on this screen does it: a retry of a submit whose reply was lost has to
+ * carry the same one, and a fresh id on the second click is a second account.
+ *
+ * The fields follow the method because the server refuses the other
+ * combinations by name (`payout_account_declaration_invalid`), and a form that
+ * can only produce refusals is a form that wastes the collector's visit. The
+ * shape rules themselves are not repeated here — the `pattern` is the same
+ * ten-digit rule the server states, and the server is still the one that
+ * decides.
+ */
+function PayoutDeclaration({
+  busy,
+  onSubmit,
+}: {
+  busy: boolean;
+  onSubmit: (body: BoPayoutDeclaration) => void;
+}) {
+  const { t } = useTranslation();
+  const [method, setMethod] = useState<BoPayoutDeclaration['method']>('WALLET');
+  const [id] = useState(() => crypto.randomUUID());
+
+  return (
+    <form
+      className="grid gap-4 sm:grid-cols-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const form = new FormData(e.currentTarget);
+        const declared_name = String(form.get('holder') ?? '').trim();
+        onSubmit(
+          method === 'WALLET'
+            ? { id, method, declared_name, phone: String(form.get('phone') ?? '').trim() }
+            : {
+                id,
+                method,
+                declared_name,
+                bank_code: String(form.get('bank') ?? '').trim(),
+                account_no: String(form.get('account') ?? '').trim(),
+              },
+        );
+      }}
+    >
+      <Select
+        label={t('bo.collector.payout.method')}
+        name="method"
+        value={method}
+        onChange={(e) => setMethod(e.target.value as BoPayoutDeclaration['method'])}
+        options={(['WALLET', 'BANK_ACCOUNT', 'BANK_CARD'] as const).map((m) => ({
+          value: m,
+          label: t(`bo.collector.payout.method.${m}`),
+        }))}
+      />
+      <Field label={t('bo.collector.payout.holder')} name="holder" required />
+      {method === 'WALLET' ? (
+        <Field
+          label={t('bo.collector.payout.phone')}
+          name="phone"
+          required
+          inputMode="numeric"
+          pattern="0\d{9}"
+        />
+      ) : (
+        <>
+          <Field label={t('bo.collector.payout.bankCode')} name="bank" required />
+          <Field
+            label={t('bo.collector.payout.accountNo')}
+            name="account"
+            required
+            inputMode="numeric"
+            pattern="\d{4,32}"
+          />
+        </>
+      )}
+      <div className="flex items-end sm:col-span-3">
+        <Button type="submit" variant="primary" disabled={busy}>
+          {busy ? t('bo.working') : t('bo.collector.payout.declare')}
+        </Button>
+      </div>
+      <p className="max-w-[70ch] text-[0.8125rem] leading-relaxed text-[var(--muted-foreground)] sm:col-span-3">
+        {t('bo.collector.payout.note')}
+      </p>
+    </form>
   );
 }
 

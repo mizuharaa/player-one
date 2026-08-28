@@ -183,6 +183,13 @@
       "when": 1788480000000,
       "tag": "0016_dispute_review",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1788520000000,
+      "tag": "0018_payout_account_declarer",
+      "breakpoints": true
     }
   ]
 }
