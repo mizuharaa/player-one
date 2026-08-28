@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { contentFingerprint, EpisodeRecord } from '@playerone/contracts';
+import { contentFingerprint, EpisodeRecord, windowDiscrepancies } from '@playerone/contracts';
 import { ingest } from '../src/ingest.ts';
 import { SESSIONS_ROOT, hasSession } from './sessions.ts';
 
@@ -82,6 +82,23 @@ describe('the record can verify itself', () => {
       const record = await ingest(dir);
       const paths = record.source_files.map((f) => f.relative_path);
       expect(paths, basename(dir)).toEqual([...paths].sort());
+    }
+  });
+
+  /**
+   * The store quarantines a record whose `raw_duration_s` is longer than the
+   * window its own timestamps describe. That rule is only safe if the engine —
+   * the legitimate producer of these records — never trips it, so the check
+   * runs over every session there is: 22 fixtures, and the 5 real ones when the
+   * corpus is present. A failure here is the check being wrong, not the session.
+   */
+  it('never claims more duration than its own window holds, on every session', async () => {
+    for (const dir of await everySession()) {
+      const record = await ingest(dir);
+      expect(
+        windowDiscrepancies(record).map((d) => d.detail),
+        `${basename(dir)} contradicts its own timestamps`,
+      ).toEqual([]);
     }
   });
 

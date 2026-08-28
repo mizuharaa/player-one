@@ -56,6 +56,14 @@ const BLOCKING = new Set([
 ]);
 
 /**
+ * DUR-EXCEEDS-WINDOW is deliberately absent from BLOCKING too, and for the
+ * reason above: a reviewer can watch that video perfectly well. It keeps an
+ * episode out of review through its severity instead — it is `quarantine`, and
+ * `review.ts` refuses a quarantined ingest — which is the same route
+ * CALIB-MISSING and MEDIA-UNREADABLE's severity already take. That route only
+ * works because `storeEpisode` now derives the stored state from the
+ * discrepancies rather than believing the one the client asserted.
+ *
  * CALIB-MISSING is deliberately absent from BLOCKING and from this set.
  *
  * Acceptance 10.3.8 wants calibration on every episode, but the collector did
@@ -74,6 +82,8 @@ const DESCRIPTIONS: Partial<Record<string, string>> = {
   'PART-MISSING-INTERIOR': 'A part is missing from the middle of a multi-part stream.',
   'CALIB-MISSING': 'Calibration did not travel with the episode.',
   'CHECKSUM-MISMATCH': 'The bytes changed between two deliveries of one session.',
+  'DUR-EXCEEDS-WINDOW':
+    'The duration claimed is longer than the window the record’s own timestamps describe.',
   'SESSION-UNCLOSED': 'The device never wrote an end time; the recording is still fine.',
   'EPISODE-ID-FALLBACK': 'The directory name does not parse; the id falls back to the raw name.',
   'SERIAL-CONFLICT': 'Basename, manifest and calibration disagree on the device serial.',
