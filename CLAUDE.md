@@ -252,16 +252,18 @@ The **SEC-06 disk-encryption decision** is
   was silently missing `bill_lines_immutable`, `bills_total_matches_lines` and
   the unverified-account refusal; `0016_replay_bill_and_payout_guards` replays
   them idempotently, the way `0009_cloud_leg_gate` did for `0007`.
-- **`DROP DATABASE` does not hang — it pays for a checkpoint, once.** Measured
+- **`DROP DATABASE` is not hanging — it is waiting for a checkpoint.** Measured
   2026-08-28 on the org PC. `dropdb()` forces an immediate checkpoint and waits
-  for it, so the *first* drop after a batch of test runs flushes the whole dirty
-  backlog: one drop took **2m 2s**. The next two took **0.34s** and **0.32s**,
-  and a bare `CHECKPOINT` took **0.15s**. The cost is the backlog, not the drop.
-  So do the housekeeping in that order: issue `CHECKPOINT;` first, then drop in
-  a loop. Every agent that hit the 2-minute first drop concluded
-  "drops hang here" and stopped cleaning up, which is how the server reached
-  **2,219 `po_*` databases** and slowed every test run for a week. Clean up
-  after yourself.
+  for it, so a drop costs whatever is dirty at that moment, not what the
+  database contains. On an idle server that is nothing: one drop took **2m 2s**
+  and flushed a week's backlog, then the next two took **0.34s** and **0.32s**,
+  and a bare `CHECKPOINT` took **0.15s**. Under load it comes back — with other
+  agents running tests and a large delete churning the disk, drops went back to
+  about two minutes each. So `CHECKPOINT;` first, then drop in a loop, and do it
+  when the machine is quiet. Every agent that met the two-minute first drop
+  concluded "drops hang here" and stopped cleaning up, which is how the server
+  reached **2,219 `po_*` databases** and slowed every test run for a week. Clean
+  up after yourself.
   Use plain `DROP DATABASE`, never `WITH (FORCE)`: plain refuses while anyone is
   connected, and that refusal is the guard that stops you deleting a database
   another agent is using. A dropped test database is cheap anyway — `db()` in
