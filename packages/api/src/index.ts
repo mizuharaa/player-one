@@ -7,6 +7,13 @@ import { registerBackOffice } from './backoffice.ts';
 export { API_REFUSALS, REFUSALS } from './backoffice.ts';
 export { COUNTER_REFUSALS } from './counter.ts';
 import { registerCollectorAuth, type SendSignInCode } from './collector.ts';
+export {
+  MAX_DELIVERY_BYTES,
+  UPLOAD_API_REFUSALS,
+  type CollectorUploadOptions,
+  type FilePlan,
+} from './collector-upload.ts';
+import { registerCollectorUpload } from './collector-upload.ts';
 import { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';
@@ -24,14 +31,14 @@ import { registerReview } from './review.ts';
 import { registerSessionRoutes } from './session.ts';
 import { registerSettle } from './settle.ts';
 import { registerUpload } from './upload.ts';
-import type { ObjectStore, UploadProgress } from './upload-worker.ts';
+import type { DirectUploadStore, ObjectStore, UploadProgress } from './upload-worker.ts';
 import { authenticateMachine, authenticateOperator } from './session.ts';
 import type { Actor, CounterActor } from './actor.ts';
 import { signToken, verifyToken, type CollectorClaims } from './credentials.ts';
 
 export * from './credentials.ts';
 export * from './audit.ts';
-export type { Actor, CounterActor, ReviewerActor } from './actor.ts';
+export type { Actor, CollectorActor, CounterActor, ReviewerActor } from './actor.ts';
 export * from './resolve.ts';
 export * from './money.ts';
 export { LEASE_MS, REVIEW_API_REFUSALS } from './review.ts';
@@ -42,12 +49,15 @@ export {
   objectKey,
   planOpenUploads,
   planParts,
+  verifyReadBack,
   PART_SIZE,
+  PRESIGN_TTL_S,
   READBACK_STALLS,
   S3ObjectStore,
   s3StoreFromEnv,
   transportInventory,
   uploadEpisode,
+  type DirectUploadStore,
   type EpisodeUploadResult,
   type Mismatch,
   type ObjectStore,
@@ -242,6 +252,10 @@ const IDENTITY_ROUTE = '/whoami';
 const COLLECTOR_SCOPE = '/api/me';
 const inCollectorScope = (route: string): boolean =>
   route === COLLECTOR_SCOPE || route.startsWith(`${COLLECTOR_SCOPE}/`);
+
+/** Whether this store can hand a signed URL to somebody who is not this process. */
+const canPresign = (s: ObjectStore): s is ObjectStore & DirectUploadStore =>
+  typeof (s as Partial<DirectUploadStore>).presignPut === 'function';
 
 export function buildApi({
   db,
@@ -543,6 +557,17 @@ export function buildApi({
   registerCounter(app, db, requireActor, currency);
   registerEpisodes(app, db, requireActor, toleranceMs);
   registerUpload(app, db, requireActor, { objectStore, mediaRoot, uploadProgress });
+  /**
+   * Path A needs more of the store than Path C does — it has to sign URLs for
+   * a client that is not this process — and the fs-backed stub Path C's tests
+   * use cannot sign anything. Rather than widen `objectStore` and force every
+   * implementation to fake a protocol, the capability is detected: a store
+   * that can presign gets the Path A routes a working cloud, one that cannot
+   * gets the same 503 an absent store gets, saying so.
+   */
+  registerCollectorUpload(app, db, requireActor, {
+    objectStore: objectStore !== undefined && canPresign(objectStore) ? objectStore : undefined,
+  });
   registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate, reviewerMediaEnabled });
   registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays });
   registerPayout(app, db, requireActor, {

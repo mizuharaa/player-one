@@ -14,6 +14,7 @@ import {
   S3Client,
   UploadPartCommand,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { safeJoin } from './media.ts';
 
 /**
@@ -82,6 +83,61 @@ export interface ObjectStore {
    * episode, and an unverified episode is never paid.
    */
   read(key: string, from?: number): Promise<AsyncIterable<Uint8Array> | null>;
+}
+
+/**
+ * What Path A needs on top of `ObjectStore`: the store handing a URL to
+ * somebody who is not this process.
+ *
+ * Path C runs at the upload centre and the bytes are already on that machine's
+ * disk, so `put` reading a local path is the whole job. Path A's bytes are on
+ * a phone. Part 8 of the brief puts them at ~16 GB per recorded hour and ~23 GB
+ * per collector-day, and there are 500 collectors — moving that through Fastify
+ * would make the API a file server sized for the whole fleet's video, for no
+ * gain, because the object store is on the other side of it either way. So the
+ * phone is given a signed URL per part and talks to storage directly, and the
+ * API only ever handles the JSON that plans and checks it.
+ *
+ * A second interface rather than five more methods on `ObjectStore`: the
+ * fs-backed test stub implements that one and cannot sign anything, and
+ * widening it would force every implementation to fake a protocol. `S3ObjectStore`
+ * implements both; a Path A route asks for the intersection.
+ */
+export interface DirectUploadStore {
+  /** Size and recorded sha256 of an object already up, or null when the key is absent. */
+  head(key: string): Promise<{ bytes: number; sha256: string | null } | null>;
+  /** A URL the client PUTs one whole object to. Used below `PART_SIZE`. */
+  presignPut(key: string, sha256: string, expiresInS: number): Promise<string>;
+  /**
+   * The multipart upload for `key` — the one already in flight if there is
+   * one, a new one otherwise. Adopting rather than starting a second is what
+   * makes a resumed upload keep the parts the cloud already holds (UPL-16).
+   */
+  beginMultipart(key: string, sha256: string): Promise<string>;
+  /**
+   * The multipart upload already in flight for `key`, or null. Separate from
+   * `beginMultipart` because the assembly step must not create one: a client
+   * that sent nothing would leave an empty upload behind on every attempt.
+   */
+  openMultipart(key: string): Promise<string | null>;
+  /** Parts the cloud holds for that upload, by number and size. */
+  heldParts(key: string, uploadId: string): Promise<{ partNumber: number; size: number }[]>;
+  /** A URL the client PUTs one part to. */
+  presignPart(
+    key: string,
+    uploadId: string,
+    partNumber: number,
+    expiresInS: number,
+  ): Promise<string>;
+  /**
+   * Assembles the object from the parts the cloud holds.
+   *
+   * The part list comes from `ListParts` and not from the client. An ETag is
+   * the store's own receipt for bytes it wrote; routing it out through a phone
+   * and back adds a way for the assembly to name something that was never
+   * stored, and buys nothing — the store already knows what it has.
+   */
+  finishMultipart(key: string, uploadId: string): Promise<void>;
 }
 
 /**
@@ -271,7 +327,17 @@ const retryableTransport = (err: unknown): boolean => {
   return status >= 500 || status === 429;
 };
 
-export class S3ObjectStore implements ObjectStore {
+/**
+ * How long a signed URL a phone is handed stays valid.
+ *
+ * One hour, and short on purpose: the resume route re-issues them, so a link
+ * that drops for a day costs the phone one small JSON request rather than a
+ * URL that has been sitting in a queue since yesterday. `PART_SIZE` is 64 MiB,
+ * so an hour is a long time to move one part even on a bad connection.
+ */
+export const PRESIGN_TTL_S = 60 * 60;
+
+export class S3ObjectStore implements ObjectStore, DirectUploadStore {
   private readonly client: S3Client;
   private readonly bucket: string;
 
@@ -288,7 +354,7 @@ export class S3ObjectStore implements ObjectStore {
     });
   }
 
-  private async head(key: string): Promise<{ bytes: number; sha256: string | null } | null> {
+  async head(key: string): Promise<{ bytes: number; sha256: string | null } | null> {
     try {
       const r = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
       return { bytes: r.ContentLength ?? -1, sha256: r.Metadata?.['sha256'] ?? null };
@@ -386,6 +452,71 @@ export class S3ObjectStore implements ObjectStore {
       if (rangeSpent(err)) return NO_BYTES;
       throw err;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Path A: the same mechanics, signed for a client that is not this process.
+
+  async presignPut(key: string, sha256: string, expiresInS = PRESIGN_TTL_S): Promise<string> {
+    return getSignedUrl(
+      this.client,
+      new PutObjectCommand({ Bucket: this.bucket, Key: key, Metadata: { sha256 } }),
+      { expiresIn: expiresInS },
+    );
+  }
+
+  async openMultipart(key: string): Promise<string | null> {
+    return this.findOpenUpload(key);
+  }
+
+  async beginMultipart(key: string, sha256: string): Promise<string> {
+    const open = await this.openMultipart(key);
+    if (open !== null) return open;
+    const created = await this.client.send(
+      new CreateMultipartUploadCommand({ Bucket: this.bucket, Key: key, Metadata: { sha256 } }),
+    );
+    return created.UploadId!;
+  }
+
+  async heldParts(key: string, uploadId: string): Promise<{ partNumber: number; size: number }[]> {
+    return (await this.listParts(key, uploadId)).map((p) => ({
+      partNumber: p.partNumber,
+      size: p.size,
+    }));
+  }
+
+  async presignPart(
+    key: string,
+    uploadId: string,
+    partNumber: number,
+    expiresInS = PRESIGN_TTL_S,
+  ): Promise<string> {
+    return getSignedUrl(
+      this.client,
+      new UploadPartCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+        PartNumber: partNumber,
+      }),
+      { expiresIn: expiresInS },
+    );
+  }
+
+  async finishMultipart(key: string, uploadId: string): Promise<void> {
+    const parts = await this.listParts(key, uploadId);
+    await this.client.send(
+      new CompleteMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+        MultipartUpload: {
+          Parts: parts
+            .sort((a, b) => a.partNumber - b.partNumber)
+            .map((p) => ({ PartNumber: p.partNumber, ETag: p.etag })),
+        },
+      }),
+    );
   }
 
   private async findOpenUpload(key: string): Promise<string | null> {
@@ -510,7 +641,7 @@ export const READBACK_STALLS = 3;
  * Null when the key is absent, which is a mismatch of a different kind and the
  * caller's to report.
  */
-async function sha256OfObject(store: ObjectStore, key: string): Promise<string | null> {
+async function sha256OfObject(store: Pick<ObjectStore, 'read'>, key: string): Promise<string | null> {
   const h = createHash('sha256');
   let at = 0;
   for (let stalls = 0; ; ) {
@@ -645,15 +776,66 @@ export async function uploadEpisode(
   }
 
   /**
-   * UPL-05: every transported object is downloaded and re-hashed against its
-   * reference digest. Reading every byte back is the price of ING-29's "an
-   * ETag is not a content digest"; a provider checksum feature can replace it
-   * the day the contract names one.
+   * Read back only what this run has not already proved. A file with a receipt
+   * naming exactly these bytes was verified on an earlier run, and re-reading
+   * it costs 1.00x of the object for evidence already held.
+   *
+   * The filter lives here rather than inside `verifyReadBack` because Path A
+   * shares that function and has no receipts of its own: the shared rule is
+   * "these files must read back clean", and which files those are is each
+   * path's own question.
    */
+  const keyFor = (p: string): string => objectKey(args.episodeId, args.ingestId, p);
+  const unproven = files.filter((f) => !proven(keyFor(f.relative_path), f.sha256));
+  const mismatches = await verifyReadBack(store, unproven, keyFor, (key, f) =>
+    progress.record(args.episodeId, key, f.sha256),
+  );
+  /**
+   * Forget the receipts for the files that failed, and only those. Forgetting
+   * the whole episode would re-send every object on the retry, which is what
+   * this branch measured at 16.00 MB up and 16.00 MB down for 512 damaged
+   * bytes.
+   */
+  for (const m of mismatches) await progress.forget(args.episodeId, keyFor(m.relative_path));
+
+  return { uploaded, kept, transported: files.length, mismatches };
+}
+
+/**
+ * UPL-04/05: every object is downloaded and re-hashed against the digest that
+ * was computed at source, and the list of the ones that disagree is the whole
+ * verdict.
+ *
+ * Reading every byte back is the price of ING-29's "an ETag is not a content
+ * digest"; a provider checksum feature can replace it the day a storage
+ * contract names one. The sha256 IS recorded as object metadata, for operators
+ * browsing the bucket, and is never evidence here — metadata travels with the
+ * object, so a write that corrupted the bytes can still carry a clean-looking
+ * digest.
+ *
+ * Shared by both paths on purpose. Path C computes the reference digests when
+ * an operator imports a card; Path A takes them from the phone that computed
+ * them at source. Where the digest came from is the two paths' difference and
+ * the rule applied to it must not be, because "the bytes in the cloud are not
+ * the bytes that were measured" has to mean the same thing and block the same
+ * review whichever route the recording took.
+ */
+export async function verifyReadBack(
+  store: Pick<ObjectStore, 'read'>,
+  files: readonly TransportFile[],
+  keyOf: (relativePath: string) => string,
+  onMatch: (key: string, file: TransportFile) => Promise<void> = async () => {},
+): Promise<Mismatch[]> {
   const mismatches: Mismatch[] = [];
   for (const f of files) {
-    const key = objectKey(args.episodeId, args.ingestId, f.relative_path);
-    if (proven(key, f.sha256)) continue;
+    const key = keyOf(f.relative_path);
+    /**
+     * `sha256OfObject` and not a plain `store.read`: it sends a Range from the
+     * byte count already fed into the hash, so a link that drops halfway
+     * through a 6.4 GB part resumes instead of starting the object again. That
+     * is `fix/download-resume`'s change and it belongs on both paths — Path A's
+     * phone is on a worse connection than Path C's centre, not a better one.
+     */
     const cloud = await sha256OfObject(store, key);
     if (cloud !== f.sha256) {
       mismatches.push({
@@ -661,11 +843,9 @@ export async function uploadEpisode(
         expected_sha256: f.sha256,
         cloud_sha256: cloud,
       });
-      await progress.forget(args.episodeId, key);
     } else {
-      await progress.record(args.episodeId, key, f.sha256);
+      await onMatch(key, f);
     }
   }
-
-  return { uploaded, kept, transported: files.length, mismatches };
+  return mismatches;
 }

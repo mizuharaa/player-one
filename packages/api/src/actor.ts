@@ -1,7 +1,12 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { schema, type Db } from '@playerone/store';
-import type { MachineClaims, OperatorClaims, ReviewerClaims } from './credentials.ts';
+import type {
+  CollectorClaims,
+  MachineClaims,
+  OperatorClaims,
+  ReviewerClaims,
+} from './credentials.ts';
 
 /**
  * Who made a change, and from where.
@@ -25,15 +30,42 @@ export type CounterActor = {
   machine: MachineClaims;
   operator: OperatorClaims;
   reviewer?: undefined;
+  /** Never set. Present so `AuditActor` below discriminates on one absent key. */
+  collector?: undefined;
 };
 
 export type ReviewerActor = {
   reviewer: ReviewerClaims;
   machine?: undefined;
   operator?: undefined;
+  collector?: undefined;
 };
 
 export type Actor = CounterActor | ReviewerActor;
+
+/**
+ * Who a collector is, for the audit trail and for nothing else.
+ *
+ * `Actor` above stays staff-only on purpose (feat/collector-auth's rule): a
+ * route handler that reads `actor.operator.uploadCentreId` must not be
+ * handed a collector even by a guard mistake, and requireActor never sets
+ * `req.actor` for a collector — it sets `req.collector` and returns.
+ *
+ * What changed when feat/path-a-upload merged is narrower than that. A
+ * collector now DOES make an audited change: `POST /api/me/uploads` and its
+ * completion write rows, and 0019 gives `audit_events` a `collector_id`
+ * column and a third attribution shape to hold them. So the audit writer, and
+ * only the audit writer, accepts one. Everything else still takes `Actor`.
+ */
+export type CollectorActor = {
+  collector: CollectorClaims;
+  machine?: undefined;
+  operator?: undefined;
+  reviewer?: undefined;
+};
+
+/** What `mutate` may attribute a row to. Staff, or a collector on Path A. */
+export type AuditActor = Actor | CollectorActor;
 
 type Reply = { code: (n: number) => { send: (b: unknown) => unknown } };
 
@@ -92,7 +124,7 @@ export const ADMIN_ROLE = 'administrator';
  * Same shape as the finance gate this tree already carries twice — `payout.ts`
  * and `risk/routes.ts` each have a `requireFinance` preHandler that reads the
  * role from the row — and `roleOf` above is the lookup both of them repeat.
- * `fix/money-and-access``fix/money-and-access` lifted that lookup and a `financeGuard` into this file
+ * `fix/money-and-access` lifted that lookup and a `financeGuard` into this file
  * first; the two `roleOf` implementations were byte-identical and one was kept
  * at the merge.
  *

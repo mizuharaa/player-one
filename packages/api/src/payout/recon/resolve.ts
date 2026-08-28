@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { Db } from '@playerone/store';
 import { mutate } from '../../audit.ts';
-import type { Actor } from '../../actor.ts';
+import { type Actor } from '../../actor.ts';
 import type { ReconLineRow } from './lines.ts';
 
 /**

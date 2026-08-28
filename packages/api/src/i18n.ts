@@ -466,6 +466,26 @@ const en = {
     'The settlement under challenge was billed while the challenge was open, so a second verdict cannot replace it. Nothing was recorded. Send it back to the counter with a note.',
   'bo.refused.review_verdict_id_taken':
     'That verdict reference already belongs to a different review. Nothing was recorded. Reload the screen and judge the episode again.',
+
+  /**
+   * Path A's refusals (UPL-01/APP-26). These reach a collector on a phone, not
+   * an operator at a counter, and Vietnamese is the language most of them read.
+   * They are in the same `bo.refused.*` namespace as everything else because
+   * the console shows the same sentence when a support operator looks at an
+   * upload that failed.
+   */
+  'bo.refused.upload_unknown_session':
+    'That session does not exist. Bind a session in the app before uploading it.',
+  'bo.refused.upload_foreign_session':
+    'That session belongs to another collector, so nothing can be uploaded against it.',
+  'bo.refused.upload_already_complete':
+    'This upload is finished and checked. Sending it again would change nothing.',
+  'bo.refused.upload_checksum_mismatch':
+    'A file in the cloud does not match the checksum your phone computed for it. The recording is held out of review until it is sent again.',
+  'bo.refused.upload_payload_too_large':
+    'That delivery is larger than one upload may declare. Send it as more than one upload, or hand the card in at an upload centre.',
+  'bo.refused.upload_superseded':
+    'A newer delivery of this recording arrived while these files were being sent, so this result was not recorded. Start the upload again.',
   'bo.refused.review_disputes_open_key': 'That verdict is already under dispute.',
   'bo.refused.review_disputes_decided_check':
     'That review has not been decided yet, so there is no outcome to challenge.',
@@ -1175,6 +1195,15 @@ const zh: Record<MessageKey, string> = {
     '被申诉的结算在申诉期间已生成账单，因此复审结果无法取代它。未记录任何内容。请附上说明退回上传柜台。',
   'bo.refused.review_verdict_id_taken':
     '该审核结果编号已属于另一条审核记录。未记录任何内容。请刷新页面后重新审核。',
+  'bo.refused.upload_unknown_session': '该采集会话不存在。请先在应用中绑定会话，再上传。',
+  'bo.refused.upload_foreign_session': '该采集会话属于其他采集员，无法向其上传数据。',
+  'bo.refused.upload_already_complete': '本次上传已完成并通过校验，重复发送不会有任何改变。',
+  'bo.refused.upload_checksum_mismatch':
+    '云端某个文件与手机计算出的校验和不一致。在重新上传之前，该段素材不会进入审核。',
+  'bo.refused.upload_payload_too_large':
+    '本次交付超过单次上传允许的大小。请分多次上传，或将存储卡交至上传中心。',
+  'bo.refused.upload_superseded':
+    '文件传输期间，该段素材出现了更新的交付，因此本次结果未被记录。请重新发起上传。',
   'bo.refused.review_disputes_open_key': '该审核结果已在申诉中。',
   'bo.refused.review_disputes_decided_check': '该审核尚未给出结果，无可申诉的内容。',
   'bo.refused.review_disputes_final_check': '该结果本身已是复审结果，复审为最终结论。',
@@ -1832,6 +1861,18 @@ const vi: Record<MessageKey, string> = {
     'Khoản thanh toán đang bị khiếu nại đã lên hoá đơn trong lúc khiếu nại còn mở, nên kết quả duyệt lần hai không thể thay thế nó. Không có gì được ghi lại. Hãy gửi lại quầy kèm ghi chú.',
   'bo.refused.review_verdict_id_taken':
     'Mã kết quả duyệt đó đã thuộc về một bản duyệt khác. Không có gì được ghi lại. Hãy tải lại màn hình và duyệt lại phân đoạn.',
+  'bo.refused.upload_unknown_session':
+    'Phiên thu thập đó không tồn tại. Hãy gán phiên trong ứng dụng trước khi tải lên.',
+  'bo.refused.upload_foreign_session':
+    'Phiên thu thập đó thuộc về người thu thập khác, nên không thể tải dữ liệu lên phiên đó.',
+  'bo.refused.upload_already_complete':
+    'Lần tải lên này đã hoàn tất và đã được kiểm tra. Gửi lại cũng không thay đổi gì.',
+  'bo.refused.upload_checksum_mismatch':
+    'Một tệp trên đám mây không khớp với giá trị kiểm tra mà điện thoại đã tính. Đoạn ghi hình này bị giữ lại, không vào duyệt, cho đến khi được gửi lại.',
+  'bo.refused.upload_payload_too_large':
+    'Lần giao đó lớn hơn mức một lần tải lên được phép khai báo. Hãy gửi thành nhiều lần tải lên, hoặc nộp thẻ nhớ tại trung tâm tải lên.',
+  'bo.refused.upload_superseded':
+    'Một lần giao mới hơn của đoạn ghi hình này đã đến trong khi các tệp đang được gửi, nên kết quả lần này không được ghi nhận. Hãy tải lên lại.',
   'bo.refused.unknown': 'Máy chủ đã từ chối thay đổi đó.',
 
   'theme.toggle': 'Giao diện',
