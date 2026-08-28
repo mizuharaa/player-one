@@ -239,6 +239,13 @@
       "when": 1788703000000,
       "tag": "0020_cloud_verification_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788710000000,
+      "tag": "0018_collector_identity",
+      "breakpoints": true
     }
   ]
 }

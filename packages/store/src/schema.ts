@@ -454,11 +454,53 @@ export const collectors = pgTable(
      */
     examResult: text('exam_result'),
     examDecidedAt: timestamp('exam_decided_at', { withTimezone: true }),
+    /**
+     * APP-01 / SEC-01, migration 0018. The collector's own credential, and the
+     * whole of it: PaXini's PRD §7.1 registers a collector by phone number with
+     * no password, so there is nothing here to hash but a code sent to that
+     * number, and nothing to remember between sign-ins.
+     *
+     * Nullable because every collector enrolled before 0018 has no phone, and a
+     * collector the back office created but nobody has reached yet still has
+     * none. A collector with no phone simply cannot sign in.
+     *
+     * `collectors_phone_key` is a unique index on a nullable column, which
+     * Postgres lets hold any number of nulls and exactly one of each number.
+     * That is the property the sign-in depends on: the lookup is by phone alone,
+     * so there must be one row or none, never a first row.
+     */
+    phone: text('phone'),
+    /**
+     * The one-time code, hashed with the same scrypt as every other credential
+     * in this service. The code itself is never stored — a six-digit code in
+     * plaintext in a column is a credential in a backup.
+     */
+    signInCodeHash: text('sign_in_code_hash'),
+    signInCodeExpiresAt: timestamp('sign_in_code_expires_at', { withTimezone: true }),
+    /**
+     * How many times this code has been offered. Six digits is a million
+     * guesses, which the rate limiter alone would let through in about a year of
+     * sustained attack; the counter is what makes a code die after a handful of
+     * tries rather than at its expiry.
+     */
+    signInCodeAttempts: integer('sign_in_code_attempts').notNull().default(0),
+    /**
+     * Revocation, for a credential that lives in somebody's pocket for thirty
+     * days at a time.
+     *
+     * The token carries this number and every request checks it against the row,
+     * so raising it by one invalidates every token ever issued to this
+     * collector, on every device they have ever signed in on, at once. The
+     * alternative is a table of live tokens, which is a second thing to write on
+     * every sign-in and to prune forever; this is one integer.
+     */
+    tokenEpoch: integer('token_epoch').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex('collectors_external_ref_key').on(t.externalRef),
+    uniqueIndex('collectors_phone_key').on(t.phone),
     check(
       'collectors_status_check',
       sql`${t.status} in ('pending', 'qualified', 'suspended')`,
@@ -472,6 +514,23 @@ export const collectors = pgTable(
       'collectors_exam_decided_check',
       sql`(${t.examResult} is null) = (${t.examDecidedAt} is null)`,
     ),
+    /**
+     * A code with no expiry never expires, and an expiry with no code is a
+     * deadline on nothing. Both or neither, the same shape as the exam pair
+     * above and for the same reason: a half-written row here is a credential
+     * that outlives its window.
+     */
+    check(
+      'collectors_sign_in_code_check',
+      sql`(${t.signInCodeHash} is null) = (${t.signInCodeExpiresAt} is null)`,
+    ),
+    /** A negative attempt count is a lockout that counts backwards. */
+    check('collectors_sign_in_code_attempts_check', sql`${t.signInCodeAttempts} >= 0`),
+    /**
+     * Epochs start at one and only go up. Zero would make "revoke everything"
+     * indistinguishable from a column somebody forgot to fill in.
+     */
+    check('collectors_token_epoch_check', sql`${t.tokenEpoch} >= 1`),
   ],
 );
 
@@ -1732,7 +1791,17 @@ export const auditEvents = pgTable(
   (t) => [
     index('audit_events_target_idx').on(t.targetTable, t.targetId, t.occurredAt.desc()),
     index('audit_events_operator_idx').on(t.operatorId, t.occurredAt.desc()),
-    check('audit_events_actor_role_check', sql`${t.actorRole} in ('operator', 'reviewer')`),
+    /**
+     * `collector` joins the list in 0018. A collector signs in and nothing else
+     * — there is no collector route that mutates anything yet — so the only
+     * rows that can carry it are `collector.login` and `collector.login_failed`,
+     * which the attribution CHECK below exempts by action. Every other shape
+     * with this role fails that check, which is the point: filing a collector
+     * sign-in as `operator` would put it in the same column as a VNG counter
+     * operator's writes and make "what did operators do" a question the trail
+     * answers wrongly.
+     */
+    check('audit_events_actor_role_check', sql`${t.actorRole} in ('operator', 'reviewer', 'collector')`),
     /**
      * An unattributed audit row defeats the table. Logins are the one case with
      * no actor yet — a failed one (0017) has no actor at all and may name a

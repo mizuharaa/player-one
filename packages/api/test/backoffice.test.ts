@@ -1720,6 +1720,26 @@ describe.skipIf(!hasDb())('the back office', () => {
       'devices_status_check',
       'collector_agreements_name_check',
       'collector_agreements_version_check',
+      /**
+       * The collector's own sign-in columns (0018). No route writes any of
+       * them: `POST /api/collectors` and `PATCH /api/collectors/:id` set a
+       * reference, a status, an exam result and agreements, and a phone number
+       * arrives by fixture the way an upload centre does (ADR 0003). The two
+       * routes that read them — `/auth/collector/request-code` and
+       * `/auth/collector/verify` — write the hash and its expiry as a pair,
+       * increment the attempt count from itself, and never touch the phone or
+       * the epoch. Raw SQL is the only caller; collector-auth.test.ts proves
+       * each one fires.
+       *
+       * `collectors_phone_key` is the one that moves. The moment the back
+       * office can set a collector's phone number, "another collector already
+       * uses that number" becomes a sentence a person reads, and it belongs in
+       * REFUSALS beside `collectors_external_ref_key` — not here.
+       */
+      'collectors_phone_key',
+      'collectors_sign_in_code_check',
+      'collectors_sign_in_code_attempts_check',
+      'collectors_token_epoch_check',
       // Written as a pair by the route, or not at all.
       'collectors_exam_decided_check',
       'devices_bound_at_check',
