@@ -406,7 +406,9 @@ export function Note({ text }: { text: string }) {
         padding: theme.space[3],
       }}
     >
-      <Text style={{ color: theme.color.tech[700], fontSize: theme.fontSize.sm }}>{text}</Text>
+      {/* `techInk` and not `tech[700]`: the fill inverts in dark mode and that
+          step does not, which measured 1.80:1. See `native.ts`. */}
+      <Text style={{ color: theme.color.techInk, fontSize: theme.fontSize.sm }}>{text}</Text>
     </View>
   );
 }

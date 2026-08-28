@@ -33,6 +33,41 @@ export type Locale = (typeof LOCALES)[number];
 
 export const DEFAULT_LOCALE: Locale = 'en';
 
+/**
+ * The refusals the review screen offers a park for, rather than "take the next
+ * one" (0017).
+ *
+ * It lives HERE, in the catalogue module, for two reasons. It is the one
+ * module the console imports from this package — `src/index.ts` pulls in
+ * fastify, drizzle and the S3 client, none of which belong in a browser
+ * bundle — and every name in it is a name that needs a `bo.refused.*`
+ * sentence, which is what this file holds. A test in backoffice.test.ts walks
+ * it and fails on a name with no sentence in any of the three locales.
+ *
+ * What they have in common: after one of these the review row is still
+ * `pending` and still eligible, so the lease runs out, the queue hands the
+ * episode to the next reviewer and they meet the same refusal. Nothing in the
+ * lane ends that loop except parking the episode.
+ *
+ * `session_claim_missing` is the counter's own name (counter.ts) and reaches
+ * the review screen from `POST /api/review/verdict`; the rest are that route's
+ * own (`REVIEW_API_REFUSALS` in review.ts).
+ *
+ * `review_duration_implausible` is `feat/upload-restriction`'s billable-duration
+ * guard. It strands an episode exactly the same way, so it is in this set. It
+ * renders as its own sentence either way — the classification is by the name in
+ * the body, not by this list — but without the entry the reviewer is shown no
+ * way out of it. Added when the two branches were merged, on the note the
+ * console branch left here.
+ */
+export const REVIEW_HOLDABLE_REFUSALS: ReadonlySet<string> = new Set([
+  'session_claim_missing',
+  'review_no_task',
+  'review_no_longer_reviewable',
+  'review_billed_while_disputed',
+  'review_duration_implausible',
+]);
+
 const en = {
   'app.name': 'PlayerOne',
   'app.review': 'Review',
@@ -133,6 +168,23 @@ const en = {
     'The commit did not reach the server. Nothing has been paid and nothing has advanced. Try again, or release the episode and it will return to the queue.',
   'state.writeFailed.retry': 'Try again',
   'state.writeFailed.release': 'Release it',
+
+  /**
+   * The refused-verdict state (0017). A refusal the reviewer cannot fix is not
+   * a lost lease and not a failed write: the episode is judgeable footage that
+   * the server will not take a verdict on, and the only honest action is to
+   * park it and say why. The body of the box is the refusal's own
+   * `bo.refused.*` sentence; these keys are the frame around it.
+   */
+  'state.refused.title': 'The server refused this verdict',
+  'state.refused.hold': 'Send it back to the counter',
+  'state.refused.holdReason': 'What the counter has to fix',
+  'state.refused.holding': 'Sending it back',
+  'state.refused.holdFailed':
+    'The episode was not parked. It is still in the queue. Try again, or tell the counter directly.',
+  'state.refused.held.title': 'Sent back to the counter',
+  'state.refused.held.body':
+    'This episode has left the review queue and will not be handed to anyone else until the counter fixes what the refusal named. Nothing was paid.',
   'state.offline.title': 'No connection',
   'state.offline.body': 'Verdicts cannot be recorded while this machine is offline.',
   'state.loadFailed.title': 'Could not reach the queue',
@@ -361,6 +413,22 @@ const en = {
     'That task has been taken down, so no new session can be recorded against it.',
   'bo.refused.review_duration_implausible':
     'This episode claims to run longer than one card can record, so it cannot be paid. Send it back to the counter to have the delivery checked.',
+
+  /**
+   * The verdict route's own refusals (`REVIEW_API_REFUSALS` in review.ts).
+   * These are the sentences the review screen shows instead of the lost-lease
+   * banner it used to show for every 409.
+   */
+  'bo.refused.review_already_decided':
+    'This episode already has a verdict. Nothing you marked was recorded. Take the next one.',
+  'bo.refused.review_no_task':
+    'This episode names no task, so there is no price to pay it at and no verdict can be recorded. Send it back to the counter with a note; it needs a session attached before anyone can review it.',
+  'bo.refused.review_no_longer_reviewable':
+    'This episode stopped being reviewable while you had it open — a new delivery landed, or its copy failed verification. Nothing was recorded. Send it back to the counter with a note.',
+  'bo.refused.review_billed_while_disputed':
+    'The settlement under challenge was billed while the challenge was open, so a second verdict cannot replace it. Nothing was recorded. Send it back to the counter with a note.',
+  'bo.refused.review_verdict_id_taken':
+    'That verdict reference already belongs to a different review. Nothing was recorded. Reload the screen and judge the episode again.',
   'bo.refused.review_disputes_open_key': 'That verdict is already under dispute.',
   'bo.refused.review_disputes_decided_check':
     'That review has not been decided yet, so there is no outcome to challenge.',
@@ -844,6 +912,15 @@ const zh: Record<MessageKey, string> = {
     '提交未送达服务器。没有产生任何结算，也没有跳转到下一条。请重试，或释放该片段使其回到队列。',
   'state.writeFailed.retry': '重试',
   'state.writeFailed.release': '释放',
+
+  'state.refused.title': '服务端拒绝了本次审核结果',
+  'state.refused.hold': '退回上传柜台',
+  'state.refused.holdReason': '需要柜台处理的问题',
+  'state.refused.holding': '正在退回',
+  'state.refused.holdFailed': '该片段未被移出队列，仍在队列中。请重试，或直接联系上传柜台。',
+  'state.refused.held.title': '已退回上传柜台',
+  'state.refused.held.body':
+    '该片段已移出审核队列，在柜台处理拒绝原因之前不会再分配给任何人。未产生任何结算。',
   'state.offline.title': '网络已断开',
   'state.offline.body': '离线状态下无法记录审核结果。',
   'state.loadFailed.title': '无法连接队列',
@@ -1024,6 +1101,16 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.session_task_not_published': '该任务已下架，不能再登记新的采集会话。',
   'bo.refused.review_duration_implausible':
     '该片段声称的时长超过一张存储卡所能录制的上限，无法结算。请退回柜台核查该次交付。',
+
+  'bo.refused.review_already_decided': '该片段已有审核结果。您所做的标记未被记录。请领取下一条。',
+  'bo.refused.review_no_task':
+    '该片段没有对应的任务，因此没有单价，也无法记录审核结果。请附上说明退回上传柜台；须先关联采集会话才能审核。',
+  'bo.refused.review_no_longer_reviewable':
+    '在您打开期间，该片段已不可审核：可能有新的交付，或云端副本校验失败。未记录任何内容。请附上说明退回上传柜台。',
+  'bo.refused.review_billed_while_disputed':
+    '被申诉的结算在申诉期间已生成账单，因此复审结果无法取代它。未记录任何内容。请附上说明退回上传柜台。',
+  'bo.refused.review_verdict_id_taken':
+    '该审核结果编号已属于另一条审核记录。未记录任何内容。请刷新页面后重新审核。',
   'bo.refused.review_disputes_open_key': '该审核结果已在申诉中。',
   'bo.refused.review_disputes_decided_check': '该审核尚未给出结果，无可申诉的内容。',
   'bo.refused.review_disputes_final_check': '该结果本身已是复审结果，复审为最终结论。',
@@ -1438,6 +1525,16 @@ const vi: Record<MessageKey, string> = {
     'Lệnh ghi không đến được máy chủ. Chưa có gì được thanh toán và chưa chuyển sang phiên nào. Thử lại, hoặc trả phiên để nó quay về hàng đợi.',
   'state.writeFailed.retry': 'Thử lại',
   'state.writeFailed.release': 'Trả phiên',
+
+  'state.refused.title': 'Máy chủ đã từ chối kết quả duyệt này',
+  'state.refused.hold': 'Gửi lại quầy tiếp nhận',
+  'state.refused.holdReason': 'Điều quầy cần xử lý',
+  'state.refused.holding': 'Đang gửi lại',
+  'state.refused.holdFailed':
+    'Phân đoạn chưa được đưa ra khỏi hàng đợi và vẫn còn trong hàng đợi. Hãy thử lại, hoặc báo trực tiếp cho quầy.',
+  'state.refused.held.title': 'Đã gửi lại quầy tiếp nhận',
+  'state.refused.held.body':
+    'Phân đoạn này đã rời hàng đợi duyệt và sẽ không được giao cho ai khác cho đến khi quầy xử lý xong lý do từ chối. Không có khoản nào được trả.',
   'state.offline.title': 'Mất kết nối',
   'state.offline.body': 'Không thể ghi kết luận khi máy này ngoại tuyến.',
   'state.loadFailed.title': 'Không kết nối được hàng đợi',
@@ -1630,6 +1727,17 @@ const vi: Record<MessageKey, string> = {
     'Cộng tác viên này đã trả lại nhiệm vụ đó. Cần nhận lại nhiệm vụ trước khi ghi một phiên mới.',
   'bo.refused.session_task_not_published':
     'Nhiệm vụ đó đã được gỡ xuống, nên không thể ghi phiên mới cho nó.',
+
+  'bo.refused.review_already_decided':
+    'Phân đoạn này đã có kết quả duyệt. Những gì bạn đánh dấu không được ghi lại. Hãy nhận phân đoạn tiếp theo.',
+  'bo.refused.review_no_task':
+    'Phân đoạn này không thuộc nhiệm vụ nào, nên không có đơn giá và không thể ghi kết quả duyệt. Hãy gửi lại quầy kèm ghi chú; cần gắn phiên thu thập trước khi duyệt được.',
+  'bo.refused.review_no_longer_reviewable':
+    'Phân đoạn này đã ngừng đủ điều kiện duyệt trong lúc bạn đang mở: có lần giao mới, hoặc bản sao trên đám mây không qua kiểm tra. Không có gì được ghi lại. Hãy gửi lại quầy kèm ghi chú.',
+  'bo.refused.review_billed_while_disputed':
+    'Khoản thanh toán đang bị khiếu nại đã lên hoá đơn trong lúc khiếu nại còn mở, nên kết quả duyệt lần hai không thể thay thế nó. Không có gì được ghi lại. Hãy gửi lại quầy kèm ghi chú.',
+  'bo.refused.review_verdict_id_taken':
+    'Mã kết quả duyệt đó đã thuộc về một bản duyệt khác. Không có gì được ghi lại. Hãy tải lại màn hình và duyệt lại phân đoạn.',
   'bo.refused.unknown': 'Máy chủ đã từ chối thay đổi đó.',
 
   'theme.toggle': 'Giao diện',

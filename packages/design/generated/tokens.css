@@ -19,12 +19,13 @@
   --tech-600: #0F55CC;
   --tech-700: #0B3F99;
 
-  --pass: #12A150;
+  --pass: #0D763B;
   --pass-bg: #E8F8EE;
-  --partial: #7C5CFC;
+  --partial: #613AFB;
   --partial-bg: #F0EDFF;
-  --reject: #E5484D;
+  --reject: #C41C21;
   --reject-bg: #FDECEC;
+  --ring: #E8620A;
 
   --background: #FFFFFF;
   --surface: #FBFAF9;
@@ -79,9 +80,13 @@
   --sun-100: #3D2009;
   --tech-50: #0C1A33;
   --tech-100: #123061;
+  --pass: #14B459;
   --pass-bg: #0D2A1A;
+  --partial: #9B83FD;
   --partial-bg: #1E1840;
+  --reject: #EB6F73;
   --reject-bg: #331416;
+  --ring: #FF9450;
   --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
   --shadow: 0 4px 16px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
   --shadow-lg: 0 18px 48px rgba(0,0,0,.6);
@@ -104,9 +109,13 @@
   --sun-100: #3D2009;
   --tech-50: #0C1A33;
   --tech-100: #123061;
+  --pass: #14B459;
   --pass-bg: #0D2A1A;
+  --partial: #9B83FD;
   --partial-bg: #1E1840;
+  --reject: #EB6F73;
   --reject-bg: #331416;
+  --ring: #FF9450;
   --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
   --shadow: 0 4px 16px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
   --shadow-lg: 0 18px 48px rgba(0,0,0,.6);

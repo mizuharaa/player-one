@@ -1,0 +1,41 @@
+-- A fourth lane on `episode_reviews.queue`: `held`.
+--
+-- The problem it answers. A verdict can be refused for a reason no reviewer
+-- can act on: `session_claim_missing` (review.ts) is the one on this branch,
+-- and the upload ceiling adds `review_duration_implausible`. The review row
+-- stays `pending`, the lease runs out, the takeover in `claimNext` hands the
+-- same episode to the next reviewer, and they hit the same refusal. There was
+-- no exit: the only way to make an episode stop coming back was a `bad`
+-- verdict, which pays the collector 0 for footage nobody judged.
+--
+-- Why a lane and not a new state. `review_state` is checked to
+-- ('pending', 'pass', 'partial_pass', 'fail') and
+-- `episode_reviews_decided_check` demands `reviewed_at` and
+-- `effective_duration_s` on anything that is not `pending` — so a fifth state
+-- would be a decided review, which is a payment. `episodes.resolution_state`
+-- cannot carry it either: `episodes_resolution_shape_check` (0000) forces
+-- `collection_session_id` to be NULL alongside `quarantined`, so parking an
+-- episode there would erase the attribution the counter worked out. The
+-- `queue` column already means "which lane this review waits in" and already
+-- has a lane nothing materialises into (`second_review`), so this is the
+-- column that fits.
+--
+-- What makes it a park. `LANES` in review.ts is the set of CLAIMABLE lanes and
+-- `held` is deliberately not in it: `claimNext`, `queueDepth` and `laneOf` all
+-- read `LANES`, so no reviewer is offered a held row, no depth counts one, and
+-- `?queue=held` is a 400. The row stays `pending` and keeps its ingest, its
+-- priority and its history.
+--
+-- The way out is the route that put it there. `POST /api/review/route/:id`
+-- moves the same row back to `standard` or `privacy` once the counter or the
+-- back office has fixed what the refusal named — attaching the task claim, in
+-- the `session_claim_missing` case. That is an operator action; the route
+-- already refuses a reviewer anything but a privacy quarantine, and `held` is
+-- the second thing a reviewer may ask for, because the refusal is shown to
+-- them and acting on it must not need somebody else's login.
+--
+-- BACKFILL: none. This widens a CHECK, so every existing row still satisfies
+-- it and the ALTER is a metadata change plus one validating scan.
+
+ALTER TABLE "episode_reviews" DROP CONSTRAINT "episode_reviews_queue_check";--> statement-breakpoint
+ALTER TABLE "episode_reviews" ADD CONSTRAINT "episode_reviews_queue_check" CHECK ("episode_reviews"."queue" in ('standard', 'privacy', 'second_review', 'held'));
