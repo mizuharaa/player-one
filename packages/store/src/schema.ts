@@ -864,6 +864,14 @@ export const uploadDevices = pgTable(
   },
   (t) => [
     uniqueIndex('upload_devices_machine_key').on(t.uploadCentreId, t.machineIdentifier),
+    /**
+     * `POST /auth/machine` has only the identifier and the secret — there is no
+     * centre to scope by, because the identifier IS the first credential — so
+     * `authenticateMachine` selects on it alone. Two centres both naming a
+     * machine 'UPLOAD-01' would both insert under the key above and then sign
+     * in whichever row the heap returned first. Unique on its own, 0017.
+     */
+    uniqueIndex('upload_devices_identifier_key').on(t.machineIdentifier),
     check('upload_devices_status_check', sql`${t.status} in ('active', 'retired')`),
   ],
 );
@@ -890,6 +898,13 @@ export const operators = pgTable(
     uploadCentreId: uuid('upload_centre_id').references(() => uploadCentres.id),
     externalRef: text('external_ref').notNull(),
     role: text('role').notNull(),
+    /**
+     * 0017, and the same two values as `upload_devices.status`. A leaver is
+     * retired: DELETE is refused by the audit foreign key, and blanking the
+     * hash below stops only their next sign-in, not the token they are
+     * already holding.
+     */
+    status: text('status').notNull().default('active'),
     /** scrypt, `N$salt$hash`. Never a secret at rest, never logged. */
     credentialHash: text('credential_hash'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -908,6 +923,17 @@ export const operators = pgTable(
       .on(t.externalRef)
       .where(sql`role = 'reviewer'`),
     /**
+     * And the same for everybody else, 0017. `POST /auth/operator` has only
+     * the reference and the secret, so `authenticateOperator` selects on the
+     * reference alone; the key above cannot make that safe, because it is per
+     * centre and the login has no centre. Partial on `role <> 'reviewer'` so
+     * the two indexes do not overlap: a reviewer and a counter operator may
+     * still share a reference, and each lookup filters by role.
+     */
+    uniqueIndex('operators_counter_ref_key')
+      .on(t.externalRef)
+      .where(sql`role <> 'reviewer'`),
+    /**
      * Everyone but a reviewer belongs to a centre. Dropping `not null` to make
      * room for reviewers must not quietly make it optional for the operators
      * BO-11 / SEC-02 scope by centre.
@@ -916,6 +942,7 @@ export const operators = pgTable(
       'operators_centre_check',
       sql`${t.uploadCentreId} is not null or ${t.role} = 'reviewer'`,
     ),
+    check('operators_status_check', sql`${t.status} in ('active', 'retired')`),
   ],
 );
 

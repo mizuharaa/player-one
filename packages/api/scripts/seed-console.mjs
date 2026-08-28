@@ -77,12 +77,16 @@ for (const t of ['audit_events','settlements','episode_review_spans','episode_re
   await db.execute(sql.raw(`truncate ${t} cascade`));
 
 const id = Object.fromEntries(
-  ['centre','machine','operator','collector','dtype','device','task','scenario'].map((k) => [k, uid()]),
+  ['centre','machine','operator','finance','collector','dtype','device','task','scenario'].map((k) => [k, uid()]),
 );
 const hash = await hashCredential(SECRET);
 await db.execute(sql`insert into upload_centres (id,region,name,status) values (${id.centre},'HCM','D7','active')`);
 await db.execute(sql`insert into upload_devices (id,upload_centre_id,machine_identifier,status,credential_hash) values (${id.machine},${id.centre},'HCM-01','active',${hash})`);
 await db.execute(sql`insert into operators (id,upload_centre_id,external_ref,role,credential_hash) values (${id.operator},${id.centre},'op-1','centre_operator',${hash})`);
+// Two accounts, because the money path needs two people. The settle and payout
+// screens are finance's, and `settle_generate_by_finance` refuses finance the
+// generate: whoever issues a bill is the operator 0013 will not let pay it.
+await db.execute(sql`insert into operators (id,upload_centre_id,external_ref,role,credential_hash) values (${id.finance},${id.centre},'fin-1','finance',${hash})`);
 await db.execute(sql`insert into collectors (id,external_ref,status) values (${id.collector},'c-1','qualified')`);
 await db.execute(sql`insert into device_types (id,code,generation) values (${id.dtype},'ego_headset','gen1')`);
 await db.execute(sql`insert into devices (id,device_type_id,hardware_serial,status) values (${id.device},${id.dtype},'AZER76400FE','active')`);
@@ -223,17 +227,25 @@ for (const d of decisions) {
 const shift = await asReviewer('GET', '/api/review/shift');
 console.log('\nshift:', JSON.stringify(shift.json(), null, 2));
 
+/**
+ * The URL is named, not printed. This block is meant to be pasted into the
+ * shell that just ran the seed, so `"$DATABASE_URL"` is the same value with
+ * none of it on the screen or in the scrollback — every other site that
+ * prints a connection string puts it through `redact()` first.
+ */
 console.log(`
-Seeded. Now run, in two shells:
+Seeded. Now run, in two shells (the second line needs the same DATABASE_URL
+this seed ran with; in PowerShell write it "$env:DATABASE_URL"):
 
-  DATABASE_URL=${process.env.DATABASE_URL ?? '...'} \\
+  DATABASE_URL="$DATABASE_URL" \\
   PLAYERONE_TOKEN_SECRET=dev \\
   PLAYERONE_MEDIA_ROOT=${MEDIA_ROOT} \\
   pnpm serve
 
   pnpm -F @playerone/console dev
 
-Sign in with  HCM-01 / ${SECRET}  and  op-1 / ${SECRET}.
+Sign in with  HCM-01 / ${SECRET}  and  op-1 / ${SECRET}  for the counter and
+the review lane, or  fin-1 / ${SECRET}  for the settle and payout screens.
 `);
 
 await app.close();

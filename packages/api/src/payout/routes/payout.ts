@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from '../../audit.ts';
-import type { Actor, CounterActor } from '../../actor.ts';
+import { financeGuard, type Actor, type CounterActor } from '../../actor.ts';
 import { attemptById, applyEvent, insertAttempt, latestAttemptOf } from '../domain/attempts.ts';
 import type { VerifyReceiver } from '../domain/client-contract.ts';
 import { assertPayoutBootInvariants, type PayoutOptions } from '../domain/config.ts';
@@ -148,21 +148,19 @@ export function registerPayout(
   /**
    * The finance role, read from the row and not from the token. A token is
    * signed once at login; a role revoked this morning must bite this
-   * afternoon, so it costs one lookup per mutating request.
+   * afternoon, so it costs one lookup per request that asks.
    */
-  const requireFinance = async (req: FastifyRequest, reply: Reply) => {
-    const actor = req.actor;
-    if (actor === undefined || actor.reviewer !== undefined) {
-      return reply.code(403).send({ error: 'finance role required' });
-    }
-    const [row] = await db
-      .select({ role: schema.operators.role })
-      .from(schema.operators)
-      .where(eq(schema.operators.id, actor.operator.operatorId));
-    if (row?.role !== 'finance') return reply.code(403).send({ error: 'finance role required' });
-  };
+  const requireFinance = financeGuard(db);
 
-  const read = { preHandler: requireActor };
+  /**
+   * Every route on this lane, read or write. There was a second option,
+   * `read = { preHandler: requireActor }`, and it was wrong: measured, a plain
+   * counter operator at an unrelated centre got 200 on a collector's bank
+   * code, account last four, declared and verified name, their income and the
+   * whole period's batch of bills. None of that is public to an operator
+   * session, so the reads carry the same guard as the writes and there is one
+   * list to keep.
+   */
   const finance = { preHandler: [requireActor, requireFinance] };
 
   async function guarded<T>(
@@ -465,7 +463,7 @@ export function registerPayout(
    * on PaXini), so this is addressed by collector id under the operator
    * session; the app's server-side proxy maps `GET /api/payout/income` onto it.
    */
-  app.get('/api/payout/collectors/:id/income', read, async (req, reply) => {
+  app.get('/api/payout/collectors/:id/income', finance, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     const [collector] = await db.select({ id: schema.collectors.id }).from(schema.collectors).where(eq(schema.collectors.id, id));
@@ -533,7 +531,7 @@ export function registerPayout(
     return { collector_id: id, currency: 'VND', periods };
   });
 
-  app.get('/api/payout/collectors/:id/accounts', read, async (req, reply) => {
+  app.get('/api/payout/collectors/:id/accounts', finance, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     const rows = await db
@@ -564,7 +562,7 @@ export function registerPayout(
   // -------------------------------------------------------------------------
   // Batches: the period's bills, and the preflight
 
-  app.get('/api/payout/batches/:period', read, async (req, reply) => {
+  app.get('/api/payout/batches/:period', finance, async (req, reply) => {
     const period = periodOf(req);
     if (typeof period === 'string') return reply.code(422).send({ error: period });
     const bills = await loadBatch(db, period, batchOptions);
@@ -576,7 +574,7 @@ export function registerPayout(
     });
   });
 
-  app.post('/api/payout/batches/:period/preflight', read, async (req, reply) => {
+  app.post('/api/payout/batches/:period/preflight', finance, async (req, reply) => {
     const period = periodOf(req);
     if (typeof period === 'string') return reply.code(422).send({ error: period });
     const { billsDetail, ...result } = await preflight(db, client, period, batchOptions);
@@ -863,7 +861,7 @@ export function registerPayout(
     });
   });
 
-  app.get('/api/payout/attempts/:id', read, async (req, reply) => {
+  app.get('/api/payout/attempts/:id', finance, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     const row = await attemptById(db, id);

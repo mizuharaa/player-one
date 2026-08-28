@@ -206,6 +206,82 @@ describe.skipIf(!hasDb())('operator API auth', () => {
     expect(retired.json().error).toBe('invalid credentials');
   });
 
+  it('refuses a retired operator, and the token they are already holding', async () => {
+    /**
+     * `upload_devices` has carried `status` since 0000 and the machine login
+     * has always read it. `operators` had none, so there was no way to
+     * deactivate a person at all: DELETE is refused by the audit foreign key,
+     * an unknown role falls through as an ordinary operator, and blanking
+     * `credential_hash` stops only the NEXT sign-in — the cookie already in
+     * their browser keeps working for the rest of its twelve hours. Both
+     * halves are asserted here, because only the second one is the leaver.
+     */
+    const d = await db();
+    const ids = await seedTwoCentres();
+    const app = await api();
+    const { machineToken, operatorToken } = await login(app, 'HCM');
+    const headers = {
+      'x-machine-token': `Bearer ${machineToken}`,
+      authorization: `Bearer ${operatorToken}`,
+    };
+    expect((await app.inject({ method: 'GET', url: '/whoami', headers })).statusCode).toBe(200);
+
+    await d.execute(sql`update operators set status = 'retired' where id = ${ids.operatorA}`);
+
+    const again = await app.inject({
+      method: 'POST',
+      url: '/auth/operator',
+      payload: { external_ref: 'op-HCM', secret: 'correct horse' },
+    });
+    expect(again.statusCode).toBe(401);
+    // Same sentence as a wrong secret: a sign-in page names nothing.
+    expect(again.json().error).toBe('invalid credentials');
+
+    // The one that matters: the token issued before the change stops now.
+    const held = await app.inject({ method: 'GET', url: '/whoami', headers });
+    expect(held.statusCode).toBe(401);
+
+    // The machine at that counter is untouched; the person is not.
+    expect((await app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: 'HCM-IMPORT-01', secret: 'correct horse' } })).statusCode).toBe(200);
+  });
+
+  it('refuses an operator status no login knows how to read', async () => {
+    const d = await db();
+    const ids = await seedTwoCentres();
+    await violates(
+      'operators_status_check',
+      d.execute(sql`update operators set status = 'on_leave' where id = ${ids.operatorA}`),
+    );
+  });
+
+  it('refuses a second centre reusing a sign-in name, for a person or a machine', async () => {
+    /**
+     * `POST /auth/operator` takes a reference and a secret, `POST
+     * /auth/machine` an identifier and a secret; neither has a centre to give,
+     * so both lookups select on the name alone and take the first row Postgres
+     * returns — heap order, which an unrelated UPDATE reorders. Two centres
+     * both calling their clerk 'counter-1' inserted cleanly and then one of
+     * them was told their password was wrong, and which one changed. 0009
+     * settled the same shape for reviewers with `operators_reviewer_ref_key`:
+     * make the name unique so the lookup has one row or none. The refusal now
+     * lands when the second centre is set up, by name.
+     */
+    const d = await db();
+    const ids = await seedTwoCentres();
+    await violates(
+      'operators_counter_ref_key',
+      d.execute(sql`
+        insert into operators (id, upload_centre_id, external_ref, role)
+          values (${uid()}, ${ids.centreB}, 'op-HCM', 'centre_operator')`),
+    );
+    await violates(
+      'upload_devices_identifier_key',
+      d.execute(sql`
+        insert into upload_devices (id, upload_centre_id, machine_identifier, status)
+          values (${uid()}, ${ids.centreB}, 'HCM-IMPORT-01', 'active')`),
+    );
+  });
+
   it('rejects a tampered, unsigned or expired token', async () => {
     expect(verifyToken(SECRET, undefined)).toBeNull();
     expect(verifyToken(SECRET, 'garbage')).toBeNull();

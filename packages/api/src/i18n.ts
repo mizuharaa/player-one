@@ -372,6 +372,8 @@ const en = {
   'bo.refused.settlements_not_in_exception': 'That settlement is not in exception, so there is nothing to release.',
   'bo.refused.settle_export_bill_in_exception':
     'A bill in this period has a line in exception. Its total would not match the lines in the file, so the export is held until the line is released.',
+  'bo.refused.settle_generate_by_finance':
+    'A finance operator may not generate the cycle. Whoever issues a bill is refused when they pay it, so another operator has to run this.',
   'bo.refused.payout_settlement_exception':
     'A line on this bill is in exception. Release it before the bill can be paid.',
 
@@ -1030,6 +1032,8 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.settlements_not_in_exception': '该结算记录不在异常状态，无需释放。',
   'bo.refused.settle_export_bill_in_exception':
     '本周期内有账单包含异常状态的明细。导出文件的合计与明细将无法对上，因此在释放该明细之前暂不导出。',
+  'bo.refused.settle_generate_by_finance':
+    '财务角色的操作员不能生成本周期账单。出账的人在付款时会被拒绝，因此需要由其他操作员来生成。',
   'bo.refused.payout_settlement_exception': '该账单中有一条结算记录处于异常状态。请先释放，账单才能支付。',
 
   'theme.toggle': '主题',
@@ -1976,6 +1980,8 @@ const vi: Record<MessageKey, string> = {
     'Kết quả này đã lên hóa đơn hoặc đã được chi trả, và hóa đơn không bao giờ được sửa.',
   'bo.refused.settle_export_bill_in_exception':
     'Một hóa đơn trong kỳ này có khoản đang ở ngoại lệ. Tổng của nó sẽ không khớp với các dòng trong tệp, nên bản xuất được giữ lại cho đến khi khoản đó được giải phóng.',
+  'bo.refused.settle_generate_by_finance':
+    'Nhân viên tài chính không được tạo hóa đơn cho kỳ này. Người phát hành hóa đơn sẽ bị từ chối khi chi trả, nên phải để nhân viên khác chạy kỳ này.',
   'bo.refused.payout_settlement_exception':
     'Một khoản trên hóa đơn này đang ở ngoại lệ. Giải phóng nó trước khi hóa đơn có thể được chi trả.',
   'bo.refused.payout_mode_manual': 'Máy chủ đang ở chế độ chi trả thủ công. Tự chuyển tiền và ghi mã tham chiếu tại đây.',

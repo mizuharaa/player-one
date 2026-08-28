@@ -190,6 +190,13 @@
       "when": 1788490000000,
       "tag": "0017_sign_in_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1788500000000,
+      "tag": "0017_operator_status",
+      "breakpoints": true
     }
   ]
 }
