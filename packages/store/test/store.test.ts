@@ -9,8 +9,10 @@ import {
   filesOf,
   ingestsOf,
   listEpisodes,
+  open,
   showEpisode,
   storeEpisode,
+  StoreUnreachableError,
   streamsOf,
   type MismatchPayload,
 } from '../src/index.ts';
@@ -337,5 +339,32 @@ describe.skipIf(!hasDb())('the episode store', () => {
     expect(await snapshot()).toEqual(before);
 
     await c.cleanup();
+  });
+});
+
+/**
+ * SEC-09 at the connection string, and the only test in this file that needs no
+ * Postgres: `open` refuses before it dials, so the check is exercised on a
+ * machine with no database at all.
+ *
+ * The property is narrow on purpose. A loopback database is the pilot's shape
+ * and needs nothing said about it. A database on another machine has to say
+ * one way or the other, because a Postgres link in clear carries every masked
+ * payout account, every operator credential hash and the whole PLT-08 audit
+ * trail. Port 1 is closed everywhere, so "got past the check" reads as
+ * `StoreUnreachableError` rather than as a hang.
+ */
+describe('the database connection string', () => {
+  it('refuses a remote database that does not say whether it is encrypted', async () => {
+    await expect(open('postgres://u:p@db.example.test:5432/playerone')).rejects.toThrow(/sslmode/);
+  });
+
+  it('accepts a stated answer either way, and says nothing about a loopback one', async () => {
+    // Both of these reach the connect and fail there — which is the assertion:
+    // the transport check let them through.
+    await expect(open('postgres://u:p@127.0.0.2:1/x?sslmode=disable')).rejects.toThrow(
+      StoreUnreachableError,
+    );
+    await expect(open('postgres://u:p@127.0.0.1:1/x')).rejects.toThrow(StoreUnreachableError);
   });
 });

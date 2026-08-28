@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
-import type { LightMyRequestResponse } from 'fastify';
+import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApi, hashCredential } from '../src/index.ts';
 import { closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
@@ -966,6 +966,30 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
     expect(() =>
       buildApi({ db: d, tokenSecret: SECRET, reviewerMediaEnabled: true, secureCookies: true }),
     ).not.toThrow();
+  });
+
+  it('sends HSTS on a TLS deployment and not on a plain-HTTP one', async () => {
+    /**
+     * SEC-09. `secureCookies` is this repo's one "there is TLS in front of this
+     * process" signal, so the header follows it rather than becoming a second
+     * switch that can disagree with the first.
+     *
+     * The negative half is the half that matters. A browser ignores this header
+     * on a plain-HTTP response, so emitting it at a LAN centre would be
+     * decoration — until that centre puts one hostname behind TLS, at which
+     * point a year of `includeSubDomains` lands on every other path on that
+     * host at once.
+     */
+    const d = await db();
+    const hsts = async (app: FastifyInstance): Promise<string | undefined> =>
+      (await app.inject({ method: 'GET', url: '/whoami' })).headers['strict-transport-security'] as
+        | string
+        | undefined;
+
+    expect(await hsts(buildApi({ db: d, tokenSecret: SECRET, secureCookies: true }))).toBe(
+      'max-age=31536000; includeSubDomains',
+    );
+    expect(await hsts(buildApi({ db: d, tokenSecret: SECRET }))).toBeUndefined();
   });
 
   // -------------------------------------------------------------------------
