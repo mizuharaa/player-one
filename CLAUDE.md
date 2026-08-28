@@ -1,7 +1,10 @@
 # PlayerOne — agent handoff
 
-Read this before touching anything. State below is as of 2026-08-26; the
-Decisions and Traps sections are cumulative.
+Read this before touching anything.
+
+This file holds only what does not rot: decisions, and traps that have already
+cost time. Both sections are cumulative — append, do not rewrite. Current state
+is not in here; the State section below tells you how to derive it from Git.
 
 ## What this is
 
@@ -22,120 +25,79 @@ the second one govern the upload centre.
 
 `docs/RUNNING.md` is how to run it. Start there for anything mechanical.
 
-## State
+## State — derive it from Git, never read it here
 
-Written 2026-08-27, at the cut-over from the home machine to the org PC.
-Everything below is on GitHub; nothing is stranded on either machine.
+There is no snapshot in this file any more, on purpose.
 
-**Branch `integration/eight-features` — pushed.** It is `feat/review-console`
-(which already carries #11, the React SPA) plus the eight feature branches of
-2026-08-25 merged in journal order — settlement-lifecycle, review-queues,
-backoffice-crud, device-assignment, greennode-upload, reviewer-role,
-hardware-checkout, collector-app — plus the ZaloPay client
-(`feat/payout-zalopay-client`) and the payout domain (`feat/payout-domain`
-through `d84d60c`), plus the fixes the combined tree needed. `main` is still
-at #9; PRs #10, #12, #13, #14 are open and superseded by this branch. When
-Daniel says so, this branch becomes one PR to `main`.
+There used to be one: branch names, test totals, a migration range, a list of
+what was not built. It rotted every time somebody merged. One copy of this file
+was measured 92 commits behind — it named a branch that had already been
+deleted and claimed 342 tests when the suite had about a thousand. Agents are
+told this file is binding, so they believed it: they rebuilt work that had
+already shipped and branched from the wrong commit.
 
-**With `DATABASE_URL`: 685 pass, 41 skip** (the 41 want `docs/sample_data/`).
-**With none: 356 pass, 370 skip** — that property is load-bearing, see below.
-Measured at `a8b20c6` on a fresh Postgres 16 with `--testTimeout=180000`.
-The first run against brand-new databases showed 16 first-test-in-file
-timeouts while 41 files migrated at once; the rerun on the same databases was
-clean. That is load, not defects: rerun before believing a red first run.
+A snapshot cannot be kept correct by the person writing it. So run these
+instead. They take under a minute and they cannot be stale.
 
-Built and tested, all on this branch: the ingest engine, the episode store,
-the identity spine, both-token auth, the audit trail, the counter workflow,
-the session resolver with the device-custody crosscheck, the review lane with
-two queues (standard/privacy), priority and assignee, the PaXini reviewer role
-(scoped, logged, media denied by default), the back office (tasks, collectors,
-devices, claims, agreements, exam result) with its console screen, the
-settlement lifecycle (state machine, bills, lines, CSV export), the cloud leg
-to GreenNode with read-back verification (unproven live — no credits), the
-Ego hardware checkout tools, the collector-app scaffold (real home:
-`mizuharaa/player-one-app`), the ZaloPay disbursement client (HMAC signing,
-RSA-encrypted receiver_info, every sub-code mapped, fake server; 94 tests, no
-network), and the payout domain (0012/0013: `payout_accounts`,
-`payout_attempts`, `payout_events`, `payout_exports`; finance role with
-separation of duty in the database; manual rail `/api/payout/bills/:id/mark-paid`
-as the ONLY way a bill becomes paid; API rail + poller + batch runner behind
-`PLAYERONE_PAYOUT_MODE=manual`). Migrations `0000`–`0013`; the journal is
-ordered by `when`, and tags with the same numeric prefix (`0007_*`,
-`0009_*`) are distinct migrations — never renumber.
+**Where you are, and how far `main` has moved.**
 
-**In progress on their own branches, all pushed, merge in this order:**
+```
+git fetch origin
+git log --oneline -1 origin/main
+git status -sb
+git log --oneline HEAD..origin/main   # landed since you branched
+git log --oneline origin/main..HEAD   # yours alone, not yet merged
+```
 
-1. `feat/payout-domain` tip `f8667a2` is a WIP commit on top of the merged
-   `d84d60c`: `POST /api/payout/batches/:period/run`, the server-side batch
-   the console must call instead of looping pay in the browser. Design is in
-   the commit message (transaction-scoped advisory lock → 409
-   `payout_batch_running`; 200 with `preflight`, `sent[]`, `refused[]`,
-   `stopped_at`, `tickets[]`). Not typechecked, not run. Finish, test
-   (finance gate, manual mode refused, idempotent second run sends nothing,
-   stop-on-failure), merge.
-2. `feat/risk-engine` tip `a1145bd` (advisory flags with evidence, reversible
-   holds, tuning as data, wrappers over the hardware-checkout analysers,
-   provenance detectors designed with stubs; 7,100 lines, migration 0014).
-   Two things before it merges: (a) `0014_risk.sql` and `schema.ts` put a
-   subquery inside a CHECK constraint (`count(DISTINCT x) from
-   unnest(signal_ids)`), which PostgreSQL refuses at CREATE TABLE — move it
-   into the BEFORE INSERT trigger and prove it on a freshly migrated database;
-   (b) the WIP commit's wiring (`RiskReader` implementation for the payout
-   domain's `buildApi({ payout: { risk } })`, `bin/risk-worker.ts`,
-   `src/risk/run.ts`) is untested. No parameter properties anywhere —
-   `packages/api/test/strip-only.test.ts` fails if one appears.
-3. `feat/payout-recon` tip `2454dbd` (0015 recon tables, daily reconciliation
-   tick, statement matching, shadow mode, the E01–E29 edge-case suite). Five
-   review findings open, all real: an open discrepancy's resolution is
-   mutable (make it write-once); two concurrent runs duplicate one open
-   discrepancy and its ticket (partial unique index or SKIP LOCKED); the
-   losing concurrent resolver returns the stale row (lock, then re-read); a
-   provider order behind a locally never-sent attempt is reported clean
-   (must be a discrepancy); impossible statement dates normalise into real
-   dates (parse strictly). Fixtures must write a bill's lines in ONE
-   statement (0011's total check runs at statement end) and use whole-dong
-   totals.
-4. `feat/payout-console` tip `5216c51` — a single WIP commit: the whole
-   console (settle tab, preflight, bill screen with mark-paid, API batch,
-   exceptions queue, flag review, api client, vi catalogue in
-   `packages/api/src/i18n.ts` with a sentence for every `PAYOUT_REFUSALS`
-   name). Never typechecked or run. Open: the preflight gate compares `>` at
-   the five-minute boundary and has no fake-clock test (make it `>=`, cover
-   299,999 / 300,000 / future / changed fingerprint); the API batch calls the
-   `/run` route from item 1; the three-locale switch is a cycle and must be a
-   selector; `lib/i18n.ts`'s comment still says Vietnamese is absent.
-5. `mizuharaa/player-one-app` branch `feat/payout-screens` (`f75506d`, 58
-   tests) — the collector's payout screens; merge into that repo's `main`.
+**What every other agent is doing right now.** One worktree per agent, and the
+branch name is the job. Check this before you start: somebody may already be
+building what you were asked to build.
 
-Then: one full run with a database, a rewrite of this section, one PR.
+```
+git worktree list
+git for-each-ref --sort=-committerdate \
+  --format='%(committerdate:short) %(refname:short)' refs/heads | head -30
+```
 
-**Decisions Daniel has to make before any real payout, in order:**
-whole-dong rounding of fractional bill totals (every review-lane bill is
-fractional today, e.g. 320.0004 VND, and the domain refuses an attempt on one);
-non-verified payout accounts are refused on BOTH rails by SQL, so with no
-live ZaloPay verification nobody is payable — gate G3, override is an
-escalation; ZaloPay's wallet verification returns no holder name, so
-"verified" on the wallet route cannot include a name check; the
-`CHECKSUM-MISMATCH` quarantine (ingest spec §6) makes a redelivery with
-changed bytes unpayable until a per-episode clearing route exists; PIT
-withholding (export column is 0); bank-ceiling splitting (refused by name).
+**The migrations.** drizzle applies them in the journal's `when` order, not by
+filename. Numeric prefixes repeat deliberately — `0016_*` is six distinct
+migrations. Never renumber one, never edit an applied one (see Traps).
 
-Not built: a console screen for Settle beyond item 4, `exception` as a
-state any route can reach, the claims → sessions → settlement join (footage
-can still be paid with no live claim behind it), a launchable collector app
-(device transfer is a mock), dispute and second review (P2), achievements /
-badges / reputation / deposit (no spec; the brief says a deposit is likely
-unviable — decide before building).
+```
+grep -o '"tag": "[^"]*"' packages/store/drizzle/meta/_journal.json
+grep -c '"tag"' packages/store/drizzle/meta/_journal.json
+```
 
-Integration decisions taken on 2026-08-26, reversible, recorded in code:
-custody tracking for a device starts with its first recorded period and
-footage from before that is not judged (`resolve.ts`, `assigneeAt`);
-bind/unbind write the custody period (`backoffice.ts`); the legacy
-`/api/settle/bills/:id/pay` is gone.
+**The test inventory.** Run it both ways; the second is load-bearing and is
+explained in Traps.
 
-The review ledger for all of this (`codex-bridge.md`, 51 findings with
-verdicts and evidence) is an untracked file on the home machine; every open
-item from it is in this section.
+```
+git ls-files '*.test.ts' | wc -l
+pnpm exec vitest run --testTimeout=180000 --hookTimeout=180000
+env -u DATABASE_URL pnpm exec vitest run --testTimeout=180000
+```
+
+Export `PLAYERONE_SESSIONS` at the real corpus first, or 41 tests skip in
+silence and the run still looks green. Never write `pnpm test -- --flags`; the
+flags do not reach vitest.
+
+**What is and is not built.** The code answers this faster and more honestly
+than prose ever did. `git ls-files packages/api/src`, and
+`packages/store/src/schema.ts` for the shape of the data. For *why* something
+is the way it is, read the commit message — they are long here, and they say
+what was measured, what changed and what did not.
+
+**Where live state actually lives:** `CODEX_BRIDGE.md` at the repo root. That
+is the running ledger — the protocol, the findings per agent slug, and the
+`## Agent reports` log that each agent appends one line to when it finishes.
+It is about 350 KB, so do not read all of it: read `## Protocol`, the
+`[general]` and `[context-audit]` findings, and your own slug. Open questions
+and open review findings belong there, not here.
+
+Only two kinds of thing belong in this file: a decision that will still be true
+next month, and a trap that has already cost somebody a day. Both are below.
+If you catch yourself typing a number into this file, it belongs in
+`CODEX_BRIDGE.md` instead.
 
 ## The review slice, now built
 
@@ -159,8 +121,9 @@ recorded in `docs/adr/0003-bo09-centres-machines-operators-stay-fixtures.md`
 with its trigger condition — second upload centre, or 500 collectors,
 whichever first.
 
-Daniel was sending the storage target, so the upload slice may no longer be
-blocked. **Ask.** It was meant to run in parallel, not after.
+The **SEC-06 disk-encryption decision** is
+`docs/adr/0004-sec06-is-disk-encryption-at-the-upload-centre.md`. It is on
+`feat/encryption`, not yet on `main`. Owner is Alois.
 
 ## Decisions taken. Do not re-litigate these.
 
@@ -188,18 +151,35 @@ blocked. **Ask.** It was meant to run in parallel, not after.
   UPL-06 and the APP-17b declarations are CHECKs and FK shapes, tested in raw
   SQL with no application in the path. The review lane added three more:
   `episode_reviews_verdict_key` (one review per client verdict id, which is what
-  stops a retry becoming a second payment), `episode_reviews_delivery_key` (one
-  review per delivery) and `episode_reviews_verdict_id_check` (a decided review
-  must name the request that decided it).
+  stops a retry becoming a second payment), `episode_reviews_delivery_key` and
+  `episode_reviews_verdict_id_check` (a decided review must name the request
+  that decided it).
+- **`episode_reviews_delivery_key` is partial, and that is QR-08, not a bug.**
+  `0004_review_lane` made it one review per delivery, full stop.
+  `0016_dispute_review` deliberately replaced it with a *partial* unique index
+  — one review per delivery **where `dispute_id is null`** — and added
+  `episode_reviews_dispute_key`, one second review per dispute. So a delivery
+  carries at most one ordinary review plus at most one dispute review. The
+  `on conflict` targets in `review.ts` carry the predicate, so a race still
+  loses on the index and not on application logic. An earlier version of this
+  file still described the 0004 rule; anyone who "restored" it would delete
+  second review and undo QR-08. Do not.
 - **The amount on a bill comes from the *rounded* minutes, not the exact
   seconds.** 16 s at 1200/min stores `0.266667` and `320.0004`, where the exact
   product is `320.0000`. Deliberate and pinned by a test: `unit_price ×
   effective_minutes` must reproduce `amount`, because that is the first thing
   checked when an invoice is disputed. Do not "fix" it.
-- **Rounding lives in exactly one function**, `quantise` in `packages/api/src/money.ts`,
-  and the rule is half away from zero. Everything feeding it converts exactly —
-  including a float64 span boundary, which becomes the rational it actually is.
-  A second rounding site anywhere in that file voids the guarantee.
+- **Rounding lives in exactly one function**, `quantise` in `packages/api/src/money.ts`.
+  Everything feeding it converts exactly — including a float64 span boundary,
+  which becomes the rational it actually is. A second rounding site anywhere in
+  that file voids the guarantee. That part is not negotiable.
+- **Bill totals round DOWN.** Daniel decided this on 2026-08-28. Down — not
+  half away from zero, not up. The collector is never paid a fraction of a dong
+  that was not earned, and the rounding error never favours the platform's
+  paperwork over the ledger. `quantise`'s historical rule was half away from
+  zero and `main` still carries it, so this is a decision, not a description:
+  check `packages/api/src/money.ts` before you assume either way. Whatever the
+  rule is, it stays inside `quantise`.
 - **Auto session matching by time applies only to `session_origin = 'app'`.**
   A handover-origin `prepare_time` is what an operator typed from what a
   collector remembered; matching a microsecond PTS start against it and paying
@@ -212,11 +192,34 @@ blocked. **Ask.** It was meant to run in parallel, not after.
   (APP-16); the operator creates the handover when the card arrives (BO-10).
   Different objects, different moments. In the pilot the operator also creates
   the session, stamped `session_origin = 'handover'`, so the drift is measurable.
-- **Privacy is legal's problem and collectors wear masks.** Capture the two
-  APP-17b flags and stop. Daniel has said so explicitly; do not expand on it.
+- **Do not invent extra collector consent fields beyond APP-17b.** Privacy is
+  legal's problem and collectors wear masks; capture the two APP-17b
+  declarations and add no third. That is the whole of this rule, and it is
+  narrower than it once read. It does **not** waive the platform's privacy,
+  access-control, residency, audit or reviewer-routing obligations — the
+  privacy review queue, scoped reviewer access, media denied by default and the
+  residency gate are all built, all required, and none of them are "expanding
+  on privacy". The rule is about the collector-facing consent form only.
+- **The app never starts or stops recording.** The camera's own physical
+  buttons do, and only they. The Bluetooth library exposes scan, connect,
+  characteristic read and write, Wi-Fi provisioning and an IP query — there is
+  no record command in it. Do not design a screen, a route or a test around the
+  app arming or ending a recording; it cannot.
+- **Cloud verification runs inside the GreenNode VPC.** GreenNode has no native
+  SHA-256. Their suggested "put the hash in object metadata and read it back
+  with HeadObject" is rejected: that returns the hash *we sent*, not a hash of
+  the bytes they stored, so it proves nothing about the stored object. The
+  read-back has to hash real bytes, and it runs in the VPC so the bytes do not
+  cross the internet twice.
+- **Disk encryption at the upload centre is SEC-06's answer, and Alois owns
+  it.** ADR 0004 (on `feat/encryption`). It is an operations task on the centre
+  PC; the software must not depend on it and cannot verify it remotely.
+- **A pre-deploy phase runs before the collector pilot**: 20 internal VNG
+  employees with Ego devices. Real devices, real upload, real review, staff
+  instead of paid collectors. Plan for it as its own phase — it comes first.
 - **Status goes in the conversation, not a doc.** `docs/STATUS.md` was written
   and deleted at his request. This file is the exception because it is a handoff
-  for an agent.
+  for an agent — and it holds decisions and traps only, never status.
 
 ## Traps that have already cost time
 
@@ -249,6 +252,20 @@ blocked. **Ask.** It was meant to run in parallel, not after.
   was silently missing `bill_lines_immutable`, `bills_total_matches_lines` and
   the unverified-account refusal; `0016_replay_bill_and_payout_guards` replays
   them idempotently, the way `0009_cloud_leg_gate` did for `0007`.
+- **`DROP DATABASE` does not hang — it pays for a checkpoint, once.** Measured
+  2026-08-28 on the org PC. `dropdb()` forces an immediate checkpoint and waits
+  for it, so the *first* drop after a batch of test runs flushes the whole dirty
+  backlog: one drop took **2m 2s**. The next two took **0.34s** and **0.32s**,
+  and a bare `CHECKPOINT` took **0.15s**. The cost is the backlog, not the drop.
+  So do the housekeeping in that order: issue `CHECKPOINT;` first, then drop in
+  a loop. Every agent that hit the 2-minute first drop concluded
+  "drops hang here" and stopped cleaning up, which is how the server reached
+  **2,219 `po_*` databases** and slowed every test run for a week. Clean up
+  after yourself.
+  Use plain `DROP DATABASE`, never `WITH (FORCE)`: plain refuses while anyone is
+  connected, and that refusal is the guard that stops you deleting a database
+  another agent is using. A dropped test database is cheap anyway — `db()` in
+  `packages/store/test/db.ts` recreates and re-migrates it on demand.
 - **Vitest runs test files in parallel and every database file truncates.** Each
   gets its own database via `useDatabase(name)` in
   `packages/store/test/db.ts`. An advisory lock was tried first and does not
