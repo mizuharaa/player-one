@@ -37,6 +37,7 @@ export { parseRange, safeJoin } from './media.ts';
 export {
   noProgress,
   objectKey,
+  planOpenUploads,
   planParts,
   PART_SIZE,
   S3ObjectStore,
@@ -46,6 +47,7 @@ export {
   type EpisodeUploadResult,
   type Mismatch,
   type ObjectStore,
+  type OpenUpload,
   type PutResult,
   type TransportFile,
   type UploadProgress,

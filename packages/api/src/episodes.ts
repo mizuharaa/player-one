@@ -683,6 +683,121 @@ export function registerEpisodes(
     });
   });
 
+  /**
+   * QR-04 and APP-27, the read side: why this episode's footage was refused,
+   * in words the collector can read.
+   *
+   * Both are P0 and both were unreachable. A reviewer already picks reason
+   * codes, `review_reason_codes` already carries `label_vi` and `label_zh`, and
+   * until now the only thing that could read either was the operator console.
+   * A collector who is not paid for a recording had no way to be told why.
+   *
+   * **Scoped so a collector may be admitted here later.** Nothing in the body
+   * is anybody else's: no reviewer, no lease, no queue, no centre, no
+   * settlement, no other episode. `collector_id` is in it precisely so the
+   * collector guard is a comparison and not a rewrite — when the collector
+   * token exists, the guard is one line after the 404:
+   *
+   *     if (actor.collector !== undefined && actor.collector.id !== row.collector_id)
+   *       return reply.code(404).send({ error: 'no such episode' });
+   *
+   * A 404 rather than a 403, so another collector's episode ids cannot be
+   * enumerated from here. Building that token is a different agent's work and
+   * is deliberately not started here.
+   *
+   * **No centre scope, unlike every other route in this file.** SEC-02 scopes a
+   * counter operator to what arrived at their own machine, and that is right
+   * for importing, resolving and clearing — those act on a card somebody is
+   * holding. This one answers a question a collector asks, and a collector can
+   * walk into any centre; scoping it would make the answer depend on where the
+   * card happened to be read. `GET /api/payout/collectors/:id/income` already
+   * takes the same position for the same reason, on money rather than words.
+   *
+   * ponytail: `review_state` is returned as the database spells it — `pending`,
+   * `pass`, `partial_pass`, `fail`, or null when nothing has been claimed yet.
+   * A second collector-facing vocabulary mapped on top would be one more thing
+   * to keep in step with the schema, and the console already reads these four.
+   *
+   * The labels are returned as stored, all three. `label_vi` and `label_zh` are
+   * nullable columns (0001), so a reason added with English only answers null
+   * here — making them NOT NULL is `fix/console-defects`'s change and is not
+   * duplicated in this route.
+   */
+  app.get('/api/episodes/:id/outcome', opts, async (req, reply) => {
+    const episodeId = (req.params as { id: string }).id;
+
+    /**
+     * The verdict on the delivery that currently counts, and the last one
+     * anybody decided.
+     *
+     * `latest_ingest_id` because a redelivery is judged on its own bytes and an
+     * older delivery's verdict is not an answer about the footage that stands.
+     * `reviewed_at desc nulls last` because QR-08 puts a second review on the
+     * same delivery: once the dispute is decided that verdict is the newest and
+     * wins, and while it is still pending the original stays visible — a
+     * collector under second review must not lose the reason they challenged.
+     */
+    const [row] = (await db.execute(sql`
+      select e.episode_id,
+             cs.collector_id,
+             e.latest_ingest_id as ingest_id,
+             r.id as review_id,
+             r.review_state,
+             r.reviewed_at,
+             r.reviewer_note
+        from episodes e
+        left join collection_sessions cs on cs.id = e.collection_session_id
+        left join lateral (
+          select id, review_state, reviewed_at, reviewer_note
+            from episode_reviews
+           where episode_id = e.episode_id
+             and ingest_id = e.latest_ingest_id
+           order by reviewed_at desc nulls last
+           limit 1
+        ) r on true
+       where e.episode_id = ${episodeId}
+    `)) as unknown as {
+      episode_id: string;
+      collector_id: string | null;
+      ingest_id: string | null;
+      review_id: string | null;
+      review_state: string | null;
+      reviewed_at: Date | null;
+      reviewer_note: string | null;
+    }[];
+    if (row === undefined) return reply.code(404).send({ error: 'no such episode' });
+
+    const reasons =
+      row.review_id === null
+        ? []
+        : await db
+            .select({
+              code: schema.reviewReasonCodes.code,
+              category: schema.reviewReasonCodes.category,
+              label_en: schema.reviewReasonCodes.labelEn,
+              label_vi: schema.reviewReasonCodes.labelVi,
+              label_zh: schema.reviewReasonCodes.labelZh,
+            })
+            .from(schema.episodeReviewReasons)
+            .innerJoin(
+              schema.reviewReasonCodes,
+              eq(schema.reviewReasonCodes.code, schema.episodeReviewReasons.code),
+            )
+            .where(eq(schema.episodeReviewReasons.reviewId, row.review_id))
+            .orderBy(schema.reviewReasonCodes.category, schema.reviewReasonCodes.code);
+
+    return reply.send({
+      episode_id: row.episode_id,
+      collector_id: row.collector_id,
+      ingest_id: row.ingest_id,
+      review_state: row.review_state,
+      reviewed_at: row.reviewed_at === null ? null : new Date(row.reviewed_at).toISOString(),
+      /** QR-04's free text, written by the reviewer for the collector to read. */
+      reviewer_note: row.reviewer_note,
+      reasons,
+    });
+  });
+
   /** The status view: batches on this machine, newest first. */
   app.get('/upload-batches', opts, async (req, reply) => {
     const actor = actorOf(req);

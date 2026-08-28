@@ -854,6 +854,79 @@ describe.skipIf(!hasDb())('the review lane', () => {
       expect(reasons.map((r) => r.code)).toEqual(['VQ-DARK']);
     });
 
+    /**
+     * QR-04 and APP-27: the reason has to leave the operator console.
+     *
+     * Both are P0 — "failure reasons are surfaced to the collector in a form
+     * they can act on", and "failed review shows the reason in the collector's
+     * language" — and until this route the codes a reviewer picked were
+     * readable only by the console that wrote them.
+     */
+    it('tells a counter clerk why an episode failed, in the collector’s language', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const episodeId = h.episodeIds[0]!;
+
+      // Before anybody reviews it: the episode is known, nothing is decided,
+      // and there is no reason to give. A collector asking early gets an
+      // honest empty answer rather than a 404 they would read as data loss.
+      const waiting = await h.send('GET', `/api/episodes/${episodeId}/outcome`);
+      expect(waiting.statusCode, waiting.body).toBe(200);
+      expect(waiting.json().review_state).toBeNull();
+      expect(waiting.json().reasons).toEqual([]);
+      expect(waiting.json().collector_id).toBe(h.ids.collector);
+
+      await claim(h);
+      const decided = await verdict(h, {
+        verdict_id: uid(),
+        episode_id: episodeId,
+        decision: 'bad',
+        reject_reasons: ['VQ-DARK', 'DI-NO-IMU'],
+        reviewer_note: 'the whole clip is unusable',
+      });
+      expect(decided.statusCode, decided.body).toBe(200);
+
+      const res = await h.send('GET', `/api/episodes/${episodeId}/outcome`);
+      expect(res.statusCode, res.body).toBe(200);
+      const body = res.json();
+      expect(body.review_state).toBe('fail');
+      expect(body.reviewed_at).not.toBeNull();
+      expect(body.reviewer_note).toBe('the whole clip is unusable');
+      // Ordered by category then code, so the same verdict reads the same way twice.
+      expect(body.reasons).toEqual([
+        {
+          code: 'DI-NO-IMU',
+          category: 'data_integrity',
+          label_en: 'Missing IMU',
+          label_vi: 'Thiếu dữ liệu IMU',
+          label_zh: '缺少IMU',
+        },
+        {
+          code: 'VQ-DARK',
+          category: 'visual_quality',
+          label_en: 'Too dark',
+          label_vi: 'Quá tối',
+          label_zh: '过暗',
+        },
+      ]);
+
+      /**
+       * Nothing here belongs to anybody but this collector. The body is what a
+       * collector token will be admitted to read, so a reviewer's identity, a
+       * lease or another episode leaking into it is the defect this pins.
+       */
+      expect(Object.keys(body).sort()).toEqual([
+        'collector_id',
+        'episode_id',
+        'ingest_id',
+        'reasons',
+        'review_state',
+        'reviewed_at',
+        'reviewer_note',
+      ]);
+
+      expect((await h.send('GET', `/api/episodes/${uid()}/outcome`)).statusCode).toBe(404);
+    });
+
     it('stores overlapping marks as merged, non-overlapping spans', async () => {
       // Acceptance 6. Overlaps are allowed on the client because forbidding them
       // makes marking fiddly; the server is where they become disjoint, so the

@@ -7,7 +7,7 @@ import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { contentFingerprint, deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
-import { buildApi, hashCredential, objectKey, planParts, PART_SIZE, s3StoreFromEnv, transportInventory, type ObjectStore, type PutResult } from '../src/index.ts';
+import { buildApi, hashCredential, objectKey, planOpenUploads, planParts, PART_SIZE, s3StoreFromEnv, transportInventory, type ObjectStore, type PutResult } from '../src/index.ts';
 import { closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -53,6 +53,55 @@ describe('multipart part planning', () => {
     // recognisable by number and size on the next attempt.
     expect(planParts(3 * PART_SIZE + 7)).toEqual(planParts(3 * PART_SIZE + 7));
     expect(planParts(3 * PART_SIZE).length).toBe(3);
+  });
+});
+
+describe('open multipart uploads', () => {
+  const at = (ms: number) => new Date(ms);
+
+  it('adopts nothing and abandons nothing when the key has no open upload', () => {
+    expect(planOpenUploads([])).toEqual({ adopt: null, abandon: [] });
+  });
+
+  it('resumes the newest and abandons the attempts no later run could adopt', () => {
+    // The measured leak: an interrupted 200 MB upload leaves 128 MB of parts
+    // that no object listing shows. `put` only ever resumes the newest open
+    // upload on the key, so every older one is billed storage nobody reaches.
+    expect(
+      planOpenUploads([
+        { uploadId: 'old', initiated: at(1000) },
+        { uploadId: 'newest', initiated: at(3000) },
+        { uploadId: 'middle', initiated: at(2000) },
+      ]),
+    ).toEqual({ adopt: 'newest', abandon: ['old', 'middle'] });
+  });
+
+  it('keeps the only open upload, which is the one a resume needs', () => {
+    expect(planOpenUploads([{ uploadId: 'only', initiated: at(1000) }])).toEqual({
+      adopt: 'only',
+      abandon: [],
+    });
+  });
+
+  it('abandons nothing on the key when a provider omits Initiated', () => {
+    // Sorting on `getTime() ?? 0` makes every timestamp-less candidate equal, so
+    // "older" is a guess. Guessing wrong costs a re-sent part on adoption and a
+    // destroyed upload on an abort, so only adoption may guess.
+    expect(
+      planOpenUploads([
+        { uploadId: 'a', initiated: null },
+        { uploadId: 'b', initiated: at(3000) },
+      ]),
+    ).toEqual({ adopt: 'b', abandon: [] });
+  });
+
+  it('abandons nothing when the newest timestamp is shared', () => {
+    const plan = planOpenUploads([
+      { uploadId: 'a', initiated: at(3000) },
+      { uploadId: 'b', initiated: at(3000) },
+    ]);
+    expect(plan.abandon).toEqual([]);
+    expect(plan.adopt).not.toBeNull();
   });
 });
 

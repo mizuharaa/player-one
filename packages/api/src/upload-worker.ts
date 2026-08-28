@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   GetObjectCommand,
@@ -146,6 +147,67 @@ export function planParts(bytes: number): PlannedPart[] {
   return parts;
 }
 
+/** One open multipart upload on a key, as `ListMultipartUploads` reports it. */
+export type OpenUpload = { uploadId: string; initiated: Date | null };
+
+/**
+ * Which open upload to resume, and which ones this system has given up on.
+ *
+ * Parts of an incomplete multipart upload are stored and billed, and they appear
+ * in NO object listing — `ListObjectsV2` on a key with 128 MB of parts under it
+ * answers empty. Measured against MinIO on 2026-08-27, an interrupted 200 MB
+ * upload left exactly that. So an upload nobody will ever resume is a storage
+ * bill no operator can see, and something has to abort it.
+ *
+ * The rule here is narrow on purpose: only an upload this code would never
+ * adopt again is abandoned. `put` resumes the NEWEST open upload on the key, so
+ * every strictly older one is already unreachable — a later run will not pick
+ * it, and nothing else in this repo starts a multipart upload. Aborting those
+ * costs a resume nobody could have performed.
+ *
+ * Everything else is left alone, and the two cases are worth naming:
+ *
+ *   - **An upload with no `Initiated`.** S3 always sends it; the SDK types it
+ *     optional, and an S3-compatible provider may omit it. Sorting on
+ *     `getTime() ?? 0` made every such candidate equal, so adoption picked
+ *     whichever the server happened to list last — tolerable, because resuming
+ *     the wrong open upload only re-sends parts. Aborting on the same guess is
+ *     not tolerable, so one missing timestamp abandons nothing on that key.
+ *   - **A tie on the newest timestamp.** Same argument: two uploads initiated in
+ *     the same millisecond cannot be ordered, so neither is abandoned.
+ *
+ * This replaces a comment that refused to abort anything because doing so would
+ * "turn one machine's clock skew into another machine's lost resume". The
+ * premise does not hold: `Initiated` is stamped by the object store, so every
+ * timestamp compared here comes from one clock and no centre's clock is in it.
+ * What CAN still be taken away is a second run in flight on the same key from
+ * the same machine — it created the older upload, this one abandons it, and its
+ * next `UploadPart` fails. Nothing is lost by that: no object is completed from
+ * a half-sent upload, and the next run re-sends. A dead upload billing forever
+ * is the worse of the two.
+ *
+ * The one thing it does not cover is an upload for a delivery nobody ever
+ * retries — the card goes back, the batch is dropped, the parts stay. No code
+ * can tell that from a resume that happens tomorrow. That is the bucket
+ * lifecycle rule's job, and `docs/RUNNING.md` carries the command that sets it.
+ */
+export function planOpenUploads(uploads: readonly OpenUpload[]): {
+  adopt: string | null;
+  abandon: string[];
+} {
+  if (uploads.length === 0) return { adopt: null, abandon: [] };
+  const sorted = [...uploads].sort(
+    (a, b) => (a.initiated?.getTime() ?? 0) - (b.initiated?.getTime() ?? 0),
+  );
+  const adopt = sorted.at(-1)!;
+  if (uploads.some((u) => u.initiated === null)) return { adopt: adopt.uploadId, abandon: [] };
+  const newest = adopt.initiated!.getTime();
+  return {
+    adopt: adopt.uploadId,
+    abandon: sorted.filter((u) => u.initiated!.getTime() < newest).map((u) => u.uploadId),
+  };
+}
+
 const notFound = (err: unknown): boolean => {
   const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
   return e.name === 'NotFound' || e.name === 'NoSuchKey' || e.$metadata?.httpStatusCode === 404;
@@ -258,12 +320,26 @@ export class S3ObjectStore implements ObjectStore {
     const r = await this.client.send(
       new ListMultipartUploadsCommand({ Bucket: this.bucket, Prefix: key }),
     );
-    const mine = (r.Uploads ?? []).filter((u) => u.Key === key);
-    // Newest wins; older abandoned attempts are left for the bucket's own
-    // lifecycle rule to reap — aborting them here would turn one machine's
-    // clock skew into another machine's lost resume.
-    mine.sort((a, b) => (a.Initiated?.getTime() ?? 0) - (b.Initiated?.getTime() ?? 0));
-    return mine.at(-1)?.UploadId ?? null;
+    const mine = (r.Uploads ?? [])
+      .filter((u) => u.Key === key && u.UploadId !== undefined)
+      .map((u) => ({ uploadId: u.UploadId!, initiated: u.Initiated ?? null }));
+    const plan = planOpenUploads(mine);
+    for (const uploadId of plan.abandon) {
+      /**
+       * Hygiene, not the job. A provider that refuses the abort — no
+       * permission, or the upload already gone — leaves a bill this run cannot
+       * clear, and failing the transport over that would trade a storage cost
+       * for a delivery that does not arrive. The lifecycle rule is the backstop.
+       */
+      try {
+        await this.client.send(
+          new AbortMultipartUploadCommand({ Bucket: this.bucket, Key: key, UploadId: uploadId }),
+        );
+      } catch {
+        /* ignored on purpose; see above */
+      }
+    }
+    return plan.adopt;
   }
 
   private async listParts(

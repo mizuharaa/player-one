@@ -545,7 +545,26 @@ export function registerBackOffice(
     return reply.code(200).send({ id: b.id, replayed: true });
   });
 
-  /** Releasing is what makes a slot reusable; without it a cap is a one-way door. */
+  /**
+   * Releasing is what makes a slot reusable; without it a cap is a one-way door.
+   *
+   * `released_at` is stamped by the database, not by this process, and that is
+   * the whole of what `now()` is doing there. `claimed_at` defaults to
+   * Postgres `now()`, which carries microseconds;
+   * `task_claims_released_after_check` compares the two. A JavaScript `Date` is
+   * a whole number of milliseconds and cannot express the remainder — and on
+   * Windows its source is coarser again than the one Postgres reads — so a
+   * release written from here could land BEFORE the claim it ends, the check
+   * refused it, and the refusal left `mutate` as a 500 with nothing in it
+   * anybody could act on. Measured: 27 refusals in 400 claim-then-release
+   * cycles on a probe table of the same shape, and the route itself 500ing on
+   * cycle 4 of a hundred during a full suite run.
+   *
+   * One clock for both columns is the fix, not a wider tolerance and not a
+   * `guarded()` around the write: the constraint is right, and a comparison
+   * between two clocks is what was wrong. `updated_at` is left as it is — it is
+   * compared with nothing.
+   */
   app.post('/api/task-claims/:id/release', opts, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
@@ -556,7 +575,7 @@ export function registerBackOffice(
       async (tx) => {
         const [row] = await tx
           .update(schema.taskClaims)
-          .set({ releasedAt: new Date(), updatedAt: new Date() })
+          .set({ releasedAt: sql`now()`, updatedAt: new Date() })
           .where(and(eq(schema.taskClaims.id, id), isNull(schema.taskClaims.releasedAt)))
           .returning();
         return row;
