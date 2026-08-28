@@ -645,10 +645,22 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
 
   it('scopes a collector token to /api/me and nothing else', async () => {
     const h = await harness();
-    for (const url of ['/whoami', '/api/tasks', '/api/collectors', '/upload-batches']) {
+    for (const url of ['/api/tasks', '/api/collectors', '/upload-batches']) {
       const res = await h.get(url);
       expect(res.statusCode, url).toBe(403);
     }
+    /**
+     * `/whoami` is the exception, and it is feat/collector-auth's call. That
+     * branch admits the identity route to every kind of session — the app has
+     * to be able to ask "who am I?" with the only token it holds — and it
+     * answers `{ role: 'collector', collector_id }` and nothing else. This
+     * branch asserted 403 here, written before that route existed. Its own
+     * test in collector-auth.test.ts asserts the 200, and the merge kept
+     * collector-auth's shape.
+     */
+    const me = await h.get('/whoami');
+    expect(me.statusCode, me.body).toBe(200);
+    expect(me.json().role).toBe('collector');
   });
 
   it('refuses a staff session on the collector’s own scope', async () => {
@@ -729,15 +741,25 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
 
   it('answers 503 when no object store is configured', async () => {
     const d = await db();
+    /**
+     * A REAL collector row, because the token is now checked against one.
+     * feat/collector-auth re-reads `collectors.token_epoch` on every request
+     * and answers 401 when there is no row — a deleted collector and a revoked
+     * one get the same answer. This test was written when a signed token with
+     * any uuid in it reached the handler, and used a uuid belonging to nobody;
+     * it now asserts what the route body does, which is what it was for.
+     */
+    const collector = uid();
+    await d.execute(sql`insert into collectors (id, external_ref, status) values (${collector}, 'col-503', 'qualified')`);
     const app = buildApi({ db: d, tokenSecret: SECRET });
     await app.ready();
     const res = await app.inject({
       method: 'POST',
       url: '/api/me/uploads',
       payload: { id: uid(), collection_session_id: uid(), episode: delivery().record } as never,
-      headers: { authorization: `Bearer ${signToken(SECRET, { kind: 'collector', collectorId: uid(), epoch: 1 })}` },
+      headers: { authorization: `Bearer ${signToken(SECRET, { kind: 'collector', collectorId: collector, epoch: 1 })}` },
     });
-    expect(res.statusCode).toBe(503);
+    expect(res.statusCode, res.body).toBe(503);
   });
 });
 
