@@ -152,7 +152,10 @@ export function registerPayout(
    */
   const requireFinance = async (req: FastifyRequest, reply: Reply) => {
     const actor = req.actor;
-    if (actor === undefined || actor.reviewer !== undefined) {
+    // Anyone without an operator half: a reviewer, and now a collector too.
+    // Asking for the operator rather than excluding the reviewer means a
+    // fourth kind of session is refused here on the day it is invented.
+    if (actor?.operator === undefined) {
       return reply.code(403).send({ error: 'finance role required' });
     }
     const [row] = await db

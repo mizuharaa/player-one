@@ -1,4 +1,9 @@
-import type { MachineClaims, OperatorClaims, ReviewerClaims } from './credentials.ts';
+import type {
+  CollectorClaims,
+  MachineClaims,
+  OperatorClaims,
+  ReviewerClaims,
+} from './credentials.ts';
 
 /**
  * Who made a change, and from where.
@@ -22,12 +27,30 @@ export type CounterActor = {
   machine: MachineClaims;
   operator: OperatorClaims;
   reviewer?: undefined;
+  collector?: undefined;
 };
 
 export type ReviewerActor = {
   reviewer: ReviewerClaims;
   machine?: undefined;
   operator?: undefined;
+  collector?: undefined;
 };
 
-export type Actor = CounterActor | ReviewerActor;
+/**
+ * A collector, signed in from the app. The third case, and the narrowest: it
+ * reaches `/api/me/` and nothing else.
+ *
+ * `machine`, `operator` and `reviewer` are all `undefined` here, which is the
+ * point. `me.ts` cannot read an operator's centre off a collector token
+ * because the compiler will not let it, and no `/api/me/` query has a centre
+ * or a reviewer to scope by in the first place.
+ */
+export type CollectorActor = {
+  collector: CollectorClaims;
+  machine?: undefined;
+  operator?: undefined;
+  reviewer?: undefined;
+};
+
+export type Actor = CounterActor | ReviewerActor | CollectorActor;

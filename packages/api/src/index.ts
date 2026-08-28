@@ -11,6 +11,7 @@ import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';
 import { registerEpisodes } from './episodes.ts';
 import { registerMedia } from './media.ts';
+import { registerMe } from './me.ts';
 import { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
 import { registerPayout } from './payout/routes/payout.ts';
 import { seedRiskSignals } from './risk/catalogue.ts';
@@ -164,6 +165,17 @@ const REVIEW_SCOPE = '/api/review/';
 /** Raw footage. In scope for a reviewer only behind `reviewerMediaEnabled`. */
 const MEDIA_SCOPE = '/media/';
 /**
+ * What a collector session may reach, and the whole of it.
+ *
+ * The prefix is the guard, exactly as `REVIEW_SCOPE` is for a reviewer: a
+ * `/api/me/` route added next month is in scope by its path, and a route added
+ * anywhere else is out of it without anybody remembering to say so. It cuts
+ * both ways — an operator or reviewer token gets 403 here, because the routes
+ * under it read the collector id off the token and there is no collector id on
+ * either of those.
+ */
+const ME_SCOPE = '/api/me/';
+/**
  * The one route outside the review lane a reviewer may call, named exactly and
  * not by prefix.
  *
@@ -271,6 +283,20 @@ export function buildApi({
       return;
     }
 
+    /**
+     * APP-*, and the mirror image of the reviewer clause above. A collector
+     * reaches `/api/me/` and `/whoami` and nothing else; everything else is
+     * 403 by path, decided here once.
+     */
+    if (person?.kind === 'collector') {
+      const route = req.routeOptions.url ?? '';
+      if (!route.startsWith(ME_SCOPE) && route !== IDENTITY_ROUTE) {
+        return reply.code(403).send({ error: 'collector session is scoped to /api/me' });
+      }
+      req.actor = { collector: person };
+      return;
+    }
+
     const machine = verifyToken(tokenSecret, bearer(req, 'x-machine-token', MACHINE_COOKIE));
     if (machine?.kind !== 'machine') return reply.code(401).send({ error: 'machine token required' });
     if (person?.kind !== 'operator') return reply.code(401).send({ error: 'operator token required' });
@@ -357,6 +383,17 @@ export function buildApi({
     risk: payout.risk ?? riskReader,
     holdsEnabled: payout.holdsEnabled ?? risk.holdsEnabled,
   });
+  /**
+   * The collector's own money, under `/api/me/`. Given the SAME risk reader
+   * and hold switch as the payout lane on purpose: it calls `loadBill`, so if
+   * these options differed, a collector and the batch runner would disagree
+   * about whether a bill can pay.
+   */
+  registerMe(app, db, requireActor, {
+    risk: payout.risk ?? riskReader,
+    holdsEnabled: payout.holdsEnabled ?? risk.holdsEnabled,
+    capVnd: payout.capVnd,
+  });
   registerRisk(app, db, requireActor, riskEngine);
   registerMedia(app, db, requireActor, mediaRoot);
   registerConsole(app, db, { tokenSecret, secureCookies });
@@ -372,6 +409,9 @@ export function buildApi({
     const actor = req.actor!;
     if (actor.reviewer !== undefined) {
       return { role: 'reviewer', reviewer_id: actor.reviewer.reviewerId };
+    }
+    if (actor.collector !== undefined) {
+      return { role: 'collector', collector_id: actor.collector.collectorId };
     }
     return {
       role: 'operator',

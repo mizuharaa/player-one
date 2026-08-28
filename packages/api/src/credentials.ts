@@ -62,7 +62,23 @@ export type OperatorClaims = { kind: 'operator'; operatorId: string; uploadCentr
  * foreign key and `episode_reviews.reviewer_ref` keeps holding one kind of value.
  */
 export type ReviewerClaims = { kind: 'reviewer'; reviewerId: string };
-export type Claims = MachineClaims | OperatorClaims | ReviewerClaims;
+/**
+ * APP-*. A fourth kind, by the same argument as `ReviewerClaims`: a collector
+ * has no upload centre and no operator row, so every counter and back-office
+ * route is unreachable to this token by *type*, not by a forgotten `if`.
+ *
+ * `collectorId` is a `collectors.id`, and it is the ONLY place a `/api/me/`
+ * route may learn which collector is asking. It appears in no path, no query
+ * string and no body — a collector who edits an id in a URL edits nothing,
+ * because there is no id in the URL to edit.
+ *
+ * `feat/collector-auth` owns issuing this token (the sign-in route, the
+ * credential store and the rate limiter). This declaration is the minimum the
+ * `/api/me/` money routes need in order to exist and be tested; that branch
+ * should replace it wholesale rather than merge around it.
+ */
+export type CollectorClaims = { kind: 'collector'; collectorId: string };
+export type Claims = MachineClaims | OperatorClaims | ReviewerClaims | CollectorClaims;
 
 /**
  * The centre is baked into both tokens at issue time and is never taken from the
@@ -105,5 +121,6 @@ export function verifyToken(
   if (c.kind === 'machine' && c.uploadDeviceId && c.uploadCentreId) return c;
   if (c.kind === 'operator' && c.operatorId && c.uploadCentreId) return c;
   if (c.kind === 'reviewer' && c.reviewerId) return c;
+  if (c.kind === 'collector' && c.collectorId) return c;
   return null;
 }

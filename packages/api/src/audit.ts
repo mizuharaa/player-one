@@ -82,19 +82,41 @@ export async function mutate<T>(
       action: recorded.action,
       targetTable: recorded.targetTable,
       targetId: recorded.targetId,
-      ...(actor.reviewer === undefined
+      ...(actor.operator !== undefined
         ? {
             actorRole: 'operator',
             operatorId: actor.operator.operatorId,
             uploadDeviceId: actor.machine.uploadDeviceId,
             uploadCentreId: actor.operator.uploadCentreId,
           }
-        : {
-            actorRole: 'reviewer',
-            operatorId: actor.reviewer.reviewerId,
-            uploadDeviceId: null,
-            uploadCentreId: null,
-          }),
+        : actor.reviewer !== undefined
+          ? {
+              actorRole: 'reviewer',
+              operatorId: actor.reviewer.reviewerId,
+              uploadDeviceId: null,
+              uploadCentreId: null,
+            }
+          : /**
+             * A collector session. It reaches no mutating route today — every
+             * `/api/me/` route is a read — and it must not reach one by
+             * accident, because there is no honest row to write for it:
+             * `audit_events_actor_role_check` allows `operator` and `reviewer`
+             * and nothing else, and `operator_id` is a foreign key into
+             * `operators`, which a collector is not a row in.
+             *
+             * So this throws inside the transaction and the whole mutation
+             * rolls back. A write nobody can attribute is worse than a refused
+             * write, and this is the audit trail: the one place where failing
+             * loudly is the requirement. Whoever gives a collector something to
+             * write — raising a dispute is the obvious one — adds the role to
+             * that CHECK and the identity column to this table in the same
+             * migration, and deletes this branch.
+             */
+            ((): never => {
+              throw new Error(
+                'a collector session cannot write an audited mutation: audit_events has no actor_role for one',
+              );
+            })()),
       before: recorded.before ?? null,
       after: recorded.after ?? null,
       reason: recorded.reason ?? null,
