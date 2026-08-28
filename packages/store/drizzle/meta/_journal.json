@@ -232,6 +232,13 @@
       "when": 1788700000000,
       "tag": "0020_backoffice_admin_role",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788703000000,
+      "tag": "0020_cloud_verification_receipts",
+      "breakpoints": true
     }
   ]
 }

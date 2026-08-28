@@ -2225,3 +2225,53 @@ export const riskHolds = pgTable(
     ),
   ],
 );
+
+/**
+ * One receipt per cloud object that has been pulled back out of the store and
+ * hashed to the digest the engine settled at import (UPL-05, ING-29).
+ *
+ * It exists to answer one question cheaply: may this re-run skip this file?
+ * Without it every re-run of a batch re-downloads every byte it already proved
+ * — measured against a real S3 endpoint, a second run over a clean 16 MB
+ * episode moved 0.00 MB up and 16.00 MB down — and one damaged object forced a
+ * re-send and a re-read of its whole episode, because `force` was decided per
+ * episode and there was nothing finer to decide it with.
+ *
+ * The digest is stored, not just the key: a redelivery whose media fingerprint
+ * is unchanged keeps its ingest and therefore its keys, and the manifest beside
+ * it is hashed at transport time, so a receipt that does not name the bytes
+ * about to be transported must not authorise a skip.
+ *
+ * Written by the upload route only, and only after a successful read-back;
+ * deleted for exactly the object whose read-back failed. The audited
+ * `episode.cloud_verify` event is still the record of the verdict — this table
+ * is transport bookkeeping, and losing all of it costs bandwidth, not
+ * correctness.
+ */
+export const cloudVerifications = pgTable(
+  'cloud_verifications',
+  {
+    /** `episodes/<episode_id>/<ingest_id>/<relative_path>`, per `objectKey`. */
+    objectKey: text('object_key').primaryKey(),
+    episodeId: uuid('episode_id')
+      .notNull()
+      .references(() => episodes.episodeId),
+    /**
+     * Which delivery's bytes were proven — a verdict binds to an exact ingest.
+     * Bound to this episode by the composite FK below, the same way
+     * `episode_clearings` is: an ingest of some other episode is not a receipt
+     * for this one.
+     */
+    ingestId: uuid('ingest_id').notNull(),
+    sha256: text('sha256').notNull(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.episodeId, t.ingestId],
+      foreignColumns: [episodeIngests.episodeId, episodeIngests.ingestId],
+      name: 'cloud_verifications_delivery_fk',
+    }),
+    index('cloud_verifications_episode_idx').on(t.episodeId),
+  ],
+);
