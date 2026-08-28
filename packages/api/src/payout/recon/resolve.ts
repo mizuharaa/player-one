@@ -36,7 +36,9 @@ function constraintOf(err: unknown): string | undefined {
 }
 
 export async function resolveLine(db: Db, actor: Actor, lineId: string, reason: string): Promise<ResolveOutcome> {
-  if (actor.reviewer !== undefined) return { kind: 'refused', constraint: 'recon_lines_resolved_by_operator' };
+  // `resolved_by` is an operator, so anyone without an operator half is
+  // refused by name: a reviewer, and now a collector too.
+  if (actor.operator === undefined) return { kind: 'refused', constraint: 'recon_lines_resolved_by_operator' };
   if (reason.trim() === '') return { kind: 'refused', constraint: 'recon_lines_resolution_check' };
 
   /** What the transaction saw once it held the row: absent, already closed, or closed by us. */

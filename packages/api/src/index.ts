@@ -19,6 +19,7 @@ import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';
 import { registerEpisodes } from './episodes.ts';
 import { registerMedia } from './media.ts';
+import { registerMe } from './me.ts';
 import { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
 import { registerPayout } from './payout/routes/payout.ts';
 import { seedRiskSignals } from './risk/catalogue.ts';
@@ -217,6 +218,17 @@ export type ApiOptions = {
 const REVIEW_SCOPE = '/api/review/';
 /** Raw footage. In scope for a reviewer only behind `reviewerMediaEnabled`. */
 const MEDIA_SCOPE = '/media/';
+/**
+ * What a collector session may reach, and the whole of it.
+ *
+ * The prefix is the guard, exactly as `REVIEW_SCOPE` is for a reviewer: a
+ * `/api/me/` route added next month is in scope by its path, and a route added
+ * anywhere else is out of it without anybody remembering to say so. It cuts
+ * both ways — an operator or reviewer token gets 403 here, because the routes
+ * under it read the collector id off the token and there is no collector id on
+ * either of those.
+ */
+const ME_SCOPE = '/api/me/';
 /**
  * The one route outside the review lane a reviewer may call, named exactly and
  * not by prefix.
@@ -575,6 +587,17 @@ export function buildApi({
     ...payout,
     risk: payout.risk ?? riskReader,
     holdsEnabled: payout.holdsEnabled ?? risk.holdsEnabled,
+  });
+  /**
+   * The collector's own money, under `/api/me/`. Given the SAME risk reader
+   * and hold switch as the payout lane on purpose: it calls `loadBill`, so if
+   * these options differed, a collector and the batch runner would disagree
+   * about whether a bill can pay.
+   */
+  registerMe(app, db, requireActor, {
+    risk: payout.risk ?? riskReader,
+    holdsEnabled: payout.holdsEnabled ?? risk.holdsEnabled,
+    capVnd: payout.capVnd,
   });
   registerRisk(app, db, requireActor, riskEngine);
   registerMedia(app, db, requireActor, mediaRoot);

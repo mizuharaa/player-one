@@ -353,8 +353,18 @@ export function registerReview(
    * Vietnam entirely. What changed is that a reviewer no longer *has* to
    * borrow one of those credentials to work.
    */
-  const reviewerOf = (actor: Actor): string =>
-    actor.reviewer === undefined ? actor.operator.operatorId : actor.reviewer.reviewerId;
+  const reviewerOf = (actor: Actor): string => {
+    if (actor.reviewer !== undefined) return actor.reviewer.reviewerId;
+    if (actor.operator !== undefined) return actor.operator.operatorId;
+    /**
+     * A collector session. `requireActor` scopes it to `/api/me/` and it never
+     * reaches the review lane, so this is unreachable — but `reviewer_ref` is a
+     * foreign key into `operators` and a collector id is not one, so the
+     * alternative to throwing is writing a value that names nobody into the
+     * only column recording who decided a payment.
+     */
+    throw new Error('a collector session cannot act as a reviewer');
+  };
 
   // -------------------------------------------------------------------------
   // The queue
@@ -2036,7 +2046,11 @@ export function registerReview(
       return reply.code(400).send({ error: 'invalid body', detail: parsed.error.issues.slice(0, 5) });
     }
     const actor = req.actor!;
-    if (actor.reviewer !== undefined) {
+    // `raised_by` is an operator. Ask for the operator half rather than
+    // excluding the reviewer, so a collector session is refused here too — QR-08
+    // says a dispute is raised at the upload centre on the collector's behalf,
+    // and a collector-raised dispute is a different route nobody has built.
+    if (actor.operator === undefined) {
       return reply.code(403).send({ error: 'a dispute is raised at the upload centre, on the collector\'s behalf' });
     }
     const body = parsed.data;

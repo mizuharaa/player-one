@@ -76,9 +76,19 @@ type Reply = { code: (n: number) => { send: (b: unknown) => unknown } };
  *
  * Null for a reviewer: PLT-10 scopes them to review and they hold no
  * back-office role at all.
+ *
+ * It ASKS FOR THE OPERATOR HALF rather than excluding the reviewer. The two
+ * are the same test today and stop being the same the moment a fourth kind of
+ * session exists: "not a reviewer, therefore an operator" would let that one
+ * fall through into the role lookup and read `actor.operator.operatorId` off
+ * a token that has no operator. feat/collector-money-api's report raised this
+ * against the shape fix/money-and-access lifted here, and it is fixed on the
+ * merge. Nothing changes for the two kinds that exist — requireActor never
+ * sets `req.actor` for a collector — but a guard that is right for the wrong
+ * reason breaks the day somebody adds the fourth kind.
  */
 export async function roleOf(db: Db, actor: Actor | undefined): Promise<string | null> {
-  if (actor === undefined || actor.reviewer !== undefined) return null;
+  if (actor?.operator === undefined) return null;
   const [row] = await db
     .select({ role: schema.operators.role })
     .from(schema.operators)
