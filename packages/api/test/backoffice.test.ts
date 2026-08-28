@@ -61,9 +61,12 @@ async function seed() {
   await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash) values
     (${ids.machineA}, ${ids.centreA}, 'HCM-01', 'active', ${hash}),
     (${ids.machineB}, ${ids.centreB}, 'HAN-01', 'active', ${hash})`);
+  // BO-11: every route this file exercises is an administrator's, so both
+  // operators hold that role. A clerk being refused each of them by name, and
+  // 0020's triggers refusing one below the routes, are in backoffice-role.test.ts.
   await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values
-    (${ids.operatorA}, ${ids.centreA}, 'op-a', 'centre_operator', ${hash}),
-    (${ids.operatorB}, ${ids.centreB}, 'op-b', 'centre_operator', ${hash})`);
+    (${ids.operatorA}, ${ids.centreA}, 'op-a', 'administrator', ${hash}),
+    (${ids.operatorB}, ${ids.centreB}, 'op-b', 'administrator', ${hash})`);
   await d.execute(sql`insert into collectors (id, external_ref, status) values
     (${ids.collector1}, 'c-1', 'qualified'),
     (${ids.collector2}, 'c-2', 'qualified'),

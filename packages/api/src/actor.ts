@@ -69,3 +69,49 @@ export const financeGuard =
     }
     return undefined;
   };
+
+/**
+ * The name a refusal for the wrong role carries, on the route and in the
+ * database alike (migration 0020). One name, because the operator's question
+ * is the same either way — "why not?" — and the answer is the same sentence.
+ */
+export const ADMIN_REFUSAL = 'backoffice_admin_required';
+
+/**
+ * The role that shapes the back office. What it is, what it deliberately is
+ * not, and what happens to the operators already in the database, are all in
+ * the header of `packages/store/drizzle/0020_backoffice_admin_role.sql`.
+ */
+export const ADMIN_ROLE = 'administrator';
+
+/**
+ * BO-11 / SEC-02. The administrator gate, for the shaping half of the back
+ * office: tasks and their prices, collector qualification, device inventory
+ * and bindings.
+ *
+ * Same shape as the finance gate this tree already carries twice — `payout.ts`
+ * and `risk/routes.ts` each have a `requireFinance` preHandler that reads the
+ * role from the row — and `roleOf` above is the lookup both of them repeat.
+ * `fix/money-and-access``fix/money-and-access` lifted that lookup and a `financeGuard` into this file
+ * first; the two `roleOf` implementations were byte-identical and one was kept
+ * at the merge.
+ *
+ * It exists because the daily counter job and the shaping job are different
+ * people in §4.1, and until this guard every authenticated operator at every
+ * centre could publish a task, price it, and qualify a collector to record
+ * against it.
+ *
+ * The reply names the role, because "403" on a screen with a Save button on it
+ * tells an operator nothing they can act on. `role_required` is the machine
+ * half; `constraint` is what the console turns into a sentence.
+ */
+export const adminGuard =
+  (db: Db) =>
+  async (req: FastifyRequest, reply: Reply): Promise<unknown> => {
+    if ((await roleOf(db, req.actor)) !== ADMIN_ROLE) {
+      return reply
+        .code(403)
+        .send({ error: 'refused', constraint: ADMIN_REFUSAL, role_required: ADMIN_ROLE });
+    }
+    return undefined;
+  };

@@ -225,6 +225,13 @@
       "when": 1788540000000,
       "tag": "0018_payout_account_declarer",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1788700000000,
+      "tag": "0020_backoffice_admin_role",
+      "breakpoints": true
     }
   ]
 }

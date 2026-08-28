@@ -390,6 +390,14 @@ const en = {
   'bo.refused.collector_agreements_append_only':
     'An acceptance is a record of a moment and cannot be changed or removed.',
   'bo.refused.devices_retired_unbound_check': 'Unbind the device before retiring it.',
+  /**
+   * BO-11 (0020). The one refusal that has to name the role it wants: "403" on
+   * a screen with a Save button tells an operator nothing they can act on.
+   * Sent by `adminGuard` on the route and raised by 0020's triggers in the
+   * database, with the same name and this one sentence either way.
+   */
+  'bo.refused.backoffice_admin_required':
+    'That change needs the administrator role. Your sign-in is an upload-centre one, which covers handovers, imports and the queues. Ask an administrator to make the change, or to give you the role.',
   'bo.refused.collectors_external_ref_key': 'Another collector already uses that reference.',
   'bo.refused.devices_hardware_serial_key': 'Another device already carries that serial.',
   'bo.refused.device_already_bound': 'That device is bound to somebody else. Unbind it first.',
@@ -1123,6 +1131,8 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.task_claims_id_reused': '该领取编号已属于其他任务或采集者。',
   'bo.refused.collector_agreements_append_only': '协议接受记录是当时的事实记录，不可修改或删除。',
   'bo.refused.devices_retired_unbound_check': '请先解绑设备，再将其退役。',
+  'bo.refused.backoffice_admin_required':
+    '该操作需要管理员角色。您当前是上传中心操作员，权限覆盖交接、导入和各类队列。请让管理员执行该操作，或为您授予该角色。',
   'bo.refused.collectors_external_ref_key': '该采集者编号已被占用。',
   'bo.refused.devices_hardware_serial_key': '该序列号已被其他设备占用。',
   'bo.refused.device_already_bound': '该设备已绑定给其他人，请先解绑。',
@@ -1766,6 +1776,8 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.task_claims_id_reused': 'Mã nhận đó đã thuộc về một nhiệm vụ hoặc cộng tác viên khác.',
   'bo.refused.collector_agreements_append_only': 'Một lần chấp thuận là bản ghi của một thời điểm và không thể sửa hay xóa.',
   'bo.refused.devices_retired_unbound_check': 'Bỏ gán thiết bị trước khi ngừng dùng.',
+  'bo.refused.backoffice_admin_required':
+    'Thay đổi đó cần vai trò quản trị viên. Tài khoản của bạn là nhân viên trung tâm tải lên, gồm bàn giao, nhập dữ liệu và các hàng đợi. Hãy nhờ quản trị viên thực hiện, hoặc cấp vai trò đó cho bạn.',
   'bo.refused.collectors_external_ref_key': 'Một cộng tác viên khác đã dùng mã đó.',
   'bo.refused.devices_hardware_serial_key': 'Một thiết bị khác đã mang số sê-ri đó.',
   'bo.refused.device_already_bound': 'Thiết bị đó đang gán cho người khác. Bỏ gán trước.',

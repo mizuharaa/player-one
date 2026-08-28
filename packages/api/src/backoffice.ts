@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { schema, type Db } from '@playerone/store';
 import { z } from 'zod';
 import { mutate } from './audit.ts';
-import type { Actor } from './actor.ts';
+import { ADMIN_REFUSAL, adminGuard, type Actor } from './actor.ts';
 import { maskPhone } from './payout/domain/names.ts';
 
 /**
@@ -246,6 +246,13 @@ export const REFUSALS = new Set([
   'episode_parks_already_parked',
   'episode_parks_not_parked',
   'episode_parks_settled',
+  /**
+   * BO-11 (0020). Raised by the two constraint triggers that make the
+   * administrator role a property of the database and not of the route list,
+   * and by `adminGuard` itself, which sends the same name so the console has
+   * one sentence to show either way. `refused` answers 403 for this one.
+   */
+  ADMIN_REFUSAL,
 ]);
 
 /**
@@ -293,6 +300,25 @@ export function registerBackOffice(
   requireActor: (req: FastifyRequest, reply: Reply) => Promise<unknown>,
 ): void {
   const opts = { preHandler: requireActor };
+  /**
+   * BO-11 / SEC-02. The shaping half of this file, gated on the administrator
+   * role; `opts` is the daily half and stays open to any operator.
+   *
+   * Which routes carry it is the whole decision, so it is written once here
+   * rather than argued at nine call sites:
+   *
+   *   - **`admin`**: create and edit a task (price, target duration, publish,
+   *     take down), create and edit a collector (qualification, exam result,
+   *     agreements), create and edit a device, bind, unbind, and allot. These
+   *     are §4.1's operations administrator and device administrator, which
+   *     the pilot collapses into one role — one centre, a handful of JV staff,
+   *     and both rows live in this one file.
+   *   - **`opts`**: every GET, because a clerk at the counter has to look up
+   *     the collector standing in front of them; and claim and release, which
+   *     are APP-10 — the collector's own act, taken by an operator on their
+   *     behalf until the app has a session of its own.
+   */
+  const admin = { preHandler: [requireActor, adminGuard(db)] };
   const actorOf = (req: FastifyRequest): Actor => req.actor!;
 
   /**
@@ -315,8 +341,14 @@ export function registerBackOffice(
     }
   }
 
+  /**
+   * 409 is "the rules refuse what you asked for". The administrator refusal is
+   * "you may not ask", which is 403 — and it reaches here only when a route in
+   * this file forgot `admin` and 0020's trigger caught it at COMMIT. The name
+   * and the sentence are the same either way.
+   */
   const refused = (reply: Reply, constraint: string) =>
-    reply.code(409).send({ error: 'refused', constraint });
+    reply.code(constraint === ADMIN_REFUSAL ? 403 : 409).send({ error: 'refused', constraint });
 
   /**
    * The id in the path, or `null` when it is not one.
@@ -385,7 +417,7 @@ export function registerBackOffice(
     return { tasks: rows };
   });
 
-  app.post('/api/tasks', opts, async (req, reply) => {
+  app.post('/api/tasks', admin, async (req, reply) => {
     const body = TaskBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
     const b = body.data;
@@ -433,7 +465,7 @@ export function registerBackOffice(
     );
   });
 
-  app.patch('/api/tasks/:id', opts, async (req, reply) => {
+  app.patch('/api/tasks/:id', admin, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     const body = TaskPatch.safeParse(req.body);
@@ -691,7 +723,7 @@ export function registerBackOffice(
     };
   });
 
-  app.post('/api/collectors', opts, async (req, reply) => {
+  app.post('/api/collectors', admin, async (req, reply) => {
     const body = CollectorBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
     const b = body.data;
@@ -781,7 +813,7 @@ export function registerBackOffice(
     );
   });
 
-  app.patch('/api/collectors/:id', opts, async (req, reply) => {
+  app.patch('/api/collectors/:id', admin, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     const body = CollectorPatch.safeParse(req.body);
@@ -869,7 +901,7 @@ export function registerBackOffice(
     return { devices: rows, device_types: types };
   });
 
-  app.post('/api/devices', opts, async (req, reply) => {
+  app.post('/api/devices', admin, async (req, reply) => {
     const body = DeviceBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
     const b = body.data;
@@ -915,7 +947,7 @@ export function registerBackOffice(
     );
   });
 
-  app.patch('/api/devices/:id', opts, async (req, reply) => {
+  app.patch('/api/devices/:id', admin, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     const body = DevicePatch.safeParse(req.body);
@@ -986,7 +1018,7 @@ export function registerBackOffice(
    * gone (404), somebody else's (409), or already this collector's, which is a
    * replayed form submission and a 200.
    */
-  app.post('/api/devices/:id/bind', opts, async (req, reply) => {
+  app.post('/api/devices/:id/bind', admin, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     const body = z.object({ collector_id: uuid }).safeParse(req.body);
@@ -1048,7 +1080,7 @@ export function registerBackOffice(
     return reply.send({ id, bound_collector_id: collectorId, replayed: true });
   });
 
-  app.post('/api/devices/:id/unbind', opts, async (req, reply) => {
+  app.post('/api/devices/:id/unbind', admin, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
 
@@ -1137,7 +1169,7 @@ export function registerBackOffice(
    * twenty pilot devices, or when somebody other than an engineer has to record
    * a swap.
    */
-  app.post('/api/devices/:id/assignments', opts, async (req, reply) => {
+  app.post('/api/devices/:id/assignments', admin, async (req, reply) => {
     const body = AssignmentBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
     const deviceId = (req.params as { id: string }).id;

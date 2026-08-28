@@ -370,6 +370,12 @@ pnpm -F @playerone/console dev
 
 Then <http://localhost:5173>, and sign in with `HCM-01` / `pw` and `op-1` / `pw`.
 
+`op-1`'s role is `administrator`. BO-11 (migration 0020) put the nine shaping
+routes — tasks, collectors, devices, bind, unbind, assignments — behind that
+role, and 0020 backfills every existing `centre_operator` to it, so an
+administrator is what a seeded operator would be on a real deployment. Counter
+work (the GETs, claim and release) is open to either role.
+
 The seed makes a second operator, `fin-1` / `pw`, whose role is `finance`.
 **Everything on the settle and payout screens needs that one**: a bill is what a
 named person earns, so reading one, exporting one and paying one are all

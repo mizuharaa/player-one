@@ -82,7 +82,12 @@ const id = Object.fromEntries(
 const hash = await hashCredential(SECRET);
 await db.execute(sql`insert into upload_centres (id,region,name,status) values (${id.centre},'HCM','D7','active')`);
 await db.execute(sql`insert into upload_devices (id,upload_centre_id,machine_identifier,status,credential_hash) values (${id.machine},${id.centre},'HCM-01','active',${hash})`);
-await db.execute(sql`insert into operators (id,upload_centre_id,external_ref,role,credential_hash) values (${id.operator},${id.centre},'op-1','centre_operator',${hash})`);
+// op-1 is an `administrator`, not a `centre_operator`. BO-11 (0020) put the
+// nine shaping routes — tasks, collectors, devices, bind, unbind, assignments
+// — behind that role, and 0020 backfills every existing centre_operator to it,
+// so an administrator is what a seeded operator would be on a real deployment.
+// The counter work (GETs, claim, release) is open to either.
+await db.execute(sql`insert into operators (id,upload_centre_id,external_ref,role,credential_hash) values (${id.operator},${id.centre},'op-1','administrator',${hash})`);
 // Two accounts, because the money path needs two people. The settle and payout
 // screens are finance's, and `settle_generate_by_finance` refuses finance the
 // generate: whoever issues a bill is the operator 0013 will not let pay it.
