@@ -405,6 +405,14 @@ const en = {
     'That delivery does not belong to this episode. Name one of its own deliveries.',
   'bo.refused.episode_clearing_paid_on_other_delivery':
     'Another delivery of this episode has already been reviewed and paid. Choosing a different one is a dispute, not a clear.',
+  'bo.refused.episode_parks_already_parked':
+    'This episode is already parked out of the review queue. Release it before parking it again.',
+  'bo.refused.episode_parks_not_parked':
+    'This episode is not parked, so there is nothing to release.',
+  'bo.refused.episode_parks_settled':
+    'This episode has already been reviewed and carries a settlement, so it cannot be parked. Park the settlement instead.',
+  'bo.refused.episode_park_id_reused':
+    'That park reference already names a different decision. Send a new reference.',
   'bo.refused.session_claim_missing':
     'This collector holds no claim on that task, so nothing recorded for it can be paid. Claim the task first.',
   'bo.refused.session_claim_released':
@@ -1096,6 +1104,10 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.episode_clearing_foreign_delivery': '该交付不属于这个片段。请选择该片段自己的交付。',
   'bo.refused.episode_clearing_paid_on_other_delivery':
     '该片段的另一次交付已审核并结算。改选其他交付属于争议流程，不是清除。',
+  'bo.refused.episode_parks_already_parked': '该片段已被暂存出审核队列。请先释放，再重新暂存。',
+  'bo.refused.episode_parks_not_parked': '该片段未被暂存，没有可释放的内容。',
+  'bo.refused.episode_parks_settled': '该片段已审核并已有结算记录，不能暂存。请改为暂存该笔结算。',
+  'bo.refused.episode_park_id_reused': '该暂存编号已对应另一项决定。请使用新的编号。',
   'bo.refused.session_claim_missing': '该采集者未领取此任务，为其录制的内容无法结算。请先领取任务。',
   'bo.refused.session_claim_released': '该采集者已释放对此任务的领取。需要重新领取后才能登记采集会话。',
   'bo.refused.session_task_not_published': '该任务已下架，不能再登记新的采集会话。',
@@ -1721,6 +1733,14 @@ const vi: Record<MessageKey, string> = {
     'Lần giao đó không thuộc phân đoạn này. Hãy chọn một lần giao của chính nó.',
   'bo.refused.episode_clearing_paid_on_other_delivery':
     'Một lần giao khác của phân đoạn này đã được duyệt và trả tiền. Chọn lần giao khác là khiếu nại, không phải gỡ.',
+  'bo.refused.episode_parks_already_parked':
+    'Phân đoạn này đã được đưa ra khỏi hàng chờ duyệt. Hãy thả nó ra trước khi giữ lại lần nữa.',
+  'bo.refused.episode_parks_not_parked':
+    'Phân đoạn này không bị giữ lại, nên không có gì để thả ra.',
+  'bo.refused.episode_parks_settled':
+    'Phân đoạn này đã được duyệt và đã có bản thanh toán, nên không thể giữ lại. Hãy giữ lại bản thanh toán đó.',
+  'bo.refused.episode_park_id_reused':
+    'Mã giữ đó đã thuộc về một quyết định khác. Hãy gửi một mã mới.',
   'bo.refused.session_claim_missing':
     'Cộng tác viên này chưa nhận nhiệm vụ đó, nên không thể trả tiền cho những gì đã ghi. Hãy nhận nhiệm vụ trước.',
   'bo.refused.session_claim_released':

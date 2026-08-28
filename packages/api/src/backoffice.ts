@@ -237,6 +237,14 @@ export const REFUSALS = new Set([
   'review_disputes_decided_check',
   'review_disputes_final_check',
   'review_disputes_unbilled_check',
+  /**
+   * 0018. Raised by `POST /episodes/:id/park` and `/unpark` in episodes.ts,
+   * which read the pointer under a lock and answer by name before the trigger
+   * fires; the trigger is the second lock, for raw SQL and for the race.
+   */
+  'episode_parks_already_parked',
+  'episode_parks_not_parked',
+  'episode_parks_settled',
 ]);
 
 /**
@@ -264,6 +272,8 @@ export const API_REFUSALS = new Set([
    * the ceiling lives on the payment instead. See `MAX_BILLABLE_SECONDS`.
    */
   'review_duration_implausible',
+  /** Raised by `POST /episodes/:id/park` and `/unpark` (0018), same shape. */
+  'episode_park_id_reused',
 ]);
 
 /**
