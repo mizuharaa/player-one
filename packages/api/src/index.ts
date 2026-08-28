@@ -6,6 +6,13 @@ import { registerBackOffice } from './backoffice.ts';
 
 export { API_REFUSALS, REFUSALS } from './backoffice.ts';
 export { COUNTER_REFUSALS } from './counter.ts';
+export {
+  MAX_DELIVERY_BYTES,
+  UPLOAD_API_REFUSALS,
+  type CollectorUploadOptions,
+  type FilePlan,
+} from './collector-upload.ts';
+import { registerCollectorUpload } from './collector-upload.ts';
 import { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';
@@ -22,14 +29,14 @@ import { registerReview } from './review.ts';
 import { registerSessionRoutes } from './session.ts';
 import { registerSettle } from './settle.ts';
 import { registerUpload } from './upload.ts';
-import type { ObjectStore, UploadProgress } from './upload-worker.ts';
+import type { DirectUploadStore, ObjectStore, UploadProgress } from './upload-worker.ts';
 import { authenticateMachine, authenticateOperator } from './session.ts';
-import type { Actor, CounterActor } from './actor.ts';
+import { counterActor, type Actor, type CounterActor } from './actor.ts';
 import { signToken, verifyToken } from './credentials.ts';
 
 export * from './credentials.ts';
 export * from './audit.ts';
-export type { Actor, CounterActor, ReviewerActor } from './actor.ts';
+export type { Actor, CollectorActor, CounterActor, ReviewerActor } from './actor.ts';
 export * from './resolve.ts';
 export * from './money.ts';
 export { LEASE_MS } from './review.ts';
@@ -38,11 +45,14 @@ export {
   noProgress,
   objectKey,
   planParts,
+  verifyReadBack,
   PART_SIZE,
+  PRESIGN_TTL_S,
   S3ObjectStore,
   s3StoreFromEnv,
   transportInventory,
   uploadEpisode,
+  type DirectUploadStore,
   type EpisodeUploadResult,
   type Mismatch,
   type ObjectStore,
@@ -161,6 +171,16 @@ export type ApiOptions = {
 
 /** What a reviewer session may reach. Everything else answers 403. */
 const REVIEW_SCOPE = '/api/review/';
+/**
+ * What a collector session may reach. Everything else answers 403.
+ *
+ * `/api/me/` and not `/api/collectors/:id/`, because the prefix is the rule: a
+ * collector's id comes from the token and appears in no path, no query and no
+ * body. A route that took one would be a route where "is this yours?" is a
+ * comparison against a value the caller chose, and adding a new one under this
+ * prefix cannot reintroduce that by forgetting a guard.
+ */
+const COLLECTOR_SCOPE = '/api/me/';
 /** Raw footage. In scope for a reviewer only behind `reviewerMediaEnabled`. */
 const MEDIA_SCOPE = '/media/';
 /**
@@ -174,6 +194,10 @@ const MEDIA_SCOPE = '/media/';
  * fleet, no data.
  */
 const IDENTITY_ROUTE = '/whoami';
+
+/** Whether this store can hand a signed URL to somebody who is not this process. */
+const canPresign = (s: ObjectStore): s is ObjectStore & DirectUploadStore =>
+  typeof (s as Partial<DirectUploadStore>).presignPut === 'function';
 
 export function buildApi({
   db,
@@ -271,11 +295,40 @@ export function buildApi({
       return;
     }
 
+    /**
+     * Path A's caller. Scoped by path prefix for the same reason a reviewer is:
+     * a route added next month is in scope or out of it by where it is
+     * registered, and nobody has to remember to guard it. The prefix is the
+     * matched route pattern, not `req.url`, so it is a string this service
+     * registered and not one a caller composed.
+     *
+     * The sign-in that issues this token belongs to `feat/collector-auth` and
+     * is not on this branch; nothing here mints one. What is here is the claim
+     * kind those routes were written against.
+     */
+    if (person?.kind === 'collector') {
+      const route = req.routeOptions.url ?? '';
+      if (!route.startsWith(COLLECTOR_SCOPE)) {
+        return reply.code(403).send({ error: 'collector session is scoped to /api/me' });
+      }
+      req.actor = { collector: person };
+      return;
+    }
+
     const machine = verifyToken(tokenSecret, bearer(req, 'x-machine-token', MACHINE_COOKIE));
     if (machine?.kind !== 'machine') return reply.code(401).send({ error: 'machine token required' });
     if (person?.kind !== 'operator') return reply.code(401).send({ error: 'operator token required' });
     if (machine.uploadCentreId !== person.uploadCentreId) {
       return reply.code(403).send({ error: 'operator and machine belong to different centres' });
+    }
+    /**
+     * The other half of the `/api/me/` rule. Those routes read the collector
+     * off the token and there is no collector on an operator's, so a staff
+     * session reaching one would be a route with no owner to check against.
+     * Refused by prefix here rather than by a null check inside each handler.
+     */
+    if ((req.routeOptions.url ?? '').startsWith(COLLECTOR_SCOPE)) {
+      return reply.code(403).send({ error: '/api/me is the collector’s own scope' });
     }
     req.actor = { machine, operator: person };
   };
@@ -349,6 +402,17 @@ export function buildApi({
   registerCounter(app, db, requireActor, currency);
   registerEpisodes(app, db, requireActor, toleranceMs);
   registerUpload(app, db, requireActor, { objectStore, mediaRoot, uploadProgress });
+  /**
+   * Path A needs more of the store than Path C does — it has to sign URLs for
+   * a client that is not this process — and the fs-backed stub Path C's tests
+   * use cannot sign anything. Rather than widen `objectStore` and force every
+   * implementation to fake a protocol, the capability is detected: a store
+   * that can presign gets the Path A routes a working cloud, one that cannot
+   * gets the same 503 an absent store gets, saying so.
+   */
+  registerCollectorUpload(app, db, requireActor, {
+    objectStore: objectStore !== undefined && canPresign(objectStore) ? objectStore : undefined,
+  });
   registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate, reviewerMediaEnabled });
   registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays });
   registerPayout(app, db, requireActor, {
@@ -373,11 +437,12 @@ export function buildApi({
     if (actor.reviewer !== undefined) {
       return { role: 'reviewer', reviewer_id: actor.reviewer.reviewerId };
     }
+    const staff = counterActor(actor);
     return {
       role: 'operator',
-      operator_id: actor.operator.operatorId,
-      upload_device_id: actor.machine.uploadDeviceId,
-      upload_centre_id: actor.operator.uploadCentreId,
+      operator_id: staff.operator.operatorId,
+      upload_device_id: staff.machine.uploadDeviceId,
+      upload_centre_id: staff.operator.uploadCentreId,
     };
   });
 

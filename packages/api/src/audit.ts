@@ -37,6 +37,51 @@ export type AuditEvent = {
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 /**
+ * Who a row names, as one complete shape per kind of actor.
+ *
+ * `audit_events_attributed_check` lists three complete shapes and no overlap
+ * between them rather than three "at least this much" predicates, so every
+ * column a kind does not have is written null here on purpose. A half-filled
+ * row is evidence of something that did not happen, which is the one failure
+ * that table exists to prevent.
+ */
+const attribution = (
+  actor: Actor,
+): {
+  actorRole: string;
+  operatorId: string | null;
+  collectorId: string | null;
+  uploadDeviceId: string | null;
+  uploadCentreId: string | null;
+} => {
+  if (actor.reviewer !== undefined) {
+    return {
+      actorRole: 'reviewer',
+      operatorId: actor.reviewer.reviewerId,
+      collectorId: null,
+      uploadDeviceId: null,
+      uploadCentreId: null,
+    };
+  }
+  if (actor.collector !== undefined) {
+    return {
+      actorRole: 'collector',
+      operatorId: null,
+      collectorId: actor.collector.collectorId,
+      uploadDeviceId: null,
+      uploadCentreId: null,
+    };
+  }
+  return {
+    actorRole: 'operator',
+    operatorId: actor.operator.operatorId,
+    collectorId: null,
+    uploadDeviceId: actor.machine.uploadDeviceId,
+    uploadCentreId: actor.operator.uploadCentreId,
+  };
+};
+
+/**
  * Runs `write` and records it. Returns whatever `write` returned.
  *
  * The actor is not a parameter of the event on purpose: it comes from the
@@ -82,19 +127,16 @@ export async function mutate<T>(
       action: recorded.action,
       targetTable: recorded.targetTable,
       targetId: recorded.targetId,
-      ...(actor.reviewer === undefined
-        ? {
-            actorRole: 'operator',
-            operatorId: actor.operator.operatorId,
-            uploadDeviceId: actor.machine.uploadDeviceId,
-            uploadCentreId: actor.operator.uploadCentreId,
-          }
-        : {
-            actorRole: 'reviewer',
-            operatorId: actor.reviewer.reviewerId,
-            uploadDeviceId: null,
-            uploadCentreId: null,
-          }),
+      /**
+       * A collector is recorded as a collector, in a column of its own (0019).
+       * PLT-07 and PLT-08 want every mutation attributed, and Path A is the
+       * first route a person who is not staff can mutate anything through.
+       * Reusing `operator_id` would have been one fewer column and would have
+       * made "did a member of staff touch this episode" unanswerable, because
+       * that column carries a foreign key into the table of people who sign in
+       * to VNG systems.
+       */
+      ...attribution(actor),
       before: recorded.before ?? null,
       after: recorded.after ?? null,
       reason: recorded.reason ?? null,

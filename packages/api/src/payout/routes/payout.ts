@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from '../../audit.ts';
-import type { Actor, CounterActor } from '../../actor.ts';
+import { counterActor, type Actor, type CounterActor } from '../../actor.ts';
 import { attemptById, applyEvent, insertAttempt, latestAttemptOf } from '../domain/attempts.ts';
 import type { VerifyReceiver } from '../domain/client-contract.ts';
 import { assertPayoutBootInvariants, type PayoutOptions } from '../domain/config.ts';
@@ -158,7 +158,7 @@ export function registerPayout(
     const [row] = await db
       .select({ role: schema.operators.role })
       .from(schema.operators)
-      .where(eq(schema.operators.id, actor.operator.operatorId));
+      .where(eq(schema.operators.id, counterActor(actor).operator.operatorId));
     if (row?.role !== 'finance') return reply.code(403).send({ error: 'finance role required' });
   };
 

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from './audit.ts';
-import type { Actor } from './actor.ts';
+import { counterActor, type Actor } from './actor.ts';
 import { REFUSALS, constraintOf } from './backoffice.ts';
 import {
   REVIEW_STATE,
@@ -293,7 +293,7 @@ export function registerReview(
    * borrow one of those credentials to work.
    */
   const reviewerOf = (actor: Actor): string =>
-    actor.reviewer === undefined ? actor.operator.operatorId : actor.reviewer.reviewerId;
+    actor.reviewer?.reviewerId ?? counterActor(actor).operator.operatorId;
 
   // -------------------------------------------------------------------------
   // The queue
@@ -341,7 +341,23 @@ export function registerReview(
     and ${
       cloudGate
         ? sql`${schema.episodes.verificationState} = 'verified'`
-        : sql`${schema.episodes.verificationState} <> 'failed'`
+        : /**
+           * The local gate, with the one exception ADR 0001's own reasoning
+           * forces: it deviates from QR-02 by reading the check the ingest
+           * engine ran over the copy on the upload centre's disk, and that
+           * argument only holds where such a copy exists.
+           *
+           * On Path A there is none. The engine ran on the collector's phone,
+           * the platform never saw those bytes, and nothing but the read-back
+           * in `/api/me/uploads/:id/complete` has ever compared what the cloud
+           * holds against what was measured. A pending Path A episode is an
+           * episode whose footage may not be anywhere the platform can reach,
+           * and serving it to a reviewer would mean paying for a recording on
+           * the strength of a phone's word about it.
+           */
+          sql`case when ${schema.episodes.uploadPath} = 'A'
+                   then ${schema.episodes.verificationState} = 'verified'
+                   else ${schema.episodes.verificationState} <> 'failed' end`
     }
     and not exists (
       select 1
@@ -1802,7 +1818,7 @@ export function registerReview(
       .where(
         and(
           eq(schema.episodeReviews.id, body.review_id),
-          eq(schema.handovers.uploadCentreId, actor.operator.uploadCentreId),
+          eq(schema.handovers.uploadCentreId, counterActor(actor).operator.uploadCentreId),
         ),
       );
     if (own === undefined) return reply.code(404).send({ error: 'no such review' });
@@ -1821,7 +1837,7 @@ export function registerReview(
         await tx.insert(schema.reviewDisputes).values({
           id: disputeId,
           reviewId: body.review_id,
-          raisedBy: actor.operator.operatorId,
+          raisedBy: counterActor(actor).operator.operatorId,
           reason: body.reason,
         });
         /**

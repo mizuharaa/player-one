@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { Db } from '@playerone/store';
 import { mutate } from '../../audit.ts';
-import type { Actor } from '../../actor.ts';
+import { counterActor, type Actor } from '../../actor.ts';
 import type { ReconLineRow } from './lines.ts';
 
 /**
@@ -50,7 +50,7 @@ export async function resolveLine(db: Db, actor: Actor, lineId: string, reason: 
         targetTable: 'recon_lines',
         targetId: lineId,
         before: { resolved_at: null },
-        after: { resolved_by: actor.operator.operatorId },
+        after: { resolved_by: counterActor(actor).operator.operatorId },
         reason,
       },
       async (tx) => {
@@ -68,7 +68,7 @@ export async function resolveLine(db: Db, actor: Actor, lineId: string, reason: 
         }
         const rows = (await tx.execute(sql`
           update recon_lines
-             set resolved_at = now(), resolved_by = ${actor.operator.operatorId}, resolve_reason = ${reason}
+             set resolved_at = now(), resolved_by = ${counterActor(actor).operator.operatorId}, resolve_reason = ${reason}
            where id = ${lineId} and resolved_at is null
           returning *
         `)) as unknown as ReconLineRow[];

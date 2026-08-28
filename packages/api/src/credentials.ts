@@ -62,7 +62,24 @@ export type OperatorClaims = { kind: 'operator'; operatorId: string; uploadCentr
  * foreign key and `episode_reviews.reviewer_ref` keeps holding one kind of value.
  */
 export type ReviewerClaims = { kind: 'reviewer'; reviewerId: string };
-export type Claims = MachineClaims | OperatorClaims | ReviewerClaims;
+/**
+ * A collector's phone, on Path A. A fourth kind for the same reason a reviewer
+ * is a third one: a collector has no upload centre, and every counter route
+ * reads `uploadCentreId` off the operator token.
+ *
+ * `collectorId` is a `collectors.id`, and it is the ONLY place a collector's
+ * identity comes from. No route under `/api/me/` takes a collector id in a
+ * path, a query or a body — a client that could name a collector could name
+ * somebody else's, and every ownership check in this service would then be
+ * checking a value the caller chose.
+ *
+ * The sign-in that issues this token is not in this file and not on this
+ * branch: `feat/collector-auth` owns it, along with whatever credential column
+ * `collectors` grows. What is here is the claim shape those routes are written
+ * against, so the two halves meet without either inventing the other's rules.
+ */
+export type CollectorClaims = { kind: 'collector'; collectorId: string };
+export type Claims = MachineClaims | OperatorClaims | ReviewerClaims | CollectorClaims;
 
 /**
  * The centre is baked into both tokens at issue time and is never taken from the
@@ -105,5 +122,6 @@ export function verifyToken(
   if (c.kind === 'machine' && c.uploadDeviceId && c.uploadCentreId) return c;
   if (c.kind === 'operator' && c.operatorId && c.uploadCentreId) return c;
   if (c.kind === 'reviewer' && c.reviewerId) return c;
+  if (c.kind === 'collector' && c.collectorId) return c;
   return null;
 }

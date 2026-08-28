@@ -105,10 +105,17 @@ export const episodes = pgTable(
       'episodes_verification_check',
       sql`${t.verificationState} in ('pending', 'verified', 'failed')`,
     ),
+    /**
+     * `app_declared` is Path A's (0019). The collector's app bound the session
+     * before recording (APP-16) and then pulled that session's own files off
+     * the device, so the attribution is a declaration made before the fact by
+     * the person who made the recording — not a machine's proposal from a
+     * card's contents and not an operator overruling one.
+     */
     check(
       'episodes_resolution_method_check',
       sql`${t.resolutionMethod} is null
-          or ${t.resolutionMethod} in ('automatic_single', 'automatic_time_window', 'manual')`,
+          or ${t.resolutionMethod} in ('automatic_single', 'automatic_time_window', 'manual', 'app_declared')`,
     ),
     /** A method implies an owner. Complements episodes_resolution_check, not a duplicate. */
     check(
@@ -810,6 +817,14 @@ export const collectionSessions = pgTable(
       'collection_sessions_handover_required_check',
       sql`${t.sessionOrigin} <> 'handover' or ${t.handoverId} is not null`,
     ),
+    /**
+     * The target of `collector_uploads_session_fk` (0019). `id` is already the
+     * primary key, so this restricts nothing on this table; it exists so a
+     * Path A upload can name (session, collector) as a pair and have the pair
+     * checked by Postgres. "That session is not yours" is then unrepresentable
+     * rather than only refused by a route.
+     */
+    unique('collection_sessions_owner_key').on(t.id, t.collectorId),
   ],
 );
 
@@ -997,6 +1012,104 @@ export const uploadBatches = pgTable(
       'upload_batches_cache_after_verify_check',
       sql`${t.localCacheCleanedAt} is null or (${t.cloudVerifiedAt} is not null and ${t.localCacheCleanedAt} >= ${t.cloudVerifiedAt})`,
     ),
+  ],
+);
+
+/**
+ * Path A: one delivery, by one collector, of one session (migration 0019).
+ *
+ * UPL-07 asks that an episode trace to the parties that handled it. Path C
+ * traces through `upload_batches` to a handover, and from there to a centre, a
+ * machine, an operator, a collector and a device. Path A has none of those
+ * hops — the phone is the whole chain — so this row carries the three that
+ * exist: the collector who sent it, the session it was recorded under, and the
+ * device that recorded it.
+ *
+ * It is not a second `upload_batches`. A batch is a card's worth of episodes
+ * imported by a machine, and its lifecycle carries the UPL-06 cache gate,
+ * which has no meaning here: there is no upload-centre cache on Path A and no
+ * code path anywhere clears the phone. One row is one episode's delivery.
+ *
+ * The multipart upload id and the parts already in the cloud are deliberately
+ * NOT columns here. `upload-worker.ts` explains why for Path C and the same
+ * argument is stronger on Path A: the object store is the one record that
+ * cannot disagree with the object store, and a phone that is reinstalled
+ * still resumes because the server asks the cloud rather than a table.
+ */
+export const collectorUploads = pgTable(
+  'collector_uploads',
+  {
+    /** Client-generated, so a replayed registration lands once. */
+    id: uuid('id').primaryKey(),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    collectionSessionId: uuid('collection_session_id').notNull(),
+    /** As the session directory's basename spells it. Evidence, not identity. */
+    deviceSerial: text('device_serial').notNull(),
+    /** The platform row that serial resolves to, when the fleet has one. */
+    deviceId: uuid('device_id').references(() => devices.id),
+    episodeId: uuid('episode_id')
+      .notNull()
+      .references(() => episodes.episodeId),
+    ingestId: uuid('ingest_id')
+      .notNull()
+      .references(() => episodeIngests.ingestId),
+    sourceBasename: text('source_basename').notNull(),
+    /** Declared by the phone, never measured here: the server never sees its disk. */
+    fileCount: integer('file_count').notNull(),
+    totalBytes: bigint('total_bytes', { mode: 'number' }).notNull(),
+    /**
+     * The files of the delivery that are not in `episode_files` — in practice
+     * the manifest, which ING-02 keeps out of the fingerprint. Path C
+     * recomputes this set by scanning the centre's disk (`transportInventory`);
+     * Path A has no disk to scan, so the phone declares it and it is stored.
+     */
+    extraFiles: jsonb('extra_files').notNull().default([]),
+    state: text('state').notNull().default('registered'),
+    clientVersion: text('client_version'),
+    registeredAt: timestamp('registered_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('collector_uploads_collector_idx').on(t.collectorId, t.registeredAt.desc()),
+    index('collector_uploads_session_idx').on(t.collectionSessionId),
+    index('collector_uploads_episode_idx').on(t.episodeId),
+    /** The session has to be this collector's; a key on the session alone would take anybody's. */
+    foreignKey({
+      columns: [t.collectionSessionId, t.collectorId],
+      foreignColumns: [collectionSessions.id, collectionSessions.collectorId],
+      name: 'collector_uploads_session_fk',
+    }),
+    /** The delivery has to be one of that episode's own. */
+    foreignKey({
+      columns: [t.episodeId, t.ingestId],
+      foreignColumns: [episodeIngests.episodeId, episodeIngests.ingestId],
+      name: 'collector_uploads_delivery_fk',
+    }),
+    check('collector_uploads_state_check', sql`${t.state} in ('registered', 'verified', 'failed')`),
+    check(
+      'collector_uploads_completed_check',
+      sql`(${t.state} = 'registered') = (${t.completedAt} is null)`,
+    ),
+    /**
+     * `>= 0`. Sample session 072415 is a real recorded session with no media in
+     * it, and ING-17 says nothing is discarded: an empty delivery still stores
+     * and still gets a row saying a phone offered it.
+     */
+    check(
+      'collector_uploads_counts_check',
+      sql`${t.fileCount} >= 0 and ${t.totalBytes} >= 0`,
+    ),
+    /**
+     * One verified upload per delivery, and no second one. Partial, because a
+     * delivery may be attempted more than once and each attempt is a row —
+     * what must not exist twice is the sentence "these bytes are up and
+     * checked", which is what a settlement reads.
+     */
+    uniqueIndex('collector_uploads_verified_key')
+      .on(t.episodeId, t.ingestId)
+      .where(sql`state = 'verified'`),
   ],
 );
 
@@ -1599,6 +1712,14 @@ export const auditEvents = pgTable(
     /** text, not uuid: not every target is uuid-keyed. */
     targetId: text('target_id').notNull(),
     operatorId: uuid('operator_id').references(() => operators.id),
+    /**
+     * The third kind of actor (0019). A collector is not an `operators` row and
+     * must not become one: `operator_id` names people who sign in to VNG
+     * systems, and putting collectors in it would make "did a member of staff
+     * touch this episode" unanswerable. Path A is the first route a collector
+     * can mutate anything through, so it is the first row shape that needs it.
+     */
+    collectorId: uuid('collector_id').references(() => collectors.id),
     uploadDeviceId: uuid('upload_device_id').references(() => uploadDevices.id),
     uploadCentreId: uuid('upload_centre_id').references(() => uploadCentres.id),
     /**
@@ -1622,28 +1743,47 @@ export const auditEvents = pgTable(
   (t) => [
     index('audit_events_target_idx').on(t.targetTable, t.targetId, t.occurredAt.desc()),
     index('audit_events_operator_idx').on(t.operatorId, t.occurredAt.desc()),
-    check('audit_events_actor_role_check', sql`${t.actorRole} in ('operator', 'reviewer')`),
+    index('audit_events_collector_idx').on(t.collectorId, t.occurredAt.desc()),
+    check(
+      'audit_events_actor_role_check',
+      sql`${t.actorRole} in ('operator', 'reviewer', 'collector')`,
+    ),
     /**
      * An unattributed audit row defeats the table. Logins are the one case with
-     * no actor yet; a reviewer is the one case with a person and no machine.
+     * no actor yet; a reviewer is the one case with a person and no machine; a
+     * collector (0019) is the one case with a person who is not staff.
      *
-     * Two complete shapes and no overlap between them, rather than two "at
+     * Three complete shapes and no overlap between them, rather than three "at
      * least this much" predicates. A half-filled row — a reviewer carrying an
-     * upload device, an operator with no centre — would satisfy a loose check
-     * and still be evidence of something that did not happen, which is the one
-     * failure this table exists to prevent.
+     * upload device, an operator with no centre, a collector carrying an
+     * operator row — would satisfy a loose check and still be evidence of
+     * something that did not happen, which is the one failure this table exists
+     * to prevent.
+     *
+     * `%.login_failed` belongs to `feat/rate-limiting`'s migration 0017, which
+     * rewrites this same constraint and runs before 0019. The clause is carried
+     * here so a later rewrite does not silently drop it; it matches nothing
+     * until that branch lands.
      */
     check(
       'audit_events_attributed_check',
       sql`${t.action} like '%.login'
+          or ${t.action} like '%.login_failed'
           or (${t.actorRole} = 'reviewer'
               and ${t.operatorId} is not null
+              and ${t.collectorId} is null
               and ${t.uploadDeviceId} is null
               and ${t.uploadCentreId} is null)
           or (${t.actorRole} = 'operator'
               and ${t.operatorId} is not null
+              and ${t.collectorId} is null
               and ${t.uploadDeviceId} is not null
-              and ${t.uploadCentreId} is not null)`,
+              and ${t.uploadCentreId} is not null)
+          or (${t.actorRole} = 'collector'
+              and ${t.collectorId} is not null
+              and ${t.operatorId} is null
+              and ${t.uploadDeviceId} is null
+              and ${t.uploadCentreId} is null)`,
     ),
     /** Manual resolution overrides the machine on a money path. It says why. */
     check(
