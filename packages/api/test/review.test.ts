@@ -293,7 +293,16 @@ describe.skipIf(!hasDb())('the review lane', () => {
       expect(beat.statusCode).toBe(200);
 
       // Somebody else's episode is not somebody else's to extend.
-      expect((await h.send('POST', `/api/review/heartbeat/${episodeId}`, undefined, h.headers2)).statusCode).toBe(409);
+      const stolen = await h.send('POST', `/api/review/heartbeat/${episodeId}`, undefined, h.headers2);
+      expect(stolen.statusCode).toBe(409);
+      /**
+       * And it says `reassigned`, which is now the word that means it. The
+       * console reads that word to tell a lost lease from a refusal it should
+       * print a sentence for; a 409 here saying anything else would put the
+       * heartbeat's own failure into the refusal box instead of the banner.
+       */
+      expect(stolen.json().error).toBe('reassigned');
+      expect(stolen.json().constraint).toBeUndefined();
     });
 
     it('puts a released episode back at the head of the queue', async () => {
@@ -670,6 +679,119 @@ describe.skipIf(!hasDb())('the review lane', () => {
       await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'good' });
       const routed = await h.send('POST', `/api/review/route/${episodeId}`, { queue: 'privacy' });
       expect(routed.statusCode).toBe(409);
+    });
+
+    /**
+     * 0017: the park.
+     *
+     * A verdict can be refused for a reason no reviewer can fix. Before this
+     * lane the review row stayed pending, the lease expired, the takeover
+     * handed the same episode to the next reviewer and they met the same
+     * refusal — for ever, with no exit but a `bad` verdict paying 0. `held` is
+     * a lane no claim can ask for, so the row simply stops being served.
+     */
+    it('parks a refused episode out of every claimable lane, and only with a reason', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const [episodeId] = h.episodeIds;
+      expect((await claim(h)).json().episode_id).toBe(episodeId);
+
+      // A park with no reason is refused, and nothing about the row moved.
+      const bare = await h.send('POST', `/api/review/hold/${episodeId}`, {});
+      expect(bare.statusCode, bare.body).toBe(400);
+      const before = (await h.d.execute(sql`
+        select queue, reviewer_ref from episode_reviews where episode_id = ${episodeId}
+      `)) as unknown as { queue: string; reviewer_ref: string | null }[];
+      expect(before[0]!.queue).toBe('standard');
+      expect(before[0]!.reviewer_ref).not.toBeNull();
+
+      const parked = await h.send('POST', `/api/review/hold/${episodeId}`, {
+        reason: 'this collector holds no claim on the task; the counter has to attach one',
+      });
+      expect(parked.statusCode, parked.body).toBe(200);
+      expect(parked.json().queue).toBe('held');
+
+      // Out of the queue: nothing serves it, nothing counts it, and asking for
+      // the lane by name is a 400 rather than a way in.
+      expect((await claim(h, h.headers2)).statusCode).toBe(204);
+      expect((await h.send('GET', '/api/review/next', undefined, h.headers2)).statusCode).toBe(204);
+      expect((await h.send('GET', '/api/review/shift', undefined, h.headers2)).json().queue_depth).toBe(0);
+      expect((await h.send('POST', '/api/review/claim?queue=held', undefined, h.headers2)).statusCode).toBe(400);
+
+      // The row is still pending and still names its delivery: parking is not
+      // a verdict and pays nothing.
+      const rows = (await h.d.execute(sql`
+        select review_state, queue, reviewer_ref, lease_expires_at from episode_reviews where episode_id = ${episodeId}
+      `)) as unknown as { review_state: string; queue: string; reviewer_ref: string | null; lease_expires_at: Date | null }[];
+      expect(rows[0]!.review_state).toBe('pending');
+      expect(rows[0]!.queue).toBe('held');
+      // The lease goes with it, the same way a privacy quarantine releases one.
+      expect(rows[0]!.reviewer_ref).toBeNull();
+      expect(rows[0]!.lease_expires_at).toBeNull();
+      const settled = (await h.d.execute(sql`select count(*)::int as n from settlements`)) as unknown as { n: number }[];
+      expect(settled[0]!.n).toBe(0);
+
+      // And it is audited, with the words the reviewer typed.
+      const events = (await h.d.execute(sql`
+        select action, reason, after from audit_events where action = 'review.hold' order by occurred_at desc limit 1
+      `)) as unknown as { action: string; reason: string | null; after: Record<string, unknown> }[];
+      expect(events[0]!.reason).toContain('the counter has to attach one');
+      expect(events[0]!.after['queue']).toBe('held');
+      expect(events[0]!.after['lease_released']).toBe(true);
+
+      // A retry of the same park answers 200 and writes no second audit row.
+      // The park is already recorded, and an event saying nothing changed
+      // buries the one that did.
+      const retried = await h.send('POST', `/api/review/hold/${episodeId}`, { reason: 'same again' });
+      expect(retried.statusCode, retried.body).toBe(200);
+      expect(retried.json().queue).toBe('held');
+      const count = (await h.d.execute(sql`
+        select count(*)::int as n from audit_events where action = 'review.hold'
+      `)) as unknown as { n: number }[];
+      expect(count[0]!.n).toBe(1);
+    });
+
+    it('lets an operator put a parked episode back once the counter has fixed it', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const [episodeId] = h.episodeIds;
+      expect((await claim(h)).json().episode_id).toBe(episodeId);
+      expect(
+        (await h.send('POST', `/api/review/hold/${episodeId}`, { reason: 'no task claim' })).statusCode,
+      ).toBe(200);
+      expect((await claim(h, h.headers2)).statusCode).toBe(204);
+
+      const back = await h.send('POST', `/api/review/hold/${episodeId}`, {
+        queue: 'standard',
+        reason: 'the claim is attached',
+      });
+      expect(back.statusCode, back.body).toBe(200);
+      expect(back.json().queue).toBe('standard');
+      // Same review row, not a new one: the delivery, the priority and the
+      // history all survive the park.
+      const rows = (await h.d.execute(sql`
+        select count(*)::int as n from episode_reviews where episode_id = ${episodeId}
+      `)) as unknown as { n: number }[];
+      expect(rows[0]!.n).toBe(1);
+      expect((await claim(h, h.headers2)).json().episode_id).toBe(episodeId);
+    });
+
+    it('refuses to park a review that has already been decided', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const episodeId = (await claim(h)).json().episode_id;
+      await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'good' });
+      const parked = await h.send('POST', `/api/review/hold/${episodeId}`, { reason: 'too late' });
+      expect(parked.statusCode, parked.body).toBe(409);
+      expect(parked.json().error).toBe('no pending review on this episode');
+    });
+
+    it('rejects a lane the queue does not have, and keeps `held` out of `/route`', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const [episodeId] = h.episodeIds;
+      const bad = await h.send('POST', `/api/review/hold/${episodeId}`, { queue: 'helld', reason: 'x' });
+      expect(bad.statusCode, bad.body).toBe(400);
+      // One way to park an episode, not two. `/route` is queue management on
+      // the first review and does not know this lane.
+      const other = await h.send('POST', `/api/review/route/${episodeId}`, { queue: 'held', reason: 'x' });
+      expect(other.statusCode, other.body).toBe(400);
     });
 
     it('measures each reviewer against their own verdicts, and nobody else', async () => {

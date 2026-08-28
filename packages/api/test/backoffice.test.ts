@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LightMyRequestResponse } from 'fastify';
 import { open, schema } from '@playerone/store';
-import { COUNTER_REFUSALS, PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, SETTLE_API_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
+import { COUNTER_REFUSALS, PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, REVIEW_API_REFUSALS, REVIEW_HOLDABLE_REFUSALS, SETTLE_API_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
 import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
@@ -1794,10 +1794,28 @@ describe.skipIf(!hasDb())('the back office', () => {
       'device_assignments_id_reused',
       // The counter's own (0016): a session needs a live claim.
       ...COUNTER_REFUSALS,
+      // The verdict route's own. Every one of these reaches the review screen
+      // as a 409, and before they were named the console read all of them as a
+      // lost lease and showed the wrong sentence.
+      ...REVIEW_API_REFUSALS,
     ]) {
       const key = `bo.refused.${constraint}` as keyof typeof MESSAGES.en;
       expect(MESSAGES.en[key], `no English sentence for ${constraint}`).toBeTruthy();
       expect(MESSAGES.zh[key], `no Chinese sentence for ${constraint}`).toBeTruthy();
+      expect(MESSAGES.vi[key], `no Vietnamese sentence for ${constraint}`).toBeTruthy();
+    }
+
+    /**
+     * And every refusal the review screen offers a park for. That list is the
+     * console's, and one of its names comes from the counter rather than from
+     * the verdict route, so it is walked separately instead of being folded
+     * into the loop above.
+     */
+    for (const constraint of REVIEW_HOLDABLE_REFUSALS) {
+      const key = `bo.refused.${constraint}` as keyof typeof MESSAGES.en;
+      for (const locale of ['en', 'zh', 'vi'] as const) {
+        expect(MESSAGES[locale][key], `no ${locale} sentence for ${constraint}`).toBeTruthy();
+      }
     }
   });
 

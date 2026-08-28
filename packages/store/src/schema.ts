@@ -1047,10 +1047,19 @@ export const reviewReasonCodes = pgTable(
     code: text('code').primaryKey(),
     category: text('category').notNull(),
     labelEn: text('label_en').notNull(),
-    /** LOC-04: the collector reads Vietnamese. */
-    labelVi: text('label_vi'),
-    /** LOC-02: PaXini reviewers work in Chinese during phase 1. */
-    labelZh: text('label_zh'),
+    /**
+     * LOC-04: the collector reads Vietnamese. LOC-02: PaXini reviewers work in
+     * Chinese during phase 1.
+     *
+     * NOT NULL since 0018, and it has to be at the database. §6.9 makes the
+     * taxonomy configurable and `seedCatalogues` leaves an operator's edit
+     * alone, so the row that adds a reason during the pilot is typed by hand
+     * into psql. A half-translated one renders as a checkbox with no label
+     * beside it, and QR-04 requires the collector be told why they were paid
+     * nothing.
+     */
+    labelVi: text('label_vi').notNull(),
+    labelZh: text('label_zh').notNull(),
     active: boolean('active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1298,12 +1307,18 @@ export const episodeReviews = pgTable(
       sql`${t.reviewState} in ('pending', 'pass', 'partial_pass', 'fail')`,
     ),
     /**
-     * Two lanes, and the second-review lane (QR-08). A misspelt lane is an
-     * episode nobody is offered.
+     * Two lanes, the second-review lane (QR-08) and `held` (0017). A misspelt
+     * lane is an episode nobody is offered.
+     *
+     * `held` is the park: a pending review the server refuses to take a
+     * verdict on — no task claim on the session, an implausible measured
+     * duration — moved out of every claimable lane with a typed reason, so it
+     * stops being re-served to reviewer after reviewer. It is not in `LANES`
+     * in review.ts, which is the set of lanes a claim may ask for.
      */
     check(
       'episode_reviews_queue_check',
-      sql`${t.queue} in ('standard', 'privacy', 'second_review')`,
+      sql`${t.queue} in ('standard', 'privacy', 'second_review', 'held')`,
     ),
     /**
      * QR-05, bounded at the database and not only in the request parser.

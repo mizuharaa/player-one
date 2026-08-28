@@ -70,11 +70,22 @@ export const tech = {
  * Each carries a `bg` for fills that keeps its `fg` legible — a pill that sets
  * only its background is the usual way a status colour ends up unreadable in
  * one of the three states.
+ *
+ * The ink moves with the scheme, the same way the fill already did. One ink
+ * per verdict was tried first and cannot work: measured, `#12A150` on the
+ * light fill was 3.06:1 and on the dark fill 4.58:1, and every step that lifts
+ * one lowers the other. So there are two, and `contrast.test.ts` holds every
+ * pair at 4.5:1 against its own fill, against the card and against the page.
+ *
+ * **Hue is what holds across the themes, not the hex.** `fg` and `fgDark` are
+ * the same HSL hue and saturation as the value they replace — 146°, 252°, 358°
+ * — and differ only in lightness. A green pill still means paid in a dark
+ * room; it is only light enough to read there.
  */
 export const verdict = {
-  pass: { fg: '#12A150', bg: '#E8F8EE', bgDark: '#0D2A1A' },
-  partial: { fg: '#7C5CFC', bg: '#F0EDFF', bgDark: '#1E1840' },
-  reject: { fg: '#E5484D', bg: '#FDECEC', bgDark: '#331416' },
+  pass: { fg: '#0D763B', fgDark: '#14B459', bg: '#E8F8EE', bgDark: '#0D2A1A' },
+  partial: { fg: '#613AFB', fgDark: '#9B83FD', bg: '#F0EDFF', bgDark: '#1E1840' },
+  reject: { fg: '#C41C21', fgDark: '#EB6F73', bg: '#FDECEC', bgDark: '#331416' },
 } as const;
 
 export type VerdictName = keyof typeof verdict;
@@ -106,9 +117,10 @@ export const light = {
 
 /**
  * Dark, for reviewers working nights and for the Electron client on a dim
- * counter. Only the neutrals and the two lowest brand steps move — the brand
- * ramps and the verdicts hold their hue in both themes so a green pill means
- * the same thing whatever the room is doing.
+ * counter. The brand ramps and the verdicts hold their **hue** in both themes,
+ * so a green pill means the same thing whatever the room is doing; what moves
+ * is lightness, on the neutrals, on the two lowest brand steps, on the verdict
+ * inks (`fgDark`) and on the focus ring (`ring`).
  */
 export const dark = {
   background: '#0E1013',
@@ -129,6 +141,20 @@ export const darkBrandTints = {
   tech50: '#0C1A33',
   tech100: '#123061',
 } as const;
+
+/**
+ * The keyboard focus ring, per scheme.
+ *
+ * §6.6 requires a complete review with no pointer, so the ring is a control
+ * and WCAG 1.4.11 asks 3:1 of it against what it sits on. `sun[500]` was used
+ * in both themes and measures 2.61:1 on white, 2.50:1 on the surface and
+ * 2.35:1 on the muted fill — under the floor on every shell surface, and worst
+ * on the one behind most buttons. `sun[600]` clears it on all three (3.40,
+ * 3.26, 3.06) and `sun[400]` clears it on the dark shell (8.71). The stage
+ * keeps its own override in globals.css, because near-black is a different
+ * ground again.
+ */
+export const ring = { light: sun[600], dark: sun[400] } as const;
 
 /**
  * A fixed rem scale, not fluid. Operators view at a consistent DPI on fixed
@@ -284,9 +310,13 @@ export function toCss(): string {
   --sun-100: ${darkBrandTints.sun100};
   --tech-50: ${darkBrandTints.tech50};
   --tech-100: ${darkBrandTints.tech100};
+  --pass: ${verdict.pass.fgDark};
   --pass-bg: ${verdict.pass.bgDark};
+  --partial: ${verdict.partial.fgDark};
   --partial-bg: ${verdict.partial.bgDark};
+  --reject: ${verdict.reject.fgDark};
   --reject-bg: ${verdict.reject.bgDark};
+  --ring: ${ring.dark};
 ${shadows(shadowDark)}`;
 
   return `:root {
@@ -299,6 +329,7 @@ ${ramp('tech', tech)}
   --partial-bg: ${verdict.partial.bg};
   --reject: ${verdict.reject.fg};
   --reject-bg: ${verdict.reject.bg};
+  --ring: ${ring.light};
 
 ${neutrals(light)}
 

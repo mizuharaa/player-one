@@ -160,9 +160,15 @@
    * to be visible against the light shell, the dark theatre and arbitrary
    * video. Two rings: a sun halo and a ground-coloured inner line, so it holds
    * on both.
+   *
+   * `--ring` is a step of the sun ramp chosen per scheme, not `--sun-500` in
+   * both. WCAG 1.4.11 asks 3:1 of a control boundary and sun-500 measured
+   * 2.61:1 on white, 2.50:1 on the surface and 2.35:1 on the muted fill. The
+   * stage keeps its own override below: near-black is a third ground and the
+   * lighter step reads better on it.
    */
   :focus-visible {
-    outline: 2px solid var(--sun-500);
+    outline: 2px solid var(--ring);
     outline-offset: 2px;
     border-radius: 4px;
   }

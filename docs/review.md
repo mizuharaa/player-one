@@ -123,6 +123,48 @@ judgement is a different fact; writing it over the declaration would destroy the
 only evidence of what was declared. So the flag moves the review row and leaves
 the session alone.
 
+## A refused verdict has an exit: the `held` lane
+
+A verdict can be refused for a reason the reviewer cannot fix. Three exist
+today: a session with no task claim (`session_claim_missing`, 0016), an episode
+with no task at all, and a second review whose settlement was billed while its
+dispute was open. All three answer 409 and write nothing.
+
+The failure this created was a loop, not a dead end. The review row stayed
+`pending` and stayed eligible, so the lease ran out, the takeover in `claimNext`
+handed the same episode to the next reviewer, and they met the same refusal. The
+only exit was a `bad` verdict, which pays the collector 0 for footage nobody
+could judge — a wrong payment reached by a reviewer following the screen.
+
+`held` (migration `0017`) is a fourth value of `queue` and **is not in `LANES`**.
+`LANES` is the set of lanes a claim may ask for: `claimNext`, `queueDepth` and
+`laneOf` all read it, so a held row is offered to nobody, counted in no depth,
+and `?queue=held` is a 400. The row stays `pending` and keeps its delivery, its
+priority and its history. Parking is not a verdict and writes no settlement.
+
+Why the lane and not something else. `review_state` is checked to the four
+verdict values and `episode_reviews_decided_check` demands `reviewed_at` and
+`effective_duration_s` on anything that is not `pending`, so a fifth state would
+be a decided review, which is a payment. `episodes.resolution_state` cannot carry
+it either: `episodes_resolution_shape_check` forces `collection_session_id` NULL
+alongside `quarantined`, so parking there would erase the attribution the counter
+worked out. `queue` already means "which lane this review waits in" and already
+has a lane nothing materialises into.
+
+`POST /api/review/hold/:episodeId` moves it both ways, with a mandatory reason
+each way. A reviewer may park — the refusal sentence is shown to them, so acting
+on it must not need somebody else's login — and only an upload-centre operator
+may name a claimable lane to bring it back, because that is the claim that what
+the refusal named has been fixed. Same split as the privacy flag, same reason
+(BO-15).
+
+It is a separate route from `POST /api/review/route/:id` because that one
+addresses exactly one row: the first review of the latest delivery, its upsert
+targeting `episode_reviews_delivery_key`, which is partial on `dispute_id is
+null`. A second review (QR-08) is a different row under a different key and gets
+"already reviewed" there — and a stranded second review is the reachable case.
+This route locks whichever pending row exists, the caller's own first.
+
 **`priority` is higher-first, and only a row that exists can carry one.** That is
 the real cost of a lazy queue: an episode nobody has claimed has no review row,
 so nothing to prioritise. `POST /api/review/route/:episodeId` materialises the
@@ -368,6 +410,19 @@ released. Not a toast: a verdict that vanished is a payment that vanished, and a
 notification that fades after four seconds is exactly how one goes unnoticed
 until settlement. Retrying from the modal re-sends the same `verdict_id`, so a
 retry after a write that actually landed returns the original result.
+
+**A 409 is not one thing, and the console tells them apart by the name in the
+body.** `{"error":"reassigned"}` — the lease expired, somebody else claimed it,
+the heartbeat lost it — is a lost lease, and the screen says so and fetches the
+next episode. A 409 carrying a `constraint` is a refusal about the episode the
+reviewer still holds, and the screen prints that refusal's own sentence from the
+catalogue, in their language, with the park button beside it where the refusal
+strands the row. `ApiError.isReassigned` was `status === 409` and made every
+refusal read as an expired claim: the reviewer was told something that had not
+happened, the three translated sentences never rendered, and the episode went
+straight back into the queue. `REVIEW_API_REFUSALS` in `review.ts` is the list of
+names that route raises itself, and the completeness test holds a sentence in all
+three locales for each of them.
 
 ## Serving the footage
 
