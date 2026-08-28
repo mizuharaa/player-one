@@ -33,6 +33,55 @@ import { uploadEpisode, type ObjectStore, type UploadProgress } from './upload-w
 
 type Reply = { code: (n: number) => { send: (b: unknown) => unknown } };
 
+/**
+ * The centre's memory of what it has already proven, in the only durable store
+ * this half of the leg has today.
+ *
+ * `UploadProgress` is described in upload-worker.ts as the better-sqlite3 state
+ * of the Electron client, and that is still where it belongs the day that
+ * client exists. Until then it is nowhere, and "nowhere" has a measured price:
+ * a re-run of a batch re-downloaded every byte it had already verified (0.00 MB
+ * up and 16.00 MB down on a clean 16 MB episode), and one damaged object forced
+ * a re-send and a re-read of its whole episode. Both loops in `uploadEpisode`
+ * now skip a file with a matching receipt, so the receipts have to survive
+ * between two HTTP requests, and the database is what does that here.
+ *
+ * Bound to the ingest being transported: a receipt names one delivery's bytes,
+ * and the composite foreign key refuses one that names another episode's.
+ *
+ * ponytail: three one-line statements, no transaction. Each row is independent
+ * and self-describing, a lost write costs one re-read, and a duplicate write is
+ * an upsert. Nothing downstream reads this table.
+ */
+function verificationReceipts(db: Db, ingestId: string): UploadProgress {
+  return {
+    done: async (episodeId) =>
+      new Map(
+        (
+          await db
+            .select({
+              key: schema.cloudVerifications.objectKey,
+              sha256: schema.cloudVerifications.sha256,
+            })
+            .from(schema.cloudVerifications)
+            .where(eq(schema.cloudVerifications.episodeId, episodeId))
+        ).map((r) => [r.key, r.sha256]),
+      ),
+    record: async (episodeId, key, sha256) => {
+      await db
+        .insert(schema.cloudVerifications)
+        .values({ objectKey: key, episodeId, ingestId, sha256 })
+        .onConflictDoUpdate({
+          target: schema.cloudVerifications.objectKey,
+          set: { ingestId, sha256, verifiedAt: new Date() },
+        });
+    },
+    forget: async (_episodeId, key) => {
+      await db.delete(schema.cloudVerifications).where(eq(schema.cloudVerifications.objectKey, key));
+    },
+  };
+}
+
 export type UploadOptions = {
   /** Absent until the GreenNode contract yields an endpoint; the routes answer 503 saying so. */
   objectStore?: ObjectStore;
@@ -103,10 +152,12 @@ export function registerUpload(
 
   /**
    * UPL-04/05: push every episode of the batch to the cloud, then verify each
-   * by read-back and record the verdict. Safe to re-run at any point — an
-   * object already up and matching is kept, an interrupted run resumes, and a
-   * failed episode is force-overwritten from the local cache (its metadata has
-   * already proved unreliable).
+   * by read-back and record the verdict. Safe to re-run at any point, and a
+   * re-run costs only what it has not already proved: an object already up and
+   * matching is kept, an object already read back and matched is left alone
+   * entirely, an interrupted run resumes, and the files of a failed episode
+   * that have no receipt are force-overwritten from the local cache (their
+   * metadata has already proved unreliable).
    *
    * ponytail: one synchronous request per batch, sized for the pilot's card
    * loads; a background queue with progress is the upgrade path when a batch
@@ -166,9 +217,17 @@ export function registerUpload(
             mediaRoot,
             sourceBasename: row.sourceBasename,
             sourceFiles: parsed.data.source_files,
+            /**
+             * The episode's last read-back failed, so the "already there"
+             * metadata check cannot be trusted for the files this run has to
+             * send. It reaches only those files: anything with a receipt was
+             * proven by read-back, which is the evidence force stands in for,
+             * and the failing file's receipt was dropped when it failed. One
+             * damaged object used to cost a whole episode in both directions.
+             */
             force: row.verificationState === 'failed',
           },
-          options.uploadProgress,
+          options.uploadProgress ?? verificationReceipts(db, row.ingestId),
         );
       } catch (err) {
         // A later re-run resumes: completed objects answer 'kept', the one in

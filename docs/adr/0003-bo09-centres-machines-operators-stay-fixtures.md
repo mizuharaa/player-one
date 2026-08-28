@@ -137,7 +137,19 @@ The trigger is a fact in the database, so it can be checked with two queries:
    refusals use the existing `REFUSALS` / `API_REFUSALS` pattern with `en` and
    `zh` sentences in `packages/api/src/i18n.ts`. Credential creation calls
    `hashCredential()` server-side and never returns the hash.
-2. A role check. `operators.role` today distinguishes `centre_operator`,
+2. A role check. **Half of this item is now done.** Migration
+   `0020_backoffice_admin_role.sql` added `administrator` — §4.1's operations
+   administrator and device administrator, collapsed into one for the pilot —
+   with `adminGuard` in `packages/api/src/actor.ts` on every shaping route in
+   `backoffice.ts` and two constraint triggers on `tasks` and `collectors`
+   underneath them, in exactly the pair this item describes. What is still
+   owed for BO-09 is the *super* administrator: `administrator` deliberately
+   cannot mint an operator, a machine or a centre, because those routes do not
+   exist, and it holds no finance power. The paragraph below is how the
+   position read before that migration and is kept because the reasoning in
+   "Alternatives considered" rests on it.
+
+   `operators.role` before 0020 distinguished `centre_operator`,
    `reviewer` and `finance` (the last added by
    `packages/store/drizzle/0013_finance_role.sql` and checked in
    `packages/api/src/payout/routes/payout.ts`), and nothing else: there is no

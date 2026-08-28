@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_BILLABLE_SECONDS,
   SpanError,
   ZERO,
   add,
+  beyondBillableCeiling,
   cmp,
   div,
   fromDecimal,
@@ -205,6 +207,19 @@ describe('the useful seconds of a verdict', () => {
         '132.961000',
       ),
     ).toBe('15.500000');
+  });
+});
+
+describe('the ceiling on a billable duration', () => {
+  it('takes exactly the recording time one card holds, and nothing past it', () => {
+    // Brief §8.5: a 256 GB card at Part 8's 16 GB per recorded hour.
+    expect(MAX_BILLABLE_SECONDS).toBe(57600);
+    expect(beyondBillableCeiling('57600.000000')).toBe(false);
+    expect(beyondBillableCeiling('57600.000001')).toBe(true);
+    // The measurement the finding was raised on: 24 hours.
+    expect(beyondBillableCeiling('86400.000000')).toBe(true);
+    // A rejection pays nothing, so it is never past the ceiling.
+    expect(beyondBillableCeiling(usefulSeconds('bad', [], '86400.000000'))).toBe(false);
   });
 });
 

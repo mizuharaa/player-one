@@ -33,6 +33,41 @@ export type Locale = (typeof LOCALES)[number];
 
 export const DEFAULT_LOCALE: Locale = 'en';
 
+/**
+ * The refusals the review screen offers a park for, rather than "take the next
+ * one" (0017).
+ *
+ * It lives HERE, in the catalogue module, for two reasons. It is the one
+ * module the console imports from this package — `src/index.ts` pulls in
+ * fastify, drizzle and the S3 client, none of which belong in a browser
+ * bundle — and every name in it is a name that needs a `bo.refused.*`
+ * sentence, which is what this file holds. A test in backoffice.test.ts walks
+ * it and fails on a name with no sentence in any of the three locales.
+ *
+ * What they have in common: after one of these the review row is still
+ * `pending` and still eligible, so the lease runs out, the queue hands the
+ * episode to the next reviewer and they meet the same refusal. Nothing in the
+ * lane ends that loop except parking the episode.
+ *
+ * `session_claim_missing` is the counter's own name (counter.ts) and reaches
+ * the review screen from `POST /api/review/verdict`; the rest are that route's
+ * own (`REVIEW_API_REFUSALS` in review.ts).
+ *
+ * `review_duration_implausible` is `feat/upload-restriction`'s billable-duration
+ * guard. It strands an episode exactly the same way, so it is in this set. It
+ * renders as its own sentence either way — the classification is by the name in
+ * the body, not by this list — but without the entry the reviewer is shown no
+ * way out of it. Added when the two branches were merged, on the note the
+ * console branch left here.
+ */
+export const REVIEW_HOLDABLE_REFUSALS: ReadonlySet<string> = new Set([
+  'session_claim_missing',
+  'review_no_task',
+  'review_no_longer_reviewable',
+  'review_billed_while_disputed',
+  'review_duration_implausible',
+]);
+
 const en = {
   'app.name': 'PlayerOne',
   'app.review': 'Review',
@@ -133,6 +168,23 @@ const en = {
     'The commit did not reach the server. Nothing has been paid and nothing has advanced. Try again, or release the episode and it will return to the queue.',
   'state.writeFailed.retry': 'Try again',
   'state.writeFailed.release': 'Release it',
+
+  /**
+   * The refused-verdict state (0017). A refusal the reviewer cannot fix is not
+   * a lost lease and not a failed write: the episode is judgeable footage that
+   * the server will not take a verdict on, and the only honest action is to
+   * park it and say why. The body of the box is the refusal's own
+   * `bo.refused.*` sentence; these keys are the frame around it.
+   */
+  'state.refused.title': 'The server refused this verdict',
+  'state.refused.hold': 'Send it back to the counter',
+  'state.refused.holdReason': 'What the counter has to fix',
+  'state.refused.holding': 'Sending it back',
+  'state.refused.holdFailed':
+    'The episode was not parked. It is still in the queue. Try again, or tell the counter directly.',
+  'state.refused.held.title': 'Sent back to the counter',
+  'state.refused.held.body':
+    'This episode has left the review queue and will not be handed to anyone else until the counter fixes what the refusal named. Nothing was paid.',
   'state.offline.title': 'No connection',
   'state.offline.body': 'Verdicts cannot be recorded while this machine is offline.',
   'state.loadFailed.title': 'Could not reach the queue',
@@ -272,6 +324,27 @@ const en = {
   'bo.collector.agreement.commercial_use': 'Commercial use',
   'bo.collector.agreement.manual_review': 'Manual review',
   'bo.collector.agreement.offline_settlement': 'Offline settlement',
+  /**
+   * The payout account, on the collectors tab. A collector with none is
+   * approved and then waits for ever, so "not declared" is a state the screen
+   * has to name rather than leave blank.
+   */
+  'bo.collector.payout': 'Payout account',
+  'bo.collector.payout.none': 'Not declared',
+  'bo.collector.payout.declare': 'Declare account',
+  'bo.collector.payout.redeclare': 'Replace account',
+  'bo.collector.payout.method': 'Method',
+  'bo.collector.payout.method.WALLET': 'ZaloPay wallet',
+  'bo.collector.payout.method.BANK_ACCOUNT': 'Bank account',
+  'bo.collector.payout.method.BANK_CARD': 'Bank card',
+  'bo.collector.payout.holder': 'Name on the account',
+  'bo.collector.payout.phone': 'Mobile number',
+  'bo.collector.payout.bankCode': 'Bank code',
+  'bo.collector.payout.accountNo': 'Account or card number',
+  'bo.collector.payout.note':
+    'Type what the collector shows you. The number is sent to ZaloPay to confirm the name and is not stored: only the last four digits are kept.',
+  'bo.collector.payout.declared': 'Declared. ZaloPay answered:',
+  'bo.collector.payout.open': 'Open the ZaloPay page the collector needs',
 
   'bo.device.serial': 'Serial',
   'bo.device.type': 'Type',
@@ -317,6 +390,14 @@ const en = {
   'bo.refused.collector_agreements_append_only':
     'An acceptance is a record of a moment and cannot be changed or removed.',
   'bo.refused.devices_retired_unbound_check': 'Unbind the device before retiring it.',
+  /**
+   * BO-11 (0020). The one refusal that has to name the role it wants: "403" on
+   * a screen with a Save button tells an operator nothing they can act on.
+   * Sent by `adminGuard` on the route and raised by 0020's triggers in the
+   * database, with the same name and this one sentence either way.
+   */
+  'bo.refused.backoffice_admin_required':
+    'That change needs the administrator role. Your sign-in is an upload-centre one, which covers handovers, imports and the queues. Ask an administrator to make the change, or to give you the role.',
   'bo.refused.collectors_external_ref_key': 'Another collector already uses that reference.',
   'bo.refused.devices_hardware_serial_key': 'Another device already carries that serial.',
   'bo.refused.device_already_bound': 'That device is bound to somebody else. Unbind it first.',
@@ -353,12 +434,58 @@ const en = {
     'That delivery does not belong to this episode. Name one of its own deliveries.',
   'bo.refused.episode_clearing_paid_on_other_delivery':
     'Another delivery of this episode has already been reviewed and paid. Choosing a different one is a dispute, not a clear.',
+  'bo.refused.episode_parks_already_parked':
+    'This episode is already parked out of the review queue. Release it before parking it again.',
+  'bo.refused.episode_parks_not_parked':
+    'This episode is not parked, so there is nothing to release.',
+  'bo.refused.episode_parks_settled':
+    'This episode has already been reviewed and carries a settlement, so it cannot be parked. Park the settlement instead.',
+  'bo.refused.episode_park_id_reused':
+    'That park reference already names a different decision. Send a new reference.',
   'bo.refused.session_claim_missing':
     'This collector holds no claim on that task, so nothing recorded for it can be paid. Claim the task first.',
   'bo.refused.session_claim_released':
     'This collector released their claim on that task. A new claim is needed before a session can be recorded.',
   'bo.refused.session_task_not_published':
     'That task has been taken down, so no new session can be recorded against it.',
+  'bo.refused.review_duration_implausible':
+    'This episode claims to run longer than one card can record, so it cannot be paid. Send it back to the counter to have the delivery checked.',
+
+  /**
+   * The verdict route's own refusals (`REVIEW_API_REFUSALS` in review.ts).
+   * These are the sentences the review screen shows instead of the lost-lease
+   * banner it used to show for every 409.
+   */
+  'bo.refused.review_already_decided':
+    'This episode already has a verdict. Nothing you marked was recorded. Take the next one.',
+  'bo.refused.review_no_task':
+    'This episode names no task, so there is no price to pay it at and no verdict can be recorded. Send it back to the counter with a note; it needs a session attached before anyone can review it.',
+  'bo.refused.review_no_longer_reviewable':
+    'This episode stopped being reviewable while you had it open — a new delivery landed, or its copy failed verification. Nothing was recorded. Send it back to the counter with a note.',
+  'bo.refused.review_billed_while_disputed':
+    'The settlement under challenge was billed while the challenge was open, so a second verdict cannot replace it. Nothing was recorded. Send it back to the counter with a note.',
+  'bo.refused.review_verdict_id_taken':
+    'That verdict reference already belongs to a different review. Nothing was recorded. Reload the screen and judge the episode again.',
+
+  /**
+   * Path A's refusals (UPL-01/APP-26). These reach a collector on a phone, not
+   * an operator at a counter, and Vietnamese is the language most of them read.
+   * They are in the same `bo.refused.*` namespace as everything else because
+   * the console shows the same sentence when a support operator looks at an
+   * upload that failed.
+   */
+  'bo.refused.upload_unknown_session':
+    'That session does not exist. Bind a session in the app before uploading it.',
+  'bo.refused.upload_foreign_session':
+    'That session belongs to another collector, so nothing can be uploaded against it.',
+  'bo.refused.upload_already_complete':
+    'This upload is finished and checked. Sending it again would change nothing.',
+  'bo.refused.upload_checksum_mismatch':
+    'A file in the cloud does not match the checksum your phone computed for it. The recording is held out of review until it is sent again.',
+  'bo.refused.upload_payload_too_large':
+    'That delivery is larger than one upload may declare. Send it as more than one upload, or hand the card in at an upload centre.',
+  'bo.refused.upload_superseded':
+    'A newer delivery of this recording arrived while these files were being sent, so this result was not recorded. Start the upload again.',
   'bo.refused.review_disputes_open_key': 'That verdict is already under dispute.',
   'bo.refused.review_disputes_decided_check':
     'That review has not been decided yet, so there is no outcome to challenge.',
@@ -370,6 +497,8 @@ const en = {
   'bo.refused.settlements_not_in_exception': 'That settlement is not in exception, so there is nothing to release.',
   'bo.refused.settle_export_bill_in_exception':
     'A bill in this period has a line in exception. Its total would not match the lines in the file, so the export is held until the line is released.',
+  'bo.refused.settle_generate_by_finance':
+    'A finance operator may not generate the cycle. Whoever issues a bill is refused when they pay it, so another operator has to run this.',
   'bo.refused.payout_settlement_exception':
     'A line on this bill is in exception. Release it before the bill can be paid.',
 
@@ -717,7 +846,7 @@ const en = {
   'bo.refused.payout_attempts_manual_reference_check': 'A manual payment needs the transaction reference. None was recorded.',
   'bo.refused.payout_finance_required': 'Only an operator with the finance role may pay or resolve. The server refused.',
   'bo.refused.payout_separation_of_duty':
-    'The operator who created this collector or approved this bill may not be the one who pays it.',
+    'The operator who created this collector, approved this bill, or declared the payout account may not be the one who pays it.',
   'bo.refused.payout_accounts_current_key': 'The collector already has a current payout account. Reload and try again.',
   'bo.refused.payout_accounts_append_only': 'A payout account is a record of a declaration and cannot be changed or removed.',
   'bo.refused.settlements_transition_check':
@@ -738,6 +867,12 @@ const en = {
   'bo.refused.payout_risk_hold': 'The risk engine holds this bill. Clear the hold with a reason in the flag review first.',
   'bo.refused.payout_already_paid': 'This bill is already paid.',
   'bo.refused.payout_accounts_id_reused': 'That account reference already names a different declaration.',
+  'bo.refused.payout_account_declaration_invalid':
+    'That declaration cannot be stored. A wallet needs a Vietnamese mobile number of ten digits starting with 0; a bank route needs a bank code and an account number.',
+  'bo.refused.payout_account_locked_while_paying':
+    'A payment to this collector is still open, so the account cannot be changed. Finish or resolve that payment first.',
+  'bo.refused.payout_account_not_this_centre':
+    'This collector has handed nothing in at this centre, so this counter cannot declare their account.',
   'bo.refused.payout_attempt_not_resolvable':
     'This attempt cannot be resolved by hand in its current state. Only a pending, exhausted or never-sent attempt is.',
   'bo.refused.payout_bill_period_mismatch': 'That bill belongs to a different period.',
@@ -840,6 +975,15 @@ const zh: Record<MessageKey, string> = {
     '提交未送达服务器。没有产生任何结算，也没有跳转到下一条。请重试，或释放该片段使其回到队列。',
   'state.writeFailed.retry': '重试',
   'state.writeFailed.release': '释放',
+
+  'state.refused.title': '服务端拒绝了本次审核结果',
+  'state.refused.hold': '退回上传柜台',
+  'state.refused.holdReason': '需要柜台处理的问题',
+  'state.refused.holding': '正在退回',
+  'state.refused.holdFailed': '该片段未被移出队列，仍在队列中。请重试，或直接联系上传柜台。',
+  'state.refused.held.title': '已退回上传柜台',
+  'state.refused.held.body':
+    '该片段已移出审核队列，在柜台处理拒绝原因之前不会再分配给任何人。未产生任何结算。',
   'state.offline.title': '网络已断开',
   'state.offline.body': '离线状态下无法记录审核结果。',
   'state.loadFailed.title': '无法连接队列',
@@ -960,6 +1104,21 @@ const zh: Record<MessageKey, string> = {
   'bo.collector.agreement.commercial_use': '商业使用协议',
   'bo.collector.agreement.manual_review': '人工审核协议',
   'bo.collector.agreement.offline_settlement': '线下结算协议',
+  'bo.collector.payout': '收款账户',
+  'bo.collector.payout.none': '未申报',
+  'bo.collector.payout.declare': '申报账户',
+  'bo.collector.payout.redeclare': '更换账户',
+  'bo.collector.payout.method': '收款方式',
+  'bo.collector.payout.method.WALLET': 'ZaloPay 钱包',
+  'bo.collector.payout.method.BANK_ACCOUNT': '银行账户',
+  'bo.collector.payout.method.BANK_CARD': '银行卡',
+  'bo.collector.payout.holder': '账户姓名',
+  'bo.collector.payout.phone': '手机号',
+  'bo.collector.payout.bankCode': '银行代码',
+  'bo.collector.payout.accountNo': '账号或卡号',
+  'bo.collector.payout.note': '按采集者出示的内容填写。号码会发送给 ZaloPay 以确认姓名，本系统不保存：只保留后四位。',
+  'bo.collector.payout.declared': '已申报。ZaloPay 的答复：',
+  'bo.collector.payout.open': '打开采集者需要的 ZaloPay 页面',
 
   'bo.device.serial': '序列号',
   'bo.device.type': '型号',
@@ -992,6 +1151,8 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.task_claims_id_reused': '该领取编号已属于其他任务或采集者。',
   'bo.refused.collector_agreements_append_only': '协议接受记录是当时的事实记录，不可修改或删除。',
   'bo.refused.devices_retired_unbound_check': '请先解绑设备，再将其退役。',
+  'bo.refused.backoffice_admin_required':
+    '该操作需要管理员角色。您当前是上传中心操作员，权限覆盖交接、导入和各类队列。请让管理员执行该操作，或为您授予该角色。',
   'bo.refused.collectors_external_ref_key': '该采集者编号已被占用。',
   'bo.refused.devices_hardware_serial_key': '该序列号已被其他设备占用。',
   'bo.refused.device_already_bound': '该设备已绑定给其他人，请先解绑。',
@@ -1015,9 +1176,34 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.episode_clearing_foreign_delivery': '该交付不属于这个片段。请选择该片段自己的交付。',
   'bo.refused.episode_clearing_paid_on_other_delivery':
     '该片段的另一次交付已审核并结算。改选其他交付属于争议流程，不是清除。',
+  'bo.refused.episode_parks_already_parked': '该片段已被暂存出审核队列。请先释放，再重新暂存。',
+  'bo.refused.episode_parks_not_parked': '该片段未被暂存，没有可释放的内容。',
+  'bo.refused.episode_parks_settled': '该片段已审核并已有结算记录，不能暂存。请改为暂存该笔结算。',
+  'bo.refused.episode_park_id_reused': '该暂存编号已对应另一项决定。请使用新的编号。',
   'bo.refused.session_claim_missing': '该采集者未领取此任务，为其录制的内容无法结算。请先领取任务。',
   'bo.refused.session_claim_released': '该采集者已释放对此任务的领取。需要重新领取后才能登记采集会话。',
   'bo.refused.session_task_not_published': '该任务已下架，不能再登记新的采集会话。',
+  'bo.refused.review_duration_implausible':
+    '该片段声称的时长超过一张存储卡所能录制的上限，无法结算。请退回柜台核查该次交付。',
+
+  'bo.refused.review_already_decided': '该片段已有审核结果。您所做的标记未被记录。请领取下一条。',
+  'bo.refused.review_no_task':
+    '该片段没有对应的任务，因此没有单价，也无法记录审核结果。请附上说明退回上传柜台；须先关联采集会话才能审核。',
+  'bo.refused.review_no_longer_reviewable':
+    '在您打开期间，该片段已不可审核：可能有新的交付，或云端副本校验失败。未记录任何内容。请附上说明退回上传柜台。',
+  'bo.refused.review_billed_while_disputed':
+    '被申诉的结算在申诉期间已生成账单，因此复审结果无法取代它。未记录任何内容。请附上说明退回上传柜台。',
+  'bo.refused.review_verdict_id_taken':
+    '该审核结果编号已属于另一条审核记录。未记录任何内容。请刷新页面后重新审核。',
+  'bo.refused.upload_unknown_session': '该采集会话不存在。请先在应用中绑定会话，再上传。',
+  'bo.refused.upload_foreign_session': '该采集会话属于其他采集员，无法向其上传数据。',
+  'bo.refused.upload_already_complete': '本次上传已完成并通过校验，重复发送不会有任何改变。',
+  'bo.refused.upload_checksum_mismatch':
+    '云端某个文件与手机计算出的校验和不一致。在重新上传之前，该段素材不会进入审核。',
+  'bo.refused.upload_payload_too_large':
+    '本次交付超过单次上传允许的大小。请分多次上传，或将存储卡交至上传中心。',
+  'bo.refused.upload_superseded':
+    '文件传输期间，该段素材出现了更新的交付，因此本次结果未被记录。请重新发起上传。',
   'bo.refused.review_disputes_open_key': '该审核结果已在申诉中。',
   'bo.refused.review_disputes_decided_check': '该审核尚未给出结果，无可申诉的内容。',
   'bo.refused.review_disputes_final_check': '该结果本身已是复审结果，复审为最终结论。',
@@ -1026,6 +1212,8 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.settlements_not_in_exception': '该结算记录不在异常状态，无需释放。',
   'bo.refused.settle_export_bill_in_exception':
     '本周期内有账单包含异常状态的明细。导出文件的合计与明细将无法对上，因此在释放该明细之前暂不导出。',
+  'bo.refused.settle_generate_by_finance':
+    '财务角色的操作员不能生成本周期账单。出账的人在付款时会被拒绝，因此需要由其他操作员来生成。',
   'bo.refused.payout_settlement_exception': '该账单中有一条结算记录处于异常状态。请先释放，账单才能支付。',
 
   'theme.toggle': '主题',
@@ -1309,7 +1497,7 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.payout_attempts_pending_operator_only': '在 ZaloPay 内部待处理的付款尝试只能由操作员填写原因后推进。其他任何方式都不能推进它。',
   'bo.refused.payout_attempts_manual_reference_check': '人工付款需要交易参考号。没有登记任何内容。',
   'bo.refused.payout_finance_required': '只有具备财务角色的操作员才能付款或处理。服务端已拒绝。',
-  'bo.refused.payout_separation_of_duty': '创建该采集者或批准该账单的操作员不能是付款的操作员。',
+  'bo.refused.payout_separation_of_duty': '创建该采集者、批准该账单或申报该收款账户的操作员不能是付款的操作员。',
   'bo.refused.payout_accounts_current_key': '该采集者已有当前收款账户。请刷新后重试。',
   'bo.refused.payout_accounts_append_only': '收款账户是申报记录，不能修改或删除。',
   'bo.refused.settlements_transition_check': '这张账单上的某条结算记录在此期间已被支付或移至异常。请刷新账单。',
@@ -1326,6 +1514,10 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.payout_risk_hold': '风险引擎已暂停这张账单。请先在风险标记页填写原因解除暂停。',
   'bo.refused.payout_already_paid': '这张账单已支付。',
   'bo.refused.payout_accounts_id_reused': '该账户编号已属于另一条不同的申报。',
+  'bo.refused.payout_account_declaration_invalid':
+    '该申报无法保存。钱包需要以 0 开头的十位越南手机号；银行方式需要银行代码和账号。',
+  'bo.refused.payout_account_locked_while_paying': '对该采集者的一笔付款仍未结束，因此不能更改账户。请先完成或处理该笔付款。',
+  'bo.refused.payout_account_not_this_centre': '该采集者未在本中心交付过任何素材，因此本柜台不能申报其账户。',
   'bo.refused.payout_attempt_not_resolvable': '该付款尝试在当前状态下不能人工处理。只有待处理、轮询耗尽或从未发送的尝试才可以。',
   'bo.refused.payout_bill_period_mismatch': '该账单属于另一个周期。',
 };
@@ -1430,6 +1622,16 @@ const vi: Record<MessageKey, string> = {
     'Lệnh ghi không đến được máy chủ. Chưa có gì được thanh toán và chưa chuyển sang phiên nào. Thử lại, hoặc trả phiên để nó quay về hàng đợi.',
   'state.writeFailed.retry': 'Thử lại',
   'state.writeFailed.release': 'Trả phiên',
+
+  'state.refused.title': 'Máy chủ đã từ chối kết quả duyệt này',
+  'state.refused.hold': 'Gửi lại quầy tiếp nhận',
+  'state.refused.holdReason': 'Điều quầy cần xử lý',
+  'state.refused.holding': 'Đang gửi lại',
+  'state.refused.holdFailed':
+    'Phân đoạn chưa được đưa ra khỏi hàng đợi và vẫn còn trong hàng đợi. Hãy thử lại, hoặc báo trực tiếp cho quầy.',
+  'state.refused.held.title': 'Đã gửi lại quầy tiếp nhận',
+  'state.refused.held.body':
+    'Phân đoạn này đã rời hàng đợi duyệt và sẽ không được giao cho ai khác cho đến khi quầy xử lý xong lý do từ chối. Không có khoản nào được trả.',
   'state.offline.title': 'Mất kết nối',
   'state.offline.body': 'Không thể ghi kết luận khi máy này ngoại tuyến.',
   'state.loadFailed.title': 'Không kết nối được hàng đợi',
@@ -1553,6 +1755,22 @@ const vi: Record<MessageKey, string> = {
   'bo.collector.agreement.commercial_use': 'Sử dụng thương mại',
   'bo.collector.agreement.manual_review': 'Duyệt thủ công',
   'bo.collector.agreement.offline_settlement': 'Thanh toán ngoại tuyến',
+  'bo.collector.payout': 'Tài khoản nhận tiền',
+  'bo.collector.payout.none': 'Chưa khai',
+  'bo.collector.payout.declare': 'Khai tài khoản',
+  'bo.collector.payout.redeclare': 'Đổi tài khoản',
+  'bo.collector.payout.method': 'Hình thức',
+  'bo.collector.payout.method.WALLET': 'Ví ZaloPay',
+  'bo.collector.payout.method.BANK_ACCOUNT': 'Tài khoản ngân hàng',
+  'bo.collector.payout.method.BANK_CARD': 'Thẻ ngân hàng',
+  'bo.collector.payout.holder': 'Tên trên tài khoản',
+  'bo.collector.payout.phone': 'Số di động',
+  'bo.collector.payout.bankCode': 'Mã ngân hàng',
+  'bo.collector.payout.accountNo': 'Số tài khoản hoặc số thẻ',
+  'bo.collector.payout.note':
+    'Gõ đúng những gì cộng tác viên đưa cho bạn. Số này được gửi cho ZaloPay để xác nhận tên và không được lưu: chỉ giữ bốn chữ số cuối.',
+  'bo.collector.payout.declared': 'Đã khai. ZaloPay trả lời:',
+  'bo.collector.payout.open': 'Mở trang ZaloPay mà cộng tác viên cần',
 
   'bo.device.serial': 'Số sê-ri',
   'bo.device.type': 'Loại',
@@ -1587,6 +1805,8 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.task_claims_id_reused': 'Mã nhận đó đã thuộc về một nhiệm vụ hoặc cộng tác viên khác.',
   'bo.refused.collector_agreements_append_only': 'Một lần chấp thuận là bản ghi của một thời điểm và không thể sửa hay xóa.',
   'bo.refused.devices_retired_unbound_check': 'Bỏ gán thiết bị trước khi ngừng dùng.',
+  'bo.refused.backoffice_admin_required':
+    'Thay đổi đó cần vai trò quản trị viên. Tài khoản của bạn là nhân viên trung tâm tải lên, gồm bàn giao, nhập dữ liệu và các hàng đợi. Hãy nhờ quản trị viên thực hiện, hoặc cấp vai trò đó cho bạn.',
   'bo.refused.collectors_external_ref_key': 'Một cộng tác viên khác đã dùng mã đó.',
   'bo.refused.devices_hardware_serial_key': 'Một thiết bị khác đã mang số sê-ri đó.',
   'bo.refused.device_already_bound': 'Thiết bị đó đang gán cho người khác. Bỏ gán trước.',
@@ -1616,12 +1836,43 @@ const vi: Record<MessageKey, string> = {
     'Lần giao đó không thuộc phân đoạn này. Hãy chọn một lần giao của chính nó.',
   'bo.refused.episode_clearing_paid_on_other_delivery':
     'Một lần giao khác của phân đoạn này đã được duyệt và trả tiền. Chọn lần giao khác là khiếu nại, không phải gỡ.',
+  'bo.refused.episode_parks_already_parked':
+    'Phân đoạn này đã được đưa ra khỏi hàng chờ duyệt. Hãy thả nó ra trước khi giữ lại lần nữa.',
+  'bo.refused.episode_parks_not_parked':
+    'Phân đoạn này không bị giữ lại, nên không có gì để thả ra.',
+  'bo.refused.episode_parks_settled':
+    'Phân đoạn này đã được duyệt và đã có bản thanh toán, nên không thể giữ lại. Hãy giữ lại bản thanh toán đó.',
+  'bo.refused.episode_park_id_reused':
+    'Mã giữ đó đã thuộc về một quyết định khác. Hãy gửi một mã mới.',
   'bo.refused.session_claim_missing':
     'Cộng tác viên này chưa nhận nhiệm vụ đó, nên không thể trả tiền cho những gì đã ghi. Hãy nhận nhiệm vụ trước.',
   'bo.refused.session_claim_released':
     'Cộng tác viên này đã trả lại nhiệm vụ đó. Cần nhận lại nhiệm vụ trước khi ghi một phiên mới.',
   'bo.refused.session_task_not_published':
     'Nhiệm vụ đó đã được gỡ xuống, nên không thể ghi phiên mới cho nó.',
+
+  'bo.refused.review_already_decided':
+    'Phân đoạn này đã có kết quả duyệt. Những gì bạn đánh dấu không được ghi lại. Hãy nhận phân đoạn tiếp theo.',
+  'bo.refused.review_no_task':
+    'Phân đoạn này không thuộc nhiệm vụ nào, nên không có đơn giá và không thể ghi kết quả duyệt. Hãy gửi lại quầy kèm ghi chú; cần gắn phiên thu thập trước khi duyệt được.',
+  'bo.refused.review_no_longer_reviewable':
+    'Phân đoạn này đã ngừng đủ điều kiện duyệt trong lúc bạn đang mở: có lần giao mới, hoặc bản sao trên đám mây không qua kiểm tra. Không có gì được ghi lại. Hãy gửi lại quầy kèm ghi chú.',
+  'bo.refused.review_billed_while_disputed':
+    'Khoản thanh toán đang bị khiếu nại đã lên hoá đơn trong lúc khiếu nại còn mở, nên kết quả duyệt lần hai không thể thay thế nó. Không có gì được ghi lại. Hãy gửi lại quầy kèm ghi chú.',
+  'bo.refused.review_verdict_id_taken':
+    'Mã kết quả duyệt đó đã thuộc về một bản duyệt khác. Không có gì được ghi lại. Hãy tải lại màn hình và duyệt lại phân đoạn.',
+  'bo.refused.upload_unknown_session':
+    'Phiên thu thập đó không tồn tại. Hãy gán phiên trong ứng dụng trước khi tải lên.',
+  'bo.refused.upload_foreign_session':
+    'Phiên thu thập đó thuộc về người thu thập khác, nên không thể tải dữ liệu lên phiên đó.',
+  'bo.refused.upload_already_complete':
+    'Lần tải lên này đã hoàn tất và đã được kiểm tra. Gửi lại cũng không thay đổi gì.',
+  'bo.refused.upload_checksum_mismatch':
+    'Một tệp trên đám mây không khớp với giá trị kiểm tra mà điện thoại đã tính. Đoạn ghi hình này bị giữ lại, không vào duyệt, cho đến khi được gửi lại.',
+  'bo.refused.upload_payload_too_large':
+    'Lần giao đó lớn hơn mức một lần tải lên được phép khai báo. Hãy gửi thành nhiều lần tải lên, hoặc nộp thẻ nhớ tại trung tâm tải lên.',
+  'bo.refused.upload_superseded':
+    'Một lần giao mới hơn của đoạn ghi hình này đã đến trong khi các tệp đang được gửi, nên kết quả lần này không được ghi nhận. Hãy tải lên lại.',
   'bo.refused.unknown': 'Máy chủ đã từ chối thay đổi đó.',
 
   'theme.toggle': 'Giao diện',
@@ -1955,12 +2206,14 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.payout_attempts_manual_reference_check': 'Khoản chi thủ công cần mã tham chiếu giao dịch. Chưa ghi nhận gì.',
   'bo.refused.payout_finance_required': 'Chỉ nhân viên có vai trò tài chính mới được chi trả hoặc xử lý. Máy chủ đã từ chối.',
   'bo.refused.payout_separation_of_duty':
-    'Nhân viên đã tạo cộng tác viên này hoặc đã duyệt hóa đơn này không được là người chi trả nó.',
+    'Nhân viên đã tạo cộng tác viên này, đã duyệt hóa đơn này, hoặc đã khai tài khoản nhận tiền không được là người chi trả nó.',
   'bo.refused.payout_accounts_current_key': 'Cộng tác viên đã có tài khoản nhận tiền hiện tại. Tải lại và thử lại.',
   'bo.refused.payout_accounts_append_only': 'Tài khoản nhận tiền là bản ghi của một lời khai và không thể sửa hay xóa.',
   'bo.refused.settlements_transition_check':
     'Một khoản trên hóa đơn này đã được trả hoặc đã chuyển sang ngoại lệ trong lúc đó. Tải lại hóa đơn.',
   'bo.refused.settlements_not_in_exception': 'Khoản này không ở trạng thái ngoại lệ, nên không có gì để giải phóng.',
+  'bo.refused.review_duration_implausible':
+    'Phân đoạn này khai thời lượng dài hơn mức một thẻ nhớ có thể ghi, nên không thể trả tiền. Hãy chuyển lại quầy để kiểm tra lần giao đó.',
   'bo.refused.review_disputes_open_key': 'Kết quả duyệt này đã đang được khiếu nại.',
   'bo.refused.review_disputes_decided_check':
     'Lần duyệt này chưa có kết quả, nên chưa có gì để khiếu nại.',
@@ -1970,6 +2223,8 @@ const vi: Record<MessageKey, string> = {
     'Kết quả này đã lên hóa đơn hoặc đã được chi trả, và hóa đơn không bao giờ được sửa.',
   'bo.refused.settle_export_bill_in_exception':
     'Một hóa đơn trong kỳ này có khoản đang ở ngoại lệ. Tổng của nó sẽ không khớp với các dòng trong tệp, nên bản xuất được giữ lại cho đến khi khoản đó được giải phóng.',
+  'bo.refused.settle_generate_by_finance':
+    'Nhân viên tài chính không được tạo hóa đơn cho kỳ này. Người phát hành hóa đơn sẽ bị từ chối khi chi trả, nên phải để nhân viên khác chạy kỳ này.',
   'bo.refused.payout_settlement_exception':
     'Một khoản trên hóa đơn này đang ở ngoại lệ. Giải phóng nó trước khi hóa đơn có thể được chi trả.',
   'bo.refused.payout_mode_manual': 'Máy chủ đang ở chế độ chi trả thủ công. Tự chuyển tiền và ghi mã tham chiếu tại đây.',
@@ -1986,6 +2241,12 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.payout_risk_hold': 'Bộ máy rủi ro đang giữ hóa đơn này. Gỡ lệnh giữ với lý do ở màn hình cờ rủi ro trước.',
   'bo.refused.payout_already_paid': 'Hóa đơn này đã được trả.',
   'bo.refused.payout_accounts_id_reused': 'Mã tài khoản đó đã đặt tên cho một lời khai khác.',
+  'bo.refused.payout_account_declaration_invalid':
+    'Lời khai đó không lưu được. Ví cần số di động Việt Nam mười chữ số bắt đầu bằng 0; đường ngân hàng cần mã ngân hàng và số tài khoản.',
+  'bo.refused.payout_account_locked_while_paying':
+    'Một khoản chi cho cộng tác viên này vẫn đang mở, nên không đổi được tài khoản. Hãy hoàn tất hoặc xử lý khoản chi đó trước.',
+  'bo.refused.payout_account_not_this_centre':
+    'Cộng tác viên này chưa nộp gì tại trung tâm này, nên quầy này không khai được tài khoản của họ.',
   'bo.refused.payout_attempt_not_resolvable':
     'Lần chi này không thể xử lý bằng tay ở trạng thái hiện tại. Chỉ lần chi đang treo, đã cạn hỏi lại hoặc chưa từng gửi mới được.',
   'bo.refused.payout_bill_period_mismatch': 'Hóa đơn đó thuộc một kỳ khác.',

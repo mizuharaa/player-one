@@ -31,14 +31,18 @@ const queryClient = new QueryClient({
       staleTime: 15_000,
       retry: (failureCount, error) => {
         /**
-         * An expired session or a lost lease is a state, not a transient
-         * failure — retrying either just delays the screen that explains what
-         * happened. Everything else gets two attempts, because an upload centre
-         * LAN drops packets.
+         * An expired session, a lost lease and a refusal are states, not
+         * transient failures — retrying any of them just delays the screen that
+         * explains what happened. Everything else gets two attempts, because an
+         * upload centre LAN drops packets.
+         *
+         * `status === 409` and not `isReassigned`: that getter now means the one
+         * thing it says, and a 409 naming a refusal is just as settled as a
+         * reassignment. Retrying it would send the same refused request twice.
          */
         if (
           error instanceof ApiError &&
-          (error.isUnauthenticated || error.isReassigned || error.isWithheld)
+          (error.isUnauthenticated || error.status === 409 || error.isWithheld)
         ) {
           return false;
         }

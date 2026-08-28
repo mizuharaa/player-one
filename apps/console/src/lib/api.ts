@@ -81,12 +81,21 @@ export interface Claim extends Episode {
   session_average_seconds: number | null;
 }
 
+/**
+ * All three labels are non-null since migration 0018.
+ *
+ * `label_vi` used to be `string | null` and `label_zh` used to be `string`,
+ * which was the wrong way round both times: the columns were equally nullable
+ * and the reviewer-facing one was the one the compiler was told to trust. The
+ * database now refuses a reason code that is missing either, so this type says
+ * what the server can actually send.
+ */
 export interface ReasonCode {
   code: string;
   category: string;
   label_en: string;
   label_zh: string;
-  label_vi: string | null;
+  label_vi: string;
 }
 
 export interface RecentReview {
@@ -126,16 +135,25 @@ export interface VerdictRequest {
  * A failed request, carrying the status so callers can act on the ones that
  * mean something specific.
  *
- * 409 on a verdict is the interesting case: it means the lease was lost, either
- * because it expired or because an operator reassigned the episode. That is not
- * an error to retry — the reviewer's marks are now about somebody else's
- * episode — so the screen has to say so and fetch a new one.
+ * 409 is the interesting case, and it is NOT one thing. It is either "somebody
+ * else holds this episode now", which the server says by answering
+ * `{"error":"reassigned"}`, or a refusal that names itself in `constraint` —
+ * the session has no task claim, the disputed settlement was billed, the
+ * measured duration is implausible. The two need opposite answers on screen:
+ * the first is a lost lease and the reviewer takes the next episode, the second
+ * is a sentence about THIS episode and an action on it.
  */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
     readonly detail?: unknown,
+    /**
+     * The refusal this response named, when it named one. Separate from
+     * `detail`, which a `reassigned` 409 fills with an English sentence that
+     * is not a refusal name and must not be looked up as one.
+     */
+    readonly constraint?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -146,9 +164,18 @@ export class ApiError extends Error {
     return this.status === 401 || this.status === 403;
   }
 
-  /** Somebody else holds this episode now. */
+  /**
+   * Somebody else holds this episode now.
+   *
+   * Read off the body, not off the status code. It used to be `status === 409`
+   * alone, and that made every named refusal on the verdict path look like an
+   * expired lease: a reviewer who tripped `session_claim_missing` was told the
+   * claim had gone and to take the next episode, the translated sentence for
+   * what actually happened never rendered, and the episode came back to the
+   * next reviewer to be refused again.
+   */
   get isReassigned() {
-    return this.status === 409;
+    return this.status === 409 && this.message === 'reassigned';
   }
 
   /**
@@ -178,6 +205,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
   if (!res.ok) {
     let message = res.statusText;
     let detail: unknown;
+    let constraint: string | undefined;
     try {
       const body = (await res.json()) as { error?: string; detail?: unknown; constraint?: string };
       if (body.error) message = body.error;
@@ -187,10 +215,11 @@ async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
        * instead of echoing an English string the server chose.
        */
       detail = body.detail ?? body.constraint;
+      constraint = body.constraint;
     } catch {
       /* A non-JSON error body is still an error; the status carries it. */
     }
-    throw new ApiError(res.status, message, detail);
+    throw new ApiError(res.status, message, detail, constraint);
   }
 
   return (await res.json()) as T;
@@ -218,6 +247,13 @@ export interface BoAgreement {
   accepted_at: string;
 }
 
+/** The masked view of a collector's current payout account. `null` is the state that matters. */
+export interface BoPayoutAccount {
+  method: 'WALLET' | 'BANK_ACCOUNT' | 'BANK_CARD';
+  verify_status: string;
+  phone_masked: string;
+}
+
 export interface BoCollector {
   id: string;
   external_ref: string;
@@ -225,6 +261,30 @@ export interface BoCollector {
   exam_result: 'pass' | 'fail' | null;
   exam_decided_at: string | null;
   agreements: BoAgreement[];
+  /** `null` means nobody has declared one, which is why this collector cannot be paid. */
+  payout_account: BoPayoutAccount | null;
+}
+
+/** What the counter declares on a collector's behalf. The full number is sent and not stored. */
+export interface BoPayoutDeclaration {
+  id: string;
+  method: BoPayoutAccount['method'];
+  declared_name: string;
+  phone?: string;
+  bank_code?: string;
+  account_no?: string;
+}
+
+export interface BoPayoutDeclared {
+  id: string;
+  replayed: boolean;
+  verify_status: string;
+  declared_name: string;
+  verified_name: string | null;
+  account_no_last4: string | null;
+  phone_masked: string;
+  onboarding_url: string | null;
+  reform_url: string | null;
 }
 
 export interface BoDevice {
@@ -287,6 +347,17 @@ export const backOffice = {
       agreements?: BoAgreement[];
     },
   ) => patch(`/api/collectors/${id}`, body),
+  /**
+   * The counter's payout declaration. On the payout lane by URL, but it is a
+   * counter route — any operator session, scoped to their own centre — and the
+   * back office is the only screen that calls it, so its client lives here
+   * beside the rest of that screen rather than in `payout`, which is finance's.
+   */
+  declarePayoutAccount: (collectorId: string, body: BoPayoutDeclaration) =>
+    call<BoPayoutDeclared>(`/api/payout/collectors/${collectorId}/accounts`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   devices: () =>
     call<{ devices: BoDevice[]; device_types: { id: string; code: string }[] }>('/api/devices'),
@@ -326,6 +397,20 @@ export const api = {
   heartbeat: (id: string) => call<unknown>(`/api/review/heartbeat/${id}`, { method: 'POST' }),
 
   release: (id: string) => call<unknown>(`/api/review/release/${id}`, { method: 'POST' }),
+
+  /**
+   * Parks an episode the server refused a verdict on (0017).
+   *
+   * `held` is not a lane a claim may ask for, so the row stops being served the
+   * moment this returns. The reason is mandatory at the server: an episode that
+   * leaves every claimable lane and comes back only when a person puts it back
+   * has to carry, in words, what the counter is being asked to fix.
+   */
+  hold: (episodeId: string, reason: string) =>
+    call<{ episode_id: string; review_id: string; queue: string }>(
+      `/api/review/hold/${episodeId}`,
+      { method: 'POST', body: JSON.stringify({ queue: 'held', reason }) },
+    ),
 
   verdict: (body: VerdictRequest) =>
     call<VerdictResult>('/api/review/verdict', {

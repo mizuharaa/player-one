@@ -49,6 +49,17 @@ const ClearBody = z.object({
   ingest_id: z.string().uuid(),
   reason: z.string().trim().min(1),
 });
+/**
+ * Park and unpark carry the same two fields as a clear, minus the delivery:
+ * parking is about the episode, not about which bytes are real. `id` is the
+ * client's, for the same reason it is on the clear — the console queues its
+ * mutations and replays them, and the same decision arriving twice has to land
+ * once. `episode_parks.id` is the primary key, which is what makes that true.
+ */
+const ParkBody = z.object({
+  id: z.string().uuid(),
+  reason: z.string().trim().min(1),
+});
 
 export function registerEpisodes(
   app: FastifyInstance,
@@ -319,13 +330,27 @@ export function registerEpisodes(
         confirmedAt: schema.episodes.resolutionConfirmedAt,
         collectionSessionId: schema.episodes.collectionSessionId,
         sessionStartedAt: schema.episodes.sessionStartedAt,
+        parkedParkId: schema.episodes.parkedParkId,
       })
       .from(schema.episodes)
       .where(eq(schema.episodes.uploadBatchId, batchId));
 
-    const quarantined = episodes.filter((e) => e.resolutionState === 'quarantined');
+    /**
+     * A parked episode blocks nothing (0018). Parking IS the operator's answer
+     * — they looked at it and said it cannot be judged as delivered — so
+     * leaving it in `blocking` would hold the batch open on the work that was
+     * just done. It is still counted, because a card whose episodes were all
+     * parked is not a clean card.
+     */
+    const parked = episodes.filter((e) => e.parkedParkId !== null);
+    const quarantined = episodes.filter(
+      (e) => e.resolutionState === 'quarantined' && e.parkedParkId === null,
+    );
     const unconfirmed = episodes.filter(
-      (e) => e.resolutionMethod === 'automatic_time_window' && e.confirmedAt === null,
+      (e) =>
+        e.resolutionMethod === 'automatic_time_window' &&
+        e.confirmedAt === null &&
+        e.parkedParkId === null,
     );
 
     return reply.send({
@@ -335,6 +360,7 @@ export function registerEpisodes(
         sessions: ctx.sessions.length,
         quarantined: quarantined.length,
         awaiting_confirmation: unconfirmed.length,
+        parked: parked.length,
         // The one an operator should look at even when nothing is wrong.
         episodes_per_session:
           ctx.sessions.length === 0 ? null : +(episodes.length / ctx.sessions.length).toFixed(2),
@@ -499,6 +525,26 @@ export function registerEpisodes(
   });
 
   /**
+   * SEC-02: an operator acts on what arrived at their own centre. Same 404 as
+   * an id that does not exist, so another centre's episodes cannot be
+   * enumerated from here either.
+   */
+  const atThisCentre = async (episodeId: string, actor: CounterActor): Promise<boolean> => {
+    const [episode] = await db
+      .select({ episodeId: schema.episodes.episodeId })
+      .from(schema.episodes)
+      .innerJoin(schema.uploadBatches, eq(schema.uploadBatches.id, schema.episodes.uploadBatchId))
+      .innerJoin(schema.handovers, eq(schema.handovers.id, schema.uploadBatches.handoverId))
+      .where(
+        and(
+          eq(schema.episodes.episodeId, episodeId),
+          eq(schema.handovers.uploadCentreId, actor.operator.uploadCentreId),
+        ),
+      );
+    return episode !== undefined;
+  };
+
+  /**
    * Clearing ONE episode out of a CHECKSUM-MISMATCH quarantine.
    *
    * A redelivery whose bytes differ writes a second ingest carrying
@@ -524,23 +570,9 @@ export function registerEpisodes(
     const episodeId = (req.params as { id: string }).id;
     const named = body.data.ingest_id;
 
-    /**
-     * SEC-02: an operator clears what arrived at their own centre. Same 404
-     * as an id that does not exist, so another centre's episodes cannot be
-     * enumerated from here either.
-     */
-    const [episode] = await db
-      .select({ episodeId: schema.episodes.episodeId })
-      .from(schema.episodes)
-      .innerJoin(schema.uploadBatches, eq(schema.uploadBatches.id, schema.episodes.uploadBatchId))
-      .innerJoin(schema.handovers, eq(schema.handovers.id, schema.uploadBatches.handoverId))
-      .where(
-        and(
-          eq(schema.episodes.episodeId, episodeId),
-          eq(schema.handovers.uploadCentreId, actor.operator.uploadCentreId),
-        ),
-      );
-    if (episode === undefined) return reply.code(404).send({ error: 'no such episode' });
+    if (!(await atThisCentre(episodeId, actor))) {
+      return reply.code(404).send({ error: 'no such episode' });
+    }
 
     const event = {
       action: 'episode.clear',
@@ -680,6 +712,457 @@ export function registerEpisodes(
       clearing_id: (written ?? replayed)!.id,
       latest_ingest_id: named,
       replayed: written === undefined,
+    });
+  });
+
+  /**
+   * QR-04 and APP-27, the read side: why this episode's footage was refused,
+   * in words the collector can read.
+   *
+   * Both are P0 and both were unreachable. A reviewer already picks reason
+   * codes, `review_reason_codes` already carries `label_vi` and `label_zh`, and
+   * until now the only thing that could read either was the operator console.
+   * A collector who is not paid for a recording had no way to be told why.
+   *
+   * **Scoped so a collector may be admitted here later.** Nothing in the body
+   * is anybody else's: no reviewer, no lease, no queue, no centre, no
+   * settlement, no other episode. `collector_id` is in it precisely so the
+   * collector guard is a comparison and not a rewrite — when the collector
+   * token exists, the guard is one line after the 404:
+   *
+   *     if (actor.collector !== undefined && actor.collector.id !== row.collector_id)
+   *       return reply.code(404).send({ error: 'no such episode' });
+   *
+   * A 404 rather than a 403, so another collector's episode ids cannot be
+   * enumerated from here. Building that token is a different agent's work and
+   * is deliberately not started here.
+   *
+   * **No centre scope, unlike every other route in this file.** SEC-02 scopes a
+   * counter operator to what arrived at their own machine, and that is right
+   * for importing, resolving and clearing — those act on a card somebody is
+   * holding. This one answers a question a collector asks, and a collector can
+   * walk into any centre; scoping it would make the answer depend on where the
+   * card happened to be read. `GET /api/payout/collectors/:id/income` already
+   * takes the same position for the same reason, on money rather than words.
+   *
+   * ponytail: `review_state` is returned as the database spells it — `pending`,
+   * `pass`, `partial_pass`, `fail`, or null when nothing has been claimed yet.
+   * A second collector-facing vocabulary mapped on top would be one more thing
+   * to keep in step with the schema, and the console already reads these four.
+   *
+   * The labels are returned as stored, all three. `label_vi` and `label_zh` are
+   * nullable columns (0001), so a reason added with English only answers null
+   * here — making them NOT NULL is `fix/console-defects`'s change and is not
+   * duplicated in this route.
+   */
+  app.get('/api/episodes/:id/outcome', opts, async (req, reply) => {
+    const episodeId = (req.params as { id: string }).id;
+
+    /**
+     * The verdict on the delivery that currently counts, and the last one
+     * anybody decided.
+     *
+     * `latest_ingest_id` because a redelivery is judged on its own bytes and an
+     * older delivery's verdict is not an answer about the footage that stands.
+     * `reviewed_at desc nulls last` because QR-08 puts a second review on the
+     * same delivery: once the dispute is decided that verdict is the newest and
+     * wins, and while it is still pending the original stays visible — a
+     * collector under second review must not lose the reason they challenged.
+     */
+    const [row] = (await db.execute(sql`
+      select e.episode_id,
+             cs.collector_id,
+             e.latest_ingest_id as ingest_id,
+             r.id as review_id,
+             r.review_state,
+             r.reviewed_at,
+             r.reviewer_note
+        from episodes e
+        left join collection_sessions cs on cs.id = e.collection_session_id
+        left join lateral (
+          select id, review_state, reviewed_at, reviewer_note
+            from episode_reviews
+           where episode_id = e.episode_id
+             and ingest_id = e.latest_ingest_id
+           order by reviewed_at desc nulls last
+           limit 1
+        ) r on true
+       where e.episode_id = ${episodeId}
+    `)) as unknown as {
+      episode_id: string;
+      collector_id: string | null;
+      ingest_id: string | null;
+      review_id: string | null;
+      review_state: string | null;
+      reviewed_at: Date | null;
+      reviewer_note: string | null;
+    }[];
+    if (row === undefined) return reply.code(404).send({ error: 'no such episode' });
+
+    const reasons =
+      row.review_id === null
+        ? []
+        : await db
+            .select({
+              code: schema.reviewReasonCodes.code,
+              category: schema.reviewReasonCodes.category,
+              label_en: schema.reviewReasonCodes.labelEn,
+              label_vi: schema.reviewReasonCodes.labelVi,
+              label_zh: schema.reviewReasonCodes.labelZh,
+            })
+            .from(schema.episodeReviewReasons)
+            .innerJoin(
+              schema.reviewReasonCodes,
+              eq(schema.reviewReasonCodes.code, schema.episodeReviewReasons.code),
+            )
+            .where(eq(schema.episodeReviewReasons.reviewId, row.review_id))
+            .orderBy(schema.reviewReasonCodes.category, schema.reviewReasonCodes.code);
+
+    return reply.send({
+      episode_id: row.episode_id,
+      collector_id: row.collector_id,
+      ingest_id: row.ingest_id,
+      review_state: row.review_state,
+      reviewed_at: row.reviewed_at === null ? null : new Date(row.reviewed_at).toISOString(),
+      /** QR-04's free text, written by the reviewer for the collector to read. */
+      reviewer_note: row.reviewer_note,
+      reasons,
+    });
+  });
+
+  /**
+   * Parking ONE episode out of the review queue, and taking it back out again.
+   *
+   * The dead end these answer: a review the queue can serve but no reviewer can
+   * finish. A verdict refused `review_duration_implausible` leaves the row
+   * pending, the lease runs out, and the next reviewer is refused the same way
+   * for ever. An episode quarantined by the ingest engine
+   * (`DUR-EXCEEDS-WINDOW`, `CALIB-MISSING`) never reaches the queue at all and
+   * had no route out but a redelivery. A session with no claim is refused
+   * `session_claim_missing` on every decision. Before this the only exit was a
+   * bad verdict, which pays a collector nothing for footage nobody judged.
+   *
+   * A park is a row and a pointer, exactly as a clearing is (0018 says why):
+   * `episode_parks` records who, when, from which state and why, and
+   * `episodes.parked_park_id` is the single value the review queue reads. A
+   * park made in error is lifted by a second row, never by an edit, so both
+   * halves of the mistake stay on the record.
+   *
+   * What parking does NOT do: touch the review row, the delivery, the session
+   * or any money. A pending review stays exactly as it was and comes back with
+   * its priority and its lane when the episode is released; the queue simply
+   * stops offering it. Nothing here deletes media (Rule 6).
+   *
+   * A parked episode cannot be paid and a paid episode cannot be parked — both
+   * enforced in the schema by 0018, not here. An episode that already carries a
+   * settlement is refused `episode_parks_settled`, and the exit for that one is
+   * the settlement exception (0016), which parks the money instead.
+   *
+   * The counter only, like everything in this file: the route guard refuses a
+   * reviewer session on every path here, so a reviewer shown "send this back to
+   * the counter" asks an operator, who is the one who can do it.
+   */
+  app.post('/episodes/:id/park', opts, async (req, reply) => {
+    const body = ParkBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
+    const actor = actorOf(req);
+    const episodeId = (req.params as { id: string }).id;
+    if (!(await atThisCentre(episodeId, actor))) {
+      return reply.code(404).send({ error: 'no such episode' });
+    }
+
+    const event = {
+      action: 'episode.park',
+      targetTable: 'episodes',
+      targetId: episodeId,
+      before: {} as Record<string, unknown>,
+      after: {} as Record<string, unknown>,
+      reason: body.data.reason,
+    };
+    let refusal: string | null = null;
+    /** The park this id already names, when the request is a replay. */
+    let replayed: { id: string } | undefined;
+    const written = await mutate(db, actor, event, async (tx) => {
+      /**
+       * Lock the episode, then read it under the lock. The verdict transaction
+       * takes the same lock before it reads eligibility, so a park racing a
+       * verdict is decided rather than interleaved: either the verdict sees the
+       * park and writes nothing, or the park waits and is refused by the
+       * settlement the verdict wrote.
+       */
+      const [row] = (await tx.execute(sql`
+        select e.resolution_state as state, e.parked_park_id as parked,
+               exists (select 1
+                         from settlements s
+                         join episode_reviews r on r.id = s.episode_review_id
+                        where r.episode_id = e.episode_id) as settled
+          from episodes e
+         where e.episode_id = ${episodeId}
+           for update of e
+      `)) as unknown as { state: string; parked: string | null; settled: boolean }[];
+      // Episodes are never deleted, so `atThisCentre` above already proved this.
+      if (row === undefined) return undefined;
+      /**
+       * The replay check before every gate, for the same reason the clear
+       * route has it there: the gates read state the first request changed,
+       * so the identical retry of a park that succeeded would be refused as
+       * already parked. Parks of one episode serialise on the lock above, so
+       * this read is current.
+       */
+      const [prior] = await tx
+        .select()
+        .from(schema.episodeParks)
+        .where(eq(schema.episodeParks.id, body.data.id));
+      if (prior !== undefined) {
+        const same =
+          prior.episodeId === episodeId &&
+          prior.releasesParkId === null &&
+          prior.reason === body.data.reason;
+        if (same) replayed = prior;
+        else refusal = 'episode_park_id_reused';
+        return undefined;
+      }
+      if (row.parked !== null) {
+        refusal = 'episode_parks_already_parked';
+        return undefined;
+      }
+      if (row.settled) {
+        refusal = 'episode_parks_settled';
+        return undefined;
+      }
+
+      const [park] = await tx
+        .insert(schema.episodeParks)
+        .values({
+          id: body.data.id,
+          episodeId,
+          fromState: row.state,
+          parkedBy: actor.operator.operatorId,
+          reason: body.data.reason,
+        })
+        // Only a concurrent park of ANOTHER episode under this id gets here;
+        // same-episode ones queue on the lock and are caught as `prior`.
+        .onConflictDoNothing({ target: schema.episodeParks.id })
+        .returning({ id: schema.episodeParks.id });
+      if (park === undefined) {
+        refusal = 'episode_park_id_reused';
+        return undefined;
+      }
+      await tx
+        .update(schema.episodes)
+        .set({ parkedParkId: park.id })
+        .where(eq(schema.episodes.episodeId, episodeId));
+      event.before = { resolution_state: row.state, parked_park_id: null };
+      event.after = { parked_park_id: park.id };
+      return park;
+    });
+    if (written === undefined && replayed === undefined) {
+      return reply.code(409).send({ error: 'refused', constraint: refusal ?? 'episode_parks_already_parked' });
+    }
+    // A replay answers with the first park's id; nothing was written, no audit row either.
+    return reply.send({
+      episode_id: episodeId,
+      park_id: (written ?? replayed)!.id,
+      parked: true,
+      replayed: written === undefined,
+    });
+  });
+
+  /** The way back, for the park that should not have happened. */
+  app.post('/episodes/:id/unpark', opts, async (req, reply) => {
+    const body = ParkBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
+    const actor = actorOf(req);
+    const episodeId = (req.params as { id: string }).id;
+    if (!(await atThisCentre(episodeId, actor))) {
+      return reply.code(404).send({ error: 'no such episode' });
+    }
+
+    const event = {
+      action: 'episode.unpark',
+      targetTable: 'episodes',
+      targetId: episodeId,
+      before: {} as Record<string, unknown>,
+      after: {} as Record<string, unknown>,
+      reason: body.data.reason,
+    };
+    let refusal: string | null = null;
+    let replayed: { id: string } | undefined;
+    const written = await mutate(db, actor, event, async (tx) => {
+      const [row] = (await tx.execute(sql`
+        select e.resolution_state as state, e.parked_park_id as parked
+          from episodes e
+         where e.episode_id = ${episodeId}
+           for update of e
+      `)) as unknown as { state: string; parked: string | null }[];
+      if (row === undefined) return undefined;
+      const [prior] = await tx
+        .select()
+        .from(schema.episodeParks)
+        .where(eq(schema.episodeParks.id, body.data.id));
+      if (prior !== undefined) {
+        /**
+         * A release is identified by the episode and the reason, never by the
+         * park it lifted: on the replay the pointer is already null, so
+         * comparing against it would refuse the retry of the request that
+         * succeeded. What the id must not do is name a different decision.
+         */
+        const same =
+          prior.episodeId === episodeId &&
+          prior.releasesParkId !== null &&
+          prior.reason === body.data.reason;
+        if (same) replayed = prior;
+        else refusal = 'episode_park_id_reused';
+        return undefined;
+      }
+      if (row.parked === null) {
+        refusal = 'episode_parks_not_parked';
+        return undefined;
+      }
+
+      const [release] = await tx
+        .insert(schema.episodeParks)
+        .values({
+          id: body.data.id,
+          episodeId,
+          releasesParkId: row.parked,
+          fromState: row.state,
+          parkedBy: actor.operator.operatorId,
+          reason: body.data.reason,
+        })
+        .onConflictDoNothing({ target: schema.episodeParks.id })
+        .returning({ id: schema.episodeParks.id });
+      if (release === undefined) {
+        refusal = 'episode_park_id_reused';
+        return undefined;
+      }
+      await tx
+        .update(schema.episodes)
+        .set({ parkedParkId: null })
+        .where(eq(schema.episodes.episodeId, episodeId));
+      event.before = { resolution_state: row.state, parked_park_id: row.parked };
+      event.after = { parked_park_id: null, release_id: release.id };
+      return release;
+    });
+    if (written === undefined && replayed === undefined) {
+      return reply.code(409).send({ error: 'refused', constraint: refusal ?? 'episode_parks_not_parked' });
+    }
+    return reply.send({
+      episode_id: episodeId,
+      release_id: (written ?? replayed)!.id,
+      parked: false,
+      replayed: written === undefined,
+    });
+  });
+
+  /**
+   * Every episode at this centre that is out of the review queue on purpose,
+   * and what takes it back out.
+   *
+   * WHY THIS ROUTE EXISTS. Two branches built an exit for a stuck episode and
+   * neither built a way to find one. `fix/console-defects` added the `held`
+   * lane on `episode_reviews`; `feat/quarantine-exit` added `episode_parks`
+   * and `episodes.parked_park_id`. Both work, and after either one the episode
+   * simply stops appearing anywhere — no list, no screen, and `?queue=held` is
+   * a 400. The loop the two changes removed was replaced by a silent hole: the
+   * collector is still not paid, and now nobody trips over it. Releasing an
+   * episode needs its id, and nothing gave an operator an id.
+   *
+   * The two mechanisms are complementary, not duplicates, and this route is
+   * where that is visible:
+   *
+   *   `held`  — a review row a reviewer already holds, refused at verdict time.
+   *             It needs a review row to exist, so it cannot touch an episode
+   *             nobody has claimed. Out through `POST /api/review/hold/:id`
+   *             naming a claimable lane; only an operator may do that.
+   *   `park`  — the episode itself, whether or not anybody ever claimed it.
+   *             This is the only exit for an ingest quarantine, because the
+   *             queue is lazy and there is no review row to hold. Out through
+   *             `POST /episodes/:id/unpark`.
+   *
+   * An episode can be both — parked after a reviewer had already held it — and
+   * then it appears once, with both holds named, so an operator lifting one
+   * can see the other is still there. That is the whole reason this is one
+   * list and not two.
+   *
+   * Centre-scoped like the rest of this file (SEC-02): an operator sees what
+   * arrived at their own centre. Read-only, so no `mutate`.
+   *
+   * ponytail: no paging. A stuck episode is a thing a person fixes one at a
+   * time, and a centre with enough of them to need a page has a different
+   * problem. Add `limit`/`offset` when a real centre's list does not fit.
+   */
+  app.get('/episodes/stuck', opts, async (req, reply) => {
+    const actor = actorOf(req);
+    const rows = (await db.execute(sql`
+      select e.episode_id,
+             e.device_serial,
+             e.session_started_at,
+             e.resolution_state,
+             p.id            as park_id,
+             p.reason        as park_reason,
+             p.parked_at     as parked_at,
+             po.external_ref as parked_by,
+             r.id            as review_id,
+             r.updated_at    as held_at
+        from episodes e
+        join upload_batches b on b.id = e.upload_batch_id
+        join handovers h on h.id = b.handover_id
+        left join episode_parks p on p.id = e.parked_park_id
+        left join operators po on po.id = p.parked_by
+        left join episode_reviews r
+               on r.episode_id = e.episode_id
+              and r.review_state = 'pending'
+              and r.queue = 'held'
+       where h.upload_centre_id = ${actor.operator.uploadCentreId}
+         and (e.parked_park_id is not null or r.id is not null)
+       order by coalesce(p.parked_at, r.updated_at) desc
+    `)) as unknown as {
+      episode_id: string;
+      device_serial: string;
+      session_started_at: string;
+      resolution_state: string;
+      park_id: string | null;
+      park_reason: string | null;
+      parked_at: Date | null;
+      parked_by: string | null;
+      review_id: string | null;
+      held_at: Date | null;
+    }[];
+
+    return reply.send({
+      episodes: rows.map((r) => ({
+        episode_id: r.episode_id,
+        /** What a person recognises: the card and the recording on it. */
+        device_serial: r.device_serial,
+        session_started_at: r.session_started_at,
+        resolution_state: r.resolution_state,
+        /** Null when this episode is only held, not parked. */
+        park:
+          r.park_id === null
+            ? null
+            : {
+                park_id: r.park_id,
+                reason: r.park_reason,
+                parked_at: new Date(r.parked_at!).toISOString(),
+                parked_by: r.parked_by,
+                /** The one route that lifts it. */
+                release_with: `POST /episodes/${r.episode_id}/unpark`,
+              },
+        /**
+         * Null when nobody had claimed this episode. The reason a reviewer
+         * typed is on the audit row, not here — `mutate` wrote it under
+         * `review.hold` and there is no audit read route yet.
+         */
+        held:
+          r.review_id === null
+            ? null
+            : {
+                review_id: r.review_id,
+                held_at: new Date(r.held_at!).toISOString(),
+                release_with: `POST /api/review/hold/${r.episode_id}`,
+              },
+      })),
     });
   });
 

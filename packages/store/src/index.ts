@@ -5,6 +5,7 @@ import {
   EpisodeRecord as EpisodeRecordSchema,
   parseSessionBasename,
   stateFrom,
+  windowDiscrepancies,
   type EpisodeRecord,
 } from '@playerone/contracts';
 import type { Db } from './db.ts';
@@ -50,10 +51,11 @@ const dec = (n: number, scale: number): string => n.toFixed(scale);
  * Three cases, and the difference between them is money.
  *
  *   new        the episode has not been seen. Insert everything.
- *   duplicate  seen, and the fingerprint matches the latest ingest. The same
- *              session arrived twice by two routes — card at the upload centre
- *              and a cloud re-download. Touch `last_seen_at` and nothing else,
- *              so one session is one episode and not two payments.
+ *   duplicate  seen, and the fingerprint AND the file list both match the
+ *              latest ingest. The same session arrived twice by two routes —
+ *              card at the upload centre and a cloud re-download. Touch
+ *              `last_seen_at` and nothing else, so one session is one episode
+ *              and not two payments.
  *   mismatch   seen, and the bytes differ. Insert a second ingest and attach
  *              CHECKSUM-MISMATCH itemising what changed. This is the one defect
  *              in the catalogue that can only be found at store time, because
@@ -66,12 +68,18 @@ const dec = (n: number, scale: number): string => n.toFixed(scale);
  *
  * A mismatch is flagged and stored. What it costs a collector is settlement's
  * decision, and settlement is not in this milestone.
+ *
+ * Two things the record asserts are not believed, and both decide payment:
+ * `state`, which is re-derived from the discrepancies the record carries, and
+ * `raw_duration_s`, which is checked against the record's own timestamps. See
+ * `trusted` below.
  */
 export async function storeEpisode(
   db: Db,
-  input: EpisodeRecord,
+  submitted: EpisodeRecord,
   now: Date = new Date(),
 ): Promise<StoreResult> {
+  const input = trusted(submitted);
   const episodeId = input.episode_id;
   /**
    * The record carries its own inventory as of schema 1.1.0, so the store no
@@ -118,7 +126,32 @@ export async function storeEpisode(
           .orderBy(desc(episodeIngests.ingestedAt))
           .limit(1);
 
-    if (latest !== undefined && latest.contentFingerprint === input.content_fingerprint) {
+    const prior = latest
+      ? await tx
+          .select({ path: episodeFiles.relativePath, sha256: episodeFiles.sha256 })
+          .from(episodeFiles)
+          .where(eq(episodeFiles.ingestId, latest.ingestId))
+      : [];
+
+    const mismatch = diffFiles(latest, prior, files, input.content_fingerprint);
+
+    /**
+     * The fingerprint alone does not decide this. It is a field on a document
+     * the client wrote, so a delivery carrying a stale fingerprint over changed
+     * bytes read as a duplicate: no second ingest row, and CHECKSUM-MISMATCH —
+     * the one defect that exists to catch exactly that — never raised.
+     *
+     * The digests the fingerprint is computed over are in the same document,
+     * and `episode_files` holds what the previous delivery said. So the test is
+     * the fingerprint *and* the file list it claims to summarise. Recomputing
+     * the fingerprint from `source_files` was the other candidate and is a
+     * weaker check on the same fields: it says the client hashed its own list
+     * correctly, not that the list is the one already stored.
+     */
+    const sameFiles =
+      mismatch.changed.length === 0 && mismatch.added.length === 0 && mismatch.removed.length === 0;
+
+    if (latest !== undefined && latest.contentFingerprint === input.content_fingerprint && sameFiles) {
       // Duplicate delivery. No new ingest row, no second payment.
       await tx.update(episodes).set({ lastSeenAt: now }).where(eq(episodes.episodeId, episodeId));
       return {
@@ -130,14 +163,6 @@ export async function storeEpisode(
       };
     }
 
-    const prior = latest
-      ? await tx
-          .select({ path: episodeFiles.relativePath, sha256: episodeFiles.sha256 })
-          .from(episodeFiles)
-          .where(eq(episodeFiles.ingestId, latest.ingestId))
-      : [];
-
-    const mismatch = diffFiles(latest, prior, files, input.content_fingerprint);
     const record = withMismatch(input, mismatch);
     const ingestId = await writeIngest(tx, record, files, now, mismatch);
 
@@ -195,6 +220,35 @@ function diffFiles(
     if (!after.has(path)) payload.removed.push({ relative_path: path, sha256 });
   }
   return payload;
+}
+
+/**
+ * The record as the platform will believe it, before anything is written.
+ *
+ * `state` is the field review eligibility reads (`review.ts`, the
+ * `state <> 'quarantined'` term), and it arrived as whatever the client put in
+ * it. A record asserting `ok` beside a quarantine-severity discrepancy was
+ * stored as `ok` and reviewed and paid, which made quarantine advice rather
+ * than a gate. The engine already derives the same value from the same rule
+ * (`stateFrom`, called in `classify.ts`), so for a record the engine wrote this
+ * changes nothing at all — it removes the client's ability to disagree with the
+ * evidence it is itself carrying.
+ *
+ * The discrepancies stay verbatim. They are evidence, not a verdict: a record
+ * that hides a defect can still hide it, and no server-side rule can invent one
+ * it was not told about. What it can no longer do is carry the defect and deny
+ * the consequence.
+ *
+ * `windowDiscrepancies` is the one consequence the server can derive on its
+ * own, because the record carries both halves of that arithmetic.
+ *
+ * Never mutates the input.
+ */
+function trusted(input: EpisodeRecord): EpisodeRecord {
+  const discrepancies = [...input.discrepancies, ...windowDiscrepancies(input)];
+  const state = stateFrom(discrepancies);
+  if (state === input.state && discrepancies.length === input.discrepancies.length) return input;
+  return { ...input, discrepancies, state };
 }
 
 /** Appends CHECKSUM-MISMATCH and re-derives the state. Never mutates the input. */

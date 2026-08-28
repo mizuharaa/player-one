@@ -6,11 +6,20 @@ import { registerBackOffice } from './backoffice.ts';
 
 export { API_REFUSALS, REFUSALS } from './backoffice.ts';
 export { COUNTER_REFUSALS } from './counter.ts';
+import { registerCollectorAuth, type SendSignInCode } from './collector.ts';
+export {
+  MAX_DELIVERY_BYTES,
+  UPLOAD_API_REFUSALS,
+  type CollectorUploadOptions,
+  type FilePlan,
+} from './collector-upload.ts';
+import { registerCollectorUpload } from './collector-upload.ts';
 import { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';
 import { registerEpisodes } from './episodes.ts';
 import { registerMedia } from './media.ts';
+import { registerMe } from './me.ts';
 import { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
 import { registerPayout } from './payout/routes/payout.ts';
 import { seedRiskSignals } from './risk/catalogue.ts';
@@ -23,36 +32,44 @@ import { registerReview } from './review.ts';
 import { registerSessionRoutes } from './session.ts';
 import { registerSettle } from './settle.ts';
 import { registerUpload } from './upload.ts';
-import type { ObjectStore, UploadProgress } from './upload-worker.ts';
+import type { DirectUploadStore, ObjectStore, UploadProgress } from './upload-worker.ts';
 import { authenticateMachine, authenticateOperator } from './session.ts';
 import type { Actor, CounterActor } from './actor.ts';
-import { signToken, verifyToken } from './credentials.ts';
+import { signToken, verifyToken, type CollectorClaims } from './credentials.ts';
 
 export * from './credentials.ts';
 export * from './audit.ts';
-export type { Actor, CounterActor, ReviewerActor } from './actor.ts';
+export type { Actor, CollectorActor, CounterActor, ReviewerActor } from './actor.ts';
 export * from './resolve.ts';
 export * from './money.ts';
-export { LEASE_MS } from './review.ts';
+export { LEASE_MS, REVIEW_API_REFUSALS } from './review.ts';
+export { REVIEW_HOLDABLE_REFUSALS } from './i18n.ts';
 export { parseRange, safeJoin } from './media.ts';
 export {
   noProgress,
   objectKey,
+  planOpenUploads,
   planParts,
+  verifyReadBack,
   PART_SIZE,
+  PRESIGN_TTL_S,
+  READBACK_STALLS,
   S3ObjectStore,
   s3StoreFromEnv,
   transportInventory,
   uploadEpisode,
+  type DirectUploadStore,
   type EpisodeUploadResult,
   type Mismatch,
   type ObjectStore,
+  type OpenUpload,
   type PutResult,
   type TransportFile,
   type UploadProgress,
 } from './upload-worker.ts';
 export { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 export { SIGN_IN_RATE_LIMITED, signInLimiter, type SignInLimiter } from './ratelimit.ts';
+export { CODE_ATTEMPTS, CODE_TTL_MS, type SendSignInCode } from './collector.ts';
 export { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS } from './payout/routes/payout.ts';
 export { SETTLE_API_REFUSALS } from './settle.ts';
 export { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
@@ -70,6 +87,28 @@ export type { RiskReader, RiskSummary, Flag } from './payout/domain/risk.ts';
 declare module 'fastify' {
   interface FastifyRequest {
     actor?: Actor;
+    /**
+     * The signed-in collector, and deliberately NOT a third case of `Actor`.
+     *
+     * `Actor` is who made an audited change. `mutate` reads it, `roleOf` reads
+     * it, and every mutating route in this service reaches into
+     * `actor.operator` or `actor.reviewer`. A collector makes no audited change
+     * — there is no collector route that writes anything — so putting them in
+     * that union would add a third case to every one of those readers today in
+     * exchange for nothing, and each of those cases would be a guess about what
+     * a collector's audit row looks like, written before anybody has decided.
+     *
+     * Keeping them out is also the stronger guarantee, and it is the one the
+     * scoping rule wants: a collector never becomes an `Actor` at all, so no
+     * route reading `actor.operator.uploadCentreId` can be handed one under any
+     * circumstances, including a mistake in the route guard. Every existing
+     * route sees `req.actor` unset and refuses.
+     *
+     * When collector mutations land — filing a dispute is the first — `Actor`
+     * grows a third case, `mutate` grows the branch that says what that row
+     * records, and the compiler names every reader that has to be told.
+     */
+    collector?: CollectorClaims;
   }
 }
 
@@ -121,8 +160,9 @@ export type ApiOptions = {
   verificationGate?: 'local' | 'cloud';
   /**
    * Where the upload centre remembers what it has already transported
-   * (PRODUCT.md:34). Defaults to `noProgress`, which remembers nothing and is
-   * correct — see `UploadProgress`.
+   * (PRODUCT.md:34). Defaults to `verificationReceipts`, this database's own
+   * table: remembering nothing is still correct, but it costs a full re-read of
+   * every object on every re-run — see `UploadProgress` and migration 0020.
    */
   uploadProgress?: UploadProgress;
   /**
@@ -149,6 +189,19 @@ export type ApiOptions = {
    */
   reviewerMediaEnabled?: boolean;
   /**
+   * How a collector's one-time sign-in code reaches their phone (APP-01).
+   *
+   * Absent by default, and then `POST /auth/collector/request-code` answers 503
+   * for every caller — there is no SMS gateway in this repository and no
+   * contract behind one yet. Defaulting to a no-op would be worse: the route
+   * would answer 204, which is what it answers on success, and a deployment
+   * with no delivery would look exactly like a working one until a collector
+   * said nobody ever sent them anything.
+   *
+   * It must return quickly. See `SendSignInCode`.
+   */
+  sendSignInCode?: SendSignInCode;
+  /**
    * The payout rail (payout brief, §2.4). Defaults to what the environment
    * says, which defaults to `manual` on `sandbox`: the pilot shape, where an
    * operator moves the money and records the reference, and nothing here can
@@ -166,6 +219,17 @@ const REVIEW_SCOPE = '/api/review/';
 /** Raw footage. In scope for a reviewer only behind `reviewerMediaEnabled`. */
 const MEDIA_SCOPE = '/media/';
 /**
+ * What a collector session may reach, and the whole of it.
+ *
+ * The prefix is the guard, exactly as `REVIEW_SCOPE` is for a reviewer: a
+ * `/api/me/` route added next month is in scope by its path, and a route added
+ * anywhere else is out of it without anybody remembering to say so. It cuts
+ * both ways — an operator or reviewer token gets 403 here, because the routes
+ * under it read the collector id off the token and there is no collector id on
+ * either of those.
+ */
+const ME_SCOPE = '/api/me/';
+/**
  * The one route outside the review lane a reviewer may call, named exactly and
  * not by prefix.
  *
@@ -176,6 +240,34 @@ const MEDIA_SCOPE = '/media/';
  * fleet, no data.
  */
 const IDENTITY_ROUTE = '/whoami';
+/**
+ * What a collector session may reach, and what nobody else may.
+ *
+ * APP-01. Every collector route lives under this prefix and **takes no
+ * collector id** — not in the path, not in the query, not in the body. The id
+ * comes off the token. That is not a convenience: it is why collector A cannot
+ * read collector B's income. There is no id in the request to substitute,
+ * so there is no comparison to forget to make and no route that can be added
+ * next month with the comparison missing.
+ *
+ * Both halves are enforced below, and the second half is the one people forget:
+ * an operator or reviewer token is refused here too. If a counter operator's
+ * token also worked on `/api/me/income`, then "me" would mean the collector for
+ * one caller and nobody in particular for another, and the routes would need
+ * the collector id back in the request to say which — which is the whole design
+ * undone.
+ *
+ * `/api/me` itself is the collector's identity route, so the check admits the
+ * exact string as well as the prefix. It is spelled out rather than made a
+ * `startsWith('/api/me')`, which would also admit `/api/method`.
+ */
+const COLLECTOR_SCOPE = '/api/me';
+const inCollectorScope = (route: string): boolean =>
+  route === COLLECTOR_SCOPE || route.startsWith(`${COLLECTOR_SCOPE}/`);
+
+/** Whether this store can hand a signed URL to somebody who is not this process. */
+const canPresign = (s: ObjectStore): s is ObjectStore & DirectUploadStore =>
+  typeof (s as Partial<DirectUploadStore>).presignPut === 'function';
 
 export function buildApi({
   db,
@@ -189,6 +281,7 @@ export function buildApi({
   verificationGate,
   uploadProgress,
   reviewerMediaEnabled = false,
+  sendSignInCode,
   payout = payoutOptionsFromEnv(),
   risk = riskConfigFromEnv(),
 }: ApiOptions): FastifyInstance {
@@ -223,6 +316,28 @@ export function buildApi({
   const app = Fastify({ logger: false });
 
   /**
+   * HSTS, and only where TLS exists (SEC-09).
+   *
+   * `secureCookies` is already this repo's single "there is TLS in front of
+   * this process" signal — it is what the reviewer-media refusal above reads,
+   * and what `bin/serve.ts` sets from `PLAYERONE_SECURE_COOKIES`. So the header
+   * follows it rather than becoming a second switch that can disagree with the
+   * first.
+   *
+   * Not sent unconditionally, for two reasons. A browser ignores this header on
+   * a plain-HTTP response, so on a LAN centre it would be decoration. And if
+   * that centre ever puts one hostname behind TLS, a header it had been
+   * emitting all along would pin every other path on that host to HTTPS for a
+   * year, which is a centre-down event with no obvious cause. No `preload`: a
+   * preload list entry is a submission nobody here has made.
+   */
+  if (secureCookies) {
+    app.addHook('onRequest', async (_req, reply) => {
+      reply.header('strict-transport-security', 'max-age=31536000; includeSubDomains');
+    });
+  }
+
+  /**
    * The token from a header, or failing that from the session cookie.
    *
    * The header is checked first so a machine client's explicit credential
@@ -246,8 +361,79 @@ export function buildApi({
    * centres is either a misconfigured machine or someone splicing credentials;
    * either way it is not a write we can attribute.
    */
+  /**
+   * Whether the person behind a valid token still works here (0017).
+   *
+   * `verifyToken` reads a signature and an expiry and never the row, so
+   * retiring somebody stopped their next sign-in and left the token already in
+   * their browser answering 200 for the rest of its twelve hours — measured.
+   * One primary-key lookup per request is what makes `operators.status` mean
+   * *now*. Not a token epoch and not a revocation list: both are a second
+   * place for the same fact to live, and this one is already the record.
+   */
+  const stillEmployed = async (operatorId: string): Promise<boolean> => {
+    const [row] = await db
+      .select({ status: schema.operators.status })
+      .from(schema.operators)
+      .where(eq(schema.operators.id, operatorId));
+    return row?.status === 'active';
+  };
+
   const requireActor = async (req: FastifyRequest, reply: { code: (n: number) => { send: (b: unknown) => unknown } }) => {
     const person = verifyToken(tokenSecret, bearer(req, 'authorization', OPERATOR_COOKIE));
+    const route = req.routeOptions.url ?? '';
+
+    /**
+     * APP-01 / SEC-01, and the only place the collector scope is enforced.
+     *
+     * Same shape as the reviewer branch below and for the same reason: the
+     * scope is a prefix on the matched route pattern, so it is the string this
+     * service registered and not one a caller composed, and a route added next
+     * month is in scope or out of it by its path with nobody having to
+     * remember a guard.
+     *
+     * The epoch costs one primary-key lookup per collector request, and it buys
+     * revocation that bites now rather than in thirty days. A token is signed
+     * once; `collectors.token_epoch` is read every time, so a phone reported
+     * lost this morning is locked out this morning.
+     */
+    if (person?.kind === 'collector') {
+      if (!(inCollectorScope(route) || route === IDENTITY_ROUTE)) {
+        return reply.code(403).send({ error: 'collector session is scoped to /api/me' });
+      }
+      const [row] = await db
+        .select({ epoch: schema.collectors.tokenEpoch })
+        .from(schema.collectors)
+        .where(eq(schema.collectors.id, person.collectorId));
+      // A deleted collector and a revoked one get the same answer, and it is
+      // 401 rather than 403: the token is no longer valid, and signing in again
+      // is what fixes it.
+      if (row === undefined || row.epoch !== person.epoch) {
+        return reply.code(401).send({ error: 'collector token required' });
+      }
+      req.collector = person;
+      return;
+    }
+
+    /**
+     * The half people forget. Nobody but a collector reaches `/api/me/`.
+     *
+     * Without this, an operator or reviewer token would fall through to the
+     * checks below, pass them, and land in a route whose whole contract is that
+     * the caller is the collector the answer is about. "Me" would then mean two
+     * things, and the routes would need a collector id back in the request to
+     * say which — undoing the reason the prefix exists.
+     *
+     * 401 when there is no valid token at all and 403 when there is one of the
+     * wrong kind. The app has to tell those apart: a thirty-day token expires
+     * in somebody's pocket and the answer is to sign in again, which is not
+     * what a 403 says. Neither answer distinguishes anything about a collector
+     * — both are about the token the caller presented.
+     */
+    if (inCollectorScope(route)) {
+      if (person === null) return reply.code(401).send({ error: 'collector token required' });
+      return reply.code(403).send({ error: 'collector session required' });
+    }
 
     /**
      * PLT-10, and the only place it is enforced.
@@ -263,12 +449,14 @@ export function buildApi({
      * `reviewerMediaEnabled`, D11 and Part 7.3.
      */
     if (person?.kind === 'reviewer') {
-      const route = req.routeOptions.url ?? '';
       const inScope =
         route.startsWith(REVIEW_SCOPE) ||
         route === IDENTITY_ROUTE ||
         (reviewerMediaEnabled && route.startsWith(MEDIA_SCOPE));
       if (!inScope) return reply.code(403).send({ error: 'reviewer session is scoped to review' });
+      if (!(await stillEmployed(person.reviewerId))) {
+        return reply.code(401).send({ error: 'operator is no longer active' });
+      }
       req.actor = { reviewer: person };
       return;
     }
@@ -278,6 +466,9 @@ export function buildApi({
     if (person?.kind !== 'operator') return reply.code(401).send({ error: 'operator token required' });
     if (machine.uploadCentreId !== person.uploadCentreId) {
       return reply.code(403).send({ error: 'operator and machine belong to different centres' });
+    }
+    if (!(await stillEmployed(person.operatorId))) {
+      return reply.code(401).send({ error: 'operator is no longer active' });
     }
     req.actor = { machine, operator: person };
   };
@@ -378,6 +569,17 @@ export function buildApi({
   registerCounter(app, db, requireActor, currency);
   registerEpisodes(app, db, requireActor, toleranceMs);
   registerUpload(app, db, requireActor, { objectStore, mediaRoot, uploadProgress });
+  /**
+   * Path A needs more of the store than Path C does — it has to sign URLs for
+   * a client that is not this process — and the fs-backed stub Path C's tests
+   * use cannot sign anything. Rather than widen `objectStore` and force every
+   * implementation to fake a protocol, the capability is detected: a store
+   * that can presign gets the Path A routes a working cloud, one that cannot
+   * gets the same 503 an absent store gets, saying so.
+   */
+  registerCollectorUpload(app, db, requireActor, {
+    objectStore: objectStore !== undefined && canPresign(objectStore) ? objectStore : undefined,
+  });
   registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate, reviewerMediaEnabled });
   registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays });
   registerPayout(app, db, requireActor, {
@@ -386,20 +588,43 @@ export function buildApi({
     risk: payout.risk ?? riskReader,
     holdsEnabled: payout.holdsEnabled ?? risk.holdsEnabled,
   });
+  /**
+   * The collector's own money, under `/api/me/`. Given the SAME risk reader
+   * and hold switch as the payout lane on purpose: it calls `loadBill`, so if
+   * these options differed, a collector and the batch runner would disagree
+   * about whether a bill can pay.
+   */
+  registerMe(app, db, requireActor, {
+    risk: payout.risk ?? riskReader,
+    holdsEnabled: payout.holdsEnabled ?? risk.holdsEnabled,
+    capVnd: payout.capVnd,
+  });
   registerRisk(app, db, requireActor, riskEngine);
   registerMedia(app, db, requireActor, mediaRoot);
-  // One limiter for all four sign-in routes, so a guesser cannot get a fresh
+  // One limiter for all six sign-in routes, so a guesser cannot get a fresh
   // budget by moving from the form to the JSON route.
   registerConsole(app, db, { tokenSecret, secureCookies, limiter });
   /** The JSON sign-in the React console uses. Same credentials, same cookies. */
   registerSessionRoutes(app, db, { tokenSecret, secureCookies, limiter });
+  /** The collector's phone sign-in. Same limiter, same failed-sign-in rows. */
+  registerCollectorAuth(app, db, { tokenSecret, limiter, sendSignInCode });
 
   /**
    * Who the caller is. Proves both-tokens and centre scope on its own, with no
    * counter state needed — and, for a reviewer, is the only thing the console
    * can ask to find out it is signed in.
    */
-  app.get(IDENTITY_ROUTE, { preHandler: requireActor }, async (req) => {
+  const whoami = async (req: FastifyRequest) => {
+    /**
+     * A collector's identity is the id off their own token and nothing else.
+     * No phone, no name, no status: the app already knows the number it signed
+     * in with, and everything else is a collector-facing route that does not
+     * exist yet.
+     */
+    const collector = req.collector;
+    if (collector !== undefined) {
+      return { role: 'collector', collector_id: collector.collectorId };
+    }
     const actor = req.actor!;
     if (actor.reviewer !== undefined) {
       return { role: 'reviewer', reviewer_id: actor.reviewer.reviewerId };
@@ -410,7 +635,21 @@ export function buildApi({
       upload_device_id: actor.machine.uploadDeviceId,
       upload_centre_id: actor.operator.uploadCentreId,
     };
-  });
+  };
+
+  app.get(IDENTITY_ROUTE, { preHandler: requireActor }, whoami);
+  /**
+   * The same answer at the root of the collector scope, and the reason it is a
+   * second path rather than only `/whoami`: the guard that refuses an operator
+   * or a reviewer under `/api/me` cannot be proved by a test unless there is a
+   * route under `/api/me` to refuse them on. Nothing else lives there yet.
+   *
+   * It is also the route the app will actually call. `/whoami` is the console's
+   * — it is exempt from every scope precisely so a browser holding an
+   * `HttpOnly` cookie can ask whether it is signed in — whereas the app holds
+   * its own token and has no reason to leave its scope to ask who it is.
+   */
+  app.get(COLLECTOR_SCOPE, { preHandler: requireActor }, whoami);
 
   return app;
 }

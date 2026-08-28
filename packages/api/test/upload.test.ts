@@ -7,7 +7,7 @@ import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { contentFingerprint, deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
-import { buildApi, hashCredential, objectKey, planParts, PART_SIZE, s3StoreFromEnv, transportInventory, type ObjectStore, type PutResult } from '../src/index.ts';
+import { buildApi, hashCredential, objectKey, planOpenUploads, planParts, PART_SIZE, READBACK_STALLS, s3StoreFromEnv, transportInventory, uploadEpisode, type Mismatch, type ObjectStore, type PutResult } from '../src/index.ts';
 import { closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -53,6 +53,55 @@ describe('multipart part planning', () => {
     // recognisable by number and size on the next attempt.
     expect(planParts(3 * PART_SIZE + 7)).toEqual(planParts(3 * PART_SIZE + 7));
     expect(planParts(3 * PART_SIZE).length).toBe(3);
+  });
+});
+
+describe('open multipart uploads', () => {
+  const at = (ms: number) => new Date(ms);
+
+  it('adopts nothing and abandons nothing when the key has no open upload', () => {
+    expect(planOpenUploads([])).toEqual({ adopt: null, abandon: [] });
+  });
+
+  it('resumes the newest and abandons the attempts no later run could adopt', () => {
+    // The measured leak: an interrupted 200 MB upload leaves 128 MB of parts
+    // that no object listing shows. `put` only ever resumes the newest open
+    // upload on the key, so every older one is billed storage nobody reaches.
+    expect(
+      planOpenUploads([
+        { uploadId: 'old', initiated: at(1000) },
+        { uploadId: 'newest', initiated: at(3000) },
+        { uploadId: 'middle', initiated: at(2000) },
+      ]),
+    ).toEqual({ adopt: 'newest', abandon: ['old', 'middle'] });
+  });
+
+  it('keeps the only open upload, which is the one a resume needs', () => {
+    expect(planOpenUploads([{ uploadId: 'only', initiated: at(1000) }])).toEqual({
+      adopt: 'only',
+      abandon: [],
+    });
+  });
+
+  it('abandons nothing on the key when a provider omits Initiated', () => {
+    // Sorting on `getTime() ?? 0` makes every timestamp-less candidate equal, so
+    // "older" is a guess. Guessing wrong costs a re-sent part on adoption and a
+    // destroyed upload on an abort, so only adoption may guess.
+    expect(
+      planOpenUploads([
+        { uploadId: 'a', initiated: null },
+        { uploadId: 'b', initiated: at(3000) },
+      ]),
+    ).toEqual({ adopt: 'b', abandon: [] });
+  });
+
+  it('abandons nothing when the newest timestamp is shared', () => {
+    const plan = planOpenUploads([
+      { uploadId: 'a', initiated: at(3000) },
+      { uploadId: 'b', initiated: at(3000) },
+    ]);
+    expect(plan.abandon).toEqual([]);
+    expect(plan.adopt).not.toBeNull();
   });
 });
 
@@ -110,6 +159,98 @@ describe('s3StoreFromEnv', () => {
   });
 });
 
+/**
+ * The read-back over a link that drops, with no database and no cloud.
+ *
+ * Measured against a real S3 endpoint (MinIO) before this existed: the GET
+ * carried no Range at all, a download cut at 4 MB of an 8 MB object threw
+ * `Error: aborted`, and the next attempt pulled all 8 MB again from byte 0.
+ * An hourly camera part is 6.4 GB — about 65 minutes at the brief's 13 Mbps —
+ * so a link that drops hourly never verified that episode, and an unverified
+ * episode is never paid.
+ */
+describe('a read-back that resumes', () => {
+  const dirs: string[] = [];
+  afterAll(async () => {
+    for (const d of dirs) await rm(d, { recursive: true, force: true }).catch(() => {});
+  });
+
+  /** One episode of one file on disk, and the run that transports and verifies it. */
+  async function one(bytes: Buffer): Promise<{ store: FlakyStore; run: () => Promise<Mismatch[]> }> {
+    const root = await mkdtemp(join(tmpdir(), 'po-resume-'));
+    dirs.push(root);
+    await mkdir(join(root, 'ego_r'), { recursive: true });
+    await writeFile(join(root, 'ego_r', 'camera.mp4'), bytes);
+    const store = new FlakyStore();
+    const args = {
+      episodeId: 'ego_r',
+      ingestId: 'ing-1',
+      mediaRoot: root,
+      sourceBasename: 'ego_r',
+      sourceFiles: [{ relative_path: 'camera.mp4', sha256: sha(bytes) }],
+      force: false,
+    };
+    return { store, run: async () => (await uploadEpisode(store, args)).mismatches };
+  }
+
+  it('continues from the byte the hash reached, and ends at the whole object\'s digest', async () => {
+    // Awkward boundaries on purpose: one byte in, on a chunk edge, and one byte
+    // short of the end. A digest is a function of the byte sequence and not of
+    // how it was cut up, so all three must produce the same answer.
+    const bytes = randomBytes(200_000);
+    for (const cut of [1, 4096, 199_999]) {
+      const { store, run } = await one(bytes);
+      store.cuts = [cut];
+      expect(await run(), `cut at ${cut}`).toEqual([]);
+      // Two reads, the second starting exactly where the first stopped, and
+      // every byte of the object crossing the wire exactly once.
+      expect(store.reads).toEqual([
+        { from: 0, delivered: cut },
+        { from: cut, delivered: bytes.length - cut },
+      ]);
+    }
+  });
+
+  it('survives more drops than its attempt budget, because progress resets it', async () => {
+    // The budget has to be consecutive stalls, not total attempts: a 6.4 GB
+    // part is over an hour of link, and a link that drops three times in an
+    // hour is normal. With a fixed budget this is the file that never verifies.
+    const bytes = randomBytes(100_000);
+    const { store, run } = await one(bytes);
+    store.cuts = Array.from({ length: 12 }, () => 7_000);
+    expect(await run()).toEqual([]);
+    expect(store.reads.length).toBe(13);
+    expect(store.reads.at(-1)?.from).toBe(12 * 7_000);
+  });
+
+  it('gives up when a read makes no progress at all, rather than looping forever', async () => {
+    const { store, run } = await one(randomBytes(50_000));
+    store.cuts = [10_000, 0, 0, 0, 0];
+    await expect(run()).rejects.toThrow(/aborted/);
+    // One good read, then READBACK_STALLS empty ones and no more.
+    expect(store.reads.length).toBe(1 + READBACK_STALLS);
+  });
+
+  it('never lets a resume mask a corrupt object', async () => {
+    // Upload and verify, then rot the second half of the stored object and read
+    // it back over a link that drops in the FIRST half. The resume happens in
+    // the clean part, so if resuming could paper over anything, this is the
+    // shape where it would: it must still fail, because the digest is still the
+    // whole object's, compared against the one the engine settled at import.
+    const bytes = randomBytes(120_000);
+    const { store, run } = await one(bytes);
+    expect(await run()).toEqual([]);
+    const key = objectKey('ego_r', 'ing-1', 'camera.mp4');
+    store.objects.set(key, Buffer.concat([bytes.subarray(0, 60_000), randomBytes(60_000)]));
+    store.reads.length = 0;
+    store.cuts = [30_000];
+    expect(await run()).toEqual([
+      expect.objectContaining({ relative_path: 'camera.mp4', expected_sha256: sha(bytes) }),
+    ]);
+    expect(store.reads.length).toBe(2);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // The stub cloud
 
@@ -126,6 +267,8 @@ describe('s3StoreFromEnv', () => {
 class FsObjectStore implements ObjectStore {
   readonly meta = new Map<string, { sha256: string }>();
   readonly writes = new Map<string, number>();
+  /** Every key this store was asked to read back, in order. */
+  readonly reads: string[] = [];
   corruptOnPut = new Set<string>();
   failAfterWrites: number | null = null;
   private written = 0;
@@ -158,9 +301,46 @@ class FsObjectStore implements ObjectStore {
     return 'uploaded';
   }
 
-  async read(key: string): Promise<AsyncIterable<Uint8Array> | null> {
+  async read(key: string, from = 0): Promise<AsyncIterable<Uint8Array> | null> {
     if (!this.meta.has(key)) return null;
-    return createReadStream(this.pathOf(key));
+    this.reads.push(key);
+    return createReadStream(this.pathOf(key), { start: from });
+  }
+}
+
+/**
+ * A cloud whose downloads die mid-body, which is what a real link does.
+ *
+ * Nothing else about it is interesting: the objects are buffers and every put
+ * succeeds. What it can do that `FsObjectStore` cannot is deliver part of an
+ * object and then throw the way a destroyed socket does, once per queued cut,
+ * and record which byte each read was asked to start at.
+ */
+class FlakyStore implements ObjectStore {
+  readonly objects = new Map<string, Buffer>();
+  /** Bytes to hand over before the socket dies, one entry per read; then whole reads. */
+  cuts: number[] = [];
+  readonly reads: { from: number; delivered: number }[] = [];
+
+  async put(key: string, localPath: string, _sha256: string): Promise<PutResult> {
+    if (this.objects.has(key)) return 'kept';
+    this.objects.set(key, await readFile(localPath));
+    return 'uploaded';
+  }
+
+  async read(key: string, from = 0): Promise<AsyncIterable<Uint8Array> | null> {
+    const body = this.objects.get(key);
+    if (body === undefined) return null;
+    const cut = this.cuts.shift();
+    const slice = body.subarray(from, cut === undefined ? undefined : from + cut);
+    this.reads.push({ from, delivered: slice.length });
+    return (async function* () {
+      // Real chunks, so the consumer's hash advances before the failure lands.
+      for (let i = 0; i < slice.length; i += 4096) yield slice.subarray(i, i + 4096);
+      // No HTTP status: the socket died before one arrived, which is the shape
+      // `retryableTransport` reads as "ask again".
+      if (cut !== undefined) throw new Error('aborted');
+    })();
   }
 }
 
@@ -499,6 +679,74 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     for (const key of e.keys) expect(h.store.writes.get(key)).toBe(1);
   });
 
+  it('a second run of a verified batch reads nothing back, and says so in receipts', async () => {
+    // Measured against MinIO before this: run 2 of a clean 16 MB episode moved
+    // 0.00 MB up and 16.00 MB down — the read-back loop iterated every file
+    // unconditionally. The only thing that can license a skip is a read-back
+    // that already happened, which is what a receipt records; an ETag or a
+    // metadata field cannot (ING-29).
+    const h = await harness();
+    const e = await h.submitEpisode('A', {
+      'left_part0001.mp4': randomBytes(8192),
+      'imu.csv': Buffer.from('timestamp_us\t,x\t,y\t,z\t,type\n'),
+    });
+    await h.upload(h.A.batch);
+    expect(h.store.reads.sort()).toEqual([...e.keys].sort());
+
+    const receipts = (await h.d.execute(
+      sql`select object_key, ingest_id, sha256 from cloud_verifications order by object_key`,
+    )) as unknown as { object_key: string; ingest_id: string; sha256: string }[];
+    expect(receipts.map((r) => r.object_key)).toEqual([...e.keys].sort());
+    for (const r of receipts) expect(r.ingest_id).toBe(e.ingestId);
+
+    h.store.reads.length = 0;
+    const again = await h.upload(h.A.batch);
+    expect(again.json().episodes).toEqual([
+      { episode_id: e.episodeId, uploaded: 0, kept: 2, verification_state: 'verified' },
+    ]);
+    // Nothing sent, nothing pulled back: the whole run is two database reads.
+    expect(h.store.reads).toEqual([]);
+    expect([...h.store.writes.values()]).toEqual([1, 1]);
+  });
+
+  it('repairs one damaged file without re-sending or re-reading the rest of the episode', async () => {
+    // Measured against MinIO before this: 512 corrupt bytes on a 16 MB episode
+    // cost 16.00 MB up and 16.00 MB down, because a failed episode set `force`
+    // for the whole episode and there was no per-file fact to narrow it.
+    const h = await harness();
+    const e = await h.submitEpisode('A', {
+      'left_part0001.mp4': randomBytes(8192),
+      'left_part0002.mp4': randomBytes(8192),
+      'calibration.yaml': randomBytes(512),
+    });
+    // The damaged file is read back LAST on purpose: the two receipts written
+    // earlier in the same run are the ones a whole-episode forget would throw
+    // away, and throwing them away is what made a repair cost an episode.
+    const bad = objectKey(e.episodeId, e.ingestId, 'left_part0002.mp4');
+    h.store.corruptOnPut.add(bad);
+
+    const first = await h.upload(h.A.batch);
+    expect(first.json().episodes[0]).toMatchObject({ verification_state: 'failed' });
+    // The two good files keep their receipts; the damaged one has none.
+    const kept = (await h.d.execute(
+      sql`select object_key from cloud_verifications order by object_key`,
+    )) as unknown as { object_key: string }[];
+    expect(kept.map((r) => r.object_key)).toEqual(e.keys.filter((k) => k !== bad).sort());
+
+    h.store.corruptOnPut.clear();
+    h.store.reads.length = 0;
+    const heal = await h.upload(h.A.batch);
+    expect(heal.json().episodes[0]).toMatchObject({
+      uploaded: 1,
+      kept: 2,
+      verification_state: 'verified',
+    });
+    // One file up, one file back down, on an episode of three.
+    expect(h.store.reads).toEqual([bad]);
+    expect(h.store.writes.get(bad)).toBe(2);
+    for (const key of e.keys) if (key !== bad) expect(h.store.writes.get(key)).toBe(1);
+  });
+
   it('UPL-16: an interrupted upload resumes where it stopped, duplicating nothing', async () => {
     const h = await harness();
     const e = await h.submitEpisode('A', {
@@ -632,20 +880,25 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     // directory cannot be reproduced from the bucket.
     await writeFile(join(h.mediaRoot, e.basename, `meta_${e.basename}.json`), manifest);
 
-    const res = await h.upload(h.A.batch);
-    expect(res.json().episodes[0]).toMatchObject({ uploaded: 2, verification_state: 'verified' });
+    // Verified by read-back like every other object: damage it in transit and
+    // the episode fails, naming the manifest.
     const manifestKey = objectKey(e.episodeId, e.ingestId, `meta_${e.basename}.json`);
-    expect(h.store.meta.get(manifestKey)?.sha256).toBe(sha(manifest));
-
-    // Verified by read-back like every other object: corrupt it and the
-    // episode fails, naming the manifest.
     h.store.corruptOnPut.add(manifestKey);
-    await h.d.execute(sql`update episodes set verification_state = 'failed' where episode_id = ${e.episodeId}`);
     const bad = await h.upload(h.A.batch);
-    expect(bad.json().episodes[0].verification_state).toBe('failed');
+    expect(bad.json().episodes[0]).toMatchObject({ uploaded: 2, verification_state: 'failed' });
     expect(bad.json().episodes[0].mismatches).toEqual([
       expect.objectContaining({ relative_path: `meta_${e.basename}.json` }),
     ]);
+
+    // And it heals on its own, without the media beside it moving again.
+    h.store.corruptOnPut.clear();
+    const res = await h.upload(h.A.batch);
+    expect(res.json().episodes[0]).toMatchObject({
+      uploaded: 1,
+      kept: 1,
+      verification_state: 'verified',
+    });
+    expect(h.store.meta.get(manifestKey)?.sha256).toBe(sha(manifest));
   });
 
   it('answers 503, not silence, on a machine with no object store configured', async () => {

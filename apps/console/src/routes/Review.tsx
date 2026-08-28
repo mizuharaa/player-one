@@ -31,7 +31,9 @@ import { AppShell } from '../components/shell/AppShell.tsx';
 import { Button, Key } from '../components/ui/button.tsx';
 import { EmptyState, Field, FlagRow, Problem, Skeleton } from '../components/ui/primitives.tsx';
 import { IconKeyboard, IconPartial, IconPass, IconReject, IconRefresh } from '../components/icons.tsx';
+import { MESSAGES } from '@playerone/api/i18n';
 import { api, ApiError, type Claim, type ReasonCode, type Verdict } from '../lib/api.ts';
+import { commitFailure, type CommitFailure } from './refusal.ts';
 import { duration, money, signedPercent, signedSeconds } from '../lib/format.ts';
 import { cn } from '../lib/cn.ts';
 
@@ -58,6 +60,17 @@ export function ReviewScreen() {
   const [rate, setRate] = useState(1);
   const [partIndex, setPartIndex] = useState(0);
   const [lost, setLost] = useState<'lease' | 'media' | null>(null);
+  /**
+   * A refusal the server named, and whether it has been parked.
+   *
+   * Separate from `lost` because it is a different fact with a different
+   * action: `lost` means the episode is no longer this reviewer's, a refusal
+   * means it is still theirs and the server will not take a verdict on it.
+   * Conflating the two is the defect — see `commitFailure`.
+   */
+  const [refused, setRefused] = useState<CommitFailure & { kind: 'refused' } | null>(null);
+  const [held, setHeld] = useState(false);
+  const [holdReason, setHoldReason] = useState('');
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [claimedAt, setClaimedAt] = useState<number>(() => Date.now());
 
@@ -81,6 +94,9 @@ export function ReviewScreen() {
     setPartIndex(0);
     setPlaying(false);
     setLost(null);
+    setRefused(null);
+    setHeld(false);
+    setHoldReason('');
     setClaimedAt(Date.now());
   }, []);
 
@@ -265,8 +281,45 @@ export function ReviewScreen() {
       void queryClient.invalidateQueries({ queryKey: ['shift'] });
       claim.mutate();
     },
+    /**
+     * A failure here is one of three things and they are not interchangeable.
+     * `commitFailure` reads which off the body; before it, every 409 became
+     * `setLost('lease')` and a refusal the reviewer could act on was shown to
+     * them as an expired claim.
+     */
     onError: (err) => {
-      if (err instanceof ApiError && err.isReassigned) setLost('lease');
+      const failure = commitFailure(err);
+      if (failure.kind === 'lease') setLost('lease');
+      else if (failure.kind === 'refused') setRefused(failure);
+    },
+  });
+
+  /**
+   * Parks the episode the server refused, with the reviewer's own words.
+   *
+   * The episode leaves every claimable lane, so the loop this ends is real: the
+   * review row stayed pending, the lease expired, and the queue handed the same
+   * episode to the next reviewer to meet the same refusal.
+   */
+  const hold = useMutation({
+    mutationFn: async () => {
+      if (episode === null || refused === null) return null;
+      /**
+       * The refusal's own English sentence travels with the typed note. The
+       * audit row and the counter screen are read by an operator who was not
+       * here, and "no task claim" plus what the reviewer saw is the whole of
+       * what they need; the reviewer's note alone would not say which refusal
+       * it answers.
+       */
+      const written = holdReason.trim();
+      const reason = `${MESSAGES.en[refused.key as keyof typeof MESSAGES.en] ?? refused.constraint ?? 'refused'}${
+        written === '' ? '' : ` — ${written}`
+      }`;
+      return api.hold(episode.episode_id, reason.slice(0, 500));
+    },
+    onSuccess: () => {
+      setHeld(true);
+      void queryClient.invalidateQueries({ queryKey: ['shift'] });
     },
   });
 
@@ -281,6 +334,7 @@ export function ReviewScreen() {
     episode !== null &&
     decision !== null &&
     lost === null &&
+    !held &&
     !commit.isPending &&
     (decision !== 'partial' || closed.length > 0) &&
     (decision !== 'bad' || reasons.length > 0);
@@ -697,7 +751,65 @@ export function ReviewScreen() {
               className="mt-3 w-full resize-none rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 py-2 text-[0.875rem] focus:border-[var(--sun-500)] focus:outline-none"
             />
 
-            {commit.isError && !(commit.error instanceof ApiError && commit.error.isReassigned) ? (
+            {/*
+              The refusal, in the reader's own language, and the way out of it.
+
+              This block is the fix for two defects at once. The old code hid
+              the error box for every 409 and showed the lease banner instead,
+              so a reviewer met "the claim expired, take the next one" for
+              refusals that had nothing to do with a lease — and there was no
+              action on the screen for the ones the sentence tells them to send
+              back to the counter.
+            */}
+            {refused !== null ? (
+              <div className="mt-3">
+                {held ? (
+                  <Problem title={t('state.refused.held.title')} body={t('state.refused.held.body')} />
+                ) : (
+                  <Problem
+                    title={t('state.refused.title')}
+                    body={t(refused.key)}
+                    action={
+                      refused.holdable ? (
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[0.75rem] font-semibold text-[var(--muted-foreground)]">
+                            {t('state.refused.holdReason')}
+                            <textarea
+                              value={holdReason}
+                              onChange={(e) => setHoldReason(e.currentTarget.value)}
+                              rows={2}
+                              className="mt-1 w-full resize-none rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 py-2 text-[0.875rem] font-normal text-[var(--foreground)] focus:border-[var(--sun-500)] focus:outline-none"
+                            />
+                          </label>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            disabled={hold.isPending}
+                            onClick={() => hold.mutate()}
+                          >
+                            {hold.isPending ? t('state.refused.holding') : t('state.refused.hold')}
+                          </Button>
+                          {hold.isError ? (
+                            <p role="alert" className="text-[0.75rem] font-medium text-[var(--reject)]">
+                              {t('state.refused.holdFailed')}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <Button variant="primary" size="sm" onClick={() => claim.mutate()}>
+                          {t('state.leaseExpired.action')}
+                        </Button>
+                      )
+                    }
+                  />
+                )}
+                {held ? (
+                  <Button variant="primary" size="sm" className="mt-3" onClick={() => claim.mutate()}>
+                    {t('state.leaseExpired.action')}
+                  </Button>
+                ) : null}
+              </div>
+            ) : commit.isError && !(commit.error instanceof ApiError && commit.error.isReassigned) ? (
               <p role="alert" className="mt-2 text-[0.8125rem] font-medium text-[var(--reject)]">
                 {t('state.writeFailed.title')} — {(commit.error as Error).message}
               </p>

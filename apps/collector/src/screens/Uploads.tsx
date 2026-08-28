@@ -24,7 +24,9 @@ const stateColors = (theme: NativeTheme, state: EpisodeState): { fg: string; bg:
       return theme.color.verdict.partial;
     case 'uploading':
     case 'uploaded':
-      return { fg: theme.color.tech[700], bg: theme.color.tech[100] };
+      // `techInk`, for the same reason `Note` uses it: `tech[100]` inverts in
+      // dark mode and `tech[700]` does not, which measured 1.35:1.
+      return { fg: theme.color.techInk, bg: theme.color.tech[100] };
     case 'pending_upload':
       return { fg: theme.color.mutedForeground, bg: theme.color.muted };
   }

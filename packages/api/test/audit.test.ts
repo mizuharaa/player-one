@@ -32,9 +32,13 @@ async function seed(): Promise<{ actor: CounterActor; centreId: string; taskId: 
   await d.execute(sql`
     insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash)
       values (${deviceId}, ${centreId}, 'HCM-01', 'active', ${hash})`);
+  // BO-11: this file's worked example is `mutate` writing a TASK, and 0020's
+  // `tasks_shaped_by_admin` refuses a task whose audited operator is not an
+  // administrator. The role here is the role of the person doing the thing
+  // being demonstrated; what the trigger refuses is in backoffice-role.test.ts.
   await d.execute(sql`
     insert into operators (id, upload_centre_id, external_ref, role, credential_hash)
-      values (${operatorId}, ${centreId}, 'op-1', 'centre_operator', ${hash})`);
+      values (${operatorId}, ${centreId}, 'op-1', 'administrator', ${hash})`);
 
   return {
     centreId,

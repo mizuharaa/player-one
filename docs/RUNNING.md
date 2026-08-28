@@ -128,6 +128,17 @@ token. Seed a centre, a machine and an operator with `credential_hash` set from
 `hashCredential()`, then `POST /auth/machine` and `POST /auth/operator`.
 `packages/api/test/counter.test.ts` is the shortest worked example.
 
+Two more rules on those two credentials, both read from the row and not from the
+token, so a change bites on the next request rather than at the twelve-hour
+expiry:
+
+- `operators.status` must be `active`. That is how a person is deactivated —
+  `DELETE` is refused by the audit foreign key, and blanking `credential_hash`
+  stops only their next sign-in.
+- An operator reference and a machine identifier are each **unique across the
+  whole platform**, not per centre, because neither login has a centre to
+  narrow by. Two centres cannot both call their clerk `counter-1`.
+
 ## Running it
 
 ```
@@ -136,12 +147,12 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 
 | Variable | | |
 |---|---|---|
-| `DATABASE_URL` | required | |
+| `DATABASE_URL` | required | A database on another machine must say whether the link is encrypted — `?sslmode=require` or `?sslmode=disable` — or `open()` refuses to start. See "Encryption, in transit and at rest" below. |
 | `PLAYERONE_TOKEN_SECRET` | required | Fails closed. A secret invented at boot would sign tokens that stop verifying on the next restart, which shows up as reviewers being randomly signed out. |
 | `PLAYERONE_MEDIA_ROOT` | | The directory holding the imported `ego_*` folders. Without it the console runs and the stream route answers 503 saying so. |
 | `PLAYERONE_CURRENCY` | `VND` | What `tasks.unit_price` is denominated in. Configuration because there is no currency column — see the gaps in `docs/review.md`. |
 | `PLAYERONE_SETTLEMENT_CYCLE_DAYS` | `7` | SET-07's settlement cycle. Weekly is `[ASSUMED]` in the brief's §13.2 rather than decided, so it is a setting and not a constant. It only supplies the *end* of a period whose start the caller gave. |
-| `PLAYERONE_SECURE_COOKIES` | off | Turn on wherever there is TLS. Off by default because a `Secure` cookie is never sent over plain HTTP and the symptom is a sign-in that silently does nothing. |
+| `PLAYERONE_SECURE_COOKIES` | off | Turn on wherever there is TLS. Off by default because a `Secure` cookie is never sent over plain HTTP and the symptom is a sign-in that silently does nothing. It is also this repo's single "there is TLS in front of this process" signal: with it on, the API sends HSTS, and `PLAYERONE_REVIEWER_MEDIA=1` is allowed. |
 | `PLAYERONE_REVIEWER_MEDIA` | **off** | Whether a PLT-10 reviewer session may stream raw footage. Leave it off. Brief D11 records remote online playback of raw video as unresolved and escalated, and Part 7.3 says the Phase 1 arrangement is remote access and not data transfer — so a reviewer gets review metadata and no bytes until Legal signs the playback architecture. With it off a reviewer session is also refused the claim and the verdict with `451`, because a verdict on footage nobody watched is a payment on a review that did not happen. Counter operators are unaffected. Setting it to `1` without `PLAYERONE_SECURE_COOKIES=1` refuses to start: a twelve-hour bearer cookie must not cross the internet in clear. |
 | `PLAYERONE_DB_POOL` | `10` | A single connection serialises the claim queue: `for update skip locked` has nothing to skip. |
 | `HOST` / `PORT` | `127.0.0.1` / `8080` | |
@@ -152,6 +163,166 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 Then `http://127.0.0.1:8080/review`, which redirects to a sign-in form taking the
 same machine and operator credentials.
 
+## The bucket needs one rule set on it, by hand
+
+**Set this before the first real upload.** It is not something the code can do
+for itself, and nothing else reaps what it reaps.
+
+A large file goes up as a multipart upload. If the run is interrupted, the parts
+already sent stay on the bucket — **stored, billed, and in no object listing**.
+Measured against MinIO on 2026-08-27: an interrupted 200 MB upload left
+`ListObjectsV2` reporting zero objects for the key while `ListMultipartUploads`
+held 128.00 MB of parts. An operator looking at the bucket sees nothing.
+
+The upload code aborts what it can prove is dead: when it resumes a key it
+abandons every older open upload on that same key, because it would never adopt
+one again. What it cannot judge is an upload for a delivery nobody comes back
+to — the card goes home, the batch is dropped, the parts sit there. Only the
+bucket can time that out.
+
+GreenNode is S3-compatible, so the AWS CLI sets it. Seven days, which is far
+longer than any legitimate resume (a 16 GB session is about 2.7 hours at the
+13 Mbps the brief assumes) and short enough that a dropped batch is not still
+billing next month:
+
+```bash
+cat > lifecycle.json <<'JSON'
+{
+  "Rules": [
+    {
+      "ID": "abort-incomplete-multipart-uploads",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "" },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+    }
+  ]
+}
+JSON
+
+aws s3api put-bucket-lifecycle-configuration \
+  --endpoint-url "$STORAGE_ENDPOINT" --bucket "$STORAGE_BUCKET" \
+  --lifecycle-configuration file://lifecycle.json
+```
+
+The empty prefix is deliberate: it is the whole bucket, so a prefix added later
+is covered without anybody remembering to widen the rule. Today every key is
+`episodes/<episode>/<ingest>/<file>`.
+
+Read it back, and look at what is currently orphaned:
+
+```bash
+aws s3api get-bucket-lifecycle-configuration --endpoint-url "$STORAGE_ENDPOINT" --bucket "$STORAGE_BUCKET"
+aws s3api list-multipart-uploads          --endpoint-url "$STORAGE_ENDPOINT" --bucket "$STORAGE_BUCKET"
+```
+
+The second command is the only way to see this cost. Run it when the storage
+bill does not match what `ListObjectsV2` says the bucket holds.
+
+## Encryption, in transit and at rest
+
+### The server speaks plain HTTP, and always will
+
+`pnpm serve` listens on plain HTTP. It does not terminate TLS, load a
+certificate, or redirect. Something in front of it does that, or nothing does.
+This was true before and was written down nowhere, which is what this section
+fixes. Pick the deployment you actually have:
+
+**A centre on its own LAN, operators in the same room.** This is the pilot.
+Leave everything as it is: plain HTTP, `PLAYERONE_SECURE_COOKIES` off,
+`PLAYERONE_REVIEWER_MEDIA` off. Turning the strict settings on here breaks the
+centre and buys nothing — a `Secure` cookie is never sent over `http://`, so
+sign-in silently stops working, and a browser ignores HSTS on a plain-HTTP
+response anyway. Bind `HOST` to the LAN address the operators reach and to
+nothing wider.
+
+**Anything reachable from outside the room** — a PaXini reviewer in Shenzhen,
+`PLAYERONE_REVIEWER_MEDIA=1`, or a centre PC with a public address. TLS in
+front is mandatory, and the server already refuses the worst combination:
+`reviewerMediaEnabled` with `secureCookies` off throws at boot
+(`packages/api/src/index.ts:214`). Twelve-hour bearer cookies and raw footage
+must not cross the internet in clear.
+
+The configuration for the second case is a reverse proxy on the same machine,
+with the app bound to loopback so nothing reaches it except through the proxy:
+
+```
+HOST=127.0.0.1 PORT=8080 PLAYERONE_SECURE_COOKIES=1 pnpm serve
+```
+
+Caddy, which obtains and renews the certificate itself:
+
+```
+centre-hcm.example.vn {
+  reverse_proxy 127.0.0.1:8080
+}
+```
+
+nginx, if the certificate comes from somewhere else:
+
+```
+server {
+  listen 443 ssl;
+  server_name centre-hcm.example.vn;
+  ssl_certificate     /etc/ssl/centre-hcm.crt;
+  ssl_certificate_key /etc/ssl/centre-hcm.key;
+  location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    # Range requests carry review video; do not buffer them.
+    proxy_buffering off;
+  }
+}
+```
+
+**There is no certificate story for a centre with no public hostname, and this
+document is not going to invent one.** A LAN machine cannot get a public
+certificate, and nobody has decided whether the programme runs an internal CA.
+Until that is decided, the answer is the one the code already enforces: remote
+reviewers do not reach a centre server, and `PLAYERONE_REVIEWER_MEDIA` stays
+off.
+
+### HSTS
+
+Sent as `strict-transport-security: max-age=31536000; includeSubDomains` when
+`PLAYERONE_SECURE_COOKIES=1`, and not otherwise. It follows that variable
+rather than being a switch of its own, so the two cannot disagree.
+
+It is not sent unconditionally, and that is deliberate. On a LAN centre it
+would be decoration, because a browser ignores the header on a plain-HTTP
+response. Worse, if that centre later puts one hostname behind TLS, a header it
+had been emitting all along pins every other path on that host to HTTPS for a
+year — a centre-down event with no obvious cause. No `preload`: that is a
+submission to a browser list which nobody here has made.
+
+### The database link
+
+`open()` refuses a `DATABASE_URL` that names a host other than loopback and
+does not say whether the connection is encrypted. Add `?sslmode=require`, or
+`?sslmode=disable` to state that the link is trusted. Either is accepted; only
+silence is refused, because a Postgres link in clear carries every collector's
+masked payout account, every operator credential hash and the whole PLT-08
+audit trail.
+
+The refusal is narrow on purpose. A loopback database — the pilot's shape and
+every URL in this repo — needs nothing said about it, and defaulting to
+`require` would brick a centre whose Postgres has no TLS, which gets the check
+reverted rather than fixed. Measured against the local Postgres 18: no query
+and `?sslmode=disable` both connect; `?sslmode=require` fails with
+`ECONNRESET`, because that server has no TLS configured. If you want a real
+encrypted link, configuring the Postgres server is the other half of the job.
+
+This covers the API, both workers and the ingest CLI. It does not cover
+`pnpm db:migrate`, which opens its own connection from
+`packages/store/drizzle.config.ts`.
+
+### At rest
+
+SEC-06 — the encrypted local cache at an upload centre — is **disk encryption
+on the centre PC, not anything this application does**. The mechanism, the
+deployment step, the owner and the acceptance check are in
+`docs/adr/0004-sec06-is-disk-encryption-at-the-upload-centre.md`. Read it
+before provisioning a centre machine. Nothing in this repository will tell you
+whether it has been done.
 ## The risk worker
 
 ```
@@ -198,6 +369,19 @@ pnpm -F @playerone/console dev
 ```
 
 Then <http://localhost:5173>, and sign in with `HCM-01` / `pw` and `op-1` / `pw`.
+
+`op-1`'s role is `administrator`. BO-11 (migration 0020) put the nine shaping
+routes — tasks, collectors, devices, bind, unbind, assignments — behind that
+role, and 0020 backfills every existing `centre_operator` to it, so an
+administrator is what a seeded operator would be on a real deployment. Counter
+work (the GETs, claim and release) is open to either role.
+
+The seed makes a second operator, `fin-1` / `pw`, whose role is `finance`.
+**Everything on the settle and payout screens needs that one**: a bill is what a
+named person earns, so reading one, exporting one and paying one are all
+finance's. `op-1` is deliberately not finance, because the operator who
+generates a cycle is the one 0013 refuses when the bill is paid — the generate
+is the one route on that lane which answers 409 for `fin-1` and 200 for `op-1`.
 
 `seed-console.mjs` **truncates every table**, so point it at a throwaway
 database. It puts six episodes through the real counter path and commits three

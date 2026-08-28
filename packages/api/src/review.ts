@@ -5,11 +5,12 @@ import { z } from 'zod';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from './audit.ts';
-import type { Actor } from './actor.ts';
+import { type Actor } from './actor.ts';
 import { REFUSALS, constraintOf } from './backoffice.ts';
 import {
   REVIEW_STATE,
   SpanError,
+  beyondBillableCeiling,
   cmp,
   fromDecimal,
   normaliseSpans,
@@ -109,6 +110,30 @@ export const LANES = ['standard', 'privacy', 'second_review'] as const;
 export type Lane = (typeof LANES)[number];
 
 /**
+ * `held` (0017): the park, and the reason it is not in `LANES`.
+ *
+ * `LANES` is the set of lanes a claim may ASK for. `claimNext`, `queueDepth`
+ * and `laneOf` all read it, so a review row in `held` is offered to nobody,
+ * counted in no depth, and `?queue=held` is a 400. That is the whole mechanism:
+ * the row stays `pending` and keeps its delivery, its priority and its history,
+ * and simply stops being served.
+ *
+ * What it is for. A verdict can be refused for a reason no reviewer can fix —
+ * a session with no task claim (`session_claim_missing` below), a settlement
+ * billed while its dispute was open. Before this the review row stayed pending,
+ * the lease ran out, the takeover handed the same episode to the next reviewer
+ * and they hit the same refusal. The only exit was a `bad` verdict, which pays
+ * the collector 0 for footage nobody judged.
+ *
+ * Both directions go through `POST /api/review/hold/:id` — a reviewer parks it,
+ * an upload-centre operator names a claimable lane once the counter has fixed
+ * what the refusal named. Nothing expires a hold on its own: an episode is
+ * parked until a person takes it out again, which is the point.
+ */
+export const ROUTABLE_LANES = [...LANES, 'held'] as const;
+export type RoutableLane = (typeof ROUTABLE_LANES)[number];
+
+/**
  * PRV-04's reason, fixed rather than passed.
  *
  * §6.9 lists exactly one compliance code and `review_reason_codes` carries it.
@@ -120,6 +145,33 @@ export type Lane = (typeof LANES)[number];
  * verdict's `reject_reasons`.
  */
 const PRIVACY_REASON = 'CO-PRIVACY';
+
+/**
+ * The refusals `POST /api/review/verdict` raises itself, named so the console
+ * can print a sentence in the reviewer's own language.
+ *
+ * None of these is a database constraint — they are conflicts this route works
+ * out — so they are a set of their own, the way `API_REFUSALS`,
+ * `SETTLE_API_REFUSALS` and `PAYOUT_API_REFUSALS` are. Every name here needs a
+ * `bo.refused.<name>` sentence in all three locales; the completeness test in
+ * backoffice.test.ts spreads this set in, so adding one without its sentences
+ * fails there rather than shipping an English string to Shenzhen.
+ *
+ * They used to carry only an English `error` string, and the console read any
+ * 409 as a lost lease — so a reviewer met "the claim expired, take the next
+ * one" for every one of them and the episode came straight back.
+ *
+ * `reassigned` is deliberately NOT in here and carries no constraint. It is
+ * the one 409 on this route that really does mean somebody else holds the
+ * episode, and the console tells the two apart by the name in the body.
+ */
+export const REVIEW_API_REFUSALS = new Set([
+  'review_already_decided',
+  'review_no_task',
+  'review_no_longer_reviewable',
+  'review_billed_while_disputed',
+  'review_verdict_id_taken',
+]);
 
 export type ReviewOptions = {
   /**
@@ -191,6 +243,15 @@ const DisputeBody = z.object({
   review_id: z.string().uuid(),
   /** What the collector said, in the operator's words. The database refuses a blank. */
   reason: z.string().min(1).max(2000),
+});
+
+/**
+ * `POST /api/review/hold/:id`. `held` parks the review; a claimable lane puts
+ * it back. The reason is required in both directions — see the route.
+ */
+const HoldBody = z.object({
+  queue: z.enum(ROUTABLE_LANES).default('held'),
+  reason: z.string().min(1).max(500),
 });
 
 const RouteBody = z
@@ -292,8 +353,18 @@ export function registerReview(
    * Vietnam entirely. What changed is that a reviewer no longer *has* to
    * borrow one of those credentials to work.
    */
-  const reviewerOf = (actor: Actor): string =>
-    actor.reviewer === undefined ? actor.operator.operatorId : actor.reviewer.reviewerId;
+  const reviewerOf = (actor: Actor): string => {
+    if (actor.reviewer !== undefined) return actor.reviewer.reviewerId;
+    if (actor.operator !== undefined) return actor.operator.operatorId;
+    /**
+     * A collector session. `requireActor` scopes it to `/api/me/` and it never
+     * reaches the review lane, so this is unreachable — but `reviewer_ref` is a
+     * foreign key into `operators` and a collector id is not one, so the
+     * alternative to throwing is writing a value that names nobody into the
+     * only column recording who decided a payment.
+     */
+    throw new Error('a collector session cannot act as a reviewer');
+  };
 
   // -------------------------------------------------------------------------
   // The queue
@@ -326,10 +397,19 @@ export function registerReview(
    * such footage is not served at all: it sits with the counter until the
    * back office attaches the claim the collector held (the UPDATE in
    * 0016_claim_join.sql), and then enters review with a price.
+   *
+   * And it must not be parked (0018). An operator who took an episode out of
+   * the queue took it out of all four readers of this fragment — the takeover,
+   * the insert, the peek and the depth — and out of the verdict as well, since
+   * `stillEligible` is this same clause and the verdict's UPDATE carries it. A
+   * reviewer holding the lease when the park lands is refused with "this
+   * episode stopped being reviewable"; nothing is recorded and nothing is paid.
+   * One column and not a join, because this runs on every queue scan.
    */
   const cloudGate = (options.verificationGate ?? 'local') === 'cloud';
   const eligible = sql`
-    ${schema.episodes.resolutionState} = 'resolved'
+    ${schema.episodes.parkedParkId} is null
+    and ${schema.episodes.resolutionState} = 'resolved'
     and exists (
       select 1
         from collection_sessions cs
@@ -341,7 +421,23 @@ export function registerReview(
     and ${
       cloudGate
         ? sql`${schema.episodes.verificationState} = 'verified'`
-        : sql`${schema.episodes.verificationState} <> 'failed'`
+        : /**
+           * The local gate, with the one exception ADR 0001's own reasoning
+           * forces: it deviates from QR-02 by reading the check the ingest
+           * engine ran over the copy on the upload centre's disk, and that
+           * argument only holds where such a copy exists.
+           *
+           * On Path A there is none. The engine ran on the collector's phone,
+           * the platform never saw those bytes, and nothing but the read-back
+           * in `/api/me/uploads/:id/complete` has ever compared what the cloud
+           * holds against what was measured. A pending Path A episode is an
+           * episode whose footage may not be anywhere the platform can reach,
+           * and serving it to a reviewer would mean paying for a recording on
+           * the strength of a phone's word about it.
+           */
+          sql`case when ${schema.episodes.uploadPath} = 'A'
+                   then ${schema.episodes.verificationState} = 'verified'
+                   else ${schema.episodes.verificationState} <> 'failed' end`
     }
     and not exists (
       select 1
@@ -981,7 +1077,9 @@ export function registerReview(
      * puts footage in front of more people, and moving priority or assignee is
      * queue management — both are the upload centre's call, not the reviewer's
      * (BO-15). The scope check in `buildApi` is by route prefix, so this is the
-     * only place the distinction can be made.
+     * only place the distinction can be made. Parking an episode the server
+     * refused a verdict on is `POST /api/review/hold/:id` below; that one is a
+     * reviewer's to do, and it addresses a different row.
      */
     if (
       actor.reviewer !== undefined &&
@@ -1231,9 +1329,19 @@ export function registerReview(
     `)) as unknown as { lease_expires_at: Date }[];
     const extended = rows[0];
     if (extended === undefined) {
-      // Not an error the client can fix by retrying: the lease is gone and the
-      // episode may already belong to somebody else.
-      return reply.code(409).send({ error: 'lease expired or not yours' });
+      /**
+       * Not an error the client can fix by retrying: the lease is gone and the
+       * episode may already belong to somebody else.
+       *
+       * `reassigned` is the word the console reads to tell a lost lease from a
+       * refusal it should print a sentence for, and this is a lost lease. It
+       * used to say "lease expired or not yours", which was true and unread:
+       * the console keyed on the status code and every 409 meant the same thing
+       * to it. Now the word carries the meaning, so it has to be this one.
+       */
+      return reply
+        .code(409)
+        .send({ error: 'reassigned', detail: 'the lease on this episode expired or is not yours' });
     }
     return reply.send({ lease_expires_at: new Date(extended.lease_expires_at).toISOString() });
   });
@@ -1277,6 +1385,154 @@ export function registerReview(
       },
     );
     return reply.send({ released: released !== undefined });
+  });
+
+  /**
+   * Parks an episode the server refused a verdict on, or puts it back (0017).
+   *
+   * The problem it answers. `POST /api/review/verdict` can refuse for a reason
+   * a reviewer cannot fix — `session_claim_missing`, an episode with no task,
+   * a second review whose settlement was billed while its dispute was open.
+   * The review row stays `pending` and stays eligible, so the lease runs out,
+   * the takeover hands the same episode to the next reviewer, and they meet the
+   * same refusal. The only other exit was a `bad` verdict, which pays the
+   * collector 0 for footage nobody could judge. `held` is a lane no claim can
+   * ask for; a row in it is served to nobody and counted in no depth.
+   *
+   * Why this is not `POST /api/review/route/:id`. That route addresses ONE row
+   * — the first review of the latest delivery, `dispute_id is null` — because
+   * its upsert targets `episode_reviews_delivery_key`, which is partial on
+   * exactly that predicate. A second review (QR-08) is a different row under a
+   * different key and answers "already reviewed" there. This route addresses
+   * whichever pending row exists, which is what a reviewer looking at a refusal
+   * needs, and it does one UPDATE instead of an upsert.
+   *
+   * Who may call it. Anyone authenticated may park; only an upload-centre
+   * operator may take one back out, because that is the claim that the thing
+   * the refusal named has been fixed — the same split as the privacy flag in
+   * `/route` and for the same reason (BO-15).
+   *
+   * The reason is mandatory in both directions. An episode that leaves every
+   * claimable lane and returns only when a person puts it back has to carry, in
+   * words, what the counter is being asked to fix; and the person who decides
+   * it is fixed has to say what they fixed.
+   *
+   * ponytail: not scoped to the caller's own centre, exactly as `/route` is
+   * not. Both take an episode out of a queue and neither knows which centre the
+   * card arrived at; `/api/review/dispute` shows the join that would do it
+   * (episode -> upload_batch -> handover -> upload_centre). It is one `where`
+   * on the locked read below, and it belongs in the same change that scopes
+   * `/route`, not in a fix that would leave the two disagreeing.
+   */
+  app.post('/api/review/hold/:id', opts, async (req, reply) => {
+    const parsed = HoldBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid body', detail: parsed.error.issues.slice(0, 5) });
+    }
+    const body = parsed.data;
+    const actor = req.actor!;
+    const episodeId = (req.params as { id: string }).id;
+    if (actor.reviewer !== undefined && body.queue !== 'held') {
+      return reply
+        .code(403)
+        .send({ error: 'a reviewer may hold an episode; releasing one is an upload-centre decision' });
+    }
+
+    const event = {
+      action: 'review.hold',
+      targetTable: 'episode_reviews',
+      targetId: episodeId,
+      before: null as unknown,
+      after: {} as Record<string, unknown>,
+      reason: body.reason,
+    };
+    let refusal: string | null = null;
+    /** A retry of a park that already happened. 200, and no second audit row. */
+    let already: { id: string; queue: RoutableLane } | null = null;
+    const written = await mutate(db, actor, event, async (tx) => {
+      /**
+       * The pending review to move, locked before it is read again.
+       *
+       * The caller's own row first: a reviewer holding a lease is looking at
+       * the refusal for THAT row, and an episode can carry a decided first
+       * review and a pending second one at the same time. Then oldest, then id,
+       * so two calls about the same episode resolve to the same row.
+       *
+       * No eligibility test. Parking an episode the queue should not have
+       * served is the whole point, and putting one back does not need it either
+       * — `stillEligible` in the takeover is what decides whether it is served.
+       */
+      const rows = (await tx.execute(sql`
+        select id, queue, reviewer_ref, dispute_id
+          from episode_reviews
+         where episode_id = ${episodeId}
+           and review_state = 'pending'
+         order by (reviewer_ref = ${reviewerOf(actor)}) desc nulls last, created_at, id
+         for update
+         limit 1
+      `)) as unknown as {
+        id: string;
+        queue: RoutableLane;
+        reviewer_ref: string | null;
+        dispute_id: string | null;
+      }[];
+      const row = rows[0];
+      if (row === undefined) {
+        // Decided, or never claimed. Neither is a row that can be stranded.
+        refusal = 'no pending review on this episode';
+        return undefined;
+      }
+      if (row.queue === body.queue) {
+        /**
+         * A double tap, or a retry after a lost response. `undefined` so
+         * `mutate` writes no audit row: the park is already recorded and a
+         * second event saying nothing changed buries the one that did.
+         */
+        already = { id: row.id, queue: row.queue };
+        return undefined;
+      }
+      if (body.queue !== 'held' && row.queue !== 'held') {
+        // This route moves a row into the park and out of it. Ordinary queue
+        // management is `/api/review/route/:id` and stays there.
+        refusal = 'this episode is not held';
+        return undefined;
+      }
+
+      const moved = (await tx.execute(sql`
+        update episode_reviews
+           set queue = ${body.queue},
+               reviewer_ref = null, claimed_at = null, lease_expires_at = null,
+               updated_at = now()
+         where id = ${row.id}
+           and review_state = 'pending'
+        returning id, queue
+      `)) as unknown as { id: string; queue: RoutableLane }[];
+      const after = moved[0];
+      if (after === undefined) {
+        // Decided between the lock and the write. Not possible under the lock
+        // above, and refused rather than reported as a park that did not happen.
+        refusal = 'no pending review on this episode';
+        return undefined;
+      }
+      event.targetId = after.id;
+      event.before = { episode_id: episodeId, queue: row.queue, reviewer_ref: row.reviewer_ref };
+      event.after = {
+        episode_id: episodeId,
+        queue: after.queue,
+        /** Who lost the episode when the park took it off them. */
+        reviewer_ref: null,
+        lease_released: true,
+        second_review: row.dispute_id !== null,
+      };
+      return { id: after.id, queue: after.queue };
+    });
+
+    const settled: { id: string; queue: RoutableLane } | null = written ?? already;
+    if (settled === null) {
+      const error: string = refusal ?? 'no pending review on this episode';
+      return reply.code(409).send({ error, episode_id: episodeId });
+    }
+    return reply.send({ episode_id: episodeId, review_id: settled.id, queue: settled.queue });
   });
 
   /**
@@ -1341,7 +1597,9 @@ export function registerReview(
       return reply.code(404).send({ error: 'this episode has not been claimed for review' });
     }
     if (review.reviewState !== 'pending') {
-      return reply.code(409).send({ error: 'this episode has already been reviewed' });
+      return reply
+        .code(409)
+        .send({ error: 'this episode has already been reviewed', constraint: 'review_already_decided' });
     }
     if (review.reviewerRef !== reviewer) {
       return reply.code(409).send({ error: 'reassigned', detail: 'this episode is claimed by someone else' });
@@ -1402,6 +1660,18 @@ export function registerReview(
 
     const decision: Decision = body.decision;
     const effectiveSeconds = usefulSeconds(decision, spans, review.measuredDurationS);
+    /**
+     * The one thing this route will not do is pay for time nobody could have
+     * recorded. `measured_duration_s` is stored exactly as the ingest client
+     * sent it (ING-17, and the widened column that makes it true), so 86400
+     * arriving there bills 1,440 minutes with nothing in the way. The ceiling
+     * is on `effectiveSeconds` and not on the episode, which is what makes a
+     * rejection and a plausible partial verdict still land: what is refused is
+     * the payment, not the review and not the delivery.
+     */
+    if (beyondBillableCeiling(effectiveSeconds)) {
+      return reply.code(409).send({ error: 'refused', constraint: 'review_duration_implausible' });
+    }
 
     /**
      * The price comes from the SESSION's snapshot and the claim it names, never
@@ -1427,7 +1697,9 @@ export function registerReview(
       // here anyway, refusing is the only safe answer: a verdict with no task
       // has no price, and guessing one is exactly the class of mistake the
       // resolver refuses to make.
-      return reply.code(409).send({ error: 'this episode has no task to be paid against' });
+      return reply
+        .code(409)
+        .send({ error: 'this episode has no task to be paid against', constraint: 'review_no_task' });
     }
     if (ownership.taskClaimId === null || ownership.unitPrice === null || ownership.currency === null) {
       /**
@@ -1675,6 +1947,7 @@ export function registerReview(
       if (err instanceof BilledWhileDisputed) {
         return reply.code(409).send({
           error: 'not reviewable',
+          constraint: 'review_billed_while_disputed',
           detail:
             'the settlement under dispute was billed while the dispute was open, so this verdict cannot replace it; nothing was recorded',
         });
@@ -1690,7 +1963,9 @@ export function registerReview(
         if (settled !== null) return reply.send({ ...settled, replayed: true });
         // The id is taken, but not by this reviewer on this episode. Say that
         // rather than returning a stranger's result or a 500.
-        return reply.code(409).send({ error: 'that verdict id belongs to another review' });
+        return reply
+          .code(409)
+          .send({ error: 'that verdict id belongs to another review', constraint: 'review_verdict_id_taken' });
       }
       throw err;
     }
@@ -1718,6 +1993,7 @@ export function registerReview(
       if (current?.state === 'pending') {
         return reply.code(409).send({
           error: 'not reviewable',
+          constraint: 'review_no_longer_reviewable',
           detail: 'this episode stopped being reviewable while it was open; nothing was recorded',
         });
       }
@@ -1770,7 +2046,11 @@ export function registerReview(
       return reply.code(400).send({ error: 'invalid body', detail: parsed.error.issues.slice(0, 5) });
     }
     const actor = req.actor!;
-    if (actor.reviewer !== undefined) {
+    // `raised_by` is an operator. Ask for the operator half rather than
+    // excluding the reviewer, so a collector session is refused here too — QR-08
+    // says a dispute is raised at the upload centre on the collector's behalf,
+    // and a collector-raised dispute is a different route nobody has built.
+    if (actor.operator === undefined) {
       return reply.code(403).send({ error: 'a dispute is raised at the upload centre, on the collector\'s behalf' });
     }
     const body = parsed.data;
