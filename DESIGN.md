@@ -42,10 +42,16 @@ palette that is not there.
 
 ## The three verdicts own their hues
 
-`--pass` `#12A150` · `--partial` `#7C5CFC` · `--reject` `#E5484D`, each with a
-`-bg` that keeps its foreground legible in both themes.
+`--pass` · `--partial` · `--reject`, each with a `-bg`, and each with **two
+inks**: light `#0D763B` / `#613AFB` / `#C41C21`, dark `#14B459` / `#9B83FD` /
+`#EB6F73`. Same hue in both schemes (146°, 252°, 358°), different lightness.
 
-Two rules:
+One ink for both schemes was the first design and it does not work. Measured:
+`#12A150` reads 3.06:1 on the light fill and 4.58:1 on the dark one, and every
+step that lifts one lowers the other. All three pills failed AA in both themes
+and nothing said so, because the ratios lived in a code comment.
+
+Three rules:
 
 - **Never orange.** Partial is violet rather than the obvious amber precisely
   because amber neighbours the sun ramp, and a reviewer must never read a
@@ -54,6 +60,11 @@ Two rules:
   half-filled ring, a cross (`IconPass` / `IconPartial` / `IconReject`).
   Red/green colour blindness is common and this axis decides whether somebody is
   paid.
+- **Never below 4.5:1.** `packages/design/test/contrast.test.ts` measures every
+  ink against its own fill, the card, the page and the muted fill, in both
+  schemes, and fails if one drops under AA. It also holds each verdict to one
+  hue across the two schemes, so a ratio can never be fixed by changing what a
+  colour means.
 
 These three appear on verdicts and nowhere else.
 
@@ -141,6 +152,12 @@ The focus ring is the sun, at 2px with a 2px offset, and it brightens to
 pointer at all** — that is a throughput requirement before it is an access one —
 so the ring has to hold against the light shell, the near-black theatre and
 arbitrary video.
+
+It is `--ring`, a different step of the ramp per scheme: `sun-600` on the light
+shell, `sun-400` on the dark one. `sun-500` in both was the first version and
+measured 2.61:1 on white, 2.50:1 on the surface and 2.35:1 on the muted fill —
+under WCAG 1.4.11's 3:1 for a control boundary on every shell surface, and worst
+behind buttons. The contrast test holds all three.
 
 ## Components
 

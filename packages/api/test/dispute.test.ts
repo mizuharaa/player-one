@@ -272,6 +272,115 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       expect(audit[0]!.after['dispute_id']).toBe(raised.json().dispute_id);
     });
 
+    /**
+     * The refusal that strands an episode, and the way out of it (0017).
+     *
+     * This is a real loop and not a hypothetical one. The bill generator can
+     * issue the disputed settlement while the dispute is open, and when it has,
+     * the second verdict cannot replace it — the route answers 409
+     * `review_billed_while_disputed` and writes nothing. The second review row
+     * stays `pending` and stays eligible, so the lease runs out, the takeover
+     * hands the same episode to the next reviewer in the lane, and they meet the
+     * same refusal. The first half of this test measures that loop; the second
+     * half proves the park ends it.
+     */
+    it('a refusal the reviewer cannot answer strands the episode until it is parked', async () => {
+      const h = await harness();
+      const reviewId = (await h.firstVerdicts()).get(h.episode1)!;
+      await h.dispute(reviewId);
+      // The dispute is open; the generator issues the bill anyway. This is the
+      // ordering `review_disputes_unbilled_check` cannot prevent, because it
+      // gates raising a dispute and not billing one.
+      await h.d.execute(sql`update settlements set settlement_state = 'bill_generated', updated_at = now() where episode_review_id = ${reviewId}`);
+
+      const first = await h.claimIn('second_review', h.A2);
+      expect(first.statusCode, first.body).toBe(200);
+      expect(first.json().episode_id).toBe(h.episode1);
+      // A verdict that DIFFERS from the first is the one that has to replace
+      // the settlement, and the settlement is already on a bill. 30 s of the
+      // 60 s recording, where the first reviewer passed the whole of it.
+      const half = [{ start_seconds: 0, end_seconds: 30 }];
+      const refused = await h.verdict(h.A2, h.episode1, 'partial', half);
+      expect(refused.statusCode, refused.body).toBe(409);
+      // Named, so the console can print a sentence instead of the lease banner.
+      expect(refused.json().constraint).toBe('review_billed_while_disputed');
+      expect(refused.json().error).not.toBe('reassigned');
+
+      // THE LOOP. The reviewer gives the episode back and it comes straight
+      // out of the queue again, to be refused again. Nothing in the lane ends
+      // this: the only other exit is a `bad` verdict, which pays 0 for footage
+      // nobody could judge.
+      expect((await h.send('POST', `/api/review/release/${h.episode1}`, undefined, h.A2)).statusCode).toBe(200);
+      const again = await h.claimIn('second_review', h.A2);
+      expect(again.statusCode, again.body).toBe(200);
+      expect(again.json().episode_id).toBe(h.episode1);
+      expect((await h.verdict(h.A2, h.episode1, 'partial', half)).statusCode).toBe(409);
+
+      // THE EXIT. The reviewer sends it back to the counter with a reason.
+      const parked = await h.send(
+        'POST',
+        `/api/review/hold/${h.episode1}`,
+        { reason: 'the settlement was billed while the challenge was open' },
+        h.A2,
+      );
+      expect(parked.statusCode, parked.body).toBe(200);
+      expect(parked.json().queue).toBe('held');
+      expect((await h.claimIn('second_review', h.A2)).statusCode).toBe(204);
+
+      // Nothing was paid and nothing was decided by parking it.
+      const rows = (await h.d.execute(sql`
+        select review_state, queue from episode_reviews where episode_id = ${h.episode1} and dispute_id is not null
+      `)) as unknown as { review_state: string; queue: string }[];
+      expect(rows).toEqual([{ review_state: 'pending', queue: 'held' }]);
+      const money = (await h.d.execute(sql`
+        select count(*)::int as n from settlements s join episode_reviews r on r.id = s.episode_review_id
+         where r.episode_id = ${h.episode1}
+      `)) as unknown as { n: number }[];
+      expect(money[0]!.n).toBe(1);
+    });
+
+    /**
+     * The park is a reviewer's own action, because the sentence that tells them
+     * to send it back is shown to them. Everything else on that route stays an
+     * upload-centre decision (BO-15).
+     */
+    it('a PaXini reviewer may park an episode but not take it back out', async () => {
+      const h = await harness();
+      const reviewId = (await h.firstVerdicts()).get(h.episode1)!;
+      await h.dispute(reviewId);
+      await h.d.execute(sql`update settlements set settlement_state = 'bill_generated', updated_at = now() where episode_review_id = ${reviewId}`);
+      // Reviewer media is off by default (brief D11), so a reviewer session
+      // cannot claim here; the refusal is proved in the test above and this
+      // one is about who may move the row.
+      const parked = await h.send(
+        'POST',
+        `/api/review/hold/${h.episode1}`,
+        { reason: 'billed while the challenge was open' },
+        h.PAX,
+      );
+      expect(parked.statusCode, parked.body).toBe(200);
+
+      // Deciding the thing the refusal named is fixed is not theirs to make.
+      const back = await h.send(
+        'POST',
+        `/api/review/hold/${h.episode1}`,
+        { queue: 'second_review', reason: 'looks fine now' },
+        h.PAX,
+      );
+      expect(back.statusCode, back.body).toBe(403);
+
+      // An operator can, and the SAME row comes back rather than a new one.
+      const released = await h.send(
+        'POST',
+        `/api/review/hold/${h.episode1}`,
+        { queue: 'second_review', reason: 'the bill line was reversed' },
+        h.A,
+      );
+      expect(released.statusCode, released.body).toBe(200);
+      expect(released.json().queue).toBe('second_review');
+      expect((await h.claimIn('second_review', h.A2)).json().episode_id).toBe(h.episode1);
+    });
+
     it('differing supersedes the original and one cycle bills the new settlement exactly once', async () => {
       const h = await harness();
       const reviewId = (await h.firstVerdicts()).get(h.episode1)!;

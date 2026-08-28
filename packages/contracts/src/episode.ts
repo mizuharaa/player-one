@@ -43,6 +43,12 @@ export const DISCREPANCY_CODES = [
   'MANIFEST-UNREADABLE', // the manifest is on disk but will not parse
   'PART-MISSING-INTERIOR',
   'CHECKSUM-MISMATCH',
+  /**
+   * Raised at store time, like CHECKSUM-MISMATCH: the record's own
+   * `raw_duration_s` is longer than the window its own timestamps describe.
+   * See `windowDiscrepancies` at the foot of this file.
+   */
+  'DUR-EXCEEDS-WINDOW',
   // Identity, from milestone 0.3. Both are cross-checks on the session
   // directory name, which is what the episode id is derived from.
   'EPISODE-ID-FALLBACK', // the basename does not parse; the id falls back to the raw name
@@ -186,4 +192,63 @@ export function stateFrom(discrepancies: readonly Discrepancy[]): EpisodeRecord[
   if (discrepancies.some((x) => x.severity === 'quarantine')) return 'quarantined';
   if (discrepancies.some((x) => x.severity === 'flag')) return 'flagged';
   return 'ok';
+}
+
+/**
+ * One millisecond. `raw_duration_s` and the `*_pts_us` strings are both derived
+ * from the same integer microseconds, so the only difference a correct record
+ * can show is the float64 division in `Number(us) / 1e6`, which is far below
+ * this. A millisecond is also the unit `max_stream_skew_ms` is already reported
+ * in, so the record states timing slack in one unit and not two.
+ */
+export const DURATION_TOLERANCE_S = 0.001;
+
+/**
+ * The record checked against itself: is the duration it claims longer than the
+ * window its own timestamps describe?
+ *
+ * `raw_duration_s` is the number a collector is paid on, and until now nothing
+ * on the server ever compared it with anything. The record carries the material
+ * to check it. `usable_start_us` and `usable_end_us` are the intersection of
+ * stream coverage — the widest instant every stream covered — and the engine's
+ * own duration is the *measure* of that intersection with its holes removed,
+ * so `raw_duration_s` can never exceed `usable_end_us - usable_start_us`. It is
+ * an upper bound, never a floor, so nothing here can raise a payment: a
+ * duration shorter than the window is a session with gaps in it and is correct.
+ *
+ * The window is used and not the sum of the stream spans, because the widest
+ * stream is the union and the union is not what anybody is paid for
+ * (docs/review.md, §5.3.3, UPL-14).
+ *
+ * A record with no window — `wall_clock` timing, where no stream carried both
+ * a first and a last PTS — has nothing to be checked against and is left alone.
+ * Its duration comes from the manifest, which is advisory by decision, and the
+ * ceiling on the payment path is what bounds it.
+ *
+ * The result is `quarantine` and not a refusal. ING-17: a bad measurement must
+ * never be the reason a delivery fails to store. The delivery stores, keeps its
+ * media and is still visible; what it does not do is enter review, because
+ * which of the two numbers is the real one is a question for a person.
+ *
+ * The way out is the way out of every ingest quarantine: the card is never
+ * cleared (ING-34), so the session is measured again and the redelivery becomes
+ * the latest ingest, which is the row review eligibility reads. There is no
+ * route that edits this one, and there should not be.
+ */
+export function windowDiscrepancies(record: EpisodeRecord): Discrepancy[] {
+  const { usable_start_us, usable_end_us, raw_duration_s } = record.timing;
+  if (usable_start_us === null || usable_end_us === null) return [];
+  const start = BigInt(usable_start_us);
+  const end = BigInt(usable_end_us);
+  const windowS = end > start ? Number(end - start) / 1e6 : 0;
+  if (raw_duration_s <= windowS + DURATION_TOLERANCE_S) return [];
+  return [
+    {
+      code: 'DUR-EXCEEDS-WINDOW',
+      severity: 'quarantine',
+      detail:
+        `claims ${raw_duration_s.toFixed(6)} s of media inside a window of ` +
+        `${windowS.toFixed(6)} s (${usable_start_us} to ${usable_end_us})`,
+    },
+  ];
 }

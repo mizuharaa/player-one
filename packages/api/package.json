@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1117.0",
+    "@aws-sdk/s3-request-presigner": "^3.1120.0",
     "@playerone/contracts": "workspace:*",
     "@playerone/store": "workspace:*",
     "drizzle-orm": "^0.45.2",

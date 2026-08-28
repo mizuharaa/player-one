@@ -51,13 +51,32 @@ export function nativeTheme(scheme: ColorScheme) {
         ...tech,
         ...(isDark ? { 50: darkBrandTints.tech50, 100: darkBrandTints.tech100 } : {}),
       },
+      /**
+       * The ink for anything sitting on `tech[50]` or `tech[100]`: the `Note`
+       * that carries every gate message and every rejection reason, and the
+       * upload-state pills.
+       *
+       * It has to be resolved here, not chosen at each call site, because the
+       * two fills invert in dark mode and `tech[700]` does not. Measured with
+       * one ink for both schemes: 1.80:1 for the note and 1.35:1 for the pills
+       * — the sentence saying why a collector cannot work was invisible on a
+       * dark phone. `tech[200]` measures 10.08:1 and 7.53:1 on the same fills.
+       */
+      techInk: isDark ? tech[200] : tech[700],
+      /** Ink and fill both come from the scheme; see `verdict` in tokens.ts. */
       verdict: {
-        pass: { fg: verdict.pass.fg, bg: isDark ? verdict.pass.bgDark : verdict.pass.bg },
+        pass: {
+          fg: isDark ? verdict.pass.fgDark : verdict.pass.fg,
+          bg: isDark ? verdict.pass.bgDark : verdict.pass.bg,
+        },
         partial: {
-          fg: verdict.partial.fg,
+          fg: isDark ? verdict.partial.fgDark : verdict.partial.fg,
           bg: isDark ? verdict.partial.bgDark : verdict.partial.bg,
         },
-        reject: { fg: verdict.reject.fg, bg: isDark ? verdict.reject.bgDark : verdict.reject.bg },
+        reject: {
+          fg: isDark ? verdict.reject.fgDark : verdict.reject.fg,
+          bg: isDark ? verdict.reject.bgDark : verdict.reject.bg,
+        },
       },
       stage,
     },

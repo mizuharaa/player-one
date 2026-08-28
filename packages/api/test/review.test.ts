@@ -293,7 +293,16 @@ describe.skipIf(!hasDb())('the review lane', () => {
       expect(beat.statusCode).toBe(200);
 
       // Somebody else's episode is not somebody else's to extend.
-      expect((await h.send('POST', `/api/review/heartbeat/${episodeId}`, undefined, h.headers2)).statusCode).toBe(409);
+      const stolen = await h.send('POST', `/api/review/heartbeat/${episodeId}`, undefined, h.headers2);
+      expect(stolen.statusCode).toBe(409);
+      /**
+       * And it says `reassigned`, which is now the word that means it. The
+       * console reads that word to tell a lost lease from a refusal it should
+       * print a sentence for; a 409 here saying anything else would put the
+       * heartbeat's own failure into the refusal box instead of the banner.
+       */
+      expect(stolen.json().error).toBe('reassigned');
+      expect(stolen.json().constraint).toBeUndefined();
     });
 
     it('puts a released episode back at the head of the queue', async () => {
@@ -324,6 +333,74 @@ describe.skipIf(!hasDb())('the review lane', () => {
         update episodes set resolution_state = 'quarantined', collection_session_id = null,
                             resolution_method = null`);
       expect((await claim(h)).statusCode).toBe(204);
+    });
+
+    /**
+     * The three things the platform used to take the client's word for, each
+     * one on its own, each one measured through this route because this route
+     * is where the number a collector is paid on is handed out.
+     *
+     * `state` and `discrepancies` arrive on the same document, so a client that
+     * chose both could carry a quarantine defect and assert `ok` beside it, and
+     * eligibility read exactly the field it had asserted. The store derives the
+     * state from the discrepancies now, so the two can no longer disagree.
+     */
+    it('does not offer an episode that asserts `ok` beside a quarantine discrepancy', async () => {
+      const bad = record({});
+      const h = await harness({
+        episodes: [
+          {
+            ...bad,
+            state: 'ok',
+            // Quarantine severity, and deliberately NOT a blocking code, so the
+            // state column is the only thing that keeps it out of the queue.
+            discrepancies: [
+              { code: 'CALIB-MISSING', severity: 'quarantine', detail: 'imu MISSING' },
+            ],
+          },
+        ],
+      });
+      expect((await claim(h)).statusCode).toBe(204);
+    });
+
+    it('does not offer an episode that asserts `ok` beside CHECKSUM-MISMATCH', async () => {
+      const bad = record({});
+      const h = await harness({
+        episodes: [
+          {
+            ...bad,
+            state: 'ok',
+            discrepancies: [
+              { code: 'CHECKSUM-MISMATCH', severity: 'flag', detail: '1 changed against ingest 0' },
+            ],
+          },
+        ],
+      });
+      expect((await claim(h)).statusCode).toBe(204);
+    });
+
+    /**
+     * The record carries `usable_start_us`, `usable_end_us` and a span for
+     * every stream, and nothing on the server had ever compared its claimed
+     * duration against any of them. A day of media inside a hundred-second
+     * window is 1,440 billed minutes at a price of 1200, which is 1,728,000
+     * VND on one episode.
+     */
+    it('does not offer an episode claiming more duration than its own window holds', async () => {
+      const bad = record({ measured: 100 });
+      const h = await harness({
+        episodes: [{ ...bad, timing: { ...bad.timing, raw_duration_s: 86400 } }],
+      });
+      expect((await claim(h)).statusCode).toBe(204);
+
+      // Stored, not refused: ING-17 says a bad measurement never blocks the
+      // delivery. It is quarantined, which is a question for a person.
+      const rows = (await h.d.execute(
+        sql`select state, measured_duration_s from episode_ingests`,
+      )) as unknown as { state: string; measured_duration_s: string }[];
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.state).toBe('quarantined');
+      expect(rows[0]!.measured_duration_s).toBe('86400.000000');
     });
   });
 
@@ -672,6 +749,119 @@ describe.skipIf(!hasDb())('the review lane', () => {
       expect(routed.statusCode).toBe(409);
     });
 
+    /**
+     * 0017: the park.
+     *
+     * A verdict can be refused for a reason no reviewer can fix. Before this
+     * lane the review row stayed pending, the lease expired, the takeover
+     * handed the same episode to the next reviewer and they met the same
+     * refusal — for ever, with no exit but a `bad` verdict paying 0. `held` is
+     * a lane no claim can ask for, so the row simply stops being served.
+     */
+    it('parks a refused episode out of every claimable lane, and only with a reason', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const [episodeId] = h.episodeIds;
+      expect((await claim(h)).json().episode_id).toBe(episodeId);
+
+      // A park with no reason is refused, and nothing about the row moved.
+      const bare = await h.send('POST', `/api/review/hold/${episodeId}`, {});
+      expect(bare.statusCode, bare.body).toBe(400);
+      const before = (await h.d.execute(sql`
+        select queue, reviewer_ref from episode_reviews where episode_id = ${episodeId}
+      `)) as unknown as { queue: string; reviewer_ref: string | null }[];
+      expect(before[0]!.queue).toBe('standard');
+      expect(before[0]!.reviewer_ref).not.toBeNull();
+
+      const parked = await h.send('POST', `/api/review/hold/${episodeId}`, {
+        reason: 'this collector holds no claim on the task; the counter has to attach one',
+      });
+      expect(parked.statusCode, parked.body).toBe(200);
+      expect(parked.json().queue).toBe('held');
+
+      // Out of the queue: nothing serves it, nothing counts it, and asking for
+      // the lane by name is a 400 rather than a way in.
+      expect((await claim(h, h.headers2)).statusCode).toBe(204);
+      expect((await h.send('GET', '/api/review/next', undefined, h.headers2)).statusCode).toBe(204);
+      expect((await h.send('GET', '/api/review/shift', undefined, h.headers2)).json().queue_depth).toBe(0);
+      expect((await h.send('POST', '/api/review/claim?queue=held', undefined, h.headers2)).statusCode).toBe(400);
+
+      // The row is still pending and still names its delivery: parking is not
+      // a verdict and pays nothing.
+      const rows = (await h.d.execute(sql`
+        select review_state, queue, reviewer_ref, lease_expires_at from episode_reviews where episode_id = ${episodeId}
+      `)) as unknown as { review_state: string; queue: string; reviewer_ref: string | null; lease_expires_at: Date | null }[];
+      expect(rows[0]!.review_state).toBe('pending');
+      expect(rows[0]!.queue).toBe('held');
+      // The lease goes with it, the same way a privacy quarantine releases one.
+      expect(rows[0]!.reviewer_ref).toBeNull();
+      expect(rows[0]!.lease_expires_at).toBeNull();
+      const settled = (await h.d.execute(sql`select count(*)::int as n from settlements`)) as unknown as { n: number }[];
+      expect(settled[0]!.n).toBe(0);
+
+      // And it is audited, with the words the reviewer typed.
+      const events = (await h.d.execute(sql`
+        select action, reason, after from audit_events where action = 'review.hold' order by occurred_at desc limit 1
+      `)) as unknown as { action: string; reason: string | null; after: Record<string, unknown> }[];
+      expect(events[0]!.reason).toContain('the counter has to attach one');
+      expect(events[0]!.after['queue']).toBe('held');
+      expect(events[0]!.after['lease_released']).toBe(true);
+
+      // A retry of the same park answers 200 and writes no second audit row.
+      // The park is already recorded, and an event saying nothing changed
+      // buries the one that did.
+      const retried = await h.send('POST', `/api/review/hold/${episodeId}`, { reason: 'same again' });
+      expect(retried.statusCode, retried.body).toBe(200);
+      expect(retried.json().queue).toBe('held');
+      const count = (await h.d.execute(sql`
+        select count(*)::int as n from audit_events where action = 'review.hold'
+      `)) as unknown as { n: number }[];
+      expect(count[0]!.n).toBe(1);
+    });
+
+    it('lets an operator put a parked episode back once the counter has fixed it', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const [episodeId] = h.episodeIds;
+      expect((await claim(h)).json().episode_id).toBe(episodeId);
+      expect(
+        (await h.send('POST', `/api/review/hold/${episodeId}`, { reason: 'no task claim' })).statusCode,
+      ).toBe(200);
+      expect((await claim(h, h.headers2)).statusCode).toBe(204);
+
+      const back = await h.send('POST', `/api/review/hold/${episodeId}`, {
+        queue: 'standard',
+        reason: 'the claim is attached',
+      });
+      expect(back.statusCode, back.body).toBe(200);
+      expect(back.json().queue).toBe('standard');
+      // Same review row, not a new one: the delivery, the priority and the
+      // history all survive the park.
+      const rows = (await h.d.execute(sql`
+        select count(*)::int as n from episode_reviews where episode_id = ${episodeId}
+      `)) as unknown as { n: number }[];
+      expect(rows[0]!.n).toBe(1);
+      expect((await claim(h, h.headers2)).json().episode_id).toBe(episodeId);
+    });
+
+    it('refuses to park a review that has already been decided', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const episodeId = (await claim(h)).json().episode_id;
+      await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'good' });
+      const parked = await h.send('POST', `/api/review/hold/${episodeId}`, { reason: 'too late' });
+      expect(parked.statusCode, parked.body).toBe(409);
+      expect(parked.json().error).toBe('no pending review on this episode');
+    });
+
+    it('rejects a lane the queue does not have, and keeps `held` out of `/route`', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const [episodeId] = h.episodeIds;
+      const bad = await h.send('POST', `/api/review/hold/${episodeId}`, { queue: 'helld', reason: 'x' });
+      expect(bad.statusCode, bad.body).toBe(400);
+      // One way to park an episode, not two. `/route` is queue management on
+      // the first review and does not know this lane.
+      const other = await h.send('POST', `/api/review/route/${episodeId}`, { queue: 'held', reason: 'x' });
+      expect(other.statusCode, other.body).toBe(400);
+    });
+
     it('measures each reviewer against their own verdicts, and nobody else', async () => {
       const h = await harness({
         episodes: [
@@ -852,6 +1042,136 @@ describe.skipIf(!hasDb())('the review lane', () => {
 
       const reasons = (await h.d.execute(sql`select code from episode_review_reasons`)) as unknown as { code: string }[];
       expect(reasons.map((r) => r.code)).toEqual(['VQ-DARK']);
+    });
+
+    it('refuses to pay a duration no recording could have, and still lets the episode be rejected', async () => {
+      /**
+       * 24 hours. `measured_duration_s` is stored exactly as the ingest client
+       * sent it — deliberately, because a bad measurement must never be the
+       * reason a delivery fails to store (ING-17) — so the only thing standing
+       * between a wrong number and 1,440 billed minutes is this refusal.
+       */
+      const h = await harness({ episodes: [record({ measured: 86400 })] });
+      const episodeId = (await claim(h)).json().episode_id;
+
+      const res = await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'good' });
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json()).toEqual({ error: 'refused', constraint: 'review_duration_implausible' });
+      const [n] = (await h.d.execute(sql`select count(*)::int as n from settlements`)) as unknown as { n: number }[];
+      expect(n!.n).toBe(0);
+      const [state] = (await h.d.execute(sql`select review_state from episode_reviews where episode_id = ${episodeId}`)) as unknown as { review_state: string }[];
+      expect(state!.review_state).toBe('pending');
+
+      // A partial verdict marking a plausible slice of it is paid: the ceiling
+      // is on the number that becomes money, not on the episode.
+      const part = await verdict(h, {
+        verdict_id: uid(),
+        episode_id: episodeId,
+        decision: 'partial',
+        spans: [{ start_seconds: 0, end_seconds: 60 }],
+      });
+      expect(part.statusCode, part.body).toBe(200);
+      expect(part.json().amount).toBe('1200.0000');
+    });
+
+    it('refuses a partial verdict that marks the whole implausible duration', async () => {
+      // The spans are clamped to the measured duration, so marking "all of it"
+      // reaches the money path with the same 86,400 seconds behind it.
+      const h = await harness({ episodes: [record({ measured: 86400 })] });
+      const episodeId = (await claim(h)).json().episode_id;
+
+      const res = await verdict(h, {
+        verdict_id: uid(),
+        episode_id: episodeId,
+        decision: 'partial',
+        spans: [{ start_seconds: 0, end_seconds: 86400 }],
+      });
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json()).toEqual({ error: 'refused', constraint: 'review_duration_implausible' });
+
+      // Rejecting it is not refused. A `bad` verdict pays nothing, and closing
+      // the episode out is the one thing a reviewer can always do.
+      const bad = await verdict(h, {
+        verdict_id: uid(),
+        episode_id: episodeId,
+        decision: 'bad',
+        reject_reasons: ['VQ-DARK'],
+      });
+      expect(bad.statusCode, bad.body).toBe(200);
+      expect(bad.json().amount).toBe('0.0000');
+    });
+
+    /**
+     * QR-04 and APP-27: the reason has to leave the operator console.
+     *
+     * Both are P0 — "failure reasons are surfaced to the collector in a form
+     * they can act on", and "failed review shows the reason in the collector's
+     * language" — and until this route the codes a reviewer picked were
+     * readable only by the console that wrote them.
+     */
+    it('tells a counter clerk why an episode failed, in the collector’s language', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const episodeId = h.episodeIds[0]!;
+
+      // Before anybody reviews it: the episode is known, nothing is decided,
+      // and there is no reason to give. A collector asking early gets an
+      // honest empty answer rather than a 404 they would read as data loss.
+      const waiting = await h.send('GET', `/api/episodes/${episodeId}/outcome`);
+      expect(waiting.statusCode, waiting.body).toBe(200);
+      expect(waiting.json().review_state).toBeNull();
+      expect(waiting.json().reasons).toEqual([]);
+      expect(waiting.json().collector_id).toBe(h.ids.collector);
+
+      await claim(h);
+      const decided = await verdict(h, {
+        verdict_id: uid(),
+        episode_id: episodeId,
+        decision: 'bad',
+        reject_reasons: ['VQ-DARK', 'DI-NO-IMU'],
+        reviewer_note: 'the whole clip is unusable',
+      });
+      expect(decided.statusCode, decided.body).toBe(200);
+
+      const res = await h.send('GET', `/api/episodes/${episodeId}/outcome`);
+      expect(res.statusCode, res.body).toBe(200);
+      const body = res.json();
+      expect(body.review_state).toBe('fail');
+      expect(body.reviewed_at).not.toBeNull();
+      expect(body.reviewer_note).toBe('the whole clip is unusable');
+      // Ordered by category then code, so the same verdict reads the same way twice.
+      expect(body.reasons).toEqual([
+        {
+          code: 'DI-NO-IMU',
+          category: 'data_integrity',
+          label_en: 'Missing IMU',
+          label_vi: 'Thiếu dữ liệu IMU',
+          label_zh: '缺少IMU',
+        },
+        {
+          code: 'VQ-DARK',
+          category: 'visual_quality',
+          label_en: 'Too dark',
+          label_vi: 'Quá tối',
+          label_zh: '过暗',
+        },
+      ]);
+
+      /**
+       * Nothing here belongs to anybody but this collector. The body is what a
+       * collector token will be admitted to read, so a reviewer's identity, a
+       * lease or another episode leaking into it is the defect this pins.
+       */
+      expect(Object.keys(body).sort()).toEqual([
+        'collector_id',
+        'episode_id',
+        'ingest_id',
+        'reasons',
+        'review_state',
+        'reviewed_at',
+        'reviewer_note',
+      ]);
+
+      expect((await h.send('GET', `/api/episodes/${uid()}/outcome`)).statusCode).toBe(404);
     });
 
     it('stores overlapping marks as merged, non-overlapping spans', async () => {

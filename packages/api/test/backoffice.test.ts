@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LightMyRequestResponse } from 'fastify';
 import { open, schema } from '@playerone/store';
-import { COUNTER_REFUSALS, PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, SETTLE_API_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
+import { COUNTER_REFUSALS, PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, REVIEW_API_REFUSALS, REVIEW_HOLDABLE_REFUSALS, SETTLE_API_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
 import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
@@ -61,9 +61,12 @@ async function seed() {
   await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash) values
     (${ids.machineA}, ${ids.centreA}, 'HCM-01', 'active', ${hash}),
     (${ids.machineB}, ${ids.centreB}, 'HAN-01', 'active', ${hash})`);
+  // BO-11: every route this file exercises is an administrator's, so both
+  // operators hold that role. A clerk being refused each of them by name, and
+  // 0020's triggers refusing one below the routes, are in backoffice-role.test.ts.
   await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values
-    (${ids.operatorA}, ${ids.centreA}, 'op-a', 'centre_operator', ${hash}),
-    (${ids.operatorB}, ${ids.centreB}, 'op-b', 'centre_operator', ${hash})`);
+    (${ids.operatorA}, ${ids.centreA}, 'op-a', 'administrator', ${hash}),
+    (${ids.operatorB}, ${ids.centreB}, 'op-b', 'administrator', ${hash})`);
   await d.execute(sql`insert into collectors (id, external_ref, status) values
     (${ids.collector1}, 'c-1', 'qualified'),
     (${ids.collector2}, 'c-2', 'qualified'),
@@ -570,7 +573,8 @@ describe.skipIf(!hasDb())('the back office', () => {
       const c = await client();
       const claim = uid();
       await c.post(`/api/tasks/${ids.taskA}/claims`, { id: claim, collector_id: ids.collector1 });
-      expect((await c.post(`/api/task-claims/${claim}/release`)).statusCode).toBe(200);
+      const rel = await c.post(`/api/task-claims/${claim}/release`);
+      expect(rel.statusCode, rel.body).toBe(200);
       expect(
         (await c.post(`/api/tasks/${ids.taskA}/claims`, { id: uid(), collector_id: ids.collector2 }))
           .statusCode,
@@ -756,6 +760,63 @@ describe.skipIf(!hasDb())('the back office', () => {
   });
 
   describe('a claim is a record, not a row', () => {
+    /**
+     * Two clocks and two precisions, compared by a CHECK.
+     *
+     * `claimed_at` defaults to Postgres `now()`, which carries microseconds.
+     * The release stamped `released_at` from the API process's own
+     * `new Date()`, which carries milliseconds and nothing finer. Whenever a
+     * release landed in the same millisecond the claim was written in, the
+     * stored `claimed_at` held a sub-millisecond remainder the release could
+     * not express, `released_at >= claimed_at` was false, and
+     * `task_claims_released_after_check` refused the write. The route does not
+     * wrap `mutate`, so the refusal left the transaction and became a 500 with
+     * nothing in it an operator could act on.
+     *
+     * Measured on this machine before the fix, with a probe table of the same
+     * shape: 27 refusals in 400 claim-then-release cycles. It is why this file
+     * failed intermittently on `POST /api/task-claims/:id/release` for two
+     * other agents and passed when its own describe block ran alone — a
+     * tighter loop lands in one millisecond more often, and nothing about it
+     * is contention.
+     *
+     * Twenty cycles rather than one, and the assertion that does the work is
+     * the second one. The 500 itself needs the two writes inside a single
+     * millisecond, so no fixed number of route calls is certain to provoke it —
+     * it took until cycle 4 of a hundred during a full suite run and never
+     * appeared when this file ran alone. The microsecond check below has no
+     * such luck in it and fails on every row the old code wrote.
+     */
+    it('stamps a release from the same clock that stamped the claim', async () => {
+      const ids = await seed();
+      await examined(ids.collector1, 'pass');
+      const c = await client();
+
+      for (let i = 0; i < 20; i += 1) {
+        const claim = uid();
+        const made = await c.post(`/api/tasks/${ids.taskA}/claims`, {
+          id: claim,
+          collector_id: ids.collector1,
+        });
+        expect(made.statusCode, made.body).toBe(201);
+        const released = await c.post(`/api/task-claims/${claim}/release`);
+        expect(released.statusCode, `cycle ${i}: ${released.body}`).toBe(200);
+      }
+
+      /**
+       * And the mechanism, not just the outcome: a JS `Date` is always a whole
+       * number of milliseconds, so a release stamped in the API process has a
+       * microsecond remainder of zero every single time. Over twenty rows from
+       * the database clock, all-zero is a one-in-10^60 coincidence.
+       */
+      const [sub] = await rows<{ n: number }>(
+        sql`select count(*)::int as n from task_claims
+             where released_at is not null
+               and (extract(microseconds from released_at)::bigint % 1000) <> 0`,
+      );
+      expect(sub!.n).toBeGreaterThan(0);
+    });
+
     it('refuses to delete a claim, to move its start, or to rewrite its release', async () => {
       /**
        * `released_at` rather than a delete is what makes a claim the evidence
@@ -859,11 +920,11 @@ describe.skipIf(!hasDb())('the back office', () => {
       await c.post(`/api/tasks/${ids.taskA}/claims`, { id: claim, collector_id: ids.collector1 });
 
       const first = await c.post(`/api/task-claims/${claim}/release`);
-      expect(first.statusCode).toBe(200);
+      expect(first.statusCode, first.body).toBe(200);
       expect(first.json().replayed).toBe(false);
 
       const again = await c.post(`/api/task-claims/${claim}/release`);
-      expect(again.statusCode).toBe(200);
+      expect(again.statusCode, again.body).toBe(200);
       expect(again.json().replayed).toBe(true);
       expect(again.json().released_at).toBe(first.json().released_at);
 
@@ -1659,6 +1720,26 @@ describe.skipIf(!hasDb())('the back office', () => {
       'devices_status_check',
       'collector_agreements_name_check',
       'collector_agreements_version_check',
+      /**
+       * The collector's own sign-in columns (0018). No route writes any of
+       * them: `POST /api/collectors` and `PATCH /api/collectors/:id` set a
+       * reference, a status, an exam result and agreements, and a phone number
+       * arrives by fixture the way an upload centre does (ADR 0003). The two
+       * routes that read them — `/auth/collector/request-code` and
+       * `/auth/collector/verify` — write the hash and its expiry as a pair,
+       * increment the attempt count from itself, and never touch the phone or
+       * the epoch. Raw SQL is the only caller; collector-auth.test.ts proves
+       * each one fires.
+       *
+       * `collectors_phone_key` is the one that moves. The moment the back
+       * office can set a collector's phone number, "another collector already
+       * uses that number" becomes a sentence a person reads, and it belongs in
+       * REFUSALS beside `collectors_external_ref_key` — not here.
+       */
+      'collectors_phone_key',
+      'collectors_sign_in_code_check',
+      'collectors_sign_in_code_attempts_check',
+      'collectors_token_epoch_check',
       // Written as a pair by the route, or not at all.
       'collectors_exam_decided_check',
       'devices_bound_at_check',
@@ -1713,6 +1794,21 @@ describe.skipIf(!hasDb())('the back office', () => {
       // updates or deletes a clearing; raw SQL is the only caller, and
       // clearing.test.ts proves it fires.
       'episode_clearings_append_only',
+      // Raised by 0018's guards on episode_parks and on the two columns it
+      // touches. The three a person can trip through `/episodes/:id/park` and
+      // `/unpark` are in REFUSALS; these four are reachable only from raw SQL —
+      // the routes never update or delete a park row, always write `from_state`
+      // from the row they just locked, always release before parking again, and
+      // never name a release as the park to lift. park.test.ts proves each.
+      'episode_parks_append_only',
+      'episode_parks_from_state',
+      'episode_parks_release_target',
+      'episodes_park_pointer_check',
+      // 0018's money half: a settlement is only ever written by the verdict
+      // transaction, which carries the same park clause in its eligibility
+      // check and matches nothing on a parked episode. This is the second lock,
+      // and park.test.ts trips it with raw SQL.
+      'settlements_episode_parked',
       // Raised by the reconciliation tables' guards (0015): runs and lines are
       // append-only evidence, a run is sealed when finished, a line is born
       // open, and only a finance operator with an audited reason resolves
@@ -1802,10 +1898,28 @@ describe.skipIf(!hasDb())('the back office', () => {
       'device_assignments_id_reused',
       // The counter's own (0016): a session needs a live claim.
       ...COUNTER_REFUSALS,
+      // The verdict route's own. Every one of these reaches the review screen
+      // as a 409, and before they were named the console read all of them as a
+      // lost lease and showed the wrong sentence.
+      ...REVIEW_API_REFUSALS,
     ]) {
       const key = `bo.refused.${constraint}` as keyof typeof MESSAGES.en;
       expect(MESSAGES.en[key], `no English sentence for ${constraint}`).toBeTruthy();
       expect(MESSAGES.zh[key], `no Chinese sentence for ${constraint}`).toBeTruthy();
+      expect(MESSAGES.vi[key], `no Vietnamese sentence for ${constraint}`).toBeTruthy();
+    }
+
+    /**
+     * And every refusal the review screen offers a park for. That list is the
+     * console's, and one of its names comes from the counter rather than from
+     * the verdict route, so it is walked separately instead of being folded
+     * into the loop above.
+     */
+    for (const constraint of REVIEW_HOLDABLE_REFUSALS) {
+      const key = `bo.refused.${constraint}` as keyof typeof MESSAGES.en;
+      for (const locale of ['en', 'zh', 'vi'] as const) {
+        expect(MESSAGES[locale][key], `no ${locale} sentence for ${constraint}`).toBeTruthy();
+      }
     }
   });
 

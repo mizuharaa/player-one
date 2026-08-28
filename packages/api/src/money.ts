@@ -312,6 +312,37 @@ export function usefulSeconds(
   }
 }
 
+/**
+ * The longest recording a payment may be computed from: 16 hours.
+ *
+ * `measured_duration_s` reaches this module exactly as the ingest client sent
+ * it, and that is on purpose — ING-17 says a bad measurement must never be the
+ * reason a delivery fails to store, and `episode_ingests.measured_duration_s`
+ * was widened to numeric(20,6) so it never is (schema.ts). So the ceiling
+ * belongs here, on the number that becomes money, and nowhere near the ingest
+ * table: a delivery is still stored, still reviewed, still uploaded. Only the
+ * payment stops.
+ *
+ * The number is the card, because the card is the only physical bound the
+ * brief quantifies. Part 8's planning figure is 16 GB per recorded hour, and
+ * §8.5 turns that into recording time per card: the 256 GB card PaXini names
+ * for the pilot — *"one card can be used for two days record, it's 256"* —
+ * holds 16.0 hours. A recording cannot outrun the medium it is written to.
+ * Battery runtime is almost certainly tighter, but test 4 of
+ * docs/hardware-checkout.md has not been run yet and an unmeasured bound is
+ * not one to price against. The margin is enormous either way: ffprobe over
+ * the five real corpus sessions measures 8.515 s to 132.961 s of camera_left,
+ * and the brief's own daily figure is 1.4 hours.
+ *
+ * It is a refusal, not a clamp. Clamping 24 hours to 16 would pay 16 hours for
+ * a measurement already known to be wrong, and would do it silently.
+ */
+export const MAX_BILLABLE_SECONDS = 16 * 60 * 60;
+
+/** True when these seconds cannot have been recorded, so they must not be paid. */
+export const beyondBillableCeiling = (secondsS: string): boolean =>
+  cmp(fromDecimal(secondsS), rational(BigInt(MAX_BILLABLE_SECONDS))) > 0;
+
 /** The review states §6.9 names, which are what `episode_reviews_state_check` allows. */
 export const REVIEW_STATE: Record<Decision, 'pass' | 'partial_pass' | 'fail'> = {
   good: 'pass',

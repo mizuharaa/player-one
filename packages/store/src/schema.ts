@@ -41,6 +41,58 @@ import {
  * phase 2. Enum migrations for a list that is expected to grow are a tax.
  */
 
+/**
+ * A person taking ONE episode out of the review queue, and a person putting it
+ * back. Migration 0018 says why it is a table and not a state on `episodes`.
+ *
+ * Two kinds of row, told apart by `releases_park_id`: null is a park, set is
+ * the release of the park it names. Both carry who, when, from which state and
+ * why, because a park lifted in error has to be as answerable as the park was.
+ *
+ * Append-only: `episode_parks_guard` (0018) refuses UPDATE and DELETE. A second
+ * park is a third row.
+ *
+ * Declared above `episodes` because `episodes.parked_park_id` carries a
+ * composite foreign key into it, and a composite key needs the columns to
+ * exist when the table is built — unlike a single-column `.references(() => …)`,
+ * which is a thunk and may point either way.
+ */
+export const episodeParks = pgTable(
+  'episode_parks',
+  {
+    /** Client-generated, like every other counter mutation: the replay key. */
+    id: uuid('id').primaryKey(),
+    episodeId: uuid('episode_id')
+      .notNull()
+      .references((): AnyPgColumn => episodes.episodeId),
+    /** Null on a park; on a release, the park being lifted. */
+    releasesParkId: uuid('releases_park_id'),
+    /**
+     * `episodes.resolution_state` at the moment of the write. The guard demands
+     * it equal the live row, so no CHECK lists the legal spellings.
+     */
+    fromState: text('from_state').notNull(),
+    parkedBy: uuid('parked_by')
+      .notNull()
+      .references((): AnyPgColumn => operators.id),
+    parkedAt: timestamp('parked_at', { withTimezone: true }).notNull().defaultNow(),
+    reason: text('reason').notNull(),
+  },
+  (t) => [
+    /** The target of the self-reference and of `episodes.parked_park_id`. */
+    unique('episode_parks_episode_key').on(t.episodeId, t.id),
+    /** One release per park. Many parks carry null here, which a unique allows. */
+    unique('episode_parks_release_key').on(t.releasesParkId),
+    foreignKey({
+      columns: [t.episodeId, t.releasesParkId],
+      foreignColumns: [t.episodeId, t.id],
+      name: 'episode_parks_release_fk',
+    }),
+    index('episode_parks_episode_idx').on(t.episodeId, t.parkedAt.desc()),
+    check('episode_parks_reason_check', sql`length(trim(${t.reason})) > 0`),
+  ],
+);
+
 export const episodes = pgTable(
   'episodes',
   {
@@ -74,8 +126,24 @@ export const episodes = pgTable(
      */
     resolutionMethod: text('resolution_method'),
     resolutionConfirmedAt: timestamp('resolution_confirmed_at', { withTimezone: true }),
+    /**
+     * Which park is holding this episode out of the review queue, or null.
+     *
+     * Migration 0018 says why it is a pointer and not a state: the evidence is
+     * append-only rows in `episode_parks`, and this column is the single value
+     * the queue reads — the same division as `episode_clearings` and
+     * `latest_ingest_id`. Being a column and not a count is also the whole of
+     * "one open park at a time".
+     */
+    parkedParkId: uuid('parked_park_id'),
   },
   (t) => [
+    foreignKey({
+      columns: [t.episodeId, t.parkedParkId],
+      foreignColumns: [episodeParks.episodeId, episodeParks.id],
+      name: 'episodes_parked_park_fk',
+    }),
+    index('episodes_parked_idx').on(t.parkedParkId).where(sql`${t.parkedParkId} is not null`),
     index('episodes_session_idx').on(t.collectionSessionId),
     index('episodes_batch_idx').on(t.uploadBatchId),
     index('episodes_resolution_idx').on(t.resolutionState),
@@ -105,10 +173,17 @@ export const episodes = pgTable(
       'episodes_verification_check',
       sql`${t.verificationState} in ('pending', 'verified', 'failed')`,
     ),
+    /**
+     * `app_declared` is Path A's (0019). The collector's app bound the session
+     * before recording (APP-16) and then pulled that session's own files off
+     * the device, so the attribution is a declaration made before the fact by
+     * the person who made the recording — not a machine's proposal from a
+     * card's contents and not an operator overruling one.
+     */
     check(
       'episodes_resolution_method_check',
       sql`${t.resolutionMethod} is null
-          or ${t.resolutionMethod} in ('automatic_single', 'automatic_time_window', 'manual')`,
+          or ${t.resolutionMethod} in ('automatic_single', 'automatic_time_window', 'manual', 'app_declared')`,
     ),
     /** A method implies an owner. Complements episodes_resolution_check, not a duplicate. */
     check(
@@ -386,11 +461,53 @@ export const collectors = pgTable(
      */
     examResult: text('exam_result'),
     examDecidedAt: timestamp('exam_decided_at', { withTimezone: true }),
+    /**
+     * APP-01 / SEC-01, migration 0018. The collector's own credential, and the
+     * whole of it: PaXini's PRD §7.1 registers a collector by phone number with
+     * no password, so there is nothing here to hash but a code sent to that
+     * number, and nothing to remember between sign-ins.
+     *
+     * Nullable because every collector enrolled before 0018 has no phone, and a
+     * collector the back office created but nobody has reached yet still has
+     * none. A collector with no phone simply cannot sign in.
+     *
+     * `collectors_phone_key` is a unique index on a nullable column, which
+     * Postgres lets hold any number of nulls and exactly one of each number.
+     * That is the property the sign-in depends on: the lookup is by phone alone,
+     * so there must be one row or none, never a first row.
+     */
+    phone: text('phone'),
+    /**
+     * The one-time code, hashed with the same scrypt as every other credential
+     * in this service. The code itself is never stored — a six-digit code in
+     * plaintext in a column is a credential in a backup.
+     */
+    signInCodeHash: text('sign_in_code_hash'),
+    signInCodeExpiresAt: timestamp('sign_in_code_expires_at', { withTimezone: true }),
+    /**
+     * How many times this code has been offered. Six digits is a million
+     * guesses, which the rate limiter alone would let through in about a year of
+     * sustained attack; the counter is what makes a code die after a handful of
+     * tries rather than at its expiry.
+     */
+    signInCodeAttempts: integer('sign_in_code_attempts').notNull().default(0),
+    /**
+     * Revocation, for a credential that lives in somebody's pocket for thirty
+     * days at a time.
+     *
+     * The token carries this number and every request checks it against the row,
+     * so raising it by one invalidates every token ever issued to this
+     * collector, on every device they have ever signed in on, at once. The
+     * alternative is a table of live tokens, which is a second thing to write on
+     * every sign-in and to prune forever; this is one integer.
+     */
+    tokenEpoch: integer('token_epoch').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex('collectors_external_ref_key').on(t.externalRef),
+    uniqueIndex('collectors_phone_key').on(t.phone),
     check(
       'collectors_status_check',
       sql`${t.status} in ('pending', 'qualified', 'suspended')`,
@@ -404,6 +521,23 @@ export const collectors = pgTable(
       'collectors_exam_decided_check',
       sql`(${t.examResult} is null) = (${t.examDecidedAt} is null)`,
     ),
+    /**
+     * A code with no expiry never expires, and an expiry with no code is a
+     * deadline on nothing. Both or neither, the same shape as the exam pair
+     * above and for the same reason: a half-written row here is a credential
+     * that outlives its window.
+     */
+    check(
+      'collectors_sign_in_code_check',
+      sql`(${t.signInCodeHash} is null) = (${t.signInCodeExpiresAt} is null)`,
+    ),
+    /** A negative attempt count is a lockout that counts backwards. */
+    check('collectors_sign_in_code_attempts_check', sql`${t.signInCodeAttempts} >= 0`),
+    /**
+     * Epochs start at one and only go up. Zero would make "revoke everything"
+     * indistinguishable from a column somebody forgot to fill in.
+     */
+    check('collectors_token_epoch_check', sql`${t.tokenEpoch} >= 1`),
   ],
 );
 
@@ -810,6 +944,14 @@ export const collectionSessions = pgTable(
       'collection_sessions_handover_required_check',
       sql`${t.sessionOrigin} <> 'handover' or ${t.handoverId} is not null`,
     ),
+    /**
+     * The target of `collector_uploads_session_fk` (0019). `id` is already the
+     * primary key, so this restricts nothing on this table; it exists so a
+     * Path A upload can name (session, collector) as a pair and have the pair
+     * checked by Postgres. "That session is not yours" is then unrepresentable
+     * rather than only refused by a route.
+     */
+    unique('collection_sessions_owner_key').on(t.id, t.collectorId),
   ],
 );
 
@@ -864,6 +1006,14 @@ export const uploadDevices = pgTable(
   },
   (t) => [
     uniqueIndex('upload_devices_machine_key').on(t.uploadCentreId, t.machineIdentifier),
+    /**
+     * `POST /auth/machine` has only the identifier and the secret — there is no
+     * centre to scope by, because the identifier IS the first credential — so
+     * `authenticateMachine` selects on it alone. Two centres both naming a
+     * machine 'UPLOAD-01' would both insert under the key above and then sign
+     * in whichever row the heap returned first. Unique on its own, 0017.
+     */
+    uniqueIndex('upload_devices_identifier_key').on(t.machineIdentifier),
     check('upload_devices_status_check', sql`${t.status} in ('active', 'retired')`),
   ],
 );
@@ -890,6 +1040,13 @@ export const operators = pgTable(
     uploadCentreId: uuid('upload_centre_id').references(() => uploadCentres.id),
     externalRef: text('external_ref').notNull(),
     role: text('role').notNull(),
+    /**
+     * 0017, and the same two values as `upload_devices.status`. A leaver is
+     * retired: DELETE is refused by the audit foreign key, and blanking the
+     * hash below stops only their next sign-in, not the token they are
+     * already holding.
+     */
+    status: text('status').notNull().default('active'),
     /** scrypt, `N$salt$hash`. Never a secret at rest, never logged. */
     credentialHash: text('credential_hash'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -908,6 +1065,17 @@ export const operators = pgTable(
       .on(t.externalRef)
       .where(sql`role = 'reviewer'`),
     /**
+     * And the same for everybody else, 0017. `POST /auth/operator` has only
+     * the reference and the secret, so `authenticateOperator` selects on the
+     * reference alone; the key above cannot make that safe, because it is per
+     * centre and the login has no centre. Partial on `role <> 'reviewer'` so
+     * the two indexes do not overlap: a reviewer and a counter operator may
+     * still share a reference, and each lookup filters by role.
+     */
+    uniqueIndex('operators_counter_ref_key')
+      .on(t.externalRef)
+      .where(sql`role <> 'reviewer'`),
+    /**
      * Everyone but a reviewer belongs to a centre. Dropping `not null` to make
      * room for reviewers must not quietly make it optional for the operators
      * BO-11 / SEC-02 scope by centre.
@@ -916,6 +1084,7 @@ export const operators = pgTable(
       'operators_centre_check',
       sql`${t.uploadCentreId} is not null or ${t.role} = 'reviewer'`,
     ),
+    check('operators_status_check', sql`${t.status} in ('active', 'retired')`),
   ],
 );
 
@@ -1001,6 +1170,104 @@ export const uploadBatches = pgTable(
 );
 
 /**
+ * Path A: one delivery, by one collector, of one session (migration 0019).
+ *
+ * UPL-07 asks that an episode trace to the parties that handled it. Path C
+ * traces through `upload_batches` to a handover, and from there to a centre, a
+ * machine, an operator, a collector and a device. Path A has none of those
+ * hops — the phone is the whole chain — so this row carries the three that
+ * exist: the collector who sent it, the session it was recorded under, and the
+ * device that recorded it.
+ *
+ * It is not a second `upload_batches`. A batch is a card's worth of episodes
+ * imported by a machine, and its lifecycle carries the UPL-06 cache gate,
+ * which has no meaning here: there is no upload-centre cache on Path A and no
+ * code path anywhere clears the phone. One row is one episode's delivery.
+ *
+ * The multipart upload id and the parts already in the cloud are deliberately
+ * NOT columns here. `upload-worker.ts` explains why for Path C and the same
+ * argument is stronger on Path A: the object store is the one record that
+ * cannot disagree with the object store, and a phone that is reinstalled
+ * still resumes because the server asks the cloud rather than a table.
+ */
+export const collectorUploads = pgTable(
+  'collector_uploads',
+  {
+    /** Client-generated, so a replayed registration lands once. */
+    id: uuid('id').primaryKey(),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    collectionSessionId: uuid('collection_session_id').notNull(),
+    /** As the session directory's basename spells it. Evidence, not identity. */
+    deviceSerial: text('device_serial').notNull(),
+    /** The platform row that serial resolves to, when the fleet has one. */
+    deviceId: uuid('device_id').references(() => devices.id),
+    episodeId: uuid('episode_id')
+      .notNull()
+      .references(() => episodes.episodeId),
+    ingestId: uuid('ingest_id')
+      .notNull()
+      .references(() => episodeIngests.ingestId),
+    sourceBasename: text('source_basename').notNull(),
+    /** Declared by the phone, never measured here: the server never sees its disk. */
+    fileCount: integer('file_count').notNull(),
+    totalBytes: bigint('total_bytes', { mode: 'number' }).notNull(),
+    /**
+     * The files of the delivery that are not in `episode_files` — in practice
+     * the manifest, which ING-02 keeps out of the fingerprint. Path C
+     * recomputes this set by scanning the centre's disk (`transportInventory`);
+     * Path A has no disk to scan, so the phone declares it and it is stored.
+     */
+    extraFiles: jsonb('extra_files').notNull().default([]),
+    state: text('state').notNull().default('registered'),
+    clientVersion: text('client_version'),
+    registeredAt: timestamp('registered_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('collector_uploads_collector_idx').on(t.collectorId, t.registeredAt.desc()),
+    index('collector_uploads_session_idx').on(t.collectionSessionId),
+    index('collector_uploads_episode_idx').on(t.episodeId),
+    /** The session has to be this collector's; a key on the session alone would take anybody's. */
+    foreignKey({
+      columns: [t.collectionSessionId, t.collectorId],
+      foreignColumns: [collectionSessions.id, collectionSessions.collectorId],
+      name: 'collector_uploads_session_fk',
+    }),
+    /** The delivery has to be one of that episode's own. */
+    foreignKey({
+      columns: [t.episodeId, t.ingestId],
+      foreignColumns: [episodeIngests.episodeId, episodeIngests.ingestId],
+      name: 'collector_uploads_delivery_fk',
+    }),
+    check('collector_uploads_state_check', sql`${t.state} in ('registered', 'verified', 'failed')`),
+    check(
+      'collector_uploads_completed_check',
+      sql`(${t.state} = 'registered') = (${t.completedAt} is null)`,
+    ),
+    /**
+     * `>= 0`. Sample session 072415 is a real recorded session with no media in
+     * it, and ING-17 says nothing is discarded: an empty delivery still stores
+     * and still gets a row saying a phone offered it.
+     */
+    check(
+      'collector_uploads_counts_check',
+      sql`${t.fileCount} >= 0 and ${t.totalBytes} >= 0`,
+    ),
+    /**
+     * One verified upload per delivery, and no second one. Partial, because a
+     * delivery may be attempted more than once and each attempt is a row —
+     * what must not exist twice is the sentence "these bytes are up and
+     * checked", which is what a settlement reads.
+     */
+    uniqueIndex('collector_uploads_verified_key')
+      .on(t.episodeId, t.ingestId)
+      .where(sql`state = 'verified'`),
+  ],
+);
+
+/**
  * Defect routing, as a catalogue rather than a CHECK or an enum.
  *
  * PaXini said on 13 Aug that the in-the-wild review standard does not exist yet
@@ -1047,10 +1314,19 @@ export const reviewReasonCodes = pgTable(
     code: text('code').primaryKey(),
     category: text('category').notNull(),
     labelEn: text('label_en').notNull(),
-    /** LOC-04: the collector reads Vietnamese. */
-    labelVi: text('label_vi'),
-    /** LOC-02: PaXini reviewers work in Chinese during phase 1. */
-    labelZh: text('label_zh'),
+    /**
+     * LOC-04: the collector reads Vietnamese. LOC-02: PaXini reviewers work in
+     * Chinese during phase 1.
+     *
+     * NOT NULL since 0018, and it has to be at the database. §6.9 makes the
+     * taxonomy configurable and `seedCatalogues` leaves an operator's edit
+     * alone, so the row that adds a reason during the pilot is typed by hand
+     * into psql. A half-translated one renders as a checkbox with no label
+     * beside it, and QR-04 requires the collector be told why they were paid
+     * nothing.
+     */
+    labelVi: text('label_vi').notNull(),
+    labelZh: text('label_zh').notNull(),
     active: boolean('active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1298,12 +1574,18 @@ export const episodeReviews = pgTable(
       sql`${t.reviewState} in ('pending', 'pass', 'partial_pass', 'fail')`,
     ),
     /**
-     * Two lanes, and the second-review lane (QR-08). A misspelt lane is an
-     * episode nobody is offered.
+     * Two lanes, the second-review lane (QR-08) and `held` (0017). A misspelt
+     * lane is an episode nobody is offered.
+     *
+     * `held` is the park: a pending review the server refuses to take a
+     * verdict on — no task claim on the session, an implausible measured
+     * duration — moved out of every claimable lane with a typed reason, so it
+     * stops being re-served to reviewer after reviewer. It is not in `LANES`
+     * in review.ts, which is the set of lanes a claim may ask for.
      */
     check(
       'episode_reviews_queue_check',
-      sql`${t.queue} in ('standard', 'privacy', 'second_review')`,
+      sql`${t.queue} in ('standard', 'privacy', 'second_review', 'held')`,
     ),
     /**
      * QR-05, bounded at the database and not only in the request parser.
@@ -1599,6 +1881,14 @@ export const auditEvents = pgTable(
     /** text, not uuid: not every target is uuid-keyed. */
     targetId: text('target_id').notNull(),
     operatorId: uuid('operator_id').references(() => operators.id),
+    /**
+     * The third kind of actor (0019). A collector is not an `operators` row and
+     * must not become one: `operator_id` names people who sign in to VNG
+     * systems, and putting collectors in it would make "did a member of staff
+     * touch this episode" unanswerable. Path A is the first route a collector
+     * can mutate anything through, so it is the first row shape that needs it.
+     */
+    collectorId: uuid('collector_id').references(() => collectors.id),
     uploadDeviceId: uuid('upload_device_id').references(() => uploadDevices.id),
     uploadCentreId: uuid('upload_centre_id').references(() => uploadCentres.id),
     /**
@@ -1622,18 +1912,36 @@ export const auditEvents = pgTable(
   (t) => [
     index('audit_events_target_idx').on(t.targetTable, t.targetId, t.occurredAt.desc()),
     index('audit_events_operator_idx').on(t.operatorId, t.occurredAt.desc()),
-    check('audit_events_actor_role_check', sql`${t.actorRole} in ('operator', 'reviewer')`),
+    index('audit_events_collector_idx').on(t.collectorId, t.occurredAt.desc()),
+    /**
+     * `collector` joins the list in 0018 (feat/collector-auth) and gains a
+     * column of its own in 0019 (feat/path-a-upload). Filing a collector's act
+     * as `operator` would put it in the same column as a VNG counter operator's
+     * writes and make "what did operators do" a question the trail answers
+     * wrongly, so it is its own role with its own shape below.
+     */
+    check(
+      'audit_events_actor_role_check',
+      sql`${t.actorRole} in ('operator', 'reviewer', 'collector')`,
+    ),
     /**
      * An unattributed audit row defeats the table. Logins are the one case with
      * no actor yet — a failed one (0017) has no actor at all and may name a
      * reference that matches no row; a reviewer is the one case with a person
-     * and no machine.
+     * and no machine; a collector (0019) is the one case with a person who is
+     * not staff.
      *
-     * Two complete shapes and no overlap between them, rather than two "at
+     * Three complete shapes and no overlap between them, rather than three "at
      * least this much" predicates. A half-filled row — a reviewer carrying an
-     * upload device, an operator with no centre — would satisfy a loose check
-     * and still be evidence of something that did not happen, which is the one
-     * failure this table exists to prevent.
+     * upload device, an operator with no centre, a collector carrying an
+     * operator row — would satisfy a loose check and still be evidence of
+     * something that did not happen, which is the one failure this table exists
+     * to prevent.
+     *
+     * `%.login_failed` belongs to `feat/rate-limiting`'s migration 0017, which
+     * rewrites this same constraint and runs before 0019. The clause is carried
+     * here so a later rewrite does not silently drop it; it matches nothing
+     * until that branch lands.
      */
     check(
       'audit_events_attributed_check',
@@ -1641,12 +1949,19 @@ export const auditEvents = pgTable(
           or ${t.action} like '%.login_failed'
           or (${t.actorRole} = 'reviewer'
               and ${t.operatorId} is not null
+              and ${t.collectorId} is null
               and ${t.uploadDeviceId} is null
               and ${t.uploadCentreId} is null)
           or (${t.actorRole} = 'operator'
               and ${t.operatorId} is not null
+              and ${t.collectorId} is null
               and ${t.uploadDeviceId} is not null
-              and ${t.uploadCentreId} is not null)`,
+              and ${t.uploadCentreId} is not null)
+          or (${t.actorRole} = 'collector'
+              and ${t.collectorId} is not null
+              and ${t.operatorId} is null
+              and ${t.uploadDeviceId} is null
+              and ${t.uploadCentreId} is null)`,
     ),
     /** Manual resolution overrides the machine on a money path. It says why. */
     check(
@@ -2113,5 +2428,55 @@ export const riskHolds = pgTable(
               and ${t.clearVerdict} in ('false_positive', 'accepted', 'resolved')
               and ${t.clearedAt} >= ${t.raisedAt})`,
     ),
+  ],
+);
+
+/**
+ * One receipt per cloud object that has been pulled back out of the store and
+ * hashed to the digest the engine settled at import (UPL-05, ING-29).
+ *
+ * It exists to answer one question cheaply: may this re-run skip this file?
+ * Without it every re-run of a batch re-downloads every byte it already proved
+ * — measured against a real S3 endpoint, a second run over a clean 16 MB
+ * episode moved 0.00 MB up and 16.00 MB down — and one damaged object forced a
+ * re-send and a re-read of its whole episode, because `force` was decided per
+ * episode and there was nothing finer to decide it with.
+ *
+ * The digest is stored, not just the key: a redelivery whose media fingerprint
+ * is unchanged keeps its ingest and therefore its keys, and the manifest beside
+ * it is hashed at transport time, so a receipt that does not name the bytes
+ * about to be transported must not authorise a skip.
+ *
+ * Written by the upload route only, and only after a successful read-back;
+ * deleted for exactly the object whose read-back failed. The audited
+ * `episode.cloud_verify` event is still the record of the verdict — this table
+ * is transport bookkeeping, and losing all of it costs bandwidth, not
+ * correctness.
+ */
+export const cloudVerifications = pgTable(
+  'cloud_verifications',
+  {
+    /** `episodes/<episode_id>/<ingest_id>/<relative_path>`, per `objectKey`. */
+    objectKey: text('object_key').primaryKey(),
+    episodeId: uuid('episode_id')
+      .notNull()
+      .references(() => episodes.episodeId),
+    /**
+     * Which delivery's bytes were proven — a verdict binds to an exact ingest.
+     * Bound to this episode by the composite FK below, the same way
+     * `episode_clearings` is: an ingest of some other episode is not a receipt
+     * for this one.
+     */
+    ingestId: uuid('ingest_id').notNull(),
+    sha256: text('sha256').notNull(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.episodeId, t.ingestId],
+      foreignColumns: [episodeIngests.episodeId, episodeIngests.ingestId],
+      name: 'cloud_verifications_delivery_fk',
+    }),
+    index('cloud_verifications_episode_idx').on(t.episodeId),
   ],
 );

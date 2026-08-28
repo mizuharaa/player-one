@@ -98,9 +98,31 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       // And nothing happened.
       expect(await countOf(h.d, sql`select count(*) as n from payout_accounts`)).toBe(0);
       expect(await countOf(h.d, sql`select count(*) as n from payout_attempts`)).toBe(0);
-      // The read routes are open to any operator session, read-only.
-      expect((await h.send('GET', `/api/payout/batches/${P1.start.toISOString()}`, h.opA)).statusCode).toBe(200);
-      expect((await h.send('POST', `/api/payout/batches/${P1.start.toISOString()}/preflight`, h.opA)).statusCode).toBe(200);
+      /**
+       * The reads are finance's too. Measured before this line changed: a
+       * plain counter operator at an unrelated centre got 200 on a
+       * collector's bank code, account last four, declared and verified name,
+       * their income, and the whole period's batch — every collector's
+       * financial data from any counter PC. Nothing on this lane is public to
+       * an operator session.
+       */
+      const accountId = await seedAccount(h.d, h.ids, 1);
+      const attemptId = await insertAttemptAs(h.d, h.ids, h.ids.finA, {
+        billId: bill1,
+        accountId,
+        amountVnd: 2400,
+      });
+      for (const url of [
+        `/api/payout/batches/${P1.start.toISOString()}`,
+        `/api/payout/collectors/${h.ids.collector1}/accounts`,
+        `/api/payout/collectors/${h.ids.collector1}/income`,
+        `/api/payout/attempts/${attemptId}`,
+      ]) {
+        expect((await h.send('GET', url, h.opA)).statusCode, url).toBe(403);
+        expect((await h.send('GET', url, h.finA)).statusCode, url).toBe(200);
+      }
+      expect((await h.send('POST', `/api/payout/batches/${P1.start.toISOString()}/preflight`, h.opA)).statusCode).toBe(403);
+      expect((await h.send('POST', `/api/payout/batches/${P1.start.toISOString()}/preflight`, h.finA)).statusCode).toBe(200);
     });
 
     it('needs both tokens, like every other mutation on this service', async () => {
@@ -174,7 +196,7 @@ describe.skipIf(!hasDb())('the payout routes', () => {
         const events = await rows<{ kind: string }>(h.d, sql`select kind from payout_events`);
         expect(events.map((e) => e.kind), `sub ${sub}`).toEqual(event === null ? [] : [event]);
         // The list route hands the page back too, for an app that reloads.
-        const list = await h.send('GET', `/api/payout/collectors/${h.ids.collector1}/accounts`, h.opA);
+        const list = await h.send('GET', `/api/payout/collectors/${h.ids.collector1}/accounts`, h.finA);
         expect(list.json().accounts[0]).toMatchObject({ verify_status: status, onboarding_url: onboarding, reform_url: reform });
         await h.app.close();
       }
@@ -257,7 +279,7 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       const res = await h.send('POST', '/api/payout/accounts', h.finA, wallet(h.ids));
       expect(res.json()).toMatchObject({ verify_status: 'unverified', verified_name: null });
       await seedBills(h.d, h.ids);
-      const batch = await h.send('GET', `/api/payout/batches/${P1.start.toISOString()}`, h.opA);
+      const batch = await h.send('GET', `/api/payout/batches/${P1.start.toISOString()}`, h.finA);
       const bills = batch.json().bills as { collector_ref: string; issues: string[] }[];
       expect(bills.find((b) => b.collector_ref === 'c-0001')!.issues).toEqual(['account_unverified']);
       expect(bills.find((b) => b.collector_ref === 'c-0002')!.issues).toEqual(['no_account']);
@@ -281,7 +303,7 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       expect(other.map((s) => s.settlement_state)).toEqual(['bill_generated']);
       const audits = await rows<{ operator_id: string; target_id: string }>(h.d, sql`select operator_id, target_id from audit_events where action = 'bill.mark_paid'`);
       expect(audits).toEqual([{ operator_id: h.ids.finA, target_id: res.json().attempt_id }]);
-      const batch = await h.send('GET', `/api/payout/batches/${P1.start.toISOString()}`, h.opA);
+      const batch = await h.send('GET', `/api/payout/batches/${P1.start.toISOString()}`, h.finA);
       expect((batch.json().bills as { id: string; paid: boolean }[]).find((b) => b.id === bill1)!.paid).toBe(true);
     });
 
@@ -458,6 +480,44 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       expect(stub.calls.transferFund).toBe(1);
     });
 
+    it('reads paid on the settle screen too, once the transfer has succeeded', async () => {
+      /**
+       * 0013 says it plainly: the settlements behind an API-paid bill stay
+       * `bill_generated`, because 'manually_paid' means what it says, and
+       * "paid" is read from the attempt. The payout screen did that; the
+       * settle screen asked `bool_and(settlement_state = 'manually_paid')`
+       * and therefore said unpaid for ever. Two screens, one bill, opposite
+       * answers, and the operator on the settle screen transfers again by
+       * hand.
+       */
+      const stub = new StubZaloPay();
+      const h = await harness(apiMode(stub));
+      const { bill1 } = await seedBills(h.d, h.ids);
+      await seedAccount(h.d, h.ids, 1);
+      const sent = await h.send('POST', `/api/payout/bills/${bill1}/pay`, h.finA);
+      expect(sent.statusCode, sent.body).toBe(201);
+      await tick(h.d, stub, new Date(Date.now() + 60_000), { pauseMs: 0 });
+      expect((await attemptRow(h.d, sent.json().attempt_id))['status']).toBe('succeeded');
+      // Not one settlement moved, which is the point: nothing here is manual.
+      expect(await countOf(h.d, sql`select count(*) as n from settlements where settlement_state = 'manually_paid'`)).toBe(0);
+
+      const start = P1.start.toISOString();
+      const batch = await h.send('GET', `/api/payout/batches/${start}`, h.finA);
+      const onPayout = (batch.json().bills as { id: string; paid: boolean }[]).find((b) => b.id === bill1)!;
+      expect(onPayout.paid).toBe(true);
+
+      const listed = await h.send('GET', `/api/settle/bills?period_start=${encodeURIComponent(start)}`, h.finA);
+      const onSettle = (listed.json().bills as { id: string; paid: boolean }[]).find((b) => b.id === bill1)!;
+      expect(onSettle.paid).toBe(onPayout.paid);
+
+      const detail = await h.send('GET', `/api/settle/bills/${bill1}`, h.finA);
+      expect(detail.json().paid).toBe(true);
+
+      // The other bill in the same period was not paid and must not follow it.
+      const listedRows = listed.json().bills as { id: string; paid: boolean }[];
+      expect(listedRows.filter((b) => b.paid).map((b) => b.id)).toEqual([bill1]);
+    });
+
     it('THE TEST: a timeout lands in unknown, the poll resolves it, and no second transfer is ever sent', async () => {
       const stub = new StubZaloPay();
       stub.transfer = { kind: 'unknown', cause: 'timeout' };
@@ -623,7 +683,7 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       expect(res.json().constraint).toBe('payout_attempts_bank_ceiling');
       expect(stub.calls.transferFund).toBe(0);
       expect(await countOf(h.d, sql`select count(*) as n from payout_attempts`)).toBe(0);
-      const batch = await h.send('GET', `/api/payout/batches/${P1.start.toISOString()}`, h.opA);
+      const batch = await h.send('GET', `/api/payout/batches/${P1.start.toISOString()}`, h.finA);
       expect((batch.json().bills as { issues: string[] }[])[0]!.issues).toContain('over_bank_ceiling');
     });
 
@@ -664,7 +724,7 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       await seedAccount(h.d, h.ids, 2);
       const hold = await h.send('POST', `/api/payout/bills/${bill2}/pay`, h.finA);
       expect(hold.json().constraint).toBe('payout_risk_hold');
-      const batch = await h.send('GET', `/api/payout/batches/${P1.start.toISOString()}`, h.opA);
+      const batch = await h.send('GET', `/api/payout/batches/${P1.start.toISOString()}`, h.finA);
       const bills = batch.json().bills as { id: string; issues: string[]; risk: { band: string } }[];
       expect(bills.find((b) => b.id === bill2)!).toMatchObject({ issues: ['risk_hold'], risk: { band: 'hold' } });
       // 2,400 is over a 2,000 cap: refused, and a ticket says so. The cap is never silently paid.
@@ -1025,13 +1085,13 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       await seedAccount(h.d, h.ids, 1);
       const older = await seedBill(h.d, h.ids, 1, P0, ['1200.0000'], '1200.0000');
       await insertAttemptAs(h.d, h.ids, h.ids.finA, { billId: older, accountId: (await rows<{ id: string }>(h.d, sql`select id from payout_accounts where collector_id = ${h.ids.collector1}`))[0]!.id, amountVnd: 1200, mode: 'manual', manualReference: 'VCB-0', settledAt: new Date() });
-      const res = await h.send('GET', `/api/payout/collectors/${h.ids.collector1}/income`, h.opA);
+      const res = await h.send('GET', `/api/payout/collectors/${h.ids.collector1}/income`, h.finA);
       expect(res.statusCode, res.body).toBe(200);
       const periods = res.json().periods as { bill_id: string | null; status: string; gross: string; net: string; withheld: string; valid_minutes: string }[];
       expect(periods.find((p) => p.bill_id === bill1)).toMatchObject({ status: 'approved', gross: '2400.0000', net: '2400.0000', withheld: '0', valid_minutes: '2.000000' });
       expect(periods.find((p) => p.bill_id === older)).toMatchObject({ status: 'paid', gross: '1200.0000' });
       expect(res.json().currency).toBe('VND');
-      expect((await h.send('GET', `/api/payout/collectors/${uid()}/income`, h.opA)).statusCode).toBe(404);
+      expect((await h.send('GET', `/api/payout/collectors/${uid()}/income`, h.finA)).statusCode).toBe(404);
     });
   });
 });

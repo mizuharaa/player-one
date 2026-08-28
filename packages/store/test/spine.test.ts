@@ -1263,6 +1263,36 @@ describe.skipIf(!hasDb())('the catalogues', () => {
     expect(rows[0]!.untranslated).toBe(0);
   });
 
+  /**
+   * The half of the line above that the seed cannot keep true.
+   *
+   * The test above counts the seeded rows and finds all thirteen translated,
+   * which is what the seed put there. §6.9 makes the taxonomy configurable and
+   * the seed deliberately leaves an operator's edit alone, so the row that adds
+   * a reason during the pilot is an INSERT typed into psql by somebody who has
+   * never read this repository. Before 0018 that INSERT succeeded with
+   * `label_en` alone, `GET /api/review/reasons` passed the null through, and
+   * the console rendered a live checkbox with an empty label beside it.
+   */
+  it('refuses a reject reason that the reviewer or the collector cannot read', async () => {
+    const d = await db();
+    await seedCatalogues(d);
+    await violates(
+      '"label_zh" of relation "review_reason_codes" violates not-null',
+      d.execute(sql`
+        insert into review_reason_codes (code, category, label_en, label_vi)
+        values ('VQ-SMUDGE', 'visual_quality', 'Lens smudged', 'Ống kính bị mờ')
+      `),
+    );
+    await violates(
+      '"label_vi" of relation "review_reason_codes" violates not-null',
+      d.execute(sql`
+        insert into review_reason_codes (code, category, label_en, label_zh)
+        values ('VQ-SMUDGE', 'visual_quality', 'Lens smudged', '镜头污渍')
+      `),
+    );
+  });
+
   it('is idempotent, so re-seeding is how routing gets re-tuned', async () => {
     const d = await db();
     await seedCatalogues(d);

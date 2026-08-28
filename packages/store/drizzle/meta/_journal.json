@@ -194,6 +194,69 @@
     {
       "idx": 27,
       "version": "7",
+      "when": 1788500000000,
+      "tag": "0017_operator_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1788510000000,
+      "tag": "0017_review_held_lane",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1788520000000,
+      "tag": "0018_reason_labels_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788530000000,
+      "tag": "0018_episode_park",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788540000000,
+      "tag": "0018_payout_account_declarer",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1788700000000,
+      "tag": "0020_backoffice_admin_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788703000000,
+      "tag": "0020_cloud_verification_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788710000000,
+      "tag": "0018_collector_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1788720000000,
+      "tag": "0019_path_a_upload",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
       "when": 1788730000000,
       "tag": "0018_bill_total_rounds_down",
       "breakpoints": true
