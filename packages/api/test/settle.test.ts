@@ -260,7 +260,16 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       }
     }
 
-    return { d, app, ids, headersA, headersB, headersF, headersR, send, expected };
+    /**
+     * Every read on the settle lane is finance-only: a bill names a collector,
+     * a total and the money owed to a person, and a counter operator at an
+     * unrelated centre has no business with it. The operator who runs the
+     * cycle is not the one who reads the money — the same separation `0013`
+     * enforces at the moment the bill is paid.
+     */
+    const read = (url: string) => send('GET', url, undefined, headersF);
+
+    return { d, app, ids, headersA, headersB, headersF, headersR, send, read, expected };
   }
 
   /**
@@ -305,7 +314,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       expect(bill('c-0001').paid).toBe(false);
 
       for (const ref of ['c-0001', 'c-0002']) {
-        const detail = await h.send('GET', `/api/settle/bills/${bill(ref).id}`);
+        const detail = await h.read(`/api/settle/bills/${bill(ref).id}`);
         const lines = detail.json().lines as {
           unit_price: string;
           effective_minutes: string;
@@ -365,7 +374,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       expect(Date.parse(res.json().period_end) - START.getTime()).toBe(14 * 24 * 60 * 60 * 1000);
 
       // An explicit end still wins over the cycle.
-      const explicit = await h.send('GET', '/api/settle/bills?period_start=2026-08-17T00:00:00Z&period_end=2026-08-18T00:00:00Z');
+      const explicit = await h.read('/api/settle/bills?period_start=2026-08-17T00:00:00Z&period_end=2026-08-18T00:00:00Z');
       expect(explicit.json().period_end).toBe('2026-08-18T00:00:00.000Z');
     });
 
@@ -386,6 +395,63 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       });
       expect(res.json().created).toBe(0);
       expect(res.json().bills).toEqual([]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+
+  describe('who may run the cycle, and who may read it', () => {
+    /**
+     * 0013 says a bill is paid by finance and never by the operator who issued
+     * it — "the operator who generated the bill is the one who approved its
+     * contents". The trigger enforces that at COMMIT, deferred, on the
+     * payment. With one finance operator who pressed Generate first, that
+     * refusal arrives when there is no way back: the bill cannot be
+     * regenerated (`bills_collector_period_key`) and its settlements cannot
+     * return to `pending_settlement` (0005 has no such edge), so every
+     * collector on the bill is unpayable for ever. The route refuses the
+     * generate instead, which is a refusal an operator can act on.
+     */
+    it('refuses a finance operator the generate, rather than the payment afterwards', async () => {
+      const h = await harness({ each: 1 });
+      const res = await h.send('POST', '/api/settle/bills', period(), h.headersF);
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json()).toEqual({ error: 'refused', constraint: 'settle_generate_by_finance' });
+      // And nothing was written: no bill, no audit row, no settlement moved.
+      const after = (await h.d.execute(sql`
+        select (select count(*) from bills)::int as bills,
+               (select count(*) from audit_events where action = 'bill.generate')::int as audits,
+               (select count(*) from settlements where settlement_state <> 'pending_settlement')::int as moved
+      `)) as unknown as Record<string, number>[];
+      expect(after[0]).toEqual({ bills: 0, audits: 0, moved: 0 });
+
+      // The operator who does not pay may still run it.
+      expect((await h.send('POST', '/api/settle/bills', period())).statusCode).toBe(200);
+    });
+
+    /**
+     * Measured before this test existed: a plain counter operator at an
+     * unrelated centre read a whole cycle's bills, one bill's lines and the
+     * settlement CSV — every collector's earnings from any counter PC.
+     */
+    it('refuses the bills, one bill and the export to an operator who is not finance', async () => {
+      const h = await harness({ each: 1 });
+      expect((await h.send('POST', '/api/settle/bills', period())).statusCode).toBe(200);
+      const [bill] = (await h.read(`/api/settle/bills?period_start=${encodeURIComponent(period().period_start)}`)).json().bills as { id: string }[];
+
+      const start = encodeURIComponent(period().period_start);
+      for (const url of [
+        `/api/settle/bills?period_start=${start}`,
+        `/api/settle/bills/${bill!.id}`,
+        `/api/settle/export.csv?period_start=${start}`,
+      ]) {
+        // headersB is the other centre entirely, which is how it was measured.
+        for (const who of [h.headersA, h.headersB]) {
+          const res = await h.send('GET', url, undefined, who);
+          expect(res.statusCode, `${url}: ${res.body}`).toBe(403);
+        }
+        expect((await h.send('GET', url, undefined, h.headersF)).statusCode, url).toBe(200);
+      }
     });
   });
 
@@ -437,7 +503,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       const h = await harness();
       await h.send('POST', '/api/settle/bills', period());
 
-      const res = await h.send('GET', `/api/settle/export.csv?period_start=${encodeURIComponent(period().period_start)}`);
+      const res = await h.read(`/api/settle/export.csv?period_start=${encodeURIComponent(period().period_start)}`);
       expect(res.statusCode, res.body).toBe(200);
       expect(res.headers['content-type']).toContain('text/csv');
       expect(res.headers['content-disposition']).toContain('attachment');
@@ -467,7 +533,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
 
       // The sum of the exported amounts is the stored bill total, to the last
       // ten-thousandth, on both bills.
-      const bills = (await h.send('GET', `/api/settle/bills?period_start=${encodeURIComponent(period().period_start)}`)).json().bills as { id: string; total: string }[];
+      const bills = (await h.read(`/api/settle/bills?period_start=${encodeURIComponent(period().period_start)}`)).json().bills as { id: string; total: string }[];
       expect(bills).toHaveLength(2);
       for (const bill of bills) {
         // Exact, with `money.ts`'s own rationals. `toBeCloseTo` on floats would
@@ -518,7 +584,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       const lines = (await h.d.execute(sql`select count(*)::int as n from bill_lines`)) as unknown as { n: number }[];
       expect(lines[0]!.n).toBe(3);
       expect((res.json().bills as { exceptions: number }[]).map((b) => b.exceptions)).toEqual([0, 0]);
-      expect((await h.send('GET', `/api/settle/bills?period_start=${encodeURIComponent(period().period_start)}`)).json().exception).toBe(1);
+      expect((await h.read(`/api/settle/bills?period_start=${encodeURIComponent(period().period_start)}`)).json().exception).toBe(1);
 
       // The event says who, what and why, in the same transaction as the move.
       const [event] = (await h.d.execute(sql`
@@ -593,19 +659,19 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       const h = await harness({ each: 1 });
       const generated = await h.send('POST', '/api/settle/bills', period());
       const bill = (generated.json().bills as { id: string; collector_ref: string; total: string }[]).find((b) => b.collector_ref === 'c-0001')!;
-      const [line] = (await h.send('GET', `/api/settle/bills/${bill.id}`)).json().lines as { settlement_id: string }[];
+      const [line] = (await h.read(`/api/settle/bills/${bill.id}`)).json().lines as { settlement_id: string }[];
 
       const parked = await h.send('POST', `/api/settle/settlements/${line!.settlement_id}/exception`, { reason: 'duplicate', note: 'same footage already paid on last week’s bill' });
       expect(parked.statusCode, parked.body).toBe(200);
       expect(parked.json().exception_from_state).toBe('bill_generated');
 
-      const detail = (await h.send('GET', `/api/settle/bills/${bill.id}`)).json();
+      const detail = (await h.read(`/api/settle/bills/${bill.id}`)).json();
       expect(detail.exceptions).toBe(1);
       expect(detail.paid).toBe(false);
       expect(detail.total).toBe(bill.total);
       expect(detail.lines).toHaveLength(1);
       expect(detail.lines[0].settlement_state).toBe('exception');
-      const listed = (await h.send('GET', `/api/settle/bills?period_start=${encodeURIComponent(period().period_start)}`)).json();
+      const listed = (await h.read(`/api/settle/bills?period_start=${encodeURIComponent(period().period_start)}`)).json();
       expect((listed.bills as { id: string; exceptions: number }[]).find((b) => b.id === bill.id)!.exceptions).toBe(1);
       // SET-05: a parked line cannot be billed, paid OR exported. The line is
       // excluded from the file, and because it is still inside the bill's
@@ -613,7 +679,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       // handing finance a file whose lines do not add up to its own total
       // column. Both halves are here: the excluded row is worth the whole
       // bill, so `exported_total` is zero against a non-zero `total`.
-      const exported = await h.send('GET', `/api/settle/export.csv?period_start=${encodeURIComponent(period().period_start)}`);
+      const exported = await h.read(`/api/settle/export.csv?period_start=${encodeURIComponent(period().period_start)}`);
       expect(exported.statusCode, exported.body).toBe(409);
       expect(exported.json().constraint).toBe('settle_export_bill_in_exception');
       expect(exported.json().bills).toEqual([
@@ -639,7 +705,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       // into the existing neutral `on_hold` bucket, and the response carries no
       // reason code and no note: the reason may name another collector and the
       // note is internal evidence.
-      const income = await h.send('GET', `/api/payout/collectors/${h.ids.collector1}/income`, undefined, h.headersF);
+      const income = await h.read(`/api/payout/collectors/${h.ids.collector1}/income`);
       expect(income.statusCode, income.body).toBe(200);
       const shown = (income.json().periods as { bill_id: string | null; status: string }[]).find((p) => p.bill_id === bill.id)!;
       expect(shown.status).toBe('on_hold');
@@ -657,9 +723,9 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       const released = await h.send('POST', `/api/settle/settlements/${line!.settlement_id}/release`);
       expect(released.json().settlement_state).toBe('bill_generated');
       expect((await h.send('POST', '/api/settle/bills', period())).json().created).toBe(0);
-      expect((await h.send('GET', `/api/settle/bills/${bill.id}`)).json().exceptions).toBe(0);
+      expect((await h.read(`/api/settle/bills/${bill.id}`)).json().exceptions).toBe(0);
       // Released, the same screen goes back to saying the money is approved.
-      const reopenedIncome = await h.send('GET', `/api/payout/collectors/${h.ids.collector1}/income`, undefined, h.headersF);
+      const reopenedIncome = await h.read(`/api/payout/collectors/${h.ids.collector1}/income`);
       expect((reopenedIncome.json().periods as { bill_id: string | null; status: string }[]).find((p) => p.bill_id === bill.id)!.status).toBe('approved');
 
       const after = await h.send('POST', `/api/payout/bills/${bill.id}/mark-paid`, { manual_reference: 'TX-1', amount_vnd: 320 }, h.headersF);
@@ -667,7 +733,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
 
       // And with nothing parked the export runs again, with the line back in
       // it and its own arithmetic unchanged.
-      const reopened = await h.send('GET', `/api/settle/export.csv?period_start=${encodeURIComponent(period().period_start)}`);
+      const reopened = await h.read(`/api/settle/export.csv?period_start=${encodeURIComponent(period().period_start)}`);
       expect(reopened.statusCode, reopened.body).toBe(200);
       const csv = parseCsv(reopened.body);
       const header = csv[0]!;

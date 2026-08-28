@@ -25,6 +25,10 @@ import {
  *
  * An unauthenticated caller learns nothing about the fleet from a failure —
  * not which identifiers exist, and not which of them have been retired.
+ *
+ * By identifier alone, because the identifier IS the credential and there is
+ * no centre yet to narrow by; `upload_devices_identifier_key` (0017) is what
+ * makes that one row or none.
  */
 export async function authenticateMachine(
   db: Db,
@@ -52,12 +56,32 @@ export async function authenticateMachine(
 }
 
 /**
+ * A retired operator, and the one thing this cannot do on its own.
+ *
+ * `authenticateMachine` above has always read `upload_devices.status`;
+ * `operators.status` is 0017 and is read here for the same reason and with the
+ * same silence — one message for "no such reference", "wrong secret" and
+ * "retired". What it does NOT do is stop the token that operator is already
+ * holding, because nothing here runs again until they sign in. That is
+ * `requireActor` in `index.ts`, which reads the same column once per request.
+ */
+const ACTIVE = 'active';
+
+/**
  * Reviewer rows are excluded, and that is the whole of it: `operators` now holds
  * both kinds, and without the filter a reviewer credential presented here would
  * mint an *operator* token — a token whose whole job is to say which upload
  * centre its holder may write to, held by somebody who belongs to none. It
  * would fail verification a moment later on the null centre, which is a fail
  * closed, but failing closed by accident three functions away is not a rule.
+ *
+ * The lookup is by reference alone because that is all the route is given —
+ * there is no centre on `POST /auth/operator` — and `operators_counter_ref_key`
+ * (0017) is what makes it safe, exactly as `operators_reviewer_ref_key` does
+ * below. Without it, two centres both calling their clerk 'counter-1' both
+ * insert and this returns whichever row the heap holds first, which an
+ * unrelated UPDATE reorders: the clerk who worked all morning is locked out
+ * and the message blames their password.
  */
 export async function authenticateOperator(
   db: Db,
@@ -74,6 +98,7 @@ export async function authenticateOperator(
   if (
     operator === undefined ||
     operator.uploadCentreId === null ||
+    operator.status !== ACTIVE ||
     !(await verifyCredential(secret, operator.credentialHash))
   ) {
     return null;
@@ -112,7 +137,11 @@ export async function authenticateReviewer(
       and(eq(schema.operators.externalRef, externalRef), eq(schema.operators.role, 'reviewer')),
     );
 
-  if (reviewer === undefined || !(await verifyCredential(secret, reviewer.credentialHash))) {
+  if (
+    reviewer === undefined ||
+    reviewer.status !== ACTIVE ||
+    !(await verifyCredential(secret, reviewer.credentialHash))
+  ) {
     return null;
   }
 

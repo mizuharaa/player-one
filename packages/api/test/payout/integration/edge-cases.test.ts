@@ -462,7 +462,7 @@ describe.skipIf(!hasDb())('the edge-case suite, E01–E29, over a real socket to
         for (const guess of [170, 171]) {
           await violates('payout_attempts_total_fractional', insertAttemptAs(h.d, h.ids, h.ids.finA, { billId: fractional, accountId: account1, amountVnd: guess }));
         }
-        const view = await h.send('GET', `/api/payout/batches/${P0.start.toISOString()}`, h.opA);
+        const view = await h.send('GET', `/api/payout/batches/${P0.start.toISOString()}`, h.finA);
         expect((view.json().bills as { id: string; issues: string[]; amount_vnd: unknown }[]).find((b) => b.id === fractional)).toMatchObject({ issues: ['total_fractional'], amount_vnd: null });
         const run = await runBatch(h.d, h.client, h.actor('finA'), P0, { pauseMs: 0 });
         expect(run.preflight.counts.total_fractional).toBe(1);
@@ -779,7 +779,7 @@ describe.skipIf(!hasDb())('the edge-case suite, E01–E29, over a real socket to
         const res = await pay(on, on.bill1);
         expect(res.statusCode).toBe(409);
         expect(res.json().constraint).toBe('payout_risk_hold');
-        const view = await on.send('GET', `/api/payout/batches/${P1.start.toISOString()}`, on.opA);
+        const view = await on.send('GET', `/api/payout/batches/${P1.start.toISOString()}`, on.finA);
         expect((view.json().bills as { id: string; issues: string[]; risk: RiskSummary }[]).find((b) => b.id === on.bill1)).toMatchObject({ issues: ['risk_hold'], risk: { band: 'hold', score: 65 } });
         expect(await attemptCount(on.d)).toBe(0);
         expect(transfers(on)).toHaveLength(0);
@@ -789,7 +789,7 @@ describe.skipIf(!hasDb())('the edge-case suite, E01–E29, over a real socket to
       await truncate();
       const off = await seeded({ risk: reader('hold'), holdsEnabled: false });
       try {
-        const view = await off.send('GET', `/api/payout/batches/${P1.start.toISOString()}`, off.opA);
+        const view = await off.send('GET', `/api/payout/batches/${P1.start.toISOString()}`, off.finA);
         expect((view.json().bills as { id: string; issues: string[]; risk: RiskSummary }[]).find((b) => b.id === off.bill1)).toMatchObject({ issues: [], risk: { band: 'hold' } });
         const res = await pay(off, off.bill1);
         expect(res.statusCode, res.body).toBe(201);

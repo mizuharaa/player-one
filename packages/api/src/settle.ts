@@ -3,6 +3,7 @@ import { and, asc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { schema, type Db } from '@playerone/store';
+import { financeGuard, roleOf } from './actor.ts';
 import { mutate } from './audit.ts';
 import { MONEY_SCALE, ZERO, add, fromDecimal, quantise } from './money.ts';
 
@@ -30,9 +31,10 @@ import { MONEY_SCALE, ZERO, add, fromDecimal, quantise } from './money.ts';
  * row, and the second run is a read.
  *
  * Who may call these is the same both-token operator session as everything else
- * on this service. Finance is not a role yet — there is no `finance` value in
- * `operators.role` — so this is honest rather than complete, exactly as the
- * review lane is about reviewer accounts.
+ * on this service, split in two by 0013's separation of duty. The reads are
+ * finance's, because a bill is what a named person earns. The generate is
+ * refused TO finance, because whoever issues a bill is the operator who
+ * approved its contents and 0013 will not let them pay it.
  */
 
 type Reply = { code: (n: number) => { send: (b: unknown) => unknown } };
@@ -93,6 +95,7 @@ export const SETTLE_API_REFUSALS = new Set([
   'settlements_transition_check',
   'settlements_not_in_exception',
   'settle_export_bill_in_exception',
+  'settle_generate_by_finance',
 ]);
 
 const uuid = z.string().uuid();
@@ -107,6 +110,28 @@ const uuid = z.string().uuid();
 const csvRow = (cells: readonly string[]): string =>
   cells.map((c) => `"${c.replaceAll('"', '""')}"`).join(',');
 
+/**
+ * The other half of "this bill is paid", and the reason it is written once.
+ *
+ * A bill paid on the API rail leaves every settlement at `bill_generated`.
+ * 0013 says so on purpose: *"a worker polling ZaloPay and moving an attempt
+ * from `processing` to `succeeded` has no operator and is not a decision …
+ * 'manually_paid' means what it says — and 'paid' is read from the attempt."*
+ * So `bool_and(settlement_state = 'manually_paid')` alone answered false for
+ * ever on an API-paid bill, while the payout screen next door said paid, and
+ * the operator on the settle screen transferred the money again by hand.
+ *
+ * `exists succeeded` and "the latest attempt succeeded" are the same set:
+ * `payout_attempts_succeeded_immutable` and
+ * `payout_attempts_previous_not_failed` mean nothing can follow a success.
+ * This is what `loadBatch` asks on the payout side; asking it in the same
+ * words here is what makes the two screens agree.
+ */
+const paidOnApiRail = sql<boolean>`exists (
+  select 1 from payout_attempts pa
+   where pa.bill_id = ${schema.bills.id} and pa.status = 'succeeded'
+)`;
+
 export function registerSettle(
   app: FastifyInstance,
   db: Db,
@@ -114,6 +139,17 @@ export function registerSettle(
   options: SettleOptions = {},
 ): void {
   const opts = { preHandler: requireActor };
+  /**
+   * Reading a bill is reading what a named person earns. It was open to any
+   * operator session, and measured that way: a plain counter operator at an
+   * unrelated centre got 200 on the whole cycle's bills, on one bill's lines
+   * and on the settlement CSV. The reads are finance's, the same guard the
+   * payout lane uses.
+   *
+   * The two writes here are NOT finance's, and that is the point of the
+   * separation 0013 asks for — see `settle_generate_by_finance` below.
+   */
+  const readOpts = { preHandler: [requireActor, financeGuard(db)] };
   const currency = options.currency ?? 'VND';
   const cycleDays = options.cycleDays ?? 7;
 
@@ -221,10 +257,14 @@ export function registerSettle(
         /**
          * SET-03's visible state, derived rather than stored. A `paid_at` column
          * on `bills` would be a second place the answer lives and a second place
-         * it can be wrong; the settlements are the record of payment and this
-         * reads them.
+         * it can be wrong; the settlements and the attempts are the record of
+         * payment and this reads them. Both rails, because there are two —
+         * see `paidOnApiRail`.
+         *
+         * `bool_and` over no rows is null and `null or false` is null, which
+         * `shapeBill` reads as false: an empty bill is not a paid one.
          */
-        paid: sql<boolean>`bool_and(${schema.settlements.settlementState} = 'manually_paid')`,
+        paid: sql<boolean>`bool_and(${schema.settlements.settlementState} = 'manually_paid') or ${paidOnApiRail}`,
         /** Lines parked in `exception`. The bill keeps them and cannot be paid while there are any. */
         exceptions: sql<number>`count(*) filter (where ${schema.settlements.settlementState} = 'exception')::int`,
       })
@@ -287,6 +327,28 @@ export function registerSettle(
   // SET-07: generate the cycle
 
   app.post('/api/settle/bills', opts, async (req, reply) => {
+    /**
+     * The separation of duty, refused where an operator can still act on it.
+     *
+     * 0013 says what "issued" means: *"this repo has no separate approval
+     * step, so the operator who generated the bill is the one who approved its
+     * contents."* Its trigger then refuses the payment by that operator — at
+     * COMMIT, deferred, on the payment. With one finance operator who pressed
+     * Generate that refusal arrives when there is no way out: the bill cannot
+     * be regenerated (`bills_collector_period_key` has nowhere to put a second
+     * one) and its settlements cannot go back to `pending_settlement` (0005
+     * has no such edge), so every collector on that bill is unpayable and
+     * stays unpayable.
+     *
+     * So the refusal moves to the only moment it can still be obeyed. Finance
+     * does not issue bills; another operator runs the cycle, and finance pays
+     * it. That needs at least two operator accounts, which is what the
+     * separation asks for anyway.
+     */
+    if ((await roleOf(db, req.actor)) === 'finance') {
+      return reply.code(409).send({ error: 'refused', constraint: 'settle_generate_by_finance' });
+    }
+
     const period = periodOf(req.body ?? {});
     if (typeof period === 'string') return reply.code(422).send({ error: period });
     const { start, end } = period;
@@ -620,7 +682,7 @@ export function registerSettle(
   // -------------------------------------------------------------------------
   // BO-08: view
 
-  app.get('/api/settle/bills', opts, async (req, reply) => {
+  app.get('/api/settle/bills', readOpts, async (req, reply) => {
     const period = periodOf(req.query ?? {});
     if (typeof period === 'string') return reply.code(422).send({ error: period });
     return reply.send({
@@ -631,7 +693,7 @@ export function registerSettle(
     });
   });
 
-  app.get('/api/settle/bills/:id', opts, async (req, reply) => {
+  app.get('/api/settle/bills/:id', readOpts, async (req, reply) => {
     const { id } = req.params as { id: string };
     const [bill] = await db
       .select({
@@ -642,6 +704,7 @@ export function registerSettle(
         currency: schema.bills.currency,
         total: schema.bills.total,
         generatedAt: schema.bills.generatedAt,
+        apiPaid: paidOnApiRail,
       })
       .from(schema.bills)
       .innerJoin(schema.collectors, eq(schema.collectors.id, schema.bills.collectorId))
@@ -657,7 +720,8 @@ export function registerSettle(
       currency: bill.currency,
       total: bill.total,
       generated_at: bill.generatedAt.toISOString(),
-      paid: lines.length > 0 && lines.every((l) => l.state === 'manually_paid'),
+      /** Both rails, exactly as the list above reads it. */
+      paid: (lines.length > 0 && lines.every((l) => l.state === 'manually_paid')) || bill.apiPaid,
       exceptions: lines.filter((l) => l.state === 'exception').length,
       lines: lines.map((l) => ({
         settlement_id: l.settlementId,
@@ -677,7 +741,7 @@ export function registerSettle(
   // -------------------------------------------------------------------------
   // SET-06: export
 
-  app.get('/api/settle/export.csv', opts, async (req, reply) => {
+  app.get('/api/settle/export.csv', readOpts, async (req, reply) => {
     const period = periodOf(req.query ?? {});
     if (typeof period === 'string') return reply.code(422).send({ error: period });
 

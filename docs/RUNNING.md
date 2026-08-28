@@ -128,6 +128,17 @@ token. Seed a centre, a machine and an operator with `credential_hash` set from
 `hashCredential()`, then `POST /auth/machine` and `POST /auth/operator`.
 `packages/api/test/counter.test.ts` is the shortest worked example.
 
+Two more rules on those two credentials, both read from the row and not from the
+token, so a change bites on the next request rather than at the twelve-hour
+expiry:
+
+- `operators.status` must be `active`. That is how a person is deactivated —
+  `DELETE` is refused by the audit foreign key, and blanking `credential_hash`
+  stops only their next sign-in.
+- An operator reference and a machine identifier are each **unique across the
+  whole platform**, not per centre, because neither login has a centre to
+  narrow by. Two centres cannot both call their clerk `counter-1`.
+
 ## Running it
 
 ```
@@ -198,6 +209,13 @@ pnpm -F @playerone/console dev
 ```
 
 Then <http://localhost:5173>, and sign in with `HCM-01` / `pw` and `op-1` / `pw`.
+
+The seed makes a second operator, `fin-1` / `pw`, whose role is `finance`.
+**Everything on the settle and payout screens needs that one**: a bill is what a
+named person earns, so reading one, exporting one and paying one are all
+finance's. `op-1` is deliberately not finance, because the operator who
+generates a cycle is the one 0013 refuses when the bill is paid — the generate
+is the one route on that lane which answers 409 for `fin-1` and 200 for `op-1`.
 
 `seed-console.mjs` **truncates every table**, so point it at a throwaway
 database. It puts six episodes through the real counter path and commits three

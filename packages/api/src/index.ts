@@ -244,6 +244,24 @@ export function buildApi({
    * centres is either a misconfigured machine or someone splicing credentials;
    * either way it is not a write we can attribute.
    */
+  /**
+   * Whether the person behind a valid token still works here (0017).
+   *
+   * `verifyToken` reads a signature and an expiry and never the row, so
+   * retiring somebody stopped their next sign-in and left the token already in
+   * their browser answering 200 for the rest of its twelve hours — measured.
+   * One primary-key lookup per request is what makes `operators.status` mean
+   * *now*. Not a token epoch and not a revocation list: both are a second
+   * place for the same fact to live, and this one is already the record.
+   */
+  const stillEmployed = async (operatorId: string): Promise<boolean> => {
+    const [row] = await db
+      .select({ status: schema.operators.status })
+      .from(schema.operators)
+      .where(eq(schema.operators.id, operatorId));
+    return row?.status === 'active';
+  };
+
   const requireActor = async (req: FastifyRequest, reply: { code: (n: number) => { send: (b: unknown) => unknown } }) => {
     const person = verifyToken(tokenSecret, bearer(req, 'authorization', OPERATOR_COOKIE));
 
@@ -267,6 +285,9 @@ export function buildApi({
         route === IDENTITY_ROUTE ||
         (reviewerMediaEnabled && route.startsWith(MEDIA_SCOPE));
       if (!inScope) return reply.code(403).send({ error: 'reviewer session is scoped to review' });
+      if (!(await stillEmployed(person.reviewerId))) {
+        return reply.code(401).send({ error: 'operator is no longer active' });
+      }
       req.actor = { reviewer: person };
       return;
     }
@@ -276,6 +297,9 @@ export function buildApi({
     if (person?.kind !== 'operator') return reply.code(401).send({ error: 'operator token required' });
     if (machine.uploadCentreId !== person.uploadCentreId) {
       return reply.code(403).send({ error: 'operator and machine belong to different centres' });
+    }
+    if (!(await stillEmployed(person.operatorId))) {
+      return reply.code(401).send({ error: 'operator is no longer active' });
     }
     req.actor = { machine, operator: person };
   };
