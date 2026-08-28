@@ -260,7 +260,10 @@ The **SEC-06 disk-encryption decision** is
   and a bare `CHECKPOINT` took **0.15s**. Under load it comes back — with other
   agents running tests and a large delete churning the disk, drops went back to
   about two minutes each. So `CHECKPOINT;` first, then drop in a loop, and do it
-  when the machine is quiet. Every agent that met the two-minute first drop
+  when the machine is quiet. Confirm it rather than guessing — a drop that looks
+  hung shows `wait_event_type = IPC`, `wait_event = CheckpointDone` in
+  `pg_stat_activity`. That is waiting, not deadlock, and killing it wastes the
+  flush already done. Every agent that met the two-minute first drop
   concluded "drops hang here" and stopped cleaning up, which is how the server
   reached **2,219 `po_*` databases** and slowed every test run for a week. Clean
   up after yourself.
