@@ -359,6 +359,8 @@ const en = {
     'This collector released their claim on that task. A new claim is needed before a session can be recorded.',
   'bo.refused.session_task_not_published':
     'That task has been taken down, so no new session can be recorded against it.',
+  'bo.refused.review_duration_implausible':
+    'This episode claims to run longer than one card can record, so it cannot be paid. Send it back to the counter to have the delivery checked.',
   'bo.refused.review_disputes_open_key': 'That verdict is already under dispute.',
   'bo.refused.review_disputes_decided_check':
     'That review has not been decided yet, so there is no outcome to challenge.',
@@ -1018,6 +1020,8 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.session_claim_missing': '该采集者未领取此任务，为其录制的内容无法结算。请先领取任务。',
   'bo.refused.session_claim_released': '该采集者已释放对此任务的领取。需要重新领取后才能登记采集会话。',
   'bo.refused.session_task_not_published': '该任务已下架，不能再登记新的采集会话。',
+  'bo.refused.review_duration_implausible':
+    '该片段声称的时长超过一张存储卡所能录制的上限，无法结算。请退回柜台核查该次交付。',
   'bo.refused.review_disputes_open_key': '该审核结果已在申诉中。',
   'bo.refused.review_disputes_decided_check': '该审核尚未给出结果，无可申诉的内容。',
   'bo.refused.review_disputes_final_check': '该结果本身已是复审结果，复审为最终结论。',
@@ -1961,6 +1965,8 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.settlements_transition_check':
     'Một khoản trên hóa đơn này đã được trả hoặc đã chuyển sang ngoại lệ trong lúc đó. Tải lại hóa đơn.',
   'bo.refused.settlements_not_in_exception': 'Khoản này không ở trạng thái ngoại lệ, nên không có gì để giải phóng.',
+  'bo.refused.review_duration_implausible':
+    'Phân đoạn này khai thời lượng dài hơn mức một thẻ nhớ có thể ghi, nên không thể trả tiền. Hãy chuyển lại quầy để kiểm tra lần giao đó.',
   'bo.refused.review_disputes_open_key': 'Kết quả duyệt này đã đang được khiếu nại.',
   'bo.refused.review_disputes_decided_check':
     'Lần duyệt này chưa có kết quả, nên chưa có gì để khiếu nại.',

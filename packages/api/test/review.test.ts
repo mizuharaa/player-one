@@ -854,6 +854,63 @@ describe.skipIf(!hasDb())('the review lane', () => {
       expect(reasons.map((r) => r.code)).toEqual(['VQ-DARK']);
     });
 
+    it('refuses to pay a duration no recording could have, and still lets the episode be rejected', async () => {
+      /**
+       * 24 hours. `measured_duration_s` is stored exactly as the ingest client
+       * sent it — deliberately, because a bad measurement must never be the
+       * reason a delivery fails to store (ING-17) — so the only thing standing
+       * between a wrong number and 1,440 billed minutes is this refusal.
+       */
+      const h = await harness({ episodes: [record({ measured: 86400 })] });
+      const episodeId = (await claim(h)).json().episode_id;
+
+      const res = await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'good' });
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json()).toEqual({ error: 'refused', constraint: 'review_duration_implausible' });
+      const [n] = (await h.d.execute(sql`select count(*)::int as n from settlements`)) as unknown as { n: number }[];
+      expect(n!.n).toBe(0);
+      const [state] = (await h.d.execute(sql`select review_state from episode_reviews where episode_id = ${episodeId}`)) as unknown as { review_state: string }[];
+      expect(state!.review_state).toBe('pending');
+
+      // A partial verdict marking a plausible slice of it is paid: the ceiling
+      // is on the number that becomes money, not on the episode.
+      const part = await verdict(h, {
+        verdict_id: uid(),
+        episode_id: episodeId,
+        decision: 'partial',
+        spans: [{ start_seconds: 0, end_seconds: 60 }],
+      });
+      expect(part.statusCode, part.body).toBe(200);
+      expect(part.json().amount).toBe('1200.0000');
+    });
+
+    it('refuses a partial verdict that marks the whole implausible duration', async () => {
+      // The spans are clamped to the measured duration, so marking "all of it"
+      // reaches the money path with the same 86,400 seconds behind it.
+      const h = await harness({ episodes: [record({ measured: 86400 })] });
+      const episodeId = (await claim(h)).json().episode_id;
+
+      const res = await verdict(h, {
+        verdict_id: uid(),
+        episode_id: episodeId,
+        decision: 'partial',
+        spans: [{ start_seconds: 0, end_seconds: 86400 }],
+      });
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json()).toEqual({ error: 'refused', constraint: 'review_duration_implausible' });
+
+      // Rejecting it is not refused. A `bad` verdict pays nothing, and closing
+      // the episode out is the one thing a reviewer can always do.
+      const bad = await verdict(h, {
+        verdict_id: uid(),
+        episode_id: episodeId,
+        decision: 'bad',
+        reject_reasons: ['VQ-DARK'],
+      });
+      expect(bad.statusCode, bad.body).toBe(200);
+      expect(bad.json().amount).toBe('0.0000');
+    });
+
     it('stores overlapping marks as merged, non-overlapping spans', async () => {
       // Acceptance 6. Overlaps are allowed on the client because forbidding them
       // makes marking fiddly; the server is where they become disjoint, so the

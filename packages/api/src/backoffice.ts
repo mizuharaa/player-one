@@ -257,6 +257,13 @@ export const API_REFUSALS = new Set([
   'episode_clearing_id_reused',
   'episode_clearing_foreign_delivery',
   'episode_clearing_paid_on_other_delivery',
+  /**
+   * Raised by the verdict route in review.ts. Not a constraint and not one it
+   * could be: `episode_ingests.measured_duration_s` is deliberately
+   * unconstrained so a bad measurement never blocks a delivery (ING-17), so
+   * the ceiling lives on the payment instead. See `MAX_BILLABLE_SECONDS`.
+   */
+  'review_duration_implausible',
 ]);
 
 /**

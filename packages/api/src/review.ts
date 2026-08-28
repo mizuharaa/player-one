@@ -10,6 +10,7 @@ import { REFUSALS, constraintOf } from './backoffice.ts';
 import {
   REVIEW_STATE,
   SpanError,
+  beyondBillableCeiling,
   cmp,
   fromDecimal,
   normaliseSpans,
@@ -1402,6 +1403,18 @@ export function registerReview(
 
     const decision: Decision = body.decision;
     const effectiveSeconds = usefulSeconds(decision, spans, review.measuredDurationS);
+    /**
+     * The one thing this route will not do is pay for time nobody could have
+     * recorded. `measured_duration_s` is stored exactly as the ingest client
+     * sent it (ING-17, and the widened column that makes it true), so 86400
+     * arriving there bills 1,440 minutes with nothing in the way. The ceiling
+     * is on `effectiveSeconds` and not on the episode, which is what makes a
+     * rejection and a plausible partial verdict still land: what is refused is
+     * the payment, not the review and not the delivery.
+     */
+    if (beyondBillableCeiling(effectiveSeconds)) {
+      return reply.code(409).send({ error: 'refused', constraint: 'review_duration_implausible' });
+    }
 
     /**
      * The price comes from the SESSION's snapshot and the claim it names, never
