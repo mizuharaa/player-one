@@ -41,6 +41,58 @@ import {
  * phase 2. Enum migrations for a list that is expected to grow are a tax.
  */
 
+/**
+ * A person taking ONE episode out of the review queue, and a person putting it
+ * back. Migration 0018 says why it is a table and not a state on `episodes`.
+ *
+ * Two kinds of row, told apart by `releases_park_id`: null is a park, set is
+ * the release of the park it names. Both carry who, when, from which state and
+ * why, because a park lifted in error has to be as answerable as the park was.
+ *
+ * Append-only: `episode_parks_guard` (0018) refuses UPDATE and DELETE. A second
+ * park is a third row.
+ *
+ * Declared above `episodes` because `episodes.parked_park_id` carries a
+ * composite foreign key into it, and a composite key needs the columns to
+ * exist when the table is built — unlike a single-column `.references(() => …)`,
+ * which is a thunk and may point either way.
+ */
+export const episodeParks = pgTable(
+  'episode_parks',
+  {
+    /** Client-generated, like every other counter mutation: the replay key. */
+    id: uuid('id').primaryKey(),
+    episodeId: uuid('episode_id')
+      .notNull()
+      .references((): AnyPgColumn => episodes.episodeId),
+    /** Null on a park; on a release, the park being lifted. */
+    releasesParkId: uuid('releases_park_id'),
+    /**
+     * `episodes.resolution_state` at the moment of the write. The guard demands
+     * it equal the live row, so no CHECK lists the legal spellings.
+     */
+    fromState: text('from_state').notNull(),
+    parkedBy: uuid('parked_by')
+      .notNull()
+      .references((): AnyPgColumn => operators.id),
+    parkedAt: timestamp('parked_at', { withTimezone: true }).notNull().defaultNow(),
+    reason: text('reason').notNull(),
+  },
+  (t) => [
+    /** The target of the self-reference and of `episodes.parked_park_id`. */
+    unique('episode_parks_episode_key').on(t.episodeId, t.id),
+    /** One release per park. Many parks carry null here, which a unique allows. */
+    unique('episode_parks_release_key').on(t.releasesParkId),
+    foreignKey({
+      columns: [t.episodeId, t.releasesParkId],
+      foreignColumns: [t.episodeId, t.id],
+      name: 'episode_parks_release_fk',
+    }),
+    index('episode_parks_episode_idx').on(t.episodeId, t.parkedAt.desc()),
+    check('episode_parks_reason_check', sql`length(trim(${t.reason})) > 0`),
+  ],
+);
+
 export const episodes = pgTable(
   'episodes',
   {
@@ -74,8 +126,24 @@ export const episodes = pgTable(
      */
     resolutionMethod: text('resolution_method'),
     resolutionConfirmedAt: timestamp('resolution_confirmed_at', { withTimezone: true }),
+    /**
+     * Which park is holding this episode out of the review queue, or null.
+     *
+     * Migration 0018 says why it is a pointer and not a state: the evidence is
+     * append-only rows in `episode_parks`, and this column is the single value
+     * the queue reads — the same division as `episode_clearings` and
+     * `latest_ingest_id`. Being a column and not a count is also the whole of
+     * "one open park at a time".
+     */
+    parkedParkId: uuid('parked_park_id'),
   },
   (t) => [
+    foreignKey({
+      columns: [t.episodeId, t.parkedParkId],
+      foreignColumns: [episodeParks.episodeId, episodeParks.id],
+      name: 'episodes_parked_park_fk',
+    }),
+    index('episodes_parked_idx').on(t.parkedParkId).where(sql`${t.parkedParkId} is not null`),
     index('episodes_session_idx').on(t.collectionSessionId),
     index('episodes_batch_idx').on(t.uploadBatchId),
     index('episodes_resolution_idx').on(t.resolutionState),

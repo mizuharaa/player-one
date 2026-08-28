@@ -326,10 +326,19 @@ export function registerReview(
    * such footage is not served at all: it sits with the counter until the
    * back office attaches the claim the collector held (the UPDATE in
    * 0016_claim_join.sql), and then enters review with a price.
+   *
+   * And it must not be parked (0018). An operator who took an episode out of
+   * the queue took it out of all four readers of this fragment — the takeover,
+   * the insert, the peek and the depth — and out of the verdict as well, since
+   * `stillEligible` is this same clause and the verdict's UPDATE carries it. A
+   * reviewer holding the lease when the park lands is refused with "this
+   * episode stopped being reviewable"; nothing is recorded and nothing is paid.
+   * One column and not a join, because this runs on every queue scan.
    */
   const cloudGate = (options.verificationGate ?? 'local') === 'cloud';
   const eligible = sql`
-    ${schema.episodes.resolutionState} = 'resolved'
+    ${schema.episodes.parkedParkId} is null
+    and ${schema.episodes.resolutionState} = 'resolved'
     and exists (
       select 1
         from collection_sessions cs

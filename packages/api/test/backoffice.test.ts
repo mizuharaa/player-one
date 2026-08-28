@@ -1713,6 +1713,21 @@ describe.skipIf(!hasDb())('the back office', () => {
       // updates or deletes a clearing; raw SQL is the only caller, and
       // clearing.test.ts proves it fires.
       'episode_clearings_append_only',
+      // Raised by 0018's guards on episode_parks and on the two columns it
+      // touches. The three a person can trip through `/episodes/:id/park` and
+      // `/unpark` are in REFUSALS; these four are reachable only from raw SQL —
+      // the routes never update or delete a park row, always write `from_state`
+      // from the row they just locked, always release before parking again, and
+      // never name a release as the park to lift. park.test.ts proves each.
+      'episode_parks_append_only',
+      'episode_parks_from_state',
+      'episode_parks_release_target',
+      'episodes_park_pointer_check',
+      // 0018's money half: a settlement is only ever written by the verdict
+      // transaction, which carries the same park clause in its eligibility
+      // check and matches nothing on a parked episode. This is the second lock,
+      // and park.test.ts trips it with raw SQL.
+      'settlements_episode_parked',
       // Raised by the reconciliation tables' guards (0015): runs and lines are
       // append-only evidence, a run is sealed when finished, a line is born
       // open, and only a finance operator with an audited reason resolves

@@ -49,6 +49,17 @@ const ClearBody = z.object({
   ingest_id: z.string().uuid(),
   reason: z.string().trim().min(1),
 });
+/**
+ * Park and unpark carry the same two fields as a clear, minus the delivery:
+ * parking is about the episode, not about which bytes are real. `id` is the
+ * client's, for the same reason it is on the clear — the console queues its
+ * mutations and replays them, and the same decision arriving twice has to land
+ * once. `episode_parks.id` is the primary key, which is what makes that true.
+ */
+const ParkBody = z.object({
+  id: z.string().uuid(),
+  reason: z.string().trim().min(1),
+});
 
 export function registerEpisodes(
   app: FastifyInstance,
@@ -319,13 +330,27 @@ export function registerEpisodes(
         confirmedAt: schema.episodes.resolutionConfirmedAt,
         collectionSessionId: schema.episodes.collectionSessionId,
         sessionStartedAt: schema.episodes.sessionStartedAt,
+        parkedParkId: schema.episodes.parkedParkId,
       })
       .from(schema.episodes)
       .where(eq(schema.episodes.uploadBatchId, batchId));
 
-    const quarantined = episodes.filter((e) => e.resolutionState === 'quarantined');
+    /**
+     * A parked episode blocks nothing (0018). Parking IS the operator's answer
+     * — they looked at it and said it cannot be judged as delivered — so
+     * leaving it in `blocking` would hold the batch open on the work that was
+     * just done. It is still counted, because a card whose episodes were all
+     * parked is not a clean card.
+     */
+    const parked = episodes.filter((e) => e.parkedParkId !== null);
+    const quarantined = episodes.filter(
+      (e) => e.resolutionState === 'quarantined' && e.parkedParkId === null,
+    );
     const unconfirmed = episodes.filter(
-      (e) => e.resolutionMethod === 'automatic_time_window' && e.confirmedAt === null,
+      (e) =>
+        e.resolutionMethod === 'automatic_time_window' &&
+        e.confirmedAt === null &&
+        e.parkedParkId === null,
     );
 
     return reply.send({
@@ -335,6 +360,7 @@ export function registerEpisodes(
         sessions: ctx.sessions.length,
         quarantined: quarantined.length,
         awaiting_confirmation: unconfirmed.length,
+        parked: parked.length,
         // The one an operator should look at even when nothing is wrong.
         episodes_per_session:
           ctx.sessions.length === 0 ? null : +(episodes.length / ctx.sessions.length).toFixed(2),
@@ -499,6 +525,26 @@ export function registerEpisodes(
   });
 
   /**
+   * SEC-02: an operator acts on what arrived at their own centre. Same 404 as
+   * an id that does not exist, so another centre's episodes cannot be
+   * enumerated from here either.
+   */
+  const atThisCentre = async (episodeId: string, actor: CounterActor): Promise<boolean> => {
+    const [episode] = await db
+      .select({ episodeId: schema.episodes.episodeId })
+      .from(schema.episodes)
+      .innerJoin(schema.uploadBatches, eq(schema.uploadBatches.id, schema.episodes.uploadBatchId))
+      .innerJoin(schema.handovers, eq(schema.handovers.id, schema.uploadBatches.handoverId))
+      .where(
+        and(
+          eq(schema.episodes.episodeId, episodeId),
+          eq(schema.handovers.uploadCentreId, actor.operator.uploadCentreId),
+        ),
+      );
+    return episode !== undefined;
+  };
+
+  /**
    * Clearing ONE episode out of a CHECKSUM-MISMATCH quarantine.
    *
    * A redelivery whose bytes differ writes a second ingest carrying
@@ -524,23 +570,9 @@ export function registerEpisodes(
     const episodeId = (req.params as { id: string }).id;
     const named = body.data.ingest_id;
 
-    /**
-     * SEC-02: an operator clears what arrived at their own centre. Same 404
-     * as an id that does not exist, so another centre's episodes cannot be
-     * enumerated from here either.
-     */
-    const [episode] = await db
-      .select({ episodeId: schema.episodes.episodeId })
-      .from(schema.episodes)
-      .innerJoin(schema.uploadBatches, eq(schema.uploadBatches.id, schema.episodes.uploadBatchId))
-      .innerJoin(schema.handovers, eq(schema.handovers.id, schema.uploadBatches.handoverId))
-      .where(
-        and(
-          eq(schema.episodes.episodeId, episodeId),
-          eq(schema.handovers.uploadCentreId, actor.operator.uploadCentreId),
-        ),
-      );
-    if (episode === undefined) return reply.code(404).send({ error: 'no such episode' });
+    if (!(await atThisCentre(episodeId, actor))) {
+      return reply.code(404).send({ error: 'no such episode' });
+    }
 
     const event = {
       action: 'episode.clear',
@@ -679,6 +711,231 @@ export function registerEpisodes(
       episode_id: episodeId,
       clearing_id: (written ?? replayed)!.id,
       latest_ingest_id: named,
+      replayed: written === undefined,
+    });
+  });
+
+  /**
+   * Parking ONE episode out of the review queue, and taking it back out again.
+   *
+   * The dead end these answer: a review the queue can serve but no reviewer can
+   * finish. A verdict refused `review_duration_implausible` leaves the row
+   * pending, the lease runs out, and the next reviewer is refused the same way
+   * for ever. An episode quarantined by the ingest engine
+   * (`DUR-EXCEEDS-WINDOW`, `CALIB-MISSING`) never reaches the queue at all and
+   * had no route out but a redelivery. A session with no claim is refused
+   * `session_claim_missing` on every decision. Before this the only exit was a
+   * bad verdict, which pays a collector nothing for footage nobody judged.
+   *
+   * A park is a row and a pointer, exactly as a clearing is (0018 says why):
+   * `episode_parks` records who, when, from which state and why, and
+   * `episodes.parked_park_id` is the single value the review queue reads. A
+   * park made in error is lifted by a second row, never by an edit, so both
+   * halves of the mistake stay on the record.
+   *
+   * What parking does NOT do: touch the review row, the delivery, the session
+   * or any money. A pending review stays exactly as it was and comes back with
+   * its priority and its lane when the episode is released; the queue simply
+   * stops offering it. Nothing here deletes media (Rule 6).
+   *
+   * A parked episode cannot be paid and a paid episode cannot be parked — both
+   * enforced in the schema by 0018, not here. An episode that already carries a
+   * settlement is refused `episode_parks_settled`, and the exit for that one is
+   * the settlement exception (0016), which parks the money instead.
+   *
+   * The counter only, like everything in this file: the route guard refuses a
+   * reviewer session on every path here, so a reviewer shown "send this back to
+   * the counter" asks an operator, who is the one who can do it.
+   */
+  app.post('/episodes/:id/park', opts, async (req, reply) => {
+    const body = ParkBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
+    const actor = actorOf(req);
+    const episodeId = (req.params as { id: string }).id;
+    if (!(await atThisCentre(episodeId, actor))) {
+      return reply.code(404).send({ error: 'no such episode' });
+    }
+
+    const event = {
+      action: 'episode.park',
+      targetTable: 'episodes',
+      targetId: episodeId,
+      before: {} as Record<string, unknown>,
+      after: {} as Record<string, unknown>,
+      reason: body.data.reason,
+    };
+    let refusal: string | null = null;
+    /** The park this id already names, when the request is a replay. */
+    let replayed: { id: string } | undefined;
+    const written = await mutate(db, actor, event, async (tx) => {
+      /**
+       * Lock the episode, then read it under the lock. The verdict transaction
+       * takes the same lock before it reads eligibility, so a park racing a
+       * verdict is decided rather than interleaved: either the verdict sees the
+       * park and writes nothing, or the park waits and is refused by the
+       * settlement the verdict wrote.
+       */
+      const [row] = (await tx.execute(sql`
+        select e.resolution_state as state, e.parked_park_id as parked,
+               exists (select 1
+                         from settlements s
+                         join episode_reviews r on r.id = s.episode_review_id
+                        where r.episode_id = e.episode_id) as settled
+          from episodes e
+         where e.episode_id = ${episodeId}
+           for update of e
+      `)) as unknown as { state: string; parked: string | null; settled: boolean }[];
+      // Episodes are never deleted, so `atThisCentre` above already proved this.
+      if (row === undefined) return undefined;
+      /**
+       * The replay check before every gate, for the same reason the clear
+       * route has it there: the gates read state the first request changed,
+       * so the identical retry of a park that succeeded would be refused as
+       * already parked. Parks of one episode serialise on the lock above, so
+       * this read is current.
+       */
+      const [prior] = await tx
+        .select()
+        .from(schema.episodeParks)
+        .where(eq(schema.episodeParks.id, body.data.id));
+      if (prior !== undefined) {
+        const same =
+          prior.episodeId === episodeId &&
+          prior.releasesParkId === null &&
+          prior.reason === body.data.reason;
+        if (same) replayed = prior;
+        else refusal = 'episode_park_id_reused';
+        return undefined;
+      }
+      if (row.parked !== null) {
+        refusal = 'episode_parks_already_parked';
+        return undefined;
+      }
+      if (row.settled) {
+        refusal = 'episode_parks_settled';
+        return undefined;
+      }
+
+      const [park] = await tx
+        .insert(schema.episodeParks)
+        .values({
+          id: body.data.id,
+          episodeId,
+          fromState: row.state,
+          parkedBy: actor.operator.operatorId,
+          reason: body.data.reason,
+        })
+        // Only a concurrent park of ANOTHER episode under this id gets here;
+        // same-episode ones queue on the lock and are caught as `prior`.
+        .onConflictDoNothing({ target: schema.episodeParks.id })
+        .returning({ id: schema.episodeParks.id });
+      if (park === undefined) {
+        refusal = 'episode_park_id_reused';
+        return undefined;
+      }
+      await tx
+        .update(schema.episodes)
+        .set({ parkedParkId: park.id })
+        .where(eq(schema.episodes.episodeId, episodeId));
+      event.before = { resolution_state: row.state, parked_park_id: null };
+      event.after = { parked_park_id: park.id };
+      return park;
+    });
+    if (written === undefined && replayed === undefined) {
+      return reply.code(409).send({ error: 'refused', constraint: refusal ?? 'episode_parks_already_parked' });
+    }
+    // A replay answers with the first park's id; nothing was written, no audit row either.
+    return reply.send({
+      episode_id: episodeId,
+      park_id: (written ?? replayed)!.id,
+      parked: true,
+      replayed: written === undefined,
+    });
+  });
+
+  /** The way back, for the park that should not have happened. */
+  app.post('/episodes/:id/unpark', opts, async (req, reply) => {
+    const body = ParkBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
+    const actor = actorOf(req);
+    const episodeId = (req.params as { id: string }).id;
+    if (!(await atThisCentre(episodeId, actor))) {
+      return reply.code(404).send({ error: 'no such episode' });
+    }
+
+    const event = {
+      action: 'episode.unpark',
+      targetTable: 'episodes',
+      targetId: episodeId,
+      before: {} as Record<string, unknown>,
+      after: {} as Record<string, unknown>,
+      reason: body.data.reason,
+    };
+    let refusal: string | null = null;
+    let replayed: { id: string } | undefined;
+    const written = await mutate(db, actor, event, async (tx) => {
+      const [row] = (await tx.execute(sql`
+        select e.resolution_state as state, e.parked_park_id as parked
+          from episodes e
+         where e.episode_id = ${episodeId}
+           for update of e
+      `)) as unknown as { state: string; parked: string | null }[];
+      if (row === undefined) return undefined;
+      const [prior] = await tx
+        .select()
+        .from(schema.episodeParks)
+        .where(eq(schema.episodeParks.id, body.data.id));
+      if (prior !== undefined) {
+        /**
+         * A release is identified by the episode and the reason, never by the
+         * park it lifted: on the replay the pointer is already null, so
+         * comparing against it would refuse the retry of the request that
+         * succeeded. What the id must not do is name a different decision.
+         */
+        const same =
+          prior.episodeId === episodeId &&
+          prior.releasesParkId !== null &&
+          prior.reason === body.data.reason;
+        if (same) replayed = prior;
+        else refusal = 'episode_park_id_reused';
+        return undefined;
+      }
+      if (row.parked === null) {
+        refusal = 'episode_parks_not_parked';
+        return undefined;
+      }
+
+      const [release] = await tx
+        .insert(schema.episodeParks)
+        .values({
+          id: body.data.id,
+          episodeId,
+          releasesParkId: row.parked,
+          fromState: row.state,
+          parkedBy: actor.operator.operatorId,
+          reason: body.data.reason,
+        })
+        .onConflictDoNothing({ target: schema.episodeParks.id })
+        .returning({ id: schema.episodeParks.id });
+      if (release === undefined) {
+        refusal = 'episode_park_id_reused';
+        return undefined;
+      }
+      await tx
+        .update(schema.episodes)
+        .set({ parkedParkId: null })
+        .where(eq(schema.episodes.episodeId, episodeId));
+      event.before = { resolution_state: row.state, parked_park_id: row.parked };
+      event.after = { parked_park_id: null, release_id: release.id };
+      return release;
+    });
+    if (written === undefined && replayed === undefined) {
+      return reply.code(409).send({ error: 'refused', constraint: refusal ?? 'episode_parks_not_parked' });
+    }
+    return reply.send({
+      episode_id: episodeId,
+      release_id: (written ?? replayed)!.id,
+      parked: false,
       replayed: written === undefined,
     });
   });
