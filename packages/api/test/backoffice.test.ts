@@ -570,7 +570,8 @@ describe.skipIf(!hasDb())('the back office', () => {
       const c = await client();
       const claim = uid();
       await c.post(`/api/tasks/${ids.taskA}/claims`, { id: claim, collector_id: ids.collector1 });
-      expect((await c.post(`/api/task-claims/${claim}/release`)).statusCode).toBe(200);
+      const rel = await c.post(`/api/task-claims/${claim}/release`);
+      expect(rel.statusCode, rel.body).toBe(200);
       expect(
         (await c.post(`/api/tasks/${ids.taskA}/claims`, { id: uid(), collector_id: ids.collector2 }))
           .statusCode,
@@ -756,6 +757,63 @@ describe.skipIf(!hasDb())('the back office', () => {
   });
 
   describe('a claim is a record, not a row', () => {
+    /**
+     * Two clocks and two precisions, compared by a CHECK.
+     *
+     * `claimed_at` defaults to Postgres `now()`, which carries microseconds.
+     * The release stamped `released_at` from the API process's own
+     * `new Date()`, which carries milliseconds and nothing finer. Whenever a
+     * release landed in the same millisecond the claim was written in, the
+     * stored `claimed_at` held a sub-millisecond remainder the release could
+     * not express, `released_at >= claimed_at` was false, and
+     * `task_claims_released_after_check` refused the write. The route does not
+     * wrap `mutate`, so the refusal left the transaction and became a 500 with
+     * nothing in it an operator could act on.
+     *
+     * Measured on this machine before the fix, with a probe table of the same
+     * shape: 27 refusals in 400 claim-then-release cycles. It is why this file
+     * failed intermittently on `POST /api/task-claims/:id/release` for two
+     * other agents and passed when its own describe block ran alone — a
+     * tighter loop lands in one millisecond more often, and nothing about it
+     * is contention.
+     *
+     * Twenty cycles rather than one, and the assertion that does the work is
+     * the second one. The 500 itself needs the two writes inside a single
+     * millisecond, so no fixed number of route calls is certain to provoke it —
+     * it took until cycle 4 of a hundred during a full suite run and never
+     * appeared when this file ran alone. The microsecond check below has no
+     * such luck in it and fails on every row the old code wrote.
+     */
+    it('stamps a release from the same clock that stamped the claim', async () => {
+      const ids = await seed();
+      await examined(ids.collector1, 'pass');
+      const c = await client();
+
+      for (let i = 0; i < 20; i += 1) {
+        const claim = uid();
+        const made = await c.post(`/api/tasks/${ids.taskA}/claims`, {
+          id: claim,
+          collector_id: ids.collector1,
+        });
+        expect(made.statusCode, made.body).toBe(201);
+        const released = await c.post(`/api/task-claims/${claim}/release`);
+        expect(released.statusCode, `cycle ${i}: ${released.body}`).toBe(200);
+      }
+
+      /**
+       * And the mechanism, not just the outcome: a JS `Date` is always a whole
+       * number of milliseconds, so a release stamped in the API process has a
+       * microsecond remainder of zero every single time. Over twenty rows from
+       * the database clock, all-zero is a one-in-10^60 coincidence.
+       */
+      const [sub] = await rows<{ n: number }>(
+        sql`select count(*)::int as n from task_claims
+             where released_at is not null
+               and (extract(microseconds from released_at)::bigint % 1000) <> 0`,
+      );
+      expect(sub!.n).toBeGreaterThan(0);
+    });
+
     it('refuses to delete a claim, to move its start, or to rewrite its release', async () => {
       /**
        * `released_at` rather than a delete is what makes a claim the evidence
@@ -859,11 +917,11 @@ describe.skipIf(!hasDb())('the back office', () => {
       await c.post(`/api/tasks/${ids.taskA}/claims`, { id: claim, collector_id: ids.collector1 });
 
       const first = await c.post(`/api/task-claims/${claim}/release`);
-      expect(first.statusCode).toBe(200);
+      expect(first.statusCode, first.body).toBe(200);
       expect(first.json().replayed).toBe(false);
 
       const again = await c.post(`/api/task-claims/${claim}/release`);
-      expect(again.statusCode).toBe(200);
+      expect(again.statusCode, again.body).toBe(200);
       expect(again.json().replayed).toBe(true);
       expect(again.json().released_at).toBe(first.json().released_at);
 

@@ -433,6 +433,13 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
       ['submitting episodes', 'POST', `/upload-batches/${card.batch}/episodes`, { episodes: [] }],
       ['the machine heartbeat', 'POST', `/upload-devices/${h.ids.machineA}/heartbeat`, {}],
       ['the reference cache', 'GET', '/reference/sync'],
+      /**
+       * The collector's own answer to "why did my footage fail". It reads
+       * exactly what a reviewer wrote, so it looks like review data — but the
+       * reader it is shaped for is the collector, and PLT-10 scopes PaXini to
+       * the review functions and no further.
+       */
+      ['an episode outcome', 'GET', `/api/episodes/${uid()}/outcome`],
     ];
 
     for (const [what, method, url, payload] of refused) {

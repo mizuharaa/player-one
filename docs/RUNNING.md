@@ -152,6 +152,61 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 Then `http://127.0.0.1:8080/review`, which redirects to a sign-in form taking the
 same machine and operator credentials.
 
+## The bucket needs one rule set on it, by hand
+
+**Set this before the first real upload.** It is not something the code can do
+for itself, and nothing else reaps what it reaps.
+
+A large file goes up as a multipart upload. If the run is interrupted, the parts
+already sent stay on the bucket — **stored, billed, and in no object listing**.
+Measured against MinIO on 2026-08-27: an interrupted 200 MB upload left
+`ListObjectsV2` reporting zero objects for the key while `ListMultipartUploads`
+held 128.00 MB of parts. An operator looking at the bucket sees nothing.
+
+The upload code aborts what it can prove is dead: when it resumes a key it
+abandons every older open upload on that same key, because it would never adopt
+one again. What it cannot judge is an upload for a delivery nobody comes back
+to — the card goes home, the batch is dropped, the parts sit there. Only the
+bucket can time that out.
+
+GreenNode is S3-compatible, so the AWS CLI sets it. Seven days, which is far
+longer than any legitimate resume (a 16 GB session is about 2.7 hours at the
+13 Mbps the brief assumes) and short enough that a dropped batch is not still
+billing next month:
+
+```bash
+cat > lifecycle.json <<'JSON'
+{
+  "Rules": [
+    {
+      "ID": "abort-incomplete-multipart-uploads",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "" },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+    }
+  ]
+}
+JSON
+
+aws s3api put-bucket-lifecycle-configuration \
+  --endpoint-url "$STORAGE_ENDPOINT" --bucket "$STORAGE_BUCKET" \
+  --lifecycle-configuration file://lifecycle.json
+```
+
+The empty prefix is deliberate: it is the whole bucket, so a prefix added later
+is covered without anybody remembering to widen the rule. Today every key is
+`episodes/<episode>/<ingest>/<file>`.
+
+Read it back, and look at what is currently orphaned:
+
+```bash
+aws s3api get-bucket-lifecycle-configuration --endpoint-url "$STORAGE_ENDPOINT" --bucket "$STORAGE_BUCKET"
+aws s3api list-multipart-uploads          --endpoint-url "$STORAGE_ENDPOINT" --bucket "$STORAGE_BUCKET"
+```
+
+The second command is the only way to see this cost. Run it when the storage
+bill does not match what `ListObjectsV2` says the bucket holds.
+
 ## Encryption, in transit and at rest
 
 ### The server speaks plain HTTP, and always will
@@ -257,7 +312,6 @@ deployment step, the owner and the acceptance check are in
 `docs/adr/0004-sec06-is-disk-encryption-at-the-upload-centre.md`. Read it
 before provisioning a centre machine. Nothing in this repository will tell you
 whether it has been done.
-
 ## The risk worker
 
 ```
