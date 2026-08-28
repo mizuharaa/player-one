@@ -293,7 +293,9 @@ export function buildApi({
     const { machine_identifier, secret } = (req.body ?? {}) as Record<string, string>;
     if (!machine_identifier || !secret) return reply.code(400).send({ error: 'missing credentials' });
 
-    const attempt = signInAttempt(db, limiter, req.ip, 'machine.login_failed', [machine_identifier]);
+    const attempt = signInAttempt(db, limiter, req.ip, 'machine.login_failed', [
+      { id: machine_identifier, kind: 'machine' },
+    ]);
     const wait = await attempt.blocked();
     if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
 
@@ -310,7 +312,9 @@ export function buildApi({
     const { external_ref, secret } = (req.body ?? {}) as Record<string, string>;
     if (!external_ref || !secret) return reply.code(400).send({ error: 'missing credentials' });
 
-    const attempt = signInAttempt(db, limiter, req.ip, 'operator.login_failed', [external_ref]);
+    const attempt = signInAttempt(db, limiter, req.ip, 'operator.login_failed', [
+      { id: external_ref, kind: 'operator' },
+    ]);
     const wait = await attempt.blocked();
     if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
 

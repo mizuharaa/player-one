@@ -98,8 +98,8 @@ export function registerConsole(app: FastifyInstance, db: Db, options: ConsoleOp
     // SEC-03, the same limiter the JSON sign-in uses. The person sees the
     // sentence on the form rather than a bare 429 they cannot read.
     const attempt = signInAttempt(db, options.limiter, req.ip, 'operator.login_failed', [
-      form['external_ref'] ?? '',
-      form['machine_identifier'] ?? '',
+      { id: form['external_ref'] ?? '', kind: 'operator' },
+      { id: form['machine_identifier'] ?? '', kind: 'machine' },
     ]);
     const wait = await attempt.blocked();
     if (wait !== null) {

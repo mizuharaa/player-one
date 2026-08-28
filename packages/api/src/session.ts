@@ -190,7 +190,10 @@ export function registerSessionRoutes(
       options.limiter,
       req.ip,
       wanted === 'reviewer' ? 'reviewer.login_failed' : 'operator.login_failed',
-      [str('external_ref'), str('machine_identifier')],
+      [
+        { id: str('external_ref'), kind: 'operator' },
+        { id: str('machine_identifier'), kind: 'machine' },
+      ],
     );
     const wait = await attempt.blocked();
     if (wait !== null) {

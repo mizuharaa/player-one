@@ -44,16 +44,22 @@ import type { Db } from '@playerone/store';
  *
  * ## The numbers, and why these
  *
- * Ten failures per credential and thirty per address, in a five-minute window.
- * They come from the deployment, not from a table of defaults: a handful of
- * counter PCs on a LAN, staff typing passwords they know, and about twenty
+ * Ten failures per personal credential, thirty per shared one, in a five-minute
+ * window. They come from the deployment, not from a table of defaults: a handful
+ * of counter PCs on a LAN, staff typing passwords they know, and about twenty
  * devices. A person who has forgotten a password types it wrong three or four
  * times, not ten; thirty wrong sign-ins in five minutes from one machine is not
- * a shift, it is a script. Against a guesser the two together cap one account at
- * two guesses a minute and one machine at six, against the 48 a second measured
- * above.
+ * a shift, it is a script.
  *
- * ## Getting back in
+ * A machine identifier is shared, not personal, and it is on the thirty. That
+ * was measured the wrong way round first: with the machine identifier on the
+ * ten, ten different staff each mistyping their own password once at one counter
+ * PC — every one of them naming the correct machine secret — locked the whole
+ * counter out of `POST /api/session`, and the eleventh person answered 429 with
+ * fully correct credentials. The address and the machine identifier name the
+ * same thing on a LAN, a counter PC, so they carry the same budget.
+ *
+ * ## Getting back in, and what this cannot do
  *
  * The window expires by itself. An operator who exhausts their ten waits at
  * most five minutes and needs no administrator, no second account and no
@@ -63,6 +69,26 @@ import type { Db } from '@playerone/store';
  * credential's own counter, so a shift of near misses does not accumulate; it
  * does not clear the address counter, because a correct password proves who is
  * typing and says nothing about where from.
+ *
+ * That covers the operator who mistypes. It does NOT cover an attacker who
+ * keeps going: the fixed window bounds one lock, not a campaign of them.
+ * Simulated over two hours of limiter clock, an attacker who fires ten guesses
+ * at `op-HCM` whenever the limiter lets them held that reference refused for
+ * 7,200 seconds out of 7,200, and the real operator — at a different address,
+ * with the correct password — could not sign in for one of them. Every
+ * credential-keyed limit anywhere has this shape, because the check has to
+ * happen before the password is looked at or it is not a defence against a
+ * burst. Nothing here softens it, deliberately: letting a caller past the
+ * credential counter because their own address looks clean is exactly the
+ * distributed attack the credential counter exists to catch.
+ *
+ * So the recovery path from a sustained attack is not a wait, it is stopping the
+ * source. That is now possible: every refused attempt leaves an audit row naming
+ * the address it came from, which is the whole reason the audit half of this
+ * change exists. Moving to another counter PC does not help, because it is the
+ * reference that is held down and not the machine. If somebody has to be let in
+ * before the source is cut off, the service is restarted: the counters are in
+ * memory and nothing survives it.
  *
  * ## Which routes, and which not
  *
@@ -112,10 +138,15 @@ import type { Db } from '@playerone/store';
 
 /** How long a counter lives once it is opened. */
 const WINDOW_MS = 5 * 60_000;
-/** Failed sign-ins one credential reference may accumulate inside a window. */
+/** Failed sign-ins one person's own reference may accumulate inside a window. */
 const PER_CREDENTIAL = 10;
-/** Failed sign-ins one source address may accumulate inside a window. */
-const PER_SOURCE = 30;
+/**
+ * Failed sign-ins anything a whole counter shares may accumulate inside a
+ * window: the source address, and the machine identifier every operator at that
+ * counter types. One number and not two, because on a LAN they name the same
+ * counter PC and a budget that fits one fits the other.
+ */
+const PER_SHARED = 30;
 /**
  * How long a reference may be before it is truncated for the key and the audit
  * row. Every real one is far shorter; the value is whatever the caller posted.
@@ -150,14 +181,21 @@ export const rateLimited = (retryAfter: number) => ({
   retry_after: retryAfter,
 });
 
-type Counter = { failures: number; expiresAt: number };
+type Counter = { failures: number; expiresAt: number; refused: boolean };
+
+/**
+ * One credential a sign-in named, and whether it belongs to a person or to the
+ * counter they are standing at. The kind picks the budget, and it picks the
+ * table the audit row is filed against.
+ */
+export type SignInRef = { id: string; kind: 'operator' | 'machine' };
 
 export type SignInLimiter = {
   /**
    * Seconds the caller must wait, or `null` when the attempt may proceed.
    * Call it before verifying anything.
    */
-  refusedFor(source: string, refs: readonly string[]): number | null;
+  refusedFor(source: string, refs: readonly SignInRef[]): number | null;
   /**
    * Count one attempt. Called *before* the credential is checked, not after it
    * turns out to be wrong.
@@ -169,13 +207,25 @@ export type SignInLimiter = {
    * them is refused — a limit that stops a slow guesser and not a fast one.
    * Counting on the way in caps the burst at the limit itself.
    */
-  attempted(source: string, refs: readonly string[]): void;
+  attempted(source: string, refs: readonly SignInRef[]): void;
   /**
    * Give back an attempt that turned out to be right: the credential's counter
    * is cleared, and the address gets its one attempt back rather than keeping
    * a count that a successful sign-in raised.
    */
-  succeeded(source: string, refs: readonly string[]): void;
+  succeeded(source: string, refs: readonly SignInRef[]): void;
+  /**
+   * Record that this attempt was refused, and say whether it is the first
+   * refusal of the windows that refused it.
+   *
+   * It exists so the trail records the event and not every repeat of it.
+   * Measured with a row per repeat: three hundred requests that were refused
+   * without a password being checked at all wrote three hundred permanent rows
+   * in 783 ms, about 380 a second, into a table an append-only trigger will not
+   * let anybody prune. One row per window says the same thing — this reference
+   * was under a limit, from here, then — and cannot be used to fill a disk.
+   */
+  noteRefusal(source: string, refs: readonly SignInRef[]): boolean;
 };
 
 /**
@@ -200,12 +250,16 @@ export function signInLimiter(now: () => number = Date.now): SignInLimiter {
    * `''` for a field that is not there, and counting that would put every
    * malformed request into one bucket.
    */
-  const keysOf = (source: string, refs: readonly string[]): string[] => [
+  const keysOf = (source: string, refs: readonly SignInRef[]): string[] => [
     `ip:${source}`,
-    ...new Set(refs.filter((r) => r !== '').map((r) => `ref:${r.slice(0, REF_MAX)}`)),
+    ...new Set(
+      refs
+        .filter((r) => r.id !== '')
+        .map((r) => `${r.kind === 'machine' ? 'mach' : 'ref'}:${r.id.slice(0, REF_MAX)}`),
+    ),
   ];
 
-  const limitOf = (key: string): number => (key.startsWith('ip:') ? PER_SOURCE : PER_CREDENTIAL);
+  const limitOf = (key: string): number => (key.startsWith('ref:') ? PER_CREDENTIAL : PER_SHARED);
 
   /** The counter for `key`, or nothing when it never existed or has expired. */
   const live = (key: string): Counter | undefined => {
@@ -240,21 +294,36 @@ export function signInLimiter(now: () => number = Date.now): SignInLimiter {
       for (const key of keysOf(source, refs)) {
         const counter = live(key);
         // A fixed window: the first attempt opens it and later ones do not
-        // extend it, so a guesser cannot hold a legitimate operator out for
-        // longer than five minutes by keeping up the attempts.
-        if (counter === undefined) counters.set(key, { failures: 1, expiresAt: now() + WINDOW_MS });
+        // extend it, so one lock lasts five minutes and not longer. It does not
+        // bound a campaign — see "what this cannot do" at the top of the file.
+        if (counter === undefined)
+          counters.set(key, { failures: 1, expiresAt: now() + WINDOW_MS, refused: false });
         else counter.failures += 1;
       }
     },
 
+    noteRefusal(source, refs) {
+      let first = false;
+      for (const key of keysOf(source, refs)) {
+        const counter = live(key);
+        if (counter === undefined || counter.failures < limitOf(key)) continue;
+        if (!counter.refused) {
+          counter.refused = true;
+          first = true;
+        }
+      }
+      return first;
+    },
+
     succeeded(source, refs) {
       for (const key of keysOf(source, refs)) {
-        // The credential is cleared outright, so a shift of near misses does
-        // not accumulate. The address only gives back this one attempt: a
-        // correct password proves who is typing and says nothing about where
-        // from, and clearing the address would let one valid account wipe the
-        // count for every guess sprayed from the same machine.
-        if (!key.startsWith('ip:')) counters.delete(key);
+        // The person's own credential is cleared outright, so a shift of near
+        // misses does not accumulate. Anything shared — the address, the
+        // machine identifier — only gives back this one attempt: a correct
+        // password proves who is typing and says nothing about where from, and
+        // clearing a shared counter would let one valid account wipe the count
+        // for every guess sprayed from the same counter PC.
+        if (key.startsWith('ref:')) counters.delete(key);
         else {
           const counter = live(key);
           if (counter === undefined) continue;
@@ -282,21 +351,28 @@ export function signInLimiter(now: () => number = Date.now): SignInLimiter {
  * reference is a `target_id`, which is `text` and carries no foreign key, so an
  * attempt on an operator who does not exist still records what was tried.
  *
- * `refs` is every reference the attempt named, and its first entry is the one
- * the row is filed under: the operator reference where there is one, because
- * that is the person a shift supervisor asks about.
+ * `refs` is every reference the attempt named. The row is filed under the first
+ * one that is not blank — the operator reference where there is one, because
+ * that is the person a shift supervisor asks about, and the machine identifier
+ * where the caller named nothing else. Filing under `refs[0]` regardless was
+ * measured writing `target_id = ''` against `operators` for a sign-in that had
+ * named only a machine: a row saying an attack happened and not what it was on.
  */
 export function signInAttempt(
   db: Db,
   limiter: SignInLimiter,
   source: string,
   action: `${string}.login_failed`,
-  refs: readonly string[],
+  refs: readonly SignInRef[],
 ) {
-  // From the action, the way `auditLogin` derives the actor role: a machine
-  // sign-in is filed against the fleet, everything else against a person.
-  const table = action.startsWith('machine.') ? 'upload_devices' : 'operators';
-  const target = (refs[0] ?? '').slice(0, REF_MAX);
+  // The credential the row is about, and with it the table it is filed against
+  // and the actor `auditLogin` derives: a machine sign-in goes to the fleet,
+  // everything else to a person.
+  const attacked = refs.find((ref) => ref.id !== '');
+  const machine = attacked?.kind === 'machine';
+  const filed = machine ? 'machine.login_failed' : action;
+  const table = machine ? 'upload_devices' : 'operators';
+  const target = (attacked?.id ?? '').slice(0, REF_MAX);
 
   return {
     /**
@@ -310,7 +386,12 @@ export function signInAttempt(
     async blocked(): Promise<number | null> {
       const wait = limiter.refusedFor(source, refs);
       if (wait !== null) {
-        await auditLogin(db, action, table, target, { source, outcome: 'rate_limited' });
+        // Once per window, not once per repeat. A refused repeat costs the
+        // attacker nothing, so a row for each of them is a way to grow an
+        // append-only table without a password ever being checked.
+        if (limiter.noteRefusal(source, refs)) {
+          await auditLogin(db, filed, table, target, { source, outcome: 'rate_limited' });
+        }
         return wait;
       }
       limiter.attempted(source, refs);
@@ -318,7 +399,7 @@ export function signInAttempt(
     },
     /** The credential was wrong. It is counted already; this records it. */
     async wrong(): Promise<void> {
-      await auditLogin(db, action, table, target, { source, outcome: 'credentials' });
+      await auditLogin(db, filed, table, target, { source, outcome: 'credentials' });
     },
     /** The credential was right. Gives the attempt back; the success is audited already. */
     ok(): void {
