@@ -5,6 +5,7 @@ import { schema, type Db } from '@playerone/store';
 import { loadTuning, retuneSignal, tuningHistory } from './catalogue.ts';
 import { batchId, type RiskEngine } from './engine.ts';
 import { CLEAR_VERDICTS, clearHold, currentHolds, holdHistory, NoOpenHold } from './holds.ts';
+import { reviewQueue, shapeQueueEntry } from './queue.ts';
 import { falsePositiveReport } from './report.ts';
 import { RISK_LOCALES, sentence } from './sentences.ts';
 import type { Flag, RiskSummary, SubjectType } from './types.ts';
@@ -41,6 +42,13 @@ const RetuneBody = z.object({
   params: z.record(z.unknown()).optional(),
   description: z.string().optional(),
   reason: z.string().trim().min(10),
+});
+
+const QueueQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  // Not `z.coerce.boolean()`: it reads the string 'false' as true, so
+  // `?include_paid=false` would do the opposite of what it says.
+  include_paid: z.enum(['true', 'false']).optional(),
 });
 
 const Window = z.object({
@@ -140,6 +148,29 @@ export function registerRisk(
         raised_at: h.raisedAt.toISOString(),
         signal_ids: h.signalIds,
       })),
+    });
+  });
+
+  /**
+   * The operator queue: every bill a person must decide on before it is paid,
+   * oldest first, with the evidence. This is the surface Daniel asked for —
+   * "flag it to an operator FIRST, before money moves" — and it is the answer
+   * to "which bills am I holding up and why", which `/api/risk/holds` could
+   * not give because it carried ids and no reasons.
+   *
+   * `blocking: false` on a row means the score asks for a look but nothing is
+   * refusing payment: holds are switched off, or the last clear already
+   * covered every signal now showing.
+   */
+  app.get('/api/risk/queue', opts, async (req, reply) => {
+    const q = QueueQuery.safeParse(req.query ?? {});
+    if (!q.success) return reply.code(400).send({ error: 'limit must be 1 to 500, include_paid a boolean' });
+    if (operatorOf(req) === null) return reply.code(403).send({ error: 'an operator session is required' });
+    const entries = await reviewQueue(db, engine, { limit: q.data.limit, includePaid: q.data.include_paid === 'true' });
+    return reply.send({
+      holds_enabled: engine.holdsEnabled,
+      blocking: entries.filter((e) => e.blocking).length,
+      entries: entries.map(shapeQueueEntry),
     });
   });
 

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { deliverySignals, type DeliveryFacts, type MismatchFacts } from '../../src/risk/detectors/delivery.ts';
+import { historySignals, type HistoryInput } from '../../src/risk/detectors/history.ts';
 import { identChangedLate, identSignals, namesMatch, type PayoutAccount } from '../../src/risk/detectors/ident.ts';
 import { approvalOutliers, concentration, reviewTooFast, selfDealing } from '../../src/risk/detectors/ops.ts';
 import { dayKey, percentile, volumeSignals, type EpisodeSlice } from '../../src/risk/detectors/volume.ts';
 import { riskConfigFromEnv } from '../../src/risk/config.ts';
-import { signalIds, tuningFromCatalogue } from './helpers.ts';
+import { bands, signalIds, tuningFromCatalogue } from './helpers.ts';
 
 /**
  * The detectors that need no media, tested as the pure functions they are.
@@ -243,5 +245,175 @@ describe('the environment flags', () => {
     expect(riskConfigFromEnv({})).toEqual({ engineEnabled: true, holdsEnabled: false, mediaRoot: undefined });
     expect(riskConfigFromEnv({ PLAYERONE_RISK_ENGINE: '0', PLAYERONE_RISK_HOLD: '1', PLAYERONE_MEDIA_ROOT: '/m' })).toEqual({ engineEnabled: false, holdsEnabled: true, mediaRoot: '/m' });
     expect(() => riskConfigFromEnv({ PLAYERONE_RISK_HOLD: 'yes' })).toThrow(/PLAYERONE_RISK_HOLD/);
+  });
+});
+
+/**
+ * The delivery detectors. Every case here is built from rows the store writes
+ * on its own: one `episode_ingests` row per delivery whose bytes differed, and
+ * the CHECKSUM-MISMATCH payload naming what changed. Nothing needs media.
+ */
+describe('the delivery detectors', () => {
+  const facts = (over: Partial<DeliveryFacts> = {}): DeliveryFacts => ({
+    episodeId: 'e1',
+    deliveries: 1,
+    mismatchDeliveries: 0,
+    firstDeliveredAt: D('2026-08-20T00:00:00Z'),
+    lastDeliveredAt: D('2026-08-20T00:00:00Z'),
+    latest: null,
+    recordedAtMs: D('2026-08-19T00:00:00Z').getTime(),
+    ...over,
+  });
+  const mismatch = (over: Partial<MismatchFacts> = {}): MismatchFacts => ({
+    priorIngestId: 'i0',
+    changed: [],
+    added: [],
+    removed: [],
+    measuredS: 100,
+    priorMeasuredS: 100,
+    ...over,
+  });
+  const NOW = D('2026-08-21T00:00:00Z');
+
+  it('says nothing about one clean delivery', () => {
+    expect(deliverySignals(facts(), NOW, T)).toEqual([]);
+  });
+
+  it('flags an episode delivered past the threshold with changing bytes, and not one delivered twice', () => {
+    const churn = facts({
+      deliveries: 4,
+      mismatchDeliveries: 3,
+      lastDeliveredAt: D('2026-08-20T06:00:00Z'),
+      latest: mismatch({ added: ['tail.pts'] }),
+    });
+    const f = deliverySignals(churn, NOW, T);
+    expect(signalIds(f)).toEqual(['CONT.REDELIVERY_CHURN']);
+    expect(f[0]!.evidence).toMatchObject({ deliveries: 4, mismatch_deliveries: 3, max_deliveries: 2, hours_between: 6 });
+    // Two deliveries is the threshold, not past it.
+    expect(deliverySignals({ ...churn, deliveries: 2, mismatchDeliveries: 1 }, NOW, T)).toEqual([]);
+    // Deliveries whose bytes never differed are not churn; nothing changed.
+    expect(deliverySignals({ ...churn, mismatchDeliveries: 0, latest: null }, NOW, T)).toEqual([]);
+  });
+
+  it('separates a lost transfer from a substitution', () => {
+    // An interrupted upload: the tail file never arrived and the episode
+    // measures SHORTER than the delivery it replaced. Nothing was exchanged.
+    const lost = facts({
+      deliveries: 2,
+      mismatchDeliveries: 1,
+      latest: mismatch({ removed: ['left_part0002.mp4'], measuredS: 60, priorMeasuredS: 100 }),
+    });
+    expect(deliverySignals(lost, NOW, T)).toEqual([]);
+
+    // A substitution: a file that had already arrived whole comes back with
+    // different bytes.
+    const swapped = facts({
+      deliveries: 2,
+      mismatchDeliveries: 1,
+      latest: mismatch({ changed: ['left_part0001.mp4', 'session.pts'] }),
+    });
+    const f = deliverySignals(swapped, NOW, T);
+    expect(signalIds(f)).toEqual(['CONT.MEDIA_SUBSTITUTED']);
+    expect(f[0]!.evidence).toMatchObject({ changed_media: ['left_part0001.mp4'], changed_media_count: 1, grew_by_s: 0 });
+
+    // A timestamp sidecar rewritten on its own is not media and not this signal.
+    expect(deliverySignals(facts({ deliveries: 2, mismatchDeliveries: 1, latest: mismatch({ changed: ['session.pts'] }) }), NOW, T)).toEqual([]);
+
+    // Growth is the other half: a redelivery cannot hold MORE footage than the
+    // recording that arrived first.
+    const grew = deliverySignals(facts({ deliveries: 2, mismatchDeliveries: 1, latest: mismatch({ measuredS: 140, priorMeasuredS: 100 }) }), NOW, T);
+    expect(signalIds(grew)).toEqual(['CONT.MEDIA_SUBSTITUTED']);
+    expect(grew[0]!.evidence).toMatchObject({ grew_by_s: 40, changed_media_count: 0 });
+  });
+
+  it('flags footage delivered long after it was recorded, and reads the device clock to do it', () => {
+    const f = deliverySignals(facts({ recordedAtMs: D('2026-06-01T00:00:00Z').getTime() }), NOW, T);
+    expect(signalIds(f)).toEqual(['PROV.STALE_RECORDING']);
+    expect(f[0]!.evidence).toMatchObject({ age_days: 80, max_age_days: 30 });
+    // Inside the window, and with no clock at all, nothing is claimed.
+    expect(deliverySignals(facts({ recordedAtMs: D('2026-08-01T00:00:00Z').getTime() }), NOW, T)).toEqual([]);
+    expect(deliverySignals(facts({ recordedAtMs: null }), NOW, T)).toEqual([]);
+  });
+});
+
+/**
+ * The history detectors. Their whole input is this engine's own output, which
+ * is what makes a history score openable: every episode counted has a flag row
+ * carrying the evidence that raised it.
+ */
+describe('the history detectors', () => {
+  const finding = (episodeId: string, signalId: string, family = 'CONT') => ({ episodeId, signalId, family });
+  const input = (over: Partial<HistoryInput> = {}): HistoryInput => ({
+    collectorId: 'c1',
+    episodesEvaluated: 10,
+    findings: [],
+    clears: [],
+    ...over,
+  });
+
+  it('says nothing about a collector whose past is clean, or who has no past yet', () => {
+    expect(historySignals(input(), T)).toEqual([]);
+    expect(historySignals(input({ episodesEvaluated: 0 }), T)).toEqual([]);
+  });
+
+  it('flags a repeated content finding past the threshold and names what repeated', () => {
+    const findings = [
+      finding('e1', 'CONT.NEAR_DUPLICATE'),
+      finding('e2', 'CONT.NEAR_DUPLICATE'),
+      finding('e3', 'CONT.NEAR_DUPLICATE'),
+      finding('e3', 'PROV.SCREEN_RECAPTURE', 'PROV'),
+      // Another family's finding is not this signal's business.
+      finding('e4', 'VOL.NO_GAP', 'VOL'),
+    ];
+    const f = historySignals(input({ findings }), T);
+    expect(signalIds(f)).toEqual(['HIST.REPEAT_CONTENT_FINDINGS']);
+    expect(f[0]!.evidence).toMatchObject({
+      episodes: 3,
+      max_episodes: 2,
+      episodes_evaluated: 10,
+      share: 0.3,
+      signals: ['CONT.NEAR_DUPLICATE', 'PROV.SCREEN_RECAPTURE'],
+      signal_counts: { 'CONT.NEAR_DUPLICATE': 3, 'PROV.SCREEN_RECAPTURE': 1 },
+      episode_ids: ['e1', 'e2', 'e3'],
+    });
+    // Two episodes is the threshold; one episode with four faults is one episode.
+    expect(historySignals(input({ findings: findings.slice(0, 2) }), T)).toEqual([]);
+  });
+
+  it('carries an operator decision to pay a held bill forward, and never a false positive', () => {
+    const clear = (verdict: string, at: string, ids: string[]) => ({ verdict, clearedAt: D(at), signalIds: ids });
+    const clears = [
+      clear('accepted', '2026-07-01T00:00:00Z', ['CONT.NEAR_DUPLICATE']),
+      clear('accepted', '2026-08-01T00:00:00Z', ['VOL.HOURS_PER_DAY']),
+      clear('false_positive', '2026-08-05T00:00:00Z', ['CONT.STATIC_SCENE']),
+    ];
+    const f = historySignals(input({ clears }), T);
+    expect(signalIds(f)).toEqual(['HIST.PRIOR_ACCEPTED_HOLDS']);
+    expect(f[0]!.evidence).toMatchObject({
+      accepted_holds: 2,
+      max_accepted: 1,
+      false_positive_clears: 1,
+      signal_ids: ['CONT.NEAR_DUPLICATE', 'VOL.HOURS_PER_DAY'],
+      last_cleared_at: '2026-08-01T00:00:00.000Z',
+    });
+    // Four false positives are evidence about the thresholds, not the person.
+    expect(historySignals(input({ clears: clears.filter((c) => c.verdict === 'false_positive') }), T)).toEqual([]);
+  });
+
+  it('never holds on history alone: the two signals together stay under the hold edge', () => {
+    const f = historySignals(
+      input({
+        findings: [finding('e1', 'CONT.NEAR_DUPLICATE'), finding('e2', 'CONT.NEAR_DUPLICATE'), finding('e3', 'CONT.NEAR_DUPLICATE')],
+        clears: [
+          { verdict: 'accepted', clearedAt: D('2026-07-01T00:00:00Z'), signalIds: ['CONT.NEAR_DUPLICATE'] },
+          { verdict: 'accepted', clearedAt: D('2026-08-01T00:00:00Z'), signalIds: ['CONT.NEAR_DUPLICATE'] },
+        ],
+      }),
+      T,
+    );
+    expect(signalIds(f)).toEqual(['HIST.PRIOR_ACCEPTED_HOLDS', 'HIST.REPEAT_CONTENT_FINDINGS']);
+    const points = f.reduce((a, x) => a + T.get(x.signalId)!.points, 0);
+    expect(points).toBe(55);
+    expect(points).toBeLessThan(bands().hold);
   });
 });

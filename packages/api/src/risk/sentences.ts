@@ -82,6 +82,10 @@ const en = {
     'No usable audio ({reason}) on a task that expects sound ({task_type}).',
   'risk.signal.CONT.FINGERPRINT':
     'A frame fingerprint of {frames} frames was recorded for duplicate checks.',
+  'risk.signal.CONT.REDELIVERY_CHURN':
+    'This episode was delivered {deliveries} times over {hours_between} hours, and the bytes differed on {mismatch_deliveries} of them. More than {max_deliveries} deliveries is unusual.',
+  'risk.signal.CONT.MEDIA_SUBSTITUTED':
+    'A later delivery replaced {changed_media_count} media file(s) that had already arrived whole ({changed_media}) and now measures {measured_s} s against {prior_measured_s} s before. A lost link loses bytes; it does not exchange them.',
 
   'risk.signal.PROV.PRNU_MISMATCH':
     'The sensor noise pattern of the footage correlates {correlation} with the fingerprint enrolled for device {device_serial}; a match is above {min_correlation}.',
@@ -93,6 +97,13 @@ const en = {
     'The footage looks like a filmed screen: {cues} ({frames} frames checked).',
   'risk.signal.PROV.SYNTHETIC_HEURISTIC':
     'The footage has almost no sensor noise ({noise_floor}, cameras read above {max_noise_floor}). A weak cue on its own.',
+  'risk.signal.PROV.STALE_RECORDING':
+    'The recording is dated {recorded_at} but was first delivered on {first_delivered_at}, {age_days} days later. More than {max_age_days} days is unusual.',
+
+  'risk.signal.HIST.REPEAT_CONTENT_FINDINGS':
+    '{episodes} of this collector’s {episodes_evaluated} evaluated episodes ({share_pct}) carry a content or provenance finding: {signals}. More than {max_episodes} episodes is the finding.',
+  'risk.signal.HIST.PRIOR_ACCEPTED_HOLDS':
+    'An operator has held a bill of this collector’s and paid it anyway {accepted_holds} times, most recently on {last_cleared_at} ({signal_ids}). More than {max_accepted} is the finding.',
 
   'risk.signal.OPS.REVIEW_TOO_FAST':
     'Reviewer {reviewer_ref} recorded a {verdict} verdict in {time_to_verdict_s} s on an episode that runs {measured_duration_s} s.',
@@ -158,6 +169,10 @@ const zh: Record<RiskMessageKey, string> = {
     '{dark_share_pct} 的抽样帧过暗，{flat_share_pct} 的帧没有细节（平均亮度 {mean_luma}/255）。镜头可能被遮挡。',
   'risk.signal.CONT.AUDIO_ABSENT': '没有可用的音频（{reason}），而任务类型 {task_type} 应当有声音。',
   'risk.signal.CONT.FINGERPRINT': '已记录 {frames} 帧的画面指纹，用于重复检查。',
+  'risk.signal.CONT.REDELIVERY_CHURN':
+    '该片段在 {hours_between} 小时内被交付了 {deliveries} 次，其中 {mismatch_deliveries} 次内容不一致。超过 {max_deliveries} 次交付属于异常。',
+  'risk.signal.CONT.MEDIA_SUBSTITUTED':
+    '后一次交付替换了 {changed_media_count} 个已完整到达的媒体文件（{changed_media}），现在实测 {measured_s} 秒，此前为 {prior_measured_s} 秒。链路中断只会丢失数据，不会替换数据。',
 
   'risk.signal.PROV.PRNU_MISMATCH':
     '画面的传感器噪声模式与设备 {device_serial} 登记的指纹相关性为 {correlation}，匹配应高于 {min_correlation}。',
@@ -167,6 +182,13 @@ const zh: Record<RiskMessageKey, string> = {
   'risk.signal.PROV.SCREEN_RECAPTURE': '画面像是翻拍的屏幕：{cues}（检查了 {frames} 帧）。',
   'risk.signal.PROV.SYNTHETIC_HEURISTIC':
     '画面几乎没有传感器噪声（{noise_floor}，相机通常高于 {max_noise_floor}）。单独看只是弱线索。',
+  'risk.signal.PROV.STALE_RECORDING':
+    '该录制的日期为 {recorded_at}，但首次交付是在 {first_delivered_at}，相隔 {age_days} 天。超过 {max_age_days} 天属于异常。',
+
+  'risk.signal.HIST.REPEAT_CONTENT_FINDINGS':
+    '该采集者已评估的 {episodes_evaluated} 个片段中有 {episodes} 个（{share_pct}）存在画面或来源方面的发现：{signals}。超过 {max_episodes} 个片段即构成本项。',
+  'risk.signal.HIST.PRIOR_ACCEPTED_HOLDS':
+    '运营人员曾对该采集者的账单挂起后仍决定付款 {accepted_holds} 次，最近一次为 {last_cleared_at}（{signal_ids}）。超过 {max_accepted} 次即构成本项。',
 
   'risk.signal.OPS.REVIEW_TOO_FAST':
     '审核员 {reviewer_ref} 用 {time_to_verdict_s} 秒给出了 {verdict} 结论，而该片段时长 {measured_duration_s} 秒。',
@@ -232,6 +254,10 @@ const vi: Record<RiskMessageKey, string> = {
     '{dark_share_pct} khung hình mẫu bị tối và {flat_share_pct} không có chi tiết (độ sáng trung bình {mean_luma}/255). Ống kính có thể đã bị che.',
   'risk.signal.CONT.AUDIO_ABSENT': 'Không có âm thanh dùng được ({reason}) trong khi loại nhiệm vụ {task_type} cần có tiếng.',
   'risk.signal.CONT.FINGERPRINT': 'Đã lưu dấu vân khung hình của {frames} khung để đối chiếu trùng lặp.',
+  'risk.signal.CONT.REDELIVERY_CHURN':
+    'Phiên này được nộp {deliveries} lần trong {hours_between} giờ, và dữ liệu khác nhau ở {mismatch_deliveries} lần. Quá {max_deliveries} lần nộp là bất thường.',
+  'risk.signal.CONT.MEDIA_SUBSTITUTED':
+    'Lần nộp sau đã thay thế {changed_media_count} tệp video hoặc âm thanh vốn đã về đủ ({changed_media}) và nay đo được {measured_s} giây so với {prior_measured_s} giây trước đó. Mất kết nối làm mất dữ liệu, không thay dữ liệu.',
 
   'risk.signal.PROV.PRNU_MISMATCH':
     'Mẫu nhiễu cảm biến của video tương quan {correlation} với dấu vân đã đăng ký cho thiết bị {device_serial}; khớp phải trên {min_correlation}.',
@@ -241,6 +267,13 @@ const vi: Record<RiskMessageKey, string> = {
   'risk.signal.PROV.SCREEN_RECAPTURE': 'Video giống như quay lại từ màn hình: {cues} (đã kiểm tra {frames} khung hình).',
   'risk.signal.PROV.SYNTHETIC_HEURISTIC':
     'Video gần như không có nhiễu cảm biến ({noise_floor}, máy quay thường trên {max_noise_floor}). Chỉ là dấu hiệu yếu nếu đứng một mình.',
+  'risk.signal.PROV.STALE_RECORDING':
+    'Bản ghi đề ngày {recorded_at} nhưng lần nộp đầu tiên là {first_delivered_at}, muộn hơn {age_days} ngày. Quá {max_age_days} ngày là bất thường.',
+
+  'risk.signal.HIST.REPEAT_CONTENT_FINDINGS':
+    '{episodes} trong {episodes_evaluated} phiên đã đánh giá của cộng tác viên này ({share_pct}) có phát hiện về nội dung hoặc nguồn gốc: {signals}. Quá {max_episodes} phiên là mức phát hiện.',
+  'risk.signal.HIST.PRIOR_ACCEPTED_HOLDS':
+    'Nhân viên vận hành đã tạm giữ hoá đơn của cộng tác viên này rồi vẫn quyết định chi trả {accepted_holds} lần, gần nhất là {last_cleared_at} ({signal_ids}). Quá {max_accepted} lần là mức phát hiện.',
 
   'risk.signal.OPS.REVIEW_TOO_FAST':
     'Người duyệt {reviewer_ref} đưa ra kết luận {verdict} trong {time_to_verdict_s} giây cho phiên dài {measured_duration_s} giây.',
