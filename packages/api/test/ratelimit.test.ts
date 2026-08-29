@@ -4,7 +4,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApi, hashCredential, SIGN_IN_RATE_LIMITED, signInLimiter } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
-import { closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('ratelimit');
@@ -152,7 +152,7 @@ describe.skipIf(!hasDb())('sign-in rate limiting', () => {
   beforeEach(truncate);
   afterAll(closeDb);
 
-  const api = async () => buildApi({ db: await db(), tokenSecret: SECRET });
+  const api = async () => buildApi({ db: await appDb(), tokenSecret: SECRET });
 
   /** Two centres, two operators, two machines: one attacker, one bystander. */
   async function seed() {

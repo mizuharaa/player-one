@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { signToken } from '../src/credentials.ts';
 import { buildApi } from '../src/index.ts';
 import { STATE_SENTENCES, collectorStateOf, type CollectorState } from '../src/me.ts';
-import { closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
 import { P1, seedAccount, seedBill, seedPayout, seedSettlement, uid } from './payout/domain/fixture.ts';
 
 /**
@@ -156,7 +156,7 @@ async function signedIn() {
   const d = await db();
   const ids = await seedPayout(d);
   const app = buildApi({
-    db: d,
+    db: await appDb(),
     tokenSecret: SECRET,
     payout: { mode: 'manual', zaloPayEnv: 'sandbox' },
     // Holds default to off (the pilot). On here, so the leak test actually

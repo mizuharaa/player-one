@@ -218,6 +218,29 @@ aws s3api list-multipart-uploads          --endpoint-url "$STORAGE_ENDPOINT" --b
 The second command is the only way to see this cost. Run it when the storage
 bill does not match what `ListObjectsV2` says the bucket holds.
 
+## Forcing the cloud to prove one batch again
+
+```
+POST /upload-batches/<id>/upload?reverify=1
+```
+
+`POST /upload-batches/<id>/upload` skips any object it has a verification
+receipt for (migration 0020), which is what makes a re-run cost only what it has
+not already proved. It also means a file that verified once is never read again,
+so nothing would notice the cloud damaging it afterwards — a lost replica, a bad
+restore, bit rot.
+
+`?reverify=1` clears that one batch's receipts before the run, so every object
+on it is pulled back and re-hashed. Nothing else changes: it is the same route,
+scoped to the machine holding the card, and it does not widen the general rule —
+every other batch keeps its receipts. It is recorded as an audited
+`batch.reverify` event naming the operator and how many receipts it dropped.
+
+If an object now fails, the episode goes to `failed`: the review queue stops
+serving it and the UPL-06 cache gate refuses, which is the same handling a
+corrupt first upload gets. Re-running without the parameter re-sends and
+re-verifies just that file.
+
 ## Encryption, in transit and at rest
 
 ### The server speaks plain HTTP, and always will
@@ -323,6 +346,80 @@ deployment step, the owner and the acceptance check are in
 `docs/adr/0004-sec06-is-disk-encryption-at-the-upload-centre.md`. Read it
 before provisioning a centre machine. Nothing in this repository will tell you
 whether it has been done.
+
+### The database user the API connects as
+
+**Do not point `DATABASE_URL` at `postgres` on a deployment.** A superuser
+bypasses every grant and owns every table, so the append-only audit trail is a
+courtesy rather than a rule. Measured against the local Postgres 18, connected
+exactly as the API connects:
+
+```
+TRUNCATE audit_events;                                              -- succeeded
+ALTER TABLE audit_events DISABLE TRIGGER audit_events_append_only;  -- succeeded
+UPDATE audit_events SET action = 'nothing happened';                -- succeeded
+```
+
+Migration `0021_app_role` creates the role to use instead. It has SELECT,
+INSERT and UPDATE on every table, DELETE on `cloud_verifications` only (the one
+table this codebase deletes a row from), USAGE on the sequences, and membership
+of `playerone_risk`. It owns nothing, so it cannot TRUNCATE any table and
+cannot disable any trigger — the three statements above all fail under it, and
+so does every other route to rewriting history. It is created `NOLOGIN`,
+because a migration cannot invent a password:
+
+```
+ALTER ROLE playerone_app LOGIN PASSWORD '<a password you generated>';
+DATABASE_URL='postgres://playerone_app:<password>@host:5432/playerone?sslmode=require'
+```
+
+Two things to know:
+
+- **A migration must still run as the owner.** `pnpm db:migrate` creates and
+  alters tables, which `playerone_app` cannot do. Migrate as the owning user,
+  then run the service as `playerone_app`. If a *different* user ever runs a
+  migration, re-run the grant block in `0021_app_role.sql`: `ALTER DEFAULT
+  PRIVILEGES` only covers tables created by the user that set it.
+- **The whole test suite passes under this role**, which is how the grants were
+  settled rather than argued about. `PLAYERONE_DB_ROLE=playerone_app pnpm test`
+  hands **`buildApi`** a connection whose session role is that one, so every
+  route, every audited write and every worker runs under the deployment's
+  grants. The fixtures keep the ordinary connection, and that split is the
+  point: creating a database, migrating it, truncating between tests and
+  disabling a trigger to prove that the trigger is what refuses a write are all
+  things the schema *owner* does. A test that asserts `bill_lines_immutable` by
+  attempting a DELETE has to reach the trigger to be testing anything; run
+  under a role with no DELETE grant it would pass for the wrong reason. Run it
+  after adding a route that writes somewhere new.
+
+## Operational alerts
+
+`GET /api/alerts` answers PLT-12's nine conditions — PaXini's PRD §11.4 list,
+adopted verbatim — as one derived query over rows the platform already writes.
+Any operator session may read it. There is no alerts table, no worker and no
+notification channel: for a twenty-device pilot it is a screen somebody looks
+at.
+
+```json
+{ "at": "2026-08-29T…", "alerts": [
+  { "id": "upload_failures", "state": "ok", "observed": 0, "threshold": 3 },
+  { "id": "cloud_write_failures", "state": "no_signal", "observed": null, "threshold": null } ] }
+```
+
+`state` is `firing` when `observed >= threshold`, `ok` when it is not, and
+`no_signal` when **nothing in this system records the fact**. Three of the nine
+are `no_signal` today and say so rather than reading a reassuring zero:
+`cloud_write_failures` (a failed cloud PUT is returned in the HTTP response and
+never stored), `review_cannot_read_cloud` (the review lane reads local media —
+ADR 0001 — so there is no cloud read to fail) and `cross_border_timeouts`
+(nothing times the link). Two more, `upload_centres_offline_or_backlogged` and
+`upload_devices_low_disk`, read the §11.3.2 rule 8 heartbeat and are
+`no_signal` until some machine sends one; no client sends it yet.
+
+The thresholds are literals in `packages/api/src/alerts.ts` — the PRD gives no
+numbers, and a setting invented before the first week of real data is a guess
+with a knob on it. Tune them there.
+
 ## The risk worker
 
 ```

@@ -5,7 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential } from '../src/index.ts';
 import { ZERO, add, fromDecimal, mul, quantise } from '../src/money.ts';
-import { closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('settle');
@@ -137,7 +137,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       await liveClaim(d, ids.taskFactory, collector);
     }
 
-    const app = buildApi({ db: d, tokenSecret: SECRET, settlementCycleDays: options.cycleDays });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET, settlementCycleDays: options.cycleDays });
     await app.ready();
 
     const login = async (machine: string, operator: string) => {

@@ -7,7 +7,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { open, schema } from '@playerone/store';
 import { COUNTER_REFUSALS, PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, REVIEW_API_REFUSALS, REVIEW_HOLDABLE_REFUSALS, SETTLE_API_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
-import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { appDb, closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
 useDatabase('backoffice');
 
@@ -122,7 +122,7 @@ describe.skipIf(!hasDb())('the back office', () => {
   afterAll(closeDb);
 
   const client = async (machine = 'HCM-01', operator = 'op-a') => {
-    const app = buildApi({ db: await db(), tokenSecret: SECRET });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET });
     const m = await app.inject({
       method: 'POST',
       url: '/auth/machine',
@@ -1917,7 +1917,7 @@ describe.skipIf(!hasDb())('the back office', () => {
 
   it('needs both tokens for every back-office route', async () => {
     const ids = await seed();
-    const app = buildApi({ db: await db(), tokenSecret: SECRET });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET });
     for (const [method, url] of [
       ['GET', '/api/tasks'],
       ['GET', '/api/collectors'],

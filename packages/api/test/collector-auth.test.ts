@@ -9,7 +9,7 @@ import {
   CODE_ATTEMPTS,
   type SendSignInCode,
 } from '../src/index.ts';
-import { closeDb, db, hasDb, truncate, violates, useDatabase } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, truncate, violates, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('collector_auth');
@@ -80,7 +80,7 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
   // "no delivery configured", which a default parameter would quietly override.
   const api = async (...arg: [SendSignInCode | undefined] | []) =>
     buildApi({
-      db: await db(),
+      db: await appDb(),
       tokenSecret: SECRET,
       sendSignInCode: arg.length === 0 ? send : arg[0],
     });

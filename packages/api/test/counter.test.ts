@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LightMyRequestResponse } from 'fastify';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('counter');
@@ -59,7 +59,7 @@ describe.skipIf(!hasDb())('the counter workflow', () => {
   afterAll(closeDb);
 
   const client = async () => {
-    const app = buildApi({ db: await db(), tokenSecret: SECRET });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET });
     const m = await app.inject({
       method: 'POST',
       url: '/auth/machine',
@@ -447,7 +447,7 @@ describe.skipIf(!hasDb())('the counter workflow', () => {
       await d.execute(sql`insert into handovers (id, collector_id, device_id, tf_card_id, upload_centre_id, operator_id, handover_time)
         values (${other.handover}, ${other.collector}, ${other.egoDevice}, 'CARD-2', ${other.centre}, ${other.operator}, now())`);
 
-      const app = buildApi({ db: d, tokenSecret: SECRET });
+      const app = buildApi({ db: await appDb(), tokenSecret: SECRET });
       const m = await app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: 'HAN-01', secret: 'pw' } });
       const o = await app.inject({ method: 'POST', url: '/auth/operator', payload: { external_ref: 'op-2', secret: 'pw' } });
       const headers = { 'x-machine-token': `Bearer ${m.json().token}`, authorization: `Bearer ${o.json().token}` };

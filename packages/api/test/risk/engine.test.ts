@@ -4,7 +4,7 @@ import Fastify from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { open, storeEpisode, type Db } from '@playerone/store';
-import { closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase, violates } from '../../../store/test/db.ts';
+import { appDb, closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase, violates } from '../../../store/test/db.ts';
 import type { CounterActor } from '../../src/actor.ts';
 import { buildApi } from '../../src/index.ts';
 import { loadTuning, retuneSignal, seedRiskSignals } from '../../src/risk/catalogue.ts';
@@ -824,7 +824,7 @@ describe.skipIf(!hasDb())('the risk engine', () => {
 
     it('mounts the risk surface through the production API assembly (F-50)', async () => {
       const live = buildApi({
-        db: await db(),
+        db: await appDb(),
         tokenSecret: 'risk-route-registration-test',
         payout: { mode: 'manual', zaloPayEnv: 'sandbox' },
         risk: { engineEnabled: true, holdsEnabled: false, mediaRoot: undefined },
