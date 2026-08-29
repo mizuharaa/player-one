@@ -16,7 +16,7 @@
 
 import { env, exit } from 'node:process';
 import { open, redact } from '@playerone/store';
-import { payoutOptionsFromEnv, buildApi, s3StoreFromEnv } from '../src/index.ts';
+import { payoutOptionsFromEnv, buildApi, s3StoreFromEnv, signInCodeSenderFromEnv } from '../src/index.ts';
 import { riskConfigFromEnv } from '../src/risk/config.ts';
 import { zaloPayClientFromEnv } from '../src/payout/zalopay/client.ts';
 
@@ -106,6 +106,14 @@ const app = buildApi({
    * Vietnamese-collected video across the border, so it is a deliberate act.
    */
   reviewerMediaEnabled,
+  /**
+   * APP-01. How a collector's sign-in code reaches their phone, from
+   * PLAYERONE_ZNS_*. Zalo Notification Service when the credentials are set;
+   * a sender that writes the code to this log when they are not, so a pilot
+   * runs before VNG has issued a ZNS account. A partial configuration, or
+   * PLAYERONE_ZNS_ENV=production with none of it, throws by name.
+   */
+  sendSignInCode: signInCodeSenderFromEnv(env),
   /**
    * The payout rail's client, from PLAYERONE_ZALOPAY_*. Null in sandbox with
    * no credentials — verification then stores `unverified` and pay refuses

@@ -158,6 +158,10 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 | `HOST` / `PORT` | `127.0.0.1` / `8080` | |
 | `STORAGE_ENDPOINT` | | The S3-compatible endpoint of the cloud store (GreenNode, once the contract is signed). Unset, the upload routes answer 503 saying so and everything else runs. |
 | `STORAGE_BUCKET` / `STORAGE_KEY` / `STORAGE_SECRET` | | Required together with `STORAGE_ENDPOINT`; a partial set fails closed at boot naming what is missing. |
+| `PLAYERONE_ZNS_ACCESS_TOKEN` / `PLAYERONE_ZNS_TEMPLATE_ID` | | How a collector's sign-in code reaches their phone: Zalo Notification Service (`packages/api/src/zns.ts`). Set both, or neither. With neither, the server writes each code to its own log instead of sending it, so a pilot runs before VNG has issued a ZNS account — every such line says `NOT SENT`. With one of the two, boot fails naming the other. |
+| `PLAYERONE_ZNS_ENV` | `sandbox` | `production` refuses to boot with no ZNS credentials, because production with no ZNS account is not a development mode — it is a server that prints live sign-in codes into a production log. |
+| `PLAYERONE_ZNS_CODE_PARAM` | `otp` | The `template_data` key the six digits go in. Whatever the approved template names it. |
+| `PLAYERONE_ZNS_BASE_URL` | Zalo's | Override only to point at a proxy or a test double. |
 | `REVIEW_VERIFICATION_GATE` | `local` | Which integrity check QR-02's review gate reads. `local` is the ADR 0001 deviation; `cloud` requires read-back-verified uploads and retires that ADR. Do not set `cloud` before the settlement question in the ADR's exit section is answered. |
 
 Then `http://127.0.0.1:8080/review`, which redirects to a sign-in form taking the

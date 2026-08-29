@@ -212,6 +212,19 @@ blocked. **Ask.** It was meant to run in parallel, not after.
   (APP-16); the operator creates the handover when the card arrives (BO-10).
   Different objects, different moments. In the pilot the operator also creates
   the session, stamped `session_origin = 'handover'`, so the drift is measurable.
+- **A collector's sign-in code is delivered over Zalo, not SMS.** Daniel's
+  decision, 2026-08-29. VNG owns Zalo; Zalo is the messaging app Vietnamese
+  collectors already have; ZaloPay is already integrated for payouts, so the
+  corporate relationship exists; and ZNS (Zalo Notification Service) is the
+  standard Vietnamese channel for a one-time code. The brief says nothing about
+  how a login code is delivered — C10 only ever weighed a Zalo *Mini App* as an
+  app platform, resolved 14 Aug as native Android first — so this is a new
+  decision, not a re-litigation. What it costs, stated up front: **a collector
+  whose number has no Zalo account cannot sign in at all.** That is the named
+  refusal `zns_no_zalo_account`, recorded against the collector in
+  `audit_events` so an operator can find those people. Do not build SMS as
+  well; if a second channel is ever needed it is a second `SendSignInCode`, not
+  a change to the route. `packages/api/src/zns.ts`.
 - **Privacy is legal's problem and collectors wear masks.** Capture the two
   APP-17b flags and stop. Daniel has said so explicitly; do not expand on it.
 - **Status goes in the conversation, not a doc.** `docs/STATUS.md` was written
