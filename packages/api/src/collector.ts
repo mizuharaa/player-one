@@ -3,9 +3,10 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { schema, type Db } from '@playerone/store';
-import { auditLogin } from './audit.ts';
+import { auditLogin, mutate } from './audit.ts';
 import { hashCredential, signToken, verifyCredential, type CollectorClaims } from './credentials.ts';
 import { rateLimited, signInAttempt, type SignInLimiter } from './ratelimit.ts';
+import { ZnsDeliveryError, type ZnsRefusal } from './zns.ts';
 
 /**
  * How a collector signs in. APP-01, SEC-01, PLT-06.
@@ -38,9 +39,9 @@ import { rateLimited, signInAttempt, type SignInLimiter } from './ratelimit.ts';
  */
 
 /**
- * How long a code lives. Short because it arrives by SMS on a phone the person
- * is holding, and every second of it is a second somebody else could read the
- * notification off a locked screen.
+ * How long a code lives. Short because it arrives as a notification on a phone
+ * the person is holding, and every second of it is a second somebody else could
+ * read it off a locked screen.
  */
 export const CODE_TTL_MS = 5 * 60_000;
 /**
@@ -92,14 +93,96 @@ const newCode = (): string => String(randomInt(0, 1_000_000)).padStart(6, '0');
 /**
  * Delivering the code. Absent by default and the routes say so.
  *
- * There is no SMS gateway in this repository and no contract behind one yet, so
- * this is an injected function rather than a client. It **must return quickly**
- * — enqueue the message, do not wait for a carrier. A gateway call awaited here
- * would take hundreds of milliseconds on the enrolled path and zero on the
- * unenrolled one, which is the timing signal `constantLatency` exists to remove,
- * and no floor can hide it.
+ * The implementation is `zns.ts` — Zalo Notification Service, decided on
+ * 2026-08-29 and argued there — or `devLogSender`, which writes the code to
+ * the server log so a pilot can run before VNG has issued a ZNS account. It is
+ * an injected function rather than a client because this route does not care
+ * which of them it holds.
+ *
+ * **It is never awaited on the request's clock.** A gateway call takes
+ * hundreds of milliseconds on the enrolled path and zero on the unenrolled
+ * one, and a ZNS timeout takes ten seconds on the enrolled path only — which
+ * is exactly the signal `constantLatency` exists to remove, and which no floor
+ * can hide, because a floor can only make a fast answer slower. So the route
+ * starts the delivery and answers; `deliverAndRecord` below finishes it.
+ *
+ * A failure is a throw, and `ZnsDeliveryError` carries the named refusal.
+ * Returning a result instead would have been the same information with a wider
+ * blast radius: every existing caller and test would have had to change shape.
  */
 export type SendSignInCode = (phone: string, code: string) => Promise<void>;
+
+/**
+ * Deliver the code, then record what happened. Runs after the reply.
+ *
+ * ## Why this is audited at all
+ *
+ * PLT-07 wants every mutation attributed, and sending somebody a login code is
+ * an act on their account whether or not a row changed. It is also the only
+ * place the answer to "why can this collector never sign in" exists: the route
+ * answers 204 to the phone either way, deliberately, so the refusal has to be
+ * written down somewhere an operator can read it. `zns_no_zalo_account` is
+ * that case and it is permanent for that number.
+ *
+ * ## Why it can be audited now, when the request route says it cannot
+ *
+ * The comment on the rate-limit branch below is still right about what it
+ * describes: a row for a number nobody owns would put "which numbers are not
+ * collectors" in a table, from an unauthenticated request, and there is nobody
+ * to attribute it to. This row is the other case — the number IS a collector's,
+ * so the row names them, and 0019's third attribution shape (`actor_role =
+ * 'collector'` with `collector_id` set) holds it with no exemption and no new
+ * migration. An unenrolled number still writes nothing, which is what keeps
+ * the table from answering the question the 204 refuses to.
+ *
+ * ## What is never written
+ *
+ * The code. It is not a parameter of the event and must never become one: an
+ * audit trail that an operator can read a live sign-in code out of is a way in,
+ * not a control. `after` carries the channel and the outcome and nothing else —
+ * the phone number is already on the collector row this is filed against.
+ *
+ * Nothing here can reject: the caller has already replied.
+ */
+function deliverAndRecord(
+  db: Db,
+  send: SendSignInCode,
+  collector: { id: string; epoch: number },
+  phone: string,
+  code: string,
+): void {
+  void (async () => {
+    let outcome: 'sent' | ZnsRefusal = 'sent';
+    try {
+      await send(phone, code);
+    } catch (err) {
+      /**
+       * A sender that throws anything else is a sender we cannot ask what went
+       * wrong. `zns_unreachable` is the honest name for that and it is one of
+       * the temporary ones, so a bug in a sender strands nobody permanently.
+       */
+      outcome = err instanceof ZnsDeliveryError ? err.refusal : 'zns_unreachable';
+    }
+    try {
+      await mutate(
+        db,
+        { collector: { kind: 'collector', collectorId: collector.id, epoch: collector.epoch } },
+        {
+          action: 'collector.sign_in_code',
+          targetTable: 'collectors',
+          targetId: collector.id,
+          after: { channel: 'zns', outcome },
+        },
+        async () => outcome,
+      );
+    } catch (err) {
+      // The reply went out minutes of wall clock ago and the pool may be
+      // closing under a shutting-down server. Losing the row is bad; throwing
+      // into an empty stack and taking the process with it is worse.
+      console.warn(`[collector.sign_in_code] outcome ${outcome} not recorded: ${String(err)}`);
+    }
+  })();
+}
 
 /** One 401 body for every way `verify` can fail. */
 const CREDENTIALS = { error: 'credentials', reason: 'credentials' };
@@ -115,8 +198,10 @@ export function registerCollectorAuth(
    * Always 204 when it runs at all, whatever the number is. The only answers
    * that are not 204 say nothing about any number: 400 for a request with no
    * phone field, 429 for a caller over the limit, and 503 when this deployment
-   * has no way to send an SMS — the same answer the upload routes give when
-   * there is no object store, and the same for every caller.
+   * was handed no sender at all — the same answer the upload routes give when
+   * there is no object store, and the same for every caller. A server started
+   * through `bin/serve.ts` always has one (`signInCodeSenderFromEnv`), so the
+   * 503 is now only what an embedder that passes nothing gets.
    */
   app.post('/auth/collector/request-code', async (req, reply) => {
     const send = options.sendSignInCode;
@@ -135,14 +220,16 @@ export function registerCollectorAuth(
      * right" to refund. What it does cost is an SMS to somebody's phone, and ten
      * per number per five minutes is the cap on using this service to send them.
      *
-     * A refused request leaves an audit row and a delivered one does not.
-     * `audit_events_attributed_check` exempts sign-in rows by action — `%.login`
-     * and `%.login_failed`, nothing else — so a third name for "a code was
-     * asked for" cannot be written without widening that check, and widening it
-     * to admit a row that names nobody is not worth a convenience. The
-     * successful sign-in a few seconds later is the row that says a code
-     * arrived; a refused burst is the row that says somebody is sending SMS at
-     * a stranger.
+     * A refused request leaves an audit row saying somebody is sending
+     * messages at a stranger. A request for an *enrolled* number leaves a
+     * second one, `collector.sign_in_code`, written after the reply by
+     * `deliverAndRecord` and naming the collector — that is where a refused
+     * delivery is recorded, and it is the only place the answer to "why can
+     * this collector never sign in" exists.
+     *
+     * Neither of those needs `audit_events_attributed_check` widened.
+     * `%.login_failed` is exempt by action; the delivery row names a collector
+     * and satisfies 0019's third attribution shape on its own.
      *
      * A number nobody owns leaves no row either, and that is not an oversight:
      * `attempt.wrong()` means a credential was checked and was wrong, and
@@ -165,7 +252,11 @@ export function registerCollectorAuth(
       const hash = await hashCredential(code);
 
       const [collector] = await db
-        .select({ id: schema.collectors.id })
+        // `token_epoch` is read only so the audit row below can be attributed
+        // with a complete `CollectorClaims`. It costs nothing on a row already
+        // being fetched, and inventing a placeholder epoch would put a value
+        // in the type that is not the collector's.
+        .select({ id: schema.collectors.id, epoch: schema.collectors.tokenEpoch })
         .from(schema.collectors)
         .where(eq(schema.collectors.phone, phone));
       if (collector === undefined) return;
@@ -182,7 +273,13 @@ export function registerCollectorAuth(
           updatedAt: new Date(),
         })
         .where(eq(schema.collectors.id, collector.id));
-      await send(phone, code);
+      /**
+       * Started, not awaited. See `SendSignInCode`: whether the message went
+       * out, was refused, or hung until a ten-second timeout must not be
+       * visible in how long this reply took, because only an enrolled number
+       * ever reaches this line.
+       */
+      deliverAndRecord(db, send, collector, phone, code);
     });
 
     return reply.code(204).send();

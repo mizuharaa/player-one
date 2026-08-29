@@ -875,6 +875,30 @@ const en = {
   'bo.refused.payout_attempt_not_resolvable':
     'This attempt cannot be resolved by hand in its current state. Only a pending, exhausted or never-sent attempt is.',
   'bo.refused.payout_bill_period_mismatch': 'That bill belongs to a different period.',
+
+  // ---------------------------------------------------------------------
+  // Sign-in code delivery: `ZNS_REFUSALS` in `zns.ts`. These are never an HTTP
+  // body — the route answers 204 whatever happens, on purpose — so they are
+  // read out of `audit_events` by an operator asking why somebody cannot sign
+  // in. Each sentence says what to DO, because somebody has to do something:
+  // the collector cannot ask again and get a different answer.
+
+  'bo.refused.zns_no_zalo_account':
+    'That phone number has no Zalo account, so no sign-in code can reach it and this collector cannot sign in. Ask them to install Zalo on that number, or record a different number for them.',
+  'bo.refused.zns_phone_not_vietnamese':
+    'The number on this collector’s record is not a Vietnamese mobile number, so no code was sent. Correct the number in the back office.',
+  'bo.refused.zns_template_rejected':
+    'Zalo refused the sign-in message template. Nobody can sign in until the template is approved and active again. This is a Zalo Official Account matter, not the collector’s.',
+  'bo.refused.zns_quota_exhausted':
+    'The Zalo Official Account has no notification quota left, so no sign-in code was sent. Nobody can sign in until more is bought.',
+  'bo.refused.zns_rate_limited':
+    'Zalo is refusing messages for the moment because too many were sent too quickly. It clears by itself; ask the collector to try again in a few minutes.',
+  'bo.refused.zns_credentials_rejected':
+    'Zalo refused this server’s credentials, so no sign-in code was sent. The access token is wrong or has expired and has to be renewed.',
+  'bo.refused.zns_unreachable':
+    'Zalo could not be reached, so no sign-in code was sent. Ask the collector to try again; if it keeps happening, the link to Zalo is down.',
+  'bo.refused.zns_refused':
+    'Zalo refused to send the code and gave a reason this server does not recognise. The reason is in the server log; ask the collector to try again while somebody reads it.',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1518,6 +1542,22 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.payout_account_not_this_centre': '该采集者未在本中心交付过任何素材，因此本柜台不能申报其账户。',
   'bo.refused.payout_attempt_not_resolvable': '该付款尝试在当前状态下不能人工处理。只有待处理、轮询耗尽或从未发送的尝试才可以。',
   'bo.refused.payout_bill_period_mismatch': '该账单属于另一个周期。',
+
+  // 登录验证码的发送失败（zns.ts 中的 ZNS_REFUSALS）。
+  'bo.refused.zns_no_zalo_account':
+    '该手机号没有 Zalo 账号，验证码无法送达，此采集者无法登录。请让他们在该号码上安装 Zalo，或为其登记另一个号码。',
+  'bo.refused.zns_phone_not_vietnamese':
+    '该采集者档案中的号码不是越南手机号，因此未发送验证码。请在后台更正该号码。',
+  'bo.refused.zns_template_rejected':
+    'Zalo 拒绝了登录短信模板。在模板重新通过审核并启用之前，没有人能登录。这是 Zalo 公众号一侧的事，与采集者无关。',
+  'bo.refused.zns_quota_exhausted': 'Zalo 公众号的通知配额已用尽，因此未发送验证码。在购买新配额之前无人能登录。',
+  'bo.refused.zns_rate_limited': 'Zalo 因发送过快暂时拒绝了消息。它会自行恢复；请让采集者几分钟后再试。',
+  'bo.refused.zns_credentials_rejected':
+    'Zalo 拒绝了本服务器的凭据，因此未发送验证码。访问令牌错误或已过期，需要重新获取。',
+  'bo.refused.zns_unreachable':
+    '无法连接 Zalo，因此未发送验证码。请让采集者再试一次；如果反复出现，说明与 Zalo 的链路已中断。',
+  'bo.refused.zns_refused':
+    'Zalo 拒绝发送验证码，给出的原因本服务器无法识别。原因记录在服务器日志中；请一边查阅日志一边让采集者再试。',
 };
 
 const vi: Record<MessageKey, string> = {
@@ -2247,6 +2287,24 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.payout_attempt_not_resolvable':
     'Lần chi này không thể xử lý bằng tay ở trạng thái hiện tại. Chỉ lần chi đang treo, đã cạn hỏi lại hoặc chưa từng gửi mới được.',
   'bo.refused.payout_bill_period_mismatch': 'Hóa đơn đó thuộc một kỳ khác.',
+
+  // Gửi mã đăng nhập thất bại (ZNS_REFUSALS trong zns.ts).
+  'bo.refused.zns_no_zalo_account':
+    'Số điện thoại đó không có tài khoản Zalo nên mã đăng nhập không thể đến được, và cộng tác viên này không đăng nhập được. Hãy nhờ họ cài Zalo trên số đó, hoặc ghi nhận một số khác cho họ.',
+  'bo.refused.zns_phone_not_vietnamese':
+    'Số trong hồ sơ của cộng tác viên này không phải số di động Việt Nam nên không gửi được mã. Hãy sửa lại số trong phần quản trị.',
+  'bo.refused.zns_template_rejected':
+    'Zalo từ chối mẫu tin nhắn đăng nhập. Không ai đăng nhập được cho tới khi mẫu được duyệt và bật lại. Đây là việc của tài khoản Zalo Official Account, không phải của cộng tác viên.',
+  'bo.refused.zns_quota_exhausted':
+    'Tài khoản Zalo Official Account đã hết hạn mức tin nhắn nên không gửi được mã. Không ai đăng nhập được cho tới khi mua thêm.',
+  'bo.refused.zns_rate_limited':
+    'Zalo tạm thời từ chối vì gửi quá nhiều tin trong thời gian ngắn. Việc này tự hết; hãy nhờ cộng tác viên thử lại sau vài phút.',
+  'bo.refused.zns_credentials_rejected':
+    'Zalo từ chối thông tin xác thực của máy chủ này nên không gửi được mã. Access token sai hoặc đã hết hạn và phải được cấp lại.',
+  'bo.refused.zns_unreachable':
+    'Không kết nối được tới Zalo nên không gửi được mã. Hãy nhờ cộng tác viên thử lại; nếu vẫn vậy thì đường tới Zalo đang hỏng.',
+  'bo.refused.zns_refused':
+    'Zalo từ chối gửi mã với một lý do máy chủ này không hiểu. Lý do nằm trong nhật ký máy chủ; hãy nhờ cộng tác viên thử lại trong khi có người đọc nhật ký.',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { en, zh, vi };

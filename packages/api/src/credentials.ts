@@ -94,10 +94,10 @@ const TOKEN_TTL_S = 12 * 60 * 60; // one shift
  * An operator's session ends with a shift: they are at a counter, they sign in
  * at the start of it, and a stale token on a shared upload-centre PC is a real
  * exposure. A collector holds a phone that is theirs, they sign in from their
- * own device, and the only way back in is a code sent by SMS — so a twelve-hour
- * token means a collector who opens the app on the way to work waits for an SMS
- * first, every day, and pays for the message. Thirty days is what makes the
- * app usable at all.
+ * own device, and the only way back in is a code sent to that phone (Zalo, see
+ * `zns.ts`) — so a twelve-hour token means a collector who opens the app on the
+ * way to work waits for a notification first, every day, and every one of those
+ * costs the OA's ZNS quota. Thirty days is what makes the app usable at all.
  *
  * What pays for the longer window is `token_epoch`. An operator token cannot be
  * revoked before it expires and its twelve hours are the bound; a collector

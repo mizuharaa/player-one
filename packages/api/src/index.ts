@@ -70,6 +70,22 @@ export {
 export { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 export { SIGN_IN_RATE_LIMITED, signInLimiter, type SignInLimiter } from './ratelimit.ts';
 export { CODE_ATTEMPTS, CODE_TTL_MS, type SendSignInCode } from './collector.ts';
+export {
+  DEFAULT_ZNS_TIMEOUT_MS,
+  ZNS_BASE_URL,
+  ZNS_ERROR_CODES,
+  ZNS_REFUSALS,
+  ZNS_SEND_PATH,
+  ZnsDeliveryError,
+  devLogSender,
+  signInCodeSenderFromEnv,
+  toZnsPhone,
+  znsSender,
+  type CodeSender,
+  type ZnsConfig,
+  type ZnsRefusal,
+  type ZnsWarning,
+} from './zns.ts';
 export { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS } from './payout/routes/payout.ts';
 export { SETTLE_API_REFUSALS } from './settle.ts';
 export { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
@@ -191,14 +207,18 @@ export type ApiOptions = {
   /**
    * How a collector's one-time sign-in code reaches their phone (APP-01).
    *
-   * Absent by default, and then `POST /auth/collector/request-code` answers 503
-   * for every caller — there is no SMS gateway in this repository and no
-   * contract behind one yet. Defaulting to a no-op would be worse: the route
-   * would answer 204, which is what it answers on success, and a deployment
-   * with no delivery would look exactly like a working one until a collector
-   * said nobody ever sent them anything.
+   * Absent here, and then `POST /auth/collector/request-code` answers 503 for
+   * every caller. Not defaulted inside `buildApi` on purpose: a quiet no-op
+   * sender would answer 204, which is what it answers on success, and a
+   * deployment with no delivery would look exactly like a working one until a
+   * collector said nobody ever sent them anything.
    *
-   * It must return quickly. See `SendSignInCode`.
+   * `bin/serve.ts` reads `signInCodeSenderFromEnv()` and passes it, the same
+   * way it reads `zaloPayClientFromEnv()`, so a real server always has one:
+   * ZNS when credentials are set, and a sender that writes the code to the
+   * server log when they are not.
+   *
+   * It is not awaited on the request's clock. See `SendSignInCode`.
    */
   sendSignInCode?: SendSignInCode;
   /**
