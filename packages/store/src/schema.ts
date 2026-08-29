@@ -447,7 +447,26 @@ export const collectors = pgTable(
   {
     id: uuid('id').primaryKey(),
     externalRef: text('external_ref').notNull(),
+    /**
+     * What this person is called (APP-01, migration 0021). Not `external_ref`:
+     * that column is unique and is the back office's reference for a person,
+     * and two collectors called Nguyễn Văn A are two collectors.
+     *
+     * Nullable, because every collector enrolled before 0021 was enrolled by an
+     * operator who typed a reference and never a name.
+     */
+    name: text('name'),
     status: text('status').notNull(),
+    /**
+     * APP-03, migration 0021. The instant and not a boolean, for the reason
+     * `devices_bound_at_check` gives about bindings: "trained" and "trained on
+     * the 14th" are one record, and only one of them answers a question later.
+     *
+     * Nothing gates on it yet. `task_claims_guard` asks for the exam, the
+     * qualification and the six agreements and deliberately not for this; the
+     * migration header says why.
+     */
+    trainingCompletedAt: timestamp('training_completed_at', { withTimezone: true }),
     /**
      * APP-04: "An exam follows training. Pass/fail is recorded." Both answers,
      * so a fail is a recorded fact and not the absence of one — which matters

@@ -89,6 +89,46 @@ export const COUNTER_REFUSALS = new Set([
 ]);
 
 /**
+ * The claim a session is recorded under, and what it paid.
+ *
+ * A collector records against a task they hold (APP-10), and payment is that
+ * task's unit price — so the caller names the task and the claim is looked up,
+ * never trusted. `task_claims_live_key` allows at most one live claim per
+ * (task, collector), and `desc(releasedAt)` puts nulls first, so this is the
+ * live one if there is one and otherwise the latest released one.
+ *
+ * Exported because the counter and the collector app both create sessions and
+ * both need the same three answers — no claim, a released claim, a task taken
+ * down — from the same query. They differ in who they are (an operator with a
+ * card, or the collector's own phone) and in what they call the refusals; they
+ * must not differ in which claim a session hangs off.
+ */
+export async function claimForSession(
+  db: Db,
+  taskId: string,
+  collectorId: string,
+): Promise<
+  { id: string; releasedAt: Date | null; status: string; unitPrice: string } | undefined
+> {
+  const [claim] = await db
+    .select({
+      id: schema.taskClaims.id,
+      releasedAt: schema.taskClaims.releasedAt,
+      status: schema.tasks.status,
+      unitPrice: schema.tasks.unitPrice,
+    })
+    .from(schema.taskClaims)
+    .innerJoin(schema.tasks, eq(schema.tasks.id, schema.taskClaims.taskId))
+    .where(
+      and(eq(schema.taskClaims.taskId, taskId), eq(schema.taskClaims.collectorId, collectorId)),
+    )
+    // DESC puts nulls first: the live one if there is one, else the latest released.
+    .orderBy(desc(schema.taskClaims.releasedAt))
+    .limit(1);
+  return claim;
+}
+
+/**
  * Registers the counter endpoints. `requireActor` is passed in rather than
  * re-derived so there is exactly one implementation of the both-tokens rule.
  */
@@ -193,11 +233,8 @@ export function registerCounter(
     if (handover === undefined) return reply.code(404).send({ error: 'no such handover here' });
 
     /**
-     * The claim this session is recorded under. A collector records against a
-     * task they hold (APP-10), and payment is that task's unit price — so the
-     * body names the task, and the claim is looked up, never trusted: the live
-     * claim by the handover's collector on that task, of which
-     * `task_claims_live_key` allows at most one. No live claim, no session.
+     * The claim this session is recorded under. See `claimForSession` above,
+     * which the collector app's own session route calls too.
      *
      * The price is copied onto the session here, so a later edit to the task
      * cannot change what this recording earns; the verdict reads the copy.
@@ -209,24 +246,7 @@ export function registerCounter(
      * the two are different conversations at a counter, and the released one
      * is the case where footage on the card may be real and unpayable.
      */
-    const [claim] = await db
-      .select({
-        id: schema.taskClaims.id,
-        releasedAt: schema.taskClaims.releasedAt,
-        status: schema.tasks.status,
-        unitPrice: schema.tasks.unitPrice,
-      })
-      .from(schema.taskClaims)
-      .innerJoin(schema.tasks, eq(schema.tasks.id, schema.taskClaims.taskId))
-      .where(
-        and(
-          eq(schema.taskClaims.taskId, b.task_id),
-          eq(schema.taskClaims.collectorId, handover.collectorId),
-        ),
-      )
-      // DESC puts nulls first: the live one if there is one, else the latest released.
-      .orderBy(desc(schema.taskClaims.releasedAt))
-      .limit(1);
+    const claim = await claimForSession(db, b.task_id, handover.collectorId);
     if (claim === undefined) return refuse(reply, 'session_claim_missing');
     if (claim.releasedAt !== null) return refuse(reply, 'session_claim_released');
     if (claim.status !== 'published') return refuse(reply, 'session_task_not_published');

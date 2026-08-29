@@ -1,0 +1,32 @@
+-- 0021: what the collector app records about a collector that nothing did yet.
+--
+-- APP-01 to APP-18 give the phone fourteen routes it had none of, and thirteen
+-- of them write nothing this schema did not already hold: agreements are
+-- `collector_agreements`, the exam is `collectors.exam_result`, a claim is
+-- `task_claims`, a binding is `devices.bound_collector_id`, a session is
+-- `collection_sessions` with `session_origin = 'app'`, which
+-- `collection_sessions_origin_check` has admitted since 0002.
+--
+-- Two facts have nowhere to live, and this migration is both of them.
+--
+-- `name` — a collector registers with a phone number and a name (APP-01,
+-- PaXini PRD §7.1). `external_ref` is not it: that column is unique and is the
+-- back office's reference for a person, and two collectors called Nguyễn Văn A
+-- are two collectors. Nullable, because every collector enrolled before today
+-- was enrolled by a counter operator who typed a reference and not a name.
+--
+-- `training_completed_at` — APP-03. The instant, not a boolean, for the reason
+-- `devices_bound_at_check` gives about bindings: "trained" and "trained on the
+-- 14th" are the same record and one of them can answer a question later.
+--
+-- WHAT THIS DELIBERATELY DOES NOT DO: it does not add training to
+-- `task_claims_guard`. That function's own comment invites it — "when a
+-- training record exists it belongs in this function" — and it is still the
+-- wrong move today. Pilot training happens in a room with a PaXini engineer,
+-- nothing has ever recorded it, and every collector now on the platform would
+-- become unclaimable the moment the gate went in, including the ones an
+-- operator claims for at a counter. The column has to be filled for real
+-- collectors before it can gate anything. Adding the IF is a three-line
+-- migration on the day it is.
+ALTER TABLE "collectors" ADD COLUMN "name" text;--> statement-breakpoint
+ALTER TABLE "collectors" ADD COLUMN "training_completed_at" timestamp with time zone;

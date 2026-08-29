@@ -327,7 +327,7 @@ describe.skipIf(!hasDb())('GET /api/me/income and /api/me/episodes', () => {
           if (line.includes(':')) params.push(line.replace(/^[^a-z/]*/i, ''));
         }
         /**
-         * Exactly one path parameter under `/api/me`, and it is not a
+         * Every path parameter under `/api/me`, and not one of them is a
          * collector id.
          *
          * This branch's rule was "no id in any path under /api/me", and it
@@ -342,8 +342,19 @@ describe.skipIf(!hasDb())('GET /api/me/income and /api/me/episodes', () => {
          * upload rather than confirming it exists
          * (collector-upload.test.ts:678). What must never appear here is a
          * `:collectorId`, so that is what is asserted.
+         *
+         * feat/collector-routes added the second, `GET /api/me/tasks/:id`, and
+         * the same argument covers it: a task id names a task and not a person,
+         * and the row is read with the collector off the token in the same
+         * query (`taskRows` in collector-app.ts), so a task the collector may
+         * not see is not there rather than confirmed to exist.
+         *
+         * The list stays EXACT rather than becoming "none of them says
+         * collector". Both halves matter, and the exact half is the forcing
+         * one: a third parameter should be somebody's decision in a diff, not a
+         * line that slips past a predicate.
          */
-        expect(params).toEqual(['/:id (GET, HEAD)']);
+        expect(params).toEqual(['/:id (GET, HEAD)', '/:id (GET, HEAD)']);
         for (const line of params) expect(line.toLowerCase()).not.toContain('collector');
       } finally {
         await h.app.close();
