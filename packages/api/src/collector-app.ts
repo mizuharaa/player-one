@@ -103,12 +103,31 @@ export const CURRENT_AGREEMENTS: readonly { agreement: string; version: string }
  *
  * PaXini owes the questions (a D-item in the brief), so what exists here is the
  * shell the app already talks to — three true/false checks that a collector
- * confirms — and the grading, which is server-side because APP-05 is P0 and a
- * pass decides whether somebody may take paid work. The key never leaves this
- * process: the route takes answers and returns a verdict.
+ * confirms — and the grading, which is server-side.
  *
- * When PaXini delivers the real paper this becomes a catalogue and a route that
- * serves it. The gate it feeds does not change: a pass is
+ * ponytail: THIS IS NOT A GATE AND MUST NOT BE READ AS ONE. The key is three
+ * `true`s. There are eight possible answer sets, `POST /api/me/exam` takes
+ * unlimited attempts, and nothing records that an attempt happened — so any
+ * collector holding a token passes on the first try or within eight, and the
+ * `pass` that lands in `collectors.exam_result` is a fact about persistence and
+ * not about competence. The ceiling is the content, not the plumbing: no
+ * lockout, attempt counter or retake policy changes what a placeholder grades,
+ * and building one would be a migration spent protecting three booleans.
+ *
+ * WHAT ACTUALLY HOLDS TODAY, and it is not this route. `task_claims_guard`
+ * (0006) asks four questions before a claim is allowed, and the exam is only
+ * one of them. `task_claims_qualified_gate` requires `collectors.status =
+ * 'qualified'`, which a collector cannot set from the app at all — only the
+ * back office can (BO-03, SEC-02). So a self-served exam pass gets somebody
+ * past one of four gates, and an operator still decides whether they take paid
+ * work. That is the honest statement of APP-05's coverage: **the database gate
+ * is real, what feeds this half of it is self-service, and the requirement is
+ * not met until PaXini delivers the paper.**
+ *
+ * Upgrade path, in the order it unblocks: PaXini supplies questions → they
+ * become a catalogue and a route that serves it, the key stays server-side, and
+ * attempts become worth recording because a wrong answer will then mean
+ * something. The gate the result feeds does not change at any point: a pass is
  * `collectors.exam_result`, which `task_claims_guard` has read since 0006.
  */
 export const EXAM_ANSWERS: readonly boolean[] = [true, true, true];
@@ -209,19 +228,14 @@ type TaskRow = {
   published: boolean;
 };
 
-export type CollectorAppOptions = {
-  /** What `tasks.unit_price` is denominated in. Same option the counter takes. */
-  currency?: string;
-};
-
 export function registerCollectorApp(
   app: FastifyInstance,
   db: Db,
   requireActor: (req: FastifyRequest, reply: Reply) => Promise<unknown>,
-  options: CollectorAppOptions = {},
+  /** What `tasks.unit_price` is denominated in; snapshotted onto the session. Same parameter the counter takes. */
+  currency = 'VND',
 ): void {
   const opts = { preHandler: requireActor };
-  const currency = options.currency ?? 'VND';
 
   /**
    * `req.collector`, not `req.actor`. `requireActor` sets the collector claims
@@ -473,13 +487,19 @@ export function registerCollectorApp(
   });
 
   /**
-   * APP-04 and APP-05. Grade the exam here, record the result, and let the
-   * gate that already exists do the rest.
+   * APP-04. Grade the exam here and record the result.
    *
-   * The answers are graded server-side and the key never leaves this process.
    * The result lands in `collectors.exam_result`, which `task_claims_guard` has
    * read since migration 0006 — so this route does not enforce APP-05, it feeds
-   * the one place that does.
+   * one of the four questions that does.
+   *
+   * ponytail: unlimited attempts, no lockout, no attempt record, and that is
+   * deliberate rather than missed. `EXAM_ANSWERS` above says why at length: the
+   * key is three booleans PaXini has not replaced yet, so a cap would be a
+   * migration spent rate-limiting a placeholder. **Do not read a `pass` from
+   * this route as evidence a collector knows anything.** The thing that keeps
+   * an unready collector off paid work today is `task_claims_qualified_gate`,
+   * which needs an operator.
    *
    * A pass is never overwritten by a later fail. APP-07's retake policy is P2
    * and undecided, so the narrow rule is the safe one: somebody who has passed
@@ -533,7 +553,27 @@ export function registerCollectorApp(
     return { passed };
   });
 
-  // -- the task hall (APP-08, APP-09) ---------------------------------------
+  // -- the task hall (APP-08; APP-09 is NOT met, see below) -----------------
+
+  /**
+   * ponytail: APP-09 IS NOT BUILT, and this route was described as meeting it.
+   *
+   * The brief asks a task detail for instructions, scenario, a privacy notice
+   * and a payment rule. `tasks` has no column for any of the four — it holds
+   * id, name, type, unit_price, target_effective_duration_s,
+   * max_concurrent_claimants and status — so four of the eleven fields on the
+   * app's own `Task` type have no server source and the phone fills them from
+   * its bundled placeholder text. `type` is not `scenario`: it is
+   * 'home_cooking' where the app's `Scenario` union is 'home' | 'office' |
+   * 'shop' | 'warehouse', and scenarios are keyed to a SESSION, not to a task.
+   *
+   * Columns are deliberately not added for them. Instructions, a privacy notice
+   * and a payment rule are text somebody has to write and legal has to approve
+   * — PaXini and legal owe that copy the way PaXini owes the exam questions —
+   * and a nullable column per field would let the back office ship a task with
+   * an empty privacy notice, which is worse than a task the app knows is
+   * incomplete. Build it when there is copy to put in it.
+   */
 
   /**
    * The hall, and one task in it.
@@ -647,7 +687,16 @@ export function registerCollectorApp(
     );
     if (!attempt.ok) return refused(reply, attempt.constraint);
     if (attempt.value !== undefined) {
-      return reply.code(201).send({ id: b.id, task_id: taskId.data, replayed: false });
+      return reply.code(201).send({
+        id: b.id,
+        task_id: taskId.data,
+        // The app's `Claim` is `{id, taskId, claimedAt}`. `claimed_at` is the
+        // row's own default and is not knowable from the request, so leaving it
+        // out costs the phone a second call to `GET /api/me/claims` for a field
+        // the insert already returned.
+        claimed_at: attempt.value.claimedAt,
+        replayed: false,
+      });
     }
 
     /**
@@ -668,10 +717,25 @@ export function registerCollectorApp(
     // somebody else may hold it; claiming again is a new claim and a new id,
     // which is also what keeps the release on the record.
     if (held.releasedAt !== null) return refused(reply, 'claim_released');
-    return reply.code(200).send({ id: b.id, task_id: taskId.data, replayed: true });
+    // The moment the ORIGINAL claim was made, which is what a replay is a
+    // replay of. Restamping it here would move a claim's age on every retry.
+    return reply
+      .code(200)
+      .send({ id: b.id, task_id: taskId.data, claimed_at: held.claimedAt, replayed: true });
   });
 
-  /** APP-11. The tasks this collector holds now. A released claim is not one. */
+  /**
+   * The tasks this collector holds now. A released claim is not one.
+   *
+   * ponytail: APP-11 IS NOT FULLY MET and this route was described as meeting
+   * it. The requirement asks for the STATE of a claim; this returns only the
+   * live ones and says nothing about what state each is in, so the app cannot
+   * tell "held" from "released" from anything else — a released claim simply
+   * vanishes from the list. `task_claims` has `released_at` and nothing else
+   * resembling a state, so the shape of the answer is a decision nobody has
+   * made: what the states ARE is the part that is missing, not the column.
+   * Decide the vocabulary first, then serve it.
+   */
   app.get('/api/me/claims', opts, async (req) => {
     const rows = await db
       .select({
@@ -726,15 +790,35 @@ export function registerCollectorApp(
    * `devices.bound_collector_id` and `device_assignments` are two answers to
    * "who holds it" and nothing else keeps them in step.
    *
-   * ponytail: the only guard is that nobody else holds it. A collector who
-   * knows an unissued serial can bind a camera that is not in their hands, and
-   * what that costs is the custody period on it — not money, because payment
-   * attribution runs through the session and the handover and not through this
-   * column, but a wrong period is a crosscheck that quarantines the real
-   * holder's footage. It is the same guard the back office's own bind route has
-   * and the fleet is twenty devices issued across a counter. The upgrade is to
-   * bind only a device already allotted to this collector in
-   * `device_assignments`; do it when devices are issued without a counter.
+   * ponytail: THE ONLY GUARD IS THAT NOBODY ELSE HOLDS IT, and the exposure is
+   * the whole fleet rather than one camera. Nothing caps how many devices one
+   * collector may bind, so one account with a token can bind EVERY spare serial
+   * on the pilot's twenty in twenty requests — measured, two devices, two rows,
+   * two open custody periods, both 201. Serials are sequential and printed on
+   * the hardware, so guessing the unissued ones is not the hard part.
+   *
+   * What that costs is not money directly: payment attribution runs through the
+   * session and the handover, not through this column. It is that each wrong
+   * period is exactly what the payment crosscheck reads, so N wrong bindings
+   * quarantine N real holders' footage — the failure scales with the number of
+   * spare cameras, not with the attacker's effort.
+   *
+   * THE UPGRADE PATH THIS COMMENT USED TO NAME DOES NOT EXIST YET. "Bind only a
+   * device already allotted in `device_assignments`" is circular: that table is
+   * the custody LOG, written BY this bind through `bindCustody`, and 0010 seeds
+   * it only from devices already bound. A camera nobody has bound has no row,
+   * so the check would refuse every first bind on the fleet. An allotment is a
+   * record that does not exist today — issuing a device at a counter would have
+   * to write one first, and that is a back-office change (BO-09's cut left
+   * device issuance as fixtures), not a change to this route.
+   *
+   * The cheap interim guard is a cap on how many open custody periods one
+   * collector may hold, which the schema could carry as a partial unique index.
+   * It is NOT taken here because it is a product decision nobody has made: a
+   * cap of one breaks the back office allotting a spare, and the brief does not
+   * say whether a collector may hold two cameras. Daniel decides that; it is
+   * not the same question as this route's guard, and guessing it in code would
+   * be inventing policy the way an invented exam key invents competence.
    */
   app.post('/api/me/devices', opts, async (req, reply) => {
     const body = z.object({ hardware_serial: text }).safeParse(req.body);
@@ -775,7 +859,7 @@ export function registerCollectorApp(
                 isNull(schema.devices.boundCollectorId),
               ),
             )
-            .returning({ id: schema.devices.id });
+            .returning({ id: schema.devices.id, boundAt: schema.devices.boundAt });
           if (row === undefined) return undefined;
           await bindCustody(tx, row.id, me, at);
           return row;
@@ -784,7 +868,12 @@ export function registerCollectorApp(
     );
     if (!attempt.ok) return refused(reply, attempt.constraint);
     if (attempt.value !== undefined) {
-      return reply.code(201).send({ hardware_serial: serial, replayed: false });
+      // The app's `BoundDevice` is `{serial, boundAt}`, and `bound_at` is what
+      // `GET /api/me/devices` already carries — a bind that answered without it
+      // sent the phone straight back for the list it had just changed.
+      return reply
+        .code(201)
+        .send({ hardware_serial: serial, bound_at: attempt.value.boundAt, replayed: false });
     }
 
     /**
@@ -794,12 +883,17 @@ export function registerCollectorApp(
      * the write and `guarded` above answers `device_not_available`.
      */
     const [now] = await db
-      .select({ bound: schema.devices.boundCollectorId })
+      .select({ bound: schema.devices.boundCollectorId, boundAt: schema.devices.boundAt })
       .from(schema.devices)
       .where(eq(schema.devices.hardwareSerial, serial));
     if (now === undefined) return refused(reply, 'device_not_found');
     if (now.bound !== me) return refused(reply, 'already_bound');
-    return reply.code(200).send({ hardware_serial: serial, replayed: true });
+    // The moment the binding actually started, not the moment of the retry:
+    // `bound_at` is what the custody period is cut from, and a replay must not
+    // be able to move it.
+    return reply
+      .code(200)
+      .send({ hardware_serial: serial, bound_at: now.boundAt, replayed: true });
   });
 
   // -- sessions (APP-16, APP-17b) -------------------------------------------
@@ -893,7 +987,10 @@ export function registerCollectorApp(
             prepareTime: new Date(),
           })
           .onConflictDoNothing({ target: schema.collectionSessions.id })
-          .returning({ id: schema.collectionSessions.id });
+          .returning({
+            id: schema.collectionSessions.id,
+            createdAt: schema.collectionSessions.createdAt,
+          });
         if (row === undefined) return undefined;
         // P2-01: devices bind through the join table, one per session in phase 1.
         await tx
@@ -903,7 +1000,29 @@ export function registerCollectorApp(
         return row;
       },
     );
-    if (written !== undefined) return reply.code(201).send({ id: b.id, replayed: false });
+    /**
+     * The whole session, in the keys `GET /api/me/sessions` already uses.
+     *
+     * The app's `CollectionSession` is `SessionInput` plus `{id, collectorId,
+     * createdAt}` — everything it declared, back with the two fields only the
+     * server knows. Answering `{id}` alone made the phone re-fetch the list to
+     * learn the created time of the row it had just written, on the screen a
+     * collector is standing in front of a camera to use.
+     */
+    const sessionReply = (createdAt: Date, replayed: boolean) => ({
+      id: b.id,
+      collector_id: me,
+      task_id: b.task_id,
+      device_serial: b.device_serial,
+      scenario: b.scenario,
+      others_in_frame: b.others_in_frame,
+      sensitive_info_present: b.sensitive_info_present,
+      created_at: createdAt,
+      replayed,
+    });
+    if (written !== undefined) {
+      return reply.code(201).send(sessionReply(written.createdAt, false));
+    }
 
     /**
      * Nothing was written because that id is already here. The same declaration
@@ -926,7 +1045,10 @@ export function registerCollectorApp(
     ) {
       return refused(reply, 'session_id_reused');
     }
-    return reply.code(200).send({ id: b.id, replayed: true });
+    // Every field above was just checked equal to the held row's, so the held
+    // row's `created_at` is the only thing a replay can add — and it is the
+    // original moment, which is the point of a replay.
+    return reply.code(200).send(sessionReply(held.createdAt, true));
   });
 
   /** The sessions this collector has declared, newest first. */

@@ -1,5 +1,33 @@
 -- 0021: what the collector app records about a collector that nothing did yet.
 --
+-- THE JOURNAL `when` IS 1788750000000, AND THE PREVIOUS VALUE WAS A COLLISION.
+--
+-- This entry was written at 1788730000000, which two sibling branches had
+-- already claimed: `feat/ops-readiness` for `0021_app_role`, and
+-- `feat/round-down` for `0018_bill_total_rounds_down` — the latter already
+-- merged onto `integrate/2026-08-29`. Three entries, one value.
+--
+-- What that costs is silence, not an error. drizzle reads the highest stamp in
+-- `__drizzle_migrations` ONCE and then applies every journal entry whose `when`
+-- is strictly greater. A second entry at the same value is not greater, so it
+-- is skipped: no exception, no ledger row, and the columns below simply never
+-- arrive. On a database already stamped at 1788730000000 by a sibling,
+-- `collectors.name` and `collectors.training_completed_at` are absent and
+-- `POST /api/me/register` answers 500.
+--
+-- Every branch's test suite stayed green because every suite migrates a FRESH
+-- database, where the last stamp is 0 and both entries clear it in one pass.
+-- The fault only exists on a database that already carries one of them, which
+-- is every database that will exist after the first of these branches merges.
+--
+-- 1788750000000 is held by nothing on `origin/main`, `origin/integrate/2026-08-29`
+-- (whose highest is 1788740000000, `0018_risk_history_family`),
+-- `feat/ops-readiness`, `feat/collector-money-api`, or any other branch in this
+-- repository. It is also past every value any of them holds, so this migration
+-- applies whichever sibling merges first. That last property is the one that
+-- matters: being unique is not enough, it has to be GREATER than whatever has
+-- already stamped the database.
+--
 -- APP-01 to APP-18 give the phone fourteen routes it had none of, and thirteen
 -- of them write nothing this schema did not already hold: agreements are
 -- `collector_agreements`, the exam is `collectors.exam_result`, a claim is
@@ -28,5 +56,11 @@
 -- operator claims for at a counter. The column has to be filled for real
 -- collectors before it can gate anything. Adding the IF is a three-line
 -- migration on the day it is.
-ALTER TABLE "collectors" ADD COLUMN "name" text;--> statement-breakpoint
-ALTER TABLE "collectors" ADD COLUMN "training_completed_at" timestamp with time zone;
+-- `IF NOT EXISTS` because this entry's `when` MOVED, from the colliding
+-- 1788730000000 to 1788750000000. Any database migrated from this branch before
+-- that move is stamped at the old value with both columns already present, and
+-- would now see a higher `when` and re-run the file — failing on "column
+-- already exists" for a column it already has. Same idempotent-replay shape
+-- `0016_replay_bill_and_payout_guards` used, and it costs two words.
+ALTER TABLE "collectors" ADD COLUMN IF NOT EXISTS "name" text;--> statement-breakpoint
+ALTER TABLE "collectors" ADD COLUMN IF NOT EXISTS "training_completed_at" timestamp with time zone;

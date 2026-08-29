@@ -612,7 +612,7 @@ export function buildApi({
    * counter snapshots onto a session, so a session declared on a phone and one
    * reconstructed at a counter cannot disagree about what the price is in.
    */
-  registerCollectorApp(app, db, requireActor, { currency });
+  registerCollectorApp(app, db, requireActor, currency);
   registerRisk(app, db, requireActor, riskEngine);
   registerMedia(app, db, requireActor, mediaRoot);
   // One limiter for all six sign-in routes, so a guesser cannot get a fresh

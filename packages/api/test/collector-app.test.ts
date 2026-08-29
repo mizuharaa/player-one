@@ -71,8 +71,12 @@ async function seed() {
     (${ids.taskDraft}, 'unpublished', 'warehouse', 1500.0000, null, 5, 'draft')`);
   await d.execute(sql`insert into device_types (id, code, generation)
     values (${ids.deviceType}, 'ego_headset', 'gen1')`);
+  // The note goes on the camera a collector can actually BIND. A note only on
+  // the retired one proves nothing: nobody can bind a retired device
+  // (`devices_retired_unbound_check`), so the device list is always empty of it
+  // and an assertion that the note is absent cannot fail.
   await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status, fault_note) values
-    (${ids.device}, ${ids.deviceType}, 'AZER76400FE', 'active', null),
+    (${ids.device}, ${ids.deviceType}, 'AZER76400FE', 'active', 'cracked strap, swap at the counter'),
     (${ids.device2}, ${ids.deviceType}, 'AZER76400FF', 'active', null),
     (${ids.retired}, ${ids.deviceType}, 'AZER00000RT', 'retired', 'water damage, do not issue')`);
   await d.execute(sql`insert into scenarios (id, code, privacy_risk_level)
@@ -453,12 +457,51 @@ describe.skipIf(!hasDb())('the collector app', () => {
     const [session] = await rows<{ claim: string }>(
       sql`select task_claim_id as claim from collection_sessions where id = ${sessionId}`,
     );
+    const firstSettlement = uid();
     await d.execute(sql`insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes, amount, settlement_state)
-      values (${uid()}, ${reviewId}, ${h.ids.task}, ${session!.claim}, '1200.0000', '2.500000', '3000.0000', 'pending_settlement')`);
+      values (${firstSettlement}, ${reviewId}, ${h.ids.task}, ${session!.claim}, '1200.0000', '2.500000', '3000.0000', 'pending_settlement')`);
+
+    expect(Number((await h.get(`/api/me/tasks/${h.ids.task}`)).json().collected_effective_s)).toBe(
+      150,
+    );
+
+    /**
+     * The redelivery. The same episode arrives a second time, a reviewer judges
+     * it again and finds LESS effective time, and the second settlement
+     * supersedes the first.
+     *
+     * Without this the `superseded_by is null` filter in `taskRows` is never
+     * exercised — one settlement is never superseded, so the clause can be
+     * deleted and every assertion still passes. With it, deleting the clause
+     * reports 270 (150 + 120) instead of 120: a task's progress counting the
+     * same footage under both of its verdicts.
+     */
+    const ingest2 = uid();
+    const review2 = uid();
+    const secondSettlement = uid();
+    await d.execute(sql`update episodes set ingest_count = 2 where episode_id = ${episodeId}`);
+    await d.execute(sql`insert into episode_ingests (ingest_id, episode_id, content_fingerprint, state, source_basename,
+        measured_duration_s, timing_source, timing_confidence, manifest_present, engine_version, host, ingested_at, record_json)
+      values (${ingest2}, ${episodeId}, repeat('b', 64), 'ok', 'ego_AZER76400FE_20260813_072310', '180.000000',
+              'pts_sidecar', 'exact', true, '0.3.1', 'test', now(), '{}'::jsonb)`);
+    await d.execute(sql`insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s, effective_duration_s,
+        review_state, reviewed_at, verdict_id)
+      values (${review2}, ${episodeId}, ${ingest2}, '180.000000', '120.000000', 'pass', now(), ${uid()})`);
+    await d.execute(sql`insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes, amount, settlement_state)
+      values (${secondSettlement}, ${review2}, ${h.ids.task}, ${session!.claim}, '1200.0000', '2.000000', '2400.0000', 'pending_settlement')`);
+    // `settlements_supersede_guard`: a superseded row parks in `exception` and
+    // says where it came from and why, so this is the shape the database allows.
+    await d.execute(sql`update settlements
+         set settlement_state = 'exception',
+             exception_from_state = 'pending_settlement',
+             exception_reason = 'superseded',
+             superseded_by = ${secondSettlement}
+       where id = ${firstSettlement}`);
 
     const task = (await h.get(`/api/me/tasks/${h.ids.task}`)).json();
-    // 2.5 reviewed minutes is 150 seconds against a 180,000 second target.
-    expect(Number(task.collected_effective_s)).toBe(150);
+    // The SECOND verdict only: 2.0 reviewed minutes is 120 seconds. Not 150
+    // (the replaced verdict) and not 270 (both of them).
+    expect(Number(task.collected_effective_s)).toBe(120);
   });
 
   it('shows a task the collector still holds after it is taken down, and says it is not claimable', async () => {
@@ -572,10 +615,25 @@ describe.skipIf(!hasDb())('the collector app', () => {
   it('lists bound devices without the operator’s fault note', async () => {
     const h = await harness();
     await h.post('/api/me/devices', { hardware_serial: 'AZER76400FE' });
+    // The note is on the camera this collector now holds, so the route is
+    // reading a row that HAS one. Asserting on a device whose note is null is
+    // an assertion that cannot fail, which is what this test used to be.
+    const [held] = await rows<{ note: string | null }>(
+      sql`select fault_note as note from devices where id = ${h.ids.device}`,
+    );
+    expect(held!.note).toBe('cracked strap, swap at the counter');
+
     const body = (await h.get('/api/me/devices')).json();
     expect(body.devices).toHaveLength(1);
-    expect(body.devices[0]).toMatchObject({ hardware_serial: 'AZER76400FE', status: 'active' });
-    expect(JSON.stringify(body)).not.toContain('water damage');
+    // `toEqual`, not `toMatchObject`: the keys ARE the contract here. A route
+    // that adds `fault_note` to its select fails this line, which is the whole
+    // point of the test — `toMatchObject` would have let it through.
+    expect(body.devices[0]).toEqual({
+      hardware_serial: 'AZER76400FE',
+      status: 'active',
+      bound_at: expect.any(String),
+    });
+    expect(JSON.stringify(body)).not.toContain('cracked strap');
   });
 
   it('refuses an unknown serial, a retired camera, and one somebody else holds', async () => {
