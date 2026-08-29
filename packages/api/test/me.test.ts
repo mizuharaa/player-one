@@ -110,7 +110,7 @@ describe('the state vocabulary', () => {
   });
 
   it('our own backlog is "waiting_on_us" and says the collector need do nothing', () => {
-    for (const issue of ['total_fractional', 'over_bank_ceiling', 'under_bank_minimum', 'over_cap', 'attempt_open'] as const) {
+    for (const issue of ['under_one_dong', 'over_bank_ceiling', 'under_bank_minimum', 'over_cap', 'attempt_open'] as const) {
       expect(collectorStateOf({ ...base, billIssues: [issue] }), issue).toBe('waiting_on_us');
     }
   });

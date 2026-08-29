@@ -1855,6 +1855,14 @@ describe.skipIf(!hasDb())('the back office', () => {
       'settlements_superseded_state_check',
       'bill_lines_superseded_check',
       'bill_lines_disputed_check',
+      // Retired, and unreachable for a stronger reason than the rest: nothing
+      // raises it any more. `payout_attempts_total_fractional` refused a bill
+      // whose total was not already whole dong, which was a placeholder for an
+      // undecided rounding rule; 0018 replaced the guard with the round-down
+      // rule and dropped the check. The name survives only in the superseded
+      // text of 0012 and 0016, which are applied migrations and are never
+      // edited, and this scan reads every .sql file in the directory.
+      'payout_attempts_total_fractional',
     ]);
 
     for (const name of [...declared.map((d) => d.name), ...raised]) {

@@ -131,16 +131,20 @@ describe.skipIf(!hasDb())('the payout schema', () => {
       );
     });
 
-    it('refuses a bill whose total has a fractional part, because no rounding rule has been chosen', async () => {
+    it('rounds a fractional total DOWN: 170.0004 takes 170 and refuses 171', async () => {
       const { d, ids, account1 } = await seeded();
       const frac = await seedFractionalBill(d, ids);
-      for (const amount of [170, 171]) {
-        await violates(
-          'payout_attempts_total_fractional',
-          insertAttemptAs(d, ids, ids.finA, { billId: frac, accountId: account1, amountVnd: amount }),
-        );
-      }
+      // Up is the direction that pays a collector more than the review was
+      // worth, so it is the one the trigger has to refuse.
+      await violates(
+        'payout_attempts_amount_check',
+        insertAttemptAs(d, ids, ids.finA, { billId: frac, accountId: account1, amountVnd: 171 }),
+      );
       expect(await countOf(d, sql`select count(*) as n from payout_attempts`)).toBe(0);
+      await insertAttemptAs(d, ids, ids.finA, { billId: frac, accountId: account1, amountVnd: 170 });
+      expect(await countOf(d, sql`select count(*) as n from payout_attempts`)).toBe(1);
+      // The bill is not rewritten. It still states what its lines say.
+      expect((await rows<{ t: string }>(d, sql`select total::text as t from bills where id = ${frac}`))[0]!.t).toBe('170.0004');
     });
 
     it('refuses a bank transfer above 10,000,000 VND by name, and does not split it', async () => {

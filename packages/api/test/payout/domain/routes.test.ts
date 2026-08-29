@@ -307,17 +307,18 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       expect((batch.json().bills as { id: string; paid: boolean }[]).find((b) => b.id === bill1)!.paid).toBe(true);
     });
 
-    it('requires the amount retyped to be the bill, and the total to be whole dong', async () => {
+    it('requires the amount retyped to be the bill total rounded down', async () => {
       const h = await harness();
       const { bill1 } = await seedBills(h.d, h.ids);
       await seedAccount(h.d, h.ids, 1);
       const wrong = await h.send('POST', `/api/payout/bills/${bill1}/mark-paid`, h.finA, { manual_reference: 'VCB-1', amount_vnd: 2000 });
       expect(wrong.statusCode).toBe(409);
       expect(wrong.json().constraint).toBe('payout_attempts_amount_check');
+      // 170.0004 rounds down to 170, so 171 — the direction that overpays — is refused.
       const frac = await seedFractionalBill(h.d, h.ids);
-      const refused = await h.send('POST', `/api/payout/bills/${frac}/mark-paid`, h.finA, { manual_reference: 'VCB-1', amount_vnd: 170 });
+      const refused = await h.send('POST', `/api/payout/bills/${frac}/mark-paid`, h.finA, { manual_reference: 'VCB-1', amount_vnd: 171 });
       expect(refused.statusCode).toBe(409);
-      expect(refused.json().constraint).toBe('payout_attempts_total_fractional');
+      expect(refused.json().constraint).toBe('payout_attempts_amount_check');
       expect((await h.send('POST', `/api/payout/bills/${bill1}/mark-paid`, h.finA, { amount_vnd: 2400 })).statusCode).toBe(400);
       expect((await h.send('POST', `/api/payout/bills/${bill1}/mark-paid`, h.finA, { manual_reference: '  ', amount_vnd: 2400 })).statusCode).toBe(400);
       // Nothing moved.
@@ -766,32 +767,38 @@ describe.skipIf(!hasDb())('the payout routes', () => {
     it('preflights, pays in order, reports per bill, audits the run, and sends nothing new on a second run', async () => {
       const stub = new StubZaloPay();
       stub.transfer = (i) => ({ kind: 'accepted', zlpOrderId: `zlp-${i.partnerOrderId}`, status: 1 });
-      stub.balanceVnd = 3_780;
+      stub.balanceVnd = 3_959; // 3,770 x 1.05 = 3,958.5
       const pooled = await open(dbUrl(), { max: 8 });
       try {
         const h = await harness(apiMode(stub), pooled);
         const { bill1, bill2 } = await seedBills(h.d, h.ids);
         await seedAccount(h.d, h.ids, 1);
         await seedAccount(h.d, h.ids, 2);
-        // A third bill the run must report and skip: a fractional total (the
-        // fixture has two collectors and both now have an account).
+        // A third bill with a fractional total, which is what every review-lane
+        // bill looks like. Since the round-down decision it is paid like any
+        // other, at the floor of its total: 170.0004 goes out as 170.
         const fractional = await seedBill(h.d, h.ids, 1, { start: new Date(P1.start.getTime() + 1), end: P1.end }, ['170.0004'], '170.0004');
+        // Both belong to c-0001 and the batch orders by collector, then bill id.
+        const [firstC1, secondC1] = [bill1, fractional].sort();
 
         const res = await h.send('POST', url, h.finA);
         expect(res.statusCode, res.body).toBe(200);
         const body = res.json();
         expect(body).toMatchObject({ mode: 'api', stopped_at: null, tickets: [] });
-        expect(body.preflight).toMatchObject({ ok: true, bills: 3, payable: 2, total_vnd: 3_600, balance_vnd: 3_780 });
+        expect(body.preflight).toMatchObject({ ok: true, bills: 3, payable: 3, total_vnd: 3_770, balance_vnd: 3_959 });
         expect(body.sent).toEqual([
-          { bill_id: bill1, attempt_id: expect.any(String), partner_order_id: `PO-${bill1}-1`, status: 'succeeded', result: 'ACCEPTED' },
+          { bill_id: firstC1, attempt_id: expect.any(String), partner_order_id: `PO-${firstC1}-1`, status: 'succeeded', result: 'ACCEPTED' },
+          { bill_id: secondC1, attempt_id: expect.any(String), partner_order_id: `PO-${secondC1}-1`, status: 'succeeded', result: 'ACCEPTED' },
           { bill_id: bill2, attempt_id: expect.any(String), partner_order_id: `PO-${bill2}-1`, status: 'succeeded', result: 'ACCEPTED' },
         ]);
-        expect(body.refused).toEqual([{ bill_id: fractional, collector_ref: 'c-0001', constraint: 'payout_attempts_total_fractional' }]);
-        expect(stub.transfers.map((t) => t.partnerOrderId)).toEqual([`PO-${bill1}-1`, `PO-${bill2}-1`]);
+        expect(body.refused).toEqual([]);
+        expect(stub.transfers.map((t) => t.partnerOrderId)).toEqual([`PO-${firstC1}-1`, `PO-${secondC1}-1`, `PO-${bill2}-1`]);
+        // The fractional bill went out at the floor of its total, not at 171.
+        expect(stub.transfers.find((t) => t.partnerOrderId === `PO-${fractional}-1`)!.amountVnd).toBe(170);
         const audits = await rows<{ target_id: string; after: Record<string, unknown> }>(h.d, sql`select target_id, after from audit_events where action = 'payout.batch_run'`);
         expect(audits).toHaveLength(1);
         expect(audits[0]!.after).toMatchObject({ preflight_ok: true, stopped_at: null });
-        expect((audits[0]!.after['sent'] as unknown[]).length).toBe(2);
+        expect((audits[0]!.after['sent'] as unknown[]).length).toBe(3);
 
         // Twice: nothing payable, nothing sent, no ticket, and the stub's count is unchanged.
         const again = await h.send('POST', url, h.finA);
@@ -801,10 +808,10 @@ describe.skipIf(!hasDb())('the payout routes', () => {
         expect((again.json().refused as { bill_id: string; constraint: string }[]).map((r) => r.constraint).sort()).toEqual([
           'payout_already_paid',
           'payout_already_paid',
-          'payout_attempts_total_fractional',
+          'payout_already_paid',
         ]);
-        expect(stub.calls.transferFund).toBe(2);
-        expect(await countOf(h.d, sql`select count(*) as n from payout_attempts`)).toBe(2);
+        expect(stub.calls.transferFund).toBe(3);
+        expect(await countOf(h.d, sql`select count(*) as n from payout_attempts`)).toBe(3);
         await h.app.close();
       } finally {
         await pooled.close();

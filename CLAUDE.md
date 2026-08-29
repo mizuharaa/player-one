@@ -172,14 +172,37 @@ Alois.
 - **Rounding lives in exactly one function**, `quantise` in `packages/api/src/money.ts`.
   Everything feeding it converts exactly — including a float64 span boundary,
   which becomes the rational it actually is. A second rounding site anywhere in
-  that file voids the guarantee. That part is not negotiable.
-- **Bill totals round DOWN.** Daniel decided this on 2026-08-28. Down — not
-  half away from zero, not up. The collector is never paid a fraction of a dong
-  that was not earned, and the rounding error never favours the platform's
-  paperwork over the ledger. `quantise`'s historical rule was half away from
-  zero and `main` still carries it, so this is a decision, not a description:
-  check `packages/api/src/money.ts` before you assume either way. Whatever the
-  rule is, it stays inside `quantise`.
+  that file voids the guarantee. That part is not negotiable. `quantise` takes
+  a rule, and there are two: `half-away` is the default and everything on the
+  review side uses it; `floor` is used by exactly one caller, `wholeVnd`. Two
+  rules, still one function — which rule applies is a caller's decision, where
+  the arithmetic happens is not.
+- **A bill total is paid rounded DOWN** (Daniel, 2026-08-27). Down, not
+  half-away-from-zero and not up: the platform never pays a collector more than
+  the reviewed footage was worth. The floor is taken in `wholeVnd`
+  (`packages/api/src/payout/domain/attempts.ts`) and by `payout_attempts_guard`
+  in migration `0018`, and nowhere else. **Not on the line** — a line's amount
+  has to stay reproducible from its own `unit_price × effective_minutes`, and
+  flooring each line charges the loss per line: twenty 17-second lines of
+  `339.9996` lose 19.992 dong that way against 0.992 dong for one floor on the
+  total. **Not on `bills.total`** either — `bills_total_matches_lines` (0011)
+  says the total IS the sum of the lines, and a floored total is not. So the
+  bill keeps its exact figure and only the attempt's `amount_vnd` is whole. The
+  refusal `payout_attempts_total_fractional` is retired; a wrong figure is now
+  `payout_attempts_amount_check`. **A bill worth less than one dong floors to
+  0, which is not a payment**: `issuesOf` gives it the issue `under_one_dong`
+  and preflight refuses it by name, `payout_attempts_amount_positive_check`.
+  That name is the table CHECK in 0012, reused before the insert on purpose —
+  when the issue was missing, the insert threw mid-run and `runBatch` turned it
+  into `BatchAborted`, which stopped the whole period and left every other
+  collector on it unpaid.
+- **A test for a rounding rule has to separate that rule from its
+  alternatives.** `640.0008` gives 640 under floor AND under half-away, so a
+  test written on it is green with the floor removed and proves nothing. Use a
+  figure whose fractional part is at least a half — `679.9992` (679 vs 680),
+  `6799.9920` (6799 vs 6800). Three of the four tests in
+  `payout/integration/round-down.test.ts` were on `640.0008` and were measured
+  passing with the rule disabled; they are on 17-second episodes now.
 - **Auto session matching by time applies only to `session_origin = 'app'`.**
   A handover-origin `prepare_time` is what an operator typed from what a
   collector remembered; matching a microsecond PTS start against it and paying
