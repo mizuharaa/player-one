@@ -547,8 +547,16 @@ export function buildApi({
   });
 
   /**
-   * Reference data for the offline cache. Scoped to the token's own centre —
-   * the query parameter is checked against it, not trusted.
+   * Reference data for the offline cache. Two scopes, and they are not the
+   * same one: **authorization** is centre-scoped — the token names the centre
+   * and a `centre_id` that disagrees is refused — while the **payload** is
+   * global. `collectors`, `devices`, `tasks` and `scenarios` carry no centre
+   * column anywhere in the schema, and none is owed one: BO-09 binds
+   * `upload_devices` and `operators` to a centre, not these four, and a TF
+   * card handed over at any centre can belong to any collector. A
+   * centre-filtered cache would refuse a travelling collector's card at the
+   * counter. `reference_scope` says so on the wire so an offline client is
+   * not left inferring it. ADR 0003 carries the argument.
    */
   app.get('/reference/sync', { preHandler: requireActor }, async (req, reply) => {
     // BO-11 / SEC-02: the centre comes from the token, never from the request,
@@ -567,6 +575,7 @@ export function buildApi({
     return {
       fetched_at: new Date().toISOString(),
       upload_centre_id: actor.operator.uploadCentreId,
+      reference_scope: 'global' as const,
       collectors,
       devices,
       tasks,

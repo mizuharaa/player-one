@@ -108,6 +108,22 @@ owed an ADR.
 - BO-09 stays P0 and unmet as a *screen*. Acceptance §10.2 item 8 is met at
   the data level and not at the interface level, and this ADR is the record
   of why.
+- **`GET /reference/sync` returns global reference data, and that is
+  deliberate.** The route is centre-scoped in exactly one respect — the token
+  supplies the centre and a `centre_id` query parameter that names a different
+  one is refused 403 — but its payload is not. `collectors`, `devices`,
+  `tasks` and `scenarios` have no centre column in
+  `packages/store/src/schema.ts` and are not given one: the centre bindings
+  BO-09 asks for are on `upload_devices` and `operators`, and `devices` here
+  is the collector's EgoCamera (BO-04, `bound_collector_id`), not the centre's
+  import machine. A collector is national — they claim from one task hall and
+  can hand a card over at whichever centre they reach — so a centre-filtered
+  cache would make the counter refuse a card it should accept, offline, with
+  no way to fetch the missing row. The response therefore carries
+  `reference_scope: 'global'`, so an offline client caching it knows the rows
+  are not a centre's subset and does not merge two centres' caches expecting
+  a union. Adding a centre dimension to these four tables is a schema change
+  and a product decision, not a filter.
 
 ## When this expires
 
