@@ -4,7 +4,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { open } from '@playerone/store';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { appDb, closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 import { episodeRecord } from './fixtures.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -67,7 +67,7 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
     const since = new Date(T - 30 * 24 * 60 * 60_000).toISOString();
     await d.execute(sql`insert into device_assignments (id, device_id, collector_id, valid_from) values (${uid()}, ${ids.device1}, ${ids.collector1}, ${since}), (${uid()}, ${ids.device2}, ${ids.collector2}, ${since})`);
 
-    const app = buildApi({ db: d, tokenSecret: SECRET });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET });
     await app.ready();
 
     const login = async (machine: string, operator: string): Promise<Headers> => {

@@ -8,7 +8,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { contentFingerprint, deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential, objectKey, planOpenUploads, planParts, PART_SIZE, READBACK_STALLS, s3StoreFromEnv, transportInventory, uploadEpisode, type Mismatch, type ObjectStore, type PutResult } from '../src/index.ts';
-import { closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('upload');
@@ -407,7 +407,7 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     const store = new FsObjectStore(cloudRoot);
 
     const app = buildApi({
-      db: d,
+      db: await appDb(),
       tokenSecret: SECRET,
       mediaRoot,
       objectStore: store,
@@ -563,7 +563,7 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
       return rows[0]!.verification_state;
     };
 
-    return { d, app, ids, headersA, headersB, send, A, B, store, mediaRoot,
+    return { d, app, ids, headersA, headersB, send, A, B, store, mediaRoot, cloudRoot,
              submitEpisode, upload, cacheClean, claim, batchRow, verificationOf, latestIngestOf };
   }
 
@@ -707,6 +707,54 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     // Nothing sent, nothing pulled back: the whole run is two database reads.
     expect(h.store.reads).toEqual([]);
     expect([...h.store.writes.values()]).toEqual([1, 1]);
+  });
+
+  it('?reverify=1 re-checks one batch, which is the only thing that notices later cloud damage', async () => {
+    // The receipts are what make a re-run cheap, and they are also why a file
+    // that verified once is never read again. Nothing else in this system would
+    // ever notice the cloud damaging an object AFTER we proved it, and until
+    // this parameter the only way to drop a receipt was a DELETE typed against
+    // the database by hand.
+    const h = await harness();
+    const a = await h.submitEpisode('A', { 'left_part0001.mp4': randomBytes(8192) });
+    const b = await h.submitEpisode('B');
+    expect((await h.upload(h.A.batch)).json().episodes[0].verification_state).toBe('verified');
+    expect((await h.upload(h.B.batch, h.headersB)).json().episodes[0].verification_state).toBe('verified');
+
+    // Bit rot, or a bad restore, or a cloud that lost a replica. Our side of
+    // the story has not changed at all.
+    await writeFile(join(h.cloudRoot, a.keys[0]!.replaceAll('/', '__')), randomBytes(8192));
+
+    h.store.reads.length = 0;
+    const blind = await h.upload(h.A.batch);
+    expect(h.store.reads).toEqual([]);
+    expect(blind.json().episodes[0].verification_state).toBe('verified');
+
+    h.store.reads.length = 0;
+    const forced = await h.send('POST', `/upload-batches/${h.A.batch}/upload?reverify=1`);
+    expect(forced.statusCode, forced.body).toBe(200);
+    expect(h.store.reads).toEqual(a.keys);
+    expect(forced.json().episodes[0]).toMatchObject({
+      uploaded: 0,
+      kept: 1,
+      verification_state: 'failed',
+    });
+    expect(forced.json().cloud_verified).toBe(false);
+    // The general rule does not move: the other centre's batch keeps every
+    // receipt it earned, and a re-run of it still reads nothing back.
+    const others = (await h.d.execute(
+      sql`select object_key from cloud_verifications order by object_key`,
+    )) as unknown as { object_key: string }[];
+    expect(others.map((r) => r.object_key)).toEqual([...b.keys].sort());
+    h.store.reads.length = 0;
+    await h.upload(h.B.batch, h.headersB);
+    expect(h.store.reads).toEqual([]);
+
+    // An operator overriding an integrity shortcut is an audited decision.
+    const audits = (await h.d.execute(
+      sql`select target_id, after from audit_events where action = 'batch.reverify'`,
+    )) as unknown as { target_id: string; after: { receipts_cleared: number } }[];
+    expect(audits).toEqual([{ target_id: h.A.batch, after: { receipts_cleared: 1 } }]);
   });
 
   it('repairs one damaged file without re-sending or re-reading the rest of the episode', async () => {

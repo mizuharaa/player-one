@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApi, type SendSignInCode } from '../src/index.ts';
-import { closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
 
 useDatabase('collector_token');
 
@@ -43,7 +43,7 @@ describe.skipIf(!hasDb())('one collector token, across every collector route', (
     await d.execute(sql`
       insert into collectors (id, external_ref, status, phone)
         values (${collector}, 'col-token', 'qualified', ${PHONE})`);
-    const app = buildApi({ db: d, tokenSecret: SECRET, sendSignInCode: send });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET, sendSignInCode: send });
     await app.ready();
 
     outbox.length = 0;

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApi, hashCredential, signToken, verifyToken } from '../src/index.ts';
-import { closeDb, db, hasDb, truncate, violates, useDatabase } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, truncate, violates, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('api');
@@ -53,7 +53,7 @@ describe.skipIf(!hasDb())('operator API auth', () => {
   beforeEach(truncate);
   afterAll(closeDb);
 
-  const api = async () => buildApi({ db: await db(), tokenSecret: SECRET });
+  const api = async () => buildApi({ db: await appDb(), tokenSecret: SECRET });
 
   const login = async (app: Awaited<ReturnType<typeof api>>, region: string) => {
     const machine = await app.inject({

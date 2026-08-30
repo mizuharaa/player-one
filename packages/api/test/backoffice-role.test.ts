@@ -4,7 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LightMyRequestResponse } from 'fastify';
 import { buildApi, hashCredential } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
-import { closeDb, db, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
 useDatabase('backoffice_role');
 
@@ -98,7 +98,7 @@ describe.skipIf(!hasDb())('the back-office administrator role', () => {
   afterAll(closeDb);
 
   const client = async (machine: string, operator: string) => {
-    const app = buildApi({ db: await db(), tokenSecret: SECRET });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET });
     const m = await app.inject({
       method: 'POST',
       url: '/auth/machine',

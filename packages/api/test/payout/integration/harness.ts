@@ -7,7 +7,7 @@ import { buildApi } from '../../../src/index.ts';
 import type { PayoutOptions } from '../../../src/payout/domain/config.ts';
 import { ZaloPayHttpClient } from '../../../src/payout/zalopay/client.ts';
 import type { ZlpStatus } from '../../../src/payout/zalopay/types.ts';
-import { db, dbUrl } from '../../../../store/test/db.ts';
+import { appDb, db, dbUrl } from '../../../../store/test/db.ts';
 import { insertAttemptAs, rows, seedPayout, type Ids } from '../domain/fixture.ts';
 import { startFakeZaloPay, type FakeOrder, type FakeZaloPay, type Received } from '../zalopay/fake-server.ts';
 
@@ -82,7 +82,7 @@ export async function harness(over: Partial<PayoutOptions> = {}, opts: HarnessOp
     mode === 'api'
       ? { mode: 'api', zaloPayEnv: 'production', credentialsPresent: PRODUCTION, client, ...over }
       : { mode: 'manual', zaloPayEnv: 'sandbox', client, ...over };
-  const app = buildApi({ db: d, tokenSecret: 'k', payout });
+  const app = buildApi({ db: await appDb(), tokenSecret: 'k', payout });
   await app.ready();
 
   const login = async (machine: string, operator: string): Promise<Headers> => {

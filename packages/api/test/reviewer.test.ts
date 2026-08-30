@@ -6,7 +6,7 @@ import { sql } from 'drizzle-orm';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 import { episodeRecord, FIXTURE_T as T } from './fixtures.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -103,7 +103,7 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
     await liveClaim(d, ids.task, ids.collectorB);
 
     const app = buildApi({
-      db: d,
+      db: await appDb(),
       tokenSecret: SECRET,
       mediaRoot: options.mediaRoot,
       reviewerMediaEnabled: options.reviewerMediaEnabled,

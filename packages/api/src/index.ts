@@ -1,9 +1,11 @@
 import { eq } from 'drizzle-orm';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { schema, seedCatalogues, type Db } from '@playerone/store';
+import { registerAlerts } from './alerts.ts';
 import { auditLogin } from './audit.ts';
 import { registerBackOffice } from './backoffice.ts';
 
+export { readAlerts, type Alert, type AlertState } from './alerts.ts';
 export { API_REFUSALS, REFUSALS } from './backoffice.ts';
 export { COUNTER_REFUSALS } from './counter.ts';
 export {
@@ -591,6 +593,7 @@ export function buildApi({
   // The band the payout side reads means "there is a live hold", not "the score is in the hold band".
   const riskReader = { billSummary: (billId: string) => riskEngine.payoutSummary(billId) };
 
+  registerAlerts(app, db, requireActor);
   registerBackOffice(app, db, requireActor);
   registerCounter(app, db, requireActor, currency);
   registerEpisodes(app, db, requireActor, toleranceMs);

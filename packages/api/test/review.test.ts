@@ -8,7 +8,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { EpisodeRecord } from '@playerone/contracts';
 import { open, type Db } from '@playerone/store';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { DB_URL, closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
+import { appDb, DB_URL, closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 import { episodeRecord } from './fixtures.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -101,7 +101,7 @@ describe.skipIf(!hasDb())('the review lane', () => {
     await d.execute(sql`insert into device_assignments (id, device_id, collector_id, valid_from)
       values (${uid()}, ${ids.device}, ${ids.collector}, ${new Date(T - 30 * 24 * 60 * 60_000).toISOString()})`);
 
-    const app = buildApi({ db: d, tokenSecret: SECRET, mediaRoot: options.mediaRoot });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET, mediaRoot: options.mediaRoot });
     await app.ready();
 
     const login = async (ref: string, machine = 'M1') => {
