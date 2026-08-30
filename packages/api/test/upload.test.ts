@@ -961,4 +961,74 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     expect(res.statusCode).toBe(503);
     await bare.close();
   });
+  /**
+   * NFR-08's batch list, which promised "newest first" in a comment and in
+   * nothing else.
+   *
+   * There was no `order by`, so the answer was whatever order Postgres returned
+   * and it moved under the operator as rows were updated. There was no `limit`,
+   * so a centre that had been importing for a year returned every batch it ever
+   * had and then counted the episodes of all of them. And `status` was passed
+   * through unchecked, so a typo answered `200 {batches: []}`, which reads
+   * exactly like "this machine has no batches".
+   *
+   * Two centres, because the scope is the point: the list is the caller's own
+   * machine's, and centre B's card must never appear in centre A's answer no
+   * matter what is asked for.
+   */
+  it('NFR-08: the batch list is newest first, bounded, filtered and machine-scoped', async () => {
+    const h = await harness();
+
+    // A second card at centre A, imported a day after the first.
+    const later = new Date(T + 24 * 60 * 60 * 1000);
+    const handover2 = uid();
+    const batch2 = uid();
+    await h.send('POST', '/handovers', {
+      id: handover2,
+      collector_id: h.ids.collectorA,
+      device_id: h.ids.deviceA,
+      tf_card_id: 'CARD-3',
+      handover_time: later.toISOString(),
+    });
+    const created = await h.send('POST', '/upload-batches', {
+      id: batch2,
+      handover_id: handover2,
+      import_started_at: later.toISOString(),
+    });
+    expect(created.statusCode, created.body).toBeLessThan(300);
+
+    const list = (url: string, who = h.headersA) => h.send('GET', url, undefined, who);
+    const idsOf = (res: LightMyRequestResponse) =>
+      (res.json().batches as { id: string }[]).map((b) => b.id);
+
+    // Newest first, and centre B's card is not centre A's business.
+    const all = await list('/upload-batches');
+    expect(all.statusCode, all.body).toBe(200);
+    expect(idsOf(all)).toEqual([batch2, h.A.batch]);
+    expect(idsOf(all)).not.toContain(h.B.batch);
+
+    // Bounded, and the bound keeps the newest.
+    expect(idsOf(await list('/upload-batches?limit=1'))).toEqual([batch2]);
+
+    // Time, on `import_started_at`, half-open at both ends.
+    expect(idsOf(await list(`/upload-batches?since=${later.toISOString()}`))).toEqual([batch2]);
+    expect(idsOf(await list(`/upload-batches?until=${later.toISOString()}`))).toEqual([h.A.batch]);
+
+    // The handover the card came in on.
+    expect(idsOf(await list(`/upload-batches?handover_id=${handover2}`))).toEqual([batch2]);
+
+    // Status, checked against `upload_batches_status_check` and not passed through.
+    expect(idsOf(await list('/upload-batches?status=importing'))).toEqual([batch2, h.A.batch]);
+    expect(idsOf(await list('/upload-batches?status=verified'))).toEqual([]);
+    const typo = await list('/upload-batches?status=inporting');
+    expect(typo.statusCode, typo.body).toBe(400);
+    expect(typo.json().error).toBe('invalid query');
+
+    // A limit outside the range is refused rather than clamped silently.
+    expect((await list('/upload-batches?limit=0')).statusCode).toBe(400);
+    expect((await list('/upload-batches?limit=501')).statusCode).toBe(400);
+
+    // The other centre sees its own card and only its own card.
+    expect(idsOf(await list('/upload-batches', h.headersB))).toEqual([h.B.batch]);
+  });
 });

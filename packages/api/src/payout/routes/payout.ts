@@ -214,6 +214,22 @@ export function registerPayout(
     const end = q === undefined ? new Date(start.getTime() + cycleDays * 24 * 60 * 60 * 1000) : new Date(q);
     if (Number.isNaN(end.getTime())) return 'period_end must be a date';
     if (end.getTime() <= start.getTime()) return 'the period ends before it starts';
+    /**
+     * How wide a read may be. `?period_end=2099-01-01` made `loadBatch` a scan
+     * of every bill ever issued, and `/api/payout/export/:period` streamed the
+     * result — no ceiling anywhere on the four routes that share this helper.
+     *
+     * ponytail: four cycles, derived from `cycleDays` so there is no second
+     * knob to disagree with the first. One cycle is too tight, and that is
+     * measured rather than guessed: the "counts what an operator has to look
+     * at" test asks for `P0.start -> P1.end`, a fortnight of seven-day periods,
+     * and a one-cycle cap refuses it. Four is a month of weekly cycles. Raise
+     * the multiplier if a real reconciliation needs a quarter; do not remove
+     * the ceiling.
+     */
+    if (end.getTime() - start.getTime() > cycleDays * 4 * 24 * 60 * 60 * 1000) {
+      return `the period must not be longer than ${cycleDays * 4} days`;
+    }
     return { start, end };
   };
 
