@@ -85,6 +85,10 @@ docs/sample_data/<anything>/EgoCamera Sample Data/ego_AZER76400FE_.../...   also
 Anywhere else, set `PLAYERONE_SESSIONS` to the directory *containing* the
 `ego_*` folders.
 
+Set `PLAYERONE_REQUIRE_CORPUS=1` as well and the test run fails outright unless
+all five sessions are there with their media — otherwise a missing or half-copied
+corpus just skips, and the run still looks green.
+
 Sanity check — all five must ingest, none quarantine:
 
 | Session | Duration | Notes |

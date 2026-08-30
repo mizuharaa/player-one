@@ -78,7 +78,9 @@ env -u DATABASE_URL pnpm exec vitest run --testTimeout=180000
 ```
 
 Export `PLAYERONE_SESSIONS` at the real corpus first, or 41 tests skip in
-silence and the run still looks green. Never write `pnpm test -- --flags`; the
+silence and the run still looks green. Set `PLAYERONE_REQUIRE_CORPUS=1`
+alongside it and a corpus that is not all five sessions with their media fails
+the run instead of skipping in silence. Never write `pnpm test -- --flags`; the
 flags do not reach vitest.
 
 **What is and is not built.** The code answers this faster and more honestly
