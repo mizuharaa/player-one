@@ -127,13 +127,17 @@ export function VerdictPill({
  * Severity drives the colour, but the icon is constant: these are always the
  * same kind of thing — something the machine noticed and a human should know
  * before watching.
+ * The sentence leads and the code is kept underneath, because the code is what
+ * a reviewer reads out to an operator.
  */
 export function FlagRow({
   code,
+  description,
   detail,
   blocking,
 }: {
   code: string;
+  description: string;
   detail: string | null;
   blocking: boolean;
 }) {
@@ -147,7 +151,8 @@ export function FlagRow({
         )}
       />
       <div className="min-w-0">
-        <p className="num text-[0.8125rem] font-medium text-[var(--foreground)]">{code}</p>
+        <p className="text-[0.8125rem] font-medium text-[var(--foreground)]">{description}</p>
+        <p className="num mt-0.5 text-[0.75rem] text-[var(--faint-foreground)]">{code}</p>
         {detail ? (
           <p className="mt-0.5 text-[0.8125rem] leading-snug text-[var(--muted-foreground)]">
             {detail}
