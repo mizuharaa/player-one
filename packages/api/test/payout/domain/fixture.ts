@@ -131,23 +131,27 @@ export async function seedBill(
 ): Promise<string> {
   const billId = uid();
   const collector = which === 1 ? ids.collector1 : ids.collector2;
-  await d.execute(sql`
-    insert into bills (id, collector_id, period_start, period_end, currency, total)
-      values (${billId}, ${collector}, ${period.start.toISOString()}::timestamptz, ${period.end.toISOString()}::timestamptz, 'VND', ${total})
-  `);
-  // The lines go in as one statement: `bills_total_matches_lines` (0011) is a
-  // deferred check that the bill adds up at the end of the statement/transaction,
-  // and the generator writes a bill's lines together too.
   const lines: string[] = [];
   for (const amount of amounts) {
     lines.push((await seedSettlement(d, ids, which, amount)).settlementId);
   }
-  if (lines.length > 0) {
-    await d.execute(sql`
-      insert into bill_lines (bill_id, settlement_id)
-      values ${sql.join(lines.map((id) => sql`(${billId}, ${id})`), sql`, `)}
+  // The bill and its lines go in one transaction, which is what the generator
+  // does (`settle.ts`). `bills_total_matches_lines` is deferred to commit, and
+  // since 0022 a bill that commits with a positive total and no lines is
+  // refused — so seeding the bill in its own transaction and its lines in the
+  // next one is no longer a legal shape, for a fixture or for anybody else.
+  await d.transaction(async (tx) => {
+    await tx.execute(sql`
+      insert into bills (id, collector_id, period_start, period_end, currency, total)
+        values (${billId}, ${collector}, ${period.start.toISOString()}::timestamptz, ${period.end.toISOString()}::timestamptz, 'VND', ${total})
     `);
-  }
+    if (lines.length > 0) {
+      await tx.execute(sql`
+        insert into bill_lines (bill_id, settlement_id)
+        values ${sql.join(lines.map((id) => sql`(${billId}, ${id})`), sql`, `)}
+      `);
+    }
+  });
   return billId;
 }
 

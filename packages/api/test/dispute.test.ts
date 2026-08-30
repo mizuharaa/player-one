@@ -567,21 +567,29 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       const reviews = await h.firstVerdicts();
       const [s1] = await h.settlementsOf(reviews.get(h.episode1)!);
       const [s2] = await h.settlementsOf(reviews.get(h.episode2)!);
-      const bill = async (collector: string, total: string) => {
+      // A bill and its line commit together, because `bills_total_matches_lines`
+      // is deferred to commit and 0022 refuses a bill that lands with a positive
+      // total and nothing on it. `b1` never gets a line — that is what is being
+      // refused below — so it is worth nothing.
+      const bill = async (collector: string, total: string, settlement?: string) => {
         const id = uid();
-        await h.d.execute(sql`insert into bills (id, collector_id, period_start, period_end, currency, total) values (${id}, ${collector}, now() - interval '1 day', now(), 'VND', ${total})`);
+        await h.d.transaction(async (tx) => {
+          await tx.execute(sql`insert into bills (id, collector_id, period_start, period_end, currency, total) values (${id}, ${collector}, now() - interval '1 day', now(), 'VND', ${total})`);
+          if (settlement !== undefined) {
+            await tx.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${id}, ${settlement})`);
+          }
+        });
         return id;
       };
       await h.dispute(reviews.get(h.episode1)!);
-      const b1 = await bill(h.ids.collector1, s1!.amount);
+      const b1 = await bill(h.ids.collector1, '0.0000');
       await violates('bill_lines_disputed_check', h.d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${b1}, ${s1!.id})`));
       // Superseded, with the dispute closed so only the supersession refuses.
       await h.d.execute(sql`update review_disputes set resolved_at = now(), outcome = 'overturned'`);
       await h.d.execute(sql`update settlements set superseded_by = ${s2!.id}, settlement_state = 'exception', exception_from_state = settlement_state, exception_reason = 'superseded' where id = ${s1!.id}`);
       await violates('bill_lines_superseded_check', h.d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${b1}, ${s1!.id})`));
       // The other collector's line, which nothing holds back, goes through.
-      const b2 = await bill(h.ids.collector2, s2!.amount);
-      await h.d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${b2}, ${s2!.id})`);
+      await bill(h.ids.collector2, s2!.amount, s2!.id);
     });
   });
 });

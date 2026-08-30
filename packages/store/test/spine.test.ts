@@ -414,11 +414,15 @@ describe.skipIf(!hasDb())('the identity spine', () => {
     const pay = async (ids: Awaited<ReturnType<typeof seedSettlement>>): Promise<void> => {
       const d = await db();
       const billId = uid();
-      await d.execute(sql`
-        insert into bills (id, collector_id, period_start, period_end, currency, total)
-          values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
-      `);
-      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${billId}, ${ids.settlementId});`);
+      // One transaction, the way the generator writes a bill: since 0022 a bill
+      // that COMMITS with a positive total and no lines is refused.
+      await d.transaction(async (tx) => {
+        await tx.execute(sql`
+          insert into bills (id, collector_id, period_start, period_end, currency, total)
+            values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+        `);
+        await tx.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${billId}, ${ids.settlementId});`);
+      });
       await d.transaction(async (tx) => {
         await tx.execute(sql`
           update settlements set settlement_state = 'manually_paid', updated_at = now() where id = ${ids.settlementId};
@@ -621,9 +625,11 @@ describe.skipIf(!hasDb())('the identity spine', () => {
         await park(ids.settlementId, 'pending_settlement');
         const d = await db();
         const billId = uid();
+        // Worth nothing, because the line below is refused and this bill can
+        // never have one: 0022 refuses an empty bill that claims a total.
         await d.execute(sql`
           insert into bills (id, collector_id, period_start, period_end, currency, total)
-            values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+            values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '0.0000');
         `);
         await violates(
           'bill_lines_exception_check',
@@ -637,11 +643,13 @@ describe.skipIf(!hasDb())('the identity spine', () => {
         await move(ids.settlementId, 'bill_generated');
         const d = await db();
         const billId = uid();
-        await d.execute(sql`
-          insert into bills (id, collector_id, period_start, period_end, currency, total)
-            values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
-        `);
-        await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${billId}, ${ids.settlementId});`);
+        await d.transaction(async (tx) => {
+          await tx.execute(sql`
+            insert into bills (id, collector_id, period_start, period_end, currency, total)
+              values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+          `);
+          await tx.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${billId}, ${ids.settlementId});`);
+        });
         await park(ids.settlementId, 'bill_generated', 'wrong_collector');
 
         // The line is evidence and the amount is frozen, so the total check
@@ -696,9 +704,11 @@ describe.skipIf(!hasDb())('the identity spine', () => {
         }
         // And it is a parked row for every other purpose: still unbillable.
         const billId = uid();
+        // Worth nothing, because the line below is refused and this bill can
+        // never have one: 0022 refuses an empty bill that claims a total.
         await d.execute(sql`
           insert into bills (id, collector_id, period_start, period_end, currency, total)
-            values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+            values (${billId}, ${ids.collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '0.0000');
         `);
         await violates(
           'bill_lines_exception_check',
@@ -735,14 +745,18 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const d = await db();
       const billOne = uid();
       const billTwo = uid();
-      await d.execute(sql`
-        insert into bills (id, collector_id, period_start, period_end, currency, total)
-          values (${billOne}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
-                 (${billTwo}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
-      `);
-      await d.execute(sql`
-        insert into bill_lines (bill_id, settlement_id) values (${billOne}, ${settlementId});
-      `);
+      // `billTwo` is worth nothing: its line is the thing being refused, so it
+      // never gets one, and 0022 refuses an empty bill that claims a total.
+      await d.transaction(async (tx) => {
+        await tx.execute(sql`
+          insert into bills (id, collector_id, period_start, period_end, currency, total)
+            values (${billOne}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
+                   (${billTwo}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '0.0000');
+        `);
+        await tx.execute(sql`
+          insert into bill_lines (bill_id, settlement_id) values (${billOne}, ${settlementId});
+        `);
+      });
       // A second bill for the same work has nowhere to write the line.
       await violates(
         'bill_lines_settlement_key',
@@ -760,12 +774,16 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const d = await db();
       const issued = uid();
       const draft = uid();
-      await d.execute(sql`
-        insert into bills (id, collector_id, period_start, period_end, currency, total)
-          values (${issued}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
-                 (${draft}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
-      `);
-      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${issued}, ${settlementId});`);
+      // `draft` never gets a line, so since 0022 it can only be born worth
+      // nothing; `issued` and its line share a transaction for the same reason.
+      await d.transaction(async (tx) => {
+        await tx.execute(sql`
+          insert into bills (id, collector_id, period_start, period_end, currency, total)
+            values (${issued}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
+                   (${draft}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '0.0000');
+        `);
+        await tx.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${issued}, ${settlementId});`);
+      });
       await violates(
         'bills_issued_immutable',
         d.execute(sql`update bills set total = '1.0000' where id = ${issued};`),
@@ -774,8 +792,15 @@ describe.skipIf(!hasDb())('the identity spine', () => {
         'bills_issued_immutable',
         d.execute(sql`update bills set period_end = '2026-09-01T00:00:00Z' where id = ${issued};`),
       );
-      // A bill with no lines is not issued: the generator may still be writing it.
-      await d.execute(sql`update bills set total = '0.0000' where id = ${draft};`);
+      // A bill with no lines is not issued: the generator may still be writing
+      // it, and its period is still editable.
+      await d.execute(sql`update bills set period_end = '2026-09-01T00:00:00Z' where id = ${draft};`);
+      // But 0022 will not let a draft grow a total it has no work for. Same
+      // refusal as on insert, reached from the UPDATE side.
+      await violates(
+        'bills_total_matches_lines',
+        d.execute(sql`update bills set total = '170.0000' where id = ${draft};`),
+      );
     });
 
     it('refuses a line that is another collector\'s work', async () => {
@@ -787,9 +812,10 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const other = uid();
       const bill = uid();
       await d.execute(sql`insert into collectors (id, external_ref, status) values (${other}, 'collector-0002', 'qualified');`);
+      // Worth nothing: the line below is refused, so this bill never gets one.
       await d.execute(sql`
         insert into bills (id, collector_id, period_start, period_end, currency, total)
-          values (${bill}, ${other}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+          values (${bill}, ${other}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '0.0000');
       `);
       await violates(
         'bill_lines_owner_guard',
@@ -805,12 +831,16 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const d = await db();
       const bill = uid();
       const other = uid();
-      await d.execute(sql`
-        insert into bills (id, collector_id, period_start, period_end, currency, total)
-          values (${bill}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
-                 (${other}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
-      `);
-      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`);
+      // `other` is only somewhere to try to re-point the line to; it never
+      // holds one, so since 0022 it is worth nothing.
+      await d.transaction(async (tx) => {
+        await tx.execute(sql`
+          insert into bills (id, collector_id, period_start, period_end, currency, total)
+            values (${bill}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000'),
+                   (${other}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '0.0000');
+        `);
+        await tx.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`);
+      });
       await violates(
         'bill_lines_immutable',
         d.execute(sql`delete from bill_lines where settlement_id = ${settlementId};`),
@@ -828,21 +858,56 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       const { settlementId, collector } = await seedSettlement();
       const d = await db();
       const bill = uid();
-      await d.execute(sql`
-        insert into bills (id, collector_id, period_start, period_end, currency, total)
-          values (${bill}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '1.0000');
-      `);
       await violates(
         'bills_total_matches_lines',
-        d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`),
+        d.transaction(async (tx) => {
+          await tx.execute(sql`
+            insert into bills (id, collector_id, period_start, period_end, currency, total)
+              values (${bill}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '1.0000');
+          `);
+          await tx.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill}, ${settlementId});`);
+        }),
+      );
+      // 0022. A bill with no lines used to be excused whatever it claimed, so
+      // 5,000 VND for no reviewed work committed and became payable. Now the
+      // exemption is only for a bill that claims nothing.
+      await violates(
+        'bills_total_matches_lines',
+        d.execute(sql`
+          insert into bills (id, collector_id, period_start, period_end, currency, total)
+            values (${uid()}, ${collector}, '2026-08-31T00:00:00Z', '2026-09-07T00:00:00Z', 'VND', '5000.0000');
+        `),
+      );
+      // The empty bill that is worth nothing still commits, which is the half
+      // of the old rule worth keeping.
+      const empty = uid();
+      await d.execute(sql`
+        insert into bills (id, collector_id, period_start, period_end, currency, total)
+          values (${empty}, ${collector}, '2026-08-31T00:00:00Z', '2026-09-07T00:00:00Z', 'VND', '0.0000');
+      `);
+      const kept = (await d.execute(sql`select count(*)::int as n from bills where id = ${empty}`)) as unknown as { n: number }[];
+      expect(kept[0]!.n).toBe(1);
+      // And a line cannot be walked onto it afterwards. This is the one case
+      // that reaches the check through `bill_lines_total_matches` alone: the
+      // bill's own trigger event committed with the statement above it, so at
+      // THIS commit only the bill_lines trigger has anything queued. Drop that
+      // trigger and this insert goes through, leaving a bill of 0.0000 carrying
+      // 170.0000 of work. The two cases either side of this one cannot tell the
+      // triggers apart, because the bills event sees the same finished state
+      // and raises first.
+      await violates(
+        'bills_total_matches_lines',
+        d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${empty}, ${settlementId});`),
       );
       // The same line on a bill that says 170.0000 is fine.
       const right = uid();
-      await d.execute(sql`
-        insert into bills (id, collector_id, period_start, period_end, currency, total)
-          values (${right}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
-      `);
-      await d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${right}, ${settlementId});`);
+      await d.transaction(async (tx) => {
+        await tx.execute(sql`
+          insert into bills (id, collector_id, period_start, period_end, currency, total)
+            values (${right}, ${collector}, '2026-08-24T00:00:00Z', '2026-08-31T00:00:00Z', 'VND', '170.0000');
+        `);
+        await tx.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${right}, ${settlementId});`);
+      });
     });
 
     it('cannot bill a rejected episode, which is worth nothing', async () => {
@@ -884,9 +949,11 @@ describe.skipIf(!hasDb())('the identity spine', () => {
     it('refuses a second bill for the same collector and cycle', async () => {
       const { collector } = await seedSettlement();
       const d = await db();
+      // Worth nothing: neither of these ever gets a line, and since 0022 an
+      // empty bill may not claim a total. What is under test is the period key.
       const insert = (id: string) => sql`
         insert into bills (id, collector_id, period_start, period_end, currency, total)
-          values (${id}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '170.0000');
+          values (${id}, ${collector}, '2026-08-17T00:00:00Z', '2026-08-24T00:00:00Z', 'VND', '0.0000');
       `;
       await d.execute(insert(uid()));
       // SET-07's idempotency, with the generator bypassed entirely.
