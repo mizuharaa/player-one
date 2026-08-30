@@ -26,5 +26,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # Fails the run on a high/critical advisory in a production dependency.
+      # Measured clean on 2026-08-30 ("No known vulnerabilities found"), so
+      # this gate starts green; dev-only advisories are deliberately not gated.
+      - run: pnpm audit --audit-level=high --prod
       - run: pnpm typecheck
       - run: pnpm test
