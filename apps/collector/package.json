@@ -10,6 +10,7 @@
   "dependencies": {
     "@playerone/design": "workspace:*",
     "@tanstack/react-query": "^5.66.0",
+    "expo-secure-store": "^57.0.2",
     "react": "^19.1.0",
     "react-native": "^0.82.0"
   },
