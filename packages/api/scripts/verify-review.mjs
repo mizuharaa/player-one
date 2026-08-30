@@ -21,6 +21,7 @@ import { mkdtemp, mkdir, rm, stat, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
+import { deriveEpisodeId } from '../../contracts/src/identity.ts';
 import { open } from '../../store/src/index.ts';
 import { buildApi, hashCredential } from '../src/index.ts';
 
@@ -94,7 +95,9 @@ const startUs = String(BigInt(Date.now() - 300_000) * 1000n);
 const submitted = await post(`/upload-batches/${batch}/episodes`, {
   episodes: [{
     schema_version: '1.1.0',
-    episode_id: uid(),
+    // Global and derived from the basename, never chosen: `POST /upload-batches/:id/episodes`
+    // re-derives it and refuses a record that disagrees with itself (docs/episode-identity.md).
+    episode_id: deriveEpisodeId(BASENAME),
     content_fingerprint: 'a'.repeat(64),
     state: 'ok',
     source: { path: BASENAME, ingest_tool_version: '0.3.1', ingested_at: new Date().toISOString(), ingest_host: 'verify' },
