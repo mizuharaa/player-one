@@ -581,12 +581,35 @@ export async function episodesDue(db: Reader): Promise<string[]> {
   return r.map((x) => String(x['episode_id']));
 }
 
-export async function billsDue(db: Reader): Promise<string[]> {
+/**
+ * Bills to evaluate: those whose facts moved since the last run, and — once
+ * `PLAYERONE_RISK_HOLD` is on — those last judged while it was off.
+ *
+ * The second arm is the whole point of the parameter. Timestamps cannot see a
+ * switch: a bill evaluated with holds disabled scores in the hold band, is
+ * refused by the payout rail (`payoutSummary`, and `risk_hold` in the payout
+ * preflight), and yet has no `risk_holds` row for an operator to clear. Every
+ * fact behind it is older than the run, so no timestamp comparison ever makes
+ * it due again. The run records what it was judged under —
+ * `META.EVALUATED.evidence.holds_enabled` — so ask that instead: absent (a run
+ * from before the key existed) or false means the bill has not been judged
+ * under enforcement and must be. The re-evaluation writes `holds_enabled: true`
+ * and the bill drops out again, whether or not a hold was raised, so this
+ * costs one extra evaluation per bill per off-to-on flip and does not repeat.
+ *
+ * ponytail: one correlated subquery per bill, served by
+ * `risk_flags_subject_idx (subject_type, subject_id, seq DESC)` — one indexed
+ * row each — and the backlog it opens is drained under the worker's existing
+ * per-tick `limit`. If that is ever too slow, store the band on the
+ * META.EVALUATED row and filter in SQL: the same upgrade `queue.ts` already
+ * names for its own candidate scan.
+ */
+export async function billsDue(db: Reader, holdsEnabled = false): Promise<string[]> {
   const r = await rows(
     db,
     sql`select b.id
           from bills b
-         where coalesce(${LATEST_EVAL} 'bill' and f.subject_id = b.id::text), '-infinity'::timestamptz)
+         where (coalesce(${LATEST_EVAL} 'bill' and f.subject_id = b.id::text), '-infinity'::timestamptz)
                < greatest(
                    b.generated_at,
                    coalesce(${LATEST_EVAL} 'collector' and f.subject_id = b.collector_id::text), '-infinity'::timestamptz),
@@ -596,6 +619,13 @@ export async function billsDue(db: Reader): Promise<string[]> {
                                                       join settlements s on s.id = l.settlement_id
                                                       join episode_reviews r on r.id = s.episode_review_id
                                                      where l.bill_id = b.id)), '-infinity'::timestamptz))
+                ${
+                  holdsEnabled
+                    ? sql`or not coalesce((select (f.evidence->>'holds_enabled')::boolean from risk_flags f
+                                            where f.signal_id = 'META.EVALUATED' and f.subject_type = 'bill' and f.subject_id = b.id::text
+                                            order by f.seq desc limit 1), false)`
+                    : sql``
+                })
          order by b.generated_at asc, b.id asc`,
   );
   return r.map((x) => String(x['id']));
