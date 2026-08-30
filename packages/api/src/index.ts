@@ -6,6 +6,12 @@ import { registerBackOffice } from './backoffice.ts';
 
 export { API_REFUSALS, REFUSALS } from './backoffice.ts';
 export { COUNTER_REFUSALS } from './counter.ts';
+export {
+  COLLECTOR_API_REFUSALS,
+  CURRENT_AGREEMENTS,
+  EXAM_ANSWERS,
+} from './collector-app.ts';
+import { registerCollectorApp } from './collector-app.ts';
 import { registerCollectorAuth, type SendSignInCode } from './collector.ts';
 export {
   MAX_DELIVERY_BYTES,
@@ -619,6 +625,14 @@ export function buildApi({
     holdsEnabled: payout.holdsEnabled ?? risk.holdsEnabled,
     capVnd: payout.capVnd,
   });
+  /**
+   * The rest of what the phone asks for, under the same prefix: registration,
+   * the six agreements, training, the exam, the task hall, claiming, device
+   * binding and session creation (APP-01 → APP-18). The same `currency` the
+   * counter snapshots onto a session, so a session declared on a phone and one
+   * reconstructed at a counter cannot disagree about what the price is in.
+   */
+  registerCollectorApp(app, db, requireActor, currency);
   registerRisk(app, db, requireActor, riskEngine);
   registerMedia(app, db, requireActor, mediaRoot);
   // One limiter for all six sign-in routes, so a guesser cannot get a fresh

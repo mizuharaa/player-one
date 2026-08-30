@@ -267,6 +267,13 @@
       "when": 1788740000000,
       "tag": "0018_risk_history_family",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1788750000000,
+      "tag": "0021_collector_app",
+      "breakpoints": true
     }
   ]
 }

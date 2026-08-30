@@ -1045,24 +1045,7 @@ export function registerBackOffice(
             .where(and(eq(schema.devices.id, id), isNull(schema.devices.boundCollectorId)))
             .returning();
           if (row === undefined) return row;
-          /**
-           * A bind is a custody event, so it is also the start of an assignment
-           * period — the record the payment crosscheck reads. Without this the
-           * column and `device_assignments` were two answers to "who holds it"
-           * that nothing kept in step (bridge F-1), and on the upgrade path
-           * from 0004 nothing ever seeded the table at all (F-20). Whoever held
-           * the open period until now stops holding it at this instant; the
-           * half-open range makes the boundary belong to the incoming collector.
-           */
-          await tx
-            .update(schema.deviceAssignments)
-            .set({ validTo: at, updatedAt: at })
-            .where(
-              and(eq(schema.deviceAssignments.deviceId, id), isNull(schema.deviceAssignments.validTo)),
-            );
-          await tx
-            .insert(schema.deviceAssignments)
-            .values({ id: randomUUID(), deviceId: id, collectorId, validFrom: at });
+          await bindCustody(tx, id, collectorId, at);
           return row;
         },
       ),
@@ -1320,6 +1303,37 @@ export function registerBackOffice(
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 /**
+ * A bind is a custody event, so it is also the start of an assignment period —
+ * the record the payment crosscheck reads. Without it the column and
+ * `device_assignments` were two answers to "who holds it" that nothing kept in
+ * step (bridge F-1), and on the upgrade path from 0004 nothing ever seeded the
+ * table at all (F-20). Whoever held the open period until now stops holding it
+ * at this instant; the half-open range makes the boundary belong to the
+ * incoming collector.
+ *
+ * Exported because a collector now binds their own camera by serial from the
+ * app (APP-14, `collector-app.ts`) and that is the same custody event. Two bind
+ * routes writing the column and only one of them writing the period is exactly
+ * the drift F-1 was.
+ */
+export async function bindCustody(
+  tx: Tx,
+  deviceId: string,
+  collectorId: string,
+  at: Date,
+): Promise<void> {
+  await tx
+    .update(schema.deviceAssignments)
+    .set({ validTo: at, updatedAt: at })
+    .where(
+      and(eq(schema.deviceAssignments.deviceId, deviceId), isNull(schema.deviceAssignments.validTo)),
+    );
+  await tx
+    .insert(schema.deviceAssignments)
+    .values({ id: randomUUID(), deviceId, collectorId, validFrom: at });
+}
+
+/**
  * Acceptances, written where they are given.
  *
  * `onConflictDoNothing` and not an upsert: an acceptance is evidence of what a
@@ -1344,7 +1358,7 @@ type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
  * `.returning()` after `onConflictDoNothing` yields only the rows actually
  * written, which is exactly the evidence.
  */
-async function writeAgreements(
+export async function writeAgreements(
   tx: Tx,
   collectorId: string,
   list: { agreement: string; version: string; accepted_at: string }[],

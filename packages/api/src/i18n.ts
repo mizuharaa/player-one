@@ -486,6 +486,48 @@ const en = {
     'That delivery is larger than one upload may declare. Send it as more than one upload, or hand the card in at an upload centre.',
   'bo.refused.upload_superseded':
     'A newer delivery of this recording arrived while these files were being sent, so this result was not recorded. Start the upload again.',
+
+  /**
+   * The collector app's own refusals (`COLLECTOR_API_REFUSALS` in
+   * collector-app.ts). Same namespace as everything else, for the reason Path
+   * A's are: a support operator looking at why a collector could not claim a
+   * task reads the same sentence the collector did.
+   *
+   * NONE of these is a constraint name, and that is the point of the set. The
+   * gates behind them are triggers — `task_claims_capacity`,
+   * `task_claims_consent_gate` — whose names are for the console. A collector
+   * is never shown one.
+   */
+  'bo.refused.task_not_found': 'That task is not there any more.',
+  'bo.refused.task_not_claimable':
+    'That task is not open at the moment, so it cannot be taken on or recorded against.',
+  'bo.refused.task_at_capacity':
+    'That task already has as many collectors as it takes. Try another one.',
+  'bo.refused.already_claimed': 'You have already taken this task on.',
+  'bo.refused.exam_not_passed':
+    'The exam has to be passed before a task can be taken on. Take it from the training screen.',
+  'bo.refused.not_qualified':
+    'This account has not been approved for collection yet. The upload centre can say where it stands.',
+  'bo.refused.agreements_incomplete':
+    'All six agreements have to be accepted before a task can be taken on.',
+  'bo.refused.claim_id_reused':
+    'That reference already belongs to a different task. Try taking the task on again.',
+  'bo.refused.claim_released':
+    'You gave this task up earlier, so that reference cannot be used again. Take it on again to get a new one.',
+  'bo.refused.agreement_version_unknown':
+    'The agreements on this screen are out of date. Reload them and read them again before accepting.',
+  'bo.refused.device_not_found': 'No camera carries that serial number. Check what is on the case.',
+  'bo.refused.device_not_available':
+    'That camera has been taken out of service, so it cannot be paired.',
+  'bo.refused.already_bound': 'That camera is paired to somebody else.',
+  'bo.refused.device_not_bound':
+    'That camera is not paired to you. Pair it before starting a session.',
+  'bo.refused.task_not_claimed':
+    'You do not hold that task, so nothing can be recorded against it. Take it on first.',
+  'bo.refused.scenario_not_found': 'That setting is not one this platform records.',
+  'bo.refused.session_id_reused':
+    'That reference already names a different session. Start the session again.',
+
   'bo.refused.review_disputes_open_key': 'That verdict is already under dispute.',
   'bo.refused.review_disputes_decided_check':
     'That review has not been decided yet, so there is no outcome to challenge.',
@@ -1227,6 +1269,26 @@ const zh: Record<MessageKey, string> = {
     '本次交付超过单次上传允许的大小。请分多次上传，或将存储卡交至上传中心。',
   'bo.refused.upload_superseded':
     '文件传输期间，该段素材出现了更新的交付，因此本次结果未被记录。请重新发起上传。',
+
+  /** 采集端应用自身的拒绝原因（collector-app.ts 的 COLLECTOR_API_REFUSALS）。 */
+  'bo.refused.task_not_found': '该任务已不存在。',
+  'bo.refused.task_not_claimable': '该任务目前未开放，无法领取，也无法向其记录采集。',
+  'bo.refused.task_at_capacity': '该任务的采集员名额已满，请选择其他任务。',
+  'bo.refused.already_claimed': '您已经领取了该任务。',
+  'bo.refused.exam_not_passed': '领取任务前必须通过考核。请在培训页面参加考核。',
+  'bo.refused.not_qualified': '该账号尚未通过采集资格审核。可向上传中心询问当前状态。',
+  'bo.refused.agreements_incomplete': '领取任务前必须接受全部六份协议。',
+  'bo.refused.claim_id_reused': '该编号已属于另一项任务。请重新领取任务。',
+  'bo.refused.claim_released': '您此前已放弃该任务，该编号不能再次使用。请重新领取以获取新编号。',
+  'bo.refused.agreement_version_unknown': '该页面上的协议版本已过期。请重新加载并阅读后再接受。',
+  'bo.refused.device_not_found': '没有设备使用该序列号。请核对设备外壳上的编号。',
+  'bo.refused.device_not_available': '该设备已停用，无法绑定。',
+  'bo.refused.already_bound': '该设备已绑定给其他采集员。',
+  'bo.refused.device_not_bound': '该设备未绑定到您名下。开始采集会话前请先绑定。',
+  'bo.refused.task_not_claimed': '您未持有该任务，无法向其记录采集。请先领取任务。',
+  'bo.refused.scenario_not_found': '本平台不记录该采集场景。',
+  'bo.refused.session_id_reused': '该编号已属于另一个采集会话。请重新创建会话。',
+
   'bo.refused.review_disputes_open_key': '该审核结果已在申诉中。',
   'bo.refused.review_disputes_decided_check': '该审核尚未给出结果，无可申诉的内容。',
   'bo.refused.review_disputes_final_check': '该结果本身已是复审结果，复审为最终结论。',
@@ -1911,6 +1973,42 @@ const vi: Record<MessageKey, string> = {
     'Lần giao đó lớn hơn mức một lần tải lên được phép khai báo. Hãy gửi thành nhiều lần tải lên, hoặc nộp thẻ nhớ tại trung tâm tải lên.',
   'bo.refused.upload_superseded':
     'Một lần giao mới hơn của đoạn ghi hình này đã đến trong khi các tệp đang được gửi, nên kết quả lần này không được ghi nhận. Hãy tải lên lại.',
+
+  /**
+   * Lời từ chối của chính ứng dụng người thu thập (`COLLECTOR_API_REFUSALS`).
+   * LOC-01 đặt tiếng Việt trên điện thoại, nên đây là ngôn ngữ người đọc chúng.
+   */
+  'bo.refused.task_not_found': 'Nhiệm vụ đó không còn nữa.',
+  'bo.refused.task_not_claimable':
+    'Nhiệm vụ đó hiện không mở, nên không thể nhận và không thể ghi hình cho nhiệm vụ đó.',
+  'bo.refused.task_at_capacity':
+    'Nhiệm vụ đó đã đủ số người thu thập. Hãy chọn nhiệm vụ khác.',
+  'bo.refused.already_claimed': 'Bạn đã nhận nhiệm vụ này rồi.',
+  'bo.refused.exam_not_passed':
+    'Bạn phải đạt bài kiểm tra trước khi nhận nhiệm vụ. Hãy làm bài ở màn hình đào tạo.',
+  'bo.refused.not_qualified':
+    'Tài khoản này chưa được duyệt để thu thập. Trung tâm tải lên có thể cho biết tình trạng hiện tại.',
+  'bo.refused.agreements_incomplete':
+    'Bạn phải chấp nhận đủ sáu thỏa thuận trước khi nhận nhiệm vụ.',
+  'bo.refused.claim_id_reused':
+    'Mã đó đã thuộc về một nhiệm vụ khác. Hãy thử nhận nhiệm vụ lại.',
+  'bo.refused.claim_released':
+    'Bạn đã trả lại nhiệm vụ này trước đó, nên mã đó không dùng lại được. Hãy nhận lại để có mã mới.',
+  'bo.refused.agreement_version_unknown':
+    'Các thỏa thuận trên màn hình này đã cũ. Hãy tải lại và đọc trước khi chấp nhận.',
+  'bo.refused.device_not_found':
+    'Không có thiết bị nào mang số sê-ri đó. Hãy kiểm tra số in trên vỏ máy.',
+  'bo.refused.device_not_available':
+    'Thiết bị đó đã ngừng sử dụng, nên không thể ghép nối.',
+  'bo.refused.already_bound': 'Thiết bị đó đã được ghép nối với người khác.',
+  'bo.refused.device_not_bound':
+    'Thiết bị đó chưa ghép nối với bạn. Hãy ghép nối trước khi bắt đầu phiên thu thập.',
+  'bo.refused.task_not_claimed':
+    'Bạn không giữ nhiệm vụ đó, nên không thể ghi hình cho nó. Hãy nhận nhiệm vụ trước.',
+  'bo.refused.scenario_not_found': 'Nền tảng không ghi nhận bối cảnh đó.',
+  'bo.refused.session_id_reused':
+    'Mã đó đã thuộc về một phiên thu thập khác. Hãy tạo lại phiên.',
+
   'bo.refused.unknown': 'Máy chủ đã từ chối thay đổi đó.',
 
   'theme.toggle': 'Giao diện',
