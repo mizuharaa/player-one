@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { DISCREPANCY_CODES } from '@playerone/contracts';
 import { parseCookies, parseRange, safeJoin } from '../src/index.ts';
 import { HTML_LANG, LOCALES, MESSAGES, missingKeys, pickLocale, type Locale, type MessageKey } from '../src/i18n.ts';
 import { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS } from '../src/payout/routes/payout.ts';
@@ -22,6 +23,23 @@ describe('the message catalogue', () => {
     // shows an English word in the middle of a Chinese sentence, which nobody
     // reports as a bug. It should fail here instead.
     for (const locale of LOCALES) expect(missingKeys(locale)).toEqual([]);
+  });
+
+  it('describes every ingest discrepancy in every locale', () => {
+    /**
+     * The review screen used to print the code itself in every language. A
+     * code with no sentence is not a smaller bug in Chinese than a missing
+     * string is — it is the same bug wearing the machine's name — so a value
+     * equal to the code counts as absent here.
+     */
+    expect(DISCREPANCY_CODES.length).toBeGreaterThan(30);
+    for (const locale of LOCALES) {
+      const missing = DISCREPANCY_CODES.filter((code) => {
+        const value = (MESSAGES[locale] as Record<string, string>)[`bo.flag.${code}`];
+        return typeof value !== 'string' || value.trim() === '' || value.trim() === code;
+      });
+      expect(missing, locale).toEqual([]);
+    }
   });
 
   it('has actually been translated, not copied, in every locale', () => {
