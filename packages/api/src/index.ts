@@ -23,7 +23,6 @@ export {
 } from './collector-upload.ts';
 import { registerCollectorUpload } from './collector-upload.ts';
 import { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
-import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';
 import { registerEpisodes } from './episodes.ts';
 import { registerMedia } from './media.ts';
@@ -638,10 +637,11 @@ export function buildApi({
   registerCollectorApp(app, db, requireActor, currency);
   registerRisk(app, db, requireActor, riskEngine);
   registerMedia(app, db, requireActor, mediaRoot);
-  // One limiter for all six sign-in routes, so a guesser cannot get a fresh
-  // budget by moving from the form to the JSON route.
-  registerConsole(app, db, { tokenSecret, secureCookies, limiter });
-  /** The JSON sign-in the React console uses. Same credentials, same cookies. */
+  /**
+   * The JSON sign-in the React console uses. One limiter for every sign-in
+   * route on the service, so a guesser cannot get a fresh budget by moving
+   * from one to another.
+   */
   registerSessionRoutes(app, db, { tokenSecret, secureCookies, limiter });
   /** The collector's phone sign-in. Same limiter, same failed-sign-in rows. */
   registerCollectorAuth(app, db, { tokenSecret, limiter, sendSignInCode });

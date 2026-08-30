@@ -164,8 +164,8 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 | `PLAYERONE_ZNS_BASE_URL` | Zalo's | Override only to point at a proxy or a test double. |
 | `REVIEW_VERIFICATION_GATE` | `local` | Which integrity check QR-02's review gate reads. `local` is the ADR 0001 deviation; `cloud` requires read-back-verified uploads and retires that ADR. Do not set `cloud` before the settlement question in the ADR's exit section is answered. |
 
-Then `http://127.0.0.1:8080/review`, which redirects to a sign-in form taking the
-same machine and operator credentials.
+The API serves JSON and media only. The back office is the SPA; see
+[`The back-office console`](#the-back-office-console) below.
 
 ## The bucket needs one rule set on it, by hand
 
@@ -565,8 +565,7 @@ drizzle gets wrong here and that a generated file may need fixing for by hand:
 | `packages/contracts` | `EpisodeRecord` (zod), episode id and content fingerprint |
 | `packages/ingest` | the measurement engine and the CLI |
 | `packages/store` | Postgres schema, migrations, episode store, catalogues |
-| `packages/api` | operator API: auth, counter workflow, session resolver, review console |
-| `packages/api/assets` | the superseded server-rendered console's ES module and stylesheet |
+| `packages/api` | operator API: auth, counter workflow, session resolver, review API |
 | `packages/design` | design tokens, once, for the console and the collector app |
 | `apps/console` | the back-office SPA: React 19, Vite, TanStack, Tailwind |
 | `DESIGN.md` | the visual system, recorded from the built console |
