@@ -281,6 +281,13 @@
       "when": 1788760000000,
       "tag": "0021_app_role",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788770000000,
+      "tag": "0022_positive_empty_bill",
+      "breakpoints": true
     }
   ]
 }
