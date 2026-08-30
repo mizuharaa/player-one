@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
 import { schema, seedCatalogues, type Db } from '@playerone/store';
 import { registerAlerts } from './alerts.ts';
 import { auditLogin } from './audit.ts';
@@ -342,6 +342,59 @@ export function buildApi({
     );
   }
   const app = Fastify({ logger: false });
+
+  /**
+   * Every unhandled throw leaves through here, and the reason is one measured
+   * response.
+   *
+   * `GET /api/settle/bills/not-a-uuid` sent the raw path string into
+   * `eq(bills.id, id)`. Postgres raised `22P02 invalid input syntax for type
+   * uuid: "not-a-uuid"`, drizzle wrapped that as `DrizzleQueryError` whose
+   * message is `Failed query: select ... where id = $1` followed by `params:
+   * not-a-uuid`, and Fastify's default handler puts `err.message` in the body
+   * of a 500. So a malformed identifier handed the caller the statement, its
+   * shape and its bound parameters. Measured on Postgres 18 through this
+   * repo's own `open()`.
+   *
+   * `22P02` is `invalid_text_representation`: Postgres was given text it cannot
+   * cast to the column's type. That is the caller's mistake and not the
+   * server's, so it becomes a deterministic 400 — and the offending value is
+   * not echoed back, because a body that repeats what was sent is how a
+   * reflected-content problem starts.
+   *
+   * Everything else stays 5xx: an unexpected database error must still fail.
+   * What changes is the body, which is now a constant. The detail goes to the
+   * log, where the person who can act on it reads it, and not to the network,
+   * where anyone can.
+   *
+   * Errors Fastify itself raised below 500 — an oversized body, a bad content
+   * type, its own schema validation — keep their status and their own message.
+   * Those strings are Fastify's, not a database's, and they are what tells a
+   * client what it got wrong.
+   *
+   * This is registered on the root instance and every `register*` call below
+   * adds routes to that same instance, so one handler covers the whole surface.
+   * That is the point: the leak was never specific to one route, and a guard
+   * per route would have been twenty places to forget.
+   */
+  app.setErrorHandler((err: FastifyError, req, reply) => {
+    const status = err.statusCode ?? 500;
+    if (status < 500) {
+      return reply.code(status).send({ error: err.code ?? 'bad_request', message: err.message });
+    }
+    /**
+     * drizzle wraps the driver error and hangs the original on `cause`; a
+     * driver error that ever reaches here unwrapped carries the code itself.
+     * Read both rather than depend on which layer threw.
+     */
+    const pg = (err.cause as { code?: string } | undefined)?.code ?? (err as { code?: string }).code;
+    if (pg === '22P02') return reply.code(400).send({ error: 'malformed_id' });
+    req.log.error(err);
+    return reply.code(500).send({ error: 'internal' });
+  });
+
+  /** One shape for a route that does not exist, so a 404 body never varies. */
+  app.setNotFoundHandler(async (_req, reply) => reply.code(404).send({ error: 'not_found' }));
 
   /**
    * HSTS, and only where TLS exists (SEC-09).
