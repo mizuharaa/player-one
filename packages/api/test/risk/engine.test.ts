@@ -567,6 +567,55 @@ describe.skipIf(!hasDb())('the risk engine', () => {
       expect(await billHold(await db(), billId)).toBeNull();
     });
 
+    /**
+     * PLAYERONE_RISK_HOLD off to on, with nothing else changing.
+     *
+     * The bill was judged while holds were off, so it has no `risk_holds` row
+     * — but `payoutSummary` already returns 'hold' for it and the payout
+     * preflight already refuses it. That is a bill nobody can pay and nobody
+     * can release: the queue shows it as `pending_evaluation` and there is
+     * nothing to clear. Every fact behind it is older than its own run, so no
+     * timestamp in `billsDue` ever makes it due again.
+     *
+     * The clock is held at NOW throughout on purpose. `collectorsDue` sweeps
+     * every collector once an hour and a fresh collector run makes its bills
+     * due, so in production the gap does close within `collectorStaleMs` —
+     * which is exactly why moving the clock here would make this test pass
+     * without the fix. Frozen, the second tick can only pick the bill up
+     * because the run's own `holds_enabled` evidence says it was judged with
+     * enforcement off.
+     */
+    it('materialises the hold on a bill last evaluated while holds were off', async () => {
+      const d = await db();
+      const { billId } = await heldBill();
+
+      const off = await tick(d, engine, { now: () => NOW });
+      expect(off.evaluated).toEqual({ episodes: 0, collectors: 1, bills: 1 });
+      expect(off.failed).toEqual([]);
+      expect(await billHold(d, billId)).toBeNull();
+      // Already unpayable, and already unclearable. This is the defect.
+      expect((await engine.payoutSummary(billId)).band).toBe('hold');
+
+      // The switch is flipped. Same data, same clock: nothing is stale.
+      const holding = new RiskEngine(d, { now: () => NOW, holdsEnabled: true });
+      const on = await tick(d, holding, { now: () => NOW });
+      expect(on.evaluated).toEqual({ episodes: 0, collectors: 0, bills: 1 });
+      expect(on.failed).toEqual([]);
+
+      const open = await billHold(d, billId);
+      expect(open).not.toBeNull();
+      expect(open!.signalIds).toEqual(['IDENT.PHONE_SHARED']);
+
+      // A real hold, so the ordinary release works and the bill pays.
+      await clearHold(d, actor(w.finance), { billId, operatorId: w.finance, reason: 'Two collectors in one household share a phone; checked in person.', verdict: 'false_positive', now: LATER });
+      expect(await billHold(d, billId)).toBeNull();
+      expect((await holding.payoutSummary(billId)).band).toBe('review');
+
+      // Once, not every tick: the run just written says holds were on.
+      const again = await tick(d, holding, { now: () => NOW });
+      expect(again.evaluated).toEqual({ episodes: 0, collectors: 0, bills: 0 });
+    });
+
     it('with holds on, the hold is raised, read by the payout side, cleared with a reason, and the bill reads clear to pay', async () => {
       const d = await db();
       const holding = new RiskEngine(d, { now: () => NOW, holdsEnabled: true });
