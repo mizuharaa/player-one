@@ -1491,49 +1491,49 @@ describe.skipIf(!hasDb())('the review lane', () => {
 
   // -------------------------------------------------------------------------
 
-  describe('the console page', () => {
-    it('sends somebody with no session to the sign-in form', async () => {
+  describe('the superseded server-rendered console', () => {
+    /**
+     * ADR 0002: the Fastify server serves JSON and media and stops serving
+     * markup. These four routes were the markup, and the reason they are
+     * asserted absent rather than simply deleted is finding #35 — a PLT-10
+     * reviewer holds the operator cookie and no machine cookie, so `GET /review`
+     * bounced them to a sign-in form that mints a session they are not allowed
+     * to have. A route nobody can use is worse than no route: it answers.
+     */
+    it('serves no markup at all', async () => {
       const h = await harness();
-      const res = await h.app.inject({ method: 'GET', url: '/review' });
-      // A JSON 401 is right for an API call and useless to a person who opened
-      // a bookmark.
-      expect(res.statusCode).toBe(303);
-      expect(res.headers.location).toBe('/review/login?lang=en');
+      const gone = await Promise.all([
+        h.app.inject({ method: 'GET', url: '/review' }),
+        h.app.inject({ method: 'GET', url: '/review/login' }),
+        h.app.inject({ method: 'POST', url: '/review/login' }),
+        h.app.inject({ method: 'POST', url: '/review/logout' }),
+        h.app.inject({ method: 'GET', url: '/review/assets/review.js' }),
+        h.app.inject({ method: 'GET', url: '/review/assets/review.css' }),
+      ]);
+      expect(gone.map((r) => r.statusCode)).toEqual([404, 404, 404, 404, 404, 404]);
     });
 
-    it('signs in with the same two credentials, carried as cookies', async () => {
-      const h = await harness();
-      const res = await h.app.inject({
-        method: 'POST',
-        url: '/review/login',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        payload: 'machine_identifier=M1&machine_secret=pw&external_ref=op&operator_secret=pw',
-      });
-      expect(res.statusCode).toBe(303);
-      const cookies = res.headers['set-cookie'] as string[];
-      expect(cookies.join(' ')).toContain('po_machine=');
-      expect(cookies.join(' ')).toContain('po_operator=');
-      // HttpOnly so script cannot read them; SameSite so another origin cannot
-      // cause a request that carries them.
-      expect(cookies.every((c) => c.includes('HttpOnly') && c.includes('SameSite=Strict'))).toBe(true);
-
-      const jar = cookies.map((c) => c.split(';')[0]).join('; ');
-      const page = await h.app.inject({ method: 'GET', url: '/review', headers: { cookie: jar } });
-      expect(page.statusCode).toBe(200);
-      expect(page.body).toContain('id="video-a"');
-    });
-
-    it('lets the cookie session reach the API, because a video element cannot set headers', async () => {
+    it('still lets a cookie session reach the API, because a video element cannot set headers', async () => {
       const h = await harness();
       const login = await h.app.inject({
         method: 'POST',
-        url: '/review/login',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        payload: 'machine_identifier=M1&machine_secret=pw&external_ref=op&operator_secret=pw',
+        url: '/api/session',
+        payload: {
+          role: 'operator',
+          machine_identifier: 'M1',
+          machine_secret: 'pw',
+          external_ref: 'op',
+          operator_secret: 'pw',
+        },
       });
-      const jar = (login.headers['set-cookie'] as string[]).map((c) => c.split(';')[0]).join('; ');
+      expect(login.statusCode, login.body).toBe(200);
+      const cookies = login.headers['set-cookie'] as string[];
+      // HttpOnly so script cannot read them; SameSite so another origin cannot
+      // cause a request that carries them.
+      expect(cookies.every((c) => c.includes('HttpOnly') && c.includes('SameSite=Strict'))).toBe(true);
+      const jar = cookies.map((c) => c.split(';')[0]).join('; ');
       const res = await h.app.inject({ method: 'POST', url: '/api/review/claim', headers: { cookie: jar } });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode, res.body).toBe(200);
     });
 
     it('refuses a machine and an operator from different centres', async () => {
@@ -1543,44 +1543,16 @@ describe.skipIf(!hasDb())('the review lane', () => {
       await h.d.execute(sql`update operators set upload_centre_id = ${otherCentre} where external_ref = 'op2'`);
       const res = await h.app.inject({
         method: 'POST',
-        url: '/review/login',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        payload: 'machine_identifier=M1&machine_secret=pw&external_ref=op2&operator_secret=pw',
+        url: '/api/session',
+        payload: {
+          role: 'operator',
+          machine_identifier: 'M1',
+          machine_secret: 'pw',
+          external_ref: 'op2',
+          operator_secret: 'pw',
+        },
       });
       expect(res.statusCode).toBe(403);
-    });
-
-    it('renders the whole screen in Chinese, with no English left in it', async () => {
-      // Acceptance 8. LOC-02: PaXini's reviewers work in Chinese through phase 1.
-      const h = await harness();
-      const login = await h.app.inject({
-        method: 'POST',
-        url: '/review/login',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        payload: 'machine_identifier=M1&machine_secret=pw&external_ref=op&operator_secret=pw',
-      });
-      const jar = (login.headers['set-cookie'] as string[]).map((c) => c.split(';')[0]).join('; ');
-      const page = await h.app.inject({ method: 'GET', url: '/review?lang=zh', headers: { cookie: jar } });
-
-      expect(page.statusCode).toBe(200);
-      expect(page.body).toContain('lang="zh-Hans"');
-      // Strip the markup, the bootstrap JSON and the product name, then look for
-      // any remaining run of Latin letters: that is an untranslated string.
-      const visible = page.body
-        .replace(/<script[\s\S]*?<\/script>/g, '')
-        .replace(/<style[\s\S]*?<\/style>/g, '')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/&[a-z]+;/g, ' ')
-        .replace(/PlayerOne|English/g, ' ');
-      const leaked = visible.match(/[A-Za-z]{3,}/g) ?? [];
-      expect(leaked).toEqual([]);
-    });
-
-    it('serves the module and the stylesheet, and nothing else off the disk', async () => {
-      const h = await harness();
-      expect((await h.app.inject({ method: 'GET', url: '/review/assets/review.js' })).statusCode).toBe(200);
-      expect((await h.app.inject({ method: 'GET', url: '/review/assets/review.css' })).statusCode).toBe(200);
-      expect((await h.app.inject({ method: 'GET', url: '/review/assets/index.ts' })).statusCode).toBe(404);
     });
   });
 });

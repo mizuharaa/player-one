@@ -7,11 +7,10 @@ whether any of it is worth anything. A person decides that here, and
 system that produces the number a collector is paid on, and every route in
 `packages/api/src/review.ts` is written as money-path code.
 
-The screen itself is `GET /review`: one server-rendered page and one ES module,
-no framework and no build step. htmx is used elsewhere in the back office and is
-deliberately not used here, because its swap model replaces DOM subtrees and this
-screen's whole throughput argument rests on two `<video>` elements that survive
-from one episode to the next.
+The screen itself is `apps/console/src/routes/Review.tsx` in the React 19 SPA
+(ADR 0002), and the server serves JSON and media only. Its throughput argument
+rests on two `<video>` elements that survive from one episode to the next, so
+the screen must not rebuild them per episode.
 
 ## Four rules, each enforced somewhere an author cannot skip
 
@@ -453,7 +452,7 @@ headers, and neither does `sendBeacon` — the only thing that reliably runs on
 unload and therefore the only way to release a lease when a tab closes.
 
 So the same signed claims also travel as `HttpOnly`, `SameSite=Strict` cookies,
-set by `POST /review/login` and checked by the same `verifyToken`. This is a
+set by `POST /api/session` and checked by the same `verifyToken`. This is a
 second envelope, not a second authorisation model: same tokens, same centre
 check, same access. `Secure` is off by default because pilot centres are a LAN
 over plain HTTP, where a `Secure` cookie is never sent and the symptom is a
@@ -484,9 +483,9 @@ seems to belong to a different task needs to see exactly what was recorded.
 
 ## The design system
 
-`shell.ts` holds the tokens; this was the first back-office screen, so there was
-nothing to consume. Three of its decisions are constraints rather than taste and
-a test enforces the first two:
+`packages/design/src/tokens.ts` holds the tokens, which the console, the Electron
+client and the collector app consume (ADR 0002). Three of its decisions are
+constraints rather than taste and a test enforces the first two:
 
 - **One theme, and it is dark.** A reviewer's job includes judging whether
   footage is too dark or overexposed. `VQ-DARK` and `VQ-OVEREXPOSED` are reject
