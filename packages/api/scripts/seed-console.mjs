@@ -23,6 +23,10 @@
  * - **One with a blocking defect and one unresolved**, because the flag rail
  *   and Home's "needs a human" strip are states the screen has to render and
  *   are exactly the states a happy-path seed never produces.
+ * - **Two cards, so both review lanes are populated.** QR-07 routes on the
+ *   collection session's two APP-17b declarations, so which queue an episode
+ *   lands in is a property of the session it resolved to. Seeded from one
+ *   session every episode is in one lane and the other queue reads zero.
  */
 import { randomUUID as uid } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -30,6 +34,7 @@ import { mkdtemp, mkdir, stat, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
+import { deriveEpisodeId } from '../../contracts/src/identity.ts';
 import { open } from '../../store/src/index.ts';
 import { buildApi, hashCredential } from '../src/index.ts';
 
@@ -111,26 +116,16 @@ const headers = {
   'x-machine-token': `Bearer ${await tok('/auth/machine', { machine_identifier: 'HCM-01', secret: SECRET })}`,
   authorization: `Bearer ${await tok('/auth/operator', { external_ref: 'op-1', secret: SECRET })}`,
 };
-const post = (url, payload) => app.inject({ method: 'POST', url, payload, headers });
-
-const handover = uid();
-await post('/handovers', {
-  id: handover,
-  collector_id: id.collector,
-  device_id: id.device,
-  tf_card_id: 'CARD-1',
-  handover_time: new Date().toISOString(),
-});
-const batch = uid();
-await post('/upload-batches', { id: batch, handover_id: handover, import_started_at: new Date().toISOString() });
-await post(`/handovers/${handover}/sessions`, {
-  id: uid(),
-  task_id: id.task,
-  scenario_id: id.scenario,
-  others_in_frame: true,
-  sensitive_info_present: false,
-  prepare_time: new Date(Date.now() - 7_200_000).toISOString(),
-});
+/**
+ * Every write is checked here rather than at each call site. A seed that posts
+ * a handover, is refused, and carries on printing "Seeded." is the failure this
+ * script already had once: the console then shows zeroes that read as real.
+ */
+const post = async (url, payload) => {
+  const res = await app.inject({ method: 'POST', url, payload, headers });
+  if (res.statusCode >= 300) throw new Error(`POST ${url} -> ${res.statusCode} ${res.body}`);
+  return res;
+};
 
 /**
  * `declaredSec` is deliberately about a third above the measured span on most
@@ -143,7 +138,9 @@ function record({ basename, spanSeconds, declaredSec, minutesAgo }) {
   const endUs = String(BigInt(startUs) + BigInt(Math.round(spanSeconds * 1_000_000)));
   return {
     schema_version: '1.1.0',
-    episode_id: uid(),
+    // Global and derived from the basename, never chosen: `POST /upload-batches/:id/episodes`
+    // re-derives it and refuses a record that disagrees with itself (docs/episode-identity.md).
+    episode_id: deriveEpisodeId(basename),
     content_fingerprint: uid().replace(/-/g, '').padEnd(64, '0').slice(0, 64),
     state: 'ok',
     source: {
@@ -190,10 +187,55 @@ const episodes = [
   record({ basename: BASENAMES[5], spanSeconds: 112.3, declaredSec: 149, minutesAgo: 90 }),
 ];
 
-const submitted = await post(`/upload-batches/${batch}/episodes`, { episodes });
-const results = submitted.json().episodes ?? [];
-console.log(`submitted ${results.length} episodes`);
-for (const r of results) console.log(`  ${r.episode_id ?? '?'}  ${r.resolution_state ?? r.state ?? '?'}`);
+/**
+ * One card per lane, and one session per card.
+ *
+ * Two sessions on a single handover is not the same thing and does not work:
+ * both are handover-origin, the resolver has no tie-break for two of those
+ * (`operator_confirmation_required`), and every episode would quarantine
+ * unresolved instead of reaching either queue.
+ *
+ * Four standard against two privacy, because the three verdicts below are taken
+ * from the standard queue and both depths still have to be non-zero after them.
+ */
+const cards = [
+  { tfCardId: 'CARD-1', othersInFrame: false, lane: 'standard', episodes: episodes.slice(0, 4) },
+  { tfCardId: 'CARD-2', othersInFrame: true, lane: 'privacy', episodes: episodes.slice(4) },
+];
+
+for (const card of cards) {
+  const handover = uid();
+  await post('/handovers', {
+    id: handover,
+    collector_id: id.collector,
+    device_id: id.device,
+    tf_card_id: card.tfCardId,
+    handover_time: new Date().toISOString(),
+  });
+  const batch = uid();
+  await post('/upload-batches', { id: batch, handover_id: handover, import_started_at: new Date().toISOString() });
+  await post(`/handovers/${handover}/sessions`, {
+    id: uid(),
+    task_id: id.task,
+    scenario_id: id.scenario,
+    others_in_frame: card.othersInFrame,
+    sensitive_info_present: false,
+    prepare_time: new Date(Date.now() - 7_200_000).toISOString(),
+  });
+
+  /**
+   * The submission answers 200 even when every record in it was refused — the
+   * per-episode result carries the refusal. An unresolved episode is not in any
+   * queue either, so both are fatal to a seed and both are named here.
+   */
+  const results = (await post(`/upload-batches/${batch}/episodes`, { episodes: card.episodes })).json().episodes ?? [];
+  const bad = results.filter((r) => r.resolution_state !== 'resolved');
+  if (bad.length > 0 || results.length !== card.episodes.length) {
+    throw new Error(`${card.tfCardId}: ${results.length}/${card.episodes.length} submitted, ${bad.length} not resolved:
+${JSON.stringify(bad, null, 2)}`);
+  }
+  for (const r of results) console.log(`  ${card.tfCardId}  ${card.lane}  ${r.episode_id}  ${r.resolution_state}`);
+}
 
 /**
  * Three verdicts, so the shift figures are not all zero.
@@ -217,8 +259,13 @@ const decisions = [
 ];
 
 for (const d of decisions) {
+  // No `?queue=`, which is the standard lane — CARD-1's four. The privacy lane
+  // is `?queue=privacy` and is deliberately left undecided, so the console has
+  // something in it.
   const claim = await asReviewer('POST', '/api/review/claim');
-  if (claim.statusCode !== 200) break;
+  // 204 is an empty queue, and breaking on it silently is how this script used
+  // to report six refused episodes as a successful seed.
+  if (claim.statusCode !== 200) throw new Error(`claim from the standard queue -> ${claim.statusCode} ${claim.body}`);
   const episode = claim.json();
   const res = await asReviewer('POST', '/api/review/verdict', {
     verdict_id: uid(),
@@ -226,12 +273,14 @@ for (const d of decisions) {
     ...d,
     time_to_verdict_seconds: 24 + Math.random() * 22,
   });
-  console.log(`  verdict ${d.decision} on ${episode.session_folder} -> ${res.statusCode}`);
+  if (res.statusCode !== 200) throw new Error(`verdict ${d.decision} -> ${res.statusCode} ${res.body}`);
+  console.log(`  verdict ${d.decision} on ${episode.session_folder}`);
 }
 
 const shift = await asReviewer('GET', '/api/review/shift');
 console.log('\nshift:', JSON.stringify(shift.json(), null, 2));
 
+const figures = shift.json();
 /**
  * The URL is named, not printed. This block is meant to be pasted into the
  * shell that just ran the seed, so `"$DATABASE_URL"` is the same value with
@@ -239,7 +288,11 @@ console.log('\nshift:', JSON.stringify(shift.json(), null, 2));
  * prints a connection string puts it through `redact()` first.
  */
 console.log(`
-Seeded. Now run, in two shells (the second line needs the same DATABASE_URL
+Seeded. Queue depth ${figures.queue_depth} standard, ${figures.privacy_queue_depth} privacy;
+${figures.decided} decided (${figures.approved} approved); ${figures.settled_amount} ${figures.currency} settled;
+${figures.needs_human} needing a human. Zeroes on that line mean the seed did nothing.
+
+Now run, in two shells (the second line needs the same DATABASE_URL
 this seed ran with; in PowerShell write it "$env:DATABASE_URL"):
 
   DATABASE_URL="$DATABASE_URL" \\
