@@ -7,12 +7,18 @@ import { Body, ListScreen, Row, Tag, Title } from '../ui.tsx';
 import type { MessageKey } from '../i18n.ts';
 
 /**
- * The five values `settlements.settlement_state` can hold
- * (`packages/store/src/schema.ts`), in the collector's language. The screen
+ * Every state this row can be handed, in the collector's language. The screen
  * used to print the raw column value, so a Vietnamese collector read
  * "bill_generated". An unknown value falls back to itself rather than
  * disappearing — a state the server invented later should be visible, not
  * silently blank.
+ *
+ * Two vocabularies, because there are two servers behind this screen. The first
+ * five are `settlements.settlement_state` (`packages/store/src/schema.ts`),
+ * which is what `MockCollectorApi` serves. The eleven below are
+ * `CollectorState` in `packages/api/src/me.ts`, which is what the real
+ * `GET /api/me/income` serves — the internal world already reduced to what a
+ * collector is allowed to be told.
  */
 const SETTLEMENT_STATES: Record<string, MessageKey> = {
   pending_review: 'settlement.pending_review',
@@ -20,6 +26,18 @@ const SETTLEMENT_STATES: Record<string, MessageKey> = {
   bill_generated: 'settlement.bill_generated',
   manually_paid: 'settlement.manually_paid',
   exception: 'settlement.exception',
+
+  uploaded: 'settlement.uploaded',
+  approved: 'settlement.approved',
+  not_paid: 'settlement.not_paid',
+  on_a_bill: 'settlement.on_a_bill',
+  action_needed: 'settlement.action_needed',
+  waiting_on_us: 'settlement.waiting_on_us',
+  on_hold: 'settlement.on_hold',
+  being_rechecked: 'settlement.being_rechecked',
+  paid: 'settlement.paid',
+  cannot_be_paid: 'settlement.cannot_be_paid',
+  unknown: 'settlement.unknown',
 };
 
 const settlementLabel = (tt: (key: MessageKey) => string, state: string): string => {

@@ -13,6 +13,23 @@
  */
 
 /**
+ * A refusal both implementations throw, carrying a code and never a sentence.
+ *
+ * The code is a name a screen looks up in `i18n.ts`; the server's own refusal
+ * constraints (`packages/api/src/collector-app.ts`'s `CLAIM_REFUSALS`) are
+ * already collector-facing names rather than database constraint names, so the
+ * HTTP client passes them straight through.
+ *
+ * It lives here rather than in `mock.ts` because both the mock and the HTTP
+ * client throw it, and a screen that catches one must catch the other.
+ */
+export class ApiError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
+}
+
+/**
  * APP-02's six agreements, versioned. Acceptance names the version it saw.
  *
  * These six identifiers are NOT the app's to choose. They are the closed set
@@ -125,13 +142,37 @@ export interface IncomeEntry {
 }
 
 /**
- * The typed client every screen talks to. The mock below implements it today;
- * the real HTTP client implements it when the server side exists.
- *
- * ponytail: mock implementation only — the real client lands with auth and
- * the server endpoints (a sibling workstream owns the server gates).
+ * The typed client every screen talks to. `MockCollectorApi` implements it for
+ * development and the screen tests; `HttpCollectorApi` implements it against
+ * the platform's `/api/me/*` routes.
  */
 export interface CollectorApi {
+  /**
+   * APP-01. Ask the platform to send a one-time code to this number.
+   *
+   * Resolves whatever the number is. `POST /auth/collector/request-code`
+   * answers 204 for an enrolled number and an unenrolled one alike, on
+   * purpose — a route that answered differently would be a way to ask which of
+   * five hundred numbers belong to collectors — and this app must not undo
+   * that by telling the collector which one they typed.
+   */
+  requestSignInCode(phone: string): Promise<void>;
+  /**
+   * APP-01. Exchange the code for a thirty-day token, and keep the token.
+   *
+   * Throws `ApiError('credentials')` for a wrong number, a wrong code, an
+   * expired code and a code guessed at too often — one refusal, because
+   * `POST /auth/collector/verify` answers one 401 for all four.
+   */
+  signIn(phone: string, code: string): Promise<void>;
+  /**
+   * NFR-03/NFR-04. Cold start: is there a stored token, and does it still work?
+   *
+   * True means the app opens where the collector left it. False means the
+   * sign-in screen. Throws only when the server could not be reached at all —
+   * no signal is not a signed-out session, and must not clear the token.
+   */
+  restoreSession(): Promise<boolean>;
   profile(): Promise<CollectorProfile | null>;
   register(name: string, phone: string): Promise<CollectorProfile>;
   /** APP-02: all six at once, each acceptance naming the version shown. */

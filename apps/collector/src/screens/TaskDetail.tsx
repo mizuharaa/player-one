@@ -93,15 +93,15 @@ export function TaskDetail() {
       </Card>
       <Card>
         <Title>{tt('detail.instructions')}</Title>
-        <Body>{task.data.instructions}</Body>
+        <Body>{task.data.instructions || tt('detail.notSupplied')}</Body>
       </Card>
       <Card>
         <Title>{tt('detail.privacy')}</Title>
-        <Body>{task.data.privacyNotice}</Body>
+        <Body>{task.data.privacyNotice || tt('detail.notSupplied')}</Body>
       </Card>
       <Card>
         <Title>{tt('detail.payment')}</Title>
-        <Body>{task.data.paymentRule}</Body>
+        <Body>{task.data.paymentRule || tt('detail.notSupplied')}</Body>
       </Card>
       {!examPassed ? <Note text={tt('detail.needExam')} /> : null}
       {full && !alreadyClaimed ? <Note text={tt('detail.full')} /> : null}

@@ -7,22 +7,30 @@ TypeScript strict, Vietnamese first (LOC-01 is P0; English rides along at P2).
 
 ## What this is, exactly
 
-**A UI scaffold with two mocked seams. It does not launch on a phone yet.**
+**A real client against the platform, one mocked seam left, and it does not
+launch on a phone yet.**
 
 Read that literally before quoting progress from it:
 
 | | State |
 |---|---|
-| Screens | All thirteen exist and are reachable; the route registry is `Record<RouteName, ComponentType>`, so a missing screen is a compile error. |
-| Server | `MockCollectorApi` — in memory, one process. There is no HTTP client and no auth. |
+| Screens | All thirteen exist and are reachable; the route registry is `Record<RouteName, ComponentType>`, so a missing screen is a compile error. Sign-in is a fourteenth screen and deliberately not a route — it is what the app is when there is no session. |
+| Server | `HttpCollectorApi` over `fetch`, against the fourteen `/api/me/*` routes plus `/api/me/income` and `/api/me/episodes`. `MockCollectorApi` is still selectable with `PLAYERONE_MOCK_API=1` and is what the screen tests run on. |
+| Auth | **Real.** `POST /auth/collector/request-code` → a one-time code over Zalo → `POST /auth/collector/verify` → a thirty-day token, presented as `Authorization: Bearer`. |
 | Device | `MockDeviceTransport` / `MockDeviceTransfer` — no BLE, no Wi-Fi, no file transfer. See `DEVICE_DEPS.md`. |
-| Persistence | **None.** Killing the app resets registration, claims, the upload queue and income. The offline/restart-survival requirement is not met. |
-| Native project | **None.** No `android/`, no Metro or Babel config, no Expo dependency. `expo prebuild` has never been run here. |
+| Persistence | **The token, and only the token** — `expo-secure-store`, one key. A cold start restores it and refetches claims, devices, sessions, episodes and income from the server. Nothing else is stored: the server is the record, and there is no offline mutation queue because Path A upload is out of the pilot. |
+| Native project | **None.** No `android/`, no Metro or Babel config. `expo-secure-store` is a dependency (it pulls `expo` as a peer) but `expo prebuild` has never been run here, so the keystore is unexercised on real hardware. |
 | Launchable | **No.** `npm start` / `expo run:android` do not exist as scripts because they would not work. |
 
 What *is* runnable today is the typechecker and the unit tests. Those cover the
 mock's gates (APP-02, APP-05, APP-10, APP-15, APP-25), the BLE call order, the
-message catalogue, and the agreement-id contract with the server.
+message catalogue, the agreement-id contract with the server, and the HTTP
+client against a fake `fetch` — the sign-in exchange, the cold-start restore,
+and what a 401, a 403 and a lost connection each do to the stored token.
+
+Two environment variables decide what a build talks to, and there are no others:
+`PLAYERONE_API_URL` (default `http://10.0.2.2:8080`, the Android emulator's
+route to the host) and `PLAYERONE_MOCK_API=1`.
 
 ```sh
 pnpm install
@@ -66,14 +74,27 @@ src/ui.tsx     Screen, ListScreen, Card, CardLink, Choice, Button, Field, Tag, N
 src/nav.tsx    the typed stack, and Android's hardware Back
 src/theme.tsx  the only door design tokens come through
 src/i18n.ts    every user-facing string, Vietnamese-based
-test/          the mock's gates, the device seams, the catalogue, the contract
+test/          the API seam (both implementations), the device seams, the catalogue
 ```
 
 ## Known ceilings
 
 Every one of these is marked `ponytail:` at the place it bites:
 
-- No persistence, no restart recovery, no background upload worker (`src/App.tsx`).
+- No background upload worker, and no offline queue (`src/App.tsx`). The token
+  survives a kill; nothing else is stored, on purpose — a phone's copy of claims
+  and money goes stale the moment the app closes, and Path A upload is out of
+  the pilot so there is nothing a collector can do offline that needs replaying.
+- `confirmUpload` has no server route and throws `upload_not_supported`
+  (`src/api/http.ts`). It is unreachable in practice: the button only renders
+  for `pending_upload`, and the server cannot return that state because it only
+  knows episodes already ingested at an upload centre.
+- A task's `scenario`, `instructions`, `privacyNotice` and `paymentRule` have no
+  server source — APP-09 is not built and `collector-app.ts` says why. The three
+  text fields come back empty and render `detail.notSupplied`; `scenario` is
+  guessed from `tasks.type` with `home` as the fallback, which
+  `SessionCreate.tsx` then declares. What a task's scenario *is* remains an open
+  product question (`src/api/http.ts`).
 - Hand-rolled navigation stack; `@react-navigation` needs `react-native-screens`,
   a native module (`src/nav.tsx`).
 - Top inset from `StatusBar.currentHeight` only — no cutout, gesture-bar or
@@ -82,9 +103,9 @@ Every one of these is marked `ponytail:` at the place it bites:
 - QR device binding is a fixed serial; VisionCamera needs a native build
   (`src/screens/Devices.tsx`).
 - Training and exam content is a shell. PaXini owes it.
-- No login, logout, token or restored session: the app always opens on
-  registration. An existing collector cannot sign back in, because there is no
-  auth endpoint to sign in to (`src/App.tsx`).
+- No logout and no account switching. A session ends when the token expires,
+  when an operator bumps `collectors.token_epoch`, or when the server answers
+  401. Nobody has asked for a sign-out button and there is no screen for one.
 - Agreements show a title and a version, not a document. There is no body,
   effective date, or server-supplied current version, so the revision path
   cannot be exercised — consent here is a mechanism, not yet informed consent
