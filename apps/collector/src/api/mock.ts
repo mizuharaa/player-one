@@ -10,7 +10,7 @@ import type {
   SessionInput,
   Task,
 } from './types.ts';
-import { AGREEMENTS } from './types.ts';
+import { AGREEMENTS, ApiError } from './types.ts';
 
 /**
  * In-memory server. It mirrors the server-side gates (APP-02, APP-05, APP-10,
@@ -25,12 +25,6 @@ import { AGREEMENTS } from './types.ts';
 
 /** APP-04's exam is a mechanism shell; PaXini owes the content (D-item). */
 export const EXAM_QUESTION_COUNT = 3;
-
-export class ApiError extends Error {
-  constructor(readonly code: string) {
-    super(code);
-  }
-}
 
 let seq = 0;
 const id = (prefix: string): string => `${prefix}-${(++seq).toString().padStart(4, '0')}`;
@@ -119,6 +113,24 @@ export class MockCollectorApi implements CollectorApi {
       // Estimated: uploaded but not yet decided. Server's estimate, not ours.
       { episodeId: 'ego1-20260820-1830', effectiveMinutes: '52', amountVnd: '62400', kind: 'estimated', settlementState: null },
     ];
+  }
+
+  /**
+   * There is no sign-in in the mock, and there deliberately is not one.
+   *
+   * ponytail: the three auth methods are the seam's shape, not a second
+   * implementation of it. A code this object checked would be a code this
+   * object invented, and the thing that actually decides whether a collector
+   * may sign in is `POST /auth/collector/verify` against a `collectors` row. So
+   * the mock is always signed in: `restoreSession()` is true and the app opens on
+   * the registration screen exactly as it did before there was any auth.
+   */
+  async requestSignInCode(): Promise<void> {}
+
+  async signIn(): Promise<void> {}
+
+  async restoreSession(): Promise<boolean> {
+    return true;
   }
 
   private mustProfile(): CollectorProfile {
