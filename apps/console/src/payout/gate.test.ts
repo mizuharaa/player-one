@@ -41,7 +41,7 @@ const snapshot = (bills: PayoutBill[], over: Partial<PreflightSnapshot> = {}): P
   shortfall_vnd: 0,
   ok: false,
   refusal: 'no ZaloPay client is configured, so the wallet balance cannot be read',
-  counts: { no_account: 0, account_unverified: 0, over_bank_ceiling: 0, under_bank_minimum: 0, under_one_dong: 0, over_cap: 0, risk_hold: 0, attempt_open: 0, already_paid: 0 },
+  counts: { no_account: 0, account_unverified: 0, over_bank_ceiling: 0, under_bank_minimum: 0, under_one_dong: 0, over_cap: 0, risk_hold: 0, attempt_open: 0, already_paid: 0, line_in_exception: 0 },
   risk_bands: { clear: bills.length, notice: 0, review: 0, hold: 0 },
   cap_vnd: null,
   bank_ceiling_vnd: 10_000_000,

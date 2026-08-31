@@ -1,10 +1,11 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { ApiError } from '../lib/api.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MESSAGES } from '@playerone/api/i18n';
+import { ApiError, payout } from '../lib/api.ts';
 import { asStored, count, elapsed, vnd } from './format.ts';
 import { defaultPeriod, isPeriod, periodSearch, riskSearch } from './period.ts';
-import { refusalKey } from './refusals.ts';
+import { constraintKey, isNotOnServer, refusalKey, settlementStateKey } from './refusals.ts';
 
 /**
  * The payout console's own rules, tested without a browser or a database.
@@ -145,5 +146,187 @@ describe('refusals become sentences', () => {
     expect(refusalKey(new ApiError(400, 'invalid body'))).toBe('settle.invalid');
     expect(refusalKey(new ApiError(404, 'no such bill'))).toBe('settle.gone');
     expect(refusalKey(new TypeError('fetch failed'))).toBe('settle.failed');
+  });
+});
+
+/* -------------------------------------------------------------------------
+   What the screens must keep showing.
+
+   The groups below are the regression proof for the fields this lane was
+   built to stop dropping. A catalogue test alone would not catch a screen
+   that quietly stops reading a field, and a screen scan alone would not catch
+   a sentence that exists only in English — so both are here, plus the
+   transport rule that keeps an aborted run's report.
+   ---------------------------------------------------------------------- */
+
+/** Every sentence this lane added, and the one it found missing. */
+const NEW_KEYS = [
+  'settle.generate.deferred',
+  'settle.generate.skipped',
+  'settle.generate.exception',
+  'settle.issue.line_in_exception',
+  'settle.state.pending_review',
+  'settle.state.pending_settlement',
+  'settle.state.bill_generated',
+  'settle.state.manually_paid',
+  'settle.state.exception',
+  'settle.bill.lines.title',
+  'settle.bill.lines.empty',
+  'settle.bill.lines.exceptions',
+  'settle.bill.lines.reproduce',
+  'settle.bill.line.task',
+  'settle.bill.line.episode',
+  'settle.bill.line.unitPrice',
+  'settle.bill.line.minutes',
+  'settle.bill.line.amount',
+  'settle.bill.line.state',
+  'settle.bill.line.reviewed',
+  'settle.batch.refused.title',
+  'settle.batch.refused.body',
+  'settle.batch.tickets.title',
+  'settle.batch.tickets.body',
+  'settle.batch.aborted',
+  'settle.batch.aborted.at',
+  'settle.batch.aborted.body',
+  'settle.ticket.TICKET.POLL_EXHAUSTED',
+  'settle.ticket.TICKET.ORDER_NOT_FOUND',
+  'settle.ticket.TICKET.CAP_EXCEEDED',
+  'settle.ticket.TICKET.BATCH_REFUSED',
+  'settle.ticket.TICKET.RECON_DISCREPANCY',
+];
+
+describe('the catalogue names every new sentence', () => {
+  it('holds each one in English, Chinese and Vietnamese', () => {
+    /**
+     * `settle.issue.line_in_exception` is why this is not bookkeeping.
+     * `issuesOf` has always emitted that issue and no locale had a sentence
+     * for it, so `IssueList` printed the key itself — a machine string, on
+     * the bill screen, to a finance operator.
+     */
+    for (const locale of ['en', 'zh', 'vi'] as const) {
+      const missing = NEW_KEYS.filter((key) => {
+        const value = (MESSAGES[locale] as Record<string, string>)[key];
+        return typeof value !== 'string' || value.trim() === '';
+      });
+      expect(missing, locale).toEqual([]);
+    }
+  });
+
+  it('names the settlement states the schema allows, and no others', () => {
+    // The CHECK in schema.ts. A state with no sentence falls back to the raw
+    // string, which is why settlementStateKey returns null rather than a key
+    // that would render blank.
+    for (const state of ['pending_review', 'pending_settlement', 'bill_generated', 'manually_paid', 'exception']) {
+      expect(settlementStateKey(state), state).toBe(`settle.state.${state}`);
+    }
+    expect(settlementStateKey('a_state_the_server_grew_later')).toBeNull();
+  });
+});
+
+describe('the screens still read the fields the server sends', () => {
+  /**
+   * Each of these was measured being dropped: the API produced the field and
+   * the screen never looked at it. Scanned through `code()`, so a mention in
+   * a comment or inside a string cannot satisfy the check — it has to be
+   * executable.
+   */
+  const REQUIRED: [string, string[]][] = [
+    ['SettleScreen.tsx', ['deferred_to_next_period', 'skipped']],
+    ['BillScreen.tsx', ['unit_price', 'effective_minutes', 'amount', 'settlement_state', 'reviewed_at']],
+    ['PreflightScreen.tsx', ['report.refused', 'report.tickets', 'report.aborted']],
+  ];
+
+  for (const [file, needles] of REQUIRED) {
+    it(`${file} reads them`, () => {
+      const text = code(readFileSync(join(SRC, 'payout', file), 'utf8'));
+      const missing = needles.filter((n) => !text.includes(n));
+      expect(missing).toEqual([]);
+    });
+  }
+});
+
+describe('one rule for naming a refusal', () => {
+  it('maps a known constraint to its sentence and an unknown one to the generic line', () => {
+    expect(constraintKey('payout_batch_running')).toBe('bo.refused.payout_batch_running');
+    /**
+     * Deliberate change of behaviour. The batch report used to print an
+     * unknown constraint verbatim — a machine string in front of finance.
+     * `bo.refused.unknown` is the localised sentence that exists for exactly
+     * that case.
+     */
+    expect(constraintKey('a_constraint_added_after_this_console')).toBe('bo.refused.unknown');
+  });
+
+  it('agrees with refusalKey, which now routes through it', () => {
+    expect(refusalKey(new ApiError(409, 'refused', 'payout_batch_running'))).toBe(
+      constraintKey('payout_batch_running'),
+    );
+  });
+});
+
+describe('an aborted batch keeps its report', () => {
+  /**
+   * `POST /run` answers a `BatchAborted` with 500 and the whole report in the
+   * body — including transfers that already committed. Through plain
+   * `call()` that body was thrown away and the operator saw a bare failure
+   * after money had moved.
+   */
+  const report = {
+    error: 'payout_batch_aborted',
+    message: 'boom',
+    preflight: { ok: true, payable: 2, total_vnd: 4200 },
+    sent: [{ bill_id: 'bill-sent', attempt_id: 'a1', partner_order_id: 'po1', status: 'succeeded', result: 'ok' }],
+    refused: [{ bill_id: 'bill-refused', collector_ref: 'C-002', constraint: 'payout_risk_hold' }],
+    stopped_at: 'bill-threw',
+    tickets: [
+      { kind: 'TICKET.POLL_EXHAUSTED', bill_id: 'bill-sent', evidence: {}, occurred_at: '2026-08-17T00:00:00.000Z' },
+    ],
+  };
+
+  const respond = (status: number, body: unknown) =>
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }),
+    );
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('returns the report, marked aborted, instead of throwing it away', async () => {
+    vi.stubGlobal('fetch', respond(500, report));
+    const run = await payout.runBatch('2026-08-17');
+    expect(run?.aborted).toBe(true);
+    expect(run?.sent[0]?.bill_id).toBe('bill-sent');
+    expect(run?.refused[0]?.constraint).toBe('payout_risk_hold');
+    expect(run?.stopped_at).toBe('bill-threw');
+    expect(run?.tickets[0]?.kind).toBe('TICKET.POLL_EXHAUSTED');
+  });
+
+  it('marks a clean run as not aborted', async () => {
+    const { error: _dropped, ...clean } = report;
+    vi.stubGlobal('fetch', respond(200, clean));
+    const run = await payout.runBatch('2026-08-17');
+    expect(run?.aborted).toBe(false);
+  });
+
+  it('still throws a 409, so payout_batch_running keeps its sentence', async () => {
+    vi.stubGlobal('fetch', respond(409, { error: 'refused', constraint: 'payout_batch_running' }));
+    const err = await payout.runBatch('2026-08-17').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(refusalKey(err)).toBe('bo.refused.payout_batch_running');
+  });
+
+  it('still throws a 404, so the not-on-this-server path survives', async () => {
+    vi.stubGlobal('fetch', respond(404, { error: 'not found' }));
+    const err = await payout.runBatch('2026-08-17').catch((e: unknown) => e);
+    expect(isNotOnServer(err)).toBe(true);
+  });
+
+  it('does not dress a malformed 500 up as a report', async () => {
+    // `sent` alone is not a report. A half-written body must stay an error.
+    vi.stubGlobal('fetch', respond(500, { error: 'payout_batch_aborted', sent: [] }));
+    const err = await payout.runBatch('2026-08-17').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
   });
 });

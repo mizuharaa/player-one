@@ -45,6 +45,7 @@ export function riskSearch(search: Record<string, unknown>): { period: string; b
 export const keys = {
   batch: (period: string) => ['payout', 'batch', period] as const,
   preflight: (period: string) => ['payout', 'preflight', period] as const,
+  bill: (billId: string) => ['settle', 'bill', billId] as const,
   income: (collectorId: string) => ['payout', 'income', collectorId] as const,
   attempt: (id: string) => ['payout', 'attempt', id] as const,
   holds: (billId: string) => ['risk', 'holds', billId] as const,

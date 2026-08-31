@@ -177,10 +177,34 @@ export function SettleScreen() {
             {generate.isPending ? t('bo.working') : t('settle.generate')}
           </Button>
           <Reason id="generate-hint">{t('settle.generate.hint')}</Reason>
-          {generate.data ? (
-            <p className="mt-1 text-[0.8125rem] font-semibold" role="status">
-              {t('settle.generate.result', { created: generate.data.created, notPayable: generate.data.not_payable })}
-            </p>
+          {generate.data !== undefined && generate.data !== null ? (
+            <div className="mt-1 max-w-[70ch] text-[0.8125rem] font-semibold leading-relaxed" role="status">
+              <p>
+                {t('settle.generate.result', {
+                  created: generate.data.created,
+                  notPayable: generate.data.not_payable,
+                })}
+              </p>
+              {generate.data.deferred_to_next_period.settlements > 0 ? (
+                <p>
+                  {t('settle.generate.deferred', {
+                    n: count(generate.data.deferred_to_next_period.settlements, i18n.language),
+                    who: generate.data.deferred_to_next_period.collector_refs.join(', '),
+                  })}
+                </p>
+              ) : null}
+              {generate.data.skipped.settlements > 0 ? (
+                <p>
+                  {t('settle.generate.skipped', {
+                    n: count(generate.data.skipped.settlements, i18n.language),
+                    who: generate.data.skipped.collector_refs.join(', '),
+                  })}
+                </p>
+              ) : null}
+              {generate.data.exception > 0 ? (
+                <p>{t('settle.generate.exception', { n: count(generate.data.exception, i18n.language) })}</p>
+              ) : null}
+            </div>
           ) : null}
         </div>
         <div className="sm:ml-auto">

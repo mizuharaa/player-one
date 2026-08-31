@@ -18,9 +18,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button.tsx';
-import { Panel, Problem } from '../components/ui/primitives.tsx';
+import { EmptyState, Panel, Problem } from '../components/ui/primitives.tsx';
 import { IconArrow } from '../components/icons.tsx';
-import { payout, type PayoutBill, type PayResult } from '../lib/api.ts';
+import { payout, settle, type PayoutBill, type PayResult } from '../lib/api.ts';
 import { RiskBlock } from '../risk/pieces.tsx';
 import { asStored, count, day, vnd, when } from './format.ts';
 import { keys } from './period.ts';
@@ -34,12 +34,15 @@ import {
   RefusedBanner,
   Section,
   SettleShell,
+  Table,
   TableSkeleton,
+  Td,
+  Th,
   VerifyPill,
 } from './pieces.tsx';
 import { gateReasonKey, type GateState } from './gate.ts';
 import { useGate } from './PreflightScreen.tsx';
-import { refusalKey } from './refusals.ts';
+import { refusalKey, settlementStateKey } from './refusals.ts';
 import { readOnlyReason, useFinanceRole } from './role.ts';
 
 export function BillScreen() {
@@ -48,6 +51,12 @@ export function BillScreen() {
   const { period } = useSearch({ strict: false }) as { period: string };
   const { billId } = useParams({ strict: false }) as { billId?: string };
   const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period) });
+  // ponytail: Bill detail stays a second round trip instead of making the period batch carry every line of every bill.
+  const detail = useQuery({
+    queryKey: keys.bill(billId ?? ''),
+    queryFn: () => (billId === undefined ? Promise.resolve(null) : settle.bill(billId)),
+    enabled: billId !== undefined,
+  });
   /**
    * The gate reads the cached snapshot only — rendering this screen must not
    * count as running the preflight — and re-evaluates on a ticking clock and
@@ -95,6 +104,72 @@ export function BillScreen() {
                 />
                 <Fig label={t('settle.col.attempt')} value={<AttemptPill status={bill.attempt?.status ?? null} />} hint={t('settle.lines', { n: count(bill.lines, locale) })} />
               </div>
+            </Panel>
+
+            {/*
+              The lines, and the reason this table exists.
+
+              `unit_price × effective_minutes` must reproduce `amount` — the
+              server rounds that product to four decimal places once, in
+              `quantise`, and the result is what is stored. That reproduction
+              is the first thing checked when an invoice is disputed, so the
+              three stored strings sit next to each other and the reader does
+              the multiplication. This screen must never do it: a second
+              rounding site in the client is exactly what the money rules
+              forbid, and `payout.test.ts` fails the build if one appears.
+
+              ponytail: settlement_id and review_id are not columns. They are
+              UUIDs no control on this screen can act on; episode_id is the
+              identifier SET-04 says the line carries.
+            */}
+            <Panel className="p-5">
+              <Section title={t('settle.bill.lines.title')}>
+                {detail.isPending ? (
+                  <TableSkeleton />
+                ) : detail.error ? (
+                  <LoadFailed />
+                ) : detail.data === undefined || detail.data === null || detail.data.lines.length === 0 ? (
+                  <EmptyState title={t('settle.bill.lines.title')} body={t('settle.bill.lines.empty')} />
+                ) : (
+                  <>
+                    <Table minWidth={980}>
+                      <thead>
+                        <tr className="border-b border-[var(--border)]">
+                          <Th>{t('settle.bill.line.task')}</Th>
+                          <Th>{t('settle.bill.line.episode')}</Th>
+                          <Th>{t('settle.bill.line.unitPrice')}</Th>
+                          <Th>{t('settle.bill.line.minutes')}</Th>
+                          <Th>{t('settle.bill.line.amount')}</Th>
+                          <Th>{t('settle.bill.line.state')}</Th>
+                          <Th>{t('settle.bill.line.reviewed')}</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.data.lines.map((l) => {
+                          const stateKey = settlementStateKey(l.settlement_state);
+                          return (
+                            <tr key={l.settlement_id} className="border-b border-[var(--border)]">
+                              <Td className="font-semibold">{l.task}</Td>
+                              <Td className="num break-all">{l.episode_id}</Td>
+                              <Td className="num">{asStored(l.unit_price)}</Td>
+                              <Td className="num">{asStored(l.effective_minutes)}</Td>
+                              <Td className="num">{asStored(l.amount)}</Td>
+                              <Td>{stateKey === null ? l.settlement_state : t(stateKey)}</Td>
+                              <Td className="num whitespace-nowrap">{when(l.reviewed_at, locale)}</Td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </Table>
+                    <div className="mt-3 space-y-2 text-[0.8125rem] leading-relaxed text-[var(--muted-foreground)]">
+                      {detail.data.exceptions > 0 ? (
+                        <p>{t('settle.bill.lines.exceptions', { n: count(detail.data.exceptions, locale) })}</p>
+                      ) : null}
+                      <p>{t('settle.bill.lines.reproduce')}</p>
+                    </div>
+                  </>
+                )}
+              </Section>
             </Panel>
 
             <Panel className="p-5">
@@ -200,6 +275,7 @@ function PaymentPanel({
   const done = (r: PayResult | null) => {
     setResult(r);
     onRefused(null);
+    void client.invalidateQueries({ queryKey: keys.bill(bill.id) });
     void client.invalidateQueries({ queryKey: keys.batch(period) });
     void client.invalidateQueries({ queryKey: keys.preflight(period) });
     void client.invalidateQueries({ queryKey: keys.income(bill.collector_id) });

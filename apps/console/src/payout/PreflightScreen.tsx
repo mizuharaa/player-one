@@ -36,7 +36,7 @@ import { count, vnd, when } from './format.ts';
 import { batchFingerprint, gateReasonKey, preflightGate, PREFLIGHT_WINDOW_MS, type GateState, type PreflightSnapshot } from './gate.ts';
 import { keys } from './period.ts';
 import { BandPill, Field, Fig, LoadFailed, Reason, Section, SettleShell, TableSkeleton } from './pieces.tsx';
-import { isNotOnServer, refusalKey } from './refusals.ts';
+import { constraintKey, isNotOnServer, refusalKey } from './refusals.ts';
 import { readOnlyReason, useFinanceRole } from './role.ts';
 
 const BANDS: RiskBand[] = ['clear', 'notice', 'review', 'hold'];
@@ -121,7 +121,7 @@ export function PreflightScreen() {
   };
   const ranked = [...bills].sort((a, b) => b.risk.score - a.risk.score).slice(0, 20);
   const flagged = ranked.filter((b) => b.risk.flags.length > 0);
-  const others = (['attempt_open', 'already_paid', 'no_account', 'account_unverified', 'under_bank_minimum', 'under_one_dong', 'risk_hold'] as const).filter(
+  const others = (['attempt_open', 'already_paid', 'no_account', 'account_unverified', 'under_bank_minimum', 'under_one_dong', 'risk_hold', 'line_in_exception'] as const).filter(
     (k) => p.counts[k] > 0,
   );
 
@@ -321,7 +321,7 @@ function ApiBatch({ snapshot: p, fetchedAt, bills, period }: { snapshot: Preflig
           : notOnServer
             ? t('settle.batch.notOnServer')
             : null;
-  const report: BatchRun | null | undefined = run.data;
+  const report: (BatchRun & { aborted: boolean }) | null | undefined = run.data;
 
   return (
     <Panel className="p-5">
@@ -370,28 +370,70 @@ function ApiBatch({ snapshot: p, fetchedAt, bills, period }: { snapshot: Preflig
           </div>
         ) : null}
 
-        {report ? <RunReport report={report} collectorOf={collectorOf} /> : null}
+        {report ? <RunReport report={report} collectorOf={collectorOf} period={period} /> : null}
       </Section>
     </Panel>
   );
 }
 
-/** The server's report of a run, as sentences. */
-function RunReport({ report, collectorOf }: { report: BatchRun; collectorOf: (billId: string) => string }) {
+/**
+ * The server's report of a run, as sentences.
+ *
+ * Four facts, and they are different facts. `sent` is what left. `refused` is
+ * every bill the run would not send and why — it is populated from the
+ * preflight's issue list before the loop starts, so it is usually the longest
+ * part of the report and the part somebody has to work through. `stopped_at`
+ * is the single bill the loop halted on. `tickets` is what the run wrote for a
+ * person to pick up.
+ *
+ * The aborted case is separated deliberately. When `payBill` throws, the
+ * worker leaves `stopped_at` set but never pushes that bill onto `refused`,
+ * and the route drops the constraint on its way out (`stopped_at` serialises
+ * as a bare bill id). The old code met that with
+ * `refused.find(...) ?? 'payout_transfer_rejected'` and told the operator the
+ * transfer had been rejected — a cause that never happened, on the screen
+ * where money has just moved. An aborted run now says it stopped on an error
+ * and names no reason it does not have.
+ */
+function RunReport({
+  report,
+  collectorOf,
+  period,
+}: {
+  report: BatchRun & { aborted: boolean };
+  collectorOf: (billId: string) => string;
+  period: string;
+}) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
-  const refusedConstraint = (c: string) => {
-    const key = `bo.refused.${c}`;
-    return t(key) === key ? c : t(key);
+  /** A ticket kind is a machine constant; print the sentence when there is one, the constant when there is not. */
+  const ticketLabel = (kind: string) => {
+    const key = `settle.ticket.${kind}`;
+    return t(key) === key ? kind : t(key);
   };
+  const stoppedReason = report.refused.find((r) => r.bill_id === report.stopped_at)?.constraint;
   return (
     <div className="mt-4" aria-live="polite">
+      {report.aborted ? (
+        <div className="mb-3">
+          <Problem
+            title={t('settle.batch.aborted')}
+            body={
+              report.stopped_at === null
+                ? t('settle.batch.aborted.body')
+                : `${t('settle.batch.aborted.at', { collector: collectorOf(report.stopped_at) })} ${t('settle.batch.aborted.body')}`
+            }
+          />
+        </div>
+      ) : null}
+
       {!report.preflight.ok ? (
         <Problem
           title={t('settle.preflight.refused')}
           body={t('settle.batch.refusedAtSend', { reason: report.preflight.refusal ?? '—' })}
         />
       ) : null}
+
       {report.sent.length > 0 ? (
         <ol className="divide-y divide-[var(--border)] text-[0.875rem]">
           {report.sent.map((s) => (
@@ -402,22 +444,75 @@ function RunReport({ report, collectorOf }: { report: BatchRun; collectorOf: (bi
           ))}
         </ol>
       ) : null}
-      {report.stopped_at !== null ? (
+
+      {!report.aborted && report.stopped_at !== null && stoppedReason !== undefined ? (
         <div className="mt-3">
           <Problem
             title={t('bo.refused')}
             body={t('settle.batch.stopped', {
               collector: collectorOf(report.stopped_at),
-              reason: refusedConstraint(
-                report.refused.find((r) => r.bill_id === report.stopped_at)?.constraint ?? 'payout_transfer_rejected',
-              ),
+              reason: t(constraintKey(stoppedReason)),
             })}
           />
         </div>
-      ) : report.preflight.ok ? (
+      ) : !report.aborted && report.stopped_at === null && report.preflight.ok ? (
         <p className="mt-3 text-[0.9375rem] font-semibold" role="status">
           {t('settle.batch.done', { n: count(report.sent.length, locale) })}
         </p>
+      ) : null}
+
+      {report.refused.length > 0 ? (
+        <Section className="mt-5" title={t('settle.batch.refused.title')}>
+          <p className="mb-2 text-[0.8125rem] leading-relaxed text-[var(--muted-foreground)]">
+            {t('settle.batch.refused.body')}
+          </p>
+          <ul className="divide-y divide-[var(--border)] text-[0.875rem]">
+            {report.refused.map((r) => (
+              <li key={r.bill_id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-1.5">
+                <Link
+                  to="/settle/bills/$billId"
+                  params={{ billId: r.bill_id }}
+                  search={{ period }}
+                  className="num font-semibold text-[var(--tech-600)]"
+                >
+                  {r.collector_ref}
+                </Link>
+                <span className="text-[var(--muted-foreground)]">{t(constraintKey(r.constraint))}</span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+
+      {report.tickets.length > 0 ? (
+        <Section className="mt-5" title={t('settle.batch.tickets.title')}>
+          <p className="mb-2 text-[0.8125rem] leading-relaxed text-[var(--muted-foreground)]">
+            {t('settle.batch.tickets.body')}
+          </p>
+          <ul className="divide-y divide-[var(--border)] text-[0.875rem]">
+            {report.tickets.map((k, i) => (
+              <li
+                key={`${k.kind}-${k.occurred_at}-${i}`}
+                className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-1.5"
+              >
+                <span className="font-semibold">{ticketLabel(k.kind)}</span>
+                <span className="num text-[var(--muted-foreground)]">
+                  {k.bill_id === null ? null : (
+                    <Link
+                      to="/settle/bills/$billId"
+                      params={{ billId: k.bill_id }}
+                      search={{ period }}
+                      className="mr-3 text-[var(--tech-600)]"
+                    >
+                      {collectorOf(k.bill_id)}
+                    </Link>
+                  )}
+                  {when(k.occurred_at, locale)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
       ) : null}
     </div>
   );
