@@ -815,6 +815,60 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     for (const key of e.keys) expect(h.store.writes.get(key)).toBe(1);
   });
 
+  it('records a transport failure for PLT-12 condition 6, and does not record a read-back mismatch as one', async () => {
+    const h = await harness();
+    const thrown = await h.submitEpisode('A', {
+      'left_part0001.mp4': randomBytes(8192),
+      'left_part0002.mp4': randomBytes(8192),
+    });
+
+    const failures = async () =>
+      (await h.d.execute(sql`
+        select target_id, target_table, operator_id, upload_device_id, upload_centre_id, actor_role, after
+          from audit_events where action = 'episode.cloud_transport_failed' order by id`)) as unknown as Record<
+        string,
+        unknown
+      >[];
+
+    // The link dies before a single object is stored. `upload.ts` catches it,
+    // reports it, and — this is the change — records it, because a failure
+    // that only ever existed in an HTTP response cannot be counted tomorrow.
+    h.store.failAfterWrites = 0;
+    const interrupted = await h.upload(h.A.batch);
+    expect(interrupted.json().episodes[0].error).toMatch(/injected interrupt/);
+    expect(await h.verificationOf(thrown.episodeId)).toBe('pending');
+
+    const recorded = await failures();
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toMatchObject({
+      target_id: thrown.episodeId,
+      target_table: 'episodes',
+      actor_role: 'operator',
+      operator_id: h.ids.operatorA,
+      upload_device_id: h.ids.machineA,
+      upload_centre_id: h.ids.centreA,
+    });
+    expect(JSON.stringify(recorded[0]!['after'])).toMatch(/injected interrupt/);
+
+    // A read-back MISMATCH is condition 7 and must not land here. It does not
+    // throw: the verdict is written, the episode goes to `failed`, and the
+    // count of transport failures does not move. Without this half, one
+    // damaged object would be reported twice under two different conditions.
+    h.store.failAfterWrites = null;
+    const bad = await h.submitEpisode('A', { 'left_part0001.mp4': randomBytes(4096) });
+    h.store.corruptOnPut.add(bad.keys[0]!);
+    const mismatched = await h.upload(h.A.batch);
+    expect(mismatched.statusCode, mismatched.body).toBe(200);
+    const byEpisode = Object.fromEntries(
+      mismatched.json().episodes.map((e: { episode_id: string }) => [e.episode_id, e]),
+    );
+    expect(byEpisode[bad.episodeId].verification_state).toBe('failed');
+    expect(byEpisode[thrown.episodeId].verification_state).toBe('verified');
+    h.store.corruptOnPut.clear();
+
+    expect(await failures()).toHaveLength(1);
+  });
+
   it('an episode whose verification fails after its review row exists cannot be claimed either', async () => {
     const h = await harness();
     const e = await h.submitEpisode('A');

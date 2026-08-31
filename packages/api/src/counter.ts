@@ -130,7 +130,8 @@ export async function claimForSession(
 
 /**
  * Registers the counter endpoints. `requireActor` is passed in rather than
- * re-derived so there is exactly one implementation of the both-tokens rule.
+ * re-derived so there is exactly one implementation of the both-tokens rule
+ * and of the heartbeat's one machine-only exception.
  */
 export function registerCounter(
   app: FastifyInstance,
@@ -141,10 +142,11 @@ export function registerCounter(
 ): void {
   const opts = { preHandler: requireActor };
   /**
-   * The counter, always. A reviewer session is refused by the route guard on
-   * every path in this file, so both halves are present by the time anything
-   * here runs — `CounterActor` is that guarantee written down rather than
-   * re-checked.
+   * The counter on every route that calls this helper. A reviewer session is
+   * refused by the route guard on every path in this file, and every audited
+   * route has both halves by the time it runs — `CounterActor` is that
+   * guarantee written down rather than re-checked. The heartbeat below reads
+   * the guard's separate `req.machine` when no operator is present.
    */
   const actorOf = (req: FastifyRequest): CounterActor => req.actor as CounterActor;
   /** Same shape as the back office's refusals, so the console has one way to read them. */
@@ -400,14 +402,15 @@ export function registerCounter(
 
   /** PRD §11.3.2 rule 8. Current state per machine, upserted — not audited: heartbeat cadence would bury PLT-08. */
   app.post('/upload-devices/:id/heartbeat', opts, async (req, reply) => {
-    const actor = actorOf(req);
+    const actor = req.actor as CounterActor | undefined;
+    const machine = actor?.machine ?? req.machine!;
     const target = (req.params as { id: string }).id;
-    if (target !== actor.machine.uploadDeviceId) {
+    if (target !== machine.uploadDeviceId) {
       return reply.code(403).send({ error: 'a machine may only report its own state' });
     }
     const b = (req.body ?? {}) as Record<string, unknown>;
     const row = {
-      uploadDeviceId: actor.machine.uploadDeviceId,
+      uploadDeviceId: machine.uploadDeviceId,
       networkState: typeof b['network_state'] === 'string' ? b['network_state'] : null,
       diskFreeBytes: typeof b['disk_free_bytes'] === 'number' ? b['disk_free_bytes'] : null,
       cardReaderState: typeof b['card_reader_state'] === 'string' ? b['card_reader_state'] : null,

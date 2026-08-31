@@ -16,7 +16,13 @@
 
 import { env, exit } from 'node:process';
 import { open, redact } from '@playerone/store';
-import { payoutOptionsFromEnv, buildApi, s3StoreFromEnv, signInCodeSenderFromEnv } from '../src/index.ts';
+import {
+  payoutOptionsFromEnv,
+  buildApi,
+  s3StoreFromEnv,
+  signInCodeSenderFromEnv,
+  startHeartbeat,
+} from '../src/index.ts';
 import { riskConfigFromEnv } from '../src/risk/config.ts';
 import { zaloPayClientFromEnv } from '../src/payout/zalopay/client.ts';
 
@@ -33,6 +39,9 @@ const databaseUrl = required('DATABASE_URL');
 const tokenSecret = required('PLAYERONE_TOKEN_SECRET');
 const host = env['HOST'] ?? '127.0.0.1';
 const port = Number(env['PORT'] ?? 8080);
+const mediaRoot = env['PLAYERONE_MEDIA_ROOT'];
+const machineIdentifier = env['PLAYERONE_MACHINE_IDENTIFIER'];
+const machineSecret = env['PLAYERONE_MACHINE_SECRET'];
 
 /**
  * `buildApi` refuses the two together — reviewer media on with the session
@@ -79,7 +88,7 @@ const app = buildApi({
    * console runs and the stream route answers 503 saying why, which is the
    * right symptom for a machine that has not been pointed at its storage yet.
    */
-  mediaRoot: env['PLAYERONE_MEDIA_ROOT'],
+  mediaRoot,
   currency: env['PLAYERONE_CURRENCY'],
   /**
    * SET-07's cycle. Weekly is `[ASSUMED]` in the brief's §13.2 rather than
@@ -123,8 +132,10 @@ const app = buildApi({
   risk: riskConfigFromEnv(env),
 });
 
+let stopHeartbeat: () => void = () => {};
 const shutdown = async (signal: string) => {
   console.log(`${signal}: closing`);
+  stopHeartbeat();
   await app.close();
   await db.close();
   exit(0);
@@ -133,5 +144,27 @@ process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
 await app.listen({ host, port });
+/**
+ * This entrypoint serves both upload-centre machines and back-office hosts.
+ * Only a centre has all three values, so a back-office process sends nothing;
+ * a centre sends one beat immediately and owns the timer until shutdown. The
+ * scheduler deliberately lives here rather than in `buildApi`, whose embedded
+ * and test callers must never acquire a background timer merely by building an
+ * app.
+ */
+if (
+  machineIdentifier !== undefined &&
+  machineIdentifier !== '' &&
+  machineSecret !== undefined &&
+  machineSecret !== '' &&
+  mediaRoot !== undefined &&
+  mediaRoot !== ''
+) {
+  stopHeartbeat = startHeartbeat(app, db, {
+    machineIdentifier,
+    secret: machineSecret,
+    mediaRoot,
+  });
+}
 console.log(`playerone api on http://${host}:${port}  (${redact(databaseUrl)})`);
 console.log(`review console: http://${host}:${port}/review`);

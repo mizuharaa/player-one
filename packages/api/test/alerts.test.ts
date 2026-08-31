@@ -34,25 +34,21 @@ describe.skipIf(!hasDb())('operational alerts', () => {
   const byId = async (): Promise<Record<string, Alert>> =>
     Object.fromEntries((await readAlerts(await db())).map((a) => [a.id, a]));
 
-  it('answers all nine in the PRD\'s order, and names the three nothing records', async () => {
+  it('answers all nine in the PRD\'s order, and names the two nothing records', async () => {
     const rows = await readAlerts(await db());
     expect(rows.map((a) => a.id)).toEqual(ORDER);
 
     // An empty platform has nothing wrong with it, except what it cannot see.
-    // A silent zero there would be a lie: three conditions nothing records at
-    // all, and two more that read a heartbeat no machine has sent yet.
-    const blind = new Set([
-      'cloud_write_failures',
-      'review_cannot_read_cloud',
-      'cross_border_timeouts',
-    ]);
+    // Two conditions still have no source at all and say so rather than
+    // reading a reassuring zero. The other seven now read from rows: on an
+    // empty platform there are no active machines to be quiet about and no
+    // recorded transport failure, so their zeroes are honest.
+    const blind = new Set(['review_cannot_read_cloud', 'cross_border_timeouts']);
     for (const a of rows) {
       if (blind.has(a.id)) {
         expect(a, a.id).toMatchObject({ state: 'no_signal', observed: null, threshold: null });
-      } else if (a.id.startsWith('upload_centres') || a.id.startsWith('upload_devices')) {
-        expect(a, a.id).toMatchObject({ state: 'no_signal', observed: null });
       } else {
-        expect(a.state, a.id).toBe('ok');
+        expect(a, a.id).toMatchObject({ state: 'ok', observed: 0 });
       }
     }
   });
@@ -144,38 +140,97 @@ describe.skipIf(!hasDb())('operational alerts', () => {
     expect((await byId())['devices_offline']).toMatchObject({ state: 'ok', observed: 0 });
   });
 
-  it('3 and 4: say no_signal until a machine reports, then count quiet, backed-up and full ones', async () => {
+  it('3 and 4: an active machine that has never reported is offline, then quiet, backed-up and full ones count', async () => {
     const d = await db();
-    const centre = uid();
+    // Two centres, per the fixture rule: "machines platform-wide" has to be
+    // measured across more than one, or a per-centre mistake reads correct.
+    const centreA = uid();
+    const centreB = uid();
     const hash = await hashCredential('pw');
     const machines = [uid(), uid(), uid(), uid()];
-    await d.execute(sql`insert into upload_centres (id, region, name, status) values (${centre}, 'HCM', 'A', 'active')`);
+    await d.execute(sql`insert into upload_centres (id, region, name, status) values
+      (${centreA}, 'HCM', 'A', 'active'), (${centreB}, 'HN', 'B', 'active')`);
     for (const [i, id] of machines.entries()) {
       await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash)
-        values (${id}, ${centre}, ${`M${i}`}, 'active', ${hash})`);
+        values (${id}, ${i < 2 ? centreA : centreB}, ${`M${i}`}, 'active', ${hash})`);
     }
-    // Four active machines and not one heartbeat: nothing is known, and the
-    // board says so rather than reporting four healthy centres.
+
+    // Four active machines and not one heartbeat. A machine the platform
+    // cannot see IS the condition: the centre process beats at boot, so a
+    // configured machine leaves this count as soon as it starts, and what is
+    // left is a machine nobody configured. Counting these as healthy is what
+    // would make a centre dark since installation unable to fire at all.
     let now = await byId();
-    expect(now['upload_centres_offline_or_backlogged']).toMatchObject({ state: 'no_signal', observed: null });
-    expect(now['upload_devices_low_disk']).toMatchObject({ state: 'no_signal', observed: null });
+    expect(now['upload_centres_offline_or_backlogged']).toMatchObject({ state: 'firing', observed: 4 });
+    // No machine has reported a disk figure, so none is known to be low. That
+    // is condition 3's sentence to say, not this one's.
+    expect(now['upload_devices_low_disk']).toMatchObject({ state: 'ok', observed: 0 });
 
     const beat = (id: string, ago: string, queue: number, freeGb: number) =>
       d.execute(sql`insert into upload_device_status
         (upload_device_id, last_heartbeat_at, queue_depth, disk_free_bytes)
         values (${id}, now() - ${sql.raw(`interval '${ago}'`)}, ${queue}, ${freeGb * 1_000_000_000})`);
 
-    await beat(machines[0]!, '1 minute', 2, 500); // healthy
+    for (const id of machines) await beat(id, '1 minute', 2, 500); // all healthy
     now = await byId();
     expect(now['upload_centres_offline_or_backlogged']).toMatchObject({ state: 'ok', observed: 0 });
     expect(now['upload_devices_low_disk']).toMatchObject({ state: 'ok', observed: 0 });
 
-    await beat(machines[1]!, '2 hours', 0, 500); // gone quiet
-    await beat(machines[2]!, '1 minute', 90, 500); // backed up
-    await beat(machines[3]!, '1 minute', 0, 10); // nearly full
+    await d.execute(sql`update upload_device_status
+      set last_heartbeat_at = now() - interval '2 hours' where upload_device_id = ${machines[1]!}`);
+    await d.execute(sql`update upload_device_status
+      set queue_depth = 90 where upload_device_id = ${machines[2]!}`);
+    await d.execute(sql`update upload_device_status
+      set disk_free_bytes = ${10 * 1_000_000_000} where upload_device_id = ${machines[3]!}`);
     now = await byId();
     expect(now['upload_centres_offline_or_backlogged']).toMatchObject({ state: 'firing', observed: 2 });
     expect(now['upload_devices_low_disk']).toMatchObject({ state: 'firing', observed: 1 });
+
+    // A retired machine's last reading must not stay red for ever. It is
+    // neither offline nor low on disk: it is gone.
+    const retired = uid();
+    await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash)
+      values (${retired}, ${centreB}, 'M-OLD', 'retired', ${hash})`);
+    await beat(retired, '30 days', 0, 1);
+    now = await byId();
+    expect(now['upload_centres_offline_or_backlogged']).toMatchObject({ state: 'firing', observed: 2 });
+    expect(now['upload_devices_low_disk']).toMatchObject({ state: 'firing', observed: 1 });
+  });
+
+  it('6: counts recorded cloud transport failures from the last day, not older ones', async () => {
+    const d = await db();
+    const centre = uid();
+    const machine = uid();
+    const operator = uid();
+    const hash = await hashCredential('pw');
+    await d.execute(sql`insert into upload_centres (id, region, name, status) values (${centre}, 'HCM', 'A', 'active')`);
+    await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash)
+      values (${machine}, ${centre}, 'M1', 'active', ${hash})`);
+    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash)
+      values (${operator}, ${centre}, 'op1', 'centre_operator', ${hash})`);
+
+    // Nothing recorded yet, and that is now an honest zero rather than
+    // `no_signal`: upload.ts records on the only path that produces the fact.
+    expect((await byId())['cloud_write_failures']).toMatchObject({
+      state: 'ok',
+      observed: 0,
+      threshold: 3,
+    });
+
+    const failure = (ago: string) =>
+      d.execute(sql`insert into audit_events
+        (occurred_at, action, target_table, target_id, actor_role, operator_id, upload_device_id, upload_centre_id, after)
+        values (now() - ${sql.raw(`interval '${ago}'`)}, 'episode.cloud_transport_failed', 'episodes',
+                ${uid()}, 'operator', ${operator}, ${machine}, ${centre}, '{"error":"link down"}'::jsonb)`);
+
+    await failure('1 hour');
+    await failure('2 hours');
+    // Yesterday's outage is not this morning's.
+    await failure('30 hours');
+    expect((await byId())['cloud_write_failures']).toMatchObject({ state: 'ok', observed: 2, threshold: 3 });
+
+    await failure('3 hours');
+    expect((await byId())['cloud_write_failures']).toMatchObject({ state: 'firing', observed: 3 });
   });
 
   it('5: fires on the third failed card import of the day, not the first', async () => {

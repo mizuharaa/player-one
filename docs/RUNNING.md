@@ -132,6 +132,12 @@ token. Seed a centre, a machine and an operator with `credential_hash` set from
 `hashCredential()`, then `POST /auth/machine` and `POST /auth/operator`.
 `packages/api/test/counter.test.ts` is the shortest worked example.
 
+The one exception is `POST /upload-devices/:id/heartbeat`. The upload-centre
+process sends current disk and queue state when no clerk may be signed in, so
+that route accepts its machine token alone and only for the device id in that
+token. It writes no audit row and changes no counter data. Every audited
+mutation still requires both credentials.
+
 Two more rules on those two credentials, both read from the row and not from the
 token, so a change bites on the next request rather than at the twelve-hour
 expiry:
@@ -154,6 +160,8 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 | `DATABASE_URL` | required | A database on another machine must say whether the link is encrypted — `?sslmode=require` or `?sslmode=disable` — or `open()` refuses to start. See "Encryption, in transit and at rest" below. |
 | `PLAYERONE_TOKEN_SECRET` | required | Fails closed. A secret invented at boot would sign tokens that stop verifying on the next restart, which shows up as reviewers being randomly signed out. |
 | `PLAYERONE_MEDIA_ROOT` | | The directory holding the imported `ego_*` folders. Without it the console runs and the stream route answers 503 saying so. |
+| `PLAYERONE_MACHINE_IDENTIFIER` | | The fixed upload device this process runs on. When this, `PLAYERONE_MACHINE_SECRET` and `PLAYERONE_MEDIA_ROOT` are all set, the process sends its heartbeat once at boot and every minute. A back-office host leaves them unset and sends nothing. |
+| `PLAYERONE_MACHINE_SECRET` | | The credential for `PLAYERONE_MACHINE_IDENTIFIER`, used only to obtain the machine token for that heartbeat. Set both machine variables, or neither. |
 | `PLAYERONE_CURRENCY` | `VND` | What `tasks.unit_price` is denominated in. Configuration because there is no currency column — see the gaps in `docs/review.md`. |
 | `PLAYERONE_SETTLEMENT_CYCLE_DAYS` | `7` | SET-07's settlement cycle. Weekly is `[ASSUMED]` in the brief's §13.2 rather than decided, so it is a setting and not a constant. It only supplies the *end* of a period whose start the caller gave. |
 | `PLAYERONE_SECURE_COOKIES` | off | Turn on wherever there is TLS. Off by default because a `Secure` cookie is never sent over plain HTTP and the symptom is a sign-in that silently does nothing. It is also this repo's single "there is TLS in front of this process" signal: with it on, the API sends HSTS, and `PLAYERONE_REVIEWER_MEDIA=1` is allowed. |
@@ -411,18 +419,32 @@ at.
 ```json
 { "at": "2026-08-29T…", "alerts": [
   { "id": "upload_failures", "state": "ok", "observed": 0, "threshold": 3 },
-  { "id": "cloud_write_failures", "state": "no_signal", "observed": null, "threshold": null } ] }
+  { "id": "cloud_write_failures", "state": "ok", "observed": 0, "threshold": 3 } ] }
 ```
 
 `state` is `firing` when `observed >= threshold`, `ok` when it is not, and
-`no_signal` when **nothing in this system records the fact**. Three of the nine
+`no_signal` when **nothing in this system records the fact**. Two of the nine
 are `no_signal` today and say so rather than reading a reassuring zero:
-`cloud_write_failures` (a failed cloud PUT is returned in the HTTP response and
-never stored), `review_cannot_read_cloud` (the review lane reads local media —
-ADR 0001 — so there is no cloud read to fail) and `cross_border_timeouts`
-(nothing times the link). Two more, `upload_centres_offline_or_backlogged` and
-`upload_devices_low_disk`, read the §11.3.2 rule 8 heartbeat and are
-`no_signal` until some machine sends one; no client sends it yet.
+`review_cannot_read_cloud` (the review lane reads local media — ADR 0001 — so
+there is no cloud read to fail) and `cross_border_timeouts` (nothing times the
+link).
+
+The other seven read rows. `cloud_write_failures` counts
+`episode.cloud_transport_failed` audit events from the last day — an upload
+centre's cloud leg that threw before it could record a verdict. A read-back
+mismatch is not one of those: it does not throw, and it is
+`checksum_failures`. A collector's Path A delivery is not one either; an
+unlanded one sits in `collector_uploads` and is `upload_failures`.
+
+`upload_centres_offline_or_backlogged` and `upload_devices_low_disk` read the
+§11.3.2 rule 8 heartbeat, which the upload-centre process now sends (see
+`PLAYERONE_MACHINE_IDENTIFIER` above). **An active `upload_devices` row with no
+heartbeat counts as offline.** That is deliberate: the sender beats at boot, so
+a configured machine leaves the count as soon as its process starts, and
+treating a never-reporting machine as healthy is what would stop a centre that
+has been dark since installation from ever firing the alert. A machine that
+reports nothing has no disk figure, so it is condition 3's and not condition
+4's; a `retired` machine is neither.
 
 The thresholds are literals in `packages/api/src/alerts.ts` — the PRD gives no
 numbers, and a setting invented before the first week of real data is a guess

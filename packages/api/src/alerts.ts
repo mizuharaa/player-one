@@ -22,15 +22,11 @@ import type { Db } from '@playerone/store';
  * those would be a second place for the same fact to live. What is missing for
  * a real deployment is written down at the end of this comment.
  *
- * **Three of the nine cannot fire, and say so rather than reading zero.** A
+ * **Two of the nine cannot fire, and say so rather than reading zero.** A
  * condition nothing records is not a condition that is not happening, and a
- * board showing six greens and three silent zeroes is worse than one that names
- * what it cannot see. Those three answer `no_signal`:
+ * board showing seven greens and two silent zeroes is worse than one that names
+ * what it cannot see. Those two answer `no_signal`:
  *
- *   - **6, cloud storage write failures.** `upload.ts` catches a failed `put`
- *     per episode and returns the message in the HTTP response. Nothing is
- *     stored, so nothing can be counted. It needs a persisted transport-attempt
- *     row before it can fire.
  *   - **8, review service unable to read cloud storage.** The review lane reads
  *     the upload centre's local media (ADR 0001), so there is no cloud read to
  *     fail. It becomes measurable when `REVIEW_VERIFICATION_GATE=cloud` retires
@@ -46,7 +42,7 @@ import type { Db } from '@playerone/store';
  * here when the pilot says what normal looks like.
  *
  * ponytail: a derived query and one route. Before real money at scale this
- * needs the three missing signals above, a scheduled evaluation (nothing polls
+ * needs the two missing signals above, a scheduled evaluation (nothing polls
  * this), somewhere for a firing condition to go at 3am, and per-centre
  * breakdowns — this counts machines platform-wide and an operator at one centre
  * sees another centre's number.
@@ -100,27 +96,28 @@ const ALERTS = sql`
                           where e.device_serial = d.hardware_serial),
                         d.bound_at) < now() - interval '7 days')
       union all
-      -- 3 and 4 read upload_device_status, which the counter's heartbeat route
-      -- upserts (PRD §11.3.2 rule 8). No client sends that heartbeat yet, so a
-      -- machine that has never reported is NOT counted as quiet — otherwise
-      -- every centre sits permanently red and the board is ignored. When the
-      -- centre client ships, the join becomes a left join and a missing row
-      -- starts meaning what it says. Until any machine reports at all there is
-      -- no signal here either.
+      -- 3 and 4 read upload_device_status, which the centre process posts to
+      -- the counter's heartbeat route (PRD §11.3.2 rule 8). A missing row on an
+      -- active machine now means exactly what condition 3 says: the platform
+      -- cannot see that machine. The sender beats immediately at boot, so a
+      -- configured centre leaves this count as soon as its process starts.
       select 3, 'upload_centres_offline_or_backlogged', 1, (
-        select case when not exists (select 1 from upload_device_status) then null else (
-          select count(*)::int from upload_devices ud
-            join upload_device_status s on s.upload_device_id = ud.id
-           where ud.status = 'active'
-             and (s.last_heartbeat_at < now() - interval '15 minutes'
-                  or s.queue_depth >= 50)) end)
+        select count(*)::int from upload_devices ud
+          left join upload_device_status s on s.upload_device_id = ud.id
+         where ud.status = 'active'
+           and (s.last_heartbeat_at is null
+                or s.last_heartbeat_at < now() - interval '15 minutes'
+                or s.queue_depth >= 50))
       union all
       -- 4. 50 GB is under two of the brief's largest sessions, so a machine
-      -- below it cannot take another card.
+      -- below it cannot take another card. A retired machine's last reading
+      -- must not stay red forever, while an active machine with no disk reading
+      -- belongs to condition 3: there is no figure here to judge.
       select 4, 'upload_devices_low_disk', 1, (
-        select case when not exists (select 1 from upload_device_status) then null else (
-          select count(*)::int from upload_device_status
-           where disk_free_bytes < 50000000000) end)
+        select count(*)::int from upload_device_status s
+          join upload_devices ud on ud.id = s.upload_device_id
+         where ud.status = 'active'
+           and s.disk_free_bytes < 50000000000)
       union all
       -- 5. A card import the operator's client marked failed. Three in a day at
       -- one counter is a reader or a card, not one bad card.
@@ -129,8 +126,15 @@ const ALERTS = sql`
          where batch_status = 'failed'
            and import_started_at > now() - interval '24 hours')
       union all
-      -- 6. Nothing records a failed cloud write. See the note above.
-      select 6, 'cloud_write_failures', null, null
+      -- 6. Episodes whose upload-centre cloud leg threw before it could record
+      -- a verification verdict. A read-back mismatch does not throw and is
+      -- condition 7; a phone's Path A delivery lands in collector_uploads and
+      -- is condition 1. Zero therefore means no centre transport failed in the
+      -- last day, not that every cloud path platform-wide was observed.
+      select 6, 'cloud_write_failures', 3, (
+        select count(*)::int from audit_events
+         where action = 'episode.cloud_transport_failed'
+           and occurred_at > now() - interval '24 hours')
       union all
       -- 7. One episode whose bytes did not read back is already a copy known to
       -- be bad: it blocks review and blocks the cache gate, so it fires at one
