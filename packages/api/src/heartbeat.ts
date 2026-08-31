@@ -17,6 +17,18 @@ export type HeartbeatConfig = {
   secret: string;
   mediaRoot: string;
   intervalMs?: number;
+  /**
+   * The filesystem reading, injectable for tests only. Production leaves it
+   * unset and gets `node:fs/promises`.
+   *
+   * It exists because free space is not a constant: a test that read the same
+   * disk a second time to check the sender's figure compared two different
+   * moments and failed by 24 MB on a machine running the rest of the suite.
+   * The seam lets a test state the bytes and assert the exact arithmetic —
+   * `bavail * bsize`, available blocks and not free ones, because the reserved
+   * blocks are not space this machine can write a card into.
+   */
+  statfs?: (path: string) => Promise<{ bsize: number; bavail: number }>;
 };
 
 const DEFAULT_INTERVAL_MS = 60_000;
@@ -81,7 +93,7 @@ export function heartbeatSender(
   };
 
   const measurements = async (uploadDeviceId: string) => {
-    const filesystem = await statfs(cfg.mediaRoot);
+    const filesystem = await (cfg.statfs ?? statfs)(cfg.mediaRoot);
     /**
      * These are cards imported, or still importing, whose cloud leg has not
      * finished. `verified`, `closed` and `failed` batches are not waiting to be
