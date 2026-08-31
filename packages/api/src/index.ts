@@ -6,6 +6,12 @@ import { auditLogin } from './audit.ts';
 import { registerBackOffice } from './backoffice.ts';
 
 export { readAlerts, type Alert, type AlertState } from './alerts.ts';
+export {
+  heartbeatSender,
+  startHeartbeat,
+  type HeartbeatApp,
+  type HeartbeatConfig,
+} from './heartbeat.ts';
 export { API_REFUSALS, REFUSALS } from './backoffice.ts';
 export { COUNTER_REFUSALS } from './counter.ts';
 export {
@@ -42,7 +48,12 @@ import { registerUpload } from './upload.ts';
 import type { DirectUploadStore, ObjectStore, UploadProgress } from './upload-worker.ts';
 import { authenticateMachine, authenticateOperator } from './session.ts';
 import type { Actor, CounterActor } from './actor.ts';
-import { signToken, verifyToken, type CollectorClaims } from './credentials.ts';
+import {
+  signToken,
+  verifyToken,
+  type CollectorClaims,
+  type MachineClaims,
+} from './credentials.ts';
 
 export * from './credentials.ts';
 export * from './audit.ts';
@@ -106,10 +117,21 @@ export type { RiskReader, RiskSummary, Flag } from './payout/domain/risk.ts';
  * trail unenforceable. Console → here → DB, including for reads.
  */
 
-/** Both tokens on every mutation: the machine proves where, the operator proves who. */
+/** Both tokens on every audited mutation: the machine proves where, the operator proves who. */
 declare module 'fastify' {
   interface FastifyRequest {
     actor?: Actor;
+    /**
+     * The machine making an unattended heartbeat, and deliberately not a
+     * third case of `Actor`.
+     *
+     * A heartbeat is current state, not an audited change, and there is no
+     * person behind the interval. Making it an actor would either invent an
+     * operator or produce the incomplete operator attribution shape that
+     * `audit_events_attributed_check` exists to refuse. Every audited counter
+     * route still receives the full `CounterActor` in `actor`.
+     */
+    machine?: MachineClaims;
     /**
      * The signed-in collector, and deliberately NOT a third case of `Actor`.
      *
@@ -267,6 +289,8 @@ const ME_SCOPE = '/api/me/';
  * fleet, no data.
  */
 const IDENTITY_ROUTE = '/whoami';
+/** The one route an unattended upload-centre machine may reach on its own. */
+const HEARTBEAT_ROUTE = '/upload-devices/:id/heartbeat';
 /**
  * What a collector session may reach, and what nobody else may.
  *
@@ -435,7 +459,9 @@ export function buildApi({
 
   /**
    * PRD §8.3.2 rule 1: "Upload center operators must log in to fixed upload
-   * devices before importing data." A machine token alone can do nothing.
+   * devices before importing data." A machine token alone can do nothing
+   * except report its own heartbeat below; every audited change still needs a
+   * person.
    *
    * Both tokens must also name the SAME centre. Two valid tokens from different
    * centres is either a misconfigured machine or someone splicing credentials;
@@ -543,6 +569,24 @@ export function buildApi({
 
     const machine = verifyToken(tokenSecret, bearer(req, 'x-machine-token', MACHINE_COOKIE));
     if (machine?.kind !== 'machine') return reply.code(401).send({ error: 'machine token required' });
+    /**
+     * PRD §11.3.2 rule 8 is the one fact a machine reports about itself, and
+     * the only route an unattended centre process has to reach. Requiring an
+     * operator would stop the signal whenever the clerk signs out and make the
+     * offline alert fire every night. This exception is after the collector
+     * and reviewer branches on purpose, so their central scope refusals keep
+     * winning, and it matches the registered route pattern rather than a URL a
+     * caller composed.
+     *
+     * A stolen machine secret can therefore keep the disk and queue alerts
+     * quiet for this one machine. The exception is bounded to an unaudited
+     * upsert for the device id in the same token; it reads nothing and changes
+     * no counter data.
+     */
+    if (route === HEARTBEAT_ROUTE) {
+      req.machine = machine;
+      return;
+    }
     if (person?.kind !== 'operator') return reply.code(401).send({ error: 'operator token required' });
     if (machine.uploadCentreId !== person.uploadCentreId) {
       return reply.code(403).send({ error: 'operator and machine belong to different centres' });

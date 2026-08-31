@@ -282,6 +282,23 @@ export function registerUpload(
         // A later re-run resumes: completed objects answer 'kept', the one in
         // flight is re-sent. Nothing is verified for this episode yet, so
         // nothing downstream can act on the partial upload.
+        //
+        // There is no domain row to change: the episode correctly stays in its
+        // previous verification state. `mutate` still owns this fact because
+        // its audit row must carry the operator, machine and centre together;
+        // returning `true` is the existing audit-only write shape used for a
+        // fact with no separate row behind it.
+        await mutate(
+          db,
+          actor,
+          {
+            action: 'episode.cloud_transport_failed',
+            targetTable: 'episodes',
+            targetId: row.episodeId,
+            after: { ingest_id: row.ingestId, error: (err as Error).message },
+          },
+          async () => true,
+        );
         results.push({ episode_id: row.episodeId, error: (err as Error).message });
         continue;
       }
