@@ -154,6 +154,12 @@ export class ApiError extends Error {
      * is not a refusal name and must not be looked up as one.
      */
     readonly constraint?: string,
+    /**
+     * The parsed error body, when the response had one. A 500 that carries a
+     * report — `payout_batch_aborted` is the only one today — is still an
+     * error, and the report inside it is still the record of what was sent.
+     */
+    readonly body?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -206,20 +212,22 @@ async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
     let message = res.statusText;
     let detail: unknown;
     let constraint: string | undefined;
+    let body: unknown;
     try {
-      const body = (await res.json()) as { error?: string; detail?: unknown; constraint?: string };
-      if (body.error) message = body.error;
+      body = await res.json();
+      const parsed = body as { error?: string; detail?: unknown; constraint?: string };
+      if (parsed.error) message = parsed.error;
       /**
        * A back-office 409 carries the constraint that refused it rather than a
        * sentence, so the console can say why in the reader's own language
        * instead of echoing an English string the server chose.
        */
-      detail = body.detail ?? body.constraint;
-      constraint = body.constraint;
+      detail = parsed.detail ?? parsed.constraint;
+      constraint = parsed.constraint;
     } catch {
       /* A non-JSON error body is still an error; the status carries it. */
     }
-    throw new ApiError(res.status, message, detail, constraint);
+    throw new ApiError(res.status, message, detail, constraint, body);
   }
 
   return (await res.json()) as T;
@@ -450,6 +458,50 @@ export interface SettleBill {
   generated_at: string;
   lines: number;
   paid: boolean;
+  exceptions: number;
+}
+
+export interface GenerateRollover {
+  settlements: number;
+  collector_refs: string[];
+}
+
+export interface GenerateResult {
+  period_start: string;
+  period_end: string;
+  cycle_days: number;
+  created: number;
+  not_payable: number;
+  deferred_to_next_period: GenerateRollover;
+  skipped: GenerateRollover;
+  /** Parked settlements in the window, on a bill or not. */
+  exception: number;
+  bills: SettleBill[];
+}
+
+export interface SettleLine {
+  settlement_id: string;
+  episode_id: string;
+  review_id: string;
+  task: string;
+  unit_price: Decimal;
+  effective_minutes: Decimal;
+  amount: Decimal;
+  settlement_state: string;
+  reviewed_at: string | null;
+}
+
+export interface SettleBillDetail {
+  id: string;
+  collector_ref: string;
+  period_start: string;
+  period_end: string;
+  currency: string;
+  total: Decimal;
+  generated_at: string;
+  paid: boolean;
+  exceptions: number;
+  lines: SettleLine[];
 }
 
 export type PayoutMethod = 'WALLET' | 'BANK_ACCOUNT' | 'BANK_CARD';
@@ -481,7 +533,8 @@ export type PayoutIssue =
   | 'over_cap'
   | 'risk_hold'
   | 'attempt_open'
-  | 'already_paid';
+  | 'already_paid'
+  | 'line_in_exception';
 
 export type RiskBand = 'clear' | 'notice' | 'review' | 'hold';
 export type RiskSeverity = 'info' | 'notice' | 'review' | 'hold';
@@ -675,10 +728,11 @@ export const settle = {
     ),
   /** SET-07: bill every pending settlement of the period. Idempotent on the server. */
   generate: (periodStart: string) =>
-    call<{ created: number; not_payable: number; bills: SettleBill[] }>('/api/settle/bills', {
+    call<GenerateResult>('/api/settle/bills', {
       method: 'POST',
       body: JSON.stringify({ period_start: periodStart }),
     }),
+  bill: (id: string) => call<SettleBillDetail>(`/api/settle/bills/${id}`),
   /** The per-line CSV (SET-06). A plain link: the cookies go with it. */
   linesCsvUrl: (periodStart: string) =>
     `/api/settle/export.csv?period_start=${encodeURIComponent(periodStart)}`,
@@ -703,8 +757,35 @@ export const payout = {
    * refused 409 `payout_batch_running`). A server without it answers 404 and
    * the screen says so.
    */
-  runBatch: (periodStart: string) =>
-    call<BatchRun>(`${batchPath(periodStart)}/run`, { method: 'POST' }),
+  runBatch: async (
+    periodStart: string,
+  ): Promise<(BatchRun & { aborted: boolean }) | null> => {
+    try {
+      const run = await call<BatchRun>(`${batchPath(periodStart)}/run`, { method: 'POST' });
+      if (run === null) return null;
+      return { ...run, aborted: false };
+    } catch (err) {
+      /**
+       * A run may throw after earlier transfers committed. Only the named
+       * aborted response is turned back into a report, and only when every
+       * report collection is present; every other error keeps its old path.
+       */
+      const body =
+        err instanceof ApiError && err.status === 500
+          ? (err.body as Partial<BatchRun> & { error?: string } | undefined)
+          : undefined;
+      if (
+        body?.error === 'payout_batch_aborted' &&
+        Array.isArray(body.sent) &&
+        Array.isArray(body.refused) &&
+        Array.isArray(body.tickets) &&
+        body.preflight !== undefined
+      ) {
+        return { ...(body as BatchRun), aborted: true };
+      }
+      throw err;
+    }
+  },
   /**
    * The manual rail. The reference is the transfer the operator made; the
    * amount is retyped by the operator and checked by the database against
