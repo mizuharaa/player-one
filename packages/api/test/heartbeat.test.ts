@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { statfs } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildApi,
   hashCredential,
@@ -116,10 +115,19 @@ describe.skipIf(!hasDb())('the upload centre heartbeat sender', () => {
 
   const config = { machineIdentifier: 'HCM-01', secret: 'pw', mediaRoot: tmpdir() };
 
+  /**
+   * A disk whose figures do not move. Reading the real filesystem twice — once
+   * in the sender, once in the assertion — compares two different moments, and
+   * on a machine running the rest of the suite in parallel those differed by
+   * 24 MB. The real reading is still exercised, by the last test in this file.
+   */
+  const fixedDisk = { bsize: 4096, bavail: 12_500_000 };
+  const statfsStub = { statfs: async () => fixedDisk };
+
   it('signs in once, then posts this machine\'s free disk and its own queue depth', async () => {
     const { ids } = await seed();
     const f = fakeApp();
-    const beat = heartbeatSender(f.app, await db(), config);
+    const beat = heartbeatSender(f.app, await db(), { ...config, ...statfsStub });
 
     expect(await beat()).toBe(true);
     expect(f.signIns()).toHaveLength(1);
@@ -131,9 +139,10 @@ describe.skipIf(!hasDb())('the upload centre heartbeat sender', () => {
     expect(first!.url).toBe(`/upload-devices/${ids.machineA}/heartbeat`);
     expect(first!.headers).toEqual({ 'x-machine-token': 'Bearer t1' });
 
+    // Available blocks times block size, exactly. `bavail` and not `bfree`:
+    // the reserved blocks are not space a card can be written into.
     const body = first!.payload as { disk_free_bytes: number; queue_depth: number };
-    const fs = await statfs(config.mediaRoot);
-    expect(body.disk_free_bytes).toBe(fs.bavail * fs.bsize);
+    expect(body.disk_free_bytes).toBe(fixedDisk.bavail * fixedDisk.bsize);
     // Three of machine A's five batches are still waiting on the cloud leg, and
     // machine B's two are not machine A's problem.
     expect(body.queue_depth).toBe(3);
@@ -173,25 +182,52 @@ describe.skipIf(!hasDb())('the upload centre heartbeat sender', () => {
     expect(f.sent).toHaveLength(0);
   });
 
-  it('beats immediately at boot, then on the interval, and stops when told', async () => {
+  it('beats immediately at boot, then once per interval, and stops when told', async () => {
     await seed();
     const f = fakeApp();
-    const stop = startHeartbeat(f.app, await db(), { ...config, intervalMs: 20 });
-    try {
-      // Immediately, not after the first interval: a machine that waited a
-      // minute to say anything would be counted offline for that minute.
-      const until = Date.now() + 5000;
-      while (f.beats().length < 1 && Date.now() < until) await new Promise((r) => setTimeout(r, 5));
-      expect(f.beats().length).toBeGreaterThanOrEqual(1);
+    const d = await db();
 
-      while (f.beats().length < 3 && Date.now() < until) await new Promise((r) => setTimeout(r, 5));
-      expect(f.beats().length).toBeGreaterThanOrEqual(3);
-    } finally {
+    /**
+     * Only `setInterval` is faked, so the clock advances exactly when this test
+     * says and no faster — a real 20 ms interval under a loaded parallel suite
+     * delivered seven ticks where five were expected. `setTimeout` stays real
+     * on purpose: each beat awaits two database round trips, and settling those
+     * needs the event loop to actually turn, which advancing a fake clock does
+     * not do.
+     */
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    /** Waits for beats already scheduled to finish. No new tick can arrive meanwhile. */
+    const settle = async (expected: number) => {
+      const until = Date.now() + 10_000;
+      while (f.beats().length < expected && Date.now() < until) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+    };
+    try {
+      const stop = startHeartbeat(f.app, d, { ...config, ...statfsStub, intervalMs: 60_000 });
+
+      // Before one millisecond of interval has passed. A machine that waited a
+      // whole minute to say anything would be counted offline for that minute.
+      await settle(1);
+      expect(f.beats()).toHaveLength(1);
+
+      vi.advanceTimersByTime(60_000);
+      await settle(2);
+      expect(f.beats()).toHaveLength(2);
+
+      vi.advanceTimersByTime(120_000);
+      await settle(4);
+      expect(f.beats()).toHaveLength(4);
+
+      // Ten more intervals after the stop. Nothing may arrive, so this waits a
+      // fixed moment rather than for a count that must never be reached.
       stop();
+      vi.advanceTimersByTime(600_000);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(f.beats()).toHaveLength(4);
+    } finally {
+      vi.useRealTimers();
     }
-    const afterStop = f.beats().length;
-    await new Promise((r) => setTimeout(r, 100));
-    expect(f.beats().length).toBe(afterStop);
   });
 
   it('is accepted by the real route on a machine token alone', async () => {
