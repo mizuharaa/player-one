@@ -133,7 +133,11 @@ describe.skipIf(!hasDb())('the upload centre heartbeat sender', () => {
 
     const body = first!.payload as { disk_free_bytes: number; queue_depth: number };
     const fs = await statfs(config.mediaRoot);
-    expect(body.disk_free_bytes).toBe(fs.bavail * fs.bsize);
+    // The same volume, read a moment later. Not `toBe`: `mediaRoot` is the temp
+    // directory, a full parallel suite writes to it between the two reads, and
+    // the difference was measured at 512 KB on a red gate here. Half a percent
+    // of a real volume is still far tighter than any fabricated number.
+    expect(body.disk_free_bytes / (fs.bavail * fs.bsize)).toBeCloseTo(1, 2);
     // Three of machine A's five batches are still waiting on the cloud leg, and
     // machine B's two are not machine A's problem.
     expect(body.queue_depth).toBe(3);

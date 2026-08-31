@@ -223,10 +223,18 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
     const noZalo = await api(async () => {
       throw new ZnsDeliveryError('zns_no_zalo_account', -118, 'User is not existed');
     });
-    /** Worse: a provider that hangs. Three seconds is 7× the 400 ms floor. */
-    const hangs = await api(async () => {
-      await new Promise((r) => setTimeout(r, 3_000));
+    /**
+     * Worse: a provider that never answers until this test lets it. A three
+     * second sleep proved the same point against a clock, and the clock is
+     * exactly what a loaded suite moves around; a delivery that cannot resolve
+     * proves it by construction instead, because a reply that waited on the
+     * delivery would never arrive at all.
+     */
+    let release!: () => void;
+    const delivered = new Promise<void>((resolve) => {
+      release = resolve;
     });
+    const hangs = await api(() => delivered);
     const works = await api();
 
     const at = async (app: Api, phone: string) => {
@@ -245,18 +253,33 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
       expect(r.statusCode).toBe(204);
       expect(r.body).toBe('');
     }
-    // And the same time. A delivery is started, never awaited, so a provider
-    // that takes three seconds costs the same as one that answers at once: the
-    // spread across all four is the floor's own jitter, not the delivery's.
+    /**
+     * And the same time — as bounds, never as a spread. A spread is the
+     * difference of two samples, so under a full parallel suite it measures
+     * whichever request met a scheduler stall rather than measuring the route:
+     * this line asserted a 150 ms spread and was red at 199–1038 ms across five
+     * runs, green in isolation every time. Do not put a window back.
+     *
+     * What removes the systematic difference is the floor, and the floor has to
+     * cover every path — the number nobody owns, which does strictly less work,
+     * and the number whose delivery has not answered at all. A lower bound is
+     * the half of that a loaded machine cannot break: load only ever makes a
+     * request slower. That the delivery is off the reply's clock is no longer
+     * timed at all — `hangs` above cannot have resolved yet, so `hung` having
+     * come back with the rest of them is the whole proof.
+     */
     const times = [refused.ms, hung.ms, sent.ms, unknown.ms];
-    expect(Math.max(...times) - Math.min(...times)).toBeLessThan(150);
-    expect(Math.max(...times)).toBeLessThan(1_000);
-    expect(hung.ms).toBeLessThan(3_000);
+    expect(Math.min(...times), JSON.stringify(times)).toBeGreaterThanOrEqual(380);
+    // One generous ceiling, five times the 400 ms floor, as a smoke bound only.
+    expect(Math.max(...times), JSON.stringify(times)).toBeLessThan(2_000);
+
+    // The gated delivery has served its purpose; let it finish so its row lands
+    // with the other two rather than after the next test has truncated.
+    release();
 
     /**
-     * Three requests for this collector, so three rows. Waiting for all three
-     * also drains the three-second delivery before the next test truncates.
-     * The refusal is recorded by name, so somebody can act on it.
+     * Three requests for this collector, so three rows. The refusal is recorded
+     * by name, so somebody can act on it.
      */
     const rows = await recorded(ids.collectorA, 3);
     expect(rows.map((r) => r.after.outcome).sort()).toEqual(['sent', 'sent', 'zns_no_zalo_account']);
