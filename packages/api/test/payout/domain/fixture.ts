@@ -14,9 +14,9 @@ import { liveClaim } from '../../../../store/test/db.ts';
  *
  * Amounts are whole dong on purpose: one minute at 1,200/min is `1200.0000`,
  * so a bill of two lines is `2400.0000` and converts to an attempt of 2,400
- * VND without anybody deciding a rounding rule. The one fractional bill
- * (`170.0004`, the review lane's own 8.5 s case) exists to prove that nothing
- * converts it.
+ * VND with no rounding at all, which keeps most cases arithmetically boring.
+ * The one fractional bill (`170.0004`, the review lane's own 8.5 s case) exists
+ * to prove the round-down rule: it pays 170, and 171 is refused.
  */
 
 export const uid = (): string => randomUUID();
@@ -75,9 +75,12 @@ export async function seedPayout(d: Db) {
     await d.execute(sql`insert into collection_session_devices (collection_session_id, device_id, role) values (${id}, ${device}, 'headset')`);
     return { handover, batch, claim };
   };
-  const claim1 = (await session(ids.session1, ids.collector1, ids.device1, ids.centreA, ids.machineA, ids.opA, 'CARD-1')).claim;
-  const claim2 = (await session(ids.session2, ids.collector2, ids.device2, ids.centreB, ids.machineB, ids.finB, 'CARD-2')).claim;
-  return { ...ids, claim1, claim2 };
+  const one = await session(ids.session1, ids.collector1, ids.device1, ids.centreA, ids.machineA, ids.opA, 'CARD-1');
+  const two = await session(ids.session2, ids.collector2, ids.device2, ids.centreB, ids.machineB, ids.finB, 'CARD-2');
+  // The batch ids are returned so a test can push episodes through the real
+  // ingest route instead of writing settlements in SQL; `round-down.test.ts`
+  // needs a bill that a reviewer actually produced.
+  return { ...ids, claim1: one.claim, claim2: two.claim, batch1: one.batch, batch2: two.batch };
 }
 
 /** A reviewed episode with a settlement worth `amount`, already billed (`bill_generated`). */
@@ -128,23 +131,27 @@ export async function seedBill(
 ): Promise<string> {
   const billId = uid();
   const collector = which === 1 ? ids.collector1 : ids.collector2;
-  await d.execute(sql`
-    insert into bills (id, collector_id, period_start, period_end, currency, total)
-      values (${billId}, ${collector}, ${period.start.toISOString()}::timestamptz, ${period.end.toISOString()}::timestamptz, 'VND', ${total})
-  `);
-  // The lines go in as one statement: `bills_total_matches_lines` (0011) is a
-  // deferred check that the bill adds up at the end of the statement/transaction,
-  // and the generator writes a bill's lines together too.
   const lines: string[] = [];
   for (const amount of amounts) {
     lines.push((await seedSettlement(d, ids, which, amount)).settlementId);
   }
-  if (lines.length > 0) {
-    await d.execute(sql`
-      insert into bill_lines (bill_id, settlement_id)
-      values ${sql.join(lines.map((id) => sql`(${billId}, ${id})`), sql`, `)}
+  // The bill and its lines go in one transaction, which is what the generator
+  // does (`settle.ts`). `bills_total_matches_lines` is deferred to commit, and
+  // since 0022 a bill that commits with a positive total and no lines is
+  // refused — so seeding the bill in its own transaction and its lines in the
+  // next one is no longer a legal shape, for a fixture or for anybody else.
+  await d.transaction(async (tx) => {
+    await tx.execute(sql`
+      insert into bills (id, collector_id, period_start, period_end, currency, total)
+        values (${billId}, ${collector}, ${period.start.toISOString()}::timestamptz, ${period.end.toISOString()}::timestamptz, 'VND', ${total})
     `);
-  }
+    if (lines.length > 0) {
+      await tx.execute(sql`
+        insert into bill_lines (bill_id, settlement_id)
+        values ${sql.join(lines.map((id) => sql`(${billId}, ${id})`), sql`, `)}
+      `);
+    }
+  });
   return billId;
 }
 

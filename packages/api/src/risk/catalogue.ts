@@ -26,7 +26,7 @@ export const CATALOGUE_VERSION = 'v1';
 
 export type CatalogueRow = {
   signalId: string;
-  family: 'IDENT' | 'VOL' | 'CONT' | 'PROV' | 'OPS' | 'BAND' | 'META';
+  family: 'IDENT' | 'VOL' | 'CONT' | 'PROV' | 'OPS' | 'HIST' | 'BAND' | 'META';
   description: string;
   points: number;
   severity: Severity;
@@ -75,6 +75,8 @@ export const RISK_CATALOGUE: readonly CatalogueRow[] = [
   row('CONT.LOW_LUMA_VARIANCE', 'CONT', 20, 'notice', 'Most sampled frames are dark or flat: the lens was covered or the recording was made in the dark.', { max_mean_luma: 24, max_flat_std: 2.0, min_share: 0.8, min_frames: 10 }),
   row('CONT.AUDIO_ABSENT', 'CONT', 15, 'notice', 'No audio stream, an empty one, or silence where the task expects sound.', { silent_tasks: [], max_mean_volume_db: -60 }),
   row('CONT.FINGERPRINT', 'CONT', 0, 'info', 'Frame fingerprint recorded for later duplicate checks. A record, not a finding.'),
+  row('CONT.REDELIVERY_CHURN', 'CONT', 20, 'notice', 'One episode was delivered more times than the threshold, and its bytes changed between deliveries. An interrupted upload retried is normal once; a pattern of it is not.', { max_deliveries: 2 }),
+  row('CONT.MEDIA_SUBSTITUTED', 'CONT', 45, 'review', 'A redelivery replaced the bytes of a media file that had already arrived whole, or measured longer than the delivery it superseded. A dropped link loses bytes; it does not add or exchange them.', { media_suffixes: ['.mp4', '.wav'], min_growth_s: 1 }),
 
   row('PROV.PRNU_MISMATCH', 'PROV', 60, 'hold', 'Sensor pattern noise of the footage does not correlate with the fingerprint enrolled for the assigned unit. Evaluated only when an enrolment exists.', { min_correlation: 0.2, min_frames: 30 }),
   row('PROV.IMU_VIDEO_DECORR', 'PROV', 35, 'review', 'Motion seen in the picture does not follow the motion the IMU recorded.', { min_correlation: 0.1, min_seconds: 10 }),
@@ -86,6 +88,10 @@ export const RISK_CATALOGUE: readonly CatalogueRow[] = [
   }),
   row('PROV.SCREEN_RECAPTURE', 'PROV', 60, 'hold', 'The footage looks like a screen filmed by a camera: a persistent rectangular boundary, a fine periodic grid, or refresh flicker.', { min_border_share: 0.9, min_grid_energy: 0.3, min_flicker: 0.04, min_frames: 10 }),
   row(SYNTHETIC_SIGNAL, 'PROV', 15, 'notice', 'Weak cues that the footage was not produced by a camera sensor: no noise floor. Capped at notice and never the sole cause of a hold.', { max_noise_floor: 0.75, min_frames: 10 }),
+  row('PROV.STALE_RECORDING', 'PROV', 35, 'review', 'The recording’s own clock puts it long before the day it was first delivered: old footage submitted as new work. Reads the device clock, so a device set back reads as fresh.', { max_age_days: 30 }),
+
+  row('HIST.REPEAT_CONTENT_FINDINGS', 'HIST', 35, 'review', "Several of this collector's own past episodes carry a content or provenance finding. One bad recording is a mistake; a pattern is the finding.", { max_episodes: 2, families: ['CONT', 'PROV'] }),
+  row('HIST.PRIOR_ACCEPTED_HOLDS', 'HIST', 20, 'notice', "An operator has already held a bill of this collector's and decided to pay anyway more than once. Carries that judgement forward; it does not repeat it.", { max_accepted: 1 }),
 
   row('OPS.REVIEW_TOO_FAST', 'OPS', 20, 'notice', 'A pass or partial verdict was recorded in less time than the episode runs.', { min_ratio: 1.0 }),
   row('OPS.APPROVAL_OUTLIER', 'OPS', 20, 'notice', "A reviewer's approval rate is far from the other reviewers' in the same period.", { min_decided: 20, max_delta: 0.25, min_reviewers: 3 }),

@@ -253,6 +253,41 @@
       "when": 1788720000000,
       "tag": "0019_path_a_upload",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1788730000000,
+      "tag": "0018_bill_total_rounds_down",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1788740000000,
+      "tag": "0018_risk_history_family",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1788750000000,
+      "tag": "0021_collector_app",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1788760000000,
+      "tag": "0021_app_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788770000000,
+      "tag": "0022_positive_empty_bill",
+      "breakpoints": true
     }
   ]
 }

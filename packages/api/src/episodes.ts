@@ -1,5 +1,5 @@
 import { basename } from 'node:path';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { deriveEpisodeId, EpisodeRecord } from '@playerone/contracts';
@@ -1166,10 +1166,44 @@ export function registerEpisodes(
     });
   });
 
-  /** The status view: batches on this machine, newest first. */
+  /**
+   * The status view: batches on this machine, newest first.
+   *
+   * "Newest first" was in this comment and in nothing else. There was no
+   * `order by`, so the answer was whatever order Postgres happened to return
+   * and it moved under the operator as rows were updated. There was no `limit`
+   * either: a centre that has been importing for a year returned every batch it
+   * ever had, and then a second query counted the episodes of all of them.
+   *
+   * NFR-08 asks this list to filter by region, centre, device, operator, status
+   * and time. Three of those are not parameters here and must not become
+   * parameters: the route is scoped to `actor.machine.upload_device_id`, which
+   * fixes the device and therefore its centre and its region, and a
+   * caller-supplied centre is exactly the leak that scoping prevents. That
+   * leaves status and time, plus the handover the card arrived on.
+   *
+   * `status` is checked against the values in `upload_batches_status_check`
+   * rather than passed through, so a typo is a 400 and not an empty list that
+   * reads like "no batches".
+   */
+  const BatchQuery = z.object({
+    status: z
+      .enum(['importing', 'imported', 'uploading', 'verifying', 'verified', 'closed', 'failed'])
+      .optional(),
+    handover_id: z.string().uuid().optional(),
+    /** Half-open on `import_started_at`, the same shape every other window here uses. */
+    since: z.coerce.date().optional(),
+    until: z.coerce.date().optional(),
+    limit: z.coerce.number().int().min(1).max(500).default(100),
+  });
+
   app.get('/upload-batches', opts, async (req, reply) => {
     const actor = actorOf(req);
-    const status = (req.query as Record<string, string>)['status'];
+    const q = BatchQuery.safeParse(req.query ?? {});
+    if (!q.success) {
+      return reply.code(400).send({ error: 'invalid query', detail: q.error.issues.slice(0, 3) });
+    }
+    const { status, handover_id, since, until, limit } = q.data;
     const rows = await db
       .select({
         id: schema.uploadBatches.id,
@@ -1180,13 +1214,17 @@ export function registerEpisodes(
       })
       .from(schema.uploadBatches)
       .where(
-        status
-          ? and(
-              eq(schema.uploadBatches.uploadDeviceId, actor.machine.uploadDeviceId),
-              eq(schema.uploadBatches.batchStatus, status),
-            )
-          : eq(schema.uploadBatches.uploadDeviceId, actor.machine.uploadDeviceId),
-      );
+        and(
+          eq(schema.uploadBatches.uploadDeviceId, actor.machine.uploadDeviceId),
+          ...(status === undefined ? [] : [eq(schema.uploadBatches.batchStatus, status)]),
+          ...(handover_id === undefined ? [] : [eq(schema.uploadBatches.handoverId, handover_id)]),
+          ...(since === undefined ? [] : [gte(schema.uploadBatches.importStartedAt, since)]),
+          ...(until === undefined ? [] : [lt(schema.uploadBatches.importStartedAt, until)]),
+        ),
+      )
+      /** `id` breaks ties, so two batches imported in the same second keep an order. */
+      .orderBy(desc(schema.uploadBatches.importStartedAt), asc(schema.uploadBatches.id))
+      .limit(limit);
 
     const ids = rows.map((r) => r.id);
     const counts =

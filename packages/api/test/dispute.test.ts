@@ -4,7 +4,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { open } from '@playerone/store';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { appDb, closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 import { episodeRecord } from './fixtures.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -67,7 +67,7 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
     const since = new Date(T - 30 * 24 * 60 * 60_000).toISOString();
     await d.execute(sql`insert into device_assignments (id, device_id, collector_id, valid_from) values (${uid()}, ${ids.device1}, ${ids.collector1}, ${since}), (${uid()}, ${ids.device2}, ${ids.collector2}, ${since})`);
 
-    const app = buildApi({ db: d, tokenSecret: SECRET });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET });
     await app.ready();
 
     const login = async (machine: string, operator: string): Promise<Headers> => {
@@ -567,21 +567,29 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       const reviews = await h.firstVerdicts();
       const [s1] = await h.settlementsOf(reviews.get(h.episode1)!);
       const [s2] = await h.settlementsOf(reviews.get(h.episode2)!);
-      const bill = async (collector: string, total: string) => {
+      // A bill and its line commit together, because `bills_total_matches_lines`
+      // is deferred to commit and 0022 refuses a bill that lands with a positive
+      // total and nothing on it. `b1` never gets a line — that is what is being
+      // refused below — so it is worth nothing.
+      const bill = async (collector: string, total: string, settlement?: string) => {
         const id = uid();
-        await h.d.execute(sql`insert into bills (id, collector_id, period_start, period_end, currency, total) values (${id}, ${collector}, now() - interval '1 day', now(), 'VND', ${total})`);
+        await h.d.transaction(async (tx) => {
+          await tx.execute(sql`insert into bills (id, collector_id, period_start, period_end, currency, total) values (${id}, ${collector}, now() - interval '1 day', now(), 'VND', ${total})`);
+          if (settlement !== undefined) {
+            await tx.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${id}, ${settlement})`);
+          }
+        });
         return id;
       };
       await h.dispute(reviews.get(h.episode1)!);
-      const b1 = await bill(h.ids.collector1, s1!.amount);
+      const b1 = await bill(h.ids.collector1, '0.0000');
       await violates('bill_lines_disputed_check', h.d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${b1}, ${s1!.id})`));
       // Superseded, with the dispute closed so only the supersession refuses.
       await h.d.execute(sql`update review_disputes set resolved_at = now(), outcome = 'overturned'`);
       await h.d.execute(sql`update settlements set superseded_by = ${s2!.id}, settlement_state = 'exception', exception_from_state = settlement_state, exception_reason = 'superseded' where id = ${s1!.id}`);
       await violates('bill_lines_superseded_check', h.d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${b1}, ${s1!.id})`));
       // The other collector's line, which nothing holds back, goes through.
-      const b2 = await bill(h.ids.collector2, s2!.amount);
-      await h.d.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${b2}, ${s2!.id})`);
+      await bill(h.ids.collector2, s2!.amount, s2!.id);
     });
   });
 });

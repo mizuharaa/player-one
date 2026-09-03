@@ -85,6 +85,10 @@ docs/sample_data/<anything>/EgoCamera Sample Data/ego_AZER76400FE_.../...   also
 Anywhere else, set `PLAYERONE_SESSIONS` to the directory *containing* the
 `ego_*` folders.
 
+Set `PLAYERONE_REQUIRE_CORPUS=1` as well and the test run fails outright unless
+all five sessions are there with their media — otherwise a missing or half-copied
+corpus just skips, and the run still looks green.
+
 Sanity check — all five must ingest, none quarantine:
 
 | Session | Duration | Notes |
@@ -128,6 +132,12 @@ token. Seed a centre, a machine and an operator with `credential_hash` set from
 `hashCredential()`, then `POST /auth/machine` and `POST /auth/operator`.
 `packages/api/test/counter.test.ts` is the shortest worked example.
 
+The one exception is `POST /upload-devices/:id/heartbeat`. The upload-centre
+process sends current disk and queue state when no clerk may be signed in, so
+that route accepts its machine token alone and only for the device id in that
+token. It writes no audit row and changes no counter data. Every audited
+mutation still requires both credentials.
+
 Two more rules on those two credentials, both read from the row and not from the
 token, so a change bites on the next request rather than at the twelve-hour
 expiry:
@@ -150,6 +160,8 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 | `DATABASE_URL` | required | A database on another machine must say whether the link is encrypted — `?sslmode=require` or `?sslmode=disable` — or `open()` refuses to start. See "Encryption, in transit and at rest" below. |
 | `PLAYERONE_TOKEN_SECRET` | required | Fails closed. A secret invented at boot would sign tokens that stop verifying on the next restart, which shows up as reviewers being randomly signed out. |
 | `PLAYERONE_MEDIA_ROOT` | | The directory holding the imported `ego_*` folders. Without it the console runs and the stream route answers 503 saying so. |
+| `PLAYERONE_MACHINE_IDENTIFIER` | | The fixed upload device this process runs on. When this, `PLAYERONE_MACHINE_SECRET` and `PLAYERONE_MEDIA_ROOT` are all set, the process sends its heartbeat once at boot and every minute. A back-office host leaves them unset and sends nothing. |
+| `PLAYERONE_MACHINE_SECRET` | | The credential for `PLAYERONE_MACHINE_IDENTIFIER`, used only to obtain the machine token for that heartbeat. Set both machine variables, or neither. |
 | `PLAYERONE_CURRENCY` | `VND` | What `tasks.unit_price` is denominated in. Configuration because there is no currency column — see the gaps in `docs/review.md`. |
 | `PLAYERONE_SETTLEMENT_CYCLE_DAYS` | `7` | SET-07's settlement cycle. Weekly is `[ASSUMED]` in the brief's §13.2 rather than decided, so it is a setting and not a constant. It only supplies the *end* of a period whose start the caller gave. |
 | `PLAYERONE_SECURE_COOKIES` | off | Turn on wherever there is TLS. Off by default because a `Secure` cookie is never sent over plain HTTP and the symptom is a sign-in that silently does nothing. It is also this repo's single "there is TLS in front of this process" signal: with it on, the API sends HSTS, and `PLAYERONE_REVIEWER_MEDIA=1` is allowed. |
@@ -158,10 +170,14 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 | `HOST` / `PORT` | `127.0.0.1` / `8080` | |
 | `STORAGE_ENDPOINT` | | The S3-compatible endpoint of the cloud store (GreenNode, once the contract is signed). Unset, the upload routes answer 503 saying so and everything else runs. |
 | `STORAGE_BUCKET` / `STORAGE_KEY` / `STORAGE_SECRET` | | Required together with `STORAGE_ENDPOINT`; a partial set fails closed at boot naming what is missing. |
+| `PLAYERONE_ZNS_ACCESS_TOKEN` / `PLAYERONE_ZNS_TEMPLATE_ID` | | How a collector's sign-in code reaches their phone: Zalo Notification Service (`packages/api/src/zns.ts`). Set both, or neither. With neither, the server writes each code to its own log instead of sending it, so a pilot runs before VNG has issued a ZNS account — every such line says `NOT SENT`. With one of the two, boot fails naming the other. |
+| `PLAYERONE_ZNS_ENV` | `sandbox` | `production` refuses to boot with no ZNS credentials, because production with no ZNS account is not a development mode — it is a server that prints live sign-in codes into a production log. |
+| `PLAYERONE_ZNS_CODE_PARAM` | `otp` | The `template_data` key the six digits go in. Whatever the approved template names it. |
+| `PLAYERONE_ZNS_BASE_URL` | Zalo's | Override only to point at a proxy or a test double. |
 | `REVIEW_VERIFICATION_GATE` | `local` | Which integrity check QR-02's review gate reads. `local` is the ADR 0001 deviation; `cloud` requires read-back-verified uploads and retires that ADR. Do not set `cloud` before the settlement question in the ADR's exit section is answered. |
 
-Then `http://127.0.0.1:8080/review`, which redirects to a sign-in form taking the
-same machine and operator credentials.
+The API serves JSON and media only. The back office is the SPA; see
+[`The back-office console`](#the-back-office-console) below.
 
 ## The bucket needs one rule set on it, by hand
 
@@ -217,6 +233,29 @@ aws s3api list-multipart-uploads          --endpoint-url "$STORAGE_ENDPOINT" --b
 
 The second command is the only way to see this cost. Run it when the storage
 bill does not match what `ListObjectsV2` says the bucket holds.
+
+## Forcing the cloud to prove one batch again
+
+```
+POST /upload-batches/<id>/upload?reverify=1
+```
+
+`POST /upload-batches/<id>/upload` skips any object it has a verification
+receipt for (migration 0020), which is what makes a re-run cost only what it has
+not already proved. It also means a file that verified once is never read again,
+so nothing would notice the cloud damaging it afterwards — a lost replica, a bad
+restore, bit rot.
+
+`?reverify=1` clears that one batch's receipts before the run, so every object
+on it is pulled back and re-hashed. Nothing else changes: it is the same route,
+scoped to the machine holding the card, and it does not widen the general rule —
+every other batch keeps its receipts. It is recorded as an audited
+`batch.reverify` event naming the operator and how many receipts it dropped.
+
+If an object now fails, the episode goes to `failed`: the review queue stops
+serving it and the UPL-06 cache gate refuses, which is the same handling a
+corrupt first upload gets. Re-running without the parameter re-sends and
+re-verifies just that file.
 
 ## Encryption, in transit and at rest
 
@@ -323,6 +362,94 @@ deployment step, the owner and the acceptance check are in
 `docs/adr/0004-sec06-is-disk-encryption-at-the-upload-centre.md`. Read it
 before provisioning a centre machine. Nothing in this repository will tell you
 whether it has been done.
+
+### The database user the API connects as
+
+**Do not point `DATABASE_URL` at `postgres` on a deployment.** A superuser
+bypasses every grant and owns every table, so the append-only audit trail is a
+courtesy rather than a rule. Measured against the local Postgres 18, connected
+exactly as the API connects:
+
+```
+TRUNCATE audit_events;                                              -- succeeded
+ALTER TABLE audit_events DISABLE TRIGGER audit_events_append_only;  -- succeeded
+UPDATE audit_events SET action = 'nothing happened';                -- succeeded
+```
+
+Migration `0021_app_role` creates the role to use instead. It has SELECT,
+INSERT and UPDATE on every table, DELETE on `cloud_verifications` only (the one
+table this codebase deletes a row from), USAGE on the sequences, and membership
+of `playerone_risk`. It owns nothing, so it cannot TRUNCATE any table and
+cannot disable any trigger — the three statements above all fail under it, and
+so does every other route to rewriting history. It is created `NOLOGIN`,
+because a migration cannot invent a password:
+
+```
+ALTER ROLE playerone_app LOGIN PASSWORD '<a password you generated>';
+DATABASE_URL='postgres://playerone_app:<password>@host:5432/playerone?sslmode=require'
+```
+
+Two things to know:
+
+- **A migration must still run as the owner.** `pnpm db:migrate` creates and
+  alters tables, which `playerone_app` cannot do. Migrate as the owning user,
+  then run the service as `playerone_app`. If a *different* user ever runs a
+  migration, re-run the grant block in `0021_app_role.sql`: `ALTER DEFAULT
+  PRIVILEGES` only covers tables created by the user that set it.
+- **The whole test suite passes under this role**, which is how the grants were
+  settled rather than argued about. `PLAYERONE_DB_ROLE=playerone_app pnpm test`
+  hands **`buildApi`** a connection whose session role is that one, so every
+  route, every audited write and every worker runs under the deployment's
+  grants. The fixtures keep the ordinary connection, and that split is the
+  point: creating a database, migrating it, truncating between tests and
+  disabling a trigger to prove that the trigger is what refuses a write are all
+  things the schema *owner* does. A test that asserts `bill_lines_immutable` by
+  attempting a DELETE has to reach the trigger to be testing anything; run
+  under a role with no DELETE grant it would pass for the wrong reason. Run it
+  after adding a route that writes somewhere new.
+
+## Operational alerts
+
+`GET /api/alerts` answers PLT-12's nine conditions — PaXini's PRD §11.4 list,
+adopted verbatim — as one derived query over rows the platform already writes.
+Any operator session may read it. There is no alerts table, no worker and no
+notification channel: for a twenty-device pilot it is a screen somebody looks
+at.
+
+```json
+{ "at": "2026-08-29T…", "alerts": [
+  { "id": "upload_failures", "state": "ok", "observed": 0, "threshold": 3 },
+  { "id": "cloud_write_failures", "state": "ok", "observed": 0, "threshold": 3 } ] }
+```
+
+`state` is `firing` when `observed >= threshold`, `ok` when it is not, and
+`no_signal` when **nothing in this system records the fact**. Two of the nine
+are `no_signal` today and say so rather than reading a reassuring zero:
+`review_cannot_read_cloud` (the review lane reads local media — ADR 0001 — so
+there is no cloud read to fail) and `cross_border_timeouts` (nothing times the
+link).
+
+The other seven read rows. `cloud_write_failures` counts
+`episode.cloud_transport_failed` audit events from the last day — an upload
+centre's cloud leg that threw before it could record a verdict. A read-back
+mismatch is not one of those: it does not throw, and it is
+`checksum_failures`. A collector's Path A delivery is not one either; an
+unlanded one sits in `collector_uploads` and is `upload_failures`.
+
+`upload_centres_offline_or_backlogged` and `upload_devices_low_disk` read the
+§11.3.2 rule 8 heartbeat, which the upload-centre process now sends (see
+`PLAYERONE_MACHINE_IDENTIFIER` above). **An active `upload_devices` row with no
+heartbeat counts as offline.** That is deliberate: the sender beats at boot, so
+a configured machine leaves the count as soon as its process starts, and
+treating a never-reporting machine as healthy is what would stop a centre that
+has been dark since installation from ever firing the alert. A machine that
+reports nothing has no disk figure, so it is condition 3's and not condition
+4's; a `retired` machine is neither.
+
+The thresholds are literals in `packages/api/src/alerts.ts` — the PRD gives no
+numbers, and a setting invented before the first week of real data is a guess
+with a knob on it. Tune them there.
+
 ## The risk worker
 
 ```
@@ -464,8 +591,7 @@ drizzle gets wrong here and that a generated file may need fixing for by hand:
 | `packages/contracts` | `EpisodeRecord` (zod), episode id and content fingerprint |
 | `packages/ingest` | the measurement engine and the CLI |
 | `packages/store` | Postgres schema, migrations, episode store, catalogues |
-| `packages/api` | operator API: auth, counter workflow, session resolver, review console |
-| `packages/api/assets` | the superseded server-rendered console's ES module and stylesheet |
+| `packages/api` | operator API: auth, counter workflow, session resolver, review API |
 | `packages/design` | design tokens, once, for the console and the collector app |
 | `apps/console` | the back-office SPA: React 19, Vite, TanStack, Tailwind |
 | `DESIGN.md` | the visual system, recorded from the built console |

@@ -120,6 +120,55 @@ const en = {
   'meta.yes': 'Yes',
   'meta.no': 'No',
   'meta.none': 'None',
+  /**
+   * One sentence per ingest discrepancy, for every code the contract can emit.
+   *
+   * The reviewer used to be shown the code itself — `PART-MISSING-INTERIOR` —
+   * with the engine's English `detail` under it, in every locale. The code is
+   * the stable identifier and stays on screen, but it is not a description,
+   * and a reviewer in Shenzhen reading an English machine name is being asked
+   * to do a job in a language nobody promised them. LOC-02.
+   *
+   * Keyed by the literal code, so `DISCREPANCY_CODES` and this block are held
+   * in step by a test in console.test.ts rather than by anyone remembering.
+   *
+   * ponytail: the per-episode `detail` the engine writes underneath — stream
+   * names, measured numbers — is still English. It is evidence rather than
+   * prose. Templating it the way `risk.signal.*` templates its sentences is
+   * the upgrade path, worth taking when a reviewer asks for it.
+   */
+  'bo.flag.DUR-MANIFEST-INFLATED': 'The device manifest claims a longer recording than the media actually holds.',
+  'bo.flag.FRAMECOUNT-MISMATCH': 'The frame count the manifest declares does not match the frames measured in the media.',
+  'bo.flag.AUDIO-STATS-ZERO': 'The manifest reports no audio frames although an audio stream is present.',
+  'bo.flag.MANIFEST-FILES-UNRESOLVED': 'The manifest lists files that are not on the card.',
+  'bo.flag.SESSION-UNCLOSED': 'The device never wrote an end time; the recording itself is still fine.',
+  'bo.flag.STATS-ZEROED': 'The manifest’s statistics block is all zero although media is present.',
+  'bo.flag.PTS-EMPTY': 'The timestamp sidecar is on the card but holds no timestamps.',
+  'bo.flag.PTS-ABSENT': 'No timestamp sidecar travelled with this stream.',
+  'bo.flag.PTS-TRUNCATED': 'The timestamp sidecar stops mid-line; the final partial row was dropped.',
+  'bo.flag.STATS-STALE': 'The statistics block looks copied from an earlier session: it disagrees with what was measured.',
+  'bo.flag.STREAM-CLOCK-FAULT': 'The stream’s own span cannot be explained by the number of samples it carries.',
+  'bo.flag.PART-MISSING-TAIL': 'Fewer parts are on the card than the manifest declares; the recording stops early.',
+  'bo.flag.TIMING-ESTIMATED': 'The timing was estimated rather than read exactly, so the payable time is less certain.',
+  'bo.flag.STREAM-SKEW-HIGH': 'The streams start too far apart from one another.',
+  'bo.flag.PART-GAP': 'There is a gap in time between two consecutive parts of one stream.',
+  'bo.flag.PART-ORDER-CONFLICT': 'The part numbers contradict the order the timestamps put the parts in.',
+  'bo.flag.FIRMWARE-UNKNOWN': 'The device firmware is outside the set this platform has been tested against.',
+  'bo.flag.CAMERA-NAMING-CONFLICT': 'The camera names on the card disagree with what the manifest describes.',
+  'bo.flag.IMU-RATE-ANOMALY': 'The measured IMU sample rate differs from the rate the manifest declares.',
+  'bo.flag.CALIB-MISSING': 'Calibration did not travel with the episode.',
+  'bo.flag.MEDIA-MISSING': 'A stream the session declares has no media on disk.',
+  'bo.flag.MEDIA-UNREADABLE': 'A container exists but cannot be decoded.',
+  'bo.flag.MEDIA-TRUNCATED': 'A container is structurally short: the transfer did not finish.',
+  'bo.flag.ROWS-MALFORMED': 'A timestamp file held rows that were not timestamps.',
+  'bo.flag.CALIB-UNREADABLE': 'The calibration is on disk but will not parse.',
+  'bo.flag.MANIFEST-UNREADABLE': 'The manifest is on disk but will not parse, so nothing was compared against it.',
+  'bo.flag.PART-MISSING-INTERIOR': 'A part is missing from the middle of a multi-part stream.',
+  'bo.flag.CHECKSUM-MISMATCH': 'The bytes changed between two deliveries of one session.',
+  'bo.flag.DUR-EXCEEDS-WINDOW': 'The duration claimed is longer than the window the record’s own timestamps describe.',
+  'bo.flag.EPISODE-ID-FALLBACK': 'The directory name does not parse; the id falls back to the raw name.',
+  'bo.flag.SERIAL-CONFLICT': 'Basename, manifest and calibration disagree on the device serial.',
+  'bo.flag.SESSION-CONFLICT': 'The declared session id disagrees with the handover record.',
   'meta.unknown': 'Unknown',
   'meta.claimHint': 'Advisory. The device manifest overstates media length.',
   'meta.measuredHint': 'What a verdict is scored against.',
@@ -486,6 +535,48 @@ const en = {
     'That delivery is larger than one upload may declare. Send it as more than one upload, or hand the card in at an upload centre.',
   'bo.refused.upload_superseded':
     'A newer delivery of this recording arrived while these files were being sent, so this result was not recorded. Start the upload again.',
+
+  /**
+   * The collector app's own refusals (`COLLECTOR_API_REFUSALS` in
+   * collector-app.ts). Same namespace as everything else, for the reason Path
+   * A's are: a support operator looking at why a collector could not claim a
+   * task reads the same sentence the collector did.
+   *
+   * NONE of these is a constraint name, and that is the point of the set. The
+   * gates behind them are triggers — `task_claims_capacity`,
+   * `task_claims_consent_gate` — whose names are for the console. A collector
+   * is never shown one.
+   */
+  'bo.refused.task_not_found': 'That task is not there any more.',
+  'bo.refused.task_not_claimable':
+    'That task is not open at the moment, so it cannot be taken on or recorded against.',
+  'bo.refused.task_at_capacity':
+    'That task already has as many collectors as it takes. Try another one.',
+  'bo.refused.already_claimed': 'You have already taken this task on.',
+  'bo.refused.exam_not_passed':
+    'The exam has to be passed before a task can be taken on. Take it from the training screen.',
+  'bo.refused.not_qualified':
+    'This account has not been approved for collection yet. The upload centre can say where it stands.',
+  'bo.refused.agreements_incomplete':
+    'All six agreements have to be accepted before a task can be taken on.',
+  'bo.refused.claim_id_reused':
+    'That reference already belongs to a different task. Try taking the task on again.',
+  'bo.refused.claim_released':
+    'You gave this task up earlier, so that reference cannot be used again. Take it on again to get a new one.',
+  'bo.refused.agreement_version_unknown':
+    'The agreements on this screen are out of date. Reload them and read them again before accepting.',
+  'bo.refused.device_not_found': 'No camera carries that serial number. Check what is on the case.',
+  'bo.refused.device_not_available':
+    'That camera has been taken out of service, so it cannot be paired.',
+  'bo.refused.already_bound': 'That camera is paired to somebody else.',
+  'bo.refused.device_not_bound':
+    'That camera is not paired to you. Pair it before starting a session.',
+  'bo.refused.task_not_claimed':
+    'You do not hold that task, so nothing can be recorded against it. Take it on first.',
+  'bo.refused.scenario_not_found': 'That setting is not one this platform records.',
+  'bo.refused.session_id_reused':
+    'That reference already names a different session. Start the session again.',
+
   'bo.refused.review_disputes_open_key': 'That verdict is already under dispute.',
   'bo.refused.review_disputes_decided_check':
     'That review has not been decided yet, so there is no outcome to challenge.',
@@ -539,6 +630,9 @@ const en = {
   'settle.generate': 'Generate bills',
   'settle.generate.hint': 'Bills every settlement of the period that is waiting. Running it twice changes nothing.',
   'settle.generate.result': '{{created}} bill(s) created; {{notPayable}} settlement(s) worth nothing were left off.',
+  'settle.generate.deferred': '{{n}} settlement(s) already had a bill for this period ({{who}}), so they roll into the next cycle. The money is not lost.',
+  'settle.generate.skipped': '{{n}} settlement(s) ({{who}}) were billed by another run under a different period while this one was reading. They are on that run’s bill.',
+  'settle.generate.exception': '{{n}} settlement(s) in this period are parked as exceptions.',
   'settle.export.payout': 'Export payout CSV',
   'settle.export.payout.hint': 'Hashed row by row and as a file, and recorded. Finance only.',
   'settle.export.lines': 'Export lines CSV',
@@ -553,8 +647,7 @@ const en = {
   'settle.sort': 'Sort by {{column}}',
   'settle.withheld.note': 'The PIT withholding rate is not decided. The server reports 0 withheld and net equal to gross.',
   'settle.asStored': 'As stored, in {{currency}}. Not rounded here.',
-  'settle.wholeVnd': 'Whole dong, as the database converted it.',
-  'settle.wholeVnd.none': 'No whole-dong figure: the total has a fractional part and nobody has decided how to round it.',
+  'settle.wholeVnd': 'Whole dong. The total is rounded down; the collector loses under one dong per bill.',
   'settle.lines': '{{n}} line(s)',
   'settle.attempt.none': 'No attempt',
   'settle.attempt.created': 'Created',
@@ -578,13 +671,19 @@ const en = {
   'settle.issue.none': 'Nothing. This bill can be paid.',
   'settle.issue.no_account': 'The collector has declared no payout account.',
   'settle.issue.account_unverified': 'The payout account is not verified by ZaloPay.',
-  'settle.issue.total_fractional': 'The total has a fractional part of a dong, and the rounding rule is not decided.',
   'settle.issue.over_bank_ceiling': 'Above ZaloPay’s ceiling of 10,000,000 VND for one bank transfer.',
   'settle.issue.under_bank_minimum': 'Below ZaloPay’s minimum of 2,000 VND for a bank transfer.',
+  'settle.issue.under_one_dong': 'The whole bill is worth less than one dong, so rounded down there is nothing to transfer.',
   'settle.issue.over_cap': 'Above the per-collector cap for this period.',
   'settle.issue.risk_hold': 'The risk engine holds this bill.',
   'settle.issue.attempt_open': 'An attempt is still open on this bill.',
   'settle.issue.already_paid': 'This bill is already paid.',
+  'settle.issue.line_in_exception': 'A line on this bill is parked as an exception.',
+  'settle.state.pending_review': 'Waiting for review',
+  'settle.state.pending_settlement': 'Waiting to be billed',
+  'settle.state.bill_generated': 'On an issued bill',
+  'settle.state.manually_paid': 'Paid on the manual rail',
+  'settle.state.exception': 'Parked as an exception',
 
   'settle.preflight.intro':
     'Read before any payment. What the batch would send, what the wallet holds, which accounts are unverified, and who the engine has flagged.',
@@ -637,6 +736,18 @@ const en = {
     'The batch stopped at {{collector}}: {{reason}} What was already sent stays sent; the poller finishes it.',
   'settle.batch.done': 'All {{n}} transfer(s) were sent. The poller resolves their final status.',
   'settle.batch.noneOk': 'The preflight refused the batch, or nothing in it is payable, so nothing can be sent.',
+  'settle.batch.refused.title': 'Not sent',
+  'settle.batch.refused.body': 'These bills were not sent, with the reason beside each. Some are already paid or already in flight; most need a person before any run will send them.',
+  'settle.batch.tickets.title': 'Tickets',
+  'settle.batch.tickets.body': 'Raised while this run was going. A person has to act on them.',
+  'settle.batch.aborted': 'The run stopped on an error, not on a refusal.',
+  'settle.batch.aborted.at': 'It stopped at {{collector}}.',
+  'settle.batch.aborted.body': 'What was sent is sent and committed. Why it threw is in the server’s log, not in this report. The poller resolves the transfers that are already out.',
+  'settle.ticket.TICKET.POLL_EXHAUSTED': 'Polling gave up on a transfer',
+  'settle.ticket.TICKET.ORDER_NOT_FOUND': 'ZaloPay does not know this order',
+  'settle.ticket.TICKET.CAP_EXCEEDED': 'A bill is above the per-collector cap',
+  'settle.ticket.TICKET.BATCH_REFUSED': 'The batch was refused at send time',
+  'settle.ticket.TICKET.RECON_DISCREPANCY': 'Reconciliation found a discrepancy',
 
   'settle.bill.back': 'All bills',
   'settle.bill.notInPeriod': 'That bill is not in this period.',
@@ -661,6 +772,17 @@ const en = {
   'settle.bill.attempt.polls': 'Polls',
   'settle.bill.attempt.created': 'Created',
   'settle.bill.attempt.settled': 'Settled',
+  'settle.bill.lines.title': 'Lines',
+  'settle.bill.lines.empty': 'This bill has no lines.',
+  'settle.bill.lines.exceptions': '{{n}} line(s) are parked as exceptions. They stay on the bill and stay in its total.',
+  'settle.bill.lines.reproduce': 'Each amount is the unit price multiplied by the effective minutes and then rounded to four decimal places, so the two columns beside it reproduce it. The total is the exact sum of the lines. The rounding down to whole dong happens once, on the payment, and never on a line.',
+  'settle.bill.line.task': 'Task',
+  'settle.bill.line.episode': 'Episode',
+  'settle.bill.line.unitPrice': 'Unit price',
+  'settle.bill.line.minutes': 'Effective minutes',
+  'settle.bill.line.amount': 'Amount',
+  'settle.bill.line.state': 'State',
+  'settle.bill.line.reviewed': 'Reviewed',
 
   'settle.pay.title': 'Record the payment',
   'settle.pay.manual.intro':
@@ -700,7 +822,7 @@ const en = {
     'Above the per-collector cap of {{cap}}. The batch refuses it by name and raises a ticket; it never pays the cap instead.',
   'settle.exceptions.blocked': 'Not payable yet',
   'settle.exceptions.blocked.body':
-    'Bills with something to fix before a transfer: no account, an unverified account, a fractional total, a risk hold.',
+    'Bills with something to fix before a transfer: no account, an unverified account, a risk hold.',
   'settle.exceptions.opened': 'Opened {{elapsed}} ago',
   'settle.exceptions.polls': '{{n}} poll(s), last at {{at}}',
   'settle.exceptions.polls.none': 'Not polled yet',
@@ -830,14 +952,14 @@ const en = {
 
   'bo.refused.payout_attempts_previous_not_failed':
     'This bill already has an attempt that has not failed. A new attempt is only possible after the previous one has failed.',
-  'bo.refused.payout_attempts_total_fractional':
-    'The bill total has a fractional part of a dong, and nobody has decided how to round it. It cannot be paid until they do.',
-  'bo.refused.payout_attempts_amount_check': 'The amount typed does not equal the bill total. Nothing was recorded.',
+  'bo.refused.payout_attempts_amount_check': 'The amount typed does not equal the bill total rounded down to whole dong. Nothing was recorded.',
   'bo.refused.payout_attempts_account_owner': 'That payout account belongs to a different collector.',
   'bo.refused.payout_attempts_account_current': 'That payout account is no longer the collector’s current one. Reload the bill.',
   'bo.refused.payout_attempts_bank_ceiling':
     'Above ZaloPay’s ceiling of 10,000,000 VND for one bank transfer. It cannot go as one transfer, and splitting it is an escalation, not a button.',
   'bo.refused.payout_attempts_bank_minimum': 'Below ZaloPay’s minimum of 2,000 VND for a bank transfer.',
+  'bo.refused.payout_attempts_amount_positive_check':
+    'This bill totals less than one dong, so rounded down it is 0 VND, and a payment of nothing is not recorded. Nothing was sent.',
   'bo.refused.payout_attempts_transition_check': 'The attempt cannot move from its current state that way. Reload the list.',
   'bo.refused.payout_attempts_succeeded_immutable': 'A succeeded attempt is final and cannot be changed.',
   'bo.refused.payout_attempts_failed_terminal': 'A failed attempt is final. Paying again is a new attempt.',
@@ -876,6 +998,30 @@ const en = {
   'bo.refused.payout_attempt_not_resolvable':
     'This attempt cannot be resolved by hand in its current state. Only a pending, exhausted or never-sent attempt is.',
   'bo.refused.payout_bill_period_mismatch': 'That bill belongs to a different period.',
+
+  // ---------------------------------------------------------------------
+  // Sign-in code delivery: `ZNS_REFUSALS` in `zns.ts`. These are never an HTTP
+  // body — the route answers 204 whatever happens, on purpose — so they are
+  // read out of `audit_events` by an operator asking why somebody cannot sign
+  // in. Each sentence says what to DO, because somebody has to do something:
+  // the collector cannot ask again and get a different answer.
+
+  'bo.refused.zns_no_zalo_account':
+    'That phone number has no Zalo account, so no sign-in code can reach it and this collector cannot sign in. Ask them to install Zalo on that number, or record a different number for them.',
+  'bo.refused.zns_phone_not_vietnamese':
+    'The number on this collector’s record is not a Vietnamese mobile number, so no code was sent. Correct the number in the back office.',
+  'bo.refused.zns_template_rejected':
+    'Zalo refused the sign-in message template. Nobody can sign in until the template is approved and active again. This is a Zalo Official Account matter, not the collector’s.',
+  'bo.refused.zns_quota_exhausted':
+    'The Zalo Official Account has no notification quota left, so no sign-in code was sent. Nobody can sign in until more is bought.',
+  'bo.refused.zns_rate_limited':
+    'Zalo is refusing messages for the moment because too many were sent too quickly. It clears by itself; ask the collector to try again in a few minutes.',
+  'bo.refused.zns_credentials_rejected':
+    'Zalo refused this server’s credentials, so no sign-in code was sent. The access token is wrong or has expired and has to be renewed.',
+  'bo.refused.zns_unreachable':
+    'Zalo could not be reached, so no sign-in code was sent. Ask the collector to try again; if it keeps happening, the link to Zalo is down.',
+  'bo.refused.zns_refused':
+    'Zalo refused to send the code and gave a reason this server does not recognise. The reason is in the server log; ask the collector to try again while somebody reads it.',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -929,6 +1075,38 @@ const zh: Record<MessageKey, string> = {
   'meta.yes': '是',
   'meta.no': '否',
   'meta.none': '无',
+  'bo.flag.DUR-MANIFEST-INFLATED': '设备清单声称的录制时长超过实际媒体文件的时长。',
+  'bo.flag.FRAMECOUNT-MISMATCH': '清单声明的帧数与从媒体文件中实测的帧数不一致。',
+  'bo.flag.AUDIO-STATS-ZERO': '清单报告音频帧数为零，但实际存在音频流。',
+  'bo.flag.MANIFEST-FILES-UNRESOLVED': '清单列出的部分文件在存储卡上并不存在。',
+  'bo.flag.SESSION-UNCLOSED': '设备没有写入结束时间，但录制内容本身没有问题。',
+  'bo.flag.STATS-ZEROED': '清单中的统计数据全为零，但媒体文件确实存在。',
+  'bo.flag.PTS-EMPTY': '时间戳附属文件存在于存储卡上，但其中没有任何时间戳。',
+  'bo.flag.PTS-ABSENT': '该数据流没有随附时间戳文件。',
+  'bo.flag.PTS-TRUNCATED': '时间戳文件在一行中间中断，最后一条不完整的记录已被丢弃。',
+  'bo.flag.STATS-STALE': '统计数据似乎是从上一段录制中复制而来，与实测结果不符。',
+  'bo.flag.STREAM-CLOCK-FAULT': '该数据流的时间跨度无法用其自身的采样数量来解释。',
+  'bo.flag.PART-MISSING-TAIL': '存储卡上的分段数少于清单声明的数量，录制提前结束。',
+  'bo.flag.TIMING-ESTIMATED': '时间信息是推算得出而非精确读取，因此可结算时长的确定性较低。',
+  'bo.flag.STREAM-SKEW-HIGH': '各数据流的起始时间相差过大。',
+  'bo.flag.PART-GAP': '同一数据流的两个相邻分段之间存在时间空隙。',
+  'bo.flag.PART-ORDER-CONFLICT': '分段编号与时间戳所显示的先后顺序相互矛盾。',
+  'bo.flag.FIRMWARE-UNKNOWN': '设备固件版本不在本平台已测试的范围之内。',
+  'bo.flag.CAMERA-NAMING-CONFLICT': '存储卡上的摄像头命名与清单中的描述不一致。',
+  'bo.flag.IMU-RATE-ANOMALY': '实测的 IMU 采样率与清单声明的采样率不符。',
+  'bo.flag.CALIB-MISSING': '该片段没有随附标定文件。',
+  'bo.flag.MEDIA-MISSING': '本次录制声明的某个数据流在磁盘上没有对应的媒体文件。',
+  'bo.flag.MEDIA-UNREADABLE': '媒体文件存在，但无法解码。',
+  'bo.flag.MEDIA-TRUNCATED': '媒体文件结构上不完整：传输没有完成。',
+  'bo.flag.ROWS-MALFORMED': '时间戳文件中包含并非时间戳的行。',
+  'bo.flag.CALIB-UNREADABLE': '标定文件在磁盘上，但无法解析。',
+  'bo.flag.MANIFEST-UNREADABLE': '清单文件在磁盘上但无法解析，因此没有任何内容与之比对。',
+  'bo.flag.PART-MISSING-INTERIOR': '多分段数据流的中间缺少了一个分段。',
+  'bo.flag.CHECKSUM-MISMATCH': '同一次录制的两次交付之间，文件字节发生了变化。',
+  'bo.flag.DUR-EXCEEDS-WINDOW': '声明的时长超过了该记录自身时间戳所描述的时间窗口。',
+  'bo.flag.EPISODE-ID-FALLBACK': '目录名无法解析，片段编号退回使用原始目录名。',
+  'bo.flag.SERIAL-CONFLICT': '目录名、清单和标定文件对设备序列号的记载互不一致。',
+  'bo.flag.SESSION-CONFLICT': '声明的录制编号与交接记录不一致。',
   'meta.unknown': '未知',
   'meta.claimHint': '仅供参考。设备清单会高估素材长度。',
   'meta.measuredHint': '结算以此为准。',
@@ -1204,6 +1382,26 @@ const zh: Record<MessageKey, string> = {
     '本次交付超过单次上传允许的大小。请分多次上传，或将存储卡交至上传中心。',
   'bo.refused.upload_superseded':
     '文件传输期间，该段素材出现了更新的交付，因此本次结果未被记录。请重新发起上传。',
+
+  /** 采集端应用自身的拒绝原因（collector-app.ts 的 COLLECTOR_API_REFUSALS）。 */
+  'bo.refused.task_not_found': '该任务已不存在。',
+  'bo.refused.task_not_claimable': '该任务目前未开放，无法领取，也无法向其记录采集。',
+  'bo.refused.task_at_capacity': '该任务的采集员名额已满，请选择其他任务。',
+  'bo.refused.already_claimed': '您已经领取了该任务。',
+  'bo.refused.exam_not_passed': '领取任务前必须通过考核。请在培训页面参加考核。',
+  'bo.refused.not_qualified': '该账号尚未通过采集资格审核。可向上传中心询问当前状态。',
+  'bo.refused.agreements_incomplete': '领取任务前必须接受全部六份协议。',
+  'bo.refused.claim_id_reused': '该编号已属于另一项任务。请重新领取任务。',
+  'bo.refused.claim_released': '您此前已放弃该任务，该编号不能再次使用。请重新领取以获取新编号。',
+  'bo.refused.agreement_version_unknown': '该页面上的协议版本已过期。请重新加载并阅读后再接受。',
+  'bo.refused.device_not_found': '没有设备使用该序列号。请核对设备外壳上的编号。',
+  'bo.refused.device_not_available': '该设备已停用，无法绑定。',
+  'bo.refused.already_bound': '该设备已绑定给其他采集员。',
+  'bo.refused.device_not_bound': '该设备未绑定到您名下。开始采集会话前请先绑定。',
+  'bo.refused.task_not_claimed': '您未持有该任务，无法向其记录采集。请先领取任务。',
+  'bo.refused.scenario_not_found': '本平台不记录该采集场景。',
+  'bo.refused.session_id_reused': '该编号已属于另一个采集会话。请重新创建会话。',
+
   'bo.refused.review_disputes_open_key': '该审核结果已在申诉中。',
   'bo.refused.review_disputes_decided_check': '该审核尚未给出结果，无可申诉的内容。',
   'bo.refused.review_disputes_final_check': '该结果本身已是复审结果，复审为最终结论。',
@@ -1245,6 +1443,9 @@ const zh: Record<MessageKey, string> = {
   'settle.generate': '生成账单',
   'settle.generate.hint': '为该周期内所有待结算记录开具账单。重复执行不会产生变化。',
   'settle.generate.result': '已创建 {{created}} 张账单；{{notPayable}} 条金额为零的结算记录未列入。',
+  'settle.generate.deferred': '{{n}} 条结算记录在本周期已有账单（{{who}}），因此顺延至下一周期。这笔钱不会丢失。',
+  'settle.generate.skipped': '{{n}} 条结算记录（{{who}}）在本次读取期间已被另一次运行按其他周期开具账单。它们在那次运行的账单上。',
+  'settle.generate.exception': '本周期有 {{n}} 条结算记录被搁置为异常。',
   'settle.export.payout': '导出付款 CSV',
   'settle.export.payout.hint': '逐行及整体加哈希，并记录在案。仅限财务。',
   'settle.export.lines': '导出明细 CSV',
@@ -1259,8 +1460,7 @@ const zh: Record<MessageKey, string> = {
   'settle.sort': '按{{column}}排序',
   'settle.withheld.note': '个人所得税代扣比例尚未确定。服务端报告代扣为 0，实付等于总额。',
   'settle.asStored': '按存储值显示，单位 {{currency}}。此处不取整。',
-  'settle.wholeVnd': '整数越南盾，由数据库换算。',
-  'settle.wholeVnd.none': '没有整数越南盾金额：总额带有小数部分，而取整规则尚未决定。',
+  'settle.wholeVnd': '整数越南盾。总额向下取整；每张账单采集者最多损失不到一盾。',
   'settle.lines': '{{n}} 条明细',
   'settle.attempt.none': '尚无付款尝试',
   'settle.attempt.created': '已创建',
@@ -1284,13 +1484,19 @@ const zh: Record<MessageKey, string> = {
   'settle.issue.none': '没有。这张账单可以支付。',
   'settle.issue.no_account': '采集者尚未申报收款账户。',
   'settle.issue.account_unverified': '收款账户尚未通过 ZaloPay 验证。',
-  'settle.issue.total_fractional': '总额带有小数部分，而取整规则尚未决定。',
   'settle.issue.over_bank_ceiling': '超过 ZaloPay 单笔银行转账上限 10,000,000 越南盾。',
   'settle.issue.under_bank_minimum': '低于 ZaloPay 银行转账最低金额 2,000 越南盾。',
+  'settle.issue.under_one_dong': '整张账单不足一越南盾，向下取整后没有可转账的金额。',
   'settle.issue.over_cap': '超过本周期每位采集者的上限。',
   'settle.issue.risk_hold': '风险引擎已暂停这张账单的支付。',
   'settle.issue.attempt_open': '这张账单还有一次付款尝试未完成。',
   'settle.issue.already_paid': '这张账单已支付。',
+  'settle.issue.line_in_exception': '这张账单上有一条明细被搁置为异常。',
+  'settle.state.pending_review': '等待审核',
+  'settle.state.pending_settlement': '等待开具账单',
+  'settle.state.bill_generated': '已列入已开具的账单',
+  'settle.state.manually_paid': '已通过人工渠道支付',
+  'settle.state.exception': '已搁置为异常',
 
   'settle.preflight.intro': '付款前必读。本批次将发送的内容、钱包余额、哪些账户未验证，以及引擎标记了谁。',
   'settle.preflight.balance': '钱包余额',
@@ -1337,6 +1543,18 @@ const zh: Record<MessageKey, string> = {
   'settle.batch.stopped': '批次在 {{collector}} 处停止：{{reason}} 已发送的保持已发送；由轮询程序完成。',
   'settle.batch.done': '全部 {{n}} 笔转账已发送。最终状态由轮询程序确定。',
   'settle.batch.noneOk': '付款前检查拒绝了本批次，或其中没有可支付的账单，因此无法发送。',
+  'settle.batch.refused.title': '未发送',
+  'settle.batch.refused.body': '这些账单没有发送，每条旁边写明原因。其中有些已经支付或正在处理中；多数需要有人处理后，任何一次运行才会发送。',
+  'settle.batch.tickets.title': '工单',
+  'settle.batch.tickets.body': '在本次运行期间产生。需要有人处理。',
+  'settle.batch.aborted': '本次运行因错误而中止，不是因为被拒绝。',
+  'settle.batch.aborted.at': '它在 {{collector}} 处停止。',
+  'settle.batch.aborted.body': '已发送的转账保持已发送并已提交。抛出错误的原因在服务端日志中，不在本报告里。已发出的转账由轮询程序确定最终状态。',
+  'settle.ticket.TICKET.POLL_EXHAUSTED': '轮询已放弃一笔转账',
+  'settle.ticket.TICKET.ORDER_NOT_FOUND': 'ZaloPay 找不到该订单',
+  'settle.ticket.TICKET.CAP_EXCEEDED': '有账单超过每位采集者的上限',
+  'settle.ticket.TICKET.BATCH_REFUSED': '批次在发送时被拒绝',
+  'settle.ticket.TICKET.RECON_DISCREPANCY': '对账发现差异',
 
   'settle.bill.back': '全部账单',
   'settle.bill.notInPeriod': '该账单不属于本周期。',
@@ -1361,6 +1579,17 @@ const zh: Record<MessageKey, string> = {
   'settle.bill.attempt.polls': '轮询次数',
   'settle.bill.attempt.created': '创建时间',
   'settle.bill.attempt.settled': '完成时间',
+  'settle.bill.lines.title': '账单明细',
+  'settle.bill.lines.empty': '这张账单没有明细。',
+  'settle.bill.lines.exceptions': '有 {{n}} 条明细被搁置为异常。它们仍在账单上，也仍计入总额。',
+  'settle.bill.lines.reproduce': '每一笔金额是单价乘以有效分钟数，再四舍五入到小数点后四位，因此旁边两列可以还原它。总额是各条明细的精确合计。向下取整为整数越南盾只在支付时进行一次，绝不在明细上进行。',
+  'settle.bill.line.task': '任务',
+  'settle.bill.line.episode': '片段',
+  'settle.bill.line.unitPrice': '单价',
+  'settle.bill.line.minutes': '有效分钟数',
+  'settle.bill.line.amount': '金额',
+  'settle.bill.line.state': '状态',
+  'settle.bill.line.reviewed': '审核时间',
 
   'settle.pay.title': '登记付款',
   'settle.pay.manual.intro': '请自行通过 ZaloPay 或银行向上述账户转账。然后回到这里登记该笔转账的参考号。数据库会核对金额与账单是否一致。',
@@ -1485,12 +1714,12 @@ const zh: Record<MessageKey, string> = {
   'risk.signal.OPS.CONCENTRATION': '在 {operators} 位操作员都在处理的情况下，操作员 {operator_ref} 处理了该采集者账单 {events} 次操作中的 {share_pct}。',
 
   'bo.refused.payout_attempts_previous_not_failed': '这张账单已有一次未失败的付款尝试。只有在前一次尝试失败之后才能发起新的尝试。',
-  'bo.refused.payout_attempts_total_fractional': '账单总额带有小数部分，而取整规则尚未决定。在决定之前无法支付。',
   'bo.refused.payout_attempts_amount_check': '输入的金额与账单总额不一致。没有登记任何内容。',
   'bo.refused.payout_attempts_account_owner': '该收款账户属于另一位采集者。',
   'bo.refused.payout_attempts_account_current': '该收款账户已不是采集者当前的账户。请刷新账单。',
   'bo.refused.payout_attempts_bank_ceiling': '超过 ZaloPay 单笔银行转账上限 10,000,000 越南盾。无法作为一笔转账发送，拆分需要上报决定，而不是一个按钮。',
   'bo.refused.payout_attempts_bank_minimum': '低于 ZaloPay 银行转账最低金额 2,000 越南盾。',
+  'bo.refused.payout_attempts_amount_positive_check': '这张账单总额不足一越南盾，向下取整后为 0 越南盾，金额为零的付款不会被记录。没有发送任何款项。',
   'bo.refused.payout_attempts_transition_check': '付款尝试不能以这种方式从当前状态转换。请刷新列表。',
   'bo.refused.payout_attempts_succeeded_immutable': '已成功的付款尝试是最终状态，不能更改。',
   'bo.refused.payout_attempts_failed_terminal': '已失败的付款尝试是最终状态。再次付款是一次新的尝试。',
@@ -1520,6 +1749,22 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.payout_account_not_this_centre': '该采集者未在本中心交付过任何素材，因此本柜台不能申报其账户。',
   'bo.refused.payout_attempt_not_resolvable': '该付款尝试在当前状态下不能人工处理。只有待处理、轮询耗尽或从未发送的尝试才可以。',
   'bo.refused.payout_bill_period_mismatch': '该账单属于另一个周期。',
+
+  // 登录验证码的发送失败（zns.ts 中的 ZNS_REFUSALS）。
+  'bo.refused.zns_no_zalo_account':
+    '该手机号没有 Zalo 账号，验证码无法送达，此采集者无法登录。请让他们在该号码上安装 Zalo，或为其登记另一个号码。',
+  'bo.refused.zns_phone_not_vietnamese':
+    '该采集者档案中的号码不是越南手机号，因此未发送验证码。请在后台更正该号码。',
+  'bo.refused.zns_template_rejected':
+    'Zalo 拒绝了登录短信模板。在模板重新通过审核并启用之前，没有人能登录。这是 Zalo 公众号一侧的事，与采集者无关。',
+  'bo.refused.zns_quota_exhausted': 'Zalo 公众号的通知配额已用尽，因此未发送验证码。在购买新配额之前无人能登录。',
+  'bo.refused.zns_rate_limited': 'Zalo 因发送过快暂时拒绝了消息。它会自行恢复；请让采集者几分钟后再试。',
+  'bo.refused.zns_credentials_rejected':
+    'Zalo 拒绝了本服务器的凭据，因此未发送验证码。访问令牌错误或已过期，需要重新获取。',
+  'bo.refused.zns_unreachable':
+    '无法连接 Zalo，因此未发送验证码。请让采集者再试一次；如果反复出现，说明与 Zalo 的链路已中断。',
+  'bo.refused.zns_refused':
+    'Zalo 拒绝发送验证码，给出的原因本服务器无法识别。原因记录在服务器日志中；请一边查阅日志一边让采集者再试。',
 };
 
 const vi: Record<MessageKey, string> = {
@@ -1574,6 +1819,38 @@ const vi: Record<MessageKey, string> = {
   'meta.yes': 'Có',
   'meta.no': 'Không',
   'meta.none': 'Không có',
+  'bo.flag.DUR-MANIFEST-INFLATED': 'Bản kê của thiết bị khai thời lượng ghi dài hơn thời lượng thực có trong tệp phương tiện.',
+  'bo.flag.FRAMECOUNT-MISMATCH': 'Số khung hình bản kê khai báo không khớp với số khung hình đo được trong tệp phương tiện.',
+  'bo.flag.AUDIO-STATS-ZERO': 'Bản kê báo số khung âm thanh bằng không dù vẫn có luồng âm thanh.',
+  'bo.flag.MANIFEST-FILES-UNRESOLVED': 'Bản kê liệt kê những tệp không có trên thẻ nhớ.',
+  'bo.flag.SESSION-UNCLOSED': 'Thiết bị không ghi thời điểm kết thúc; bản thân bản ghi vẫn bình thường.',
+  'bo.flag.STATS-ZEROED': 'Khối thống kê trong bản kê toàn số không dù vẫn có tệp phương tiện.',
+  'bo.flag.PTS-EMPTY': 'Tệp dấu thời gian đi kèm có trên thẻ nhớ nhưng không chứa dấu thời gian nào.',
+  'bo.flag.PTS-ABSENT': 'Luồng dữ liệu này không có tệp dấu thời gian đi kèm.',
+  'bo.flag.PTS-TRUNCATED': 'Tệp dấu thời gian bị cắt giữa dòng; dòng cuối chưa hoàn chỉnh đã bị bỏ.',
+  'bo.flag.STATS-STALE': 'Khối thống kê có vẻ được sao lại từ phiên trước: nó không khớp với kết quả đo được.',
+  'bo.flag.STREAM-CLOCK-FAULT': 'Khoảng thời gian của luồng không thể giải thích bằng chính số mẫu mà nó chứa.',
+  'bo.flag.PART-MISSING-TAIL': 'Số phần trên thẻ ít hơn số bản kê khai báo; bản ghi kết thúc sớm.',
+  'bo.flag.TIMING-ESTIMATED': 'Thời lượng được ước tính chứ không đọc chính xác, nên thời gian tính công kém chắc chắn hơn.',
+  'bo.flag.STREAM-SKEW-HIGH': 'Các luồng dữ liệu bắt đầu lệch nhau quá xa.',
+  'bo.flag.PART-GAP': 'Có khoảng trống thời gian giữa hai phần liên tiếp của cùng một luồng.',
+  'bo.flag.PART-ORDER-CONFLICT': 'Số thứ tự các phần mâu thuẫn với trình tự mà dấu thời gian thể hiện.',
+  'bo.flag.FIRMWARE-UNKNOWN': 'Phiên bản firmware của thiết bị nằm ngoài tập đã được nền tảng kiểm thử.',
+  'bo.flag.CAMERA-NAMING-CONFLICT': 'Tên các camera trên thẻ không khớp với mô tả trong bản kê.',
+  'bo.flag.IMU-RATE-ANOMALY': 'Tần số lấy mẫu IMU đo được khác với tần số bản kê khai báo.',
+  'bo.flag.CALIB-MISSING': 'Tệp hiệu chuẩn không đi kèm với phân đoạn này.',
+  'bo.flag.MEDIA-MISSING': 'Một luồng mà phiên ghi khai báo lại không có tệp phương tiện trên đĩa.',
+  'bo.flag.MEDIA-UNREADABLE': 'Tệp phương tiện có tồn tại nhưng không giải mã được.',
+  'bo.flag.MEDIA-TRUNCATED': 'Tệp phương tiện bị thiếu về cấu trúc: quá trình truyền chưa hoàn tất.',
+  'bo.flag.ROWS-MALFORMED': 'Tệp dấu thời gian chứa những dòng không phải là dấu thời gian.',
+  'bo.flag.CALIB-UNREADABLE': 'Tệp hiệu chuẩn có trên đĩa nhưng không đọc phân tích được.',
+  'bo.flag.MANIFEST-UNREADABLE': 'Bản kê có trên đĩa nhưng không phân tích được, nên không có gì được đối chiếu với nó.',
+  'bo.flag.PART-MISSING-INTERIOR': 'Thiếu một phần ở giữa của luồng nhiều phần.',
+  'bo.flag.CHECKSUM-MISMATCH': 'Nội dung tệp đã thay đổi giữa hai lần bàn giao của cùng một phiên ghi.',
+  'bo.flag.DUR-EXCEEDS-WINDOW': 'Thời lượng được khai dài hơn khoảng thời gian mà chính dấu thời gian của bản ghi mô tả.',
+  'bo.flag.EPISODE-ID-FALLBACK': 'Tên thư mục không phân tích được; mã phân đoạn lùi về dùng nguyên tên thư mục.',
+  'bo.flag.SERIAL-CONFLICT': 'Tên thư mục, bản kê và tệp hiệu chuẩn không thống nhất về số sê-ri thiết bị.',
+  'bo.flag.SESSION-CONFLICT': 'Mã phiên được khai không khớp với hồ sơ bàn giao.',
   'meta.unknown': 'Không rõ',
   'meta.claimHint': 'Chỉ để tham khảo. Tệp khai báo của thiết bị thường ghi dài hơn thực tế.',
   'meta.measuredHint': 'Kết luận được chấm dựa trên con số này.',
@@ -1873,6 +2150,42 @@ const vi: Record<MessageKey, string> = {
     'Lần giao đó lớn hơn mức một lần tải lên được phép khai báo. Hãy gửi thành nhiều lần tải lên, hoặc nộp thẻ nhớ tại trung tâm tải lên.',
   'bo.refused.upload_superseded':
     'Một lần giao mới hơn của đoạn ghi hình này đã đến trong khi các tệp đang được gửi, nên kết quả lần này không được ghi nhận. Hãy tải lên lại.',
+
+  /**
+   * Lời từ chối của chính ứng dụng người thu thập (`COLLECTOR_API_REFUSALS`).
+   * LOC-01 đặt tiếng Việt trên điện thoại, nên đây là ngôn ngữ người đọc chúng.
+   */
+  'bo.refused.task_not_found': 'Nhiệm vụ đó không còn nữa.',
+  'bo.refused.task_not_claimable':
+    'Nhiệm vụ đó hiện không mở, nên không thể nhận và không thể ghi hình cho nhiệm vụ đó.',
+  'bo.refused.task_at_capacity':
+    'Nhiệm vụ đó đã đủ số người thu thập. Hãy chọn nhiệm vụ khác.',
+  'bo.refused.already_claimed': 'Bạn đã nhận nhiệm vụ này rồi.',
+  'bo.refused.exam_not_passed':
+    'Bạn phải đạt bài kiểm tra trước khi nhận nhiệm vụ. Hãy làm bài ở màn hình đào tạo.',
+  'bo.refused.not_qualified':
+    'Tài khoản này chưa được duyệt để thu thập. Trung tâm tải lên có thể cho biết tình trạng hiện tại.',
+  'bo.refused.agreements_incomplete':
+    'Bạn phải chấp nhận đủ sáu thỏa thuận trước khi nhận nhiệm vụ.',
+  'bo.refused.claim_id_reused':
+    'Mã đó đã thuộc về một nhiệm vụ khác. Hãy thử nhận nhiệm vụ lại.',
+  'bo.refused.claim_released':
+    'Bạn đã trả lại nhiệm vụ này trước đó, nên mã đó không dùng lại được. Hãy nhận lại để có mã mới.',
+  'bo.refused.agreement_version_unknown':
+    'Các thỏa thuận trên màn hình này đã cũ. Hãy tải lại và đọc trước khi chấp nhận.',
+  'bo.refused.device_not_found':
+    'Không có thiết bị nào mang số sê-ri đó. Hãy kiểm tra số in trên vỏ máy.',
+  'bo.refused.device_not_available':
+    'Thiết bị đó đã ngừng sử dụng, nên không thể ghép nối.',
+  'bo.refused.already_bound': 'Thiết bị đó đã được ghép nối với người khác.',
+  'bo.refused.device_not_bound':
+    'Thiết bị đó chưa ghép nối với bạn. Hãy ghép nối trước khi bắt đầu phiên thu thập.',
+  'bo.refused.task_not_claimed':
+    'Bạn không giữ nhiệm vụ đó, nên không thể ghi hình cho nó. Hãy nhận nhiệm vụ trước.',
+  'bo.refused.scenario_not_found': 'Nền tảng không ghi nhận bối cảnh đó.',
+  'bo.refused.session_id_reused':
+    'Mã đó đã thuộc về một phiên thu thập khác. Hãy tạo lại phiên.',
+
   'bo.refused.unknown': 'Máy chủ đã từ chối thay đổi đó.',
 
   'theme.toggle': 'Giao diện',
@@ -1907,6 +2220,9 @@ const vi: Record<MessageKey, string> = {
   'settle.generate': 'Lập hóa đơn',
   'settle.generate.hint': 'Lập hóa đơn cho mọi khoản đang chờ trong kỳ. Chạy hai lần không thay đổi gì.',
   'settle.generate.result': 'Đã lập {{created}} hóa đơn; {{notPayable}} khoản có giá trị bằng không được để ngoài.',
+  'settle.generate.deferred': '{{n}} khoản đã có hóa đơn trong kỳ này ({{who}}) nên được chuyển sang kỳ kế tiếp. Số tiền không bị mất.',
+  'settle.generate.skipped': '{{n}} khoản ({{who}}) đã được một lần chạy khác lập hóa đơn theo kỳ khác trong lúc lần này đang đọc. Chúng nằm trên hóa đơn của lần chạy đó.',
+  'settle.generate.exception': '{{n}} khoản trong kỳ này đang được giữ lại như ngoại lệ.',
   'settle.export.payout': 'Xuất CSV chi trả',
   'settle.export.payout.hint': 'Băm từng dòng và cả tệp, có ghi nhận. Chỉ dành cho tài chính.',
   'settle.export.lines': 'Xuất CSV chi tiết',
@@ -1921,8 +2237,7 @@ const vi: Record<MessageKey, string> = {
   'settle.sort': 'Sắp xếp theo {{column}}',
   'settle.withheld.note': 'Tỷ lệ khấu trừ thuế TNCN chưa được quyết định. Máy chủ báo khấu trừ 0 và thực nhận bằng tổng.',
   'settle.asStored': 'Đúng như đã lưu, đơn vị {{currency}}. Không làm tròn ở đây.',
-  'settle.wholeVnd': 'Số đồng chẵn, do cơ sở dữ liệu quy đổi.',
-  'settle.wholeVnd.none': 'Không có số đồng chẵn: tổng có phần lẻ và chưa ai quyết định cách làm tròn.',
+  'settle.wholeVnd': 'Số đồng chẵn. Tổng được làm tròn xuống; mỗi hóa đơn cộng tác viên mất chưa tới một đồng.',
   'settle.lines': '{{n}} dòng',
   'settle.attempt.none': 'Chưa có lần chi',
   'settle.attempt.created': 'Đã tạo',
@@ -1946,13 +2261,19 @@ const vi: Record<MessageKey, string> = {
   'settle.issue.none': 'Không có gì. Hóa đơn này có thể chi trả.',
   'settle.issue.no_account': 'Cộng tác viên chưa khai tài khoản nhận tiền.',
   'settle.issue.account_unverified': 'Tài khoản nhận tiền chưa được ZaloPay xác minh.',
-  'settle.issue.total_fractional': 'Tổng có phần lẻ của một đồng, và quy tắc làm tròn chưa được quyết định.',
   'settle.issue.over_bank_ceiling': 'Vượt trần 10.000.000 VND của ZaloPay cho một lệnh chuyển ngân hàng.',
   'settle.issue.under_bank_minimum': 'Dưới mức tối thiểu 2.000 VND của ZaloPay cho một lệnh chuyển ngân hàng.',
+  'settle.issue.under_one_dong': 'Cả hóa đơn trị giá chưa tới một đồng, nên làm tròn xuống thì không còn gì để chuyển.',
   'settle.issue.over_cap': 'Vượt hạn mức mỗi cộng tác viên trong kỳ này.',
   'settle.issue.risk_hold': 'Bộ máy rủi ro đang giữ hóa đơn này.',
   'settle.issue.attempt_open': 'Hóa đơn này còn một lần chi chưa kết thúc.',
   'settle.issue.already_paid': 'Hóa đơn này đã được trả.',
+  'settle.issue.line_in_exception': 'Một dòng trên hóa đơn này đang được giữ lại như ngoại lệ.',
+  'settle.state.pending_review': 'Chờ duyệt',
+  'settle.state.pending_settlement': 'Chờ lập hóa đơn',
+  'settle.state.bill_generated': 'Đã nằm trên hóa đơn đã lập',
+  'settle.state.manually_paid': 'Đã trả qua kênh thủ công',
+  'settle.state.exception': 'Đang giữ lại như ngoại lệ',
 
   'settle.preflight.intro':
     'Đọc trước mọi khoản chi. Lô này sẽ gửi gì, ví đang có bao nhiêu, tài khoản nào chưa xác minh, và bộ máy rủi ro đã gắn cờ ai.',
@@ -2004,6 +2325,18 @@ const vi: Record<MessageKey, string> = {
   'settle.batch.stopped': 'Lô dừng tại {{collector}}: {{reason}} Những gì đã gửi vẫn là đã gửi; bộ hỏi lại sẽ hoàn tất chúng.',
   'settle.batch.done': 'Đã gửi đủ {{n}} lệnh chuyển. Bộ hỏi lại sẽ xác định trạng thái cuối.',
   'settle.batch.noneOk': 'Kiểm tra đã từ chối lô, hoặc trong lô không có gì chi trả được, nên không thể gửi.',
+  'settle.batch.refused.title': 'Không gửi',
+  'settle.batch.refused.body': 'Các hóa đơn này không được gửi, lý do ghi bên cạnh từng dòng. Một số đã được trả hoặc đang xử lý; phần lớn cần có người xử lý trước khi bất kỳ lần chạy nào gửi chúng.',
+  'settle.batch.tickets.title': 'Phiếu xử lý',
+  'settle.batch.tickets.body': 'Được tạo trong lúc lần chạy này diễn ra. Cần có người xử lý.',
+  'settle.batch.aborted': 'Lần chạy dừng vì lỗi, không phải vì bị từ chối.',
+  'settle.batch.aborted.at': 'Nó dừng ở {{collector}}.',
+  'settle.batch.aborted.body': 'Những gì đã gửi thì đã gửi và đã ghi nhận. Lý do phát sinh lỗi nằm trong nhật ký máy chủ, không có trong báo cáo này. Chương trình dò sẽ xác định trạng thái của các khoản đã chuyển.',
+  'settle.ticket.TICKET.POLL_EXHAUSTED': 'Đã ngừng dò một khoản chuyển',
+  'settle.ticket.TICKET.ORDER_NOT_FOUND': 'ZaloPay không tìm thấy đơn này',
+  'settle.ticket.TICKET.CAP_EXCEEDED': 'Một hóa đơn vượt hạn mức của người thu thập',
+  'settle.ticket.TICKET.BATCH_REFUSED': 'Lô bị từ chối lúc gửi',
+  'settle.ticket.TICKET.RECON_DISCREPANCY': 'Đối soát phát hiện chênh lệch',
 
   'settle.bill.back': 'Tất cả hóa đơn',
   'settle.bill.notInPeriod': 'Hóa đơn đó không thuộc kỳ này.',
@@ -2028,6 +2361,17 @@ const vi: Record<MessageKey, string> = {
   'settle.bill.attempt.polls': 'Số lần hỏi lại',
   'settle.bill.attempt.created': 'Tạo lúc',
   'settle.bill.attempt.settled': 'Hoàn tất lúc',
+  'settle.bill.lines.title': 'Các dòng',
+  'settle.bill.lines.empty': 'Hóa đơn này không có dòng nào.',
+  'settle.bill.lines.exceptions': '{{n}} dòng đang được giữ lại như ngoại lệ. Chúng vẫn nằm trên hóa đơn và vẫn tính vào tổng.',
+  'settle.bill.lines.reproduce': 'Mỗi số tiền là đơn giá nhân với số phút hiệu lực rồi làm tròn đến bốn chữ số thập phân, nên hai cột bên cạnh tái lập được nó. Tổng là tổng chính xác của các dòng. Việc làm tròn xuống thành đồng nguyên chỉ diễn ra một lần, lúc chi trả, và không bao giờ trên một dòng.',
+  'settle.bill.line.task': 'Nhiệm vụ',
+  'settle.bill.line.episode': 'Tập dữ liệu',
+  'settle.bill.line.unitPrice': 'Đơn giá',
+  'settle.bill.line.minutes': 'Số phút hiệu lực',
+  'settle.bill.line.amount': 'Số tiền',
+  'settle.bill.line.state': 'Trạng thái',
+  'settle.bill.line.reviewed': 'Đã duyệt lúc',
 
   'settle.pay.title': 'Ghi nhận khoản chi',
   'settle.pay.manual.intro':
@@ -2190,14 +2534,14 @@ const vi: Record<MessageKey, string> = {
 
   'bo.refused.payout_attempts_previous_not_failed':
     'Hóa đơn này đã có một lần chi chưa thất bại. Chỉ có thể tạo lần chi mới sau khi lần trước đã thất bại.',
-  'bo.refused.payout_attempts_total_fractional':
-    'Tổng hóa đơn có phần lẻ của một đồng, và chưa ai quyết định cách làm tròn. Không thể trả cho đến khi có quyết định.',
   'bo.refused.payout_attempts_amount_check': 'Số tiền đã gõ không bằng tổng hóa đơn. Chưa ghi nhận gì.',
   'bo.refused.payout_attempts_account_owner': 'Tài khoản nhận tiền đó thuộc về một cộng tác viên khác.',
   'bo.refused.payout_attempts_account_current': 'Tài khoản nhận tiền đó không còn là tài khoản hiện tại của cộng tác viên. Tải lại hóa đơn.',
   'bo.refused.payout_attempts_bank_ceiling':
     'Vượt trần 10.000.000 VND của ZaloPay cho một lệnh chuyển ngân hàng. Không thể đi trong một lệnh, và việc chia nhỏ phải được trình lên, không phải một cái nút.',
   'bo.refused.payout_attempts_bank_minimum': 'Dưới mức tối thiểu 2.000 VND của ZaloPay cho một lệnh chuyển ngân hàng.',
+  'bo.refused.payout_attempts_amount_positive_check':
+    'Hóa đơn này có tổng chưa tới một đồng, nên làm tròn xuống là 0 VND, và một khoản thanh toán bằng không thì không được ghi nhận. Không có gì được gửi đi.',
   'bo.refused.payout_attempts_transition_check': 'Lần chi không thể chuyển từ trạng thái hiện tại theo cách đó. Tải lại danh sách.',
   'bo.refused.payout_attempts_succeeded_immutable': 'Lần chi đã thành công là cuối cùng và không thể thay đổi.',
   'bo.refused.payout_attempts_failed_terminal': 'Lần chi đã thất bại là cuối cùng. Trả lại là một lần chi mới.',
@@ -2250,6 +2594,24 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.payout_attempt_not_resolvable':
     'Lần chi này không thể xử lý bằng tay ở trạng thái hiện tại. Chỉ lần chi đang treo, đã cạn hỏi lại hoặc chưa từng gửi mới được.',
   'bo.refused.payout_bill_period_mismatch': 'Hóa đơn đó thuộc một kỳ khác.',
+
+  // Gửi mã đăng nhập thất bại (ZNS_REFUSALS trong zns.ts).
+  'bo.refused.zns_no_zalo_account':
+    'Số điện thoại đó không có tài khoản Zalo nên mã đăng nhập không thể đến được, và cộng tác viên này không đăng nhập được. Hãy nhờ họ cài Zalo trên số đó, hoặc ghi nhận một số khác cho họ.',
+  'bo.refused.zns_phone_not_vietnamese':
+    'Số trong hồ sơ của cộng tác viên này không phải số di động Việt Nam nên không gửi được mã. Hãy sửa lại số trong phần quản trị.',
+  'bo.refused.zns_template_rejected':
+    'Zalo từ chối mẫu tin nhắn đăng nhập. Không ai đăng nhập được cho tới khi mẫu được duyệt và bật lại. Đây là việc của tài khoản Zalo Official Account, không phải của cộng tác viên.',
+  'bo.refused.zns_quota_exhausted':
+    'Tài khoản Zalo Official Account đã hết hạn mức tin nhắn nên không gửi được mã. Không ai đăng nhập được cho tới khi mua thêm.',
+  'bo.refused.zns_rate_limited':
+    'Zalo tạm thời từ chối vì gửi quá nhiều tin trong thời gian ngắn. Việc này tự hết; hãy nhờ cộng tác viên thử lại sau vài phút.',
+  'bo.refused.zns_credentials_rejected':
+    'Zalo từ chối thông tin xác thực của máy chủ này nên không gửi được mã. Access token sai hoặc đã hết hạn và phải được cấp lại.',
+  'bo.refused.zns_unreachable':
+    'Không kết nối được tới Zalo nên không gửi được mã. Hãy nhờ cộng tác viên thử lại; nếu vẫn vậy thì đường tới Zalo đang hỏng.',
+  'bo.refused.zns_refused':
+    'Zalo từ chối gửi mã với một lý do máy chủ này không hiểu. Lý do nằm trong nhật ký máy chủ; hãy nhờ cộng tác viên thử lại trong khi có người đọc nhật ký.',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { en, zh, vi };

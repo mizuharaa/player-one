@@ -3,6 +3,8 @@ import { EpisodeRecord as EpisodeRecordSchema, type EpisodeRecord } from '@playe
 import type { Db } from '@playerone/store';
 import type { IdentInput, PayoutAccount, Peer } from './detectors/ident.ts';
 import type { Baseline, DuplicatePeer, EpisodeFacts } from './detectors/content.ts';
+import type { DeliveryFacts } from './detectors/delivery.ts';
+import type { HistoryInput } from './detectors/history.ts';
 import type { AuditFact, ReviewFact, ReviewerRate } from './detectors/ops.ts';
 import type { EpisodeSlice } from './detectors/volume.ts';
 
@@ -207,6 +209,18 @@ export async function episodeFactsFor(db: Reader, episodeId: string): Promise<Ep
   };
 }
 
+/**
+ * Peers are searched across EVERY delivery of every other episode, not only
+ * each episode's latest one.
+ *
+ * The narrower version missed the cheapest replay there is. A collector
+ * delivers footage, then redelivers the same episode with different bytes; the
+ * first delivery stops being `latest_ingest_id` and its fingerprint and its
+ * file digests leave the search. Anyone — the same collector under a second
+ * account, or another collector handed the folder — can then submit those
+ * exact bytes and match nothing. Searching `episode_ingests` instead costs one
+ * more join and closes it. The episode is still reported once, by id.
+ */
 export async function duplicatePeersFor(
   db: Reader,
   ep: Pick<EpisodeSource, 'episodeId' | 'ingestId' | 'contentFingerprint'>,
@@ -215,9 +229,9 @@ export async function duplicatePeersFor(
   const out: DuplicatePeer[] = [];
   const same = await rows(
     db,
-    sql`select e.episode_id, coalesce(c.external_ref, '(unattributed)') as external_ref
-          from episodes e
-          join episode_ingests i on i.ingest_id = e.latest_ingest_id
+    sql`select distinct e.episode_id, coalesce(c.external_ref, '(unattributed)') as external_ref
+          from episode_ingests i
+          join episodes e on e.episode_id = i.episode_id
           left join collection_sessions s on s.id = e.collection_session_id
           left join collectors c on c.id = s.collector_id
          where i.content_fingerprint = ${ep.contentFingerprint} and e.episode_id <> ${ep.episodeId}::uuid
@@ -230,7 +244,8 @@ export async function duplicatePeersFor(
     sql`select distinct e2.episode_id, coalesce(c.external_ref, '(unattributed)') as external_ref, f2.relative_path
           from episode_files f1
           join episode_files f2 on f2.sha256 = f1.sha256 and f2.ingest_id <> f1.ingest_id
-          join episodes e2 on e2.latest_ingest_id = f2.ingest_id
+          join episode_ingests i2 on i2.ingest_id = f2.ingest_id
+          join episodes e2 on e2.episode_id = i2.episode_id
           left join collection_sessions s on s.id = e2.collection_session_id
           left join collectors c on c.id = s.collector_id
          where f1.ingest_id = ${ep.ingestId}::uuid
@@ -266,6 +281,120 @@ export async function duplicatePeersFor(
     }
   }
   return out;
+}
+
+/**
+ * Every delivery of one episode, and what the latest one changed.
+ *
+ * `episode_ingests` already holds one row per delivery whose bytes differed
+ * (an identical redelivery touches `last_seen_at` and writes nothing), and
+ * `episode_defects` holds the CHECKSUM-MISMATCH payload naming each file that
+ * changed, was added or was removed. Nothing new is recorded to answer this;
+ * it was all written at store time and never read until now.
+ */
+export async function deliveryFactsFor(db: Reader, episodeId: string): Promise<DeliveryFacts | null> {
+  const r = await rows(
+    db,
+    sql`select i.ingest_id, i.ingested_at, i.measured_duration_s,
+               (i.record_json->'timing'->>'usable_start_us')::numeric as start_us,
+               (select d.payload from episode_defects d
+                 where d.ingest_id = i.ingest_id and d.code = 'CHECKSUM-MISMATCH' limit 1) as mismatch
+          from episode_ingests i
+         where i.episode_id = ${episodeId}::uuid
+         order by i.ingested_at asc, i.ingest_id asc`,
+  );
+  if (r.length === 0) return null;
+  const measuredBy = new Map(r.map((x) => [String(x['ingest_id']), Number(x['measured_duration_s'])]));
+  const last = r[r.length - 1]!;
+  const payload = last['mismatch'] as
+    | { prior_ingest_id?: string; changed?: { relative_path: string }[]; added?: { relative_path: string }[]; removed?: { relative_path: string }[] }
+    | null;
+  const names = (xs: { relative_path: string }[] | undefined): string[] => (xs ?? []).map((x) => x.relative_path);
+  const priorId = payload?.prior_ingest_id ?? '';
+  const startUs = last['start_us'];
+  return {
+    episodeId,
+    deliveries: r.length,
+    mismatchDeliveries: r.filter((x) => x['mismatch'] !== null && x['mismatch'] !== undefined).length,
+    firstDeliveredAt: date(r[0]!['ingested_at']),
+    lastDeliveredAt: date(last['ingested_at']),
+    latest:
+      payload === null || payload === undefined
+        ? null
+        : {
+            priorIngestId: priorId,
+            changed: names(payload.changed),
+            added: names(payload.added),
+            removed: names(payload.removed),
+            measuredS: Number(last['measured_duration_s']),
+            priorMeasuredS: measuredBy.get(priorId) ?? null,
+          },
+    // usable_start_us is the recording's own wall clock in microseconds, the
+    // same field the volume signals slice days on. It comes from the device,
+    // so a device whose clock is wrong reads wrong here too, and the signal
+    // that uses it says so.
+    recordedAtMs:
+      startUs === null || startUs === undefined ? null : Number(BigInt(String(startUs).split('.')[0]!) / 1000n),
+  };
+}
+
+/**
+ * A collector's own past, as the engine itself recorded it: the findings on
+ * their episodes, and the holds an operator already ruled on.
+ *
+ * Both reads are of `risk_current_flags` and `risk_holds` — this engine's
+ * output — and never of a private tally. That is the point. The history a
+ * score is built from is the history a person can open, flag by flag, with the
+ * evidence that produced each one.
+ *
+ * It follows that a collector whose episodes have not been evaluated yet has
+ * no history, and reads clear. The worker converges over passes; a first pass
+ * that evaluates a collector before their episodes is not wrong, only early.
+ */
+export async function historyFor(db: Reader, collectorId: string, from: Date, to: Date): Promise<HistoryInput> {
+  const [n] = await rows(
+    db,
+    sql`select count(distinct f.subject_id)::int as n
+          from risk_flags f
+          join episodes e on e.episode_id::text = f.subject_id
+          join collection_sessions s on s.id = e.collection_session_id
+         where f.signal_id = 'META.EVALUATED' and f.subject_type = 'episode'
+           and s.collector_id = ${collectorId}::uuid`,
+  );
+  const findings = await rows(
+    db,
+    sql`select f.subject_id, f.signal_id, g.family
+          from risk_current_flags f
+          join risk_signals g on g.signal_id = f.signal_id and g.threshold_version = f.threshold_version
+          join episodes e on e.episode_id::text = f.subject_id
+          join collection_sessions s on s.id = e.collection_session_id
+         where f.subject_type = 'episode' and s.collector_id = ${collectorId}::uuid
+           and f.severity in ('review', 'hold')
+         order by f.subject_id, f.signal_id`,
+  );
+  const clears = await rows(
+    db,
+    sql`select h.clear_verdict, h.cleared_at, h.signal_ids
+          from risk_holds h
+          join bills b on b.id = h.bill_id
+         where b.collector_id = ${collectorId}::uuid and h.cleared_at is not null
+           and h.cleared_at >= ${from.toISOString()}::timestamptz and h.cleared_at < ${to.toISOString()}::timestamptz
+         order by h.cleared_at asc`,
+  );
+  return {
+    collectorId,
+    episodesEvaluated: Number(n?.['n'] ?? 0),
+    findings: findings.map((x) => ({
+      episodeId: String(x['subject_id']),
+      signalId: String(x['signal_id']),
+      family: String(x['family']),
+    })),
+    clears: clears.map((x) => ({
+      verdict: String(x['clear_verdict']),
+      clearedAt: date(x['cleared_at'])!,
+      signalIds: (x['signal_ids'] as string[]) ?? [],
+    })),
+  };
 }
 
 export async function baselineFor(
@@ -452,12 +581,35 @@ export async function episodesDue(db: Reader): Promise<string[]> {
   return r.map((x) => String(x['episode_id']));
 }
 
-export async function billsDue(db: Reader): Promise<string[]> {
+/**
+ * Bills to evaluate: those whose facts moved since the last run, and — once
+ * `PLAYERONE_RISK_HOLD` is on — those last judged while it was off.
+ *
+ * The second arm is the whole point of the parameter. Timestamps cannot see a
+ * switch: a bill evaluated with holds disabled scores in the hold band, is
+ * refused by the payout rail (`payoutSummary`, and `risk_hold` in the payout
+ * preflight), and yet has no `risk_holds` row for an operator to clear. Every
+ * fact behind it is older than the run, so no timestamp comparison ever makes
+ * it due again. The run records what it was judged under —
+ * `META.EVALUATED.evidence.holds_enabled` — so ask that instead: absent (a run
+ * from before the key existed) or false means the bill has not been judged
+ * under enforcement and must be. The re-evaluation writes `holds_enabled: true`
+ * and the bill drops out again, whether or not a hold was raised, so this
+ * costs one extra evaluation per bill per off-to-on flip and does not repeat.
+ *
+ * ponytail: one correlated subquery per bill, served by
+ * `risk_flags_subject_idx (subject_type, subject_id, seq DESC)` — one indexed
+ * row each — and the backlog it opens is drained under the worker's existing
+ * per-tick `limit`. If that is ever too slow, store the band on the
+ * META.EVALUATED row and filter in SQL: the same upgrade `queue.ts` already
+ * names for its own candidate scan.
+ */
+export async function billsDue(db: Reader, holdsEnabled = false): Promise<string[]> {
   const r = await rows(
     db,
     sql`select b.id
           from bills b
-         where coalesce(${LATEST_EVAL} 'bill' and f.subject_id = b.id::text), '-infinity'::timestamptz)
+         where (coalesce(${LATEST_EVAL} 'bill' and f.subject_id = b.id::text), '-infinity'::timestamptz)
                < greatest(
                    b.generated_at,
                    coalesce(${LATEST_EVAL} 'collector' and f.subject_id = b.collector_id::text), '-infinity'::timestamptz),
@@ -467,6 +619,13 @@ export async function billsDue(db: Reader): Promise<string[]> {
                                                       join settlements s on s.id = l.settlement_id
                                                       join episode_reviews r on r.id = s.episode_review_id
                                                      where l.bill_id = b.id)), '-infinity'::timestamptz))
+                ${
+                  holdsEnabled
+                    ? sql`or not coalesce((select (f.evidence->>'holds_enabled')::boolean from risk_flags f
+                                            where f.signal_id = 'META.EVALUATED' and f.subject_type = 'bill' and f.subject_id = b.id::text
+                                            order by f.seq desc limit 1), false)`
+                    : sql``
+                })
          order by b.generated_at asc, b.id asc`,
   );
   return r.map((x) => String(x['id']));

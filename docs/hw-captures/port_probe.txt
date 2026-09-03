@@ -1,0 +1,33 @@
+GET :8888/ -> HTTP 405  :: b''
+GET :8888/api -> HTTP 405  :: b''
+GET :8888/files -> HTTP 405  :: b''
+GET :8888/list -> HTTP 405  :: b''
+GET :8888/status -> HTTP 405  :: b''
+GET :8888/info -> HTTP 405  :: b''
+GET :8888/api/files -> HTTP 405  :: b''
+GET :8888/recordings -> HTTP 405  :: b''
+GET :8888/storage -> HTTP 405  :: b''
+GET :8889/ -> HTTP 405  :: b''
+GET :8889/api -> HTTP 405  :: b''
+GET :8889/files -> HTTP 405  :: b''
+GET :8889/list -> HTTP 405  :: b''
+GET :8889/status -> HTTP 405  :: b''
+GET :8889/info -> HTTP 405  :: b''
+GET :8889/api/files -> HTTP 405  :: b''
+GET :8889/recordings -> HTTP 405  :: b''
+GET :8889/storage -> HTTP 405  :: b''
+GET :8890/ -> HTTP 405  :: b''
+GET :8890/api -> HTTP 405  :: b''
+GET :8890/files -> HTTP 405  :: b''
+GET :8890/list -> HTTP 405  :: b''
+GET :8890/status -> HTTP 405  :: b''
+GET :8890/info -> HTTP 405  :: b''
+GET :8890/api/files -> HTTP 405  :: b''
+GET :8890/recordings -> HTTP 405  :: b''
+GET :8890/storage -> HTTP 405  :: b''
+GET :8090/ -> ConnectionResetError
+GET :8090/api -> ConnectionResetError
+GET :8090/list -> ConnectionResetError
+GET :8090/status -> ConnectionResetError
+GET :8090/info -> ConnectionResetError
+GET :8090/api/files -> ConnectionResetError

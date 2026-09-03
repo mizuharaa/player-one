@@ -6,6 +6,7 @@
  *   RiskEngine              evaluate a collector, episode, bill or batch
  *   tick                    one worker pass, for bin/
  *   registerRisk            the HTTP routes, for buildApi
+ *   reviewQueue             the bills an operator must decide before payment
  *   billHold / currentHolds what Agent B reads before creating a payout attempt
  *   sentence / RISK_MESSAGES the plain sentences, en / zh / vi
  */
@@ -14,7 +15,8 @@ export type { Band, Evidence, Flag, RiskSummary, Severity, SubjectType, Tuning }
 export { RISK_CATALOGUE, CATALOGUE_VERSION, SIGNAL_IDS, SYNTHETIC_SIGNAL, EVALUATED_SIGNAL, seedRiskSignals, loadTuning, bandsFrom, retuneSignal, tuningHistory } from './catalogue.ts';
 export { bandFor, bandOf, isFinding, rollup, scoreOf, severityOf, summarise, SCORE_CAP } from './scoring.ts';
 export { RISK_LOCALES, RISK_MESSAGES, bandLabel, missingRiskKeys, placeholdersOf, render, sentence, type RiskLocale, type RiskMessageKey } from './sentences.ts';
-export { RiskEngine, RiskBusy, batchId, currentFlags, lastEvaluatedAt, type Evaluation, type RiskEngineOptions } from './engine.ts';
+export { RiskEngine, RiskBusy, NEEDS_OPERATOR, batchId, currentFlags, lastEvaluatedAt, type Evaluation, type RiskEngineOptions } from './engine.ts';
+export { reviewQueue, shapeQueueEntry, type QueueEntry, type QueueHoldState } from './queue.ts';
 export { tick, type TickOptions, type TickResult } from './worker.ts';
 export { registerRisk, shapeFlag, shapeSummary } from './routes.ts';
 export { billHold, currentHolds, holdHistory, clearHold, raiseHold, NoOpenHold, CLEAR_VERDICTS, type ClearVerdict, type HoldRow } from './holds.ts';

@@ -16,7 +16,7 @@ import {
   type PutResult,
 } from '../src/index.ts';
 import { MESSAGES, LOCALES } from '../src/i18n.ts';
-import { closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 import { episodeRecord } from './fixtures.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -244,7 +244,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
                 false, false, 'app')`);
     }
 
-    const app = buildApi({ db: d, tokenSecret: SECRET, objectStore: store });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET, objectStore: store });
     await app.ready();
 
     /**
@@ -751,7 +751,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
      */
     const collector = uid();
     await d.execute(sql`insert into collectors (id, external_ref, status) values (${collector}, 'col-503', 'qualified')`);
-    const app = buildApi({ db: d, tokenSecret: SECRET });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET });
     await app.ready();
     const res = await app.inject({
       method: 'POST',
@@ -933,7 +933,7 @@ describe.skipIf(!hasDb() || !hasStore())('Path A against a real S3 endpoint', ()
          others_in_frame, sensitive_info_present, session_origin)
       values (${ids.session}, ${ids.task}, ${ids.collector}, ${ids.scenario}, ${claim}, 1200, 'VND', false, false, 'app')`);
 
-    const app = buildApi({ db: d, tokenSecret: SECRET, objectStore: store() });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET, objectStore: store() });
     await app.ready();
     const headers = {
       authorization: `Bearer ${signToken(SECRET, { kind: 'collector', collectorId: ids.collector, epoch: 1 })}`,

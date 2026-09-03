@@ -5,7 +5,8 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential } from '../src/index.ts';
 import { ZERO, add, fromDecimal, mul, quantise } from '../src/money.ts';
-import { closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
+import { open } from '@playerone/store';
+import { appDb, closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('settle');
@@ -137,7 +138,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       await liveClaim(d, ids.taskFactory, collector);
     }
 
-    const app = buildApi({ db: d, tokenSecret: SECRET, settlementCycleDays: options.cycleDays });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET, settlementCycleDays: options.cycleDays });
     await app.ready();
 
     const login = async (machine: string, operator: string) => {
@@ -852,6 +853,158 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       expect(res.json().constraint).toBe('settlements_transition_check');
       expect((await settlements(h)).find((s) => s.id === first!.id)!.settlement_state).toBe('manually_paid');
       expect(await events(h, 'settlement.exception')).toBe(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+
+  describe('the boundaries of these routes', () => {
+    /**
+     * SET-07 used to end the cycle at the first contested collector.
+     *
+     * `byCollector` is ordered by `collectors.external_ref`, so the throw at
+     * "a settlement on this bill was billed by someone else" fired on `c-0001`
+     * and left the loop, the handler and the request. The response was a 500,
+     * and `c-0002` -- and, at a real centre, everybody after them -- went
+     * unbilled for the whole cycle with nothing in the answer to say so.
+     *
+     * The race is forced with a row lock and not with two concurrent requests.
+     * `db()` opens with `open`'s default of `max = 1`, so the whole file shares
+     * one connection and two injected requests do not run in parallel at all:
+     * whether the loser reads `settleable` before or after the winner commits
+     * is an accident of how many awaits each handler happens to make, and on
+     * the wrong ordering the loser finds nothing to bill, never enters the
+     * loop, and passes on unfixed code. This is the same race, every time.
+     */
+    it('skips a collector another run billed and still bills the rest of the cycle', async () => {
+      const h = await harness({ each: 1 });
+
+      const contested = (await h.d.execute(sql`
+        select s.id
+          from settlements s
+          join episode_reviews r on r.id = s.episode_review_id
+          join episodes e on e.episode_id = r.episode_id
+          join collection_sessions cs on cs.id = e.collection_session_id
+          join collectors c on c.id = cs.collector_id
+         where c.external_ref = 'c-0001' and s.settlement_state = 'pending_settlement'
+      `)) as unknown as { id: string }[];
+      expect(contested, 'c-0001 has exactly one settlement waiting to be billed').toHaveLength(1);
+
+      /**
+       * A second connection. `h.d` is the one the request itself runs on, and
+       * holding a lock on it would deadlock against the request that has to
+       * wait for that lock to clear.
+       */
+      const other = await open(dbUrl());
+      let run: Promise<LightMyRequestResponse> | undefined;
+      try {
+        await other.transaction(async (tx) => {
+          await tx.execute(sql`select 1 from settlements where id = ${contested[0]!.id} for update`);
+
+          // Fired, deliberately not awaited. Its `settleable` read is MVCC and
+          // still sees both settlements pending; its `update ... where
+          // settlement_state = 'pending_settlement'` then blocks on the lock.
+          run = h.send('POST', '/api/settle/bills', period());
+
+          // And wait until it is genuinely blocked. Without this the flip below
+          // could land before the generator ever looked, which is a different
+          // test, and one that HEAD would also pass.
+          let waiting = false;
+          for (let i = 0; i < 400 && !waiting; i += 1) {
+            const [row] = (await tx.execute(sql`
+              select count(*)::int as n
+                from pg_stat_activity
+               where datname = current_database()
+                 and pid <> pg_backend_pid()
+                 and wait_event_type = 'Lock'
+            `)) as unknown as { n: number }[];
+            waiting = (row?.n ?? 0) > 0;
+            if (!waiting) await new Promise((r) => setTimeout(r, 25));
+          }
+          expect(waiting, 'the generator never reached the settlement lock').toBe(true);
+
+          // `pending_settlement -> bill_generated` is a legal edge of
+          // `settlements_transition_check` (0005). This is the other run.
+          await tx.execute(sql`
+            update settlements set settlement_state = 'bill_generated', updated_at = now()
+             where id = ${contested[0]!.id}`);
+        });
+
+        const res = await run!;
+        expect(res.statusCode, res.body).toBe(200);
+        const body = res.json();
+        // c-0001 lost its rows; c-0002 came after it and was still billed.
+        expect(body.created).toBe(1);
+        expect(body.skipped).toEqual({ settlements: 1, collector_refs: ['c-0001'] });
+        expect(body.deferred_to_next_period.collector_refs).toEqual([]);
+        expect((body.bills as { collector_ref: string }[]).map((b) => b.collector_ref)).toEqual(['c-0002']);
+
+        // The rollback wrote nothing of c-0001's: no bill, no line, no audit row.
+        const [counts] = (await h.d.execute(sql`
+          select (select count(*)::int from bills) as bills,
+                 (select count(*)::int from bill_lines) as lines,
+                 (select count(*)::int from audit_events where action = 'bill.generate') as audits
+        `)) as unknown as { bills: number; lines: number; audits: number }[];
+        expect(counts).toEqual({ bills: 1, lines: 1, audits: 1 });
+      } finally {
+        await other.close();
+      }
+    });
+
+    /**
+     * A malformed identifier used to reach Postgres, which raised `22P02
+     * invalid input syntax for type uuid`, which drizzle wrapped as `Failed
+     * query: select ... params: not-a-uuid`, which Fastify's default handler
+     * put in the body of a 500. The statement, its shape and its bound
+     * parameters, to anyone who could hold a session.
+     */
+    it('answers a malformed identifier with a 400 that carries no SQL', async () => {
+      const h = await harness({ each: 1 });
+      const paths: [string, Record<string, string>][] = [
+        ['/api/settle/bills/not-a-uuid', h.headersF],
+        ['/api/episodes/not-a-uuid/outcome', h.headersA],
+        ['/upload-batches/not-a-uuid/exceptions', h.headersA],
+      ];
+      for (const [url, who] of paths) {
+        const res = await h.send('GET', url, undefined, who);
+        expect(res.statusCode, `${url}: ${res.body}`).toBe(400);
+        expect(res.json(), url).toEqual({ error: 'malformed_id' });
+        expect(res.body, url).not.toMatch(/select /i);
+        expect(res.body, url).not.toMatch(/params:/);
+        expect(res.body, url).not.toMatch(/not-a-uuid/);
+      }
+
+      // And a route that does not exist has one shape too.
+      const missing = await h.send('GET', '/api/no-such-route', undefined, h.headersA);
+      expect(missing.statusCode).toBe(404);
+      expect(missing.json()).toEqual({ error: 'not_found' });
+    });
+
+    /**
+     * Both `periodOf` helpers took any end date at all, so
+     * `?period_end=2027-...` was a scan of every bill ever issued and the CSV
+     * streamed the result. The ceiling is four cycles, and both sides of it are
+     * pinned so that deleting the cap cannot leave this green.
+     */
+    it('refuses a period longer than four cycles, on both money lanes', async () => {
+      const h = await harness({ cycleDays: 7, each: 1 });
+      const from = '2026-08-17T00:00:00Z';
+
+      const wide = await h.read(`/api/settle/bills?period_start=${from}&period_end=2027-08-17T00:00:00Z`);
+      expect(wide.statusCode, wide.body).toBe(422);
+      expect(wide.json().error).toMatch(/28 days/);
+
+      // Twenty-eight days exactly is the ceiling, not past it.
+      const atCeiling = await h.read(`/api/settle/bills?period_start=${from}&period_end=2026-09-14T00:00:00Z`);
+      expect(atCeiling.statusCode, atCeiling.body).toBe(200);
+
+      const wideCsv = await h.read(`/api/settle/export.csv?period_start=${from}&period_end=2027-08-17T00:00:00Z`);
+      expect(wideCsv.statusCode).toBe(422);
+
+      const widePayout = await h.send('GET', `/api/payout/batches/${from}?period_end=2027-08-17T00:00:00Z`, undefined, h.headersF);
+      expect(widePayout.statusCode, widePayout.body).toBe(422);
+      const payoutAtCeiling = await h.send('GET', `/api/payout/batches/${from}?period_end=2026-09-14T00:00:00Z`, undefined, h.headersF);
+      expect(payoutAtCeiling.statusCode, payoutAtCeiling.body).toBe(200);
     });
   });
 

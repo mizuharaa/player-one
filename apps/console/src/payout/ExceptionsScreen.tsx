@@ -34,7 +34,20 @@ import { refusalKey } from './refusals.ts';
 import { readOnlyReason, useFinanceRole } from './role.ts';
 
 const POLLING = new Set(['submitted', 'processing', 'unknown']);
-const BLOCKING = new Set(['no_account', 'account_unverified', 'total_fractional', 'under_bank_minimum', 'risk_hold']);
+/**
+ * `line_in_exception` belongs here and was missing. `issuesOf` emits it for a
+ * bill carrying a parked line, and without it in this set a bill whose only
+ * problem was that line fell into none of the groups below — the screen showed
+ * its empty state while a bill sat unpayable.
+ */
+const BLOCKING = new Set([
+  'no_account',
+  'account_unverified',
+  'under_bank_minimum',
+  'under_one_dong',
+  'risk_hold',
+  'line_in_exception',
+]);
 
 export function ExceptionsScreen() {
   const { t, i18n } = useTranslation();

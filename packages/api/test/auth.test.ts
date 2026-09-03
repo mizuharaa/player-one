@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApi, hashCredential, signToken, verifyToken } from '../src/index.ts';
-import { closeDb, db, hasDb, truncate, violates, useDatabase } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, truncate, violates, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('api');
@@ -53,7 +53,7 @@ describe.skipIf(!hasDb())('operator API auth', () => {
   beforeEach(truncate);
   afterAll(closeDb);
 
-  const api = async () => buildApi({ db: await db(), tokenSecret: SECRET });
+  const api = async () => buildApi({ db: await appDb(), tokenSecret: SECRET });
 
   const login = async (app: Awaited<ReturnType<typeof api>>, region: string) => {
     const machine = await app.inject({
@@ -176,6 +176,55 @@ describe.skipIf(!hasDb())('operator API auth', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().upload_centre_id).toBe(ids.centreA);
+  });
+
+  it('serves global reference data while still refusing another centre’s id', async () => {
+    const ids = await seedTwoCentres();
+    const refs = {
+      collector: uid(),
+      deviceType: uid(),
+      device: uid(),
+      task: uid(),
+      scenario: uid(),
+    };
+    const d = await db();
+    await d.execute(sql`insert into collectors (id, external_ref, status)
+      values (${refs.collector}, 'c-1', 'qualified')`);
+    await d.execute(sql`insert into device_types (id, code, generation)
+      values (${refs.deviceType}, 'ego_headset', 'gen1')`);
+    await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status)
+      values (${refs.device}, ${refs.deviceType}, 'AZER76400FE', 'active')`);
+    await d.execute(sql`insert into tasks (id, name, unit_price, max_concurrent_claimants, status)
+      values (${refs.task}, 'housework', 1200.0000, 5, 'published')`);
+    await d.execute(sql`insert into scenarios (id, code, privacy_risk_level)
+      values (${refs.scenario}, 'home', 'low')`);
+
+    const app = await api();
+    const a = await login(app, 'HCM');
+    const headers = {
+      'x-machine-token': `Bearer ${a.machineToken}`,
+      authorization: `Bearer ${a.operatorToken}`,
+    };
+    const res = await app.inject({ method: 'GET', url: '/reference/sync', headers });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.reference_scope).toBe('global');
+    for (const [key, id] of [
+      ['collectors', refs.collector],
+      ['devices', refs.device],
+      ['tasks', refs.task],
+      ['scenarios', refs.scenario],
+    ] as const) {
+      expect(body[key]).toHaveLength(1);
+      expect(body[key].some((row: { id: string }) => row.id === id)).toBe(true);
+    }
+
+    const foreign = await app.inject({
+      method: 'GET',
+      url: `/reference/sync?centre_id=${ids.centreB}`,
+      headers,
+    });
+    expect(foreign.statusCode).toBe(403);
   });
 
   // -- credentials ---------------------------------------------------------

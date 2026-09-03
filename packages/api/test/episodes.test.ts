@@ -4,7 +4,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('episodes');
@@ -109,7 +109,7 @@ describe.skipIf(!hasDb())('episode submission and resolution', () => {
       insert into device_assignments (id, device_id, collector_id, valid_from)
       values (${uid()}, ${ids.device}, ${ids.collector}, ${new Date(T - min(60 * 24 * 30)).toISOString()})`);
 
-    const app = buildApi({ db: d, tokenSecret: SECRET });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET });
     const m = await app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: 'M1', secret: 'pw' } });
     const o = await app.inject({ method: 'POST', url: '/auth/operator', payload: { external_ref: 'op', secret: 'pw' } });
     const headers = {

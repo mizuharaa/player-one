@@ -7,7 +7,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { open, schema } from '@playerone/store';
 import { COUNTER_REFUSALS, PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, REVIEW_API_REFUSALS, REVIEW_HOLDABLE_REFUSALS, SETTLE_API_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
-import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { appDb, closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
 useDatabase('backoffice');
 
@@ -122,7 +122,7 @@ describe.skipIf(!hasDb())('the back office', () => {
   afterAll(closeDb);
 
   const client = async (machine = 'HCM-01', operator = 'op-a') => {
-    const app = buildApi({ db: await db(), tokenSecret: SECRET });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET });
     const m = await app.inject({
       method: 'POST',
       url: '/auth/machine',
@@ -1855,6 +1855,14 @@ describe.skipIf(!hasDb())('the back office', () => {
       'settlements_superseded_state_check',
       'bill_lines_superseded_check',
       'bill_lines_disputed_check',
+      // Retired, and unreachable for a stronger reason than the rest: nothing
+      // raises it any more. `payout_attempts_total_fractional` refused a bill
+      // whose total was not already whole dong, which was a placeholder for an
+      // undecided rounding rule; 0018 replaced the guard with the round-down
+      // rule and dropped the check. The name survives only in the superseded
+      // text of 0012 and 0016, which are applied migrations and are never
+      // edited, and this scan reads every .sql file in the directory.
+      'payout_attempts_total_fractional',
     ]);
 
     for (const name of [...declared.map((d) => d.name), ...raised]) {
@@ -1917,7 +1925,7 @@ describe.skipIf(!hasDb())('the back office', () => {
 
   it('needs both tokens for every back-office route', async () => {
     const ids = await seed();
-    const app = buildApi({ db: await db(), tokenSecret: SECRET });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET });
     for (const [method, url] of [
       ['GET', '/api/tasks'],
       ['GET', '/api/collectors'],

@@ -58,8 +58,36 @@ const dbName = (): string => {
  */
 export const dbUrl = (): string => urlFor(dbName());
 
+/**
+ * The Postgres role the APPLICATION connects as when it is named
+ * (`PLAYERONE_DB_ROLE=playerone_app`, migration 0021). Unset by default, and
+ * then `appDb()` is `db()` and nothing about a run changes.
+ *
+ * Set, `appDb()` is a second connection to the same database whose session role
+ * is that one, and it is what `buildApi` is handed. Every route, every audited
+ * write and every worker then runs under exactly the grants a real deployment
+ * gives the API, so a missing grant fails a test instead of being argued about.
+ * Postgres drops a superuser's bypass for the duration of a role change, which
+ * is what makes that a real check even though `DATABASE_URL` names a superuser.
+ *
+ * `db()` deliberately stays unrestricted, and the split is the point rather
+ * than a convenience: creating a database, migrating it, truncating between
+ * tests and disabling a trigger to prove that the trigger is what refuses a
+ * write are all things the schema OWNER does. The application does none of
+ * them and `playerone_app` cannot do any of them. A test that asserts
+ * `bill_lines_immutable` by attempting a DELETE has to reach the trigger to be
+ * testing anything at all; run under a role with no DELETE grant it would pass
+ * for the wrong reason, which is the failure `violates()` exists to prevent.
+ *
+ * `?role=` is a Postgres startup parameter; postgres.js passes query parameters
+ * it does not recognise through as connection parameters.
+ */
+const APP_ROLE = process.env['PLAYERONE_DB_ROLE'] ?? '';
+
 /** One connection for the whole file, migrated once, truncated per test. */
 let shared: Promise<Db> | null = null;
+/** The same database as `shared`, restricted, when `APP_ROLE` names a role. */
+let restricted: Promise<Db> | null = null;
 
 export function db(): Promise<Db> {
   shared ??= (async () => {
@@ -80,6 +108,19 @@ export function db(): Promise<Db> {
     return d;
   })();
   return shared;
+}
+
+/** The connection to hand `buildApi`. See `APP_ROLE`. */
+export function appDb(): Promise<Db> {
+  if (APP_ROLE === '') return db();
+  restricted ??= (async () => {
+    // The database has to exist and be migrated first, and only `db()` can do that.
+    await db();
+    const url = new URL(dbUrl());
+    url.searchParams.set('role', APP_ROLE);
+    return open(url.toString());
+  })();
+  return restricted;
 }
 
 /**
@@ -105,7 +146,9 @@ export async function truncate(): Promise<void> {
 
 export async function closeDb(): Promise<void> {
   if (shared) await (await shared).close();
+  if (restricted) await (await restricted).close();
   shared = null;
+  restricted = null;
 }
 
 /**

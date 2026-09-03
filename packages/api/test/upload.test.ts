@@ -8,7 +8,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { contentFingerprint, deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential, objectKey, planOpenUploads, planParts, PART_SIZE, READBACK_STALLS, s3StoreFromEnv, transportInventory, uploadEpisode, type Mismatch, type ObjectStore, type PutResult } from '../src/index.ts';
-import { closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('upload');
@@ -407,7 +407,7 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     const store = new FsObjectStore(cloudRoot);
 
     const app = buildApi({
-      db: d,
+      db: await appDb(),
       tokenSecret: SECRET,
       mediaRoot,
       objectStore: store,
@@ -563,7 +563,7 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
       return rows[0]!.verification_state;
     };
 
-    return { d, app, ids, headersA, headersB, send, A, B, store, mediaRoot,
+    return { d, app, ids, headersA, headersB, send, A, B, store, mediaRoot, cloudRoot,
              submitEpisode, upload, cacheClean, claim, batchRow, verificationOf, latestIngestOf };
   }
 
@@ -709,6 +709,54 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     expect([...h.store.writes.values()]).toEqual([1, 1]);
   });
 
+  it('?reverify=1 re-checks one batch, which is the only thing that notices later cloud damage', async () => {
+    // The receipts are what make a re-run cheap, and they are also why a file
+    // that verified once is never read again. Nothing else in this system would
+    // ever notice the cloud damaging an object AFTER we proved it, and until
+    // this parameter the only way to drop a receipt was a DELETE typed against
+    // the database by hand.
+    const h = await harness();
+    const a = await h.submitEpisode('A', { 'left_part0001.mp4': randomBytes(8192) });
+    const b = await h.submitEpisode('B');
+    expect((await h.upload(h.A.batch)).json().episodes[0].verification_state).toBe('verified');
+    expect((await h.upload(h.B.batch, h.headersB)).json().episodes[0].verification_state).toBe('verified');
+
+    // Bit rot, or a bad restore, or a cloud that lost a replica. Our side of
+    // the story has not changed at all.
+    await writeFile(join(h.cloudRoot, a.keys[0]!.replaceAll('/', '__')), randomBytes(8192));
+
+    h.store.reads.length = 0;
+    const blind = await h.upload(h.A.batch);
+    expect(h.store.reads).toEqual([]);
+    expect(blind.json().episodes[0].verification_state).toBe('verified');
+
+    h.store.reads.length = 0;
+    const forced = await h.send('POST', `/upload-batches/${h.A.batch}/upload?reverify=1`);
+    expect(forced.statusCode, forced.body).toBe(200);
+    expect(h.store.reads).toEqual(a.keys);
+    expect(forced.json().episodes[0]).toMatchObject({
+      uploaded: 0,
+      kept: 1,
+      verification_state: 'failed',
+    });
+    expect(forced.json().cloud_verified).toBe(false);
+    // The general rule does not move: the other centre's batch keeps every
+    // receipt it earned, and a re-run of it still reads nothing back.
+    const others = (await h.d.execute(
+      sql`select object_key from cloud_verifications order by object_key`,
+    )) as unknown as { object_key: string }[];
+    expect(others.map((r) => r.object_key)).toEqual([...b.keys].sort());
+    h.store.reads.length = 0;
+    await h.upload(h.B.batch, h.headersB);
+    expect(h.store.reads).toEqual([]);
+
+    // An operator overriding an integrity shortcut is an audited decision.
+    const audits = (await h.d.execute(
+      sql`select target_id, after from audit_events where action = 'batch.reverify'`,
+    )) as unknown as { target_id: string; after: { receipts_cleared: number } }[];
+    expect(audits).toEqual([{ target_id: h.A.batch, after: { receipts_cleared: 1 } }]);
+  });
+
   it('repairs one damaged file without re-sending or re-reading the rest of the episode', async () => {
     // Measured against MinIO before this: 512 corrupt bytes on a 16 MB episode
     // cost 16.00 MB up and 16.00 MB down, because a failed episode set `force`
@@ -765,6 +813,60 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     const resumed = await h.upload(h.A.batch);
     expect(resumed.json().episodes[0]).toMatchObject({ uploaded: 2, kept: 1, verification_state: 'verified' });
     for (const key of e.keys) expect(h.store.writes.get(key)).toBe(1);
+  });
+
+  it('records a transport failure for PLT-12 condition 6, and does not record a read-back mismatch as one', async () => {
+    const h = await harness();
+    const thrown = await h.submitEpisode('A', {
+      'left_part0001.mp4': randomBytes(8192),
+      'left_part0002.mp4': randomBytes(8192),
+    });
+
+    const failures = async () =>
+      (await h.d.execute(sql`
+        select target_id, target_table, operator_id, upload_device_id, upload_centre_id, actor_role, after
+          from audit_events where action = 'episode.cloud_transport_failed' order by id`)) as unknown as Record<
+        string,
+        unknown
+      >[];
+
+    // The link dies before a single object is stored. `upload.ts` catches it,
+    // reports it, and — this is the change — records it, because a failure
+    // that only ever existed in an HTTP response cannot be counted tomorrow.
+    h.store.failAfterWrites = 0;
+    const interrupted = await h.upload(h.A.batch);
+    expect(interrupted.json().episodes[0].error).toMatch(/injected interrupt/);
+    expect(await h.verificationOf(thrown.episodeId)).toBe('pending');
+
+    const recorded = await failures();
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toMatchObject({
+      target_id: thrown.episodeId,
+      target_table: 'episodes',
+      actor_role: 'operator',
+      operator_id: h.ids.operatorA,
+      upload_device_id: h.ids.machineA,
+      upload_centre_id: h.ids.centreA,
+    });
+    expect(JSON.stringify(recorded[0]!['after'])).toMatch(/injected interrupt/);
+
+    // A read-back MISMATCH is condition 7 and must not land here. It does not
+    // throw: the verdict is written, the episode goes to `failed`, and the
+    // count of transport failures does not move. Without this half, one
+    // damaged object would be reported twice under two different conditions.
+    h.store.failAfterWrites = null;
+    const bad = await h.submitEpisode('A', { 'left_part0001.mp4': randomBytes(4096) });
+    h.store.corruptOnPut.add(bad.keys[0]!);
+    const mismatched = await h.upload(h.A.batch);
+    expect(mismatched.statusCode, mismatched.body).toBe(200);
+    const byEpisode = Object.fromEntries(
+      mismatched.json().episodes.map((e: { episode_id: string }) => [e.episode_id, e]),
+    );
+    expect(byEpisode[bad.episodeId].verification_state).toBe('failed');
+    expect(byEpisode[thrown.episodeId].verification_state).toBe('verified');
+    h.store.corruptOnPut.clear();
+
+    expect(await failures()).toHaveLength(1);
   });
 
   it('an episode whose verification fails after its review row exists cannot be claimed either', async () => {
@@ -912,5 +1014,75 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     });
     expect(res.statusCode).toBe(503);
     await bare.close();
+  });
+  /**
+   * NFR-08's batch list, which promised "newest first" in a comment and in
+   * nothing else.
+   *
+   * There was no `order by`, so the answer was whatever order Postgres returned
+   * and it moved under the operator as rows were updated. There was no `limit`,
+   * so a centre that had been importing for a year returned every batch it ever
+   * had and then counted the episodes of all of them. And `status` was passed
+   * through unchecked, so a typo answered `200 {batches: []}`, which reads
+   * exactly like "this machine has no batches".
+   *
+   * Two centres, because the scope is the point: the list is the caller's own
+   * machine's, and centre B's card must never appear in centre A's answer no
+   * matter what is asked for.
+   */
+  it('NFR-08: the batch list is newest first, bounded, filtered and machine-scoped', async () => {
+    const h = await harness();
+
+    // A second card at centre A, imported a day after the first.
+    const later = new Date(T + 24 * 60 * 60 * 1000);
+    const handover2 = uid();
+    const batch2 = uid();
+    await h.send('POST', '/handovers', {
+      id: handover2,
+      collector_id: h.ids.collectorA,
+      device_id: h.ids.deviceA,
+      tf_card_id: 'CARD-3',
+      handover_time: later.toISOString(),
+    });
+    const created = await h.send('POST', '/upload-batches', {
+      id: batch2,
+      handover_id: handover2,
+      import_started_at: later.toISOString(),
+    });
+    expect(created.statusCode, created.body).toBeLessThan(300);
+
+    const list = (url: string, who = h.headersA) => h.send('GET', url, undefined, who);
+    const idsOf = (res: LightMyRequestResponse) =>
+      (res.json().batches as { id: string }[]).map((b) => b.id);
+
+    // Newest first, and centre B's card is not centre A's business.
+    const all = await list('/upload-batches');
+    expect(all.statusCode, all.body).toBe(200);
+    expect(idsOf(all)).toEqual([batch2, h.A.batch]);
+    expect(idsOf(all)).not.toContain(h.B.batch);
+
+    // Bounded, and the bound keeps the newest.
+    expect(idsOf(await list('/upload-batches?limit=1'))).toEqual([batch2]);
+
+    // Time, on `import_started_at`, half-open at both ends.
+    expect(idsOf(await list(`/upload-batches?since=${later.toISOString()}`))).toEqual([batch2]);
+    expect(idsOf(await list(`/upload-batches?until=${later.toISOString()}`))).toEqual([h.A.batch]);
+
+    // The handover the card came in on.
+    expect(idsOf(await list(`/upload-batches?handover_id=${handover2}`))).toEqual([batch2]);
+
+    // Status, checked against `upload_batches_status_check` and not passed through.
+    expect(idsOf(await list('/upload-batches?status=importing'))).toEqual([batch2, h.A.batch]);
+    expect(idsOf(await list('/upload-batches?status=verified'))).toEqual([]);
+    const typo = await list('/upload-batches?status=inporting');
+    expect(typo.statusCode, typo.body).toBe(400);
+    expect(typo.json().error).toBe('invalid query');
+
+    // A limit outside the range is refused rather than clamped silently.
+    expect((await list('/upload-batches?limit=0')).statusCode).toBe(400);
+    expect((await list('/upload-batches?limit=501')).statusCode).toBe(400);
+
+    // The other centre sees its own card and only its own card.
+    expect(idsOf(await list('/upload-batches', h.headersB))).toEqual([h.B.batch]);
   });
 });

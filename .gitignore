@@ -32,3 +32,7 @@ CODEX_BRIDGE.md
 .env
 .env.*
 !.env.example
+
+# Agent workflow scripts: they carry local machine credentials (a dev Postgres
+# password) and are per-machine anyway. This repository is public.
+.claude/

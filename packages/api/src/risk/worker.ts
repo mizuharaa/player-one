@@ -13,6 +13,12 @@ import { billsDue, collectorsDue, episodesDue } from './sources.ts';
  * summary rolls up its collector's and its episodes' current flags, so those
  * must be fresh before the bill is judged; `billsDue` sees the new
  * evaluation timestamps and picks the bill up in the same tick.
+ *
+ * `billsDue` is also told whether holds are enabled, because a timestamp
+ * cannot see a switch: a bill last judged with `PLAYERONE_RISK_HOLD` off is
+ * already refused by the payout rail and has no hold row to clear, and the
+ * first tick after the switch is turned on is what materialises it. That
+ * costs one extra evaluation per bill, once.
  */
 
 export type TickResult = {
@@ -64,7 +70,7 @@ export async function tick(db: Db, engine: RiskEngine, o: TickOptions = {}): Pro
   for (const id of (await collectorsDue(db, stale)).slice(0, limit)) {
     if (await run(`collector ${id}`, () => engine.evaluateCollector(id))) result.evaluated.collectors += 1;
   }
-  for (const id of (await billsDue(db)).slice(0, limit)) {
+  for (const id of (await billsDue(db, engine.holdsEnabled)).slice(0, limit)) {
     if (await run(`bill ${id}`, () => engine.evaluateBill(id))) result.evaluated.bills += 1;
   }
   result.finishedAt = now().toISOString();

@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { signToken } from '../src/credentials.ts';
 import { buildApi } from '../src/index.ts';
 import { STATE_SENTENCES, collectorStateOf, type CollectorState } from '../src/me.ts';
-import { closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
 import { P1, seedAccount, seedBill, seedPayout, seedSettlement, uid } from './payout/domain/fixture.ts';
 
 /**
@@ -110,7 +110,7 @@ describe('the state vocabulary', () => {
   });
 
   it('our own backlog is "waiting_on_us" and says the collector need do nothing', () => {
-    for (const issue of ['total_fractional', 'over_bank_ceiling', 'under_bank_minimum', 'over_cap', 'attempt_open'] as const) {
+    for (const issue of ['under_one_dong', 'over_bank_ceiling', 'under_bank_minimum', 'over_cap', 'attempt_open'] as const) {
       expect(collectorStateOf({ ...base, billIssues: [issue] }), issue).toBe('waiting_on_us');
     }
   });
@@ -156,7 +156,7 @@ async function signedIn() {
   const d = await db();
   const ids = await seedPayout(d);
   const app = buildApi({
-    db: d,
+    db: await appDb(),
     tokenSecret: SECRET,
     payout: { mode: 'manual', zaloPayEnv: 'sandbox' },
     // Holds default to off (the pilot). On here, so the leak test actually
@@ -327,7 +327,7 @@ describe.skipIf(!hasDb())('GET /api/me/income and /api/me/episodes', () => {
           if (line.includes(':')) params.push(line.replace(/^[^a-z/]*/i, ''));
         }
         /**
-         * Exactly one path parameter under `/api/me`, and it is not a
+         * Every path parameter under `/api/me`, and not one of them is a
          * collector id.
          *
          * This branch's rule was "no id in any path under /api/me", and it
@@ -342,8 +342,19 @@ describe.skipIf(!hasDb())('GET /api/me/income and /api/me/episodes', () => {
          * upload rather than confirming it exists
          * (collector-upload.test.ts:678). What must never appear here is a
          * `:collectorId`, so that is what is asserted.
+         *
+         * feat/collector-routes added the second, `GET /api/me/tasks/:id`, and
+         * the same argument covers it: a task id names a task and not a person,
+         * and the row is read with the collector off the token in the same
+         * query (`taskRows` in collector-app.ts), so a task the collector may
+         * not see is not there rather than confirmed to exist.
+         *
+         * The list stays EXACT rather than becoming "none of them says
+         * collector". Both halves matter, and the exact half is the forcing
+         * one: a third parameter should be somebody's decision in a diff, not a
+         * line that slips past a predicate.
          */
-        expect(params).toEqual(['/:id (GET, HEAD)']);
+        expect(params).toEqual(['/:id (GET, HEAD)', '/:id (GET, HEAD)']);
         for (const line of params) expect(line.toLowerCase()).not.toContain('collector');
       } finally {
         await h.app.close();

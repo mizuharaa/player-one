@@ -179,6 +179,55 @@ export function registerUpload(
     if (batch === undefined) return reply.code(404).send({ error: 'no such batch on this machine' });
 
     /**
+     * `?reverify=1` — the operator's lever for making the cloud prove itself
+     * again on ONE batch.
+     *
+     * A receipt says these bytes were read back and matched once, and that is
+     * what licenses skipping them on every later run. It is the right default
+     * and it removed the only thing that would ever have noticed the cloud
+     * damaging a file *after* we verified it: with a receipt in place the object
+     * is never read again, and before this parameter the only way to drop one
+     * was a DELETE typed against the database by hand.
+     *
+     * Narrow on purpose. The general rule does not move — widening "forget"
+     * would put the whole measured re-download bill back (1.00x the raw size
+     * of every verified episode, on every run) and turn the two receipt tests
+     * red. This clears the receipts of one named batch, on the machine that
+     * holds it, at the moment an operator asks. Whatever fails on the way back
+     * out is then reported the way any other read-back failure is: the episode
+     * goes to `failed`, review will not serve it, and the cache gate refuses.
+     *
+     * It clears the rows in `cloud_verifications`, which is what
+     * `verificationReceipts` reads. A caller that injected its own
+     * `uploadProgress` keeps its own memory and is not touched — there is one
+     * such caller and it is the test suite.
+     */
+    if ((req.query as Record<string, string>)['reverify'] === '1') {
+      await mutate(
+        db,
+        actor,
+        (cleared: number) => ({
+          action: 'batch.reverify',
+          targetTable: 'upload_batches',
+          targetId: batchId,
+          after: { receipts_cleared: cleared },
+        }),
+        async (tx) => {
+          const dropped = (await tx.execute(
+            sql`delete from cloud_verifications
+                 where episode_id in (select episode_id from episodes
+                                       where upload_batch_id = ${batchId})
+                returning object_key`,
+          )) as unknown as unknown[];
+          // Audited whether or not it found a receipt to drop: "I asked for this
+          // batch to be checked again" is the fact, and a batch that had none is
+          // still the answer to why the next run re-read everything.
+          return dropped.length;
+        },
+      );
+    }
+
+    /**
      * Every episode on the batch, quarantined ones included: ING-17, nothing is
      * discarded, and the batch cannot flip verified while any of its episodes
      * is not. The join pins the ingest whose bytes are about to move, and the
@@ -233,6 +282,23 @@ export function registerUpload(
         // A later re-run resumes: completed objects answer 'kept', the one in
         // flight is re-sent. Nothing is verified for this episode yet, so
         // nothing downstream can act on the partial upload.
+        //
+        // There is no domain row to change: the episode correctly stays in its
+        // previous verification state. `mutate` still owns this fact because
+        // its audit row must carry the operator, machine and centre together;
+        // returning `true` is the existing audit-only write shape used for a
+        // fact with no separate row behind it.
+        await mutate(
+          db,
+          actor,
+          {
+            action: 'episode.cloud_transport_failed',
+            targetTable: 'episodes',
+            targetId: row.episodeId,
+            after: { ingest_id: row.ingestId, error: (err as Error).message },
+          },
+          async () => true,
+        );
         results.push({ episode_id: row.episodeId, error: (err as Error).message });
         continue;
       }

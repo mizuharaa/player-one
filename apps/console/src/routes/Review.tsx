@@ -659,6 +659,7 @@ export function ReviewScreen() {
                         <FlagRow
                           key={f.code}
                           code={f.code}
+                          description={t(`bo.flag.${f.code}`)}
                           detail={f.detail}
                           blocking={f.blocks_review}
                         />

@@ -2,7 +2,7 @@ import { auditLogin } from './audit.ts';
 import type { Db } from '@playerone/store';
 
 /**
- * SEC-03. Rate limiting on the four sign-in routes, and nowhere else.
+ * SEC-03. Rate limiting on the sign-in routes, and nowhere else.
  *
  * Measured before this existed, on a freshly migrated database with one
  * operator: sixty concurrent wrong passwords against `POST /auth/operator` all
@@ -92,16 +92,14 @@ import type { Db } from '@playerone/store';
  *
  * ## Which routes, and which not
  *
- * Limited: `POST /auth/machine`, `POST /auth/operator`, `POST /api/session`,
- * `POST /review/login`. Those four take a credential from an unauthenticated
- * caller and burn a scrypt verify on it.
+ * Limited: `POST /auth/machine`, `POST /auth/operator`, `POST /api/session`.
+ * Those three take a credential from an unauthenticated caller and burn a
+ * scrypt verify on it.
  *
  * Not limited, deliberately:
  *
- *   - `DELETE /api/session`, `POST /review/logout`, `GET /review/login`,
- *     `GET /review`, `GET /review/assets/:file` — the rest of what is
- *     unauthenticated. None of them takes a credential or reaches the database,
- *     and the asset names are a whitelist of two extensions.
+ *   - `DELETE /api/session` — the rest of what is unauthenticated. It takes no
+ *     credential and does not reach the database.
  *   - Everything behind `requireActor`. It is authenticated traffic from a
  *     handful of counter PCs on a LAN; a limit there would mostly get in the way
  *     of an operator working a queue, and a caller who holds both tokens is

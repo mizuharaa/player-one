@@ -1,0 +1,66 @@
+-- 0021: what the collector app records about a collector that nothing did yet.
+--
+-- THE JOURNAL `when` IS 1788750000000, AND THE PREVIOUS VALUE WAS A COLLISION.
+--
+-- This entry was written at 1788730000000, which two sibling branches had
+-- already claimed: `feat/ops-readiness` for `0021_app_role`, and
+-- `feat/round-down` for `0018_bill_total_rounds_down` — the latter already
+-- merged onto `integrate/2026-08-29`. Three entries, one value.
+--
+-- What that costs is silence, not an error. drizzle reads the highest stamp in
+-- `__drizzle_migrations` ONCE and then applies every journal entry whose `when`
+-- is strictly greater. A second entry at the same value is not greater, so it
+-- is skipped: no exception, no ledger row, and the columns below simply never
+-- arrive. On a database already stamped at 1788730000000 by a sibling,
+-- `collectors.name` and `collectors.training_completed_at` are absent and
+-- `POST /api/me/register` answers 500.
+--
+-- Every branch's test suite stayed green because every suite migrates a FRESH
+-- database, where the last stamp is 0 and both entries clear it in one pass.
+-- The fault only exists on a database that already carries one of them, which
+-- is every database that will exist after the first of these branches merges.
+--
+-- 1788750000000 is held by nothing on `origin/main`, `origin/integrate/2026-08-29`
+-- (whose highest is 1788740000000, `0018_risk_history_family`),
+-- `feat/ops-readiness`, `feat/collector-money-api`, or any other branch in this
+-- repository. It is also past every value any of them holds, so this migration
+-- applies whichever sibling merges first. That last property is the one that
+-- matters: being unique is not enough, it has to be GREATER than whatever has
+-- already stamped the database.
+--
+-- APP-01 to APP-18 give the phone fourteen routes it had none of, and thirteen
+-- of them write nothing this schema did not already hold: agreements are
+-- `collector_agreements`, the exam is `collectors.exam_result`, a claim is
+-- `task_claims`, a binding is `devices.bound_collector_id`, a session is
+-- `collection_sessions` with `session_origin = 'app'`, which
+-- `collection_sessions_origin_check` has admitted since 0002.
+--
+-- Two facts have nowhere to live, and this migration is both of them.
+--
+-- `name` — a collector registers with a phone number and a name (APP-01,
+-- PaXini PRD §7.1). `external_ref` is not it: that column is unique and is the
+-- back office's reference for a person, and two collectors called Nguyễn Văn A
+-- are two collectors. Nullable, because every collector enrolled before today
+-- was enrolled by a counter operator who typed a reference and not a name.
+--
+-- `training_completed_at` — APP-03. The instant, not a boolean, for the reason
+-- `devices_bound_at_check` gives about bindings: "trained" and "trained on the
+-- 14th" are the same record and one of them can answer a question later.
+--
+-- WHAT THIS DELIBERATELY DOES NOT DO: it does not add training to
+-- `task_claims_guard`. That function's own comment invites it — "when a
+-- training record exists it belongs in this function" — and it is still the
+-- wrong move today. Pilot training happens in a room with a PaXini engineer,
+-- nothing has ever recorded it, and every collector now on the platform would
+-- become unclaimable the moment the gate went in, including the ones an
+-- operator claims for at a counter. The column has to be filled for real
+-- collectors before it can gate anything. Adding the IF is a three-line
+-- migration on the day it is.
+-- `IF NOT EXISTS` because this entry's `when` MOVED, from the colliding
+-- 1788730000000 to 1788750000000. Any database migrated from this branch before
+-- that move is stamped at the old value with both columns already present, and
+-- would now see a higher `when` and re-run the file — failing on "column
+-- already exists" for a column it already has. Same idempotent-replay shape
+-- `0016_replay_bill_and_payout_guards` used, and it costs two words.
+ALTER TABLE "collectors" ADD COLUMN IF NOT EXISTS "name" text;--> statement-breakpoint
+ALTER TABLE "collectors" ADD COLUMN IF NOT EXISTS "training_completed_at" timestamp with time zone;

@@ -4,7 +4,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApi, hashCredential, SIGN_IN_RATE_LIMITED, signInLimiter } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
-import { closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('ratelimit');
@@ -152,7 +152,7 @@ describe.skipIf(!hasDb())('sign-in rate limiting', () => {
   beforeEach(truncate);
   afterAll(closeDb);
 
-  const api = async () => buildApi({ db: await db(), tokenSecret: SECRET });
+  const api = async () => buildApi({ db: await appDb(), tokenSecret: SECRET });
 
   /** Two centres, two operators, two machines: one attacker, one bystander. */
   async function seed() {
@@ -262,43 +262,38 @@ describe.skipIf(!hasDb())('sign-in rate limiting', () => {
     expect(session.statusCode, session.body).toBe(200);
   });
 
-  it('limits all four sign-in routes off one budget', async () => {
+  it('limits every sign-in route off one budget', async () => {
     await seed();
     const app = await api();
 
-    // Ten wrong at the form; the JSON route and the header route are then
-    // refused for the same reference, because moving between them must not
-    // hand a guesser a fresh ten.
+    // Ten wrong at the JSON route; the header route is then refused for the
+    // same reference, because moving between routes must not hand a guesser a
+    // fresh ten.
     for (let i = 0; i < 10; i += 1) {
-      const form = await app.inject({
-        method: 'POST',
-        url: '/review/login',
-        payload: 'machine_identifier=HCM-IMPORT-01&machine_secret=nope&external_ref=op-HCM&operator_secret=nope',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        remoteAddress: '10.0.0.9',
+      const wrong = await post(app, '/api/session', {
+        external_ref: 'op-HCM',
+        operator_secret: GUESS,
+        machine_identifier: 'HCM-IMPORT-01',
+        machine_secret: GUESS,
       });
-      expect(form.statusCode, `attempt ${i}`).toBe(401);
+      expect(wrong.statusCode, `attempt ${i}`).toBe(401);
     }
 
-    const form = await app.inject({
-      method: 'POST',
-      url: '/review/login',
-      payload: 'machine_identifier=HCM-IMPORT-01&machine_secret=nope&external_ref=op-HCM&operator_secret=nope',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      remoteAddress: '10.0.0.9',
-    });
-    expect(form.statusCode).toBe(429);
-    // A person reads the page, not the status code.
-    expect(form.body).toContain(MESSAGES.en[`bo.refused.${SIGN_IN_RATE_LIMITED}`]);
-    expect(form.headers['retry-after']).toBeTruthy();
-
-    const json = await post(app, '/api/session', {
+    const blocked = await post(app, '/api/session', {
       external_ref: 'op-HCM',
-      operator_secret: PASSWORD,
+      operator_secret: GUESS,
       machine_identifier: 'HCM-IMPORT-01',
-      machine_secret: PASSWORD,
+      machine_secret: GUESS,
     });
-    expect(json.statusCode).toBe(429);
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.headers['retry-after']).toBeTruthy();
+    expect(blocked.json().constraint).toBe(SIGN_IN_RATE_LIMITED);
+
+    const header = await post(app, '/auth/operator', {
+      external_ref: 'op-HCM',
+      secret: PASSWORD,
+    });
+    expect(header.statusCode).toBe(429);
 
     // The machine identifier was named on those ten attempts too, but it is
     // shared by everybody at that counter, so ten does not stop it: the device

@@ -26,8 +26,8 @@ import { BatchAborted, loadBatch, loadBill, payBill, preflight, refusalFor, runB
  *     `payout_attempts_by_finance` (0012, 0013). This file inserts and reports
  *     what the database said, the way the back office does.
  *   - What ZaloPay's answer means: `domain/state.ts`.
- *   - What a bill is worth: `bills.total`, frozen. `wholeVnd` only asks
- *     whether it is a whole number of dong.
+ *   - What a bill is worth: `bills.total`, frozen. `wholeVnd` only rounds it
+ *     down to the whole dong a transfer moves.
  *
  * Mode. `PLAYERONE_PAYOUT_MODE=manual` (the default, and the pilot) means an
  * operator transfers the money themselves and records the reference with
@@ -89,8 +89,13 @@ function constraintOf(err: unknown): string | undefined {
 export const PAYOUT_REFUSALS = new Set([
   // payout_attempts_guard (0012)
   'payout_attempts_previous_not_failed',
-  'payout_attempts_total_fractional',
   'payout_attempts_amount_check',
+  // payout_attempts_amount_positive_check (0012), a table CHECK rather than the
+  // trigger. Reachable from a route since the floor rule: a bill worth less
+  // than one dong floors to 0, and 0 is not a payment. `issuesOf` names it in
+  // preflight now, and this entry is what turns the database's own refusal
+  // into a 409 if anything still reaches the insert.
+  'payout_attempts_amount_positive_check',
   'payout_attempts_account_owner',
   'payout_attempts_account_current',
   'payout_attempts_account_unverified',
@@ -209,6 +214,22 @@ export function registerPayout(
     const end = q === undefined ? new Date(start.getTime() + cycleDays * 24 * 60 * 60 * 1000) : new Date(q);
     if (Number.isNaN(end.getTime())) return 'period_end must be a date';
     if (end.getTime() <= start.getTime()) return 'the period ends before it starts';
+    /**
+     * How wide a read may be. `?period_end=2099-01-01` made `loadBatch` a scan
+     * of every bill ever issued, and `/api/payout/export/:period` streamed the
+     * result — no ceiling anywhere on the four routes that share this helper.
+     *
+     * ponytail: four cycles, derived from `cycleDays` so there is no second
+     * knob to disagree with the first. One cycle is too tight, and that is
+     * measured rather than guessed: the "counts what an operator has to look
+     * at" test asks for `P0.start -> P1.end`, a fortnight of seven-day periods,
+     * and a one-cycle cap refuses it. Four is a month of weekly cycles. Raise
+     * the multiplier if a real reconciliation needs a quarter; do not remove
+     * the ceiling.
+     */
+    if (end.getTime() - start.getTime() > cycleDays * 4 * 24 * 60 * 60 * 1000) {
+      return `the period must not be longer than ${cycleDays * 4} days`;
+    }
     return { start, end };
   };
 

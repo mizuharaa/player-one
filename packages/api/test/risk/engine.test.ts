@@ -4,12 +4,13 @@ import Fastify from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { open, storeEpisode, type Db } from '@playerone/store';
-import { closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase, violates } from '../../../store/test/db.ts';
+import { appDb, closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase, violates } from '../../../store/test/db.ts';
 import type { CounterActor } from '../../src/actor.ts';
 import { buildApi } from '../../src/index.ts';
 import { loadTuning, retuneSignal, seedRiskSignals } from '../../src/risk/catalogue.ts';
 import { RiskBusy, RiskEngine, batchId, currentFlags } from '../../src/risk/engine.ts';
 import { billHold, clearHold, currentHolds } from '../../src/risk/holds.ts';
+import { reviewQueue, shapeQueueEntry } from '../../src/risk/queue.ts';
 import { falsePositiveReport } from '../../src/risk/report.ts';
 import { registerRisk } from '../../src/risk/routes.ts';
 import { tick } from '../../src/risk/worker.ts';
@@ -120,7 +121,7 @@ async function collector(w: World, ref: string): Promise<Collector> {
   return c;
 }
 
-type EpisodeOpts = { startMs: number; measured: number; declared?: number | null; fingerprint?: string; files?: { relative_path: string; bytes: number; sha256: string }[]; audio?: boolean };
+type EpisodeOpts = { startMs: number; measured: number; declared?: number | null; fingerprint?: string; files?: { relative_path: string; bytes: number; sha256: string }[]; audio?: boolean; deliveredAt?: number };
 
 /** One resolved episode of a collector, written through the store as the counter would. */
 async function episode(c: Collector, o: EpisodeOpts): Promise<{ id: string; ingestId: string; record: EpisodeRecord }> {
@@ -137,7 +138,16 @@ async function episode(c: Collector, o: EpisodeOpts): Promise<{ id: string; inge
   }
   record.content_fingerprint = o.fingerprint ?? randomBytes(32).toString('hex');
   if (o.files) record.source_files = o.files;
-  const stored = await storeEpisode(d, record);
+  /**
+   * Delivered an hour after it was recorded, unless the case says otherwise.
+   *
+   * It used to be delivered at the wall-clock moment the test ran, which made
+   * every fixture episode look months old the further T0 fell behind today,
+   * and is what PROV.STALE_RECORDING measures. An explicit delivery time also
+   * gives the redelivery cases a defined order: `deliveryFactsFor` sorts on
+   * `ingested_at`, and two deliveries stamped the same millisecond have none.
+   */
+  const stored = await storeEpisode(d, record, new Date(o.deliveredAt ?? o.startMs + HOUR));
   await d.execute(
     sql`update episodes set collection_session_id = ${c.session}, resolution_state = 'resolved', resolution_method = 'manual', upload_path = 'C' where episode_id = ${stored.episodeId}`,
   );
@@ -557,6 +567,55 @@ describe.skipIf(!hasDb())('the risk engine', () => {
       expect(await billHold(await db(), billId)).toBeNull();
     });
 
+    /**
+     * PLAYERONE_RISK_HOLD off to on, with nothing else changing.
+     *
+     * The bill was judged while holds were off, so it has no `risk_holds` row
+     * — but `payoutSummary` already returns 'hold' for it and the payout
+     * preflight already refuses it. That is a bill nobody can pay and nobody
+     * can release: the queue shows it as `pending_evaluation` and there is
+     * nothing to clear. Every fact behind it is older than its own run, so no
+     * timestamp in `billsDue` ever makes it due again.
+     *
+     * The clock is held at NOW throughout on purpose. `collectorsDue` sweeps
+     * every collector once an hour and a fresh collector run makes its bills
+     * due, so in production the gap does close within `collectorStaleMs` —
+     * which is exactly why moving the clock here would make this test pass
+     * without the fix. Frozen, the second tick can only pick the bill up
+     * because the run's own `holds_enabled` evidence says it was judged with
+     * enforcement off.
+     */
+    it('materialises the hold on a bill last evaluated while holds were off', async () => {
+      const d = await db();
+      const { billId } = await heldBill();
+
+      const off = await tick(d, engine, { now: () => NOW });
+      expect(off.evaluated).toEqual({ episodes: 0, collectors: 1, bills: 1 });
+      expect(off.failed).toEqual([]);
+      expect(await billHold(d, billId)).toBeNull();
+      // Already unpayable, and already unclearable. This is the defect.
+      expect((await engine.payoutSummary(billId)).band).toBe('hold');
+
+      // The switch is flipped. Same data, same clock: nothing is stale.
+      const holding = new RiskEngine(d, { now: () => NOW, holdsEnabled: true });
+      const on = await tick(d, holding, { now: () => NOW });
+      expect(on.evaluated).toEqual({ episodes: 0, collectors: 0, bills: 1 });
+      expect(on.failed).toEqual([]);
+
+      const open = await billHold(d, billId);
+      expect(open).not.toBeNull();
+      expect(open!.signalIds).toEqual(['IDENT.PHONE_SHARED']);
+
+      // A real hold, so the ordinary release works and the bill pays.
+      await clearHold(d, actor(w.finance), { billId, operatorId: w.finance, reason: 'Two collectors in one household share a phone; checked in person.', verdict: 'false_positive', now: LATER });
+      expect(await billHold(d, billId)).toBeNull();
+      expect((await holding.payoutSummary(billId)).band).toBe('review');
+
+      // Once, not every tick: the run just written says holds were on.
+      const again = await tick(d, holding, { now: () => NOW });
+      expect(again.evaluated).toEqual({ episodes: 0, collectors: 0, bills: 0 });
+    });
+
     it('with holds on, the hold is raised, read by the payout side, cleared with a reason, and the bill reads clear to pay', async () => {
       const d = await db();
       const holding = new RiskEngine(d, { now: () => NOW, holdsEnabled: true });
@@ -805,6 +864,154 @@ describe.skipIf(!hasDb())('the risk engine', () => {
     });
   });
 
+  /**
+   * The four things this branch added, against the database: a duplicate found
+   * through a delivery that was later superseded, a substituted media file told
+   * apart from a lost transfer, a collector scored on their own past, and the
+   * queue that puts a suspicion in front of a person before the money moves.
+   */
+  describe('delivery, history, and the operator queue', () => {
+    const actor = (operatorId: string): CounterActor => ({
+      machine: { kind: 'machine', uploadDeviceId: w.machine, uploadCentreId: w.centre },
+      operator: { kind: 'operator', operatorId, uploadCentreId: w.centre },
+    });
+
+    it('finds a fingerprint one episode delivered and then superseded', async () => {
+      const a = await collector(w, 'c-0001');
+      const b = await collector(w, 'c-0002');
+      const fp = 'd1'.repeat(32);
+
+      // Collector a delivers the footage, then redelivers the SAME episode with
+      // different bytes. The first delivery stops being `latest_ingest_id`.
+      const ea = await episode(a, { startMs: T0, measured: 600, fingerprint: fp });
+      await episode(a, { startMs: T0, measured: 600, fingerprint: 'd2'.repeat(32), deliveredAt: T0 + 2 * HOUR });
+      const [count] = (await (await db()).execute(
+        sql`select count(*)::int as n from episode_ingests where episode_id = ${ea.id}::uuid`,
+      )) as unknown as { n: number }[];
+      expect(count!.n).toBe(2);
+
+      // Collector b then submits collector a's original bytes. Searching only
+      // each episode's latest delivery finds nothing here, which is the hole.
+      const eb = await episode(b, { startMs: T0 + DAY, measured: 600, fingerprint: fp });
+      const r = await engine.evaluateEpisode(eb.id);
+      expect(signals(r)).toEqual(['CONT.NEAR_DUPLICATE']);
+      expect(r.flags[0]!.evidence).toMatchObject({ other_episode_id: ea.id, other_collector_ref: 'c-0001', method: 'content_fingerprint' });
+    });
+
+    it('tells a substituted media file from a lost transfer, and counts the retries', async () => {
+      const c = await collector(w, 'c-0001');
+      const pts = { relative_path: 'session.pts', bytes: 900, sha256: '9'.repeat(64) };
+      const media = (sha: string) => ({ relative_path: 'left_part0001.mp4', bytes: 1_000_000, sha256: sha.repeat(32) });
+
+      // Delivery one: the whole episode.
+      const e = await episode(c, { startMs: T0, measured: 600, fingerprint: 'a1'.repeat(32), files: [media('11'), pts] });
+      expect(signals(await engine.evaluateEpisode(e.id))).toEqual([]);
+
+      // Delivery two: the link died and the media file never finished. It is
+      // gone, and the episode measures less. Not a finding.
+      await episode(c, { startMs: T0, measured: 300, fingerprint: 'a2'.repeat(32), files: [pts], deliveredAt: T0 + 2 * HOUR });
+      expect(signals(await engine.evaluateEpisode(e.id))).toEqual([]);
+
+      // Delivery three: the media file is back with different bytes and more
+      // footage than the first delivery held. A dropped link cannot do that,
+      // and three deliveries is past the churn threshold.
+      await episode(c, { startMs: T0, measured: 900, fingerprint: 'a3'.repeat(32), files: [media('22'), pts], deliveredAt: T0 + 7 * HOUR });
+      const r = await engine.evaluateEpisode(e.id);
+      expect(signals(r)).toEqual(['CONT.MEDIA_SUBSTITUTED', 'CONT.REDELIVERY_CHURN']);
+      const sub = r.flags.find((f) => f.signalId === 'CONT.MEDIA_SUBSTITUTED')!;
+      expect(sub.evidence).toMatchObject({ changed_media: [], added: ['left_part0001.mp4'], measured_s: 900, prior_measured_s: 300, grew_by_s: 600 });
+      expect(r.flags.find((f) => f.signalId === 'CONT.REDELIVERY_CHURN')!.evidence).toMatchObject({
+        deliveries: 3,
+        mismatch_deliveries: 2,
+        hours_between: 6,
+      });
+      // Storage never refused any of it. ING-17: three ingests, all on record.
+      const [n] = (await (await db()).execute(sql`select count(*)::int as n from episode_ingests where episode_id = ${e.id}::uuid`)) as unknown as { n: number }[];
+      expect(n!.n).toBe(3);
+    });
+
+    it('scores a collector on their own past, from flags a person can open', async () => {
+      const a = await collector(w, 'c-0001');
+      const b = await collector(w, 'c-0002');
+      await account(w, a);
+      await account(w, b);
+      // Three of a's episodes are the same footage as three of b's. Each one
+      // alone is a 'hold' on that episode; the collector-level finding is that
+      // it happened three times.
+      const mine: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const fp = `f${i}`.repeat(32);
+        mine.push((await episode(a, { startMs: T0 + i * DAY, measured: 600, fingerprint: fp })).id);
+        await episode(b, { startMs: T0 + i * DAY + 3 * HOUR, measured: 600, fingerprint: fp });
+      }
+      // Nothing is known about a collector whose episodes have not been judged.
+      expect(signals(await engine.evaluateCollector(a.id))).toEqual([]);
+      for (const id of mine) await engine.evaluateEpisode(id);
+
+      const r = await engine.evaluateCollector(a.id);
+      expect(signals(r)).toEqual(['HIST.REPEAT_CONTENT_FINDINGS']);
+      expect(r.flags[0]!.evidence).toMatchObject({
+        episodes: 3,
+        max_episodes: 2,
+        episodes_evaluated: 3,
+        signals: ['CONT.NEAR_DUPLICATE'],
+        signal_counts: { 'CONT.NEAR_DUPLICATE': 3 },
+      });
+      expect((r.flags[0]!.evidence['episode_ids'] as string[]).sort()).toEqual([...mine].sort());
+      // History reaches 'review' — a person looks — and not 'hold' on its own.
+      expect(r.band).toBe('review');
+    });
+
+    it('puts a review-band bill in front of an operator before it is paid, and pays it when the operator says so', async () => {
+      const d = await db();
+      const holding = new RiskEngine(d, { now: () => NOW, holdsEnabled: true });
+      const c = await collector(w, 'c-0001');
+      await account(w, c);
+      // Thirteen hours of recording in one local day: one 35-point signal, so
+      // the bill scores in the review band and not the hold band.
+      for (let i = 0; i < 3; i++) await episode(c, { startMs: T0 + i * 3.5 * HOUR, measured: 3.25 * 3600 });
+      const { billId } = await billedEpisode(w, c, { startMs: T0 + 11 * HOUR, measured: 3.25 * 3600 });
+      await holding.evaluateCollector(c.id);
+
+      const r = await holding.evaluateBill(billId);
+      expect(r.band).toBe('review');
+      // This is the change. Before it, a 'review' bill raised nothing, appeared
+      // nowhere, and was paid with nobody looking at it.
+      expect(r.hold).toMatchObject({ raised: true, reason: 'raised' });
+      expect((await billHold(d, billId))!.signalIds).toEqual(['VOL.HOURS_PER_DAY']);
+      expect((await holding.payoutSummary(billId)).band).toBe('hold');
+
+      const queue = await reviewQueue(d, holding);
+      expect(queue.map((e) => e.billId)).toEqual([billId]);
+      const entry = queue[0]!;
+      expect(entry).toMatchObject({ collectorRef: 'c-0001', band: 'review', score: 35, holdState: 'open', blocking: true });
+      expect(entry.flags.map((f) => f.signalId)).toEqual(['VOL.HOURS_PER_DAY']);
+      // The evidence and the sentence travel with the row: the person deciding
+      // needs no second request and no database client.
+      expect(entry.flags[0]!.evidence).toMatchObject({ day: '2026-08-10', hours: 13, max_hours: 12 });
+      const shaped = shapeQueueEntry(entry);
+      expect(Object.keys(shaped.flags[0]!.sentence)).toEqual(['en', 'zh', 'vi']);
+      expect(shaped.flags[0]!.sentence['en']).toContain('13 hours');
+
+      // A collector flagged in error has a path to being paid: one clear, with
+      // a typed reason and a verdict, by finance.
+      await clearHold(d, actor(w.finance), {
+        billId,
+        operatorId: w.finance,
+        reason: 'Checked the four sessions against the handover log; the day is real work.',
+        verdict: 'false_positive',
+        now: LATER,
+      });
+      expect((await holding.payoutSummary(billId)).band).toBe('review');
+      const after = await reviewQueue(d, holding);
+      expect(after[0]).toMatchObject({ billId, holdState: 'cleared', blocking: false });
+      expect(after[0]!.lastClear).toMatchObject({ verdict: 'false_positive', by: w.finance });
+      // And the false-positive report counts it against the threshold that caused it.
+      const report = await falsePositiveReport(d, { from: new Date(T0 - DAY), to: new Date(NOW.getTime() + DAY) });
+      expect(report.by_signal.find((s) => s.signal_id === 'VOL.HOURS_PER_DAY')).toMatchObject({ holds: 1, false_positive: 1 });
+    });
+  });
+
   describe('the routes', () => {
     async function api(operatorId: string | null) {
       const d = await db();
@@ -824,7 +1031,7 @@ describe.skipIf(!hasDb())('the risk engine', () => {
 
     it('mounts the risk surface through the production API assembly (F-50)', async () => {
       const live = buildApi({
-        db: await db(),
+        db: await appDb(),
         tokenSecret: 'risk-route-registration-test',
         payout: { mode: 'manual', zaloPayEnv: 'sandbox' },
         risk: { engineEnabled: true, holdsEnabled: false, mediaRoot: undefined },
@@ -832,7 +1039,33 @@ describe.skipIf(!hasDb())('the risk engine', () => {
       await live.ready();
       expect(live.hasRoute({ method: 'GET', url: '/api/risk/holds' })).toBe(true);
       expect(live.hasRoute({ method: 'POST', url: '/api/risk/evaluate/:type/:id' })).toBe(true);
+      expect(live.hasRoute({ method: 'GET', url: '/api/risk/queue' })).toBe(true);
       await live.close();
+    });
+
+    it('serves the operator queue with evidence, refuses it to a reviewer, and checks its query', async () => {
+      const c = await collector(w, 'c-0001');
+      await account(w, c);
+      for (let i = 0; i < 3; i++) await episode(c, { startMs: T0 + i * 3.5 * HOUR, measured: 3.25 * 3600 });
+      const { billId } = await billedEpisode(w, c, { startMs: T0 + 11 * HOUR, measured: 3.25 * 3600 });
+
+      const ops = await api(w.operator);
+      // Evaluating through the route is what raises the hold, so the queue and
+      // the evaluation agree without a second code path.
+      await ops.inject({ method: 'POST', url: `/api/risk/evaluate/collector/${c.id}` });
+      await ops.inject({ method: 'POST', url: `/api/risk/evaluate/bill/${billId}` });
+      const r = await ops.inject({ method: 'GET', url: '/api/risk/queue' });
+      expect(r.statusCode, r.body).toBe(200);
+      expect(r.json()).toMatchObject({ holds_enabled: true, blocking: 1 });
+      const [entry] = r.json().entries;
+      expect(entry).toMatchObject({ bill_id: billId, collector_ref: 'c-0001', band: 'review', hold_state: 'open', blocking: true });
+      expect(entry.flags[0].sentence.vi).toContain('13');
+      expect((await ops.inject({ method: 'GET', url: '/api/risk/queue?limit=0' })).statusCode).toBe(400);
+
+      // PLT-10: a reviewer session carries no operator and reaches none of this.
+      const nobody = await api(null);
+      expect((await nobody.inject({ method: 'GET', url: '/api/risk/queue' })).statusCode).toBe(403);
+      await Promise.all([ops.close(), nobody.close()]);
     });
 
     it('serves summaries with sentences in three languages, evaluates on demand, and clears holds for finance only', async () => {
@@ -875,7 +1108,17 @@ describe.skipIf(!hasDb())('the risk engine', () => {
       expect(history.json().history).toHaveLength(2);
       expect(history.json().history[1].clear_verdict).toBe('false_positive');
 
-      const report = await ops.inject({ method: 'GET', url: '/api/risk/report/false-positives?from=2026-08-01&to=2026-09-01' });
+      /**
+       * The window is derived from today, not written down. `risk_holds.raised_at`
+       * is stamped by the database at the moment this test raises the hold, so a
+       * fixed `to` bound stops containing it the day the calendar passes it — this
+       * assertion was written with `to=2026-09-01` and went red on 2026-09-02
+       * without one line of the report changing. Same fault as the timing
+       * assertions that measured the machine: it measured the date.
+       */
+      const day = 86_400_000;
+      const win = (offsetDays: number) => new Date(Date.now() + offsetDays * day).toISOString().slice(0, 10);
+      const report = await ops.inject({ method: 'GET', url: `/api/risk/report/false-positives?from=${win(-1)}&to=${win(1)}` });
       expect(report.json().holds).toMatchObject({ raised: 1, cleared_false_positive: 1, false_positive_rate: 1, over_budget: true });
       await Promise.all([ops.close(), fin.close(), rev.close()]);
     });

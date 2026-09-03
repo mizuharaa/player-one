@@ -1,15 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildApi,
   hashCredential,
   signToken,
   verifyToken,
   CODE_ATTEMPTS,
+  ZnsDeliveryError,
   type SendSignInCode,
 } from '../src/index.ts';
-import { closeDb, db, hasDb, truncate, violates, useDatabase } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, truncate, violates, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('collector_auth');
@@ -80,7 +81,7 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
   // "no delivery configured", which a default parameter would quietly override.
   const api = async (...arg: [SendSignInCode | undefined] | []) =>
     buildApi({
-      db: await db(),
+      db: await appDb(),
       tokenSecret: SECRET,
       sendSignInCode: arg.length === 0 ? send : arg[0],
     });
@@ -127,7 +128,7 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
 
   // -- delivery ------------------------------------------------------------
 
-  it('answers 503 for every number when there is no way to send an SMS', async () => {
+  it('answers 503 for every number when it was handed no way to send a code', async () => {
     await seed();
     const app = await api(undefined);
 
@@ -173,6 +174,188 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
     };
     expect(await at(PHONE_A)).toBeGreaterThanOrEqual(380);
     expect(await at('+84900000999')).toBeGreaterThanOrEqual(380);
+  });
+
+  // -- a delivery that fails ------------------------------------------------
+
+  /**
+   * Zalo, not SMS (`src/zns.ts`). The failure that has no equivalent on SMS is
+   * a number with no Zalo account: it exists, it rings, and it can never
+   * receive a code. These are the criteria that follow from that.
+   *
+   * A run of `audit_events` for one collector, newest last.
+   */
+  const codeEvents = async (collectorId: string) => {
+    const d = await db();
+    const rows = await d.execute(sql`
+      select action, actor_role, collector_id, operator_id, upload_device_id, upload_centre_id, after
+        from audit_events
+       where action = 'collector.sign_in_code'
+         and target_id = ${collectorId}
+       order by occurred_at`);
+    return [...rows] as {
+      action: string;
+      actor_role: string;
+      collector_id: string;
+      operator_id: string | null;
+      after: { channel: string; outcome: string };
+    }[];
+  };
+
+  /** Wait for the delivery that runs after the reply to have been recorded. */
+  const recorded = (collectorId: string, n = 1) =>
+    vi.waitFor(
+      async () => {
+        const rows = await codeEvents(collectorId);
+        expect(rows).toHaveLength(n);
+        return rows;
+      },
+      { timeout: 10_000, interval: 25 },
+    );
+
+  it('answers the same, in the same time, when the number has no Zalo account', async () => {
+    const ids = await seed();
+    /**
+     * The refusal that matters, and the one a timing attack would love: only
+     * an enrolled number ever reaches the sender, so if a refusal were slower
+     * than a success, the 204 would stop hiding which numbers are enrolled.
+     */
+    const noZalo = await api(async () => {
+      throw new ZnsDeliveryError('zns_no_zalo_account', -118, 'User is not existed');
+    });
+    /**
+     * Worse: a provider that never answers until this test lets it. A three
+     * second sleep proved the same point against a clock, and the clock is
+     * exactly what a loaded suite moves around; a delivery that cannot resolve
+     * proves it by construction instead, because a reply that waited on the
+     * delivery would never arrive at all.
+     */
+    let release!: () => void;
+    const delivered = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const hangs = await api(() => delivered);
+    const works = await api();
+
+    const at = async (app: Api, phone: string) => {
+      const started = Date.now();
+      const res = await request(app, phone);
+      return { ms: Date.now() - started, statusCode: res.statusCode, body: res.body };
+    };
+
+    const refused = await at(noZalo, PHONE_A);
+    const hung = await at(hangs, PHONE_A);
+    const sent = await at(works, PHONE_A);
+    const unknown = await at(works, '+84900000999');
+
+    // Same status, same body — including against a number nobody owns.
+    for (const r of [refused, hung, sent, unknown]) {
+      expect(r.statusCode).toBe(204);
+      expect(r.body).toBe('');
+    }
+    /**
+     * And the same time — as bounds, never as a spread. A spread is the
+     * difference of two samples, so under a full parallel suite it measures
+     * whichever request met a scheduler stall rather than measuring the route:
+     * this line asserted a 150 ms spread and was red at 199–1038 ms across five
+     * runs, green in isolation every time. Do not put a window back.
+     *
+     * What removes the systematic difference is the floor, and the floor has to
+     * cover every path — the number nobody owns, which does strictly less work,
+     * and the number whose delivery has not answered at all. A lower bound is
+     * the half of that a loaded machine cannot break: load only ever makes a
+     * request slower. That the delivery is off the reply's clock is no longer
+     * timed at all — `hangs` above cannot have resolved yet, so `hung` having
+     * come back with the rest of them is the whole proof.
+     */
+    const times = [refused.ms, hung.ms, sent.ms, unknown.ms];
+    expect(Math.min(...times), JSON.stringify(times)).toBeGreaterThanOrEqual(380);
+    // One generous ceiling, five times the 400 ms floor, as a smoke bound only.
+    expect(Math.max(...times), JSON.stringify(times)).toBeLessThan(2_000);
+
+    // The gated delivery has served its purpose; let it finish so its row lands
+    // with the other two rather than after the next test has truncated.
+    release();
+
+    /**
+     * Three requests for this collector, so three rows. The refusal is recorded
+     * by name, so somebody can act on it.
+     */
+    const rows = await recorded(ids.collectorA, 3);
+    expect(rows.map((r) => r.after.outcome).sort()).toEqual(['sent', 'sent', 'zns_no_zalo_account']);
+  });
+
+  it('records the attempt and its outcome against the collector, as a collector', async () => {
+    const ids = await seed();
+    const app = await api();
+    await request(app, PHONE_A);
+
+    const [row] = await recorded(ids.collectorA);
+    expect(row!.after).toEqual({ channel: 'zns', outcome: 'sent' });
+    // 0019's third attribution shape, with no exemption and no new migration:
+    // a collector names themselves and nobody else.
+    expect(row!.actor_role).toBe('collector');
+    expect(row!.collector_id).toBe(ids.collectorA);
+    expect(row!.operator_id).toBeNull();
+  });
+
+  it('records a sender that fails in a way nobody mapped as temporary, not permanent', async () => {
+    const ids = await seed();
+    const app = await api(async () => {
+      throw new TypeError('a bug in a sender');
+    });
+    await request(app, PHONE_A);
+    const [row] = await recorded(ids.collectorA);
+    // Never `zns_no_zalo_account`: guessing "permanent" on an unknown failure
+    // would strand a collector who is perfectly reachable.
+    expect(row!.after.outcome).toBe('zns_unreachable');
+  });
+
+  it('writes no row at all for a number nobody owns', async () => {
+    const d = await db();
+    const ids = await seed();
+    const app = await api();
+    await request(app, '+84900000999');
+    await request(app, PHONE_A);
+    // Waiting for the enrolled one to land is what makes this a real
+    // assertion rather than a race the unenrolled path always wins.
+    await recorded(ids.collectorA);
+
+    /**
+     * Which numbers are NOT collectors is the question the 204 refuses to
+     * answer, and it must not be answerable from this table either. Scoped to
+     * the three collectors this test seeded — their ids are fresh per test, so
+     * a delivery still finishing from an earlier one cannot be counted here.
+     */
+    const rows = await d.execute(sql`
+      select target_id from audit_events
+       where action = 'collector.sign_in_code'
+         and target_id in (${ids.collectorA}, ${ids.collectorB}, ${ids.collectorNoPhone})`);
+    expect(rows).toHaveLength(1);
+    expect((rows[0] as { target_id: string }).target_id).toBe(ids.collectorA);
+  });
+
+  it('never writes the code into audit_events', async () => {
+    const d = await db();
+    const ids = await seed();
+    const app = await api();
+    outbox.length = 0;
+    await request(app, PHONE_A);
+    await recorded(ids.collectorA);
+    const code = outbox.at(-1)!.code;
+
+    // Sign in as well, so the `collector.login` row is in the table too, and
+    // read the whole table as text rather than the columns we expect.
+    const res = await verify(app, PHONE_A, code);
+    expect(res.statusCode, res.body).toBe(200);
+    const rows = await d.execute(sql`select * from audit_events`);
+    expect(rows.length).toBeGreaterThan(1);
+    expect(JSON.stringify(rows)).not.toContain(code);
+    // And the hash is not there either — it is a scrypt hash of the live code.
+    const [collector] = await d.execute(
+      sql`select sign_in_code_hash from collectors where id = ${ids.collectorA}`,
+    );
+    expect((collector as { sign_in_code_hash: string | null }).sign_in_code_hash).toBeNull();
   });
 
   it('gives one answer to a wrong number, a wrong code and an expired code', async () => {
@@ -442,9 +625,15 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
     expect(refused!.json().retry_after).toBeGreaterThan(0);
     expect(refused!.headers['retry-after']).toBeDefined();
 
+    /**
+     * The sign-in rows only. The ten requests that were NOT refused each start
+     * a delivery, and each of those records its own outcome after the reply
+     * (`collector.sign_in_code`) — a different action, asserted where it is
+     * written rather than raced for here.
+     */
     const rows = (await d.execute(sql`
       select action, target_table, target_id, actor_role, after->>'outcome' as outcome
-        from audit_events where action like 'collector.%'`)) as unknown as Record<string, string>[];
+        from audit_events where action like 'collector.login%'`)) as unknown as Record<string, string>[];
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       action: 'collector.login_failed',
@@ -462,9 +651,11 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
     await signIn(app, PHONE_A);
     await verify(app, PHONE_A, '000000');
 
+    // `collector.login%`, not `collector.%`: the delivery row this sign-in also
+    // writes lands after the reply, so including it here would be a race.
     const rows = (await d.execute(sql`
       select action, target_table, target_id, actor_role, operator_id
-        from audit_events where action like 'collector.%' order by id`)) as unknown as Record<
+        from audit_events where action like 'collector.login%' order by id`)) as unknown as Record<
       string,
       string | null
     >[];

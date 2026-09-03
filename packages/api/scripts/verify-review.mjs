@@ -3,9 +3,9 @@
  *
  * Not a test — a script, for the same reason `verify-e2e.mjs` is one. The suite
  * drives the routes through `app.inject`, which is fast and covers the logic but
- * never opens a socket. Three of the things this screen depends on only exist on
- * a real connection: byte ranges as a browser issues them, `Set-Cookie` as a
- * browser stores it, and a redirect a browser follows. This runs them.
+ * never opens a socket. Two of the things this screen depends on only exist on
+ * a real connection: byte ranges as a browser issues them and `Set-Cookie` as a
+ * browser stores it. This runs them.
  *
  *   DATABASE_URL=... node packages/api/scripts/verify-review.mjs
  *
@@ -21,6 +21,7 @@ import { mkdtemp, mkdir, rm, stat, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
+import { deriveEpisodeId } from '../../contracts/src/identity.ts';
 import { open } from '../../store/src/index.ts';
 import { buildApi, hashCredential } from '../src/index.ts';
 
@@ -94,7 +95,9 @@ const startUs = String(BigInt(Date.now() - 300_000) * 1000n);
 const submitted = await post(`/upload-batches/${batch}/episodes`, {
   episodes: [{
     schema_version: '1.1.0',
-    episode_id: uid(),
+    // Global and derived from the basename, never chosen: `POST /upload-batches/:id/episodes`
+    // re-derives it and refuses a record that disagrees with itself (docs/episode-identity.md).
+    episode_id: deriveEpisodeId(BASENAME),
     content_fingerprint: 'a'.repeat(64),
     state: 'ok',
     source: { path: BASENAME, ingest_tool_version: '0.3.1', ingested_at: new Date().toISOString(), ingest_host: 'verify' },
@@ -111,32 +114,23 @@ const submitted = await post(`/upload-batches/${batch}/episodes`, {
 });
 check(submitted.json().episodes[0].resolution_state === 'resolved', 'the episode resolved to the declared session');
 
-// -- the console, over the wire ---------------------------------------------
+// -- the session, over the wire ---------------------------------------------
 
-const login = await fetch(`${base}/review/login`, {
+const login = await fetch(`${base}/api/session`, {
   method: 'POST',
-  headers: { 'content-type': 'application/x-www-form-urlencoded' },
-  body: 'machine_identifier=HCM-01&machine_secret=pw&external_ref=op-1&operator_secret=pw',
-  redirect: 'manual',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    role: 'operator',
+    machine_identifier: 'HCM-01',
+    machine_secret: 'pw',
+    external_ref: 'op-1',
+    operator_secret: 'pw',
+  }),
 });
-check(login.status === 303, 'sign-in redirects rather than rendering a page');
+check(login.status === 200, 'the JSON sign-in answers 200');
 const jar = login.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
 check(jar.includes('po_machine=') && jar.includes('po_operator='), 'both session cookies were set');
-
 const cookie = { cookie: jar };
-const pageRes = await fetch(`${base}/review`, { headers: cookie });
-const html = await pageRes.text();
-check(pageRes.status === 200, 'the review page renders for a signed-in session');
-check(html.includes('id="video-a"') && html.includes('id="video-b"'), 'both video elements are in the first paint');
-check(!/<video[^>]*\scontrols/.test(html), 'native video controls are off, so the keyboard layer owns focus');
-
-const zh = await (await fetch(`${base}/review?lang=zh`, { headers: cookie })).text();
-check(zh.includes('lang="zh-Hans"') && zh.includes('提交并继续'), 'the page renders in Chinese');
-
-for (const asset of ['review.js', 'review.css']) {
-  const res = await fetch(`${base}/review/assets/${asset}`);
-  check(res.status === 200, `${asset} is served`);
-}
 
 const claim = await fetch(`${base}/api/review/claim`, { method: 'POST', headers: cookie });
 const episode = await claim.json();

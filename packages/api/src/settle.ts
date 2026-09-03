@@ -101,6 +101,21 @@ export const SETTLE_API_REFUSALS = new Set([
 const uuid = z.string().uuid();
 
 /**
+ * The one race the generator expects, and the only throw it steps over.
+ *
+ * Between reading `settleable` and locking the settlements, another run under a
+ * different period can have billed some of them. `bills_collector_period_key`
+ * does not stop that second run — its `period_start` differs — so the insert
+ * succeeds and only the `update ... where settlement_state =
+ * 'pending_settlement'` finds the rows gone.
+ *
+ * A class rather than a message match, because there is exactly one throw site
+ * and exactly one catch site and a shared string would be a third place the
+ * same fact lives.
+ */
+class BilledElsewhere extends Error {}
+
+/**
  * RFC 4180, quoting everything.
  *
  * Deciding per field which ones need quotes is a rule with edge cases — a task
@@ -153,6 +168,21 @@ export function registerSettle(
   const currency = options.currency ?? 'VND';
   const cycleDays = options.cycleDays ?? 7;
 
+  /**
+   * How wide a read may be. `GET /api/settle/bills` and
+   * `GET /api/settle/export.csv` took any `period_end` at all, so
+   * `?period_end=2099-01-01` was a scan of every bill ever issued and the CSV
+   * streamed the result.
+   *
+   * ponytail: four cycles, derived from `cycleDays` so there is no second knob
+   * to disagree with the first. One cycle is too tight, and that is measured
+   * rather than guessed — `payout/domain/routes.test.ts:1014` deliberately asks
+   * for a fortnight, two seven-day periods, to count what an operator has to
+   * look at. Four is a month of weekly cycles. Raise the multiplier if a real
+   * reconciliation needs a quarter; do not remove the ceiling.
+   */
+  const maxSpanMs = cycleDays * 4 * 24 * 60 * 60 * 1000;
+
   /** The caller's period, or the caller's start plus one cycle. */
   const periodOf = (query: unknown): { start: Date; end: Date } | string => {
     const parsed = PeriodQuery.safeParse(query ?? {});
@@ -161,6 +191,9 @@ export function registerSettle(
     const end =
       parsed.data.period_end ?? new Date(start.getTime() + cycleDays * 24 * 60 * 60 * 1000);
     if (end.getTime() <= start.getTime()) return 'the period ends before it starts';
+    if (end.getTime() - start.getTime() > maxSpanMs) {
+      return `the period must not be longer than ${cycleDays * 4} days`;
+    }
     return { start, end };
   };
 
@@ -391,6 +424,14 @@ export function registerSettle(
      * still-parked ones — so it needs one of its own.
      */
     const deferred = new Map<string, number>();
+    /**
+     * Settlements another run billed under a different period while this one
+     * was reading them. Distinct from `deferred` above, which is the calm case
+     * — a bill for this collector and this exact period already exists, so
+     * nothing was attempted. Here something was attempted, lost the row, and
+     * rolled back.
+     */
+    const skipped = new Map<string, number>();
     for (const [collectorId, lines] of byCollector) {
       /**
        * Exact: every amount is a scale-4 decimal string, `add` is rational
@@ -405,86 +446,113 @@ export function registerSettle(
       );
       const billId = randomUUID();
 
-      const written = await mutate(
-        db,
-        req.actor!,
-        {
-          action: 'bill.generate',
-          targetTable: 'bills',
-          targetId: billId,
-          after: {
-            collector_id: collectorId,
-            collector_ref: lines[0]!.collectorRef,
-            period_start: start.toISOString(),
-            period_end: end.toISOString(),
-            currency,
-            total,
-            settlement_ids: lines.map((l) => l.settlementId),
-          },
-        },
-        async (tx) => {
-          /**
-           * The idempotency, in one clause. A second run for the same collector
-           * and period returns no row, so the lines are not written, the
-           * settlements are not moved, `mutate` writes no audit row, and this
-           * whole transaction is a read that changed nothing.
-           */
-          const [bill] = await tx
-            .insert(schema.bills)
-            .values({
-              id: billId,
-              collectorId,
-              periodStart: start,
-              periodEnd: end,
+      let written: { id: string } | undefined;
+      try {
+        written = await mutate(
+          db,
+          req.actor!,
+          {
+            action: 'bill.generate',
+            targetTable: 'bills',
+            targetId: billId,
+            after: {
+              collector_id: collectorId,
+              collector_ref: lines[0]!.collectorRef,
+              period_start: start.toISOString(),
+              period_end: end.toISOString(),
               currency,
               total,
-            })
-            .onConflictDoNothing({
-              target: [schema.bills.collectorId, schema.bills.periodStart, schema.bills.periodEnd],
-            })
-            .returning({ id: schema.bills.id });
-          if (bill === undefined) return undefined;
+              settlement_ids: lines.map((l) => l.settlementId),
+            },
+          },
+          async (tx) => {
+            /**
+             * The idempotency, in one clause. A second run for the same collector
+             * and period returns no row, so the lines are not written, the
+             * settlements are not moved, `mutate` writes no audit row, and this
+             * whole transaction is a read that changed nothing.
+             */
+            const [bill] = await tx
+              .insert(schema.bills)
+              .values({
+                id: billId,
+                collectorId,
+                periodStart: start,
+                periodEnd: end,
+                currency,
+                total,
+              })
+              .onConflictDoNothing({
+                target: [schema.bills.collectorId, schema.bills.periodStart, schema.bills.periodEnd],
+              })
+              .returning({ id: schema.bills.id });
+            if (bill === undefined) return undefined;
 
-          /**
-           * `pending_settlement` in the WHERE, not just in the SELECT that found
-           * these rows: another generator may have billed them in between, and
-           * then this update matches nothing, the count below disagrees, and the
-           * transaction is rolled back rather than issuing a bill for lines
-           * somebody else also issued.
-           *
-           * It runs BEFORE the lines are written, and the order is the point.
-           * This statement is where the settlement rows are locked, and
-           * `review_disputes_guard` (0016) locks the same row before it accepts
-           * a dispute. With the lines written first there was a window between
-           * them in which a dispute could commit — the line guard had already
-           * looked and seen none — and the bill went out for a settlement that
-           * was under dispute by the time it committed. Locking first closes it
-           * in both directions: a dispute that arrives now waits for this
-           * transaction and is then refused as billed, and a dispute that
-           * arrived earlier is seen by `bill_lines_dispute_guard` below.
-           */
-          const moved = await tx
-            .update(schema.settlements)
-            .set({ settlementState: 'bill_generated', updatedAt: new Date() })
-            .where(
-              and(
-                inArray(
-                  schema.settlements.id,
-                  lines.map((l) => l.settlementId),
+            /**
+             * `pending_settlement` in the WHERE, not just in the SELECT that found
+             * these rows: another generator may have billed them in between, and
+             * then this update matches nothing, the count below disagrees, and the
+             * transaction is rolled back rather than issuing a bill for lines
+             * somebody else also issued.
+             *
+             * It runs BEFORE the lines are written, and the order is the point.
+             * This statement is where the settlement rows are locked, and
+             * `review_disputes_guard` (0016) locks the same row before it accepts
+             * a dispute. With the lines written first there was a window between
+             * them in which a dispute could commit — the line guard had already
+             * looked and seen none — and the bill went out for a settlement that
+             * was under dispute by the time it committed. Locking first closes it
+             * in both directions: a dispute that arrives now waits for this
+             * transaction and is then refused as billed, and a dispute that
+             * arrived earlier is seen by `bill_lines_dispute_guard` below.
+             */
+            const moved = await tx
+              .update(schema.settlements)
+              .set({ settlementState: 'bill_generated', updatedAt: new Date() })
+              .where(
+                and(
+                  inArray(
+                    schema.settlements.id,
+                    lines.map((l) => l.settlementId),
+                  ),
+                  eq(schema.settlements.settlementState, 'pending_settlement'),
                 ),
-                eq(schema.settlements.settlementState, 'pending_settlement'),
-              ),
-            )
-            .returning({ id: schema.settlements.id });
-          if (moved.length !== lines.length) {
-            throw new Error('a settlement on this bill was billed by someone else');
-          }
-          await tx
-            .insert(schema.billLines)
-            .values(lines.map((l) => ({ billId, settlementId: l.settlementId })));
-          return bill;
-        },
-      );
+              )
+              .returning({ id: schema.settlements.id });
+            if (moved.length !== lines.length) throw new BilledElsewhere();
+            await tx
+              .insert(schema.billLines)
+              .values(lines.map((l) => ({ billId, settlementId: l.settlementId })));
+            return bill;
+          },
+        );
+      } catch (err) {
+        /**
+         * Not this run's money any more, and not this run's problem either.
+         *
+         * The throw happened inside `mutate`, which is one `db.transaction`, so
+         * nothing of this collector's was written: no bill, no lines, no audit
+         * row. The settlements are on the other run's bill. What this run has
+         * to do is say so and carry on.
+         *
+         * Before this, the throw left the loop and the handler. The response
+         * was a 500, and every collector after the contested one — the map is
+         * ordered by `collectors.external_ref`, so "after" is most of them —
+         * went unbilled for the whole cycle with nothing in the answer to say
+         * it had happened. That is the same failure `under_one_dong` caused in
+         * `runBatch`, where one refused bill turned into `BatchAborted` and
+         * stopped the period; it was fixed there by naming the case, and this
+         * names this one.
+         *
+         * Only `BilledElsewhere`. Anything else — a dispute guard, a payable
+         * guard, a lost connection — is not a race this run can reason about,
+         * and swallowing it would issue a cycle that silently skipped money.
+         * Those still leave the handler and still fail the request.
+         */
+        if (!(err instanceof BilledElsewhere)) throw err;
+        skipped.set(lines[0]!.collectorRef, lines.length);
+        continue;
+      }
       if (written !== undefined) created += 1;
       else deferred.set(lines[0]!.collectorRef, lines.length);
     }
@@ -510,6 +578,17 @@ export function registerSettle(
       deferred_to_next_period: {
         settlements: [...deferred.values()].reduce((a, b) => a + b, 0),
         collector_refs: [...deferred.keys()].sort(),
+      },
+      /**
+       * Collectors another run billed under a different period while this one
+       * was running. Their settlements are on that run's bill and are not lost;
+       * this run rolled its own transaction back and went on to the next
+       * collector instead of failing the whole cycle. Same shape as
+       * `deferred_to_next_period` so one screen can print both.
+       */
+      skipped: {
+        settlements: [...skipped.values()].reduce((a, b) => a + b, 0),
+        collector_refs: [...skipped.keys()].sort(),
       },
       /**
        * Parked settlements in the window, on a bill or not.

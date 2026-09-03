@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 import { episodeRecord } from './fixtures.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -59,7 +59,7 @@ describe.skipIf(!hasDb())('clearing a mismatched delivery', () => {
     await d.execute(sql`insert into device_assignments (id, device_id, collector_id, valid_from) values
       (${uid()}, ${ids.device}, ${ids.collector}, ${since}), (${uid()}, ${ids.device2}, ${ids.collector2}, ${since})`);
 
-    const app = buildApi({ db: d, tokenSecret: SECRET });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET });
     await app.ready();
     const login = async (machine: string, ref: string) => {
       const m = await app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: machine, secret: 'pw' } });

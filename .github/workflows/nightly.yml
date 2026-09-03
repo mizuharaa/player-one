@@ -1,0 +1,50 @@
+name: nightly
+# The whole money path once a night, as one run: a collector who does not exist
+# at the start signs in, qualifies, records, uploads, is reviewed, is billed and
+# sees the money. `ci.yml` proves each leg against its own fixture on every
+# push; this proves the legs still line up when one person walks all of them,
+# which is the shape a per-leg fixture cannot show.
+#
+# Deliberately a second workflow and not a job in `ci.yml`: it is slower, it
+# wants ffmpeg to actually encode, and a red nightly must not block a push.
+on:
+  schedule:
+    # 19:00 UTC is 02:00 in Ho Chi Minh City, so the result is waiting when
+    # somebody starts work rather than landing in the middle of the day.
+    - cron: '0 19 * * *'
+  workflow_dispatch:
+jobs:
+  loop:
+    runs-on: ubuntu-22.04
+    # The script is not a test: it opens a database somebody else migrated, so
+    # it needs a real one and cannot skip without one the way the suite can.
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: playerone }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:playerone@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      # The script encodes its own twenty seconds of footage with ffmpeg, and
+      # ffprobe is still the container-timing fallback the engine falls back to.
+      # The runner image ships neither.
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # `ci.yml` has no such step and does not need one: the suite creates and
+      # migrates a database per test file through `useDatabase`. A script has no
+      # such hook, so without this the run dies on its first `truncate`.
+      - run: pnpm db:migrate
+      # The sample corpus is gitignored and is not on any runner, so this walks
+      # the loop on the footage it makes itself and says so in its own output.
+      # On a machine that has the five real sessions, export PLAYERONE_SESSIONS
+      # and it walks one of them through the same legs as well.
+      - run: node packages/api/scripts/e2e-loop.mjs

@@ -220,7 +220,12 @@ const ISSUE_STATE: Record<Issue, CollectorState> = {
   already_paid: 'paid',
   line_in_exception: 'on_hold',
   risk_hold: 'on_hold',
-  total_fractional: 'waiting_on_us',
+  // A bill worth less than one dong floors to nothing, so no transfer can
+  // carry it. There is nothing the collector can do about that and nothing
+  // they did wrong, and what the platform does with such a bill — carry it or
+  // write it off — is not decided yet. So: our backlog, and say nothing more.
+  // (This slot held `total_fractional` until migration 0018 retired it.)
+  under_one_dong: 'waiting_on_us',
   over_bank_ceiling: 'waiting_on_us',
   under_bank_minimum: 'waiting_on_us',
   over_cap: 'waiting_on_us',

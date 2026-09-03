@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -33,6 +33,35 @@ function findCorpus(): string {
 }
 
 export const SESSIONS_ROOT = process.env['PLAYERONE_SESSIONS'] ?? findCorpus();
+
+/** The five sessions acceptance 10.3.9 names. */
+const REQUIRED = ['072310', '072415', '072516', '072538', '073055'] as const;
+
+/**
+ * Skipping is the right default — a fresh clone has no corpus — but it made a
+ * degraded corpus indistinguishable from a green run: a two-session copy once
+ * passed. `PLAYERONE_REQUIRE_CORPUS=1` turns the skip into a failure. Media is
+ * checked by a non-empty `.mp4` in each session directory, which is the cheapest
+ * thing that separates the real archive from a directory tree of names.
+ */
+if (process.env['PLAYERONE_REQUIRE_CORPUS'] === '1') {
+  const dirs = existsSync(SESSIONS_ROOT)
+    ? readdirSync(SESSIONS_ROOT, { withFileTypes: true }).filter((e) => e.isDirectory())
+    : [];
+  const withMedia = REQUIRED.filter((id) => {
+    const dir = join(SESSIONS_ROOT, `ego_AZER76400FE_20260813_${id}`);
+    // ponytail: a size check, not a decode; ffprobe here if a truncated MP4 ever slips through.
+    return existsSync(dir) && readdirSync(dir).some((n) => n.endsWith('.mp4') && statSync(join(dir, n)).size > 0);
+  });
+  if (dirs.length !== REQUIRED.length || withMedia.length !== REQUIRED.length) {
+    throw new Error(
+      `PLAYERONE_REQUIRE_CORPUS=1: ${withMedia.length} of ${REQUIRED.length} sample sessions have media ` +
+        `(${dirs.length} ${dirs.length === 1 ? 'directory' : 'directories'}) under ${SESSIONS_ROOT}. ` +
+        `Missing: ${REQUIRED.filter((id) => !withMedia.includes(id)).join(', ') || 'none'}. ` +
+        'Point PLAYERONE_SESSIONS at the full corpus or unset PLAYERONE_REQUIRE_CORPUS to skip.',
+    );
+  }
+}
 
 export const session = (id: string): string =>
   join(SESSIONS_ROOT, `ego_AZER76400FE_20260813_${id}`);

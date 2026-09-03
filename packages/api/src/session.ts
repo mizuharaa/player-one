@@ -15,10 +15,10 @@ import {
 /**
  * Checking the two credentials, in one place.
  *
- * Both the machine-client auth routes and the browser console's sign-in form
- * need exactly this, and an authentication path that exists twice is one that
- * can be fixed once. The console does not get its own rules: same lookup, same
- * failure handling, same audit row.
+ * Both the machine-client auth routes and the SPA's JSON sign-in need exactly
+ * this, and an authentication path that exists twice is one that can be fixed
+ * once. The SPA does not get its own rules: same lookup, same failure handling,
+ * same audit row.
  */
 
 /**
@@ -153,10 +153,10 @@ export async function authenticateReviewer(
 /**
  * Sign-in and sign-out for a client that speaks JSON.
  *
- * The existing `/review/login` is a form POST that answers with HTML on failure
- * and a 303 on success. That is the right shape for a server-rendered page and
- * the wrong one for a SPA, which needs to know *why* a sign-in failed without
- * parsing a document to find out. These routes are the same authentication —
+ * These routes replaced a form POST that answered with HTML on failure and a
+ * 303 on success. That was the right shape for a server-rendered page and the
+ * wrong one for a SPA, which needs to know *why* a sign-in failed without
+ * parsing a document to find out. These routes use the same authentication —
  * same lookups, same centre check, same audit rows, same cookies — with a
  * different envelope, exactly as `cookies.ts` is the same tokens with a
  * different transport.

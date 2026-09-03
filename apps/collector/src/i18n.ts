@@ -28,6 +28,19 @@ const vi = {
   'common.loadFailed': 'Không tải được dữ liệu. Kiểm tra kết nối rồi thử lại.',
   'common.actionFailed': 'Không thực hiện được. Vui lòng thử lại.',
 
+  'signIn.title': 'Đăng nhập',
+  'signIn.intro':
+    'Nhập số điện thoại của bạn. Chúng tôi gửi mã dùng một lần qua Zalo. Không cần mật khẩu.',
+  'signIn.phone': 'Số điện thoại',
+  'signIn.sendCode': 'Gửi mã',
+  'signIn.codeSent': 'Nếu số này đã được đăng ký, mã sẽ đến qua Zalo trong ít phút. Hãy mở Zalo để xem.',
+  'signIn.code': 'Mã dùng một lần',
+  'signIn.submit': 'Đăng nhập',
+  'signIn.badCode': 'Mã không đúng hoặc đã hết hạn. Hãy yêu cầu mã mới.',
+  'signIn.rateLimited': 'Bạn đã thử quá nhiều lần. Hãy đợi ít phút rồi thử lại.',
+  'signIn.unavailable': 'Hiện chưa gửi được mã đăng nhập. Hãy liên hệ điểm hỗ trợ.',
+  'signIn.restoring': 'Đang khôi phục phiên đăng nhập…',
+
   'register.title': 'Đăng ký',
   'register.intro': 'Tạo tài khoản người thu thập để nhận nhiệm vụ và được trả công theo phút hiệu quả.',
   'register.name': 'Họ và tên',
@@ -98,6 +111,7 @@ const vi = {
   'detail.claiming': 'Đang nhận…',
   'detail.needAgreements': 'Cần đồng ý cả sáu thỏa thuận trước khi nhận nhiệm vụ.',
   'detail.needTraining': 'Cần hoàn thành đào tạo trước khi nhận nhiệm vụ.',
+  'detail.notSupplied': 'PaXini chưa cung cấp nội dung này.',
 
   'mine.title': 'Nhiệm vụ của tôi',
   'mine.empty': 'Chưa nhận nhiệm vụ nào.',
@@ -176,6 +190,23 @@ const vi = {
   'settlement.bill_generated': 'Đã lập bảng kê',
   'settlement.manually_paid': 'Đã trả thủ công',
   'settlement.exception': 'Có vấn đề, đang xử lý',
+
+  // The server's own collector-facing states (`CollectorState` in
+  // `packages/api/src/me.ts`), which is what `GET /api/me/income` returns.
+  // The server also sends a full localised sentence per state in `state_text`;
+  // this row is a label/value pair and those sentences are two lines long, so
+  // the app renders its own short label and the sentence stays unused here.
+  'settlement.uploaded': 'Đã tải lên, chờ duyệt',
+  'settlement.approved': 'Đã duyệt, chờ lập hóa đơn',
+  'settlement.not_paid': 'Không được chấp nhận',
+  'settlement.on_a_bill': 'Đã lên hóa đơn',
+  'settlement.action_needed': 'Cần bạn xử lý',
+  'settlement.waiting_on_us': 'Chúng tôi đang xử lý',
+  'settlement.on_hold': 'Đang tạm giữ',
+  'settlement.being_rechecked': 'Đang duyệt lại',
+  'settlement.paid': 'Đã chi trả',
+  'settlement.cannot_be_paid': 'Không thể chi trả',
+  'settlement.unknown': 'Đang kiểm tra',
 };
 
 export type MessageKey = keyof typeof vi;
@@ -190,6 +221,19 @@ const en: Record<MessageKey, string> = {
   'common.retry': 'Try again',
   'common.loadFailed': 'Could not load this. Check the connection and try again.',
   'common.actionFailed': 'That did not go through. Please try again.',
+
+  'signIn.title': 'Sign in',
+  'signIn.intro':
+    'Enter your phone number. We send a one-time code over Zalo. There is no password.',
+  'signIn.phone': 'Phone number',
+  'signIn.sendCode': 'Send code',
+  'signIn.codeSent': 'If this number is registered, a code will arrive over Zalo shortly. Open Zalo to read it.',
+  'signIn.code': 'One-time code',
+  'signIn.submit': 'Sign in',
+  'signIn.badCode': 'That code is wrong or has expired. Ask for a new one.',
+  'signIn.rateLimited': 'Too many attempts. Wait a few minutes and try again.',
+  'signIn.unavailable': 'Sign-in codes cannot be sent right now. Contact a support point.',
+  'signIn.restoring': 'Restoring your session…',
 
   'register.title': 'Register',
   'register.intro': 'Create a collector account to claim tasks and be paid per effective minute.',
@@ -261,6 +305,7 @@ const en: Record<MessageKey, string> = {
   'detail.claiming': 'Claiming…',
   'detail.needAgreements': 'Accept all six agreements before claiming a task.',
   'detail.needTraining': 'Finish the training before claiming a task.',
+  'detail.notSupplied': 'PaXini has not supplied this content yet.',
 
   'mine.title': 'My tasks',
   'mine.empty': 'No tasks claimed yet.',
@@ -339,6 +384,18 @@ const en: Record<MessageKey, string> = {
   'settlement.bill_generated': 'On a bill',
   'settlement.manually_paid': 'Paid manually',
   'settlement.exception': 'Held — being looked at',
+
+  'settlement.uploaded': 'Uploaded, awaiting review',
+  'settlement.approved': 'Approved, awaiting a bill',
+  'settlement.not_paid': 'Not accepted',
+  'settlement.on_a_bill': 'On a bill',
+  'settlement.action_needed': 'Needs something from you',
+  'settlement.waiting_on_us': 'We are working on it',
+  'settlement.on_hold': 'On hold',
+  'settlement.being_rechecked': 'Being reviewed again',
+  'settlement.paid': 'Paid',
+  'settlement.cannot_be_paid': 'Cannot be paid',
+  'settlement.unknown': 'Being checked',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en };

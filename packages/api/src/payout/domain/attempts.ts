@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import type { Db } from '@playerone/store';
-import { fromDecimal } from '../../money.ts';
+import { fromDecimal, quantise } from '../../money.ts';
 import { emitEvent } from './events.ts';
 import { next, type AttemptEvent, type AttemptStatus, IllegalTransition } from './state.ts';
 
@@ -8,8 +8,8 @@ import { next, type AttemptEvent, type AttemptStatus, IllegalTransition } from '
  * Reading and writing `payout_attempts`, in the shape the triggers expect.
  *
  * Nothing here decides an amount, an id or an edge. The amount is the bill's
- * total converted to whole dong by `wholeVnd` — a check, not a rounding —
- * and the database compares it to the bill again. The id and the sequence are
+ * total rounded down to whole dong by `wholeVnd`, and the database applies the
+ * same floor and compares it to the bill again. The id and the sequence are
  * computed by `payout_attempts_guard`, which is why the INSERT below names
  * neither: drizzle's insert type would demand them, so the statement is raw
  * SQL that says exactly what the application supplies and nothing more. The
@@ -80,20 +80,34 @@ export const shapeAttempt = (r: RawRow): AttemptRow => ({
 });
 
 /**
- * A bill total as whole dong, or `null` when it is not one.
+ * A bill total as the whole dong an attempt is for. Rounded DOWN.
  *
- * NOT a rounding. `bills.total` is numeric(14,4) and an attempt is a bigint of
- * whole dong; how 320.0004 becomes an integer is a decision nobody has taken
- * (floor, round, ceil — Part R5), and until they do, a total with a fractional
- * part has no whole-VND value. The trigger refuses it too
- * (`payout_attempts_total_fractional`); this is the same answer earlier, with
- * a sentence.
+ * `bills.total` is numeric(14,4) and an attempt is a bigint of whole dong, so
+ * a total of `640.0008` — which is what two sixteen-second reviews at 1,200 a
+ * minute come to — has to lose its fraction somewhere. Daniel decided on
+ * 2026-08-27 that it rounds down (Part R5): the platform never pays a
+ * collector more than the reviewed footage was worth, and the collector loses
+ * at most 0.9999 dong on a bill however many lines it has.
+ *
+ * The floor is taken here and nowhere else. The bill keeps its exact total,
+ * the total still equals the sum of its lines, and each line still reproduces
+ * its own `unit_price × effective_minutes`. `payout_attempts_guard` applies the
+ * same floor in SQL and refuses any other figure by
+ * `payout_attempts_amount_check`, so this function is the same answer earlier
+ * rather than the authority.
+ *
+ * The arithmetic is `quantise`, which is still the only place this module
+ * rounds. It throws on a total no attempt could ever carry — negative, or past
+ * the safe integer range. `bills_total_nonneg_check` and numeric(14,4) make
+ * both impossible, so reaching the throw means a corrupt bill row, and stopping
+ * on it is better than sending a number derived from one.
  */
-export function wholeVnd(total: string): number | null {
-  const r = fromDecimal(total);
-  if (r.d !== 1n) return null;
-  if (r.n < 0n || r.n > BigInt(Number.MAX_SAFE_INTEGER)) return null;
-  return Number(r.n);
+export function wholeVnd(total: string): number {
+  const dong = BigInt(quantise(fromDecimal(total), 0, 'floor'));
+  if (dong < 0n || dong > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError(`bill total ${total} is not an amount an attempt can carry`);
+  }
+  return Number(dong);
 }
 
 /**

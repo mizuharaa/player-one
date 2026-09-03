@@ -3,7 +3,7 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApi } from '../../../src/index.ts';
 import type { PayoutOptions } from '../../../src/payout/domain/config.ts';
-import { closeDb, db, hasDb, truncate, useDatabase } from '../../../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, truncate, useDatabase } from '../../../../store/test/db.ts';
 import { countOf, insertAttemptAs, rows, seedAccount, seedBills, seedPayout, uid, type Ids } from './fixture.ts';
 import { StubZaloPay } from './stub-client.ts';
 
@@ -34,7 +34,7 @@ describe.skipIf(!hasDb())('declaring a payout account at the counter', () => {
   async function harness(payout: PayoutOptions = {}) {
     const d = await db();
     const ids = await seedPayout(d);
-    const app: FastifyInstance = buildApi({ db: d, tokenSecret: SECRET, payout });
+    const app: FastifyInstance = buildApi({ db: await appDb(), tokenSecret: SECRET, payout });
     await app.ready();
     const login = async (machine: string, operator: string): Promise<Headers> => {
       const m = await app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: machine, secret: 'pw' } });

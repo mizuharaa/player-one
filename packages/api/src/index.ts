@@ -1,11 +1,25 @@
 import { eq } from 'drizzle-orm';
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
 import { schema, seedCatalogues, type Db } from '@playerone/store';
+import { registerAlerts } from './alerts.ts';
 import { auditLogin } from './audit.ts';
 import { registerBackOffice } from './backoffice.ts';
 
+export { readAlerts, type Alert, type AlertState } from './alerts.ts';
+export {
+  heartbeatSender,
+  startHeartbeat,
+  type HeartbeatApp,
+  type HeartbeatConfig,
+} from './heartbeat.ts';
 export { API_REFUSALS, REFUSALS } from './backoffice.ts';
 export { COUNTER_REFUSALS } from './counter.ts';
+export {
+  COLLECTOR_API_REFUSALS,
+  CURRENT_AGREEMENTS,
+  EXAM_ANSWERS,
+} from './collector-app.ts';
+import { registerCollectorApp } from './collector-app.ts';
 import { registerCollectorAuth, type SendSignInCode } from './collector.ts';
 export {
   MAX_DELIVERY_BYTES,
@@ -15,7 +29,6 @@ export {
 } from './collector-upload.ts';
 import { registerCollectorUpload } from './collector-upload.ts';
 import { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
-import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';
 import { registerEpisodes } from './episodes.ts';
 import { registerMedia } from './media.ts';
@@ -35,7 +48,12 @@ import { registerUpload } from './upload.ts';
 import type { DirectUploadStore, ObjectStore, UploadProgress } from './upload-worker.ts';
 import { authenticateMachine, authenticateOperator } from './session.ts';
 import type { Actor, CounterActor } from './actor.ts';
-import { signToken, verifyToken, type CollectorClaims } from './credentials.ts';
+import {
+  signToken,
+  verifyToken,
+  type CollectorClaims,
+  type MachineClaims,
+} from './credentials.ts';
 
 export * from './credentials.ts';
 export * from './audit.ts';
@@ -70,6 +88,22 @@ export {
 export { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 export { SIGN_IN_RATE_LIMITED, signInLimiter, type SignInLimiter } from './ratelimit.ts';
 export { CODE_ATTEMPTS, CODE_TTL_MS, type SendSignInCode } from './collector.ts';
+export {
+  DEFAULT_ZNS_TIMEOUT_MS,
+  ZNS_BASE_URL,
+  ZNS_ERROR_CODES,
+  ZNS_REFUSALS,
+  ZNS_SEND_PATH,
+  ZnsDeliveryError,
+  devLogSender,
+  signInCodeSenderFromEnv,
+  toZnsPhone,
+  znsSender,
+  type CodeSender,
+  type ZnsConfig,
+  type ZnsRefusal,
+  type ZnsWarning,
+} from './zns.ts';
 export { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS } from './payout/routes/payout.ts';
 export { SETTLE_API_REFUSALS } from './settle.ts';
 export { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
@@ -83,10 +117,21 @@ export type { RiskReader, RiskSummary, Flag } from './payout/domain/risk.ts';
  * trail unenforceable. Console → here → DB, including for reads.
  */
 
-/** Both tokens on every mutation: the machine proves where, the operator proves who. */
+/** Both tokens on every audited mutation: the machine proves where, the operator proves who. */
 declare module 'fastify' {
   interface FastifyRequest {
     actor?: Actor;
+    /**
+     * The machine making an unattended heartbeat, and deliberately not a
+     * third case of `Actor`.
+     *
+     * A heartbeat is current state, not an audited change, and there is no
+     * person behind the interval. Making it an actor would either invent an
+     * operator or produce the incomplete operator attribution shape that
+     * `audit_events_attributed_check` exists to refuse. Every audited counter
+     * route still receives the full `CounterActor` in `actor`.
+     */
+    machine?: MachineClaims;
     /**
      * The signed-in collector, and deliberately NOT a third case of `Actor`.
      *
@@ -191,14 +236,18 @@ export type ApiOptions = {
   /**
    * How a collector's one-time sign-in code reaches their phone (APP-01).
    *
-   * Absent by default, and then `POST /auth/collector/request-code` answers 503
-   * for every caller — there is no SMS gateway in this repository and no
-   * contract behind one yet. Defaulting to a no-op would be worse: the route
-   * would answer 204, which is what it answers on success, and a deployment
-   * with no delivery would look exactly like a working one until a collector
-   * said nobody ever sent them anything.
+   * Absent here, and then `POST /auth/collector/request-code` answers 503 for
+   * every caller. Not defaulted inside `buildApi` on purpose: a quiet no-op
+   * sender would answer 204, which is what it answers on success, and a
+   * deployment with no delivery would look exactly like a working one until a
+   * collector said nobody ever sent them anything.
    *
-   * It must return quickly. See `SendSignInCode`.
+   * `bin/serve.ts` reads `signInCodeSenderFromEnv()` and passes it, the same
+   * way it reads `zaloPayClientFromEnv()`, so a real server always has one:
+   * ZNS when credentials are set, and a sender that writes the code to the
+   * server log when they are not.
+   *
+   * It is not awaited on the request's clock. See `SendSignInCode`.
    */
   sendSignInCode?: SendSignInCode;
   /**
@@ -240,6 +289,8 @@ const ME_SCOPE = '/api/me/';
  * fleet, no data.
  */
 const IDENTITY_ROUTE = '/whoami';
+/** The one route an unattended upload-centre machine may reach on its own. */
+const HEARTBEAT_ROUTE = '/upload-devices/:id/heartbeat';
 /**
  * What a collector session may reach, and what nobody else may.
  *
@@ -316,6 +367,59 @@ export function buildApi({
   const app = Fastify({ logger: false });
 
   /**
+   * Every unhandled throw leaves through here, and the reason is one measured
+   * response.
+   *
+   * `GET /api/settle/bills/not-a-uuid` sent the raw path string into
+   * `eq(bills.id, id)`. Postgres raised `22P02 invalid input syntax for type
+   * uuid: "not-a-uuid"`, drizzle wrapped that as `DrizzleQueryError` whose
+   * message is `Failed query: select ... where id = $1` followed by `params:
+   * not-a-uuid`, and Fastify's default handler puts `err.message` in the body
+   * of a 500. So a malformed identifier handed the caller the statement, its
+   * shape and its bound parameters. Measured on Postgres 18 through this
+   * repo's own `open()`.
+   *
+   * `22P02` is `invalid_text_representation`: Postgres was given text it cannot
+   * cast to the column's type. That is the caller's mistake and not the
+   * server's, so it becomes a deterministic 400 — and the offending value is
+   * not echoed back, because a body that repeats what was sent is how a
+   * reflected-content problem starts.
+   *
+   * Everything else stays 5xx: an unexpected database error must still fail.
+   * What changes is the body, which is now a constant. The detail goes to the
+   * log, where the person who can act on it reads it, and not to the network,
+   * where anyone can.
+   *
+   * Errors Fastify itself raised below 500 — an oversized body, a bad content
+   * type, its own schema validation — keep their status and their own message.
+   * Those strings are Fastify's, not a database's, and they are what tells a
+   * client what it got wrong.
+   *
+   * This is registered on the root instance and every `register*` call below
+   * adds routes to that same instance, so one handler covers the whole surface.
+   * That is the point: the leak was never specific to one route, and a guard
+   * per route would have been twenty places to forget.
+   */
+  app.setErrorHandler((err: FastifyError, req, reply) => {
+    const status = err.statusCode ?? 500;
+    if (status < 500) {
+      return reply.code(status).send({ error: err.code ?? 'bad_request', message: err.message });
+    }
+    /**
+     * drizzle wraps the driver error and hangs the original on `cause`; a
+     * driver error that ever reaches here unwrapped carries the code itself.
+     * Read both rather than depend on which layer threw.
+     */
+    const pg = (err.cause as { code?: string } | undefined)?.code ?? (err as { code?: string }).code;
+    if (pg === '22P02') return reply.code(400).send({ error: 'malformed_id' });
+    req.log.error(err);
+    return reply.code(500).send({ error: 'internal' });
+  });
+
+  /** One shape for a route that does not exist, so a 404 body never varies. */
+  app.setNotFoundHandler(async (_req, reply) => reply.code(404).send({ error: 'not_found' }));
+
+  /**
    * HSTS, and only where TLS exists (SEC-09).
    *
    * `secureCookies` is already this repo's single "there is TLS in front of
@@ -355,7 +459,9 @@ export function buildApi({
 
   /**
    * PRD §8.3.2 rule 1: "Upload center operators must log in to fixed upload
-   * devices before importing data." A machine token alone can do nothing.
+   * devices before importing data." A machine token alone can do nothing
+   * except report its own heartbeat below; every audited change still needs a
+   * person.
    *
    * Both tokens must also name the SAME centre. Two valid tokens from different
    * centres is either a misconfigured machine or someone splicing credentials;
@@ -463,6 +569,24 @@ export function buildApi({
 
     const machine = verifyToken(tokenSecret, bearer(req, 'x-machine-token', MACHINE_COOKIE));
     if (machine?.kind !== 'machine') return reply.code(401).send({ error: 'machine token required' });
+    /**
+     * PRD §11.3.2 rule 8 is the one fact a machine reports about itself, and
+     * the only route an unattended centre process has to reach. Requiring an
+     * operator would stop the signal whenever the clerk signs out and make the
+     * offline alert fire every night. This exception is after the collector
+     * and reviewer branches on purpose, so their central scope refusals keep
+     * winning, and it matches the registered route pattern rather than a URL a
+     * caller composed.
+     *
+     * A stolen machine secret can therefore keep the disk and queue alerts
+     * quiet for this one machine. The exception is bounded to an unaudited
+     * upsert for the device id in the same token; it reads nothing and changes
+     * no counter data.
+     */
+    if (route === HEARTBEAT_ROUTE) {
+      req.machine = machine;
+      return;
+    }
     if (person?.kind !== 'operator') return reply.code(401).send({ error: 'operator token required' });
     if (machine.uploadCentreId !== person.uploadCentreId) {
       return reply.code(403).send({ error: 'operator and machine belong to different centres' });
@@ -519,8 +643,16 @@ export function buildApi({
   });
 
   /**
-   * Reference data for the offline cache. Scoped to the token's own centre —
-   * the query parameter is checked against it, not trusted.
+   * Reference data for the offline cache. Two scopes, and they are not the
+   * same one: **authorization** is centre-scoped — the token names the centre
+   * and a `centre_id` that disagrees is refused — while the **payload** is
+   * global. `collectors`, `devices`, `tasks` and `scenarios` carry no centre
+   * column anywhere in the schema, and none is owed one: BO-09 binds
+   * `upload_devices` and `operators` to a centre, not these four, and a TF
+   * card handed over at any centre can belong to any collector. A
+   * centre-filtered cache would refuse a travelling collector's card at the
+   * counter. `reference_scope` says so on the wire so an offline client is
+   * not left inferring it. ADR 0003 carries the argument.
    */
   app.get('/reference/sync', { preHandler: requireActor }, async (req, reply) => {
     // BO-11 / SEC-02: the centre comes from the token, never from the request,
@@ -539,6 +671,7 @@ export function buildApi({
     return {
       fetched_at: new Date().toISOString(),
       upload_centre_id: actor.operator.uploadCentreId,
+      reference_scope: 'global' as const,
       collectors,
       devices,
       tasks,
@@ -565,6 +698,7 @@ export function buildApi({
   // The band the payout side reads means "there is a live hold", not "the score is in the hold band".
   const riskReader = { billSummary: (billId: string) => riskEngine.payoutSummary(billId) };
 
+  registerAlerts(app, db, requireActor);
   registerBackOffice(app, db, requireActor);
   registerCounter(app, db, requireActor, currency);
   registerEpisodes(app, db, requireActor, toleranceMs);
@@ -599,12 +733,21 @@ export function buildApi({
     holdsEnabled: payout.holdsEnabled ?? risk.holdsEnabled,
     capVnd: payout.capVnd,
   });
+  /**
+   * The rest of what the phone asks for, under the same prefix: registration,
+   * the six agreements, training, the exam, the task hall, claiming, device
+   * binding and session creation (APP-01 → APP-18). The same `currency` the
+   * counter snapshots onto a session, so a session declared on a phone and one
+   * reconstructed at a counter cannot disagree about what the price is in.
+   */
+  registerCollectorApp(app, db, requireActor, currency);
   registerRisk(app, db, requireActor, riskEngine);
   registerMedia(app, db, requireActor, mediaRoot);
-  // One limiter for all six sign-in routes, so a guesser cannot get a fresh
-  // budget by moving from the form to the JSON route.
-  registerConsole(app, db, { tokenSecret, secureCookies, limiter });
-  /** The JSON sign-in the React console uses. Same credentials, same cookies. */
+  /**
+   * The JSON sign-in the React console uses. One limiter for every sign-in
+   * route on the service, so a guesser cannot get a fresh budget by moving
+   * from one to another.
+   */
   registerSessionRoutes(app, db, { tokenSecret, secureCookies, limiter });
   /** The collector's phone sign-in. Same limiter, same failed-sign-in rows. */
   registerCollectorAuth(app, db, { tokenSecret, limiter, sendSignInCode });
