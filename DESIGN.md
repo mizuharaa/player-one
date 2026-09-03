@@ -35,6 +35,17 @@ Nothing decorative uses either. There is exactly one glowing element per
 viewport — the primary action, carrying `--shadow-sun` — and if a second appears
 one of them is wrong.
 
+**The two ramps disagree about their ink, and the arithmetic decides.** White on
+`sun-500` measures 2.61:1 and fails WCAG AA at every size, on the one control
+every screen points at; `--on-sun` is `stage.ground`, which measures 7.19:1 on
+the same fill. White on `tech-500` is 4.59:1 and passes, and dark ink on it is
+4.08:1 and does not, so `--on-tech` stays white. One token could not have served
+both. The collector app reached the same value by the same measurement, so a
+primary button looks the same on both surfaces.
+
+Neither is a neutral: the ramps hold their hue in light and dark alike, so their
+ink is fixed in both too.
+
 The product owner stated the two colour worlds. **The hex values are this
 system's own choice**: no formal VNG or PaXini brand guideline exists. That is
 confirmed, not assumed. Refine them freely; do not go hunting for an official
@@ -55,7 +66,16 @@ Two rules:
   Red/green colour blindness is common and this axis decides whether somebody is
   paid.
 
-These three appear on verdicts and nowhere else.
+These three appear on verdicts and nowhere else — **and never as the words
+themselves**. `--pass` on `--pass-bg` is 3.06:1, `--reject` 3.43 and `--partial`
+3.81, and a verdict pill is 11–13px. The hues are fixed here and no lighter tint
+rescues them; `#12A150` cannot reach 4.5:1 against white itself. So the hue is on
+the glyph and the border, where 3:1 is the whole requirement because it is a
+shape, and the label is ordinary `--foreground` at 13.3–16.6:1. The verdict is
+still unmistakable and it is still never colour alone.
+
+`packages/design/test/contrast.test.ts` computes all of this from `tokens.ts`, so
+a pair that drops below the floor fails a build rather than a screenshot review.
 
 ## Light shell, dark theatre
 
@@ -142,6 +162,15 @@ pointer at all** — that is a throughput requirement before it is an access one
 so the ring has to hold against the light shell, the near-black theatre and
 arbitrary video.
 
+**Space and Enter belong to whatever has focus.** Every other review shortcut is
+a letter or a digit, which no control claims, so those stay global. Space and
+Enter are the platform's activation keys: without the exception, tabbing to
+"Mark in" and pressing Space scrubbed the video instead of marking, and Enter on
+any focused control committed a verdict as well as activating it — one keystroke,
+two effects, one of them a payment. The cost is that a reviewer who reached for
+the mouse must press Enter with nothing focused to commit; the focus ring says
+where the key will land, and the commit button prints `↵` on itself.
+
 ## Components
 
 `apps/console/src/components/ui/` follows shadcn/ui's anatomy and vocabulary —
@@ -161,6 +190,11 @@ one. The verdict glyphs carry a heavier stroke (2.4–2.6) because they must hol
 at 13px inside a pill.
 
 ## Identity
+
+There is a sign-out on every screen. A counter machine is shared, the session is
+two `HttpOnly` cookies that script cannot clear, and without a control the only
+ways out are waiting for expiry or clearing browser data — which means the next
+person at the desk inherits the session.
 
 **The mark** is two overlapping circles: the Ego headset's stereo lens pair, VNG's
 sun on the left, PaXini's blue on the right, overlapping where the data is. It is
@@ -235,15 +269,34 @@ What this project holds itself to:
 - `aria-current` on the active destination, real `<fieldset>`/`<legend>` grouping
   on sign-in, `role="img"` with a text label on the gauge, and `<dialog>` for the
   shortcut sheet so focus trapping and Escape come from the platform.
+- Every navigation pill keeps its label below `lg` as `sr-only` rather than
+  `hidden`: the icons are decoration and the label is the link's only accessible
+  name, so hiding it left five destinations announced as nothing at all on the
+  counter machine.
+- Skeletons are `aria-hidden`; the region holding them is one `role="status"`
+  with `aria-busy`. Six unlabelled grey boxes is worse than one sentence.
+- Target size is WCAG 2.2 **AA** — 2.5.8, 24x24 CSS px. Every control clears it
+  (the smallest are the 32px switches and the 33px nav pills). 44x44 is 2.5.5
+  AAA and this project has not adopted AAA anywhere else.
 
 ## Checking it
 
 ```
 pnpm -F @playerone/console dev          # needs the API on :8080
 node packages/api/scripts/seed-console.mjs   # a real queue to develop against
-node apps/console/scripts/shots.mjs     # every screen, both viewports, both languages
+node apps/console/scripts/shots.mjs     # 40 shots: 5 screens x 2 viewports x 2 themes x 2 locales
 ```
 
-`shots.mjs` writes to `.impeccable/review/`. Run it before claiming a visual
-change works; a typecheck cannot see contrast, overflow or a gauge drawn from the
-wrong angle.
+`shots.mjs` writes to a new stamped directory under `.impeccable/review/`, so a
+before/after pair cannot overwrite itself, and `SHOTS_OUT` names one explicitly.
+It is generated rather than hand-listed — a hand-picked list is how a matrix
+quietly loses its dark sign-in and its mobile pipeline.
+
+**It can fail.** Every shot asserts the route it landed on and a landmark only
+that screen has, treats an unexpected console error, 5xx or network failure as
+fatal, and does not catch a sign-in failure — a round that photographs the login
+form forty times and exits 0 is worse than no round. `CONSOLE_URL` must be
+loopback, because the round signs in and claims real leases.
+
+Run it before claiming a visual change works; a typecheck cannot see contrast,
+overflow or a gauge drawn from the wrong angle.

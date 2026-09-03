@@ -22,6 +22,27 @@
  * utility classes without a second source of truth: `bg-sun-500`, `text-pass`,
  * `rounded-lg` and `font-mono` all resolve to the values in tokens.css.
  */
+/**
+ * Tailwind's `dark:` variant, taught the same rule the tokens use.
+ *
+ * Out of the box `dark:` means `prefers-color-scheme` and nothing else, so a
+ * reviewer who chose dark explicitly on a machine set to light got the dark
+ * *tokens* — those are stamped on `[data-theme]` — and the light *utilities*.
+ * `dark:text-[var(--tech-300)]` on the metadata rail was already relying on
+ * this and silently not applying. Same three states as `tokens.css`: an
+ * explicit choice wins in both directions, and no choice follows the machine.
+ */
+@custom-variant dark {
+  &:where([data-theme='dark'], [data-theme='dark'] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme='light']), :root:not([data-theme='light']) *) {
+      @slot;
+    }
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
@@ -121,7 +142,7 @@
   :root[data-theme='dark'] ::selection,
   .on-stage ::selection {
     background: var(--sun-700);
-    color: #fff;
+    color: var(--stage-fg);
   }
 
   html {
@@ -204,14 +225,39 @@
     color-scheme: dark;
   }
 
+  /**
+   * Reduced motion, answered per animation rather than with a blanket sweep.
+   *
+   * The usual `*, *::before, *::after { animation-duration: 0.01ms }` block
+   * treats every animation as the same thing and destroys the ones that carry
+   * meaning along with the ones that decorate. Here that cost the gauge its
+   * value — a sweep run in 0.01ms leaves `stroke-dashoffset` wherever the
+   * keyframe ended, which is correct only by accident — and it flattened the
+   * 150ms colour changes that are how a control says it took a keystroke.
+   * Those are state feedback, not movement, and are not what the setting is
+   * asking about.
+   *
+   * So each of the three authored motions is replaced by its finished state,
+   * and nothing else is touched. The lease warning keeps its colour and its
+   * `role="alert"` sentence; the skeletons keep their shape; the gauge shows
+   * the number it was going to sweep to.
+   */
   @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-      scroll-behavior: auto !important;
+    .gauge-fill {
+      animation: none;
+      stroke-dashoffset: var(--sweep-to);
+    }
+
+    .lease-expiring {
+      animation: none;
+    }
+
+    .animate-pulse {
+      animation: none;
+    }
+
+    html {
+      scroll-behavior: auto;
     }
   }
 }

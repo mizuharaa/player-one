@@ -12,13 +12,45 @@ import {
   Outlet,
   redirect,
 } from '@tanstack/react-router';
+import { useTranslation } from 'react-i18next';
 import { HomeScreen } from './routes/Home.tsx';
 import { ReviewScreen } from './routes/Review.tsx';
 import { PipelineScreen } from './routes/Pipeline.tsx';
 import { LoginScreen } from './routes/Login.tsx';
 import { NotBuiltScreen } from './routes/NotBuilt.tsx';
+import { Problem } from './components/ui/primitives.tsx';
+import { Button } from './components/ui/button.tsx';
 
 const rootRoute = createRootRoute({ component: Outlet });
+
+/**
+ * What a reviewer sees when the route itself cannot load.
+ *
+ * The only way to reach this is `requireSession` failing to reach `/whoami` at
+ * all — the API is down, or the centre LAN dropped. Without it TanStack Router
+ * renders its own developer default, "Something went wrong! Hide Error /
+ * Failed to fetch", which is untranslated, names no recovery, and offers a
+ * reviewer in Shenzhen an English stack-trace toggle.
+ */
+function RouteProblem() {
+  const { t } = useTranslation();
+  return (
+    <div className="mx-auto w-full max-w-[46rem] px-4 py-16">
+      <Problem
+        title={t('state.offline.title')}
+        body={t('state.offline.body')}
+        action={
+          // ponytail: a full reload, because the failure is "this machine cannot
+          // reach the API" and there is no partial state worth preserving. Swap
+          // for the router's `reset` if a route ever fails for a narrower reason.
+          <Button variant="primary" onClick={() => window.location.reload()}>
+            {t('state.writeFailed.retry')}
+          </Button>
+        }
+      />
+    </div>
+  );
+}
 
 /**
  * The session check.
@@ -100,7 +132,11 @@ const routeTree = rootRoute.addChildren([
   settleRoute,
 ]);
 
-export const router = createRouter({ routeTree, defaultPreload: 'intent' });
+export const router = createRouter({
+  routeTree,
+  defaultPreload: 'intent',
+  defaultErrorComponent: RouteProblem,
+});
 
 declare module '@tanstack/react-router' {
   interface Register {

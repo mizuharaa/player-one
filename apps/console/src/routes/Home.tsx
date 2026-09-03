@@ -12,16 +12,42 @@
  * at the bottom is not a metric at all: it is somebody's unpaid recording
  * sitting still, so it gets a sentence and a way in.
  */
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '../components/shell/AppShell.tsx';
 import { Button, Key } from '../components/ui/button.tsx';
-import { Panel, Problem, Skeleton, VerdictPill } from '../components/ui/primitives.tsx';
+import { Loading, Panel, Problem, Skeleton, VerdictPill } from '../components/ui/primitives.tsx';
 import { Cu, CU_LABEL, cuStateAt } from '../components/identity/Cu.tsx';
 import { IconAlert, IconArrow } from '../components/icons.tsx';
 import { durationShort, money, pace } from '../lib/format.ts';
 import { api, ApiError } from '../lib/api.ts';
+import { focusKind, shortcutFires } from '../lib/shortcuts.ts';
+
+/**
+ * What a figure reads when the server did not supply one.
+ *
+ * An em dash, not a translated word: it appears in a `.num` column beside real
+ * measurements, and it must be the same width and the same shape in both
+ * locales so a reviewer scanning the column sees "no answer" rather than a
+ * short number.
+ */
+const UNKNOWN = '—';
+
+/**
+ * The three verdict words, written out.
+ *
+ * This was `t(`verdict.${verdict}`)`, which reads fine and is invisible to the
+ * check that every key a screen asks for exists in both locales — the key never
+ * appears in the source. Three literals cost nothing and are the thing the test
+ * can see.
+ */
+const VERDICT_WORD = {
+  good: 'verdict.good',
+  partial: 'verdict.partial',
+  bad: 'verdict.bad',
+} as const;
 
 interface Shift {
   currency: string;
@@ -39,6 +65,35 @@ interface Shift {
 
 export function HomeScreen() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+
+  /**
+   * `R` starts reviewing.
+   *
+   * The primary action has printed `R` on itself since the screen was written
+   * and nothing was listening for it, so the one shortcut on the one screen a
+   * reviewer opens first was a promise the console did not keep. Reviewer
+   * throughput is the programme's ceiling; a shortcut that is displayed and
+   * does nothing costs more than one that is never displayed.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      /**
+       * The same rule the review screen keeps, from the same table.
+       *
+       * It was a second hand-written copy of it — three tag checks — and the
+       * copy was already narrower than the original: a keystroke aimed at a
+       * `<span>` inside a text field arrives with that span as its target, and
+       * `tagName === 'INPUT'` does not see it. One rule, in `lib/shortcuts.ts`,
+       * where it is also the thing the shortcut test checks.
+       */
+      if (!shortcutFires(focusKind(event.target as HTMLElement | null), event.key)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === 'r' || event.key === 'R') void navigate({ to: '/review' });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navigate]);
 
   const { data, isPending, error } = useQuery<Shift>({
     queryKey: ['shift'],
@@ -64,10 +119,9 @@ export function HomeScreen() {
       operator={data?.reviewer}
     >
       {error ? (
-        <Problem
-          title="The shift figures did not load."
-          body="Everything else on this screen still works. The counters come from the review database; if this keeps happening, the API cannot reach Postgres."
-        />
+        <div className="mb-6">
+          <Problem title={t('home.figuresFailed.title')} body={t('home.figuresFailed.body')} />
+        </div>
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
@@ -78,9 +132,15 @@ export function HomeScreen() {
           </p>
 
           {isPending ? (
-            <Skeleton className="mt-6 h-[196px] w-[300px] rounded-full" />
+            <Loading label={t('state.loading')}>
+              <Skeleton className="mt-6 h-[196px] w-[300px] rounded-full" />
+            </Loading>
           ) : (
-            <Gauge value={data?.decided ?? 0} target={data?.target ?? 60} state={state} />
+            <Gauge
+              value={error ? null : (data?.decided ?? 0)}
+              target={data?.target ?? 60}
+              state={state}
+            />
           )}
 
           <Button asChild variant="primary" size="lg" className="mt-6 w-full">
@@ -91,19 +151,29 @@ export function HomeScreen() {
           </Button>
         </Panel>
 
-        {/* --- The three measured figures. --- */}
+        {/*
+          The four measured figures.
+
+          When the shift call fails there is no figure to print, and printing a
+          zero would be worse than printing nothing: `0:00` payable and `₫0`
+          settled are readable claims about somebody's pay, and they would have
+          been read as such. `UNKNOWN` is the dash, and the alert above says
+          why it is there.
+        */}
         <div className="grid gap-4 sm:grid-cols-2 lg:content-start">
           <Figure
             label={t('home.payable')}
-            value={isPending ? null : durationShort(data?.payable_seconds ?? '0')}
-            note="Effective duration from decided reviews only."
+            value={isPending ? null : error ? UNKNOWN : durationShort(data?.payable_seconds ?? '0')}
+            note={t('home.payable.note')}
           />
           <Figure
             label={t('home.approval')}
-            value={isPending ? null : approvalRate === null ? '—' : `${approvalRate}%`}
-            note="Passes and partial passes, against every decision today."
+            value={
+              isPending ? null : error || approvalRate === null ? UNKNOWN : `${approvalRate}%`
+            }
+            note={t('home.approval.note')}
             trailing={
-              approvalRate === null ? null : (
+              error || approvalRate === null ? null : (
                 <VerdictPill verdict={approvalRate >= 85 ? 'good' : 'partial'} size="sm">
                   {data?.approved ?? 0}/{data?.decided ?? 0}
                 </VerdictPill>
@@ -112,13 +182,15 @@ export function HomeScreen() {
           />
           <Figure
             label={t('home.settled')}
-            value={isPending ? null : money(data?.settled_amount, data?.currency ?? 'VND')}
-            note="Your decisions only. Not the programme's spend."
+            value={
+              isPending ? null : error ? UNKNOWN : money(data?.settled_amount, data?.currency ?? 'VND')
+            }
+            note={t('home.settled.note')}
           />
           <Figure
             label={t('queue.average')}
-            value={isPending ? null : pace(data?.session_average_seconds)}
-            note="Load to verdict. Instrumentation, never money."
+            value={isPending ? null : error ? UNKNOWN : pace(data?.session_average_seconds)}
+            note={t('home.average.note')}
           />
 
           {/* --- The strip that is not a metric. --- */}
@@ -161,7 +233,7 @@ export function HomeScreen() {
  */
 function RecentVerdicts({ currency }: { currency: string }) {
   const { t } = useTranslation();
-  const { data, isPending } = useQuery({
+  const { data, isPending, isError } = useQuery({
     queryKey: ['recent'],
     queryFn: () => api.recent(),
   });
@@ -176,11 +248,24 @@ function RecentVerdicts({ currency }: { currency: string }) {
 
       <Panel className="mt-2 overflow-hidden">
         {isPending ? (
-          <div className="flex flex-col gap-2 p-4">
+          <Loading label={t('state.loading')} className="flex flex-col gap-2 p-4">
             <Skeleton className="h-5 w-full" />
             <Skeleton className="h-5 w-5/6" />
             <Skeleton className="h-5 w-2/3" />
-          </div>
+          </Loading>
+        ) : isError ? (
+          /*
+            A failed read used to render as `recent.empty` — "No verdicts yet
+            this session" — which tells a reviewer who has just committed four
+            verdicts that they committed none. On a screen about pay, an error
+            and an absence are not allowed to look alike.
+          */
+          <p
+            role="alert"
+            className="px-5 py-8 text-center text-[0.9375rem] leading-relaxed text-[var(--reject-ink)]"
+          >
+            {t('recent.failed')}
+          </p>
         ) : reviews.length === 0 ? (
           <p className="px-5 py-8 text-center text-[0.9375rem] text-[var(--muted-foreground)]">
             {t('recent.empty')}
@@ -199,7 +284,7 @@ function RecentVerdicts({ currency }: { currency: string }) {
                     >
                       <td className="py-2.5 pl-5 pr-3">
                         <VerdictPill verdict={verdict} size="sm">
-                          {t(`verdict.${verdict}`)}
+                          {t(VERDICT_WORD[verdict])}
                         </VerdictPill>
                       </td>
                       <td className="num px-3 py-2.5 text-[0.8125rem] text-[var(--muted-foreground)]">
@@ -239,7 +324,17 @@ function RecentVerdicts({ currency }: { currency: string }) {
  * a `role="img"` label, because an arc alone is unreadable to a screen reader
  * and roughly unreadable at a glance to anyone comparing two numbers.
  */
-function Gauge({ value, target, state }: { value: number; target: number; state: ReturnType<typeof cuStateAt> }) {
+function Gauge({
+  value,
+  target,
+  state,
+}: {
+  /** `null` when the shift call failed: the arc empties and the number is a dash. */
+  value: number | null;
+  target: number;
+  state: ReturnType<typeof cuStateAt>;
+}) {
+  const { t } = useTranslation();
   const R = 104;
   const CX = 150;
   const CY = 128;
@@ -264,14 +359,14 @@ function Gauge({ value, target, state }: { value: number; target: number; state:
   const track = `M ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${R} ${R} 0 1 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)}`;
 
   const arcLength = (SWEEP / 360) * 2 * Math.PI * R;
-  const ratio = target > 0 ? Math.min(value / target, 1) : 0;
-  const over = target > 0 && value > target;
+  const ratio = value !== null && target > 0 ? Math.min(value / target, 1) : 0;
+  const over = value !== null && target > 0 && value > target;
 
   return (
     <figure
       className="m-0 mt-3"
       role="img"
-      aria-label={`${value} of ${target} episodes reviewed this shift`}
+      aria-label={`${value ?? UNKNOWN} ${t('home.reviewed')} · ${t('home.target')} ${target}`}
     >
       <svg viewBox="0 0 300 198" width="300" className="max-w-full">
         <path d={track} fill="none" stroke="var(--muted)" strokeWidth="15" strokeLinecap="round" />
@@ -303,11 +398,12 @@ function Gauge({ value, target, state }: { value: number; target: number; state:
           className="num"
           style={{ fontSize: 42, fontWeight: 800, fill: 'var(--foreground)', letterSpacing: '-0.03em' }}
         >
-          {value}
+          {value ?? UNKNOWN}
         </text>
       </svg>
-      <figcaption className="mt-1 text-center text-[0.875rem] text-[var(--muted-foreground)]">
-        episodes reviewed · target <span className="num font-semibold">{target}</span>
+      <figcaption className="mt-1 text-center text-[0.875rem] leading-snug text-[var(--muted-foreground)]">
+        {t('home.reviewed')} · {t('home.target')}{' '}
+        <span className="num font-semibold">{target}</span>
       </figcaption>
     </figure>
   );

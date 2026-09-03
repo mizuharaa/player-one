@@ -32,14 +32,23 @@ const button = cva(
   {
     variants: {
       variant: {
-        /** The one glow on the page. Sun means action. */
+        /**
+         * The one glow on the page. Sun means action.
+         *
+         * The ink is `--on-sun`, and it is dark. White on `sun-500` measures
+         * 2.61:1 — a WCAG failure at any size, on the one control every screen
+         * points at. `--on-sun` is 7.19:1 on the same fill. The ramps hold
+         * their hue in both themes so their ink cannot follow the neutrals,
+         * and a colour written as a Tailwind keyword here is a colour the
+         * collector app cannot read.
+         */
         primary: cn(
-          'bg-[var(--sun-500)] text-white shadow-[var(--shadow-sun)]',
+          'bg-[var(--sun-500)] text-[var(--on-sun)] shadow-[var(--shadow-sun)]',
           'hover:bg-[var(--sun-600)] active:bg-[var(--sun-700)]',
         ),
         /** Tech blue: leads to data rather than doing something. */
         secondary: cn(
-          'bg-[var(--tech-500)] text-white',
+          'bg-[var(--tech-500)] text-[var(--on-tech)]',
           'hover:bg-[var(--tech-600)] active:bg-[var(--tech-700)]',
         ),
         outline: cn(
@@ -53,7 +62,7 @@ const button = cva(
         /** On the stage, where the ground is near-black in both themes. */
         stage: cn(
           'border border-[var(--stage-line)] bg-[var(--stage-panel)] text-[var(--stage-fg)]',
-          'hover:border-[var(--stage-mid)] hover:bg-[color-mix(in_srgb,var(--stage-panel)_70%,white)]',
+          'hover:border-[var(--stage-mid)] hover:bg-[color-mix(in_srgb,var(--stage-panel)_70%,var(--stage-fg))]',
         ),
       },
       size: {
@@ -90,7 +99,7 @@ export function Key({ children, onStage }: { children: React.ReactNode; onStage?
   return (
     <kbd
       className={cn(
-        'num ml-1 grid h-5 min-w-5 place-items-center rounded-[5px] border px-1 text-[0.6875rem] font-medium',
+        'num ml-1 grid h-5 min-w-5 shrink-0 place-items-center rounded-[var(--radius-xs)] border px-1 text-[0.6875rem] font-medium',
         onStage
           ? 'border-[var(--stage-line)] bg-[var(--stage)] text-[var(--stage-mid)]'
           : 'border-[var(--border-strong)] bg-[var(--muted)] text-[var(--muted-foreground)]',

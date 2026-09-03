@@ -26,7 +26,7 @@
  */
 import { randomUUID as uid } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, stat, copyFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, stat, copyFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
@@ -88,6 +88,33 @@ await db.execute(sql`insert into device_types (id,code,generation) values (${id.
 await db.execute(sql`insert into devices (id,device_type_id,hardware_serial,status) values (${id.device},${id.dtype},'AZER76400FE','active')`);
 await db.execute(sql`insert into tasks (id,name,unit_price,max_concurrent_claimants,status) values (${id.task},'Housework',1200,5,'published')`);
 await db.execute(sql`insert into scenarios (id,code,privacy_risk_level) values (${id.scenario},'home','low')`);
+
+/**
+ * A second operator, whose name says which seed run made it.
+ *
+ * The screenshot round signs in and claims real review leases, and until this
+ * existed the only thing standing between it and a production queue was the
+ * browser URL — which proves nothing, because Vite proxies `/api` to whatever
+ * `PLAYERONE_API` names and a loopback console can be a window onto a remote
+ * API. `op-shots-<nonce>` exists in exactly one database: the one this run just
+ * truncated and seeded. A round pointed anywhere else cannot sign in at all,
+ * which is the assertion happening at the API rather than at the address bar.
+ *
+ * The secret is the same throwaway `pw` as every other credential here and is
+ * deliberately not written to the file — the runner already knows it.
+ */
+const shotsRef = `op-shots-${uid().slice(0, 8)}`;
+await db.execute(sql`insert into operators (id,upload_centre_id,external_ref,role,credential_hash) values (${uid()},${id.centre},${shotsRef},'centre_operator',${hash})`);
+const evidence = join(import.meta.dirname, '..', '..', '..', '.impeccable');
+await mkdir(evidence, { recursive: true });
+await writeFile(
+  join(evidence, 'shots-target.json'),
+  `${JSON.stringify(
+    { machine_identifier: 'HCM-01', external_ref: shotsRef, seeded_at: new Date().toISOString() },
+    null,
+    2,
+  )}\n`,
+);
 
 const app = buildApi({ db, tokenSecret: 'k', mediaRoot: MEDIA_ROOT, currency: 'VND' });
 const tok = async (url, payload) => (await app.inject({ method: 'POST', url, payload })).json().token;
@@ -227,6 +254,7 @@ Seeded. Now run, in two shells:
   pnpm -F @playerone/console dev
 
 Sign in with  HCM-01 / ${SECRET}  and  op-1 / ${SECRET}.
+The screenshot round signs in as ${shotsRef}, named in .impeccable/shots-target.json.
 `);
 
 await app.close();

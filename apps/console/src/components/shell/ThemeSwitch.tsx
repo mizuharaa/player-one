@@ -48,13 +48,26 @@ export function ThemeSwitch() {
   const cycle = () =>
     setChoice((c) => (c === 'light' ? 'dark' : c === 'dark' ? 'system' : 'light'));
 
+  /**
+   * The state, in the reviewer's language.
+   *
+   * This printed the raw union member — `light`, `dark`, `system` — so the one
+   * label on this control stayed English on a console switched to Chinese, in
+   * the tooltip and in the screen-reader name alike. Three explicit `t()` calls
+   * rather than a computed key, so the catalogue check can still see them.
+   */
+  const state =
+    choice === 'light' ? t('theme.light') : choice === 'dark' ? t('theme.dark') : t('theme.system');
+  const label = `${t('theme.toggle')}: ${state}`;
+
   return (
     <button
       type="button"
       onClick={cycle}
-      title={`${t('theme.toggle')}: ${choice}`}
+      title={label}
       className={cn(
-        'grid h-8 w-8 shrink-0 place-items-center rounded-full',
+        /* 44x44: the target size WCAG 2.2 AA asks for. See `AppShell`. */
+        'grid h-11 w-11 shrink-0 place-items-center rounded-full',
         'text-[var(--muted-foreground)] transition-colors duration-150',
         'hover:bg-[var(--muted)] hover:text-[var(--foreground)]',
       )}
@@ -84,7 +97,7 @@ export function ThemeSwitch() {
           </>
         )}
       </svg>
-      <span className="sr-only">{t('theme.toggle')}</span>
+      <span className="sr-only">{label}</span>
     </button>
   );
 }

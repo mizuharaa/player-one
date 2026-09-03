@@ -6,6 +6,7 @@ sample-data/
 # point PLAYERONE_SESSIONS at them instead.
 docs/sample_data/
 
-# Screenshot rounds are evidence, not source.
-.impeccable/review/
+# Screenshot rounds are evidence, not source, and so is the note the seed
+# script leaves naming the throwaway database it just built.
+.impeccable/
 apps/console/dist/

@@ -26,7 +26,8 @@ export function LocaleSwitch() {
       title={t('app.language')}
       lang={next === 'zh' ? 'zh-Hans' : 'en'}
       className={cn(
-        'h-8 shrink-0 whitespace-nowrap rounded-full px-2.5 text-[0.8125rem] font-semibold',
+        /* 44 tall and 44 wide at least: the WCAG 2.2 AA target size. */
+        'h-11 min-w-11 shrink-0 whitespace-nowrap rounded-full px-2.5 text-[0.8125rem] font-semibold',
         'text-[var(--muted-foreground)] transition-colors duration-150',
         'hover:bg-[var(--muted)] hover:text-[var(--foreground)]',
       )}

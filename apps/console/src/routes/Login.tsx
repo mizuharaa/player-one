@@ -66,17 +66,23 @@ export function LoginScreen() {
     <div className="grid min-h-dvh lg:grid-cols-[1.05fr_1fr]">
       {/* The identity half. Sun field, because sign-in is an action. */}
       <aside className="relative hidden flex-col justify-between overflow-hidden bg-[var(--sun-500)] p-10 lg:flex">
-        <div className="flex items-center gap-2.5 text-white">
+        <div className="flex items-center gap-2.5 text-[var(--on-sun)]">
           <Mark size={30} monochrome />
           <span className="text-[1.1875rem] font-extrabold tracking-[-0.02em]">PlayerOne</span>
         </div>
 
-        <div className="max-w-[34ch]">
-          <p className="text-[2.0625rem] font-extrabold leading-[1.12] tracking-[-0.03em] text-white">
-            Every recorded hour gets an owner, a measurement and a decision.
+        {/*
+          `max-w-[34ch]` measured on Latin text: `ch` is the width of a zero, so
+          the same rule gives a Chinese line about half as many glyphs and the
+          panel reads as a narrow column. `max-w-[34ch] lg:max-w-[26em]` keeps
+          the English measure and lets the denser script use the width it has.
+        */}
+        <div className="max-w-[34ch] lg:max-w-[26em]">
+          <p className="text-[2.0625rem] font-extrabold leading-[1.12] tracking-[-0.03em] text-[var(--on-sun)]">
+            {t('login.promise')}
           </p>
-          <p className="mt-4 text-[0.9375rem] leading-relaxed text-white/85">
-            VNG PT Lab and PaXini. Footage stays in Vietnam.
+          <p className="mt-4 text-[0.9375rem] leading-relaxed text-[var(--on-sun)]/72">
+            {t('login.partners')}
           </p>
         </div>
 
@@ -125,18 +131,31 @@ export function LoginScreen() {
             {failure ? (
               <p
                 role="alert"
-                className="rounded-[var(--radius-base)] bg-[var(--reject-bg)] px-3.5 py-2.5 text-[0.875rem] font-medium text-[var(--reject)]"
+                className="rounded-[var(--radius-base)] bg-[var(--reject-bg)] px-3.5 py-2.5 text-[0.875rem] font-medium text-[var(--reject-ink)]"
               >
                 {failure === 'mismatch'
                   ? t('login.mismatch')
                   : failure === 'network'
-                    ? 'The service did not answer. Check the machine is on the centre network and try again.'
+                    ? t('login.network')
                     : t('login.failed')}
               </p>
             ) : null}
 
-            <Button type="submit" variant="primary" size="lg" disabled={busy} className="mt-1">
-              {busy ? '…' : t('login.submit')}
+            {/*
+              The label does not change while the request is in flight. It was
+              an ellipsis, which a screen reader reads as nothing at all and
+              which loses the only word on the button; `disabled` plus
+              `aria-busy` says the same thing to everybody.
+            */}
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              disabled={busy}
+              aria-busy={busy}
+              className="mt-1"
+            >
+              {t('login.submit')}
             </Button>
           </form>
         </div>
@@ -181,12 +200,20 @@ function Input({
         autoComplete={autoComplete}
         required
         spellCheck={false}
+        /*
+          `focus-visible:outline-none` was here and removed the console's one
+          focus ring from the only form on the product. Sign-in is the first
+          screen a keyboard user meets, and a border that changes from grey to
+          orange is not a focus indicator — it is the same 1px line in a
+          different colour, and it disappears entirely against the sun panel
+          beside it. The ring in `globals.css` does this job in both themes.
+        */
         className={cn(
           'num h-11 rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3.5',
           'text-[0.9375rem] text-[var(--foreground)] placeholder:text-[var(--faint-foreground)]',
           'transition-colors duration-150 ease-[var(--ease)]',
           'hover:border-[var(--faint-foreground)]',
-          'focus:border-[var(--sun-500)] focus:outline-none focus-visible:outline-none',
+          'focus:border-[var(--sun-500)]',
         )}
       />
     </label>

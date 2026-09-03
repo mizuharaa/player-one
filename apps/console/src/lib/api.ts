@@ -196,7 +196,16 @@ export const api = {
 
   recent: () => call<{ currency: string; reviews: RecentReview[] }>('/api/review/recent'),
 
-  heartbeat: (id: string) => call<unknown>(`/api/review/heartbeat/${id}`, { method: 'POST' }),
+  /**
+   * Extends the lease, and answers with the new expiry.
+   *
+   * The answer is the interesting half. The screen prints how long this episode
+   * is held for, and the only honest source for that after the first minute is
+   * what the server just said — a countdown seeded once at claim and never
+   * corrected would tick to zero under a heartbeat that is working fine.
+   */
+  heartbeat: (id: string) =>
+    call<{ lease_expires_at: string }>(`/api/review/heartbeat/${id}`, { method: 'POST' }),
 
   release: (id: string) => call<unknown>(`/api/review/release/${id}`, { method: 'POST' }),
 
@@ -219,4 +228,60 @@ export const api = {
   releaseOnUnload: (id: string) => {
     navigator.sendBeacon(`/api/review/release/${id}`);
   },
+
+  /**
+   * Ends the session. `DELETE /api/session` clears both cookies.
+   *
+   * Script cannot clear them — they are `HttpOnly` — so this is the only way a
+   * reviewer leaves a shared counter machine without waiting for the token to
+   * expire, and the next person at that desk inheriting the session is the
+   * failure this prevents.
+   */
+  signOut: () => call<{ signed_out: boolean }>('/api/session', { method: 'DELETE' }),
 };
+
+/* ---------------------------------------------------------------------------
+   The one lease this tab is holding.
+
+   A review lease is held by the review screen and has to be given back by
+   things that are not the review screen: the sign-out button in the shell, and
+   the router unmounting the screen on a client-side navigation. Neither can see
+   React state, and both drain the queue when they get it wrong — an episode
+   nobody is looking at, locked out for the rest of a ten-minute window, and the
+   next reviewer to reach it finds nothing wrong except that somebody else has
+   it.
+
+   So the id lives beside the transport that releases it. One tab holds at most
+   one lease, which is what `claimNext` guarantees, so this is a variable and
+   not a set.
+
+   ponytail: module state, not a store. Nothing renders from it — the screen
+   already has the episode in React state, and this is only the copy the shell
+   can reach. A second holder on this surface makes it a set.
+   ------------------------------------------------------------------------ */
+
+let held: string | null = null;
+
+export function holdLease(episodeId: string | null): void {
+  held = episodeId;
+}
+
+/**
+ * Give back whatever this tab holds, and wait for the answer.
+ *
+ * Awaited rather than beaconed: the caller is signing out, and `DELETE
+ * /api/session` invalidates the cookies this release authenticates with. A
+ * beacon fired alongside it is a race the release loses about as often as it
+ * wins, and losing it holds the episode for the full lease window.
+ *
+ * A failure is swallowed on purpose. The reason for calling this is always more
+ * important than the lease — leaving is leaving — and the lease expires by
+ * itself; refusing to sign out because a release 500'd is the worse trade on a
+ * shared counter machine.
+ */
+export async function releaseHeld(): Promise<void> {
+  const id = held;
+  if (id === null) return;
+  held = null;
+  await api.release(id).catch(() => {});
+}

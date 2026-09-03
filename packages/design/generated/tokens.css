@@ -25,6 +25,7 @@
   --partial-bg: #F0EDFF;
   --reject: #E5484D;
   --reject-bg: #FDECEC;
+  --reject-ink: #C63539;
 
   --background: #FFFFFF;
   --surface: #FBFAF9;
@@ -34,14 +35,19 @@
   --border-strong: #D5D1CC;
   --foreground: #17150F;
   --muted-foreground: #6E6A62;
-  --faint-foreground: #9C978E;
+  --faint-foreground: #736E65;
 
   --stage: #101215;
   --stage-panel: #191C21;
   --stage-line: #2A2F36;
   --stage-fg: #ECEEF1;
   --stage-mid: #9AA1AC;
+  --stage-video: #000000;
 
+  --on-sun: #101215;
+  --on-tech: #FFFFFF;
+
+  --radius-xs: 5px;
   --radius-sm: 8px;
   --radius-base: 12px;
   --radius-lg: 18px;
@@ -74,7 +80,7 @@
   --border-strong: #3A4048;
   --foreground: #ECEEF1;
   --muted-foreground: #9BA2AB;
-  --faint-foreground: #6C737C;
+  --faint-foreground: #838A93;
   --sun-50: #2A1608;
   --sun-100: #3D2009;
   --tech-50: #0C1A33;
@@ -82,6 +88,7 @@
   --pass-bg: #0D2A1A;
   --partial-bg: #1E1840;
   --reject-bg: #331416;
+  --reject-ink: #F0565B;
   --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
   --shadow: 0 4px 16px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
   --shadow-lg: 0 18px 48px rgba(0,0,0,.6);
@@ -99,7 +106,7 @@
   --border-strong: #3A4048;
   --foreground: #ECEEF1;
   --muted-foreground: #9BA2AB;
-  --faint-foreground: #6C737C;
+  --faint-foreground: #838A93;
   --sun-50: #2A1608;
   --sun-100: #3D2009;
   --tech-50: #0C1A33;
@@ -107,6 +114,7 @@
   --pass-bg: #0D2A1A;
   --partial-bg: #1E1840;
   --reject-bg: #331416;
+  --reject-ink: #F0565B;
   --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
   --shadow: 0 4px 16px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
   --shadow-lg: 0 18px 48px rgba(0,0,0,.6);

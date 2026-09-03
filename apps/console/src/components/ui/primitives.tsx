@@ -59,7 +59,7 @@ export function Field({
 }) {
   const valueTone =
     tone === 'warn'
-      ? 'text-[var(--reject)]'
+      ? 'text-[var(--reject-ink)]'
       : tone === 'data'
         ? 'text-[var(--tech-600)] dark:text-[var(--tech-300)]'
         : '';
@@ -89,6 +89,15 @@ export function Field({
 /* -------------------------------------------------------------------------
    Verdict pills. Colour AND shape, always — red/green colour blindness is
    common and this axis decides whether somebody is paid.
+
+   The hue is on the glyph and the tint; the word is ordinary ink. Measured,
+   not preferred: `--pass` on `--pass-bg` is 3.06:1, `--reject` 3.43, `--partial`
+   3.81, and these render at 11–13px where WCAG 2.2 AA asks 4.5. The three hues
+   are fixed by DESIGN.md and no lighter tint rescues them — `--pass` cannot
+   reach 4.5 against anything lighter than itself, white included — so the only
+   pairing that satisfies the record's own accessibility floor without changing
+   a pinned hue is neutral ink, which measures 13.3–16.6:1 in both schemes. The
+   shape axis is untouched: the glyph still carries the verdict, in its colour.
    ---------------------------------------------------------------------- */
 
 const VERDICT_STYLE = {
@@ -110,12 +119,12 @@ export function VerdictPill({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full font-semibold',
+        'inline-flex items-center gap-1.5 rounded-full font-semibold text-[var(--foreground)]',
         size === 'sm' ? 'px-2 py-0.5 text-[0.75rem]' : 'px-2.5 py-1 text-[0.8125rem]',
       )}
-      style={{ color: fg, backgroundColor: bg }}
+      style={{ backgroundColor: bg }}
     >
-      <Glyph size={size === 'sm' ? 13 : 15} />
+      <Glyph size={size === 'sm' ? 13 : 15} style={{ color: fg }} />
       {children}
     </span>
   );
@@ -194,11 +203,40 @@ export function EmptyState({
 export function Skeleton({ className }: { className?: string }) {
   return (
     <div
+      /**
+       * Decoration, and said so. A screen reader that reads six grey boxes as
+       * six unlabelled regions is worse than silence; the region that holds
+       * them carries `role="status"` and the word, once.
+       */
+      aria-hidden="true"
       className={cn(
         'animate-pulse rounded-[var(--radius-sm)] bg-[var(--muted)]',
         className,
       )}
     />
+  );
+}
+
+/**
+ * The shape of what is coming, plus the one sentence that says it is coming.
+ *
+ * `role="status"` announces without stealing focus, and `aria-busy` marks the
+ * region as not yet settled. Without it the skeletons were invisible to a
+ * screen reader and the screen simply went quiet — which reads as finished.
+ */
+export function Loading({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div role="status" aria-busy="true" aria-label={label} className={className}>
+      {children}
+    </div>
   );
 }
 

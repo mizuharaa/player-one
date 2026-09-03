@@ -77,6 +77,29 @@ export const verdict = {
   reject: { fg: '#E5484D', bg: '#FDECEC', bgDark: '#331416' },
 } as const;
 
+/**
+ * Reject, as a **word** rather than as a verdict.
+ *
+ * `verdict.reject.fg` is a glyph and a border colour and holds 3:1 as one, but
+ * a warning sentence is text: "a rejection must name at least one reason", the
+ * claimed-versus-measured discrepancy, a failed write, a lease running out.
+ * `#E5484D` measures 3.91:1 on the light card and 3.53 on `muted`, which is
+ * below the floor for 12–13px. These two are the same hue walked until it
+ * clears 4.5:1 on every surface a warning lands on, including the reject tint
+ * itself — the hardest of them, because the reason warning sits inside the
+ * reject fieldset.
+ *
+ * The tint decides these values, and it decides them by less than the eye can
+ * see. The first pair written here was `#C8383D` / `#F14F54`, described as
+ * clearing the floor everywhere; measured, `#C8383D` is 4.497 on `#FDECEC` and
+ * `#F14F54` is 4.503 on the dark `muted` — one below and one inside the
+ * rounding. These two hold 4.63 and 4.65 at their worst.
+ *
+ * Not a fourth verdict colour: nothing wearing this is a verdict. A verdict
+ * still carries its shape and its own hue.
+ */
+export const rejectInk = { light: '#C63539', dark: '#F0565B' } as const;
+
 export type VerdictName = keyof typeof verdict;
 
 /**
@@ -89,6 +112,14 @@ export const stage = {
   line: '#2A2F36',
   fg: '#ECEEF1',
   mid: '#9AA1AC',
+  /**
+   * What sits *behind* the video element itself, which is not the same colour
+   * as the room around it. A frame letterboxed against `ground` puts a
+   * near-black grey next to the footage and biases exactly the two calls the
+   * theatre exists to protect, `VQ-DARK` and `VQ-OVEREXPOSED`. Behind the
+   * picture the ground is nothing at all.
+   */
+  video: '#000000',
 } as const;
 
 /** Light is the shell's default: staffed upload centres are lit rooms. */
@@ -101,7 +132,17 @@ export const light = {
   borderStrong: '#D5D1CC',
   foreground: '#17150F',
   mutedForeground: '#6E6A62',
-  faintForeground: '#9C978E',
+  /**
+   * Measured, not chosen by eye: `#9C978E` was 2.90:1 on the card and 2.62:1
+   * on `muted`, and this token carries 12–13px labels — Home's figure notes,
+   * the pipeline stage numbers, the declaration block's heading. WCAG 2.2 AA
+   * wants 4.5:1 for text that size, and this value holds 5.06 / 4.86 / 4.57
+   * across card, surface and muted. It now sits close to `mutedForeground`,
+   * which is the honest consequence: at this size the hierarchy has to be
+   * carried by size, weight and tracking, because the contrast floor leaves
+   * no room for two legible greys on white.
+   */
+  faintForeground: '#736E65',
 } as const;
 
 /**
@@ -119,8 +160,28 @@ export const dark = {
   borderStrong: '#3A4048',
   foreground: '#ECEEF1',
   mutedForeground: '#9BA2AB',
-  faintForeground: '#6C737C',
+  /** The same measurement in the dark: 3.30–3.79 became 4.53–5.46. */
+  faintForeground: '#838A93',
 } as const;
+
+/**
+ * The ink that sits on a filled brand surface.
+ *
+ * One per ramp, because one value cannot serve both and the arithmetic says so.
+ * The brand ramps hold their hue in both schemes, so their ink must not follow
+ * the neutrals either — these are fixed in light and dark alike.
+ *
+ * **Sun takes dark ink.** White on `sun[500]` measures 2.61:1, which fails WCAG
+ * 2.2 AA at any size, and `sun[500]` is the primary button and the sign-in
+ * panel — the first surface anybody meets. `stage.ground` on `sun[500]` is
+ * 7.19:1. Reached by the same measurement in the collector app, which renders
+ * these tokens too, so the two surfaces agree rather than fork.
+ *
+ * **Tech takes white.** White on `tech[500]` is 4.59:1 and passes; dark ink on
+ * it is 4.08:1 and does not. The two ramps genuinely disagree.
+ */
+export const onSun = stage.ground;
+export const onTech = '#FFFFFF';
 
 /** The two brand steps that must invert, or a tint becomes a glare. */
 export const darkBrandTints = {
@@ -175,6 +236,8 @@ export const space = {
 } as const;
 
 export const radius = {
+  /** A 20px key cap. `sm` on that height reads as a pill, not as a key. */
+  xs: '5px',
   sm: '8px',
   base: '12px',
   lg: '18px',
@@ -242,6 +305,44 @@ export const duration = {
 export const CU_STATES = ['earlyBird', 'dayShift', 'goldenHour', 'nightOwl'] as const;
 export type CuState = (typeof CU_STATES)[number];
 
+/**
+ * Cú's own colours, per state.
+ *
+ * They live here for the same reason every other value does: the artwork ships
+ * again as a `react-native-svg` component in the collector app, which has no
+ * cascade and cannot read a `var()`, and a coat colour written into a `.tsx`
+ * file is a coat colour that app cannot have. Everything she shares with the
+ * system — the sun beak, the tech iris, the pupil taken from the dark
+ * background — is referenced from the ramps above rather than repeated, so
+ * moving a brand step moves her with it.
+ */
+export const cu: Record<
+  CuState,
+  { coat: string; belly: string; sclera: string; iris: string; foot: string }
+> = {
+  earlyBird: { coat: '#E9E3DA', belly: '#FAF6F0', sclera: '#FAF6F0', iris: tech[500], foot: sun[400] },
+  dayShift: { coat: '#E9E3DA', belly: '#FAF6F0', sclera: '#FAF6F0', iris: tech[500], foot: sun[400] },
+  goldenHour: { coat: '#E4DCD2', belly: '#FAF6F0', sclera: '#FAF6F0', iris: tech[600], foot: sun[400] },
+  nightOwl: { coat: '#3B4152', belly: '#4C5468', sclera: '#EFF3F8', iris: tech[400], foot: sun[600] },
+};
+
+/** The parts of her that do not change with the clock. */
+export const cuFixed = {
+  pupil: dark.background,
+  beak: sun[500],
+  /** Moon and low sun are the same disc at two times of day. */
+  sky: sun[200],
+  /** The early-bird cup, drawn in outline. */
+  cup: sun[600],
+  /**
+   * A catchlight and the cup she holds. Not `onSun`: these are white
+   * because an eye highlight is white, and they never carry text.
+   */
+  highlight: '#FFFFFF',
+  shadowDay: 'rgba(23,21,15,.09)',
+  shadowNight: 'rgba(0,0,0,.34)',
+} as const;
+
 export function cuStateAt(date: Date = new Date()): CuState {
   const h = date.getHours();
   if (h >= 5 && h < 9) return 'earlyBird';
@@ -287,6 +388,7 @@ export function toCss(): string {
   --pass-bg: ${verdict.pass.bgDark};
   --partial-bg: ${verdict.partial.bgDark};
   --reject-bg: ${verdict.reject.bgDark};
+  --reject-ink: ${rejectInk.dark};
 ${shadows(shadowDark)}`;
 
   return `:root {
@@ -299,6 +401,7 @@ ${ramp('tech', tech)}
   --partial-bg: ${verdict.partial.bg};
   --reject: ${verdict.reject.fg};
   --reject-bg: ${verdict.reject.bg};
+  --reject-ink: ${rejectInk.light};
 
 ${neutrals(light)}
 
@@ -307,6 +410,10 @@ ${neutrals(light)}
   --stage-line: ${stage.line};
   --stage-fg: ${stage.fg};
   --stage-mid: ${stage.mid};
+  --stage-video: ${stage.video};
+
+  --on-sun: ${onSun};
+  --on-tech: ${onTech};
 
 ${Object.entries(radius)
   .map(([k, v]) => `  --radius-${k}: ${v};`)

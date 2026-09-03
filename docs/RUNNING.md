@@ -188,9 +188,16 @@ drops every cookie and looks like an endless redirect back to sign-in.
 node apps/console/scripts/shots.mjs
 ```
 
-Every screen at 1440 and 390, both themes, English and Chinese, into
-`.impeccable/review/` (gitignored). Run it before claiming a visual change works:
-a typecheck cannot see contrast, overflow, or an arc drawn from the wrong angle.
+Forty shots — five screens at 1440 and 390, both themes, English and Chinese —
+into a new stamped directory under `.impeccable/review/` (gitignored), so two
+runs cannot overwrite each other. `SHOTS_OUT` names a directory explicitly for a
+before/after pair. `CONSOLE_URL` must be loopback: the round signs in with the
+seed credentials and claims real review leases.
+
+It exits non-zero, naming the shots it could not take, if a screen did not land
+on its own route, is missing its landmark, logged an unexpected console error or
+5xx, or if sign-in failed. Run it before claiming a visual change works: a
+typecheck cannot see contrast, overflow, or an arc drawn from the wrong angle.
 
 ### Tokens
 
