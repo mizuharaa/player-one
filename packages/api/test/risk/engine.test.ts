@@ -1108,7 +1108,17 @@ describe.skipIf(!hasDb())('the risk engine', () => {
       expect(history.json().history).toHaveLength(2);
       expect(history.json().history[1].clear_verdict).toBe('false_positive');
 
-      const report = await ops.inject({ method: 'GET', url: '/api/risk/report/false-positives?from=2026-08-01&to=2026-09-01' });
+      /**
+       * The window is derived from today, not written down. `risk_holds.raised_at`
+       * is stamped by the database at the moment this test raises the hold, so a
+       * fixed `to` bound stops containing it the day the calendar passes it — this
+       * assertion was written with `to=2026-09-01` and went red on 2026-09-02
+       * without one line of the report changing. Same fault as the timing
+       * assertions that measured the machine: it measured the date.
+       */
+      const day = 86_400_000;
+      const win = (offsetDays: number) => new Date(Date.now() + offsetDays * day).toISOString().slice(0, 10);
+      const report = await ops.inject({ method: 'GET', url: `/api/risk/report/false-positives?from=${win(-1)}&to=${win(1)}` });
       expect(report.json().holds).toMatchObject({ raised: 1, cleared_false_positive: 1, false_positive_rate: 1, over_budget: true });
       await Promise.all([ops.close(), fin.close(), rev.close()]);
     });
