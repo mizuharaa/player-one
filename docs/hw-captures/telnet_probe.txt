@@ -1,0 +1,2 @@
+after-negotiation: b'\r\r\n(none) login: \r\n(none) login: '
+ls-reply: b'ls /\r\nPassword: '

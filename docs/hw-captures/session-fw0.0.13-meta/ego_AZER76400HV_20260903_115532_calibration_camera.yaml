@@ -1,0 +1,77 @@
+# ============================================================
+# Camera Calibration Parameters
+# Coordinate System: Right-handed (OpenCV convention)
+#   X -> right, Y -> down, Z -> forward
+# ============================================================
+
+calibration_info:
+  format_version: "1.0"
+  calibration_date: "2026-7-28"
+  serial_number: "CH5LB5400J5"
+  chart_type: "Ux"
+  chart_version: "2"
+  num_cameras: 2
+  num_temperature_sensors: 3
+  reference_camera: "cam_0"
+  reserved: 0
+environment:
+    temperature:
+    relative_humidity: "50% RH"
+    ambient_atmospheric_pressure: "/"
+    location: "ORBBEC_lab_A"
+
+cameras:
+  - id: "cam_0"
+    name: "IR_L"
+    distortion_model: "KB"
+    image_width: 1600
+    image_height: 1300
+    intrinsics:
+      fx: 499.76320747
+      fy: 499.76378607
+      cx: 798.63188549
+      cy: 681.21337242
+    distortion:
+      k1: 0.07037590
+      k2: -0.00172299
+      k3: -0.01173850
+      k4: 0.00469957
+      k5: 0.00000000
+      k6: 0.00000000
+      p1: 0.00000000
+      p2: 0.00000000
+    extrinsics:
+      rotation:
+        - [1.00000000, -0.00000000, 0.00000000]
+        - [0.00000000, 1.00000000, -0.00000000]
+        - [-0.00000000, 0.00000000, 1.00000000]
+      translation: [0.00000000, 0.00000000, 0.00000000]
+    vcm_code: 0
+
+  - id: "cam_1"
+    name: "IR_R"
+    distortion_model: "KB"
+    image_width: 1600
+    image_height: 1300
+    intrinsics:
+      fx: 504.93529194
+      fy: 505.07383981
+      cx: 824.08659608
+      cy: 640.86191704
+    distortion:
+      k1: 0.07015909
+      k2: -0.00586080
+      k3: -0.00415365
+      k4: 0.00141861
+      k5: 0.00000000
+      k6: 0.00000000
+      p1: 0.00000000
+      p2: 0.00000000
+    extrinsics:
+      rotation:
+        - [0.99997723, 0.00542109, -0.00401992]
+        - [-0.00542026, 0.99998529, 0.00021790]
+        - [0.00402104, -0.00019611, 0.99999190]
+      translation: [-121.62113544, 0.08510369, -0.19159288]
+    vcm_code: 0
+

@@ -1,0 +1,87 @@
+{
+  "address": "54:14:FD:25:8B:95",
+  "when": "2026-09-03T11:26:00.274119",
+  "services": [
+    {
+      "uuid": "00001801-0000-1000-8000-00805f9b34fb",
+      "description": "Generic Attribute Profile",
+      "chars": [
+        {
+          "uuid": "00002a05-0000-1000-8000-00805f9b34fb",
+          "handle": 2,
+          "props": [
+            "indicate"
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "00001800-0000-1000-8000-00805f9b34fb",
+      "description": "Generic Access Profile",
+      "chars": [
+        {
+          "uuid": "00002a00-0000-1000-8000-00805f9b34fb",
+          "handle": 21,
+          "props": [
+            "read"
+          ],
+          "value_hex": "45676f5f415a455237363430304856"
+        },
+        {
+          "uuid": "00002a01-0000-1000-8000-00805f9b34fb",
+          "handle": 23,
+          "props": [
+            "read"
+          ],
+          "value_hex": "0000"
+        },
+        {
+          "uuid": "00002a04-0000-1000-8000-00805f9b34fb",
+          "handle": 25,
+          "props": [
+            "read"
+          ],
+          "value_hex": "060006000000d007"
+        },
+        {
+          "uuid": "00002aa6-0000-1000-8000-00805f9b34fb",
+          "handle": 27,
+          "props": [
+            "read"
+          ],
+          "value_hex": "00"
+        }
+      ]
+    },
+    {
+      "uuid": "0000ffe0-0000-1000-8000-00805f9b34fb",
+      "description": "Vendor specific",
+      "chars": [
+        {
+          "uuid": "0000ff01-0000-1000-8000-00805f9b34fb",
+          "handle": 41,
+          "props": [
+            "write"
+          ]
+        },
+        {
+          "uuid": "0000ff02-0000-1000-8000-00805f9b34fb",
+          "handle": 43,
+          "props": [
+            "write"
+          ]
+        },
+        {
+          "uuid": "0000ff03-0000-1000-8000-00805f9b34fb",
+          "handle": 45,
+          "props": [
+            "notify",
+            "read",
+            "write"
+          ],
+          "value_hex": "69646c65"
+        }
+      ]
+    }
+  ]
+}

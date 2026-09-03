@@ -1,0 +1,114 @@
+{
+    "device": {
+        "connection_type": "USB2.0",
+        "firmware_version": "0.0.13",
+        "name": "Orbbec Ego",
+        "sdk": "OrbbecSDK",
+        "sdk_version": "2.9.0-open-source-beta",
+        "serial_number": "AZER76400HV"
+    },
+    "files": {
+        "audio": "Orbbec_Ego_AZER76400HV_20260903_115532_audio.wav",
+        "audio_pts": "Orbbec_Ego_AZER76400HV_20260903_115532_audio_pts.csv",
+        "calibration_camera": "Orbbec_Ego_AZER76400HV_20260903_115532_calibration_camera.yaml",
+        "calibration_imu": "Orbbec_Ego_AZER76400HV_20260903_115532_calibration_imu.yaml",
+        "imu": "Orbbec_Ego_AZER76400HV_20260903_115532_imu.csv",
+        "video_left": "Orbbec_Ego_AZER76400HV_20260903_115532_camera_left.mp4",
+        "video_left_pts": "Orbbec_Ego_AZER76400HV_20260903_115532_camera_left_pts.csv",
+        "video_right": "Orbbec_Ego_AZER76400HV_20260903_115532_camera_right.mp4",
+        "video_right_pts": "Orbbec_Ego_AZER76400HV_20260903_115532_camera_right_pts.csv"
+    },
+    "recording": {
+        "duration_sec": 26.734,
+        "end_time": "2026-09-03T11:55:59.062",
+        "start_time": "2026-09-03T11:55:32.328",
+        "status": "completed",
+        "video_segment_duration_sec": 0
+    },
+    "session": {
+        "created_at": "2026-09-03T11:55:32.328",
+        "recording_id": "Orbbec_Ego_AZER76400HV_20260903_115532",
+        "session_id": "Orbbec_Ego_AZER76400HV_20260903_115532",
+        "software": "EgoViewer",
+        "software_version": "1.0.17"
+    },
+    "statistics": {
+        "audio_frame_count": 2674,
+        "imu_accel_count": 26720,
+        "imu_dropped_samples": 0,
+        "imu_gyro_count": 26720,
+        "imu_queue_high_watermark": 20,
+        "video_left_dropped_frames": 0,
+        "video_left_frame_count": 801,
+        "video_right_dropped_frames": 0,
+        "video_right_frame_count": 801
+    },
+    "streams": {
+        "audio": {
+            "bits_per_sample": 16,
+            "channels": 1,
+            "enabled": true,
+            "file": "Orbbec_Ego_AZER76400HV_20260903_115532_audio.wav",
+            "format": "PCM",
+            "pts_file": "Orbbec_Ego_AZER76400HV_20260903_115532_audio_pts.csv",
+            "sample_rate_hz": 16000
+        },
+        "color_left": {
+            "enabled": true,
+            "file": "Orbbec_Ego_AZER76400HV_20260903_115532_camera_left.mp4",
+            "format": "H264",
+            "fps": 30,
+            "height": 1300,
+            "pts_file": "Orbbec_Ego_AZER76400HV_20260903_115532_camera_left_pts.csv",
+            "segment_duration_sec": 0,
+            "segments": [
+                {
+                    "end_time_sec": 0,
+                    "end_timestamp_us": "1788411359013810",
+                    "file": "Orbbec_Ego_AZER76400HV_20260903_115532_camera_left.mp4",
+                    "frame_count": 801,
+                    "index": 1,
+                    "pts_file": "Orbbec_Ego_AZER76400HV_20260903_115532_camera_left_pts.csv",
+                    "start_time_sec": 0,
+                    "start_timestamp_us": "0"
+                }
+            ],
+            "width": 1600
+        },
+        "color_right": {
+            "enabled": true,
+            "file": "Orbbec_Ego_AZER76400HV_20260903_115532_camera_right.mp4",
+            "format": "H264",
+            "fps": 30,
+            "height": 1300,
+            "pts_file": "Orbbec_Ego_AZER76400HV_20260903_115532_camera_right_pts.csv",
+            "segment_duration_sec": 0,
+            "segments": [
+                {
+                    "end_time_sec": 0,
+                    "end_timestamp_us": "1788411359013808",
+                    "file": "Orbbec_Ego_AZER76400HV_20260903_115532_camera_right.mp4",
+                    "frame_count": 801,
+                    "index": 1,
+                    "pts_file": "Orbbec_Ego_AZER76400HV_20260903_115532_camera_right_pts.csv",
+                    "start_time_sec": 0,
+                    "start_timestamp_us": "0"
+                }
+            ],
+            "width": 1600
+        },
+        "imu": {
+            "accel_enabled": true,
+            "accel_sample_rate_hz": 1000,
+            "enabled": true,
+            "file": "Orbbec_Ego_AZER76400HV_20260903_115532_imu.csv",
+            "gyro_enabled": true,
+            "gyro_sample_rate_hz": 1000
+        }
+    },
+    "timebase": {
+        "clock_source": "device_timestamp",
+        "precision": "microsecond",
+        "unit": "seconds"
+    }
+}

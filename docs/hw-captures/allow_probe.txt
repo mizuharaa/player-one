@@ -1,0 +1,8 @@
+:8888 OPTIONS 200 Allow=None Server=None hdrs={'Date': 'Thu, Jan 01 1970 00:24:47 GMT', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, GET, OPTIONS', 'Access-Control-Allow-Headers': 'x-sessioncookie, Pragma, Cache-Control', 'Access-Control-Max-Age': '1728000'}
+:8888 GET 405 Allow=None Server=None all={'Date': 'Thu, Jan 01 1970 00:24:47 GMT'}
+:8889 OPTIONS 200 Allow=None Server=None hdrs={'Date': 'Thu, Jan 01 1970 00:24:47 GMT', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, GET, OPTIONS', 'Access-Control-Allow-Headers': 'x-sessioncookie, Pragma, Cache-Control', 'Access-Control-Max-Age': '1728000'}
+:8889 GET 405 Allow=None Server=None all={'Date': 'Thu, Jan 01 1970 00:24:47 GMT'}
+:8890 OPTIONS 200 Allow=None Server=None hdrs={'Date': 'Thu, Jan 01 1970 00:24:47 GMT', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, GET, OPTIONS', 'Access-Control-Allow-Headers': 'x-sessioncookie, Pragma, Cache-Control', 'Access-Control-Max-Age': '1728000'}
+:8890 GET 405 Allow=None Server=None all={'Date': 'Thu, Jan 01 1970 00:24:47 GMT'}
+:8900 OPTIONS TimeoutError
+:8900 GET TimeoutError
