@@ -42,6 +42,10 @@
   --stage-fg: #ECEEF1;
   --stage-mid: #9AA1AC;
 
+  --medal-bronze: #A9743F;
+  --medal-silver: #828A94;
+  --medal-gold: #A8862A;
+
   --radius-sm: 8px;
   --radius-base: 12px;
   --radius-lg: 18px;

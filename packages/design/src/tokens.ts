@@ -80,6 +80,40 @@ export const verdict = {
 export type VerdictName = keyof typeof verdict;
 
 /**
+ * Badge weight, and the only third colour family this system has.
+ *
+ * `docs/reputation.md` gives every badge one of three weights and the collector
+ * app has to show which. Nothing already here can carry that axis: the sun ramp
+ * means *action*, and a gold badge is not an action — it unlocks nothing, by
+ * design — so painting a badge in the brand would promise a privilege that does
+ * not exist. The verdicts are worse: they decide money and appear on verdicts
+ * and nowhere else.
+ *
+ * Three constraints shaped the values:
+ *
+ * **One value each, not a light/dark pair.** These are fills on a shape — the
+ * badge seal — and never a text colour. Non-text contrast needs 3:1, which all
+ * three clear against every ground in both themes (worst case 3.10, against
+ * `light.muted`; the incumbent `verdict.pass` scores 3.04 there). No single hue
+ * can clear the 4.5:1 *text* floor against `#FFFFFF` and `#181B1F` at the same
+ * time, which is why the neutrals carry a pair and these deliberately do not.
+ *
+ * **Never a fill on a control.** One glowing element per viewport is the sun's,
+ * and a seal that reads as a button is a badge promising an unlock.
+ *
+ * **Colour is never the only signal.** `silver` and `gold` sit within 0.005 of
+ * each other in relative luminance and are the same shape in greyscale, so the
+ * weight is written as a word beside the seal as well.
+ */
+export const medal = {
+  bronze: '#A9743F',
+  silver: '#828A94',
+  gold: '#A8862A',
+} as const;
+
+export type MedalWeight = keyof typeof medal;
+
+/**
  * The theatre. Present in both themes, because it is about the footage and not
  * about the operator's ambient light.
  */
@@ -307,6 +341,10 @@ ${neutrals(light)}
   --stage-line: ${stage.line};
   --stage-fg: ${stage.fg};
   --stage-mid: ${stage.mid};
+
+  --medal-bronze: ${medal.bronze};
+  --medal-silver: ${medal.silver};
+  --medal-gold: ${medal.gold};
 
 ${Object.entries(radius)
   .map(([k, v]) => `  --radius-${k}: ${v};`)

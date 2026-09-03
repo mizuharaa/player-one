@@ -22,6 +22,7 @@ import {
   fontSize,
   fontWeight,
   light,
+  medal,
   radius,
   space,
   stage,
@@ -60,6 +61,11 @@ export function nativeTheme(scheme: ColorScheme) {
         reject: { fg: verdict.reject.fg, bg: isDark ? verdict.reject.bgDark : verdict.reject.bg },
       },
       stage,
+      /**
+       * Badge weight. Scheme-independent by construction — see `medal` in
+       * `tokens.ts` — so it is spread in unchanged rather than resolved.
+       */
+      medal,
     },
     /**
      * sp-equivalent sizes. RN scales these by the system font setting on its
