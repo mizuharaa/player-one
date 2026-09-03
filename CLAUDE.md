@@ -368,3 +368,16 @@ command, so **check which one you are on before pasting a `DATABASE_URL`**:
   `confirm-modules-purge=false`. Neither is needed on pnpm 9 and neither harms it.
 
 `docs/RUNNING.md` has both paths written out.
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub issues on `mizuharaa/player-one`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, each label string equal to its name (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
