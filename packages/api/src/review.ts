@@ -665,8 +665,23 @@ export function registerReview(
     const decision: Decision = body.decision;
     const effectiveSeconds = usefulSeconds(decision, spans, review.measuredDurationS);
 
+    /**
+     * Who is owed, and at what price. Both are written onto the settlement
+     * rather than joined back to later: a settlement's payee and rate are facts
+     * about the moment the verdict was committed, and reaching them through
+     * `collection_sessions` at bill time would let a session reassigned
+     * afterwards pay a different person for footage that was already scored.
+     *
+     * This read is the eligibility check and nothing more — it answers 409
+     * before a transaction is opened. The values that reach the row are read
+     * again inside the transaction that writes it; see `provenance`.
+     */
     const [ownership] = await db
-      .select({ taskId: schema.tasks.id, unitPrice: schema.tasks.unitPrice })
+      .select({
+        taskId: schema.tasks.id,
+        unitPrice: schema.tasks.unitPrice,
+        collectorId: schema.collectionSessions.collectorId,
+      })
       .from(schema.episodes)
       .innerJoin(
         schema.collectionSessions,
@@ -681,7 +696,26 @@ export function registerReview(
       // resolver refuses to make.
       return reply.code(409).send({ error: 'this episode has no task to be paid against' });
     }
-    const bill = settlementFor(ownership.unitPrice, effectiveSeconds);
+
+    /**
+     * What the settlement will say, filled by the transaction that writes it.
+     *
+     * Seeded from the read above so it is never unset, and overwritten inside
+     * the transaction from a read taken there. The difference matters because
+     * everything here is a snapshot that can never be corrected afterwards:
+     * `settlements_amount_immutable_check` freezes the payee, the unit, the
+     * price and the amount the moment the row lands. Reading them minutes
+     * earlier — before the reason-code lookup, before the span normalisation —
+     * and freezing them as the truth of a later instant is how a reparented
+     * session or a repriced task ends up paying the wrong person the wrong
+     * amount with no record that anything moved.
+     */
+    const provenance = {
+      taskId: ownership.taskId,
+      collectorId: ownership.collectorId,
+      ...settlementFor(ownership.unitPrice, effectiveSeconds),
+      unitPrice: ownership.unitPrice,
+    };
 
     const decidedAt = new Date();
     const elapsedSeconds =
@@ -689,6 +723,27 @@ export function registerReview(
       (review.claimedAt === null
         ? null
         : (decidedAt.getTime() - review.claimedAt.getTime()) / 1000);
+
+    /**
+     * The money fields are filled by the transaction below and read only after
+     * it resolves. See the note on `AuditEvent`: an audit row has to say what
+     * the database wrote, not what the request set out to write.
+     */
+    const after = {
+      verdict_id: body.verdict_id,
+      episode_id: body.episode_id,
+      ingest_id: review.ingestId,
+      decision,
+      review_state: REVIEW_STATE[decision],
+      measured_duration_s: review.measuredDurationS,
+      effective_duration_s: effectiveSeconds,
+      spans,
+      reject_reasons: body.reject_reasons,
+      currency,
+      unit_price: provenance.unitPrice,
+      effective_minutes: provenance.effectiveMinutes,
+      amount: provenance.amount,
+    };
 
     let written: { id: string } | undefined;
     try {
@@ -700,21 +755,7 @@ export function registerReview(
           targetTable: 'episode_reviews',
           targetId: review.id,
           before: { review_state: 'pending', reviewer_ref: review.reviewerRef },
-          after: {
-            verdict_id: body.verdict_id,
-            episode_id: body.episode_id,
-            ingest_id: review.ingestId,
-            decision,
-            review_state: REVIEW_STATE[decision],
-            measured_duration_s: review.measuredDurationS,
-            effective_duration_s: effectiveSeconds,
-            spans,
-            reject_reasons: body.reject_reasons,
-            unit_price: ownership.unitPrice,
-            currency,
-            effective_minutes: bill.effectiveMinutes,
-            amount: bill.amount,
-          },
+          after,
         },
         async (tx) => {
           /**
@@ -745,6 +786,40 @@ export function registerReview(
             .returning({ id: schema.episodeReviews.id });
           if (row === undefined) return undefined;
 
+          /**
+           * The payee and the price again, read here rather than trusted from
+           * the check above, because this is the read the settlement freezes.
+           *
+           * Between that read and this transaction the request has looked up
+           * reason codes and normalised spans, and an operator may have
+           * reparented the session or repriced the task in the meantime. The
+           * settlement cannot be corrected afterwards — payee, unit, price and
+           * amount are all immutable once written — so the values it stores
+           * have to come from the transaction that stores them.
+           *
+           * ponytail: no `for update` on the session or the task. Locking them
+           * would serialise every verdict for a task behind a reprice, and a
+           * reparent that commits during this transaction has no true ordering
+           * against a verdict submitted at the same instant. The transaction
+           * boundary is what is being bought here: the row that is written
+           * agrees with the row that was read.
+           */
+          const [live] = (await tx.execute(sql`
+            select t.id as task_id, t.unit_price, cs.collector_id
+              from episodes e
+              join collection_sessions cs on cs.id = e.collection_session_id
+              join tasks t on t.id = cs.task_id
+             where e.episode_id = ${body.episode_id}
+          `)) as unknown as { task_id: string; unit_price: string; collector_id: string }[];
+          if (live === undefined) return undefined;
+          provenance.taskId = live.task_id;
+          provenance.collectorId = live.collector_id;
+          provenance.unitPrice = live.unit_price;
+          Object.assign(provenance, settlementFor(live.unit_price, effectiveSeconds));
+          after.unit_price = provenance.unitPrice;
+          after.effective_minutes = provenance.effectiveMinutes;
+          after.amount = provenance.amount;
+
           if (spans.length > 0) {
             await tx.insert(schema.episodeReviewSpans).values(
               spans.map((s, ordinal) => ({
@@ -770,11 +845,30 @@ export function registerReview(
           await tx.insert(schema.settlements).values({
             id: randomUUID(),
             episodeReviewId: review.id,
-            taskId: ownership.taskId,
-            unitPrice: ownership.unitPrice,
-            effectiveMinutes: bill.effectiveMinutes,
-            amount: bill.amount,
-            settlementState: 'pending_settlement',
+            taskId: provenance.taskId,
+            collectorId: provenance.collectorId,
+            unitPrice: provenance.unitPrice,
+            effectiveMinutes: provenance.effectiveMinutes,
+            amount: provenance.amount,
+            /**
+             * Snapshot, for the same reason the price is. Read from
+             * configuration at bill time instead, changing `PLAYERONE_CURRENCY`
+             * would relabel every historic amount without touching a number.
+             */
+            currency,
+            /**
+             * SET-01. A settlement worth nothing is born finished.
+             *
+             * The row itself stays -- it is the score of the review, what the
+             * console's settled-value sum reads and what a dispute over a
+             * refused episode points at -- but it can never reach a bill, so
+             * `pending_settlement` would make it a debt that is always owed and
+             * never paid, rescanned by every cycle for ever. Keyed on the
+             * amount and not on the verdict, because a partial pass whose every
+             * span was cut is worth 0.0000 too;
+             * `settlements_zero_not_payable_check` is the same rule as a CHECK.
+             */
+            settlementState: Number(provenance.amount) > 0 ? 'pending_settlement' : 'not_payable',
           });
           return row;
         },
@@ -817,10 +911,11 @@ export function registerReview(
       /** The authoritative figure. Whatever the client displayed was an estimate. */
       effective_duration_seconds: effectiveSeconds,
       spans,
-      unit_price: ownership.unitPrice,
+      /** What the settlement was written with, not what the request read first. */
+      unit_price: provenance.unitPrice,
       currency,
-      effective_minutes: bill.effectiveMinutes,
-      amount: bill.amount,
+      effective_minutes: provenance.effectiveMinutes,
+      amount: provenance.amount,
       replayed: false,
       queue_depth: await queueDepth(),
       session_average_seconds: await sessionAverage(reviewer),

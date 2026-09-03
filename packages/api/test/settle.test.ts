@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
@@ -199,6 +199,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
      */
     const expected = new Map<string, string[]>();
     let rejected = 0;
+    const reviewAll = async () => {
     for (const who of [headersA, headersB]) {
       for (;;) {
         const claimed = await send('POST', '/api/review/claim', undefined, who);
@@ -231,18 +232,31 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
         expected.set(collector, amounts);
       }
     }
+    };
+    await reviewAll();
 
-    return { d, app, ids, headersA, headersB, send, expected };
+    return { d, app, ids, headersA, headersB, send, expected, card, reviewAll };
   }
 
   /**
-   * A window that contains everything the harness writes. Fixed once, not
-   * recomputed per call: a period built from `Date.now()` at each use drifts by
-   * however long the test took, and a bill is looked up by the exact period it
-   * was issued for.
+   * The cycle that contains now.
+   *
+   * A caller can no longer name an arbitrary window: `period_start` is a local
+   * Vietnamese date and it has to sit on the lattice the anchor defines, so
+   * that two cycles cannot overlap and quietly disagree about which one a
+   * settlement was paid in. 1970-01-05 was a Monday, so a 7-day cycle always
+   * begins on a Monday. This computes the same lattice the endpoint does.
    */
-  const START = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const period = () => ({ period_start: START.toISOString() });
+  const ANCHOR = Date.parse('1970-01-05T00:00:00+07:00');
+  const DAY = 24 * 60 * 60 * 1000;
+  /** The local date, in Vietnam, of the cycle boundary at or before `at`. */
+  const cycleStart = (days = 7, at = Date.now()): string => {
+    const ms = ANCHOR + Math.floor((at - ANCHOR) / (days * DAY)) * days * DAY;
+    // +07:00 back to UTC midnight, so `toISOString` prints the local date.
+    return new Date(ms + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  };
+  const period = () => ({ period_start: cycleStart() });
+  const nextPeriod = () => ({ period_start: cycleStart(7, Date.now() + 7 * DAY) });
 
   // -------------------------------------------------------------------------
 
@@ -332,32 +346,232 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
 
     it('takes the cycle length as a parameter, because weekly is only assumed', async () => {
       const h = await harness({ cycleDays: 14, each: 1 });
-      const res = await h.send('POST', '/api/settle/bills', period());
+      const start = cycleStart(14);
+      const res = await h.send('POST', '/api/settle/bills', { period_start: start });
+      expect(res.statusCode, res.body).toBe(200);
       expect(res.json().cycle_days).toBe(14);
-      expect(Date.parse(res.json().period_end) - START.getTime()).toBe(14 * 24 * 60 * 60 * 1000);
-
-      // An explicit end still wins over the cycle.
-      const explicit = await h.send('GET', '/api/settle/bills?period_start=2026-08-17T00:00:00Z&period_end=2026-08-18T00:00:00Z');
-      expect(explicit.json().period_end).toBe('2026-08-18T00:00:00.000Z');
+      expect(Date.parse(res.json().period_end) - Date.parse(res.json().period_start)).toBe(14 * DAY);
+      // The cycle length also decides which dates are cycle starts at all. A
+      // Monday that begins a 7-day cycle need not begin a 14-day one.
+      const odd = await h.send('POST', '/api/settle/bills', {
+        period_start: cycleStart(7, Date.parse(`${start}T00:00:00+07:00`) + 7 * DAY),
+      });
+      expect(odd.statusCode).toBe(422);
+      expect(odd.json().error).toContain('14-day cycle');
     });
 
-    it('refuses a period that ends before it starts', async () => {
+    it('refuses anything that is not the start of a cycle', async () => {
       const h = await harness({ each: 1 });
-      const res = await h.send('POST', '/api/settle/bills', {
-        period_start: '2026-08-24T00:00:00Z',
-        period_end: '2026-08-17T00:00:00Z',
+      /**
+       * The period used to be two free instants, and two of them overlapping —
+       * `[17 Aug, 24 Aug)` and `[18 Aug, 25 Aug)` — were both valid keys on
+       * `bills_collector_period_key`. Whichever generator ran first decided
+       * which cycle a settlement was paid in. A cycle is now a position on a
+       * lattice, so an overlapping one cannot be asked for.
+       */
+      for (const period_start of [
+        '2026-08-18', // a Tuesday: inside a cycle, not the start of one
+        '2026-08-17T00:00:00Z', // the old instant form
+        '2026-02-30', // a date that does not exist, and which `Date.parse` rolls
+        'last week',
+        '',
+      ]) {
+        const res = await h.send('POST', '/api/settle/bills', { period_start });
+        expect(res.statusCode, `${period_start} was accepted`).toBe(422);
+      }
+      // And a caller still sending the old `period_end` is refused rather than
+      // quietly given a whole configured cycle it did not ask for.
+      const stale = await h.send('POST', '/api/settle/bills', {
+        period_start: period().period_start,
+        period_end: '2026-08-18',
       });
-      expect(res.statusCode).toBe(422);
+      expect(stale.statusCode, stale.body).toBe(422);
+      // And the refusal says which cycle the caller probably meant.
+      const near = await h.send('POST', '/api/settle/bills', { period_start: '2026-08-18' });
+      expect(near.json().error).toContain('2026-08-16T17:00:00.000Z');
     });
 
-    it('bills nothing when the cycle contains no verdicts', async () => {
+    it('bills nothing when nothing was owed before the cutoff', async () => {
       const h = await harness({ each: 1 });
-      const res = await h.send('POST', '/api/settle/bills', {
-        period_start: '2020-01-06T00:00:00Z',
-        period_end: '2020-01-13T00:00:00Z',
-      });
+      // 2020-01-06 was a Monday. Every settlement in the fixture was written
+      // just now, so nothing was owed as of the end of that cycle.
+      const res = await h.send('POST', '/api/settle/bills', { period_start: '2020-01-06' });
+      expect(res.statusCode, res.body).toBe(200);
       expect(res.json().created).toBe(0);
       expect(res.json().bills).toEqual([]);
+    });
+
+    it('does not strand a settlement that becomes visible after the bill was issued', async () => {
+      /**
+       * The hole this closes. A review transaction can begin before the cutoff
+       * — so its settlement's `created_at` falls inside the cycle — and commit
+       * after the generator's SELECT has run. The bill is issued without it.
+       *
+       * This is also the only test that actually reaches
+       * `onConflictDoNothing`: in the plain regeneration test every candidate is
+       * already `bill_generated` by the second run, so the second run finds
+       * nothing to bill and the unique index is never consulted. Here the
+       * collector *does* have a payable settlement on the rerun, the insert is
+       * attempted, and the index is what refuses it.
+       *
+       * Two things then have to be true: the rerun changes nothing at all, and
+       * the late settlement is not lost — it is billed by the following cycle.
+       */
+      const h = await harness({ each: 1 });
+      const first = await h.send('POST', '/api/settle/bills', period());
+      expect(first.json().created).toBe(2);
+
+      await h.card(h.headersA, h.ids.collector1, h.ids.device1, h.ids.taskHousework, 'CARD-3');
+      await h.reviewAll();
+      const late = (await h.d.execute(sql`
+        select count(*)::int as n from settlements where settlement_state = 'pending_settlement'
+      `)) as unknown as { n: number }[];
+      expect(late[0]!.n).toBe(1);
+
+      const snapshot = async () => {
+        const rows = (await h.d.execute(sql`
+          select (select count(*) from bills)::int as bills,
+                 (select count(*) from bill_lines)::int as lines,
+                 (select count(*) from audit_events where action = 'bill.generate')::int as audits,
+                 (select string_agg(id::text || ':' || total, ',' order by id) from bills) as issued
+        `)) as unknown as Record<string, unknown>[];
+        return rows[0]!;
+      };
+      const before = await snapshot();
+      const again = await h.send('POST', '/api/settle/bills', period());
+      expect(again.statusCode, again.body).toBe(200);
+      expect(again.json().created).toBe(0);
+      expect(await snapshot()).toEqual(before);
+
+      /**
+       * Not lost, and not billable early either. It is still `pending_settlement`
+       * and on no line, so the following cycle will bill it — and that cycle
+       * cannot be asked for until it starts, which is what the cutoff below is
+       * for. The proof that a cycle bills an obligation older than itself is the
+       * next test; this one only has to show the row survived.
+       */
+      const stranded = (await h.d.execute(sql`
+        select s.settlement_state,
+               (select count(*)::int from bill_lines bl where bl.settlement_id = s.id) as lines
+          from settlements s
+         where s.settlement_state = 'pending_settlement'
+      `)) as unknown as { settlement_state: string; lines: number }[];
+      expect(stranded).toHaveLength(1);
+      expect(stranded[0]!.lines).toBe(0);
+
+      const early = await h.send('POST', '/api/settle/bills', nextPeriod());
+      expect(early.statusCode, early.body).toBe(422);
+      expect(early.json().error).toContain('has not started');
+    });
+
+    it('bills an obligation older than the cycle that pays it', async () => {
+      /**
+       * `settleable` has no lower bound, and this is the property that needs.
+       * A review that commits after its own cycle has been generated would
+       * otherwise be stranded for ever: the bill is issued without it, a rerun
+       * of that cycle changes nothing, and every later cycle would filter it out
+       * for being too old. With no lower bound it appears on the next bill
+       * instead, the way a payroll run treats a late timesheet — and each line
+       * carries its own `reviewed_at`, so a line that predates its bill says so.
+       *
+       * The obligation is written directly, at a `created_at` three weeks back,
+       * because that is the one field the review lane cannot be asked to fake:
+       * `settlements_amount_immutable_check` freezes it the moment it exists.
+       */
+      const h = await harness({ each: 1 });
+      await h.card(h.headersA, h.ids.collector1, h.ids.device1, h.ids.taskHousework, 'CARD-3');
+      const [fresh] = (await h.d.execute(sql`
+        select i.episode_id, i.ingest_id
+          from episode_ingests i
+         where not exists (select 1 from episode_reviews r where r.episode_id = i.episode_id)
+         limit 1
+      `)) as unknown as { episode_id: string; ingest_id: string }[];
+      expect(fresh).toBeDefined();
+      const reviewId = uid();
+      await h.d.execute(sql`
+        insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s,
+                                     effective_duration_s, review_state, reviewed_at, verdict_id)
+          values (${reviewId}, ${fresh!.episode_id}, ${fresh!.ingest_id}, '16.000000',
+                  '16.000000', 'pass', now() - interval '21 days', ${uid()});
+      `);
+      await h.d.execute(sql`
+        insert into settlements (id, episode_review_id, task_id, collector_id, currency,
+                                 unit_price, effective_minutes, amount, settlement_state,
+                                 created_at)
+          values (${uid()}, ${reviewId}, ${h.ids.taskHousework}, ${h.ids.collector1}, 'VND',
+                  '1200.0000', '0.266667', '320.0004', 'pending_settlement',
+                  now() - interval '21 days');
+      `);
+
+      const res = await h.send('POST', '/api/settle/bills', period());
+      expect(res.statusCode, res.body).toBe(200);
+      const bill = (
+        res.json().bills as { id: string; collector_ref: string; lines: number }[]
+      ).find((b) => b.collector_ref === 'c-0001')!;
+      // Two lines: this cycle's verdict, and the three-week-old obligation.
+      expect(bill.lines).toBe(2);
+      const detail = await h.send('GET', `/api/settle/bills/${bill.id}`);
+      const old = (detail.json().lines as { amount: string; reviewed_at: string }[]).find(
+        (l) => l.amount === '320.0004',
+      )!;
+      expect(Date.parse(old.reviewed_at)).toBeLessThan(Date.parse(detail.json().period_start));
+    });
+
+    it('refuses a cycle that has not started', async () => {
+      /**
+       * The server owns the payable cutoff. Without it a caller could name any
+       * aligned future cycle and sweep every settlement owed today onto a bill
+       * labelled a week nobody has worked yet — and the run for the current
+       * cycle would then find nothing left and issue no bill at all, so the
+       * collector's pay would exist only on a document that lies about when it
+       * was earned.
+       */
+      const h = await harness({ each: 1 });
+      const ahead = await h.send('POST', '/api/settle/bills', nextPeriod());
+      expect(ahead.statusCode, ahead.body).toBe(422);
+      expect(ahead.json().error).toContain('has not started');
+      const bills = (await h.d.execute(
+        sql`select count(*)::int as n from bills`,
+      )) as unknown as { n: number }[];
+      expect(bills[0]!.n).toBe(0);
+      // The cycle that contains now is still generatable while it is running: a
+      // mid-cycle run bills what is owed so far.
+      expect((await h.send('POST', '/api/settle/bills', period())).json().created).toBe(2);
+    });
+
+    it('two generators racing one cycle lose no settlement and duplicate none', async () => {
+      /**
+       * A retried request, an impatient operator, and a cron that fired twice.
+       * Neither run may bill a settlement the other billed, and neither may
+       * leave one behind. The database is what decides:
+       * `bills_collector_period_key` has nowhere to put the second header and
+       * `bill_lines_settlement_key` nowhere to put the second line, so the
+       * loser rolls back whole rather than issuing half a bill.
+       *
+       * The loser is allowed to fail loudly — that is the honest answer to two
+       * generators — so what is asserted is the state of the money, not the two
+       * status codes.
+       */
+      const h = await harness();
+      const [a, b] = await Promise.all([
+        h.send('POST', '/api/settle/bills', period()),
+        h.send('POST', '/api/settle/bills', period()),
+      ]);
+      for (const res of [a, b]) expect([200, 500]).toContain(res.statusCode);
+
+      const [counts] = (await h.d.execute(sql`
+        select (select count(*)::int from bills) as bills,
+               (select count(*)::int from bill_lines) as lines,
+               (select count(*)::int from settlements
+                 where settlement_state = 'pending_settlement') as unbilled,
+               (select count(*)::int from settlements s
+                 where s.settlement_state = 'bill_generated'
+                   and (select count(*) from bill_lines bl where bl.settlement_id = s.id) <> 1
+               ) as mismatched,
+               (select count(*)::int from audit_events where action = 'bill.generate') as audits
+      `)) as unknown as Record<string, number>[];
+      // Four verdicts, two collectors: two bills, four lines, each billed once.
+      expect(counts).toEqual({ bills: 2, lines: 4, unbilled: 0, mismatched: 0, audits: 2 });
     });
   });
 
@@ -394,13 +608,16 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       )) as unknown as { n: number }[];
       expect(lines[0]!.n).toBe(3);
 
-      // The settlement itself survives — it is the score of the review — and
-      // stays where the review lane put it.
+      // The settlement itself survives — it is the score of the review, and
+      // what a dispute over a refused episode points at — but it is finished
+      // rather than owed. In `pending_settlement` it was a debt always owed and
+      // never paid, and every cycle from now to the end of the pilot would
+      // rescan and re-count it.
       const zero = (await h.d.execute(sql`
         select settlement_state from settlements where amount = 0
       `)) as unknown as { settlement_state: string }[];
       expect(zero).toHaveLength(1);
-      expect(zero[0]!.settlement_state).toBe('pending_settlement');
+      expect(zero[0]!.settlement_state).toBe('not_payable');
     });
   });
 
@@ -451,6 +668,69 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
         );
         expect(summed).toBe(bill.total);
         expect(totals.get(bill.id)).toHaveLength(2);
+      }
+
+      // The export is a read, but it takes a collector's pay out of the system
+      // in a form that can be forwarded, so PLT-07 wants to know who did it.
+      const audits = (await h.d.execute(sql`
+        select target_id, operator_id, after->>'lines' as lines
+          from audit_events where action = 'bill.export'
+      `)) as unknown as { target_id: string; operator_id: string; lines: string }[];
+      expect(audits).toHaveLength(2);
+      expect(new Set(audits.map((a) => a.target_id))).toEqual(new Set(bills.map((b) => b.id)));
+      expect(audits.every((a) => a.operator_id === h.ids.operatorA)).toBe(true);
+      expect(audits.every((a) => a.lines === '2')).toBe(true);
+      // Which rows left, and a digest of the exact bytes, so a file somebody
+      // produces later can be checked against the event rather than believed.
+      // Every column in the artifact is live state that can move afterwards, so
+      // without the hash the event proves only that an export happened.
+      const named = (await h.d.execute(sql`
+        select target_id,
+               jsonb_array_length(after->'settlement_ids')::int as n,
+               after->>'sha256' as sha256,
+               after->>'total' as total
+          from audit_events where action = 'bill.export'
+      `)) as unknown as { target_id: string; n: number; sha256: string; total: string }[];
+      expect(named.map((r) => r.n)).toEqual([2, 2]);
+      for (const row of named) {
+        expect(row.total).toBe(bills.find((b) => b.id === row.target_id)!.total);
+        // Recomputed from the file finance was actually handed: the bill's own
+        // block of it, in the order it was written.
+        const block = res.body
+          .replace('\ufeff', '')
+          .split('\r\n')
+          .filter((line) => line.startsWith(`"${row.target_id}"`))
+          .join('\r\n');
+        expect(block.split('\r\n')).toHaveLength(2);
+        expect(row.sha256).toBe(createHash('sha256').update(block, 'utf8').digest('hex'));
+      }
+
+      // The filename carries the cycle's own local date. `toISOString()` on a
+      // local-midnight instant prints the previous day, so this used to be off
+      // by one for every cycle.
+      expect(res.headers['content-disposition']).toContain(
+        `playerone-settlement-${period().period_start}.csv`,
+      );
+    });
+
+    it('does not hand finance a live formula in a task name', async () => {
+      /**
+       * Quoting a cell is not the same as defusing it. `=1+1` in a quoted CSV
+       * field is still a formula when the file is opened, and a task name is
+       * text an operator typed. The leading apostrophe is the standard
+       * neutraliser and it is visible, which is the honest signal.
+       */
+      const h = await harness({ each: 1 });
+      await h.d.execute(sql`update tasks set name = '=cmd|''/c calc''!A1' where id = ${h.ids.taskHousework}`);
+      await h.d.execute(sql`update collectors set external_ref = '@SUM(A:A)' where id = ${h.ids.collector1}`);
+      await h.send('POST', '/api/settle/bills', period());
+
+      const body = (await h.send('GET', `/api/settle/export.csv?period_start=${period().period_start}`)).body;
+      expect(body).toContain(`"'=cmd|'`);
+      expect(body).toContain(`"'@SUM(A:A)"`);
+      // Not merely quoted: no cell in the file opens with a formula character.
+      for (const row of parseCsv(body)) {
+        for (const cell of row) expect(cell[0] ?? '').not.toMatch(/[=+\-@]/);
       }
     });
   });
@@ -509,10 +789,25 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       expect(audits[0]!.n).toBe(1);
     });
 
-    it('answers 404 for a bill that does not exist', async () => {
+    it('answers 404 for a bill that does not exist, and for one that cannot', async () => {
       const h = await harness({ each: 1 });
       expect((await h.send('POST', `/api/settle/bills/${uid()}/pay`)).statusCode).toBe(404);
       expect((await h.send('GET', `/api/settle/bills/${uid()}`)).statusCode).toBe(404);
+      // A path segment that is not a UUID used to reach Postgres and come back
+      // as a 500 (22P02, invalid input syntax). It is a missing bill.
+      expect((await h.send('GET', '/api/settle/bills/not-a-uuid')).statusCode).toBe(404);
+      expect((await h.send('POST', '/api/settle/bills/not-a-uuid/pay')).statusCode).toBe(404);
+    });
+
+    it('refuses to start with a cycle length that is not a whole number of days', async () => {
+      // Configuration, so it fails at startup rather than answering every
+      // billing request with a period of NaN days.
+      const d = await db();
+      for (const cycleDays of [Number.NaN, 0, -7, 1.5]) {
+        expect(() => buildApi({ db: d, tokenSecret: SECRET, settlementCycleDays: cycleDays })).toThrow(
+          /whole number of days/,
+        );
+      }
     });
 
     it('needs both tokens, like every other mutation on this service', async () => {

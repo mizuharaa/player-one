@@ -178,7 +178,7 @@ export function buildApi({
   registerCounter(app, db, requireActor);
   registerEpisodes(app, db, requireActor, toleranceMs);
   registerReview(app, db, requireActor, { mediaRoot, currency });
-  registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays });
+  registerSettle(app, db, requireActor, { cycleDays: settlementCycleDays });
   registerMedia(app, db, requireActor, mediaRoot);
   registerConsole(app, db, { tokenSecret, secureCookies });
   /** The JSON sign-in the React console uses. Same credentials, same cookies. */

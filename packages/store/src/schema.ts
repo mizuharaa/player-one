@@ -904,6 +904,16 @@ export const episodeReviewSpans = pgTable(
  * `unit_price` and `effective_minutes` are copied at generation time on
  * purpose: a task's price may change later, and a bill already issued must
  * still explain its own arithmetic.
+ *
+ * `collector_id` and `currency` are copied for the same reason, and it is the
+ * same reason twice. Who is owed and in what unit are facts about the moment
+ * the verdict was committed, not about the state of the world when finance runs
+ * the cycle. Read live, the payee would come back through
+ * `episode_reviews → episodes → collection_sessions → collectors`, so reassigning
+ * a session after the fact would pay a different person for footage already
+ * scored; and the unit would come back from `PLAYERONE_CURRENCY`, so changing
+ * that environment variable would relabel every historic amount without
+ * touching a number. Neither is reachable now: the settlement carries both.
  */
 export const settlements = pgTable(
   'settlements',
@@ -915,6 +925,12 @@ export const settlements = pgTable(
     taskId: uuid('task_id')
       .notNull()
       .references(() => tasks.id),
+    /** SET-04's payee, snapshot rather than joined. See the note above. */
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    /** What `unit_price` is denominated in, snapshot for the same reason. */
+    currency: text('currency').notNull(),
     unitPrice: numeric('unit_price', { precision: 12, scale: 4, mode: 'string' }).notNull(),
     effectiveMinutes: numeric('effective_minutes', {
       precision: 20,
@@ -931,9 +947,59 @@ export const settlements = pgTable(
     uniqueIndex('settlements_review_key').on(t.episodeReviewId),
     check(
       'settlements_state_check',
-      sql`${t.settlementState} in ('pending_review', 'pending_settlement', 'bill_generated', 'manually_paid', 'exception')`,
+      sql`${t.settlementState} in ('pending_review', 'pending_settlement', 'bill_generated', 'manually_paid', 'exception', 'not_payable')`,
     ),
     check('settlements_amount_nonneg_check', sql`${t.amount} >= 0`),
+    /**
+     * SET-01's terminal outcome, and the reason it is keyed on the amount.
+     *
+     * The review lane writes a settlement for every verdict, a `fail` included,
+     * because that row is the score of the review and what a dispute over a
+     * refused episode points at. Worth 0.0000, it can never reach a bill --
+     * `bill_lines_membership_guard` refuses it a line -- so in
+     * `pending_settlement` it would be simultaneously awaiting settlement and
+     * unable to reach one, rescanned by every cycle for ever.
+     *
+     * `not_payable` is that outcome named, and it is terminal: the transition
+     * guard gives it no outgoing edge and no incoming one either, so a zero row
+     * must be *born* there and real money cannot be written off with an UPDATE.
+     * The rule is the amount rather than the verdict on purpose -- a partial
+     * pass whose every span was cut is also worth 0.0000.
+     *
+     * A biconditional, not an implication. `amount > 0 or state =
+     * 'not_payable'` states only the half that is obvious, and leaves the
+     * expensive half legal: the transition guard lets a row be *born*
+     * `not_payable`, so a single INSERT could park a formula-valid positive
+     * settlement in a terminal state, where nothing can move it and nothing can
+     * change its amount. That is a real debt written off for ever by a
+     * statement that broke no rule. Worth nothing and finished are one fact.
+     */
+    check(
+      'settlements_zero_not_payable_check',
+      sql`(${t.amount} = 0) = (${t.settlementState} = 'not_payable')`,
+    ),
+    /**
+     * The money rule, as a row that cannot exist rather than as a function
+     * nobody outside `money.ts` is obliged to call.
+     *
+     * `settlementFor` computes `amount` as `quantise(unit_price ×
+     * effective_minutes, 4)` and CLAUDE.md pins that to exactly one site.
+     * Postgres's `round(numeric, 4)` is half away from zero, which is
+     * `quantise`'s rule, and both operands are exact decimals — so this CHECK
+     * is the same arithmetic, and any writer that skips `money.ts` is refused.
+     * Note it is the *quantised* product, not the raw one: 1 second at 1 a
+     * minute stores `0.016667` minutes and `0.0167`, where the raw product is
+     * `0.016667`. The raw equality does not hold and never did.
+     */
+    check(
+      'settlements_amount_formula_check',
+      sql`${t.amount} = round(${t.unitPrice} * ${t.effectiveMinutes}, 4)`,
+    ),
+    /** A negative price or a negative duration is not a discount, it is a bug. */
+    check(
+      'settlements_operands_nonneg_check',
+      sql`${t.unitPrice} >= 0 and ${t.effectiveMinutes} >= 0`,
+    ),
   ],
 );
 
@@ -944,18 +1010,30 @@ export const settlements = pgTable(
  * *changes* are allowed, because a CHECK only ever sees the row in front of it
  * — `manually_paid → pending_review` satisfies it in both directions. The
  * ordering is enforced by `settlements_transition_guard`, a BEFORE INSERT OR
- * UPDATE trigger written by hand in `0005_settlement_lifecycle.sql`; drizzle
- * has no way to declare a trigger, so the migration is the source and this
- * comment is the pointer to it.
+ * UPDATE trigger written by hand in `0005_settlement_lifecycle.sql` and
+ * extended by `0006_settlement_lifecycle_guards.sql`; drizzle has no way to
+ * declare a trigger, so the migrations are the source and this comment is the
+ * pointer to them.
  *
  * The period is a parameter, not a constant: weekly is `[ASSUMED]` in the
  * brief's §13.2, so it is stored on every bill rather than implied by one.
+ * `bills_collector_period_key` stops a *duplicate* period and nothing more —
+ * `[17 Aug, 24 Aug)` and `[18 Aug, 25 Aug)` are different keys, both insertable,
+ * and whichever generator ran first would decide which cycle a settlement was
+ * paid in. Non-overlap is `bills_no_overlap`, an EXCLUDE constraint over the
+ * half-open range in `0006_settlement_lifecycle_guards.sql`; drizzle cannot
+ * emit EXCLUDE, so that file is the source and this is the pointer.
  *
- * `total` is stored and is the sum of the line amounts. It is a denormalisation
- * with a guard: the same trigger refuses any later change to a settlement's
- * `amount`, so a bill's arithmetic cannot be invalidated after it is issued.
- * That is also why `bill_lines` carries no money of its own — there is exactly
- * one place each figure is written down.
+ * `total` is stored and is the sum of the line amounts, and that sentence is a
+ * constraint rather than a comment: `bills_total_matches_lines`, a DEFERRABLE
+ * constraint trigger in `0006_settlement_lifecycle_guards.sql`, recomputes the sum at
+ * commit and refuses the transaction if the header disagrees. Deferred because
+ * the generator writes the header before the lines it is the sum of. Three more
+ * guards in the same migration keep that sum meaningful: a settlement's `amount`
+ * cannot change after it is written, a `bill_lines` row cannot be updated or
+ * deleted, and a line's settlement must belong to the same collector and be
+ * denominated in the same currency as the header. That is why `bill_lines`
+ * carries no money of its own — there is exactly one place each figure lives.
  */
 export const bills = pgTable(
   'bills',
@@ -981,6 +1059,26 @@ export const bills = pgTable(
     uniqueIndex('bills_collector_period_key').on(t.collectorId, t.periodStart, t.periodEnd),
     check('bills_period_check', sql`${t.periodEnd} > ${t.periodStart}`),
     check('bills_total_nonneg_check', sql`${t.total} >= 0`),
+    /**
+     * A cycle begins at local midnight in Vietnam and nowhere else.
+     *
+     * The unique index above only stops a *duplicate* period. It cannot stop
+     * two overlapping ones — `[17 Aug, 24 Aug)` and `[18 Aug, 25 Aug)` are
+     * different keys, both insertable, and whichever generator ran first would
+     * decide which cycle a settlement was paid in. Pinning both ends to local
+     * midnight is what makes the cycles tile instead of overlap; `settle.ts`
+     * additionally aligns the start to a fixed Monday anchor, and this is the
+     * half of that contract a psql session cannot skip.
+     *
+     * `Asia/Ho_Chi_Minh` rather than a fixed `+07:00`: Vietnam has observed no
+     * DST since 1975, so today they are the same, and naming the zone means a
+     * future political change is the tz database's problem and not ours.
+     */
+    check(
+      'bills_period_local_midnight_check',
+      sql`${t.periodStart} = date_trunc('day', ${t.periodStart} at time zone 'Asia/Ho_Chi_Minh') at time zone 'Asia/Ho_Chi_Minh'
+          and ${t.periodEnd} = date_trunc('day', ${t.periodEnd} at time zone 'Asia/Ho_Chi_Minh') at time zone 'Asia/Ho_Chi_Minh'`,
+    ),
   ],
 );
 
@@ -991,9 +1089,18 @@ export const bills = pgTable(
  *
  * SET-01 makes payable settlements out of pass and partial-pass reviews only.
  * The review lane writes a settlement for a rejected episode too, worth 0.0000,
- * because that row is the score of the review; `bill_lines_payable_guard` in
- * `0005_settlement_lifecycle.sql` is what keeps it off a bill, so a refused
- * episode cannot print a zero-value line.
+ * because that row is the score of the review; `bill_lines_membership_guard` in
+ * `0006_settlement_lifecycle_guards.sql` is what keeps it off a bill, so a
+ * refused episode cannot print a zero-value line. It is the *verdict* that
+ * decides, with the amount as a second condition: checking only the amount let
+ * raw SQL attach a formula-valid positive settlement to a failed review.
+ *
+ * The two foreign keys are independent, which on their own would let a line
+ * attach one collector's settlement to another collector's bill and let a line
+ * be moved or deleted after the header was totalled. `bill_lines_membership_guard`
+ * closes both: it refuses a line whose settlement disagrees with the header on
+ * collector or currency, and refuses every UPDATE and DELETE. Membership is
+ * written once, which is what lets `bills.total` mean anything.
  */
 export const billLines = pgTable(
   'bill_lines',

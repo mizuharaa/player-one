@@ -233,18 +233,31 @@ a test enforces the first two:
 BO-08 — and it writes no arithmetic of its own. Every figure on a bill is already
 on a settlement, computed once by `settlementFor`; the bill total is a sum taken
 with `money.ts`' exact rationals and quantised at the scale of the column it
-lands in. `unit_price × effective_minutes = amount` therefore still reads true on
-the export, which is the first thing checked when an invoice is disputed.
+lands in. `quantise(unit_price × effective_minutes, 4)` therefore still
+reproduces `amount` on the export, which is the first thing checked when an
+invoice is disputed. Note the `quantise`: the *raw* product is not the amount and
+never was — one second at 1 a minute stores `0.016667` minutes and `0.0167`,
+where the product is `0.016667`. The 16-seconds-at-1200 case above happens not to
+round on that last step, so it cannot tell the two apart on its own; the second
+case in `money.test.ts` is there to. `settlements_amount_formula_check` is the
+same rule as a CHECK — `amount = round(unit_price * effective_minutes, 4)`,
+Postgres rounding half away from zero exactly as `quantise` does — so a writer
+that never loads `money.ts` gets it too, and negative operands are refused
+beside it.
 
 **A CHECK cannot enforce a lifecycle.** `settlements_state_check` names SET-05's
 five states and validates the row in front of it, which means it accepts
 `manually_paid → pending_review` exactly as readily as the reverse: both are
 legal *values*. What is illegal is the *edge*, and an edge needs the previous
-value. `0005_settlement_lifecycle.sql` adds
+value. `0005_settlement_lifecycle.sql` adds, and
+`0006_settlement_lifecycle_guards.sql` extends,
 `settlements_transition_guard`, a `BEFORE INSERT OR UPDATE` trigger that allows
 seven edges and refuses everything else, including every jump out of
 `manually_paid`. It also refuses any later change to `unit_price`,
-`effective_minutes`, `amount`, `episode_review_id` or `task_id`.
+`effective_minutes`, `amount`, `episode_review_id`, `task_id`, `collector_id` or
+`currency`, and it refuses `bill_generated` or `manually_paid` on a settlement
+that is on no bill — otherwise the whole lane is walkable on a row that was never
+billed, and a state name stops being a fact about the world.
 
 The alternative considered was an append-only transition table. It can make an
 illegal jump uninsertable, but only with a self-referencing composite foreign key
@@ -269,44 +282,120 @@ pass and partial-pass reviews; the review lane writes one for a `fail` as well,
 worth `0.0000`, and that row stays because it is the *score* of the review — what
 the console's settled-value sum reads and what a dispute over a refused episode
 points at. What must not happen is that row reaching a bill, where it would print
-a zero-value line for work that was refused. `bill_lines_payable_guard` refuses
+a zero-value line for work that was refused. `bill_lines_membership_guard` refuses
 it outright, so the rule is a row that cannot be inserted rather than a `WHERE`
-clause in one generator. The generator counts them instead and reports
+clause in one generator — and it is the *verdict* that decides, with the amount
+as a second condition, because checking only the amount let raw SQL attach a
+formula-valid positive settlement to a failed review and bill it. The generator counts them instead and reports
 `not_payable` on the response, because a settlement nothing will ever bill is
 otherwise a silent backlog.
 
-`bill_lines` deliberately carries no money. `bills.total` is the sum of its
-lines, and the same trigger that orders the states also freezes the amounts, so
-an issued bill cannot quietly stop adding up.
+**`bills.total` is a stored sum, and four guards are what make that safe.**
+`bill_lines` deliberately carries no money, so each figure is written down once.
+The trigger that orders the states also freezes a settlement's `amount`;
+`bill_lines_membership_guard` refuses every UPDATE and DELETE on a line, and
+refuses a line whose settlement disagrees with the header on collector or
+currency — the two foreign keys are independent and on their own would let one
+collector's work be attached to another's bill. On top of those,
+`bills_total_matches_lines` is a DEFERRABLE constraint trigger that recomputes
+the sum at COMMIT and refuses the transaction if the header disagrees. Deferred
+because the generator writes the header before the lines it is the sum of; this
+is the only cross-row invariant in the money chain, and no per-row CHECK can
+express it. Deriving the total instead would have removed the need for it and was
+rejected: a bill is a document finance sends, and the number on it must be the
+number that was issued.
 
-The cycle length is a parameter (`settlementCycleDays`,
+**Who is owed, and in what unit, are settlement facts.** Both are copied onto the
+settlement when the verdict commits. Read live instead, the payee would come back
+through `episode_reviews → episodes → collection_sessions → collectors`, so
+reassigning a session afterwards would pay a different person for footage already
+scored; and the unit would come from `PLAYERONE_CURRENCY`, so changing an
+environment variable would relabel every historic amount without touching a
+number.
+
+**A cycle is a position on a lattice, not a window.** The caller names a local
+Vietnamese date; the cycle length is a parameter (`settlementCycleDays`,
 `PLAYERONE_SETTLEMENT_CYCLE_DAYS`, default 7) and not a constant, because weekly
-is `[ASSUMED]` in the brief's §13.2 rather than decided. It only ever supplies
-the *end* of a period whose start the caller gave.
+is `[ASSUMED]` in the brief's §13.2 rather than decided. There is no `period_end`
+input. `bills_period_local_midnight_check` pins both ends to local midnight in
+`Asia/Ho_Chi_Minh`, and `settle.ts` additionally aligns the start to a Monday
+anchor. See the note in Known gaps for why overlap had to be made unexpressible
+rather than validated.
+
+**Nothing is stranded by a late commit.** The generator's window has a cutoff and
+no lower bound: it bills everything still `pending_settlement` whose `created_at`
+precedes the end of the cycle. A review transaction that starts before the cutoff
+and commits after the generator's SELECT would otherwise be invisible to that
+run, and — because the header now exists and re-running changes nothing — filtered
+out of every later cycle as too old. With no lower bound it simply appears on the
+next cycle's bill, the way a payroll run picks up a late timesheet. The cycle
+dates stay the bill's label and each line carries its own `reviewed_at`, so a
+line that predates its bill says so.
+
+**The export is audited.** `GET /api/settle/export.csv` writes one
+`bill.export` audit row per bill, naming the actor, the bill, the period and the
+line count — no amounts, no CSV contents. It is a read, but it takes a
+collector's pay out of the system in a form that can be forwarded, and "who
+exported this collector's figures" is a question PLT-07 has to be able to answer.
+Every cell in that CSV is also quoted *and* defused: a task name is operator
+text, and `=1+1` in a quoted field is still a live formula when the file is
+opened.
 
 ## Known gaps
 
 - **`tasks` has no currency column.** The schema cannot say what a task pays in.
   It is configuration (`PLAYERONE_CURRENCY`, default `VND`) and visible on the
-  screen, which is honest but is not a decision anybody has made.
+  screen, which is honest but is not a decision anybody has made. What the
+  configuration no longer does is decide a *historic* amount's unit: the review
+  lane copies it onto the settlement at the moment of the verdict, and a bill
+  reads it from there, so changing the variable cannot relabel money that was
+  already earned. The gap is that nothing says a task's price is in that unit.
+
+- **The settlement cycle is a fixed lattice anchored on 1970-01-05.** A caller
+  names a local Vietnamese date and the cycle length is a parameter (weekly is
+  `[ASSUMED]` in §13.2), so a 7-day cycle always starts on a Monday and a
+  14-day one on alternate Mondays. There is no `period_end` input. That is not
+  tidiness: two overlapping periods are two different keys on
+  `bills_collector_period_key`, both insertable, and whichever generator ran
+  first would have decided which cycle a settlement was paid in. Overlap cannot
+  be validated one request at a time, so it is made unexpressible. The
+  milliseconds arithmetic assumes Vietnam's fixed +07:00; if that ever changes,
+  `bills_period_local_midnight_check` asks the tz database and refuses the
+  insert.
 - **`collectors` has no display name.** The screen shows `external_ref`.
 - **Frame stepping falls back to 30 fps** when `nominal_rate_hz` is absent from
   the record.
 - **Finance is not a role.** `/api/settle/*` takes the same both-token operator
-  session as everything else, so today any centre operator can generate and pay a
-  bill. Same shape as the reviewer gap above, and it goes away with the roles
-  slice.
+  session as everything else, so today any centre operator can generate, export
+  and pay every collector's bill, and the queries are global rather than scoped
+  to a centre. It is not a column this slice could add: `audit_events` requires a
+  machine and an operator from a centre for every non-login event, so a finance
+  identity needs the shared principal model that the reviewer and back-office
+  slices need too. Same shape as the reviewer gap above, and it goes away with
+  the roles slice. Until then these routes should not be exposed outside the
+  centre network.
 - **A rejected episode's settlement never leaves `pending_settlement`.** It is
   worth nothing, it cannot be billed, and none of SET-05's five states means
-  "scored, and owed nothing". It shows up as `not_payable` on every cycle it
-  falls in, which is honest and is not a resting place. The two candidate fixes
+  "scored, and owed nothing". It is counted in `not_payable` on every generation
+  — that number is the whole standing backlog, not one cycle's — which is honest
+  and is not a resting place. The two candidate fixes
   are a sixth state or SET-01's literal reading — no settlement row at all for a
   `fail`, which would change what `settlements_review_key` and the console's
   settled-value sum mean. That is a decision, not a defect to patch quietly.
-- **A bill is never revised.** There is no credit note and no way to take a line
-  off an issued bill; a settlement that turns out to be wrong goes to
-  `exception`, and the bill it is on shows as unpaid for ever. That is honest and
-  it is not a workflow. It needs one when the dispute path (QR-08) lands.
+- **A bill is never revised, and the database now says so out loud.** There is
+  no credit note and no way to take a line off an issued bill, so
+  `bill_generated -> exception` is *refused* by `settlements_transition_guard`
+  rather than allowed and left half-honoured. Allowing it looked kinder and was
+  a trap: `bill_lines` membership is written once, so a settlement that left a
+  bill would still be on it — the header would keep counting money nobody
+  intends to pay, and re-billing that settlement in a later cycle would fail for
+  ever on `bill_lines_settlement_key`. The state would have said "recoverable"
+  and the schema would have said otherwise.
+  Once a bill exists the only move is `manually_paid`. A settlement that turns
+  out to be wrong after it was billed needs a credit note against a new bill,
+  and that is what the dispute path (QR-08) has to bring — a reversal changes a
+  total, and a total that can change is what `bills_total_matches_lines` exists
+  to prevent.
 - **Dispute and second review are P2** and deliberately not built.
   `episode_reviews_delivery_key` is one review per delivery; when the dispute
   flow lands it needs a supersedes column rather than a second row, or that index

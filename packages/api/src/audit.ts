@@ -34,6 +34,15 @@ export type AuditEvent = {
   reason?: string;
 };
 
+/**
+ * Note for callers: `before`, `after` and `reason` are read *after* `write`
+ * resolves, so a caller may pass an object and fill it in from inside the
+ * transaction. That is not a trick, it is the point — the honest `after` for an
+ * UPDATE is what the UPDATE returned, which the caller does not know until it
+ * has run. Recording what it intended to change instead is an audit row
+ * asserting something the database never confirmed.
+ */
+
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 /**
