@@ -522,7 +522,14 @@ export function registerReview(
             and (pr.reviewer_ref is null or pr.lease_expires_at < now())
             -- Same re-check as the takeover: a pending row whose episode has
             -- since failed cloud verification is not claimable, so it is not depth.
-            and ${stillEligible(sql`pr.episode_id`, sql`pr.ingest_id`)})
+            and ${stillEligible(sql`pr.episode_id`, sql`pr.ingest_id`)}
+            -- And the takeover's QR-08 exclusion: a second review of this
+            -- reviewer's own verdict is not work they can pick up.
+            and not exists (
+              select 1 from review_disputes d
+                join episode_reviews o on o.id = d.review_id
+               where d.id = pr.dispute_id and o.reviewer_ref = ${reviewer}
+            ))
       + (select count(*)
            from episodes
            join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
@@ -868,6 +875,13 @@ export function registerReview(
          and (r.id is null
               or (r.review_state = 'pending'
                   and (r.reviewer_ref is null or r.lease_expires_at < now())))
+         -- The takeover's QR-08 exclusion, so the peek predicts the claim for
+         -- the reviewer whose own verdict is under challenge: nothing.
+         and not exists (
+           select 1 from review_disputes d
+             join episode_reviews o on o.id = d.review_id
+            where d.id = r.dispute_id and o.reviewer_ref = ${reviewer}
+         )
        order by (r.id is null), coalesce(r.priority, 0) desc,
                 coalesce(r.created_at, episodes.first_seen_at)
        limit 1
@@ -1250,7 +1264,12 @@ export function registerReview(
       .select()
       .from(schema.episodeReviews)
       .where(eq(schema.episodeReviews.episodeId, body.episode_id));
-    const review = rows.find((r) => r.reviewState === 'pending') ?? rows[0];
+    // This reviewer's pending row first: a redelivered, disputed episode can
+    // carry two pending rows, and the one somebody else holds is not the answer.
+    const review =
+      rows.find((r) => r.reviewState === 'pending' && r.reviewerRef === reviewer) ??
+      rows.find((r) => r.reviewState === 'pending') ??
+      rows[0];
     if (review === undefined) {
       return reply.code(404).send({ error: 'this episode has not been claimed for review' });
     }
@@ -1652,6 +1671,21 @@ export function registerReview(
       return reply.code(403).send({ error: 'a dispute is raised at the upload centre, on the collector\'s behalf' });
     }
     const body = parsed.data;
+    /**
+     * SEC-02, the same scope every counter-side mutation for a collector has:
+     * the review's episode arrived on a card handed in at THIS operator's
+     * centre, or the review does not exist as far as this operator is told.
+     */
+    const [owned] = (await db.execute(sql`
+      select 1
+        from episode_reviews r
+        join episodes e on e.episode_id = r.episode_id
+        join upload_batches b on b.id = e.upload_batch_id
+        join handovers h on h.id = b.handover_id
+       where r.id = ${body.review_id}
+         and h.upload_centre_id = ${actor.operator.uploadCentreId}
+    `)) as unknown as unknown[];
+    if (owned === undefined) return reply.code(404).send({ error: 'no such review' });
     const disputeId = randomUUID();
     const secondReviewId = randomUUID();
     const event = {
@@ -1698,10 +1732,6 @@ export function registerReview(
       const name = constraintOf(err);
       if (name !== undefined && REFUSALS.has(name)) {
         return reply.code(409).send({ error: 'refused', constraint: name });
-      }
-      // A review id that names nothing fails the FK before the guard runs.
-      if (name === 'review_disputes_review_id_episode_reviews_id_fk') {
-        return reply.code(404).send({ error: 'no such review' });
       }
       throw err;
     }

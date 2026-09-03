@@ -290,15 +290,19 @@ export function registerSettle(
             .returning({ id: schema.bills.id });
           if (bill === undefined) return undefined;
 
-          await tx
-            .insert(schema.billLines)
-            .values(lines.map((l) => ({ billId, settlementId: l.settlementId })));
           /**
            * `pending_settlement` in the WHERE, not just in the SELECT that found
            * these rows: another generator may have billed them in between, and
            * then this update matches nothing, the count below disagrees, and the
            * transaction is rolled back rather than issuing a bill for lines
            * somebody else also issued.
+           *
+           * Moved BEFORE the lines on purpose (QR-08). A dispute being raised
+           * on one of these rows holds the settlement row locked until it
+           * commits; this update waits on that lock, and the line insert that
+           * follows then sees the committed dispute and is refused by
+           * `bill_lines_disputed_check`. Lines first would let the line's
+           * check read a snapshot with no dispute in it yet.
            */
           const moved = await tx
             .update(schema.settlements)
@@ -316,6 +320,9 @@ export function registerSettle(
           if (moved.length !== lines.length) {
             throw new Error('a settlement on this bill was billed by someone else');
           }
+          await tx
+            .insert(schema.billLines)
+            .values(lines.map((l) => ({ billId, settlementId: l.settlementId })));
           return bill;
         },
       );

@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { open } from '@playerone/store';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { closeDb, db, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 import { episodeRecord } from './fixtures.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -43,6 +44,8 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       opA: uid(),
       opA2: uid(),
       opB: uid(),
+      /** A PaXini reviewer, at no centre. */
+      reviewer: uid(),
       collector1: uid(),
       collector2: uid(),
       deviceType: uid(),
@@ -55,7 +58,7 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
     const hash = await hashCredential('pw');
     await d.execute(sql`insert into upload_centres (id, region, name, status) values (${ids.centreA}, 'HCM', 'District 7', 'active'), (${ids.centreB}, 'HAN', 'Cau Giay', 'active')`);
     await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash) values (${ids.machineA}, ${ids.centreA}, 'HCM-01', 'active', ${hash}), (${ids.machineB}, ${ids.centreB}, 'HAN-01', 'active', ${hash})`);
-    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.opA}, ${ids.centreA}, 'op-a', 'centre_operator', ${hash}), (${ids.opA2}, ${ids.centreA}, 'op-a2', 'centre_operator', ${hash}), (${ids.opB}, ${ids.centreB}, 'op-b', 'centre_operator', ${hash})`);
+    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.opA}, ${ids.centreA}, 'op-a', 'centre_operator', ${hash}), (${ids.opA2}, ${ids.centreA}, 'op-a2', 'centre_operator', ${hash}), (${ids.opB}, ${ids.centreB}, 'op-b', 'centre_operator', ${hash}), (${ids.reviewer}, null, 'pax-01', 'reviewer', ${hash})`);
     await d.execute(sql`insert into collectors (id, external_ref, status) values (${ids.collector1}, 'c-0001', 'qualified'), (${ids.collector2}, 'c-0002', 'qualified')`);
     await d.execute(sql`insert into device_types (id, code, generation) values (${ids.deviceType}, 'ego_headset', 'gen1')`);
     await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status) values (${ids.device1}, ${ids.deviceType}, 'AZER76400FE', 'active'), (${ids.device2}, ${ids.deviceType}, 'BZER76400FF', 'active')`);
@@ -75,6 +78,11 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
     const A = await login('HCM-01', 'op-a');
     const A2 = await login('HCM-01', 'op-a2');
     const B = await login('HAN-01', 'op-b');
+    // A reviewer session is the cookie from /api/session, carried as a bearer.
+    const signedIn = await app.inject({ method: 'POST', url: '/api/session', payload: { external_ref: 'pax-01', operator_secret: 'pw' } });
+    expect(signedIn.statusCode, signedIn.body).toBe(200);
+    const cookie = [signedIn.headers['set-cookie'] ?? []].flat().join(' | ');
+    const R: Headers = { authorization: `Bearer ${decodeURIComponent(/po_operator=([^;]+)/.exec(cookie)?.[1] ?? '')}` };
 
     const send = async (method: 'POST' | 'GET', url: string, payload?: unknown, who: Headers = A): Promise<LightMyRequestResponse> =>
       (await app.inject({ method, url, payload: payload as never, headers: who })) as unknown as LightMyRequestResponse;
@@ -122,7 +130,7 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       (await d.execute(sql`select id, settlement_state, amount, superseded_by from settlements where episode_review_id = ${reviewId}`)) as unknown as
         { id: string; settlement_state: string; amount: string; superseded_by: string | null }[];
 
-    return { d, app, ids, A, A2, B, send, episode1, episode2, claimIn, verdict, firstVerdicts, dispute, settlementsOf };
+    return { d, app, ids, A, A2, B, R, send, episode1, episode2, claimIn, verdict, firstVerdicts, dispute, settlementsOf };
   }
 
   const START = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -165,14 +173,14 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       const h = await harness();
       const reviewId = (await h.firstVerdicts()).get(h.episode1)!;
       expect((await h.dispute(reviewId)).statusCode).toBe(200);
-      const again = await h.dispute(reviewId, h.B);
+      const again = await h.dispute(reviewId, h.A2);
       expect(again.statusCode, again.body).toBe(409);
       expect(again.json()).toEqual({ error: 'refused', constraint: 'review_disputes_open_key' });
       const rows = (await h.d.execute(sql`select count(*)::int as n from review_disputes`)) as unknown as { n: number }[];
       expect(rows[0]!.n).toBe(1);
     });
 
-    it('refuses a review that is not decided, a review id that names nothing, and a reviewer session', async () => {
+    it('refuses a review that is not decided, one that names nothing, a blank reason, a reviewer session, and another centre', async () => {
       const h = await harness();
       const claimed = await h.claimIn(null, h.A);
       const pending = (await h.d.execute(sql`select id from episode_reviews where episode_id = ${claimed.json().episode_id}`)) as unknown as { id: string }[];
@@ -181,6 +189,12 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       expect(res.json().constraint).toBe('review_disputes_decided_check');
       expect((await h.dispute(uid())).statusCode).toBe(404);
       expect((await h.send('POST', '/api/review/dispute', { review_id: pending[0]!.id, reason: '' })).statusCode).toBe(400);
+      expect((await h.dispute(pending[0]!.id, h.R)).statusCode).toBe(403);
+      // SEC-02: the card for this episode was handed in at HCM; HAN is told nothing.
+      const elsewhere = await h.dispute(pending[0]!.id, h.B);
+      expect(elsewhere.statusCode, elsewhere.body).toBe(404);
+      const rows = (await h.d.execute(sql`select count(*)::int as n from review_disputes`)) as unknown as { n: number }[];
+      expect(rows[0]!.n).toBe(0);
     });
   });
 
@@ -192,8 +206,13 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
 
       // Nothing standard is left, and the disputed episode is not smuggled in.
       expect((await h.claimIn(null, h.A2)).statusCode).toBe(204);
-      // The original reviewer asks for the lane by name and gets nothing.
+      // The original reviewer asks for the lane by name and gets nothing —
+      // and the peek says so before the claim does.
+      expect((await h.send('GET', '/api/review/next?queue=second_review', undefined, h.A)).statusCode).toBe(204);
       expect((await h.claimIn('second_review', h.A)).statusCode).toBe(204);
+      const peek = await h.send('GET', '/api/review/next?queue=second_review', undefined, h.A2);
+      expect(peek.statusCode, peek.body).toBe(200);
+      expect(peek.json().episode_id).toBe(h.episode1);
       // A colleague gets the disputed episode.
       const second = await h.claimIn('second_review', h.A2);
       expect(second.statusCode, second.body).toBe(200);
@@ -365,6 +384,91 @@ describe.skipIf(!hasDb())('dispute and second review', () => {
       await violates('settlements_superseded_immutable', h.d.execute(sql`update settlements set superseded_by = null where id = ${s1!.id}`));
       // 0005's way back out of exception is closed for a superseded row.
       await violates('settlements_superseded_state_check', h.d.execute(sql`update settlements set settlement_state = 'pending_settlement' where id = ${s1!.id}`));
+      // Nor can a row be BORN superseded and billable (0017): 0005 refuses a
+      // birth at `exception`, so supersession is only ever an update.
+      await violates('settlements_superseded_state_check', h.d.execute(sql`
+        insert into settlements (id, episode_review_id, task_id, unit_price, effective_minutes, amount, settlement_state, superseded_by)
+        select ${uid()}, episode_review_id, task_id, unit_price, effective_minutes, amount, 'pending_settlement', ${s1!.id} from settlements where id = ${s2!.id}`));
+    });
+
+    /**
+     * The two interleavings of "raise a dispute" against "generate the bill",
+     * on two real connections. Before 0017 the first one committed both: a
+     * `bill_generated` settlement with a line AND an open dispute, which no
+     * verdict could ever close.
+     */
+    it('a dispute waits on an in-flight bill and is then refused; a bill waits on an in-flight dispute and is then refused', async () => {
+      const h = await harness();
+      const reviews = await h.firstVerdicts();
+      const r1 = reviews.get(h.episode1)!;
+      const [s1] = await h.settlementsOf(r1);
+      const a = await open(dbUrl(), { max: 1 });
+      const b = await open(dbUrl(), { max: 1 });
+      const hold = () => {
+        let ready: () => void = () => {};
+        let release: () => void = () => {};
+        const held = new Promise<void>((resolve) => (ready = resolve));
+        const released = new Promise<void>((resolve) => (release = resolve));
+        return { ready: () => ready(), release: () => release(), held, released };
+      };
+      try {
+        // 1. The generator moves the settlement first (settle.ts order) and is still open.
+        const bill = hold();
+        const billId = uid();
+        const billing = a.transaction(async (tx) => {
+          await tx.execute(sql`insert into bills (id, collector_id, period_start, period_end, currency, total) values (${billId}, ${h.ids.collector1}, now() - interval '1 day', now(), 'VND', ${s1!.amount})`);
+          await tx.execute(sql`update settlements set settlement_state = 'bill_generated', updated_at = now() where id = ${s1!.id} and settlement_state = 'pending_settlement'`);
+          await tx.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${billId}, ${s1!.id})`);
+          bill.ready();
+          await bill.released;
+        });
+        await bill.held;
+        let settled = false;
+        const raising = (async () => b.execute(sql`insert into review_disputes (id, review_id, raised_by, reason) values (${uid()}, ${r1}, ${h.ids.opA}, 'race')`))();
+        void raising.then(() => (settled = true), () => (settled = true));
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        expect(settled, 'the dispute did not wait on the settlement row lock').toBe(false);
+        bill.release();
+        await billing;
+        await violates('review_disputes_unbilled_check', raising);
+
+        // 2. The other way round, on the other collector's settlement.
+        const r2 = reviews.get(h.episode2)!;
+        const [s2] = await h.settlementsOf(r2);
+        const dispute = hold();
+        const raised = a.transaction(async (tx) => {
+          await tx.execute(sql`insert into review_disputes (id, review_id, raised_by, reason) values (${uid()}, ${r2}, ${h.ids.opB}, 'race')`);
+          dispute.ready();
+          await dispute.released;
+        });
+        await dispute.held;
+        let billed = false;
+        const bill2 = uid();
+        const generating = (async () =>
+          b.transaction(async (tx) => {
+            await tx.execute(sql`insert into bills (id, collector_id, period_start, period_end, currency, total) values (${bill2}, ${h.ids.collector2}, now() - interval '1 day', now(), 'VND', ${s2!.amount})`);
+            await tx.execute(sql`update settlements set settlement_state = 'bill_generated', updated_at = now() where id = ${s2!.id} and settlement_state = 'pending_settlement'`);
+            await tx.execute(sql`insert into bill_lines (bill_id, settlement_id) values (${bill2}, ${s2!.id})`);
+          }))();
+        void generating.then(() => (billed = true), () => (billed = true));
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        expect(billed, 'the bill did not wait on the settlement row lock').toBe(false);
+        dispute.release();
+        await raised;
+        await violates('bill_lines_disputed_check', generating);
+      } finally {
+        await a.close();
+        await b.close();
+      }
+      // Neither collector's settlement is both billed and disputed.
+      const states = (await h.d.execute(sql`
+        select s.settlement_state, (select count(*)::int from bill_lines l where l.settlement_id = s.id) as lines,
+               (select count(*)::int from review_disputes d where d.review_id = s.episode_review_id and d.resolved_at is null) as open
+          from settlements s order by s.amount`)) as unknown as { settlement_state: string; lines: number; open: number }[];
+      expect(states).toEqual([
+        { settlement_state: 'pending_settlement', lines: 0, open: 1 },
+        { settlement_state: 'bill_generated', lines: 1, open: 0 },
+      ]);
     });
 
     it('a bill line is refused for a disputed or a superseded settlement', async () => {

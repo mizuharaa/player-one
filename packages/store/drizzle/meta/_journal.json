@@ -120,6 +120,13 @@
       "when": 1788300000000,
       "tag": "0016_dispute_review",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788310000000,
+      "tag": "0017_dispute_review_locks",
+      "breakpoints": true
     }
   ]
 }
