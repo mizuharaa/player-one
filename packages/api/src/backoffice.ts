@@ -662,12 +662,18 @@ export function registerBackOffice(
     }
 
     /**
-     * `external_ref` and not the status: the reference is who this row is, and
-     * the status is what has happened to them since. A registration replayed
-     * after somebody qualified the collector is still that registration, and
-     * comparing the mutable half would refuse a legitimate retry every time
-     * anything moved the row in between — which is the failure an idempotency
-     * key exists to prevent. Same reasoning for a device's firmware version.
+     * The whole payload, status included.
+     *
+     * The tempting rule is to compare only what cannot change — the reference
+     * is who this row is, the status is what has happened to them since — and
+     * call a registration replayed even though somebody qualified the
+     * collector in between. It reads well and it answers the wrong question.
+     * When the stored status and the requested one differ, this route cannot
+     * tell an original request being retried against a row that moved from a
+     * genuinely different request wearing a used id. Both readings want the
+     * same thing: do not answer 200 as though the term on the form is the term
+     * in the table. So the comparison is the whole create payload, and the
+     * operator is sent to look at the row that already owns the id.
      */
     return replayOf(
       reply,
@@ -676,7 +682,13 @@ export function registerBackOffice(
       db
         .select({ id: schema.collectors.id })
         .from(schema.collectors)
-        .where(and(eq(schema.collectors.id, b.id), eq(schema.collectors.externalRef, b.external_ref))),
+        .where(
+          and(
+            eq(schema.collectors.id, b.id),
+            eq(schema.collectors.externalRef, b.external_ref),
+            eq(schema.collectors.status, b.status ?? 'pending'),
+          ),
+        ),
     );
   });
 
@@ -809,6 +821,10 @@ export function registerBackOffice(
             eq(schema.devices.id, b.id),
             eq(schema.devices.deviceTypeId, b.device_type_id),
             eq(schema.devices.hardwareSerial, b.hardware_serial),
+            /** The whole payload here too. See the collector create above. */
+            b.firmware_version === undefined
+              ? isNull(schema.devices.firmwareVersion)
+              : eq(schema.devices.firmwareVersion, b.firmware_version),
           ),
         ),
     );

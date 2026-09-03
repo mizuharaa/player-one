@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LightMyRequestResponse } from 'fastify';
@@ -1066,20 +1064,63 @@ describe.skipIf(!hasDb())('the back office', () => {
     expect(withConsent.json().constraint).toBe('collectors_id_reused');
     expect(await count('collector_agreements')).toBe(12); // the fixture's two, unchanged
 
-    // The same request once the acceptance really is on record replays cleanly,
-    // and a status that moved underneath it does not make it a different one.
+    // Once the acceptance really is on record, the same request replays.
     await c.patch(`/api/collectors/${id}`, {
       agreements: [{ agreement: 'privacy', version: 'v1', accepted_at: '2026-08-20T03:00:00.000Z' }],
-      status: 'qualified',
     });
     const again = await c.post('/api/collectors', {
+      id,
+      external_ref: 'c-5',
+      agreements: [{ agreement: 'privacy', version: 'v1', accepted_at: '2026-08-20T03:00:00.000Z' }],
+    });
+    expect(again.statusCode, again.body).toBe(200);
+    expect(again.json().replayed).toBe(true);
+
+    /**
+     * And the status is compared like everything else. Once somebody has
+     * qualified this collector, a create asking for `pending` is not a replay
+     * of anything: the route cannot tell the original request retried against a
+     * row that moved from a different request on a used id, and both readings
+     * want the same answer — never 200, because `pending` is not what the table
+     * holds and the operator would be told it is.
+     */
+    await c.patch(`/api/collectors/${id}`, { status: 'qualified' });
+    const moved = await c.post('/api/collectors', {
       id,
       external_ref: 'c-5',
       status: 'pending',
       agreements: [{ agreement: 'privacy', version: 'v1', accepted_at: '2026-08-20T03:00:00.000Z' }],
     });
-    expect(again.statusCode, again.body).toBe(200);
-    expect(again.json().replayed).toBe(true);
+    expect(moved.statusCode, moved.body).toBe(409);
+    expect(moved.json().constraint).toBe('collectors_id_reused');
+  });
+
+  it('will not report a device create as replayed when the firmware differs', async () => {
+    // The same rule as the collector status above, on the field a device create
+    // carries that a device patch can move afterwards.
+    const ids = await seed();
+    const c = await client();
+    const id = uid();
+    const body = {
+      id,
+      device_type_id: ids.deviceType,
+      hardware_serial: 'AZER76400ZZ',
+      firmware_version: '0.0.13',
+    };
+    expect((await c.post('/api/devices', body)).statusCode).toBe(201);
+
+    const replay = await c.post('/api/devices', body);
+    expect(replay.statusCode, replay.body).toBe(200);
+    expect(replay.json().replayed).toBe(true);
+
+    const changed = await c.post('/api/devices', { ...body, firmware_version: '0.0.14' });
+    expect(changed.statusCode, changed.body).toBe(409);
+    expect(changed.json().constraint).toBe('devices_id_reused');
+
+    const [row] = await rows<{ firmware_version: string }>(
+      sql`select firmware_version from devices where id = ${id}`,
+    );
+    expect(row!.firmware_version, 'the refused create must not have changed it').toBe('0.0.13');
   });
 
   it('audits the acceptance that landed, not the one the form asked for', async () => {
@@ -1415,18 +1456,27 @@ describe.skipIf(!hasDb())('the back office', () => {
     expect(declared.length, 'the five back-office tables should carry constraints').toBeGreaterThan(15);
 
     /**
-     * Every migration, not the one this slice happens to have written. The
-     * back-office guards live in two files now — 0006 could not absorb them,
-     * because it is already applied wherever 4f1ef2e ran — and naming a file
-     * here is how the next split silently drops half the coverage.
+     * And the refusals the triggers raise, which no catalogue lists — read out
+     * of the trigger functions attached to these same five tables.
+     *
+     * Reading one migration file was scoped to whatever this slice happened to
+     * write, and it missed the guards the moment they moved to 0007. Reading
+     * every migration file swings the other way: settlement and upload land
+     * beside this one, and every trigger name of theirs would arrive here to be
+     * classified as a back-office refusal that has no sentence. The catalogue
+     * already knows which trigger sits on which table, which is the question
+     * being asked, so ask it that instead of asking the filesystem.
      */
-    const drizzle = join(import.meta.dirname, '..', '..', 'store', 'drizzle');
-    const migrations = readdirSync(drizzle)
-      .filter((f) => f.endsWith('.sql'))
-      .map((f) => readFileSync(join(drizzle, f), 'utf8'))
-      .join(' ');
-    const raised = [...migrations.matchAll(/CONSTRAINT = '([a-z0-9_]+)'/g)].map((m) => m[1]!);
-    expect(raised.length, 'the migrations raise named refusals').toBeGreaterThan(8);
+    const sources = await rows<{ src: string }>(sql`
+      select p.prosrc as src
+        from pg_trigger t
+        join pg_proc p on p.oid = t.tgfoid
+       where not t.tgisinternal and t.tgrelid::regclass::text in (${sql.raw(list)})
+    `);
+    const raised = sources.flatMap((r) =>
+      [...r.src.matchAll(/CONSTRAINT = '([a-z0-9_]+)'/g)].map((m) => m[1]!),
+    );
+    expect(raised.length, 'the triggers on these tables raise named refusals').toBeGreaterThan(8);
 
     /**
      * The other box: a statement that trips one of these was built by this

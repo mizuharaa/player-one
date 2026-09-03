@@ -424,8 +424,14 @@ export const collectorAgreements = pgTable(
  * evidence behind a settlement dispute. `task_claims_history_immutable`
  * (migration 0007) is what makes that true rather than customary — a claim row
  * cannot be deleted, `claimed_at` cannot move, and a `released_at` already set
- * cannot be rewritten. Releasing and re-claiming are still allowed, and the
- * re-claim clears the gates again.
+ * cannot be rewritten — including back to null. Releasing is the one legal
+ * change to this row and it happens once. Claiming the task again is a NEW row
+ * with a new id, which is also what the route requires: a released claim id
+ * comes back `task_claims_released`, never a replay. Do not "fix" this toward
+ * reusing the row — clearing `released_at` while `claimed_at` stays put does
+ * not reopen the claim, it rewrites the interval a disputed payment is argued
+ * from. `task_claims_guard_reclaim` still re-runs the eligibility gates on
+ * that update; it is the second lock on a door 0007 closes.
  */
 export const taskClaims = pgTable(
   'task_claims',
