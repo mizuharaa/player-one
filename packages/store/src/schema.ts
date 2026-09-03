@@ -325,11 +325,32 @@ export const collectors = pgTable(
      */
     examResult: text('exam_result'),
     examDecidedAt: timestamp('exam_decided_at', { withTimezone: true }),
+    /**
+     * A CACHE of `rep_score(id, rep_computed_at)`, and nothing more. Nothing
+     * increments it: `rep_recompute` overwrites it from the `rep_events` fold,
+     * so deleting both columns and rebuilding them yields the same numbers.
+     * `the cached score is only ever a replay of the log` is the test that says
+     * so, and the admin recompute endpoint is how an operator proves it on real
+     * data.
+     *
+     * The gates do NOT read this column — `task_claims_guard` calls
+     * `rep_score(...)` live, so a cache that is a day stale cannot decide who
+     * may claim. This is here so that listing five hundred collectors is one
+     * query rather than five hundred folds.
+     *
+     * 500 is the cold start the design names: a new collector is mid-ladder,
+     * not zero, because a first review must not be a hundred-point coin flip.
+     * The same 500 is the base inside `rep_score()`; the replay test is what
+     * keeps the two from drifting.
+     */
+    repScore: integer('rep_score').notNull().default(500),
+    repComputedAt: timestamp('rep_computed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex('collectors_external_ref_key').on(t.externalRef),
+    check('collectors_rep_score_check', sql`${t.repScore} between 0 and 1000`),
     check(
       'collectors_status_check',
       sql`${t.status} in ('pending', 'qualified', 'suspended')`,
@@ -1167,3 +1188,211 @@ export const uploadDeviceStatus = pgTable('upload_device_status', {
   lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// Reputation and achievements (§6.14, and the design record in docs/reputation.md)
+
+/**
+ * What each kind of reputation event is worth, as rows.
+ *
+ * Rows and not a TypeScript constant for the same reason `review_reason_codes`
+ * is a table: every weight in the design is a STARTING VALUE and the pilot is
+ * expected to retune all of them. A retune has to be an UPDATE somebody runs,
+ * not a deployment.
+ *
+ * The weight is copied onto `rep_events.points` when the event is written, by
+ * `rep_events_points` (migration 0013) — the same rule `settlements` follows
+ * for `unit_price`. Retuning changes what future events are worth; it does not
+ * silently rewrite what a collector was already scored on.
+ *
+ * Three kinds are seeded and cannot yet be written, because the rows they would
+ * point at do not exist on any branch: `commitment_kept`, `commitment_abandoned`
+ * (the APP-10/APP-11 claim target) and `device_fault_attributed` (the BO-04
+ * fault record). They are here so the shape is agreed before the branch that
+ * builds them lands, and they score zero until it does.
+ */
+export const repEventKinds = pgTable('rep_event_kinds', {
+  kind: text('kind').primaryKey(),
+  /** Signed. Negative is a penalty; zero is a fact that deliberately moves nothing. */
+  points: integer('points').notNull(),
+  description: text('description').notNull(),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * The reputation log. Append-only, and the only thing a score is made of.
+ *
+ * `rep_score(collector, at)` is a fold over these rows and nothing else — no
+ * counter is incremented anywhere, so the cache on `collectors` can be thrown
+ * away and rebuilt to the same number. That property is what the recompute
+ * endpoint and its test exist to prove.
+ *
+ * **Every row is backed by a row somewhere else.** Four nullable foreign keys,
+ * and `rep_events_source_check` requires exactly one of them — except for
+ * `exam_passed`, whose source IS the collector row this event already names by
+ * a NOT NULL foreign key. There is no free-floating reputation: nothing here
+ * can be written about a fact that did not happen in another table.
+ *
+ * **One event per kind per source row**, which is where idempotency comes from.
+ * A reviewer double-taps commit; `episode_reviews_verdict_key` already refuses
+ * the second verdict, and `rep_events_source_key` refuses the second reputation
+ * event even if some future path forgets. A retry cannot double-count.
+ *
+ * `rep_events_batch_key` is stricter still: one event per upload batch, of any
+ * kind. A card's import either raised an integrity defect or it did not, and
+ * both `card_clean` and `card_integrity_defect` landing against one batch would
+ * be the engine paying and fining for the same fact.
+ */
+export const repEvents = pgTable(
+  'rep_events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    kind: text('kind')
+      .notNull()
+      .references(() => repEventKinds.kind),
+    /**
+     * Copied from the catalogue by a BEFORE INSERT trigger, never sent by a
+     * caller. Frozen afterwards by `rep_events_append_only`: the score a
+     * collector had last month has to still be explicable next month.
+     */
+    points: integer('points').notNull().default(0),
+    /**
+     * When the fact happened, which is not always when the row was written. The
+     * 90-day window is measured against this, so a backfilled event ages
+     * correctly rather than starting its life today.
+     */
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    reviewId: uuid('review_id').references(() => episodeReviews.id),
+    handoverId: uuid('handover_id').references(() => handovers.id),
+    uploadBatchId: uuid('upload_batch_id').references(() => uploadBatches.id),
+    settlementId: uuid('settlement_id').references(() => settlements.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('rep_events_collector_idx').on(t.collectorId, t.occurredAt),
+    check(
+      'rep_events_source_check',
+      sql`num_nonnulls(${t.reviewId}, ${t.handoverId}, ${t.uploadBatchId}, ${t.settlementId})
+          = case when ${t.kind} = 'exam_passed' then 0 else 1 end`,
+    ),
+  ],
+);
+
+/**
+ * The four tiers, as rows, because `min_score` is a starting value like
+ * everything else in the design.
+ *
+ * `max_concurrent_claims` is the one unlock this branch enforces — the rest of
+ * the `unlocks` column is prose for the console until the branches that own
+ * those gates land. `task_claims_guard` (migration 0013) reads this column, so
+ * retuning the cap is an UPDATE, not a deployment, and no route can forget it.
+ *
+ * `min_decided_reviews` and `min_handovers` are the evidence gate that sits ON
+ * TOP of the score gate: a high score computed from four reviews is a small
+ * sample, and the top two tiers unlock work that a small sample should not buy.
+ */
+export const repTiers = pgTable(
+  'rep_tiers',
+  {
+    key: text('key').primaryKey(),
+    /** 1 is the bottom. Ordering is by rank, never by `min_score`, so a retune cannot reorder the ladder. */
+    rank: integer('rank').notNull(),
+    minScore: integer('min_score').notNull(),
+    minDecidedReviews: integer('min_decided_reviews').notNull().default(0),
+    minHandovers: integer('min_handovers').notNull().default(0),
+    maxConcurrentClaims: integer('max_concurrent_claims').notNull(),
+    nameVi: text('name_vi').notNull(),
+    nameEn: text('name_en').notNull(),
+    nameZh: text('name_zh').notNull(),
+    unlocks: text('unlocks').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('rep_tiers_rank_key').on(t.rank),
+    check('rep_tiers_min_score_check', sql`${t.minScore} >= 0 and ${t.minScore} <= 1000`),
+    check('rep_tiers_claims_check', sql`${t.maxConcurrentClaims} > 0`),
+  ],
+);
+
+/**
+ * The badge catalogue, as rows.
+ *
+ * `metric` names a key in `rep_metrics(collector)` and `threshold` is what it
+ * has to reach. That pair IS the criteria language, and it is deliberately the
+ * whole of it: twenty-nine badges reduce to nineteen counters, and a counter
+ * with a number beside it is something an operator can retune during the pilot
+ * without anybody writing SQL.
+ *
+ * ponytail: threshold on a named metric, not a general expression language. The
+ * ceiling is a badge whose criteria are not monotonic in one number — "three
+ * scenarios in one week" needs two. When one arrives it becomes another key in
+ * `rep_metrics`, not a parser here.
+ *
+ * `criteria` and `source_events` are the design record's own words, carried so
+ * the console can explain a badge without a second copy of the catalogue.
+ */
+export const badgeDefinitions = pgTable(
+  'badge_definitions',
+  {
+    key: text('key').primaryKey(),
+    /** No CHECK: the grouping is PaXini's, like `review_reason_codes.category`. */
+    category: text('category').notNull(),
+    tier: text('tier').notNull(),
+    metric: text('metric').notNull(),
+    threshold: numeric('threshold', { precision: 14, scale: 3, mode: 'string' }).notNull(),
+    nameVi: text('name_vi').notNull(),
+    nameEn: text('name_en').notNull(),
+    nameZh: text('name_zh').notNull(),
+    descVi: text('desc_vi').notNull(),
+    descEn: text('desc_en').notNull(),
+    descZh: text('desc_zh').notNull(),
+    criteria: text('criteria').notNull(),
+    sourceEvents: text('source_events').notNull(),
+    active: boolean('active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('badge_definitions_category_idx').on(t.category),
+    check('badge_definitions_tier_check', sql`${t.tier} in ('bronze', 'silver', 'gold')`),
+    check('badge_definitions_threshold_check', sql`${t.threshold} > 0`),
+  ],
+);
+
+/**
+ * One award, once, forever.
+ *
+ * `badge_awards_collector_badge_key` is the once. `badge_awards_irrevocable`
+ * (migration 0013) is the forever: UPDATE and DELETE are refused for every
+ * writer, so there is no un-award path to be called by mistake or in anger. A
+ * badge unlocks nothing — that is the design's reason for making awards
+ * permanent — so a wrong award costs a note in `audit_events` and no privilege.
+ *
+ * `metric_value` is what the metric read at the moment of the award, and
+ * `rep_event_id` is the event whose arrival triggered the evaluation. Together
+ * they are why this row exists, which is the question asked about a badge that
+ * looks wrong. `rep_event_id` is null when an administrator's recompute awarded
+ * it rather than an event.
+ */
+export const badgeAwards = pgTable(
+  'badge_awards',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    badgeKey: text('badge_key')
+      .notNull()
+      .references(() => badgeDefinitions.key),
+    awardedAt: timestamp('awarded_at', { withTimezone: true }).notNull().defaultNow(),
+    repEventId: bigint('rep_event_id', { mode: 'number' }).references(() => repEvents.id),
+    metricValue: numeric('metric_value', { precision: 14, scale: 3, mode: 'string' }).notNull(),
+  },
+  (t) => [uniqueIndex('badge_awards_collector_badge_key').on(t.collectorId, t.badgeKey)],
+);
