@@ -7,8 +7,9 @@ import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { contentFingerprint, deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
+import { open } from '@playerone/store';
 import { buildApi, hashCredential, objectKey, planParts, PART_SIZE, s3StoreFromEnv, transportInventory, type ObjectStore, type PutResult } from '../src/index.ts';
-import { closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
+import { closeDb, currentUrl, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('upload');
@@ -291,7 +292,8 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
      * something true to check against.
      */
     let sessionSeq = 0;
-    const submitEpisode = async (
+    /** Writes the session directory and builds its record, without submitting. */
+    const buildEpisode = async (
       which: 'A' | 'B',
       files: Record<string, Buffer> = { 'left_part0001.mp4': randomBytes(4096) },
       /** A second delivery of an episode already submitted: same directory, so same id. */
@@ -345,7 +347,15 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
         discrepancies: [],
         unclassified_files: [],
       };
+      return { episodeId, basename, record, sourceFiles };
+    };
 
+    const submitEpisode = async (
+      which: 'A' | 'B',
+      files: Record<string, Buffer> = { 'left_part0001.mp4': randomBytes(4096) },
+      again?: { basename: string },
+    ) => {
+      const { episodeId, basename, record, sourceFiles } = await buildEpisode(which, files, again);
       const batch = which === 'A' ? A.batch : B.batch;
       const who = which === 'A' ? headersA : headersB;
       const submitted = await send('POST', `/upload-batches/${batch}/episodes`, { episodes: [record] }, who);
@@ -382,7 +392,7 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     };
 
     return { d, app, ids, headersA, headersB, send, A, B, store, mediaRoot,
-             submitEpisode, upload, cacheClean, claim, batchRow, verificationOf, latestIngestOf };
+             buildEpisode, submitEpisode, upload, cacheClean, claim, batchRow, verificationOf, latestIngestOf };
   }
 
   // -------------------------------------------------------------------------
@@ -428,6 +438,17 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     )) as unknown as { action: string; n: string }[];
     expect(Number(audits.find((x) => x.action === 'episode.cloud_verify')?.n)).toBe(2);
     expect(Number(audits.find((x) => x.action === 'batch.cloud_verified')?.n)).toBe(2);
+
+    // The verdict's audit row is the receipt: the exact object keys and
+    // reference digests it covered, not a count. audit_events is append-only,
+    // so this stays readable after any later re-upload or redelivery.
+    const [verdict] = (await h.d.execute(
+      sql`select after from audit_events
+           where action = 'episode.cloud_verify' and target_id = ${a.episodeId}`,
+    )) as unknown as { after: { objects: { key: string; sha256: string }[] } }[];
+    expect(verdict!.after.objects).toEqual(
+      a.sourceFiles.map((f, i) => ({ key: a.keys[i]!, sha256: f.sha256 })),
+    );
   });
 
   it('a corrupted upload is caught by read-back despite clean metadata, blocks review, and heals on re-upload', async () => {
@@ -594,14 +615,21 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     // ...so under QR-02 as written the new delivery is not reviewable yet.
     expect((await h.claim()).statusCode).toBe(204);
 
-    // ...and the batch, already cloud_verified_at once, cannot be cleaned
-    // again on the strength of that historical timestamp.
-    await h.d.execute(sql`update upload_batches set local_cache_cleaned_at = null, batch_status = 'verified' where id = ${h.A.batch}`);
+    // ...and the redelivery itself voided the cleanup receipt (migration
+    // 0010): the import just wrote unverified bytes into this machine's cache,
+    // so "cleaned" stopped being a current fact in the same transaction. A
+    // deletion client asking again gets a refusal, not `replayed: true` on the
+    // strength of the historical timestamp.
+    expect((await h.batchRow(h.A.batch))['local_cache_cleaned_at']).toBeNull();
     expect((await h.cacheClean(h.A.batch)).statusCode).toBe(409);
 
     const before = new Set(h.store.meta.keys());
     await h.upload(h.A.batch);
     expect(await h.verificationOf(first.episodeId)).toBe('verified');
+
+    // The full circle: with the new delivery verified, the cache is cleanable
+    // again — a fresh receipt, not a replay of the invalidated one.
+    expect((await h.cacheClean(h.A.batch)).json()).toEqual({ id: h.A.batch, replayed: false });
 
     // Verified, and still not reviewable: CHECKSUM-MISMATCH blocks review, so
     // the cloud saying "these bytes arrived intact" does not answer "which of
@@ -619,6 +647,89 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
       expect(h.store.writes.get(key)).toBe(1);
     }
     for (const key of second.keys) expect(before.has(key)).toBe(false);
+  });
+
+  it('an older delivery cannot re-attribute the episode after a newer one lands (two connections)', async () => {
+    const h = await harness();
+    const first = await h.submitEpisode('A', { 'left_part0001.mp4': randomBytes(4096) });
+
+    // Store and resolution are two transactions by design, so a redelivery can
+    // land between another request's store and its resolution. A holder
+    // connection pins the episode row so both submissions demonstrably queue on
+    // it inside `storeEpisode`; the lock queue then serialises them: the older
+    // request's store commits first, the newer one's store slips in ahead of
+    // the older's RESOLUTION, and the older resolution must notice its delivery
+    // is no longer the latest rather than re-attributing the episode under the
+    // newer bytes.
+    const second = await open(currentUrl());
+    const other = buildApi({ db: second, tokenSecret: SECRET });
+    await other.ready();
+    const holder = await open(currentUrl());
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    try {
+      const older = await h.buildEpisode(
+        'A',
+        { 'left_part0001.mp4': randomBytes(4096) },
+        { basename: first.basename },
+      );
+      const newer = await h.buildEpisode(
+        'A',
+        { 'left_part0001.mp4': randomBytes(4096) },
+        { basename: first.basename },
+      );
+
+      let release!: () => void;
+      const released = new Promise<void>((r) => (release = r));
+      let taken!: () => void;
+      const locked = new Promise<void>((r) => (taken = r));
+      const holding = holder.transaction(async (tx) => {
+        await tx.execute(
+          sql`select 1 from episodes where episode_id = ${first.episodeId} for update`,
+        );
+        taken();
+        await released;
+      });
+      await locked;
+
+      const olderReq = h.app.inject({
+        method: 'POST',
+        url: `/upload-batches/${h.A.batch}/episodes`,
+        payload: { episodes: [older.record] },
+        headers: h.headersA,
+      });
+      await sleep(150); // older is queued on the episode row first...
+      const newerReq = other.inject({
+        method: 'POST',
+        url: `/upload-batches/${h.A.batch}/episodes`,
+        payload: { episodes: [newer.record] },
+        headers: h.headersA,
+      });
+      await sleep(150); // ...and newer behind it.
+      release();
+      await holding;
+
+      const olderOut = (await olderReq).json().episodes[0];
+      const newerOut = (await newerReq).json().episodes[0];
+      expect(newerOut.resolution_state).toBe('resolved');
+      expect(olderOut.outcome).toBe('mismatch'); // the measurement IS stored...
+      expect(olderOut.error).toMatch(/newer delivery/); // ...the attribution is not.
+
+      // Three deliveries stored, and the episode's attribution was written by
+      // the request whose delivery is the latest — with exactly one submit
+      // audit row per resolution that actually happened.
+      const [row] = (await h.d.execute(sql`
+        select ingest_count, (select count(*) from audit_events
+                               where action = 'episode.submit'
+                                 and target_id = ${first.episodeId}) as submits
+        from episodes where episode_id = ${first.episodeId}
+      `)) as unknown as { ingest_count: number; submits: string }[];
+      expect(row!.ingest_count).toBe(3);
+      expect(Number(row!.submits)).toBe(2);
+    } finally {
+      await holder.close();
+      await other.close();
+      await second.close();
+    }
   });
 
   it('transports the manifest too, and verifies it, without it joining the fingerprint', async () => {

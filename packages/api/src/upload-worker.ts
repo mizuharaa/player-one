@@ -377,8 +377,14 @@ export type Mismatch = {
 export type EpisodeUploadResult = {
   uploaded: number;
   kept: number;
-  /** How many objects the verdict below covers — source files plus the delivery's remainder. */
-  transported: number;
+  /**
+   * Every object the verdict covers — source files plus the delivery's
+   * remainder — as exact key and reference digest. This is the receipt: the
+   * caller writes it into the `episode.cloud_verify` audit row, which is
+   * append-only, so what a verdict was based on stays answerable after any
+   * later re-upload or redelivery. A count cannot answer that.
+   */
+  objects: { key: string; sha256: string }[];
   mismatches: Mismatch[];
 };
 
@@ -434,8 +440,10 @@ export async function uploadEpisode(
    * the day the contract names one.
    */
   const mismatches: Mismatch[] = [];
+  const objects: { key: string; sha256: string }[] = [];
   for (const f of files) {
     const key = objectKey(args.episodeId, args.ingestId, f.relative_path);
+    objects.push({ key, sha256: f.sha256 });
     const body = await store.read(key);
     const cloud = body === null ? null : await sha256Of(body);
     if (cloud !== f.sha256) {
@@ -450,5 +458,5 @@ export async function uploadEpisode(
   }
   if (mismatches.length > 0) await progress.forget(args.episodeId);
 
-  return { uploaded, kept, transported: files.length, mismatches };
+  return { uploaded, kept, objects, mismatches };
 }

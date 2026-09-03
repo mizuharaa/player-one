@@ -149,7 +149,7 @@ export function registerEpisodes(
       });
       const defects = resolverDefects(record, ctx.handover, resolution.sessionId);
 
-      await mutate(
+      const resolved = await mutate(
         db,
         actor,
         {
@@ -184,6 +184,17 @@ export function registerEpisodes(
           },
         },
         async (tx) => {
+          /**
+           * `latest_ingest_id` is in the WHERE for the same reason it is in the
+           * upload verdict's WHERE: this resolution was computed from the
+           * delivery `storeEpisode` just wrote, and attribution — session,
+           * batch, path — must not be written by a request whose delivery is no
+           * longer the latest. Store and resolve are two transactions by
+           * design, so a concurrent redelivery can land between them; without
+           * the clause the OLDER request's resolution commits last and
+           * re-parents the episode under the NEWER bytes. No row back means no
+           * audit row, and the result below says what happened.
+           */
           const [row] = await tx
             .update(schema.episodes)
             .set({
@@ -194,8 +205,16 @@ export function registerEpisodes(
               // Path C: this arrived on a card at a counter, by definition.
               uploadPath: 'C',
             })
-            .where(eq(schema.episodes.episodeId, stored.episodeId))
+            .where(
+              and(
+                eq(schema.episodes.episodeId, stored.episodeId),
+                stored.ingestId === null
+                  ? undefined
+                  : eq(schema.episodes.latestIngestId, stored.ingestId),
+              ),
+            )
             .returning();
+          if (row === undefined) return undefined;
 
           // Store-time defects hang off the ingest, exactly as CHECKSUM-MISMATCH
           // does. A duplicate delivery has no new ingest, so there is nothing to
@@ -215,6 +234,18 @@ export function registerEpisodes(
           return row;
         },
       );
+      if (resolved === undefined) {
+        // A newer delivery of this episode landed between the store and this
+        // resolution, so this request's attribution belongs to bytes that are
+        // no longer the latest. The measurement is stored; the newer request
+        // owns the resolution.
+        results.push({
+          episode_id: stored.episodeId,
+          outcome: stored.outcome,
+          error: 'a newer delivery of this episode landed while it was being resolved',
+        });
+        continue;
+      }
 
       results.push({
         episode_id: stored.episodeId,

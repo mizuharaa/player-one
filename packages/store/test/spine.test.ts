@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { DISCREPANCY_CODES } from '@playerone/contracts';
 import { DEFECT_CATALOGUE, REVIEW_REASON_CATALOGUE, seedCatalogues } from '../src/catalogue.ts';
-import { closeDb, db, hasDb, truncate, violates, useDatabase } from './db.ts';
+import { closeDb, currentUrl, db, hasDb, truncate, violates, useDatabase } from './db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('spine');
@@ -384,6 +385,203 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       update upload_batches set local_cache_cleaned_at = now(), batch_status = 'closed'
       where id = ${ids.batch};
     `));
+  });
+
+  it('UPL-06: a redelivery invalidates the cleanup receipt, and receipts are write-once', async () => {
+    const ids = await seedSpine();
+    const d = await db();
+    const ep = await seedEpisode({ sessionId: ids.session, measured: '8.500000', batchId: ids.batch });
+    const receipt = async () => {
+      const rows = (await d.execute(sql`
+        select cloud_verified_at, local_cache_cleaned_at from upload_batches where id = ${ids.batch}
+      `)) as unknown as { cloud_verified_at: Date | null; local_cache_cleaned_at: Date | null }[];
+      return rows[0]!;
+    };
+
+    await d.execute(sql`
+      update episodes set latest_ingest_id = ${ep.ingestId} where episode_id = ${ep.episodeId};
+    `);
+    // Two statements: moving latest_ingest_id resets the state (0009's trigger wins).
+    await d.execute(sql`
+      update episodes set verification_state = 'verified' where episode_id = ${ep.episodeId};
+    `);
+    await d.execute(sql`
+      update upload_batches set cloud_verified_at = now(), batch_status = 'verified' where id = ${ids.batch};
+    `);
+    await d.execute(sql`
+      update upload_batches set local_cache_cleaned_at = now(), batch_status = 'closed' where id = ${ids.batch};
+    `);
+
+    // A standing receipt is never silently re-stamped, and "verified once" is
+    // never edited — in either direction. Raw SQL included; that is the point.
+    await violates('upload_batches_cache_clean_write_once', d.execute(sql`
+      update upload_batches set local_cache_cleaned_at = now() + interval '1 hour' where id = ${ids.batch};
+    `));
+    await violates('upload_batches_cloud_verified_write_once', d.execute(sql`
+      update upload_batches set cloud_verified_at = now() + interval '1 hour' where id = ${ids.batch};
+    `));
+    await violates('upload_batches_cloud_verified_write_once', d.execute(sql`
+      update upload_batches set cloud_verified_at = null where id = ${ids.batch};
+    `));
+
+    // The card comes back with different bytes: the same statement that makes
+    // the new ingest current voids the receipt, because the import just wrote
+    // bytes into that cache which nobody has verified. `cloud_verified_at`
+    // stays — a verification that passed once did pass.
+    const second = uid();
+    await d.execute(sql`
+      insert into episode_ingests (ingest_id, episode_id, content_fingerprint, state, source_basename,
+                                   measured_duration_s, timing_source, timing_confidence, manifest_present,
+                                   engine_version, host, ingested_at, record_json)
+        values (${second}, ${ep.episodeId}, repeat('b', 64), 'ok', 'ego_AZER76400FE_20260813_072310',
+                '8.500000', 'pts_sidecar', 'exact', true, '0.3.1', 'test', now(), '{}'::jsonb);
+    `);
+    await d.execute(sql`
+      update episodes set latest_ingest_id = ${second}, ingest_count = 2
+      where episode_id = ${ep.episodeId};
+    `);
+    const after = await receipt();
+    expect(after.local_cache_cleaned_at).toBeNull();
+    expect(after.cloud_verified_at).not.toBeNull();
+
+    // And an episode MOVED onto a cleaned batch voids that batch's receipt the
+    // same way: its bytes sit in that machine's cache, unverified.
+    await d.execute(sql`
+      update episodes set verification_state = 'verified' where episode_id = ${ep.episodeId};
+    `);
+    await d.execute(sql`
+      update upload_batches set local_cache_cleaned_at = now() where id = ${ids.batch};
+    `);
+    const stray = await seedEpisode({ measured: '4.000000' });
+    await d.execute(sql`
+      update episodes set upload_batch_id = ${ids.batch} where episode_id = ${stray.episodeId};
+    `);
+    expect((await receipt()).local_cache_cleaned_at).toBeNull();
+  });
+
+  /**
+   * The two interleavings Codex named, run on genuinely separate connections —
+   * the file's shared connection cannot race itself. What is being proven is
+   * that the 0010 guard trigger takes its own episode row locks: a snapshot
+   * EXISTS would let both sides commit and leave a batch recorded cache-cleaned
+   * with a failed episode on it.
+   */
+  describe('UPL-06 under concurrency (two connections)', () => {
+    const hold = () => {
+      let release!: () => void;
+      let taken!: () => void;
+      const released = new Promise<void>((r) => (release = r));
+      const locked = new Promise<void>((r) => (taken = r));
+      return { release, taken, released, locked };
+    };
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    it('a cleanup cannot commit beside a concurrent verification failure', async () => {
+      const ids = await seedSpine();
+      const d = await db();
+      const ep = await seedEpisode({ sessionId: ids.session, measured: '8.500000', batchId: ids.batch });
+      await d.execute(sql`
+        update episodes set latest_ingest_id = ${ep.ingestId} where episode_id = ${ep.episodeId};
+      `);
+      // Two statements: moving latest_ingest_id resets the state (0009's trigger wins).
+      await d.execute(sql`
+        update episodes set verification_state = 'verified' where episode_id = ${ep.episodeId};
+      `);
+      await d.execute(sql`
+        update upload_batches set cloud_verified_at = now(), batch_status = 'verified' where id = ${ids.batch};
+      `);
+
+      const c1 = postgres(currentUrl(), { max: 1, onnotice: () => {} });
+      const c2 = postgres(currentUrl(), { max: 1, onnotice: () => {} });
+      try {
+        // Connection 1: a re-verification fails the episode and stays uncommitted.
+        const h = hold();
+        const t1 = c1.begin(async (tx) => {
+          await tx`update episodes set verification_state = 'failed' where episode_id = ${ep.episodeId}`;
+          h.taken();
+          await h.released;
+        });
+        await h.locked;
+
+        // Connection 2: the cleanup stamp. Under a snapshot read it would see
+        // 'verified' (connection 1 has not committed) and succeed; the
+        // trigger's FOR UPDATE makes it wait instead.
+        let settled = false;
+        const t2 = c2`update upload_batches set local_cache_cleaned_at = now(), batch_status = 'closed'
+                      where id = ${ids.batch}`.then(
+          () => {
+            settled = true;
+            return null;
+          },
+          (err: unknown) => {
+            settled = true;
+            return err;
+          },
+        );
+        await sleep(200);
+        expect(settled, 'the stamp must block on the failing verdict, not race it').toBe(false);
+
+        h.release();
+        await t1;
+        const err = (await t2) as { constraint_name?: string } | null;
+        expect(err, 'after the failure commits, the stamp must be refused').not.toBeNull();
+        expect(err!.constraint_name).toBe('upload_batches_verify_needs_verified_episodes');
+      } finally {
+        await c1.end({ timeout: 5 });
+        await c2.end({ timeout: 5 });
+      }
+    });
+
+    it('two racing first cleanups write exactly one receipt', async () => {
+      const ids = await seedSpine();
+      const d = await db();
+      const ep = await seedEpisode({ sessionId: ids.session, measured: '8.500000', batchId: ids.batch });
+      await d.execute(sql`
+        update episodes set latest_ingest_id = ${ep.ingestId} where episode_id = ${ep.episodeId};
+      `);
+      // Two statements: moving latest_ingest_id resets the state (0009's trigger wins).
+      await d.execute(sql`
+        update episodes set verification_state = 'verified' where episode_id = ${ep.episodeId};
+      `);
+      await d.execute(sql`
+        update upload_batches set cloud_verified_at = now(), batch_status = 'verified' where id = ${ids.batch};
+      `);
+
+      const c1 = postgres(currentUrl(), { max: 1, onnotice: () => {} });
+      const c2 = postgres(currentUrl(), { max: 1, onnotice: () => {} });
+      try {
+        // Both start from a null receipt. The exact statement the route runs:
+        // the CAS is `local_cache_cleaned_at is null` in the WHERE.
+        const h = hold();
+        let winnerRows = -1;
+        const t1 = c1.begin(async (tx) => {
+          const rows = await tx`update upload_batches
+                                set local_cache_cleaned_at = now(), batch_status = 'closed'
+                                where id = ${ids.batch} and local_cache_cleaned_at is null
+                                returning id`;
+          winnerRows = rows.length;
+          h.taken();
+          await h.released;
+        });
+        await h.locked;
+
+        const t2 = c2`update upload_batches
+                      set local_cache_cleaned_at = now(), batch_status = 'closed'
+                      where id = ${ids.batch} and local_cache_cleaned_at is null
+                      returning id`;
+        await sleep(50);
+        h.release();
+        await t1;
+        // READ COMMITTED re-evaluates the loser's WHERE against the winner's
+        // committed row: no second stamp, and a route seeing zero rows re-reads
+        // and answers `replayed: true` instead of writing a duplicate audit row.
+        expect(winnerRows).toBe(1);
+        expect((await t2).length).toBe(0);
+      } finally {
+        await c1.end({ timeout: 5 });
+        await c2.end({ timeout: 5 });
+      }
+    });
   });
 
   // -- UPL-05: a verdict belongs to one delivery ---------------------------

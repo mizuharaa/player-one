@@ -3,19 +3,21 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cp, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { eq } from 'drizzle-orm';
+import postgres from 'postgres';
 import { ingestSession } from '../../ingest/src/ingest.ts';
 import {
   defectsOf,
   filesOf,
   ingestsOf,
   listEpisodes,
+  open,
   showEpisode,
   storeEpisode,
   streamsOf,
   type MismatchPayload,
 } from '../src/index.ts';
 import { episodeIngests, episodes } from '../src/schema.ts';
-import { closeDb, db, hasDb, truncate, useDatabase } from './db.ts';
+import { closeDb, currentUrl, db, hasDb, truncate, useDatabase } from './db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('store');
@@ -159,6 +161,67 @@ describe.skipIf(!hasDb())('the episode store', () => {
     expect(r.mismatch!.changed).toEqual([]);
 
     await c.cleanup();
+  });
+
+  it('two concurrent changed deliveries lose neither ingest nor the count (two connections)', async () => {
+    // The race: both read the same episode row, both append an ingest, both
+    // write `ingest_count + 1`. `storeEpisode` locks the row FOR UPDATE, so the
+    // second delivery reads the first's committed state. A third connection
+    // holds the row lock first so both calls demonstrably overlap — without it
+    // this test could pass by never racing at all.
+    const c = await copyOf('delivery-a');
+    const first = await withCache(() => ingestSession(c.dir));
+    const stored = await storeEpisode(await db(), first.record);
+
+    const victim = `${STEM}_camera_left_part0001.mp4`;
+    const damage = async (b: number) => {
+      const bytes = await readFile(join(c.dir, victim));
+      bytes[b] = bytes[b]! ^ 0xff;
+      await writeFile(join(c.dir, victim), bytes);
+      return withCache(() => ingestSession(c.dir));
+    };
+    const second = await damage(0);
+    const third = await damage(1); // different byte, third distinct fingerprint
+
+    const d1 = await open(currentUrl());
+    const d2 = await open(currentUrl());
+    const holder = postgres(currentUrl(), { max: 1, onnotice: () => {} });
+    try {
+      let release!: () => void;
+      const released = new Promise<void>((r) => (release = r));
+      let taken!: () => void;
+      const locked = new Promise<void>((r) => (taken = r));
+      const holding = holder.begin(async (tx) => {
+        await tx`select 1 from episodes where episode_id = ${stored.episodeId} for update`;
+        taken();
+        await released;
+      });
+      await locked;
+
+      const both = Promise.all([
+        storeEpisode(d1, second.record),
+        storeEpisode(d2, third.record),
+      ]);
+      await new Promise((r) => setTimeout(r, 100)); // both now queue on the row lock
+      release();
+      await holding;
+      const [r2, r3] = await both;
+
+      expect(r2.outcome).toBe('mismatch');
+      expect(r3.outcome).toBe('mismatch');
+      expect(await ingestsOf(await db(), stored.episodeId)).toHaveLength(3);
+      const [ep] = await (await db())
+        .select()
+        .from(episodes)
+        .where(eq(episodes.episodeId, stored.episodeId));
+      expect(ep!.ingestCount).toBe(3);
+      expect([r2.ingestId, r3.ingestId]).toContain(ep!.latestIngestId);
+    } finally {
+      await d1.close();
+      await d2.close();
+      await holder.end({ timeout: 5 });
+      await c.cleanup();
+    }
   });
 
   // -- persistence ----------------------------------------------------------

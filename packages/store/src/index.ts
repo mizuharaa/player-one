@@ -83,7 +83,21 @@ export async function storeEpisode(
   const files = input.source_files;
 
   return db.transaction(async (tx) => {
-    const [existing] = await tx.select().from(episodes).where(eq(episodes.episodeId, episodeId));
+    /**
+     * FOR UPDATE, because everything below is decided by this read. Two
+     * concurrent deliveries of the same episode would otherwise both read the
+     * same `latest` and the same `ingest_count`, both append an ingest, and
+     * both write `ingest_count + 1` — one count lost, and whichever commits
+     * last owns `latest_ingest_id` regardless of which arrived last. The row
+     * lock serialises deliveries per episode; the second reads the first's
+     * committed state. Two concurrent FIRST deliveries have no row to lock and
+     * collide on the primary key instead, which is the same refusal, louder.
+     */
+    const [existing] = await tx
+      .select()
+      .from(episodes)
+      .where(eq(episodes.episodeId, episodeId))
+      .for('update');
 
     if (existing === undefined) {
       // The episode row goes in first: episode_ingests.episode_id references it,

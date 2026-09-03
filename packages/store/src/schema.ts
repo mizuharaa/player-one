@@ -598,14 +598,19 @@ export const handovers = pgTable(
  * than a procedure: an upload centre's local copy is the only copy until the
  * cloud says otherwise, so "cleaned before verified" must be unrepresentable.
  *
- * The other half of that gate lives in migrations 0007 and 0009, because
+ * The other half of that gate lives in migrations 0007, 0009 and 0010, because
  * drizzle cannot express a trigger: `upload_batches_cloud_verify_guard` refuses
  * to set EITHER `cloud_verified_at` OR `local_cache_cleaned_at` unless the batch
  * has at least one episode and every episode on it reads `verification_state = 'verified'`
  * at that moment — the byte read-back verdict written by the upload leg
  * (packages/api/src/upload.ts), never an ETag (spec ING-29). Both timestamps,
  * because "verified once" is a fact that stays true while "safe to delete the
- * only local copy" is a question about now.
+ * only local copy" is a question about now. 0010 makes that hold under
+ * concurrency and against raw SQL: the guard takes FOR UPDATE locks on the
+ * batch's episodes before reading them, a standing timestamp is write-once,
+ * and `episodes_invalidate_cache_receipt` nulls `local_cache_cleaned_at` in
+ * the same transaction that lands a redelivery on the batch — new bytes in the
+ * cache mean the cache is not clean.
  */
 export const uploadBatches = pgTable(
   'upload_batches',

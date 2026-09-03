@@ -19,11 +19,13 @@ import { uploadEpisode, type ObjectStore, type UploadProgress } from './upload-w
  *
  *   - **The cache-cleanup gate is schema state.** `upload_batches` already
  *     carries `cloud_verified_at`, `local_cache_cleaned_at` and
- *     `upload_batches_cache_after_verify_check`; migrations 0007 and 0009
- *     extend that gate with a trigger, so neither timestamp can be set while
- *     any episode on
- *     the batch is unverified *at that moment*. This file only tries the update
- *     and reports; it cannot bypass either.
+ *     `upload_batches_cache_after_verify_check`; migrations 0007, 0009 and
+ *     0010 extend that gate with triggers: neither timestamp can be set while
+ *     any episode on the batch is unverified *at that moment* (the trigger
+ *     takes its own episode row locks, so this holds against raw SQL too), a
+ *     standing timestamp is write-once, and a redelivery invalidates the
+ *     cleanup receipt. This file only tries the update and reports; it cannot
+ *     bypass any of it.
  *   - **No code path here deletes anything.** Not TF-card source media (PRD
  *     §11.3.1 rule 6, not deviable) and not even the local cache: the
  *     cache-clean route *records* that an operator cleaned it, once the schema
@@ -55,14 +57,14 @@ export type UploadOptions = {
  * Takes a row lock on every episode of the batch, before either gate reads
  * their verification state.
  *
- * The trigger and the WHERE clauses both ask a question about rows in another
- * table, and under READ COMMITTED each of them answers from a snapshot. Locking
- * the batch row alone does not help: a redelivery, or the verdict write of a
- * concurrent upload run, touches an EPISODE row. Both transactions could
- * therefore pass their own snapshot and both commit, leaving a batch recorded
- * cache-cleaned with a pending or failed episode on it — which is the one
- * outcome UPL-06 exists to make unrepresentable. Locking the episodes first
- * serialises the two: whichever gets there second waits and then re-reads.
+ * The WHERE clauses ask a question about rows in another table, and under READ
+ * COMMITTED each answers from a snapshot. Locking the batch row alone does not
+ * help: a redelivery, or the verdict write of a concurrent upload run, touches
+ * an EPISODE row. Since migration 0010 the guard trigger takes these same
+ * locks itself — the invariant no longer depends on this call — but the routes
+ * still lock first, and in the same episode_id order, for the answer's sake: a
+ * race that reached the trigger would surface as a constraint exception (a
+ * 500), where locking before the WHERE turns it into "no row" and a clean 409.
  *
  * ponytail: a whole-batch lock, held for the length of one small transaction.
  * A card load is tens of episodes, so there is nothing to gain from finer
@@ -190,7 +192,13 @@ export function registerUpload(
           after: {
             verification_state: state,
             ingest_id: row.ingestId,
-            files: outcome.transported,
+            /**
+             * The receipt, not a count: the exact object keys and reference
+             * digests this verdict covered. audit_events is append-only, so
+             * this survives any later re-upload — it is what a dispute reads
+             * to learn which bytes a verdict was based on.
+             */
+            objects: outcome.objects,
             mismatches: outcome.mismatches,
           },
         },
@@ -305,6 +313,12 @@ export function registerUpload(
     const batchId = (req.params as { id: string }).id;
     const batch = await batchOf(batchId, actor);
     if (batch === undefined) return reply.code(404).send({ error: 'no such batch on this machine' });
+    /**
+     * A standing receipt is a CURRENT fact, not a historical one: migration
+     * 0010 nulls `local_cache_cleaned_at` in the same transaction that lands a
+     * redelivery on the batch, so this replay answer can never describe a
+     * cache that has since received new, unverified bytes.
+     */
     if (batch.localCacheCleanedAt !== null) {
       return reply.send({ id: batchId, replayed: true });
     }
@@ -327,6 +341,11 @@ export function registerUpload(
           .where(
             and(
               eq(schema.uploadBatches.id, batchId),
+              // First writer wins. Two racing first cleanups both read a null
+              // receipt above; the loser's WHERE re-evaluates against the
+              // winner's committed row and writes nothing — no second
+              // timestamp, no duplicate audit event.
+              isNull(schema.uploadBatches.localCacheCleanedAt),
               sql`${schema.uploadBatches.cloudVerifiedAt} is not null`,
               noneUnverified(batchId),
             ),
@@ -336,6 +355,12 @@ export function registerUpload(
       },
     );
     if (written === undefined) {
+      // Nothing written: either the gate refused, or a concurrent cleanup won.
+      // Re-read to answer with the committed truth rather than a guess.
+      const now = await batchOf(batchId, actor);
+      if (now !== undefined && now.localCacheCleanedAt !== null) {
+        return reply.send({ id: batchId, replayed: true });
+      }
       return reply
         .code(409)
         .send({ error: 'the cloud has not verified this batch; the local cache stays' });

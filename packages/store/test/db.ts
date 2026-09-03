@@ -47,6 +47,15 @@ const dbName = (): string => {
   return suffix === '' ? base : `${base}_${suffix}`;
 };
 
+/**
+ * The file's own database URL, for tests that need a second, genuinely
+ * concurrent connection — a row lock has nothing to serialise when both
+ * transactions queue behind the same connection. Callers close what they open.
+ */
+export function currentUrl(): string {
+  return urlFor(dbName());
+}
+
 /** One connection for the whole file, migrated once, truncated per test. */
 let shared: Promise<Db> | null = null;
 
