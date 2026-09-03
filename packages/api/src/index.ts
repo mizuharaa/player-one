@@ -8,6 +8,7 @@ export { REFUSALS } from './backoffice.ts';
 import { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 import { registerConsole } from './console.ts';
 import { registerCounter } from './counter.ts';
+import { registerDeposits } from './deposits.ts';
 import { registerEpisodes } from './episodes.ts';
 import { registerMedia } from './media.ts';
 import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
@@ -63,6 +64,15 @@ export type ApiOptions = {
    */
   currency?: string;
   /**
+   * The default device deposit, as a decimal string, and what it is
+   * denominated in. Both are per-row columns on `deposits`; these are only the
+   * value a create falls back to. No amount default: 5,000 is PaXini's
+   * reference figure in CNY, and inventing it in the pay currency would be
+   * wrong by about three orders of magnitude.
+   */
+  depositAmount?: string;
+  depositCurrency?: string;
+  /**
    * Whether session cookies are marked `Secure`. Off by default: the pilot's
    * upload centres are a LAN over plain HTTP, where a `Secure` cookie is never
    * sent and the symptom is a login that appears to do nothing.
@@ -76,6 +86,8 @@ export function buildApi({
   toleranceMs = DEFAULT_TOLERANCE_MS,
   mediaRoot,
   currency,
+  depositAmount,
+  depositCurrency,
   secureCookies = false,
 }: ApiOptions): FastifyInstance {
   if (!tokenSecret) throw new Error('tokenSecret is required');
@@ -172,6 +184,7 @@ export function buildApi({
 
   registerBackOffice(app, db, requireActor);
   registerCounter(app, db, requireActor);
+  registerDeposits(app, db, requireActor, { depositAmount, depositCurrency, currency });
   registerEpisodes(app, db, requireActor, toleranceMs);
   registerReview(app, db, requireActor, { mediaRoot, currency });
   registerMedia(app, db, requireActor, mediaRoot);

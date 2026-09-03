@@ -54,6 +54,14 @@ const app = buildApi({
   mediaRoot: env['PLAYERONE_MEDIA_ROOT'],
   currency: env['PLAYERONE_CURRENCY'],
   /**
+   * The device deposit. Both are defaults for a column, not the column: an
+   * amount and a currency ride on every `deposits` row, because PaXini quotes
+   * the deposit in CNY and the collectors are Vietnamese, and which one binds
+   * is not settled.
+   */
+  depositAmount: env['PLAYERONE_DEPOSIT_AMOUNT'],
+  depositCurrency: env['PLAYERONE_DEPOSIT_CURRENCY'],
+  /**
    * Off unless asked for. Pilot upload centres are a LAN over plain HTTP, where
    * a `Secure` cookie is simply never sent and the symptom is a sign-in that
    * appears to succeed and does nothing. Turn it on wherever there is TLS.

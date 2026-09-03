@@ -275,6 +275,15 @@ const en = {
   'bo.refused.collectors_external_ref_key': 'Another collector already uses that reference.',
   'bo.refused.devices_hardware_serial_key': 'Another device already carries that serial.',
   'bo.refused.device_already_bound': 'That device is bound to somebody else. Unbind it first.',
+  'bo.refused.deposits_state_transition':
+    'That deposit has already been released or forfeited. A settled deposit does not re-open.',
+  'bo.refused.deposits_forfeit_bounds_check': 'A forfeiture cannot be more than the deposit.',
+  'bo.refused.deposits_forfeit_requires_receipt_check':
+    'Mark the deposit received before keeping any of it.',
+  'bo.refused.deposits_open_device_key': 'That device already has a deposit held against it.',
+  'bo.refused.deposits_fault_event_matches_device':
+    'That fault record is about another device.',
+  'bo.refused.deposit_id_reused': 'That deposit number already exists with different terms.',
   'bo.refused.unknown': 'The server refused that change.',
 
   'theme.toggle': 'Theme',
@@ -505,6 +514,12 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.collectors_external_ref_key': '该采集者编号已被占用。',
   'bo.refused.devices_hardware_serial_key': '该序列号已被其他设备占用。',
   'bo.refused.device_already_bound': '该设备已绑定给其他人，请先解绑。',
+  'bo.refused.deposits_state_transition': '该押金已退还或已没收，不能重新打开。',
+  'bo.refused.deposits_forfeit_bounds_check': '没收金额不能超过押金金额。',
+  'bo.refused.deposits_forfeit_requires_receipt_check': '请先登记押金已收到，再进行没收。',
+  'bo.refused.deposits_open_device_key': '该设备已有一笔在押的押金。',
+  'bo.refused.deposits_fault_event_matches_device': '该故障记录属于其他设备。',
+  'bo.refused.deposit_id_reused': '该押金编号已存在，且条款不同。',
   'bo.refused.unknown': '服务端拒绝了该操作。',
 
   'theme.toggle': '主题',

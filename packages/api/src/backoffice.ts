@@ -48,7 +48,7 @@ const uuid = z.string().uuid();
  * reaches the operator as a 500 on a figure nothing had told them was too
  * large.
  */
-const decimal = (precision: number, scale: number) =>
+export const decimal = (precision: number, scale: number) =>
   z
     .string()
     .regex(
@@ -137,7 +137,7 @@ const DevicePatch = z
   })
   .refine((b) => Object.keys(b).length > 0, 'nothing to change');
 
-type Reply = {
+export type Reply = {
   code: (n: number) => { send: (b: unknown) => unknown };
 };
 
@@ -179,6 +179,12 @@ export const REFUSALS = new Set([
   'devices_retired_unbound_check',
   'collectors_external_ref_key',
   'devices_hardware_serial_key',
+  /** The deposit ledger's five, from migration 0012. See `deposits.ts`. */
+  'deposits_state_transition',
+  'deposits_forfeit_bounds_check',
+  'deposits_forfeit_requires_receipt_check',
+  'deposits_open_device_key',
+  'deposits_fault_event_matches_device',
 ]);
 
 /**
@@ -190,6 +196,32 @@ export const REFUSALS = new Set([
  * and is what catches the omission.
  */
 
+/**
+ * Runs a write and separates "the rules said no" from "this code is wrong".
+ *
+ * A result rather than a reply, so the caller decides the status code and the
+ * value stays typed. Anything not in `REFUSALS` is re-thrown and becomes a
+ * 500, which is what a foreign key failing on a column the route filled in
+ * itself should look like.
+ *
+ * Module scope and exported, because `deposits.ts` needs exactly this and a
+ * second copy of it is a second thing to get wrong.
+ */
+export async function guarded<T>(
+  run: () => Promise<T | undefined>,
+): Promise<{ ok: true; value: T | undefined } | { ok: false; constraint: string }> {
+  try {
+    return { ok: true, value: await run() };
+  } catch (err) {
+    const name = constraintOf(err);
+    if (name !== undefined && REFUSALS.has(name)) return { ok: false, constraint: name };
+    throw err;
+  }
+}
+
+export const refused = (reply: Reply, constraint: string) =>
+  reply.code(409).send({ error: 'refused', constraint });
+
 export function registerBackOffice(
   app: FastifyInstance,
   db: Db,
@@ -197,29 +229,6 @@ export function registerBackOffice(
 ): void {
   const opts = { preHandler: requireActor };
   const actorOf = (req: FastifyRequest): Actor => req.actor!;
-
-  /**
-   * Runs a write and separates "the rules said no" from "this code is wrong".
-   *
-   * A result rather than a reply, so the caller decides the status code and the
-   * value stays typed. Anything not in `REFUSALS` is re-thrown and becomes a
-   * 500, which is what a foreign key failing on a column this file filled in
-   * itself should look like.
-   */
-  async function guarded<T>(
-    run: () => Promise<T | undefined>,
-  ): Promise<{ ok: true; value: T | undefined } | { ok: false; constraint: string }> {
-    try {
-      return { ok: true, value: await run() };
-    } catch (err) {
-      const name = constraintOf(err);
-      if (name !== undefined && REFUSALS.has(name)) return { ok: false, constraint: name };
-      throw err;
-    }
-  }
-
-  const refused = (reply: Reply, constraint: string) =>
-    reply.code(409).send({ error: 'refused', constraint });
 
   // -- tasks (BO-01, BO-02) -------------------------------------------------
 

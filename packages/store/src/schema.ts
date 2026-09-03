@@ -1167,3 +1167,162 @@ export const uploadDeviceStatus = pgTable('upload_device_status', {
   lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// The device deposit ledger
+
+/**
+ * A deposit rides on a device the way a hotel's rides on a room key: it is
+ * locked when the device is assigned, returned when the device comes back
+ * healthy, and at risk when the device is damaged or lost.
+ *
+ * Three things about this table are load-bearing.
+ *
+ * **Nothing here is in the settlement formula.** A settlement is
+ * `quantise(unit_price x effective_minutes)` and nothing else. A deposit is a
+ * separate obligation between the collector and the platform, denominated in
+ * its own currency, and it never adds to or subtracts from what a reviewed
+ * minute pays. There is deliberately no foreign key from here to `settlements`,
+ * `episode_reviews` or `tasks`, for the same reason `settlements` has none to
+ * `upload_batches`: the absence is what makes the rule unbreakable rather than
+ * remembered.
+ *
+ * **`amount` and `currency` are per row.** PaXini's reference figure is
+ * 5,000 CNY and the collectors are Vietnamese, so which currency actually binds
+ * is an open commercial question — the brief's §11.1 and open item O11 record
+ * the whole damage-and-deposit policy as undecided. A column holds either
+ * answer today; a constant in code would have picked one.
+ *
+ * **Every state change is a human decision.** No trigger, job or fault report
+ * moves a deposit — `devices.status = 'faulty'` makes a forfeiture *possible*
+ * and a person makes it *actual*, through `mutate`, with a written reason. That
+ * is the same shape SET-03 gives a settlement mark.
+ *
+ * The deposit deliberately references `collector_id` and `device_id` directly
+ * rather than an assignment period: exclusive device-assignment windows are
+ * being built in parallel and do not exist on this base. When they land, an
+ * `assignment_id` here is an integration item, not a rewrite — the pair above
+ * is what an assignment resolves to anyway.
+ */
+export const deposits = pgTable(
+  'deposits',
+  {
+    id: uuid('id').primaryKey(),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    deviceId: uuid('device_id')
+      .notNull()
+      .references(() => devices.id),
+    /** Same precision as `settlements.amount`, and for the same reason: money is a string. */
+    amount: numeric('amount', { precision: 14, scale: 4, mode: 'string' }).notNull(),
+    /** ISO 4217, checked for shape only. A code list here would go stale in the schema. */
+    currency: text('currency').notNull(),
+    state: text('state').notNull().default('held'),
+    /** Zero until somebody forfeits, and then exactly what the state says it is. */
+    forfeitAmount: numeric('forfeit_amount', { precision: 14, scale: 4, mode: 'string' })
+      .notNull()
+      .default('0'),
+    /** Why money was kept. Not optional on a forfeiture — see the CHECK below. */
+    reason: text('reason'),
+    /**
+     * The device fault this forfeiture cites, as the audit row that recorded it.
+     *
+     * BO-04 did not land a fault *table*: a fault is `devices.status = 'faulty'`
+     * plus `fault_note`, written through `mutate`, so the durable record of the
+     * moment — who said it, when, and what the device looked like before — is
+     * the `audit_events` row. That row is the thing worth pointing at; the
+     * current column values can be edited afterwards and an audit row cannot.
+     *
+     * Nullable, because a device can be lost rather than broken and there may be
+     * no fault report at all. `deposits_fault_event_matches_device` keeps it
+     * from pointing at somebody else's event.
+     */
+    faultAuditEventId: bigint('fault_audit_event_id', { mode: 'number' }).references(
+      () => auditEvents.id,
+    ),
+    /** One timestamp per transition. `held_at` is the assignment moment. */
+    heldAt: timestamp('held_at', { withTimezone: true }).notNull().defaultNow(),
+    /** When finance recorded the money as actually received. Not a state: see the header. */
+    receivedAt: timestamp('received_at', { withTimezone: true }),
+    /** Whatever finance calls the receipt — a slip number, a transfer reference. */
+    receiptReference: text('receipt_reference'),
+    releasedAt: timestamp('released_at', { withTimezone: true }),
+    forfeitedAt: timestamp('forfeited_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      'deposits_state_check',
+      sql`${t.state} in ('held', 'released', 'partially_forfeited', 'forfeited')`,
+    ),
+    /** A deposit of nothing is not a deposit, and a negative one is a payout. */
+    check('deposits_amount_positive_check', sql`${t.amount} > 0`),
+    check('deposits_currency_check', sql`${t.currency} ~ '^[A-Z]{3}$'`),
+    /** The headline rule: a forfeiture cannot exceed what was deposited. */
+    check(
+      'deposits_forfeit_bounds_check',
+      sql`${t.forfeitAmount} >= 0 and ${t.forfeitAmount} <= ${t.amount}`,
+    ),
+    /**
+     * The state and the number agree, or the row does not exist. Without this a
+     * row can say `released` and hold a forfeit amount, or say `forfeited` and
+     * hold nothing — and every report downstream would have to guess which half
+     * to believe.
+     */
+    check(
+      'deposits_forfeit_amount_state_check',
+      sql`case ${t.state}
+            when 'held' then ${t.forfeitAmount} = 0
+            when 'released' then ${t.forfeitAmount} = 0
+            when 'partially_forfeited' then ${t.forfeitAmount} > 0 and ${t.forfeitAmount} < ${t.amount}
+            when 'forfeited' then ${t.forfeitAmount} = ${t.amount}
+          end`,
+    ),
+    /**
+     * Keeping a collector's money says why, in writing. This is the sentence a
+     * dispute is answered with, so an empty string is refused as well as a null.
+     */
+    check(
+      'deposits_forfeit_reason_check',
+      sql`${t.state} not in ('partially_forfeited', 'forfeited')
+          or (${t.reason} is not null and length(trim(${t.reason})) > 0)`,
+    ),
+    /**
+     * Money nobody recorded receiving cannot be kept. A deposit that was never
+     * paid and then forfeited would print as platform income that never existed;
+     * the honest sequence is to mark the receipt first, which is its own audited
+     * decision, or to release a row that is holding nothing.
+     */
+    check(
+      'deposits_forfeit_requires_receipt_check',
+      sql`${t.forfeitAmount} = 0 or ${t.receivedAt} is not null`,
+    ),
+    check(
+      'deposits_released_at_check',
+      sql`(${t.state} = 'released') = (${t.releasedAt} is not null)`,
+    ),
+    check(
+      'deposits_forfeited_at_check',
+      sql`(${t.state} in ('partially_forfeited', 'forfeited')) = (${t.forfeitedAt} is not null)`,
+    ),
+    /** A fault citation only means anything on a forfeiture. */
+    check(
+      'deposits_fault_event_state_check',
+      sql`${t.faultAuditEventId} is null
+          or ${t.state} in ('partially_forfeited', 'forfeited')`,
+    ),
+    /**
+     * One open deposit per device, which is what "a deposit rides on the device"
+     * means. Two live rows on one headset would double what a collector is owed
+     * back and leave nobody able to say which one the device returns against.
+     * Partial, so the closed history of a device stays unlimited.
+     */
+    uniqueIndex('deposits_open_device_key')
+      .on(t.deviceId)
+      .where(sql`state = 'held'`),
+    index('deposits_collector_idx').on(t.collectorId, t.heldAt.desc()),
+    index('deposits_device_idx').on(t.deviceId, t.heldAt.desc()),
+  ],
+);
