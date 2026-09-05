@@ -288,6 +288,13 @@
       "when": 1788770000000,
       "tag": "0022_positive_empty_bill",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1788780000000,
+      "tag": "0023_commitment_contracts",
+      "breakpoints": true
     }
   ]
 }
