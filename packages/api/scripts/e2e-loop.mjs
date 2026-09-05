@@ -39,6 +39,9 @@ import { sql } from 'drizzle-orm';
 import { contentFingerprint, deriveEpisodeId } from '../../contracts/src/identity.ts';
 import { ingest } from '../../ingest/src/ingest.ts';
 import { open } from '../../store/src/index.ts';
+import { wholeVnd } from '../src/payout/domain/attempts.ts';
+import { verifyExport } from '../src/payout/domain/export.ts';
+import { shadowDiff, shadowRun } from '../src/payout/recon/index.ts';
 import {
   buildApi,
   hashCredential,
@@ -67,6 +70,14 @@ const ok = (message) => console.log(`ok    ${message}`);
 const check = (condition, message, detail) => (condition ? ok(message) : fail(message, detail));
 
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
+
+/**
+ * Every ZaloPay call this script must never make. Thrown, not stubbed: a
+ * silent zero would let a leg pass that had quietly reached for the rail.
+ */
+const noRail = async () => {
+  throw new Error('the manual pilot has no ZaloPay rail: this script may only verify');
+};
 
 /**
  * The cloud, as an fs-backed stub of the two-method `ObjectStore` seam.
@@ -159,12 +170,12 @@ await db.execute(sql`insert into scenarios (id,code,privacy_risk_level) values (
  * that hid a real payment bug in the resolver, and two runs against one
  * database is the cheapest way to have two of everything.
  */
-async function runLoop({ label, mediaRoot, basename, record, spans, prepareTime, serial }) {
+async function runLoop({ label, mediaRoot, basename, record, spans, prepareTime, serial, period }) {
   console.log(`\n--- ${label} -------------------------------------------------`);
   const n = label.replaceAll(/[^a-z0-9]/g, '').slice(0, 8);
   const id = {
     ...Object.fromEntries(
-      ['centre', 'machine', 'operator', 'collector', 'device', 'task'].map((k) => [k, uid()]),
+      ['centre', 'machine', 'operator', 'finance', 'collector', 'device', 'task'].map((k) => [k, uid()]),
     ),
     ...catalogue,
   };
@@ -174,6 +185,15 @@ async function runLoop({ label, mediaRoot, basename, record, spans, prepareTime,
   await db.execute(sql`insert into upload_centres (id,region,name,status) values (${id.centre},'HCM',${`centre ${n}`},'active')`);
   await db.execute(sql`insert into upload_devices (id,upload_centre_id,machine_identifier,status,credential_hash) values (${id.machine},${id.centre},${`M-${n}`},'active',${hash})`);
   await db.execute(sql`insert into operators (id,upload_centre_id,external_ref,role,credential_hash) values (${id.operator},${id.centre},${`op-${n}`},'centre_operator',${hash})`);
+  /**
+   * A second operator, with the finance role, because the money leg needs two
+   * people and the database says so. `payout_separation_of_duty` (0013) refuses
+   * a payment by the operator who issued the bill, and `settle_generate_by_finance`
+   * refuses a cycle run BY finance — so the counter operator above runs the
+   * cycle and this one pays it. One operator cannot walk this leg alone, and
+   * that is the control, not an inconvenience.
+   */
+  await db.execute(sql`insert into operators (id,upload_centre_id,external_ref,role,credential_hash) values (${id.finance},${id.centre},${`fin-${n}`},'finance',${hash})`);
   /**
    * The phone is seeded, and it is the ONE credential in this script that no
    * route could have set. BO-03 enrols a collector by `external_ref`:
@@ -219,6 +239,38 @@ async function runLoop({ label, mediaRoot, basename, record, spans, prepareTime,
      */
     verificationGate: 'cloud',
     sendSignInCode: async (to, code) => void outbox.push({ phone: to, code }),
+    /**
+     * The pilot rail, pinned rather than inherited: `manual` is the default
+     * (`payoutOptionsFromEnv`), and pinning it here means a machine that has
+     * exported `PLAYERONE_PAYOUT_MODE=api` still runs the loop this script is
+     * about. `/pay` answers 409 `payout_mode_manual` throughout; nothing below
+     * calls it.
+     *
+     * `client` is Verify Account and NOTHING else, deliberately.
+     *
+     * Manual mode removes the need to DISBURSE through ZaloPay. It does not
+     * remove the need to VERIFY through them: `payout_attempts_account_unverified`
+     * (0018) refuses to record a payment to a destination ZaloPay never
+     * confirmed — "a pilot with no ZaloPay credentials verifies nobody and can
+     * therefore pay nobody", in the migration's own words — and `refusalFor`
+     * asks the same question on the route. So the manual rail needs the
+     * read-only verify credential even though it moves no money through the
+     * API. That is the shape modelled here: an in-process double that answers
+     * one call and throws on the other four, so a transfer cannot be sent from
+     * this script even by accident. It speaks no network and holds no
+     * credential. `routes.test.ts` pins the other half — every non-verified
+     * status is a 409 on `mark-paid`.
+     */
+    payout: {
+      mode: 'manual',
+      client: {
+        verifyAccount: async () => ({ kind: 'verified', verifiedName: `Nguyen ${n}`, mUId: `mu-${n}` }),
+        transferFund: noRail,
+        queryTransaction: noRail,
+        balance: noRail,
+        bankCodes: noRail,
+      },
+    },
   });
   await app.ready();
 
@@ -435,8 +487,10 @@ async function runLoop({ label, mediaRoot, basename, record, spans, prepareTime,
 
   // -- 19. the cycle (SET-07) ------------------------------------------------
 
-  const periodStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const billed = await post('/api/settle/bills', { period_start: periodStart }, counter);
+  const billed = await post('/api/settle/bills', {
+    period_start: period.start.toISOString(),
+    period_end: period.end.toISOString(),
+  }, counter);
   check(billed.statusCode === 200, 'the settlement cycle runs', billed.body);
   const mine = billed.json().bills.find((b) => b.collector_ref === `c-${n}`);
   check(mine !== undefined, 'this collector got a bill', billed.body);
@@ -484,8 +538,136 @@ async function runLoop({ label, mediaRoot, basename, record, spans, prepareTime,
     'the period total on the collector’s screen is the bill finance will pay',
     JSON.stringify(income.periods));
 
+  // -- 21. where the money goes, and the verification that gates it (G3) -----
+
+  /**
+   * A different person from the one who ran the cycle. `settle_generate_by_finance`
+   * refuses a cycle run by finance and `payout_separation_of_duty` refuses a
+   * payment by whoever issued the bill, so the two roles above are both needed
+   * and neither can do the other's half.
+   */
+  const finance = {
+    'x-machine-token': counter['x-machine-token'],
+    authorization: `Bearer ${await tok('/auth/operator', { external_ref: `fin-${n}`, secret: 'pw' })}`,
+  };
+
+  /**
+   * Declared at the COUNTER, by the operator, and not by finance.
+   *
+   * `POST /api/payout/accounts` exists and finance may call it — but 0018
+   * added a third separation-of-duty question, and it is asked of the payer:
+   * an operator who declared the account an attempt names may not pay that
+   * bill. Measured, not assumed: this leg was written against the finance
+   * route first and every walk of it ended in `payout_separation_of_duty` on
+   * `mark-paid`, which is exactly what that migration says will happen — "In a
+   * one-finance-person pilot that reads as a deadlock, and it is the intended
+   * one: the counter route is the way out." So the pilot's flow is this one,
+   * and the collector is at the counter anyway, which is the whole argument
+   * for the route.
+   */
+  const declared = await post(`/api/payout/collectors/${id.collector}/accounts`, {
+    id: uid(),
+    method: 'WALLET',
+    declared_name: `Nguyen ${n}`,
+    phone: `09${String(Date.now()).slice(-8)}`,
+  }, counter);
+  check(declared.statusCode === 201, 'the payout destination is declared', declared.body);
+  check(declared.json().verify_status === 'verified',
+    'and the holder ZaloPay names is the collector who was declared', declared.body);
+
+  // -- 22. what the API rail WOULD have sent, before anybody pays anything ---
+
+  /**
+   * The window is this run's own cycle, one day wide, because the script walks
+   * the loop twice against one database and each walk must diff its own cycle
+   * and nobody else's. `loadBatch` selects bills by `period_start`, and the two
+   * runs' period starts are eight days apart.
+   *
+   * The client is `undefined`, which is the pilot exactly: no wallet to read a
+   * balance from. `preflight_ok` is therefore false and says why, and per-bill
+   * intention is recorded anyway — the batch refusal is about the wallet and
+   * says nothing about whether this bill was right to pay.
+   */
+  const window = { start: period.start, end: new Date(period.start.getTime() + 24 * 60 * 60 * 1000) };
+  const shadow = await shadowRun(db, undefined, window, { now: new Date() });
+  check(shadow.preflight_ok === false && /no ZaloPay client/.test(shadow.refusal ?? ''),
+    'shadow mode records that this deployment has no wallet to pay from', shadow.refusal);
+  check(shadow.intended.length === 1, 'the shadow run sees exactly this cycle’s one bill',
+    JSON.stringify(shadow.intended.map((i) => i.bill_id)));
+  const intent = shadow.intended[0];
+  const whole = wholeVnd(mine.total);
+  check(intent.bill_id === mine.id, 'and it is this collector’s bill');
+  check(intent.would_send === true && intent.issues.length === 0,
+    'the API rail would have sent it, with nothing standing in the way', JSON.stringify(intent.issues));
+  check(intent.amount_vnd === whole,
+    `the rail would have sent ${whole} VND: ${mine.total} floored to whole dong`,
+    `${intent.amount_vnd} != ${whole}`);
+
+  // -- 23. the file finance is handed (BUILD 6) ------------------------------
+
+  const exportUrl = `/api/payout/export/${encodeURIComponent(window.start.toISOString())}`
+    + `?period_end=${encodeURIComponent(window.end.toISOString())}`;
+  const csv = await get(exportUrl, finance);
+  check(csv.statusCode === 200, 'the payout CSV exports', csv.body);
+  check(verifyExport(csv.body).ok,
+    'the hash in its trailer is the hash of the bytes above it');
+  check(csv.headers['x-playerone-file-hash'] === verifyExport(csv.body).actual,
+    'and the header names the same hash');
+  /**
+   * `gross_vnd` is the bill's exact total, NOT the floored figure. The floor
+   * lives on the attempt and nowhere else; a CSV carrying 320 where the bill
+   * says 320.0004 would be the first sign it had moved.
+   */
+  check(csv.body.includes(`"${mine.total}"`),
+    'and it carries the bill total exactly as stored, unfloored', mine.total);
+  check((await get(exportUrl, finance)).body === csv.body,
+    'the same period exported twice is byte-identical');
+
+  // -- 24. the operator pays by hand and types the reference back (SET-03) ---
+
+  const mistyped = await post(`/api/payout/bills/${mine.id}/mark-paid`, {
+    manual_reference: `VCB-${n}-0001`, amount_vnd: whole + 1,
+  }, finance);
+  check(mistyped.statusCode === 409 && mistyped.json().constraint === 'payout_attempts_amount_check',
+    'a retyped amount that is not the floored total is refused by the database', mistyped.body);
+
+  const marked = await post(`/api/payout/bills/${mine.id}/mark-paid`, {
+    manual_reference: `VCB-${n}-0001`, amount_vnd: whole,
+  }, finance);
+  check(marked.statusCode === 201, 'the transfer the operator made is recorded', marked.body);
+  check(marked.json().amount_vnd === whole && marked.json().status === 'succeeded',
+    `${whole} VND is on the ledger against reference ${marked.json().manual_reference}`, marked.body);
+
+  const [states] = await db.execute(sql`
+    select bool_and(s.settlement_state = 'manually_paid') as all_paid
+      from bill_lines l join settlements s on s.id = l.settlement_id
+     where l.bill_id = ${mine.id}`);
+  check(states.all_paid === true, 'and every settlement on the bill moved to manually_paid');
+
+  const settled = (await get('/api/me/income', me)).json();
+  check(settled.episodes[0].state === 'paid',
+    'the collector’s own screen now says paid', settled.episodes[0].state);
+
+  // -- 25. the API rail still cannot fire, and never did ---------------------
+
+  const refusedPay = await post(`/api/payout/bills/${mine.id}/pay`, {}, finance);
+  check(refusedPay.statusCode === 409 && refusedPay.json().constraint === 'payout_mode_manual',
+    'the API rail answers 409 payout_mode_manual, as it did all the way through', refusedPay.body);
+  const attempts = await db.execute(sql`
+    select mode, status from payout_attempts where bill_id = ${mine.id}`);
+  check(attempts.length === 1 && attempts[0].mode === 'manual' && attempts[0].status === 'succeeded',
+    'exactly one attempt exists on this bill and it is the manual one',
+    JSON.stringify(attempts));
+
+  // -- 26. intention against outcome ----------------------------------------
+
+  const diff = await shadowDiff(db, shadow.runId, { now: new Date() });
+  check(diff.bills === 1 && diff.agreed === 1 && diff.raised === 0,
+    'the shadow cycle diffed clean: what the rail would have sent is what was paid',
+    JSON.stringify(diff));
+
   await app.close();
-  return paid.amount;
+  return { amount: paid.amount, diff };
 }
 
 // ---------------------------------------------------------------------------
@@ -526,8 +708,18 @@ const startUs = String(BigInt(started) * 1000n);
 const endUs = String(BigInt(started + 20_000) * 1000n);
 const sourceFiles = [{ relative_path: mediaName, bytes: media.length, sha256: sha(media) }];
 
-const syntheticAmount = await runLoop({
+/**
+ * One cycle per walk, eight days apart, because the payout window selects
+ * bills by `period_start` and each walk must diff its own cycle alone. The end
+ * is in the future in both: `settleable` bills every settlement created before
+ * the period's end, and these were created a moment ago.
+ */
+const CYCLE_ONE = { start: new Date(Date.now() - 10 * 24 * 3600_000), end: new Date(Date.now() + 24 * 3600_000) };
+const CYCLE_TWO = { start: new Date(Date.now() - 2 * 24 * 3600_000), end: new Date(Date.now() + 24 * 3600_000) };
+
+const synthetic = await runLoop({
   label: 'synthetic footage',
+  period: CYCLE_ONE,
   mediaRoot,
   basename: BASENAME,
   serial: SERIAL,
@@ -562,9 +754,11 @@ const syntheticAmount = await runLoop({
     unclassified_files: [],
   },
 });
-check(syntheticAmount === '320.0004',
+check(synthetic.amount === '320.0004',
   'sixteen seconds at 1200 a minute is 320.0004, from the rounded minutes and not the exact seconds',
-  syntheticAmount);
+  synthetic.amount);
+
+const cycles = [synthetic.diff];
 
 // ---------------------------------------------------------------------------
 // Run two: one real session, when this machine has the corpus.
@@ -597,8 +791,9 @@ if (sessions.length !== 5) {
   check(record.state !== 'quarantined', `${real} ingests (state: ${record.state})`,
     JSON.stringify(record.discrepancies));
   const measured = (Number(record.timing.usable_end_us) - Number(record.timing.usable_start_us)) / 1e6;
-  const realAmount = await runLoop({
+  const realRun = await runLoop({
     label: `real corpus: ${real}`,
+    period: CYCLE_TWO,
     mediaRoot: corpus,
     basename: real,
     serial: record.device.serial,
@@ -616,7 +811,20 @@ if (sessions.length !== 5) {
     spans: [{ start_seconds: 0, end_seconds: Math.min(10, Math.floor(measured)) }],
     record,
   });
-  ok(`the real session paid ${realAmount} VND`);
+  ok(`the real session paid ${realRun.amount} VND`);
+  cycles.push(realRun.diff);
+}
+
+/**
+ * The gate `shadow.ts` names: *"Two shadow cycles diffed clean is the gate
+ * before `api` becomes discussable."* Two cycles means two, so a machine with
+ * no corpus is told plainly that it ran one and has not met the bar.
+ */
+if (cycles.length === 2 && cycles.every((c) => c.raised === 0)) {
+  ok(`two shadow cycles diffed clean (${cycles.map((c) => `${c.agreed}/${c.bills}`).join(', ')} bills agreed, 0 findings)`);
+} else {
+  console.log(`\nNOTE  ${cycles.length} shadow cycle(s) ran, ${cycles.reduce((a, c) => a + c.raised, 0)} finding(s) raised.`);
+  console.log('      The G7 gate wants TWO clean cycles; one walk is not two.');
 }
 
 await db.close();
