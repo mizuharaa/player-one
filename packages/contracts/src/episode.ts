@@ -26,6 +26,7 @@ export const DISCREPANCY_CODES = [
   'PTS-TRUNCATED', // sidecar cut mid-digit; the final partial line is dropped
   'STATS-STALE', // statistics block copied verbatim from a previous session
   'STREAM-CLOCK-FAULT', // stream span cannot be explained by its own sample count
+  'DEVICE-CLOCK-UNSET', // the manifest's wall clock predates the fleet: the device clock was never set
   'PART-MISSING-TAIL', // the spec requires this behaviour but names no code for it
   'TIMING-ESTIMATED',
   'STREAM-SKEW-HIGH',
@@ -252,3 +253,21 @@ export function windowDiscrepancies(record: EpisodeRecord): Discrepancy[] {
     },
   ];
 }
+
+/**
+ * 2026-01-01T00:00:00Z in epoch milliseconds: the earliest wall clock the Ego
+ * fleet could plausibly have produced. The first real samples are firmware
+ * 1.0.3 dated 13 August 2026, so nothing genuine predates this.
+ *
+ * It lives here, in `contracts`, because two places need to agree on it and a
+ * second copy of the number is a bug waiting to happen: the ingest engine
+ * raises `DEVICE-CLOCK-UNSET` against it, and the resolver refuses to attribute
+ * a session that starts before it (`DEFAULT_EARLIEST_PLAUSIBLE_START_MS` in
+ * `packages/api/src/resolve.ts`, which now re-exports this value rather than
+ * restating it). Move the fleet floor and both move together.
+ *
+ * This is why it is needed at all: the Ego has no battery-backed real-time
+ * clock, and the thing that would set it is the companion app, which does not
+ * exist. Every session on the 2026-09-04 corpus is stamped 1970-01-01.
+ */
+export const EARLIEST_PLAUSIBLE_START_MS = 1_767_225_600_000;

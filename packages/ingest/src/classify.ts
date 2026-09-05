@@ -1,4 +1,5 @@
 import type { Discrepancy, EpisodeRecord } from '@playerone/contracts';
+import { EARLIEST_PLAUSIBLE_START_MS } from '@playerone/contracts';
 import { stateFrom } from '@playerone/contracts';
 import type { Discovery } from './discover.ts';
 import type { CalibrationInfo } from './calibration.ts';
@@ -162,6 +163,37 @@ export function classify(input: ClassifyInput): {
 
   if (m.parsed && m.firmwareVersion !== null && !KNOWN_FIRMWARE.includes(m.firmwareVersion)) {
     add('FIRMWARE-UNKNOWN', 'flag', `firmware ${m.firmwareVersion} is outside the tested set`);
+  }
+
+  /**
+   * The device clock was never set, so the wall clock in the manifest is not a
+   * time — it is whatever the unset clock read, which on this hardware is at or
+   * near the Unix epoch.
+   *
+   * A flag and not an error: the footage is fine and stays payable. Every
+   * number that becomes money is measured from the media through the PTS
+   * sidecars, which are relative, and the episode id comes from the directory
+   * basename. Nothing about the value of this recording depends on the clock.
+   *
+   * What DOES depend on it is attribution. The resolver refuses any session
+   * starting before the same fleet floor, so this episode will sit unresolved
+   * until an operator says which collection session it belongs to. Without this
+   * flag the queue shows "unresolved" and the operator cannot tell a device
+   * with an unset clock apart from a genuinely ambiguous card — two different
+   * problems with two different fixes. The raw value is kept and reported; it
+   * is never replaced with a guess.
+   */
+  const declaredStart = m.declared.start_time;
+  if (m.parsed && declaredStart !== null) {
+    const startMs = Date.parse(declaredStart);
+    if (Number.isFinite(startMs) && startMs < EARLIEST_PLAUSIBLE_START_MS) {
+      add(
+        'DEVICE-CLOCK-UNSET',
+        'flag',
+        `the manifest start_time is ${declaredStart}, before the fleet existed; ` +
+          `the device clock was not set, so this episode cannot be attributed by time`,
+      );
+    }
   }
 
   if (

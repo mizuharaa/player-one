@@ -1,0 +1,66 @@
+{
+  "device": {
+    "firmware_version": "1.0.3",
+    "name": "ego",
+    "sdk": "OrbbecSDK",
+    "serial_number": "SYNTH0000001"
+  },
+  "files": {
+    "video_left": "ego_SYNTH0000002_19700101_003357_camera_left.mp4"
+  },
+  "recording": {
+    "duration_sec": 0,
+    "end_time": "1970-01-01T00:35:49.616",
+    "start_time": "1970-01-01T00:33:57.875",
+    "status": "recording",
+    "video_segment_duration_sec": 3600
+  },
+  "statistics": {
+    "audio_frame_count": 0,
+    "imu_accel_count": 634,
+    "imu_gyro_count": 634,
+    "video_left_frame_count": 20,
+    "video_right_frame_count": 20
+  },
+  "streams": {
+    "audio": {
+      "enabled": true
+    },
+    "color_left": {
+      "enabled": true,
+      "file": "ego_SYNTH0000002_19700101_003357_camera_left.mp4",
+      "fps": 30,
+      "segment_duration_sec": 3600,
+      "segments": [
+        {
+          "index": 1,
+          "frame_count": 20,
+          "start_timestamp_us": "0",
+          "end_timestamp_us": "0"
+        }
+      ]
+    },
+    "color_right": {
+      "enabled": true,
+      "file": "ego_SYNTH0000002_19700101_003357_camera_left.mp4",
+      "fps": 30,
+      "segment_duration_sec": 3600,
+      "segments": [
+        {
+          "index": 1,
+          "frame_count": 20,
+          "start_timestamp_us": "0",
+          "end_timestamp_us": "0"
+        }
+      ]
+    },
+    "imu": {
+      "accel_sample_rate_hz": 1000
+    }
+  },
+  "timebase": {
+    "clock_source": "device_timestamp",
+    "precision": "microsecond",
+    "unit": "seconds"
+  }
+}
