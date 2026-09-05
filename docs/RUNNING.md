@@ -475,6 +475,60 @@ GRANT playerone_risk TO <application user>;
 
 The engine checks this at its first evaluation and names the statement to run.
 
+## The shadow payout cycle
+
+`PLAYERONE_PAYOUT_MODE` defaults to `manual`, and that default is the pilot: an
+operator transfers the money themselves and records the reference with
+`POST /api/payout/bills/:id/mark-paid`, while `/pay` answers 409
+`payout_mode_manual` so the API rail cannot fire by accident. Shadow mode is
+how that manual cycle is checked against the rail nobody has switched on:
+before the cycle is paid, record what an API run WOULD have sent; after it is
+paid, diff intention against what was actually recorded.
+
+```
+DATABASE_URL=... node packages/api/bin/payout-shadow.ts run  2026-08-17 2026-08-24
+DATABASE_URL=... node packages/api/bin/payout-shadow.ts diff <shadow_run_id>
+```
+
+`run` prints the intention and its `runId`; `diff` prints the comparison and
+exits **0 when it is clean and 1 when it raised findings**, so a cron can act
+on it. Order matters: `run` before the operator pays the period, `diff`
+afterwards. Running `run` again on a period that is already paid is not a
+second cycle and does not read as one — an already-paid bill is one the rail
+would now refuse, so the diff reports `SHADOW_UNINTENDED` about a payment that
+was correct. **Two cycles means two periods.**
+
+Two shadow cycles diffed clean is the gate before `PLAYERONE_PAYOUT_MODE=api`
+is discussable at all (`packages/api/src/payout/recon/shadow.ts`).
+
+It writes no attempt and sends no transfer. The only ZaloPay call it can make
+is the wallet balance the preflight reads, and only where credentials exist; in
+the manual pilot there are none, and the run says so on its summary instead of
+failing.
+
+**The manual rail still needs ZaloPay's read-only Verify Account credential.**
+Manual mode removes the need to disburse through ZaloPay; it does not remove
+the need to verify through them. `payout_attempts_account_unverified` (0018)
+refuses to record a payment to a destination ZaloPay never confirmed, and
+`refusalFor` asks the same question on the route — so a deployment with no
+credentials at all verifies nobody and can therefore pay nobody. That is the G3
+gate, and any override is an escalation.
+
+**Two people, not one.** `settle_generate_by_finance` refuses a settlement
+cycle run BY finance, `payout_separation_of_duty` refuses a payment by whoever
+issued the bill, and since `0018_payout_account_declarer` it also refuses a
+payment by whoever declared the account being paid. So the destination is
+declared at the counter (`POST /api/payout/collectors/:id/accounts`), a
+non-finance operator runs the cycle, and finance pays it. Declaring through the
+finance route (`POST /api/payout/accounts`) and then paying that bill with the
+same operator is refused, every time, and declaring it again as the same person
+does not help: the check is against the account the attempt actually names. The
+way out is somebody else declaring it — which is what the counter route is
+for — or a second finance operator.
+
+`packages/api/scripts/e2e-loop.mjs` walks all of this end to end, twice, and
+asserts both cycles diffed clean.
+
 ## The back-office console
 
 A React 19 SPA in `apps/console`, talking to the API over `/v1` and `/api` with a
