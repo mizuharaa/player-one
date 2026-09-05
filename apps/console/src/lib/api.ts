@@ -165,6 +165,22 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 
+  /**
+   * The server's own id for this failure, when it gave one.
+   *
+   * A 500 body is deliberately a constant — it must not echo the statement or
+   * its parameters — so `{"error":"internal"}` was all an operator could see
+   * and all they could report. The server now logs the failure against
+   * Fastify's request id and returns that same id as `ref`, so the sentence on
+   * screen and the line in the log can be joined by somebody reading them
+   * hours apart. It is a generated id and says nothing about the request,
+   * which is why it is safe to put in front of a user.
+   */
+  get ref(): string | undefined {
+    const r = (this.body as { ref?: unknown } | undefined)?.ref;
+    return typeof r === 'string' ? r : undefined;
+  }
+
   /** The session is gone. The router sends these back to sign-in. */
   get isUnauthenticated() {
     return this.status === 401 || this.status === 403;

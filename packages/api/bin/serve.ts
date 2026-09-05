@@ -84,6 +84,13 @@ const app = buildApi({
   db,
   tokenSecret,
   /**
+   * On unless `PLAYERONE_LOG=0`. A deployed server that logs nothing cannot be
+   * operated: until 2026-09-05 this process ran with the logger hard-coded
+   * off, so every 500 was `{"error":"internal"}` and nothing recorded what had
+   * thrown. Off remains the default inside `buildApi` for the test suite.
+   */
+  logger: env['PLAYERONE_LOG'] !== '0',
+  /**
    * The directory holding the imported `ego_*` session folders. Without it the
    * console runs and the stream route answers 503 saying why, which is the
    * right symptom for a machine that has not been pointed at its storage yet.

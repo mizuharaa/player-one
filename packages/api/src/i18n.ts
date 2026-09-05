@@ -1022,11 +1022,19 @@ const en = {
     'Zalo could not be reached, so no sign-in code was sent. Ask the collector to try again; if it keeps happening, the link to Zalo is down.',
   'bo.refused.zns_refused':
     'Zalo refused to send the code and gave a reason this server does not recognise. The reason is in the server log; ask the collector to try again while somebody reads it.',
+  /**
+   * Shown under a failed write that the server could not explain, next to the
+   * id it logged the failure against. The operator reads it out; whoever has
+   * the log finds the same id. Before this the body was `{"error":"internal"}`
+   * and there was nothing to quote.
+   */
+  'bo.error.reference': 'Reference:',
 } as const;
 
 export type MessageKey = keyof typeof en;
 
 const zh: Record<MessageKey, string> = {
+  'bo.error.reference': '编号：',
   'app.name': 'PlayerOne',
   'app.review': '审核',
   'app.signOut': '退出登录',
@@ -1768,6 +1776,7 @@ const zh: Record<MessageKey, string> = {
 };
 
 const vi: Record<MessageKey, string> = {
+  'bo.error.reference': 'Mã tham chiếu:',
   'app.name': 'PlayerOne',
   'app.review': 'Duyệt',
   'app.signOut': 'Đăng xuất',
