@@ -4,6 +4,7 @@ import {
   bigserial,
   boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -417,6 +418,27 @@ export const tasks = pgTable(
       mode: 'string',
     }),
     maxConcurrentClaimants: integer('max_concurrent_claimants').notNull().default(1),
+    /**
+     * BO-02, the commitment half: which weekly pledges this task offers, and
+     * over how many weeks. Operator-set, and an array rather than a min/max
+     * pair because "8 or 16 hours" is a choice an operator makes, not a range
+     * to interpolate — a collector picking 11 h/week from a 8..16 range is a
+     * number nobody offered.
+     *
+     * Both null together means this task asks for no commitment and a claim on
+     * it carries none; both set means a claim without a pledge is refused
+     * (`task_claims_commitment_required`, migration 0023). The CHECK below is
+     * what makes "is this a commitment task?" one question with one answer,
+     * rather than three half-configured states.
+     *
+     * NOT frozen on publish, unlike `unit_price`. The terms a collector pledged
+     * are COPIED onto their contract row at claim time, so editing these moves
+     * what the next claimant may choose and cannot rewrite what an existing one
+     * agreed to — which is the property `tasks_price_frozen` exists to buy for
+     * a column that is not copied.
+     */
+    commitmentHoursOptions: integer('commitment_hours_options').array(),
+    commitmentWeeks: integer('commitment_weeks'),
     status: text('status').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -439,6 +461,21 @@ export const tasks = pgTable(
      * lock `task_claims_guard` takes.
      */
     check('tasks_claimants_check', sql`${t.maxConcurrentClaimants} > 0`),
+    /** Terms are one configuration, so half of one is not a state that exists. */
+    check(
+      'tasks_commitment_terms_check',
+      sql`(${t.commitmentHoursOptions} is null) = (${t.commitmentWeeks} is null)`,
+    ),
+    check(
+      'tasks_commitment_shape_check',
+      sql`${t.commitmentHoursOptions} is null
+          or (array_length(${t.commitmentHoursOptions}, 1) >= 1
+              and 0 < all(${t.commitmentHoursOptions}))`,
+    ),
+    check(
+      'tasks_commitment_weeks_check',
+      sql`${t.commitmentWeeks} is null or ${t.commitmentWeeks} > 0`,
+    ),
   ],
 );
 
@@ -672,6 +709,175 @@ export const taskClaims = pgTable(
      */
     unique('task_claims_task_key').on(t.id, t.taskId),
     unique('task_claims_pairing_key').on(t.id, t.taskId, t.collectorId),
+  ],
+);
+
+/**
+ * APP-11 / BO-02: what a collector pledged when they claimed a task, and how
+ * that pledge ended.
+ *
+ * Claiming a task on this branch already existed. A commitment does not replace
+ * a claim — it rides on one, `claim_id` FK and all, so there is exactly one
+ * place that says who holds what and the contract cannot outlive it or name a
+ * different pairing than the claim does.
+ *
+ * **The terms are copied, never referenced.** `pledged_hours_per_week` and the
+ * `started_on`/`ends_on` window are written from `tasks.commitment_*` at the
+ * moment of the claim and are never read back from the task again. That is the
+ * same argument as `tasks_price_frozen`, arrived at from the other side: rather
+ * than freezing the task's terms, the contract takes a copy, so an operator may
+ * re-offer 12 h/week tomorrow without a single existing pledge changing shape.
+ * `task_commitments_terms_gate` (migration 0023) is what proves the copy was
+ * honest at the time it was taken.
+ *
+ * **Adherence is not here, deliberately.** Delivered minutes are a sum over
+ * settled reviews and change every time a reviewer commits a verdict; a column
+ * would be stale between those moments and there is no honest moment to refresh
+ * it. `commitment_delivered_minutes(uuid)` computes it, and the one place a
+ * number IS frozen is `commitment_events`, where it is a record of what was
+ * true when a human closed the contract.
+ *
+ * **Four states, three of them terminal.** `active -> completed | released |
+ * abandoned`, and nothing leaves a terminal state. A CHECK cannot say that,
+ * because a CHECK never sees the old value, so the transitions and their two
+ * timing rules live in `task_commitments_state_transition` in migration 0023:
+ * a collector may release only in the first quarter of the window, and neither
+ * completion nor abandonment can be declared before the window is over.
+ */
+export const taskCommitments = pgTable(
+  'task_commitments',
+  {
+    id: uuid('id').primaryKey(),
+    claimId: uuid('claim_id')
+      .notNull()
+      .references(() => taskClaims.id),
+    pledgedHoursPerWeek: integer('pledged_hours_per_week').notNull(),
+    /**
+     * `date`, not `timestamptz`, and both ends of the window. A pledge is
+     * "10 hours a week for 8 weeks" — a calendar object — and the delivered
+     * side is matched against the recording day in an episode's basename,
+     * which is the device's own local clock and carries no zone. Comparing two
+     * wall-clock calendars is honest; converting one of them to an instant
+     * would be precision on one side only, the same mistake the repo already
+     * refuses to make with a handover's `prepare_time`.
+     *
+     * Half-open, `[started_on, ends_on)`: the day the window ends is the first
+     * day outside it, so two consecutive contracts leave no gap and no overlap.
+     */
+    startedOn: date('started_on', { mode: 'string' }).notNull(),
+    endsOn: date('ends_on', { mode: 'string' }).notNull(),
+    state: text('state').notNull().default('active'),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    /**
+     * Why a human closed this. Required for `abandoned` by the CHECK below,
+     * because "materially nothing was delivered" is a judgement and a judgement
+     * with no sentence attached is not reviewable — the same rule
+     * `audit_events_manual_reason_check` puts on a manual resolution.
+     */
+    closeReason: text('close_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('task_commitments_claim_idx').on(t.claimId),
+    /**
+     * One ACTIVE contract per claim. Partial rather than plain unique, because
+     * a closed contract stays on the record — it is the evidence behind a
+     * reputation event — and the claim it hung on is still the same claim.
+     */
+    uniqueIndex('task_commitments_active_key')
+      .on(t.claimId)
+      .where(sql`${t.state} = 'active'`),
+    check(
+      'task_commitments_state_check',
+      sql`${t.state} in ('active', 'completed', 'released', 'abandoned')`,
+    ),
+    check('task_commitments_hours_check', sql`${t.pledgedHoursPerWeek} > 0`),
+    /**
+     * Whole weeks, so `(ends_on - started_on) / 7` is the pledged duration
+     * exactly and the pledged minutes a reputation event records are an exact
+     * numeric rather than a rounding.
+     */
+    check(
+      'task_commitments_whole_weeks_check',
+      sql`${t.endsOn} > ${t.startedOn} and (${t.endsOn} - ${t.startedOn}) % 7 = 0`,
+    ),
+    /** Closed is a moment; active is the absence of one. Both or neither. */
+    check(
+      'task_commitments_closed_at_check',
+      sql`(${t.state} = 'active') = (${t.closedAt} is null)`,
+    ),
+    check(
+      'task_commitments_abandon_reason_check',
+      sql`${t.state} <> 'abandoned' or ${t.closeReason} is not null`,
+    ),
+  ],
+);
+
+/**
+ * What the reputation engine reads. One row per contract, written the moment a
+ * human closes it, by `task_commitments_emit_event` in migration 0023 — a
+ * trigger and not route code, so a second writer that closes a contract with
+ * one UPDATE cannot close it silently.
+ *
+ * The two minute figures are SNAPSHOTS and that is the point of the table.
+ * Everywhere else in this repo a derivable number is computed on read; here it
+ * is frozen, because the question a reputation score answers is "what had this
+ * person delivered when the contract ended", and recomputing it next month
+ * gives a different answer as late verdicts land. A score recomputed from an
+ * event log has to be able to reproduce itself.
+ *
+ * `collector_id` is the one thing denormalised off the claim, because the
+ * engine groups by person and because a reputation event that cannot be read
+ * without three joins is a table people will copy instead of query. It cannot
+ * drift: `task_claims_identity_immutable` refuses to move a claim between
+ * collectors.
+ *
+ * ponytail: the [rep-engine] slice had not defined its own tables when this
+ * landed, so this is the minimum shape its `commitment_adherence` and
+ * `abandoned_commitment` inputs need (docs/reputation.md names them). If that
+ * branch ships a richer event table, this one folds into it — the trigger is
+ * the only writer and there is exactly one row per contract to migrate.
+ *
+ * ponytail: no append-only trigger. One row per contract is already enforced by
+ * `commitment_events_commitment_key` plus terminal contract states, so no
+ * legitimate path can write twice; add the `collector_agreements_append_only`
+ * shape here if scores must be provably recomputable from an untouched log.
+ */
+export const commitmentEvents = pgTable(
+  'commitment_events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    /** The state the contract closed into: completed, released or abandoned. */
+    event: text('event').notNull(),
+    commitmentId: uuid('commitment_id')
+      .notNull()
+      .references(() => taskCommitments.id),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    pledgedMinutes: numeric('pledged_minutes', {
+      precision: 20,
+      scale: 6,
+      mode: 'string',
+    }).notNull(),
+    deliveredMinutes: numeric('delivered_minutes', {
+      precision: 20,
+      scale: 6,
+      mode: 'string',
+    }).notNull(),
+  },
+  (t) => [
+    index('commitment_events_collector_idx').on(t.collectorId, t.occurredAt.desc()),
+    /** A contract closes once, so it is worth exactly one event. */
+    uniqueIndex('commitment_events_commitment_key').on(t.commitmentId),
+    check(
+      'commitment_events_event_check',
+      sql`${t.event} in ('completed', 'released', 'abandoned')`,
+    ),
+    check('commitment_events_pledged_check', sql`${t.pledgedMinutes} > 0`),
+    check('commitment_events_delivered_check', sql`${t.deliveredMinutes} >= 0`),
   ],
 );
 

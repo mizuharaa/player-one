@@ -1863,6 +1863,29 @@ describe.skipIf(!hasDb())('the back office', () => {
       // text of 0012 and 0016, which are applied migrations and are never
       // edited, and this scan reads every .sql file in the directory.
       'payout_attempts_total_fractional',
+      /**
+       * Commitment contracts (0023). No route writes `task_commitments` — the
+       * branch that brought the schema forward shipped no API — so every one of
+       * these is reachable from raw SQL only. `tasks_commitment_*` are the
+       * three CHECKs on the task's offered terms, which the back office cannot
+       * set yet either: `POST /api/tasks` and `PATCH /api/tasks/:id` do not
+       * accept the two columns. When the commitment routes land, the ones a
+       * person can trip — the pledge gate, the release window, the "close the
+       * contract before releasing the claim" rule — move to REFUSALS with
+       * sentences, and these stay.
+       */
+      'tasks_commitment_terms_check',
+      'tasks_commitment_shape_check',
+      'tasks_commitment_weeks_check',
+      'task_commitments_live_claim',
+      'task_commitments_task_has_no_terms',
+      'task_commitments_pledge_not_offered',
+      'task_commitments_duration_mismatch',
+      'task_commitments_state_transition',
+      'task_commitments_release_window',
+      'task_commitments_window_open',
+      'task_claims_commitment_required',
+      'task_claims_commitment_open',
     ]);
 
     for (const name of [...declared.map((d) => d.name), ...raised]) {
