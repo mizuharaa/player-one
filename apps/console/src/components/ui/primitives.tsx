@@ -7,6 +7,7 @@
  * product.
  */
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/cn.ts';
 import { IconAlert, IconPartial, IconPass, IconReject } from '../icons.tsx';
 import { Cu } from '../identity/Cu.tsx';
@@ -218,12 +219,20 @@ export function Problem({
   body,
   action,
   onStage = false,
+  reference,
 }: {
   title: string;
   body: string;
   action?: ReactNode;
   onStage?: boolean;
+  /**
+   * The server's id for this failure, from `ApiError.ref`. Shown small and
+   * selectable because its whole job is to be read out or pasted: it is the
+   * only thing that joins what the operator saw to the line in the log.
+   */
+  reference?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       className={cn(
@@ -253,6 +262,16 @@ export function Problem({
           >
             {body}
           </p>
+          {reference ? (
+            <p
+              className={cn(
+                'mt-2 font-mono text-[0.75rem] select-all',
+                onStage ? 'text-[var(--stage-mid)]' : 'text-[var(--muted-foreground)]',
+              )}
+            >
+              {t('bo.error.reference')} {reference}
+            </p>
+          ) : null}
           {action ? <div className="mt-3.5">{action}</div> : null}
         </div>
       </div>

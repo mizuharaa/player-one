@@ -234,6 +234,24 @@ export type ApiOptions = {
    */
   reviewerMediaEnabled?: boolean;
   /**
+   * Request and error logging, off by default.
+   *
+   * Off is right for the 1,300-test suite and for an embedded caller: a logger
+   * on by default writes a line per request into whatever is running the
+   * process, and in the suite that is a thousand files of noise nobody reads.
+   *
+   * On is right for every deployed server, and until 2026-09-05 no deployed
+   * server had it. `Fastify({ logger: false })` was hard-coded here, so the
+   * `req.log.error(err)` in the error handler below went nowhere: a 500 told
+   * the operator `{"error":"internal"}` and left no record anywhere of what
+   * actually threw. `bin/serve.ts` now passes `true` unless
+   * `PLAYERONE_LOG=0`.
+   *
+   * Anything Fastify's logger option accepts works here, so a deployment that
+   * wants a level or a destination can pass the object form.
+   */
+  logger?: boolean | Record<string, unknown>;
+  /**
    * How a collector's one-time sign-in code reaches their phone (APP-01).
    *
    * Absent here, and then `POST /auth/collector/request-code` answers 503 for
@@ -323,6 +341,7 @@ const canPresign = (s: ObjectStore): s is ObjectStore & DirectUploadStore =>
 export function buildApi({
   db,
   tokenSecret,
+  logger = false,
   toleranceMs = DEFAULT_TOLERANCE_MS,
   mediaRoot,
   currency,
@@ -364,7 +383,7 @@ export function buildApi({
         'with TLS terminated in front of this process)',
     );
   }
-  const app = Fastify({ logger: false });
+  const app = Fastify({ logger });
 
   /**
    * Every unhandled throw leaves through here, and the reason is one measured
@@ -412,8 +431,19 @@ export function buildApi({
      */
     const pg = (err.cause as { code?: string } | undefined)?.code ?? (err as { code?: string }).code;
     if (pg === '22P02') return reply.code(400).send({ error: 'malformed_id' });
-    req.log.error(err);
-    return reply.code(500).send({ error: 'internal' });
+    /**
+     * The body stays a constant — it must not echo the statement or its bound
+     * parameters, which is the leak this handler exists to stop — but it now
+     * carries Fastify's own request id, and the log line carries the same id.
+     *
+     * Without it the two halves could not be joined. An operator saw
+     * `{"error":"internal"}` with nothing to quote, and whoever read the log
+     * had no way to tell which of the day's 500s the operator meant. `ref` is
+     * a generated id and says nothing about the request, so it is safe to show
+     * a caller and worth reading out over a phone.
+     */
+    req.log.error({ err, ref: req.id, route: req.routeOptions?.url, method: req.method }, 'unhandled');
+    return reply.code(500).send({ error: 'internal', ref: req.id });
   });
 
   /** One shape for a route that does not exist, so a 404 body never varies. */
