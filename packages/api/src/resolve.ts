@@ -1,4 +1,5 @@
 import type { EpisodeRecord } from '@playerone/contracts';
+import { EARLIEST_PLAUSIBLE_START_MS } from '@playerone/contracts';
 
 /**
  * Which session an episode belongs to.
@@ -220,8 +221,14 @@ export type ResolverDefect = { code: 'SERIAL-CONFLICT' | 'SESSION-CONFLICT'; det
 /** 5 minutes. Only ever consulted for app-origin sessions — see below. */
 export const DEFAULT_TOLERANCE_MS = 5 * 60 * 1000;
 
-/** 2026-01-01T00:00:00Z, as epoch milliseconds. */
-export const DEFAULT_EARLIEST_PLAUSIBLE_START_MS = 1_767_225_600_000;
+/**
+ * 2026-01-01T00:00:00Z, as epoch milliseconds.
+ *
+ * Re-exported from `@playerone/contracts` rather than restated, because the
+ * ingest engine raises `DEVICE-CLOCK-UNSET` against the same floor and two
+ * copies of the number would drift. The value is unchanged.
+ */
+export const DEFAULT_EARLIEST_PLAUSIBLE_START_MS = EARLIEST_PLAUSIBLE_START_MS;
 /** 2100-01-01T00:00:00Z. The adapter should narrow this to `now + slack`. */
 export const DEFAULT_LATEST_PLAUSIBLE_START_MS = 4_102_444_800_000;
 
