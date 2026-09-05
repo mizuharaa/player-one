@@ -89,17 +89,44 @@ than prose ever did. `git ls-files packages/api/src`, and
 is the way it is, read the commit message — they are long here, and they say
 what was measured, what changed and what did not.
 
-**Where live state actually lives:** `CODEX_BRIDGE.md` at the repo root. That
-is the running ledger — the protocol, the findings per agent slug, and the
-`## Agent reports` log that each agent appends one line to when it finishes.
-It is about 350 KB, so do not read all of it: read `## Protocol`, the
-`[general]` and `[context-audit]` findings, and your own slug. Open questions
-and open review findings belong there, not here.
+**Where live state lives.** Two places, and neither is a ledger file. Facts
+about the tree come from Git, by the commands above. Facts about what the other
+agents are doing come from asking them, through Herdr.
+
+`CODEX_BRIDGE.md` is **retired as of 2026-09-04**. It reached 460 KB, every
+agent paid to read it, and it rotted between reads — the same failure as the
+status snapshot this file used to carry. The file may still be sitting in the
+working directory of a machine that used it; it is untracked
+(`.git/info/exclude`) and is now an archive. **Do not read it, do not write to
+it, and do not start another shared coordination ledger in its place.**
+
+That ban is on *ledgers* — long-lived files that several agents append to. It
+is not a ban on working documents: `PLAN.md` and `PLAN-REVIEW-LOG.md` are
+written by one author for one job, are excluded from Git, and are expected.
+
+Coordination happens through the terminal workspace instead. Herdr runs one
+pane per agent, and a read-only Codex auditor sits in its own pane with the
+repo as its working directory:
+
+```
+herdr agent list                                   # who is up, and in what state
+herdr agent prompt auditor "<question>" --wait
+herdr agent read auditor --source recent-unwrapped --lines 120
+```
+
+`--wait` waits for a settled lifecycle state, **not for your turn to finish**.
+If the agent was already working when you prompted it, the wait can be
+satisfied by the previous turn ending. Confirm from `agent read` that the reply
+you are looking at answers the question you asked.
+
+The auditor reads the working tree itself, so nothing has to be written down
+for it. Findings go straight into the work, or into a GitHub issue if they
+outlive the session (`docs/agents/issue-tracker.md`).
 
 Only two kinds of thing belong in this file: a decision that will still be true
-next month, and a trap that has already cost somebody a day. Both are below.
-If you catch yourself typing a number into this file, it belongs in
-`CODEX_BRIDGE.md` instead.
+next month, and a trap that has already cost somebody a day. A measurement that
+will be different next week belongs in Git or an issue — a figure quoted below
+is evidence for a trap, not a status.
 
 ## The review slice, now built
 
@@ -126,6 +153,59 @@ whichever first.
 The **SEC-06 disk-encryption decision** is
 `docs/adr/0004-sec06-is-disk-encryption-at-the-upload-centre.md`. Owner is
 Alois.
+
+## How we work. This is the protocol, not a suggestion.
+
+Settled 2026-09-04. Four rules, each of which exists because skipping it cost
+something. Rules 1 and 2 bind the orchestrating session (Claude Code, which is
+where `/claudex-loop` and `/grill-me` exist). Rules 3 and 4 bind every agent,
+whichever model it is.
+
+**1. Grill before building.** Anything that is not a typo goes through
+`/claudex-loop` (recon → interrogate → Codex plan review → build) or at minimum
+`/grill-me` first. Nothing high-stakes — schema, money, concurrency, auth,
+migrations — starts from a prompt alone. The plan lands in `PLAN.md`, the
+argument in `PLAN-REVIEW-LOG.md`; both are in `.git/info/exclude` and are
+working files, never committed.
+
+**2. Whoever made the thing never checks the thing.** The model that wrote a
+diff never reviews that diff. Both directions are used, and they are different
+sessions with different powers: `/codex-build` gives Codex write access to
+implement a frozen spec, and Claude then reviews the diff and runs the proof;
+the standing **auditor** pane is a separate, permanently read-only Codex
+session that reviews Claude's work and can never write. Read-only is a property
+of that pane, not of Codex.
+
+**3. An agent reports the numbers it measured itself.** A gate quoting the
+previous step's test counts has not run the gate. On 2026-08-27 one merge did
+exactly that and shipped 22 failing tests that surfaced two merges later, where
+another agent burned its budget diagnosing faults that were not its own. Say
+the pass/fail/skip you observed at *this* step, and name the database you
+observed it on.
+
+**4. Measure before asserting, including about your own change.** Diff old
+against new over the real corpus and report the actual delta. Claims retracted
+for want of this: a refactor that "fixed monotonicity" and was a semantic
+no-op; "a net deletion" on a file that grew 490 → 662 lines; a 237 MB/s ceiling
+from a cold-buffer benchmark that was really 520.
+
+### The bench
+
+| Role | Who | Where |
+| --- | --- | --- |
+| Orchestrate, spec, verify, merge, commit | Claude (Fable) | this pane |
+| Build under a frozen spec | Claude (Opus) subagents, one worktree each | `C:\Users\user\pw\<slug>` |
+| Build under a frozen spec, alternative | Codex via `/codex-build`, write access | a worktree, its own session |
+| Standing audit, adversarial review | Codex, **read-only, never writes** | its own Herdr pane, named `auditor` |
+
+**Codex never commits, in either mode.** Integration — merges, journal `when`
+re-stamping, full runs, PRs — stays Claude-side.
+
+**The auditor is a fallible reviewer, not an oracle.** Reproduce a finding
+before acting on it. On its first run against this section it raised eight
+findings: five were real and are fixed above, one was a timezone artefact (it
+reads UTC; we are UTC+7), and the rest were wording. That ratio is normal and
+is the reason the rule is "reproduce", not "obey".
 
 ## Decisions taken. Do not re-litigate these.
 
