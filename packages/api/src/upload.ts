@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
@@ -338,6 +338,47 @@ export function registerUpload(
               ),
             )
             .returning();
+          if (updated !== undefined && state === 'failed') {
+            // Policy B: park the debt and audit it atomically with the failed copy; payment stands.
+            const settlements = await tx
+              .select({ id: schema.settlements.id, state: schema.settlements.settlementState })
+              .from(schema.settlements)
+              .innerJoin(schema.episodeReviews, eq(schema.episodeReviews.id, schema.settlements.episodeReviewId))
+              .where(and(
+                eq(schema.episodeReviews.episodeId, row.episodeId),
+                inArray(schema.settlements.settlementState, ['pending_settlement', 'bill_generated', 'manually_paid']),
+              ))
+              .orderBy(schema.settlements.id)
+              .for('update', { of: schema.settlements });
+            for (const settlement of settlements) {
+              await mutate(tx, actor, {
+                action: 'settlement.exception',
+                targetTable: 'settlements',
+                targetId: settlement.id,
+                before: { settlement_state: settlement.state },
+                after: {
+                  settlement_state: 'exception',
+                  exception_from_state: settlement.state,
+                  exception_reason: 'cloud_verification_failed',
+                  exception_note: null,
+                },
+                reason: 'cloud_verification_failed',
+              }, async (settlementTx) => {
+                const [parked] = await settlementTx
+                  .update(schema.settlements)
+                  .set({
+                    settlementState: 'exception',
+                    exceptionFromState: settlement.state,
+                    exceptionReason: 'cloud_verification_failed',
+                    exceptionNote: null,
+                    updatedAt: new Date(),
+                  })
+                  .where(and(eq(schema.settlements.id, settlement.id), eq(schema.settlements.settlementState, settlement.state)))
+                  .returning({ id: schema.settlements.id });
+                return parked;
+              });
+            }
+          }
           return updated;
         },
       );

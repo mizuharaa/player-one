@@ -9,6 +9,8 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { contentFingerprint, deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential, objectKey, planOpenUploads, planParts, PART_SIZE, READBACK_STALLS, s3StoreFromEnv, transportInventory, uploadEpisode, type Mismatch, type ObjectStore, type PutResult } from '../src/index.ts';
 import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
+import { signToken } from '../src/credentials.ts';
+import { schema } from '@playerone/store';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('upload');
@@ -610,6 +612,126 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     )) as unknown as { action: string; n: string }[];
     expect(Number(audits.find((x) => x.action === 'episode.cloud_verify')?.n)).toBe(2);
     expect(Number(audits.find((x) => x.action === 'batch.cloud_verified')?.n)).toBe(2);
+  });
+
+  const period = { period_start: new Date(Date.now() - 86_400_000).toISOString() };
+
+  async function reviewedEpisode(h: Awaited<ReturnType<typeof harness>>, which: 'A' | 'B' = 'A') {
+    const episode = await h.submitEpisode(which);
+    const who = which === 'A' ? h.headersA : h.headersB;
+    const claim = await h.claim(who);
+    expect(claim.statusCode, claim.body).toBe(200);
+    expect(claim.json().episode_id).toBe(episode.episodeId);
+    const verdict = await h.send('POST', '/api/review/verdict', {
+      verdict_id: uid(), episode_id: episode.episodeId, decision: 'good', spans: [], reject_reasons: [],
+    }, who);
+    expect(verdict.statusCode, verdict.body).toBe(200);
+    const [settlement] = await h.d.select().from(schema.settlements)
+      .where(sql`episode_review_id in (select id from episode_reviews where episode_id = ${episode.episodeId})`);
+    expect(settlement!.settlementState).toBe('pending_settlement');
+    return { ...episode, settlement: settlement! };
+  }
+
+  async function mismatch(h: Awaited<ReturnType<typeof harness>>, episode: { episodeId: string; keys: string[] }) {
+    h.store.corruptOnPut.add(episode.keys[0]!);
+    const res = await h.upload(h.A.batch);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().episodes).toEqual([
+      expect.objectContaining({ episode_id: episode.episodeId, verification_state: 'failed', mismatches: [expect.any(Object)] }),
+    ]);
+    expect(await h.verificationOf(episode.episodeId)).toBe('failed');
+  }
+
+  it.each(['manually_paid', 'bill_generated'] as const)('4a: cloud failure parks %s and preserves the bill and payment', async (state) => {
+    const h = await harness({ verificationGate: 'local' });
+    try {
+      const episode = await reviewedEpisode(h);
+      const generated = await h.send('POST', '/api/settle/bills', period);
+      expect(generated.statusCode, generated.body).toBe(200);
+      const [bill] = await h.d.select().from(schema.bills);
+      expect(bill).toBeDefined();
+
+      if (state === 'manually_paid') {
+        const financeId = uid();
+        await h.d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role)
+          values (${financeId}, ${h.ids.centreA}, 'fin-cloud', 'finance')`);
+        await h.d.execute(sql`insert into payout_accounts
+          (id, collector_id, method, phone, declared_name, verified_name, m_u_id, verify_status, verified_at, is_current, created_by)
+          values (${uid()}, ${h.ids.collectorA}, 'WALLET', '0912345678', 'Nguyen Van A', 'NGUYEN VAN A',
+                  'mu-cloud', 'verified', now(), true, ${h.ids.operatorA})`);
+        const finance = {
+          ...h.headersA,
+          authorization: `Bearer ${signToken(SECRET, { kind: 'operator', operatorId: financeId, uploadCentreId: h.ids.centreA })}`,
+        };
+        const paid = await h.send('POST', `/api/payout/bills/${bill!.id}/mark-paid`, {
+          manual_reference: 'CLOUD-PAID-1', amount_vnd: 2000,
+        }, finance);
+        expect(paid.statusCode, paid.body).toBe(201);
+
+        const refused = await h.send('POST', `/api/settle/settlements/${episode.settlement.id}/exception`, { reason: 'duplicate', note: 'operator attempt on a paid settlement' });
+        expect(refused.statusCode, refused.body).toBe(409);
+        expect(refused.json().constraint).toBe('settlements_transition_check');
+        const reserved = await h.send('POST', `/api/settle/settlements/${episode.settlement.id}/exception`, { reason: 'cloud_verification_failed', note: 'a person must not be able to type this' });
+        expect(reserved.statusCode, reserved.body).toBe(400);
+      }
+
+      const billsBefore = await h.d.select().from(schema.bills);
+      const attemptsBefore = await h.d.select().from(schema.payoutAttempts);
+      if (state === 'manually_paid') expect(attemptsBefore).toEqual([expect.objectContaining({ mode: 'manual', status: 'succeeded' })]);
+      await mismatch(h, episode);
+      const [parked] = await h.d.select().from(schema.settlements);
+      expect(parked).toMatchObject({
+        id: episode.settlement.id, settlementState: 'exception', exceptionFromState: state,
+        exceptionReason: 'cloud_verification_failed', amount: episode.settlement.amount,
+      });
+      expect(await h.d.select().from(schema.bills)).toEqual(billsBefore);
+      expect(await h.d.select().from(schema.payoutAttempts)).toEqual(attemptsBefore);
+      const events = await h.d.select().from(schema.auditEvents).where(sql`action = 'settlement.exception'`);
+      expect(events).toEqual([expect.objectContaining({
+        targetId: episode.settlement.id, reason: 'cloud_verification_failed',
+        before: { settlement_state: state },
+        after: { settlement_state: 'exception', exception_from_state: state, exception_reason: 'cloud_verification_failed', exception_note: null },
+      })]);
+      if (state === 'manually_paid') {
+        const income = await h.send('GET', '/api/me/income', undefined, {
+          authorization: `Bearer ${signToken(SECRET, { kind: 'collector', collectorId: h.ids.collectorA, epoch: 1 })}`,
+        });
+        expect(income.statusCode, income.body).toBe(200);
+        expect(income.json().episodes).toEqual([expect.objectContaining({ episode_id: episode.episodeId, state: 'paid' })]);
+      }
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  it('4b: a reviewed then failed episode cannot acquire a bill line', async () => {
+    const h = await harness({ verificationGate: 'local' });
+    try {
+      const failed = await reviewedEpisode(h);
+      const other = await reviewedEpisode(h, 'B');
+      await mismatch(h, failed);
+      const generated = await h.send('POST', '/api/settle/bills', period);
+      expect(generated.statusCode, generated.body).toBe(200);
+      const lines = await h.d.select().from(schema.billLines);
+      expect(lines.map((line) => line.settlementId)).toEqual([other.settlement.id]);
+      const [parked] = await h.d.select().from(schema.settlements).where(sql`id = ${failed.settlement.id}`);
+      expect(parked).toMatchObject({ settlementState: 'exception', exceptionFromState: 'pending_settlement', exceptionReason: 'cloud_verification_failed' });
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  it('4c: an unreviewed mismatch touches no settlement and writes no settlement audit', async () => {
+    const h = await harness();
+    try {
+      const episode = await h.submitEpisode('A');
+      expect(await h.d.select().from(schema.episodeReviews)).toEqual([]);
+      await mismatch(h, episode);
+      expect(await h.d.select().from(schema.settlements)).toEqual([]);
+      expect(await h.d.select().from(schema.auditEvents).where(sql`action = 'settlement.exception'`)).toEqual([]);
+    } finally {
+      await h.app.close();
+    }
   });
 
   it('a corrupted upload is caught by read-back despite clean metadata, blocks review, and heals on re-upload', async () => {

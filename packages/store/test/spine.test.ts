@@ -489,6 +489,15 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       expect(await stateOf(settlementId)).toBe('manually_paid');
     });
 
+    it('4d: only cloud_verification_failed may park a manually paid settlement', async () => {
+      const ids = await seedSettlement();
+      await move(ids.settlementId, 'bill_generated');
+      await pay(ids);
+      await violates('settlements_transition_check', park(ids.settlementId, 'manually_paid', 'duplicate'));
+      await park(ids.settlementId, 'manually_paid', 'cloud_verification_failed');
+      expect(await stateOf(ids.settlementId)).toBe('exception');
+    });
+
     it('refuses manually_paid -> pending_review, which the state CHECK accepts', async () => {
       const ids = await seedSettlement();
       const { settlementId } = ids;

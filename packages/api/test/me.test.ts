@@ -124,6 +124,11 @@ describe('the state vocabulary', () => {
     expect(collectorStateOf({ ...base, billIssues: ['line_in_exception', 'account_unverified'] })).toBe('action_needed');
   });
 
+  it('4e: a parked settlement keeps paid only when a succeeded attempt proves payment', () => {
+    expect(collectorStateOf({ ...base, settlementState: 'exception', billPaid: true })).toBe('paid');
+    expect(collectorStateOf({ ...base, settlementState: 'exception', billPaid: false })).toBe('on_hold');
+  });
+
   it('paid beats everything', () => {
     expect(collectorStateOf({ ...base, billIssues: ['no_account'], billPaid: true })).toBe('paid');
     expect(collectorStateOf({ ...base, settlementState: 'manually_paid' })).toBe('paid');

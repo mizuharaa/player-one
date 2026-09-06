@@ -69,12 +69,8 @@ const db = await open(databaseUrl, { max: Number(env['PLAYERONE_DB_POOL'] ?? 10)
  */
 const objectStore = s3StoreFromEnv() ?? undefined;
 
-/**
- * Which integrity check QR-02's review gate reads. 'local' until a real cloud
- * endpoint is verifying uploads; setting 'cloud' is what retires ADR 0001
- * (docs/adr/0001-review-reads-local-verification.md).
- */
-const verificationGate = env['REVIEW_VERIFICATION_GATE'] ?? 'local';
+// QR-02: cloud verification by default; centres without a bucket may opt into 'local'.
+const verificationGate = env['REVIEW_VERIFICATION_GATE'] ?? 'cloud';
 if (verificationGate !== 'local' && verificationGate !== 'cloud') {
   console.error(`REVIEW_VERIFICATION_GATE must be 'local' or 'cloud', not '${verificationGate}'`);
   exit(2);

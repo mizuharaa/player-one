@@ -279,7 +279,7 @@ export function collectorStateOf(row: {
       return 'uploaded';
     case 'exception':
       // The reason is never read, never selected and never rendered.
-      return 'on_hold';
+      return row.billPaid ? 'paid' : 'on_hold';
     case 'manually_paid':
       return 'paid';
     case 'pending_settlement':

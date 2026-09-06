@@ -95,7 +95,7 @@ const attribution = (
  * entry. audit_events is a table §10.6 counts.
  */
 export async function mutate<T>(
-  db: Db,
+  db: Db | Tx,
   actor: AuditActor,
   /**
    * Either the event, or a function of what `write` returned.
