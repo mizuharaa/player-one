@@ -23,9 +23,10 @@ import { Button } from '../components/ui/button.tsx';
 import { Panel, Problem, Skeleton } from '../components/ui/primitives.tsx';
 import { IconAlert } from '../components/icons.tsx';
 import { cn } from '../lib/cn.ts';
-import type { AttemptStatus, PayoutIssue, PayoutMode, RiskBand, VerifyStatus } from '../lib/api.ts';
+import { ApiError, type AttemptStatus, type PayoutIssue, type PayoutMode, type RiskBand, type VerifyStatus } from '../lib/api.ts';
 import { bandLabel } from '../risk/sentences.ts';
 import { isPeriod } from './period.ts';
+import { refusalKey } from './refusals.ts';
 import { readOnlyReason, useFinanceRole } from './role.ts';
 
 export type SettleTab = 'bills' | 'preflight' | 'flags' | 'exceptions';
@@ -371,19 +372,20 @@ export function TableSkeleton() {
   );
 }
 
-export function LoadFailed() {
+export function LoadFailed({ error }: { error: unknown }) {
   const { t } = useTranslation();
-  return <Problem title={t('settle.loadFailed')} body={t('settle.loadFailed.body')} />;
+  return <Problem title={t('settle.loadFailed')} body={t('settle.loadFailed.body')} reference={error instanceof ApiError ? error.ref : undefined} />;
 }
 
-export function RefusedBanner({ refusedKey, onDismiss }: { refusedKey: string | null; onDismiss: () => void }) {
+export function RefusedBanner({ error, onDismiss }: { error: unknown; onDismiss: () => void }) {
   const { t } = useTranslation();
-  if (refusedKey === null) return null;
+  if (error === null) return null;
   return (
     <div className="mb-5">
       <Problem
         title={t('bo.refused')}
-        body={t(refusedKey)}
+        body={t(refusalKey(error))}
+        reference={error instanceof ApiError ? error.ref : undefined}
         action={
           <Button variant="outline" size="sm" onClick={onDismiss}>
             {t('bo.cancel')}

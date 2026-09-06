@@ -34,7 +34,7 @@ import { RiskEngine } from '../src/risk/engine.ts';
  * absent, and the run says so on its summary instead of failing.
  *
  * Exit status is the answer, so cron can read it: 0 clean, 1 the diff raised
- * findings, 2 it could not be asked.
+ * findings or still has unresolved findings, 2 it could not be asked.
  */
 
 const env = process.env;
@@ -92,7 +92,7 @@ try {
   const diff = await shadowDiff(db, first!);
   console.log(JSON.stringify(diff, null, 2));
   await db.close();
-  exit(diff.raised === 0 ? 0 : 1);
+  exit(diff.raised + diff.still_open > 0 ? 1 : 0);
 } catch (err) {
   console.error(`payout-shadow: ${(err as Error).message}`);
   await db?.close();

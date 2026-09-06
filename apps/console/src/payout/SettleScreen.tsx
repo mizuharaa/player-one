@@ -44,7 +44,6 @@ import {
   Td,
   Th,
 } from './pieces.tsx';
-import { refusalKey } from './refusals.ts';
 import { readOnlyReason, useFinanceRole } from './role.ts';
 
 type Row = { bill: PayoutBill; income: IncomePeriod | null };
@@ -62,7 +61,7 @@ export function SettleScreen() {
   const { t, i18n } = useTranslation();
   const { period } = useSearch({ strict: false }) as { period: string };
   const client = useQueryClient();
-  const [refused, setRefused] = useState<string | null>(null);
+  const [refused, setRefused] = useState<unknown>(null);
   const [sorting, setSorting] = useState<SortingState>([{ id: 'collector', desc: false }]);
   const { role } = useFinanceRole();
   const readOnly = readOnlyReason(role);
@@ -88,7 +87,7 @@ export function SettleScreen() {
       void client.invalidateQueries({ queryKey: keys.preflight(period) });
       for (const id of collectors) void client.invalidateQueries({ queryKey: keys.income(id) });
     },
-    onError: (err) => setRefused(refusalKey(err)),
+    onError: (err) => setRefused(err),
   });
 
   const columns = useMemo(
@@ -169,7 +168,7 @@ export function SettleScreen() {
 
   return (
     <SettleShell period={period} tab="bills" mode={batch.data?.mode}>
-      <RefusedBanner refusedKey={refused} onDismiss={() => setRefused(null)} />
+      <RefusedBanner error={refused} onDismiss={() => setRefused(null)} />
 
       <div className="mb-4 flex flex-wrap items-start gap-3">
         <div>
@@ -231,7 +230,7 @@ export function SettleScreen() {
       </div>
 
       {batch.error ? (
-        <LoadFailed />
+        <LoadFailed error={batch.error} />
       ) : batch.isPending ? (
         <TableSkeleton />
       ) : rows.length === 0 ? (

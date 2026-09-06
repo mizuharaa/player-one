@@ -30,7 +30,7 @@ import { Link, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button.tsx';
 import { Panel, Problem } from '../components/ui/primitives.tsx';
-import { payout, type BatchRun, type PayoutBill, type RiskBand } from '../lib/api.ts';
+import { ApiError, payout, type BatchRun, type PayoutBill, type RiskBand } from '../lib/api.ts';
 import { RiskBlock } from '../risk/pieces.tsx';
 import { count, vnd, when } from './format.ts';
 import { batchFingerprint, gateReasonKey, preflightGate, PREFLIGHT_WINDOW_MS, type GateState, type PreflightSnapshot } from './gate.ts';
@@ -99,7 +99,7 @@ export function PreflightScreen() {
   if (pre.error || batch.error) {
     return (
       <SettleShell period={period} tab="preflight" mode={mode}>
-        <LoadFailed />
+        <LoadFailed error={pre.error ?? batch.error} />
       </SettleShell>
     );
   }
@@ -293,18 +293,18 @@ function ApiBatch({ snapshot: p, fetchedAt, bills, period }: { snapshot: Preflig
   const gate = preflightGate({ snapshot: p, fetchedAt, batchFingerprint: batchFingerprint(bills), now });
   const [typed, setTyped] = useState('');
   const [notOnServer, setNotOnServer] = useState(false);
-  const [refusedKey, setRefusedKey] = useState<string | null>(null);
+  const [refused, setRefused] = useState<unknown>(null);
 
   const run = useMutation({
     mutationFn: () => payout.runBatch(period),
     onSuccess: () => {
-      setRefusedKey(null);
+      setRefused(null);
       void client.invalidateQueries({ queryKey: keys.batch(period) });
       void client.invalidateQueries({ queryKey: keys.preflight(period) });
     },
     onError: (err) => {
       if (isNotOnServer(err)) setNotOnServer(true);
-      else setRefusedKey(refusalKey(err));
+      else setRefused(err);
     },
   });
 
@@ -364,9 +364,9 @@ function ApiBatch({ snapshot: p, fetchedAt, bills, period }: { snapshot: Preflig
           </form>
         )}
 
-        {refusedKey ? (
+        {refused !== null ? (
           <div className="mt-4">
-            <Problem title={t('bo.refused')} body={t(refusedKey)} />
+            <Problem title={t('bo.refused')} body={t(refusalKey(refused))} reference={refused instanceof ApiError ? refused.ref : undefined} />
           </div>
         ) : null}
 

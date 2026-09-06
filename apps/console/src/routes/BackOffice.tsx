@@ -60,7 +60,7 @@ const refusalKey = (error: unknown): string => {
 export function BackOfficeScreen() {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('tasks');
-  const [refused, setRefused] = useState<string | null>(null);
+  const [refused, setRefused] = useState<unknown>(null);
 
   return (
     <AppShell>
@@ -97,11 +97,12 @@ export function BackOfficeScreen() {
         ))}
       </div>
 
-      {refused ? (
+      {refused !== null ? (
         <div className="mt-5">
           <Problem
             title={t('bo.refused')}
-            body={t(refused)}
+            body={t(refusalKey(refused))}
+            reference={refused instanceof ApiError ? refused.ref : undefined}
             action={
               <Button variant="outline" size="sm" onClick={() => setRefused(null)}>
                 {t('bo.cancel')}
@@ -124,7 +125,7 @@ export function BackOfficeScreen() {
    Tasks (BO-01, BO-02)
    ---------------------------------------------------------------------- */
 
-function Tasks({ onRefused }: { onRefused: (key: string | null) => void }) {
+function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
   const { t } = useTranslation();
   const client = useQueryClient();
   const [creating, setCreating] = useState(false);
@@ -145,7 +146,7 @@ function Tasks({ onRefused }: { onRefused: (key: string | null) => void }) {
     onRefused(null);
     void client.invalidateQueries({ queryKey: ['bo', 'tasks'] });
   };
-  const failed = (err: unknown) => onRefused(refusalKey(err));
+  const failed = (err: unknown) => onRefused(err);
 
   const publish = useMutation({
     mutationFn: ({ id, status }: { id: string; status: BoTask['status'] }) =>
@@ -190,7 +191,7 @@ function Tasks({ onRefused }: { onRefused: (key: string | null) => void }) {
     setCreating(!creating);
   };
 
-  if (error) return <LoadFailed />;
+  if (error) return <LoadFailed error={error} />;
   if (isPending) return <TableSkeleton />;
 
   const tasks = data?.tasks ?? [];
@@ -395,7 +396,7 @@ function Tasks({ onRefused }: { onRefused: (key: string | null) => void }) {
    Collectors (BO-03, APP-02/04/05, PRV-01)
    ---------------------------------------------------------------------- */
 
-function Collectors({ onRefused }: { onRefused: (key: string | null) => void }) {
+function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
   const { t } = useTranslation();
   const client = useQueryClient();
   const [creating, setCreating] = useState(false);
@@ -413,7 +414,7 @@ function Collectors({ onRefused }: { onRefused: (key: string | null) => void }) 
     onRefused(null);
     void client.invalidateQueries({ queryKey: ['bo', 'collectors'] });
   };
-  const failed = (err: unknown) => onRefused(refusalKey(err));
+  const failed = (err: unknown) => onRefused(err);
 
   const update = useMutation({
     mutationFn: ({ id, ...body }: { id: string } & Parameters<typeof backOffice.setCollector>[1]) =>
@@ -467,7 +468,7 @@ function Collectors({ onRefused }: { onRefused: (key: string | null) => void }) 
     setCreating(!creating);
   };
 
-  if (error) return <LoadFailed />;
+  if (error) return <LoadFailed error={error} />;
   if (isPending) return <TableSkeleton />;
 
   const collectors = data?.collectors ?? [];
@@ -852,7 +853,7 @@ function PayoutDeclaration({
    Devices (BO-04, SEC-04)
    ---------------------------------------------------------------------- */
 
-function Devices({ onRefused }: { onRefused: (key: string | null) => void }) {
+function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
   const { t } = useTranslation();
   const client = useQueryClient();
   const [creating, setCreating] = useState(false);
@@ -867,7 +868,7 @@ function Devices({ onRefused }: { onRefused: (key: string | null) => void }) {
     onRefused(null);
     void client.invalidateQueries({ queryKey: ['bo', 'devices'] });
   };
-  const failed = (err: unknown) => onRefused(refusalKey(err));
+  const failed = (err: unknown) => onRefused(err);
 
   const bind = useMutation({
     mutationFn: ({ id, collectorId }: { id: string; collectorId: string }) =>
@@ -910,7 +911,7 @@ function Devices({ onRefused }: { onRefused: (key: string | null) => void }) {
     setCreating(!creating);
   };
 
-  if (devices.error) return <LoadFailed />;
+  if (devices.error) return <LoadFailed error={devices.error} />;
   if (devices.isPending) return <TableSkeleton />;
 
   const rows = devices.data?.devices ?? [];
@@ -936,7 +937,7 @@ function Devices({ onRefused }: { onRefused: (key: string | null) => void }) {
       */}
       {collectors.error ? (
         <div className="mb-4">
-          <Problem title={t('bo.loadFailed')} body={t('bo.device.rollFailed')} />
+          <Problem title={t('bo.loadFailed')} body={t('bo.device.rollFailed')} reference={collectors.error instanceof ApiError ? collectors.error.ref : undefined} />
         </div>
       ) : null}
 
@@ -1212,7 +1213,7 @@ function TableSkeleton() {
   );
 }
 
-function LoadFailed() {
+function LoadFailed({ error }: { error: unknown }) {
   const { t } = useTranslation();
-  return <Problem title={t('bo.loadFailed')} body={t('bo.loadFailed.body')} />;
+  return <Problem title={t('bo.loadFailed')} body={t('bo.loadFailed.body')} reference={error instanceof ApiError ? error.ref : undefined} />;
 }

@@ -209,6 +209,14 @@ is the reason the rule is "reproduce", not "obey".
 
 ## Decisions taken. Do not re-litigate these.
 
+- **A payment made before the cloud copy failed verification stands.** Daniel,
+  2026-09-06, choosing option B of three. The reviewer judged real footage and
+  the collector did the work; the bad copy is the platform's problem. The
+  settlement moves to `exception` so finance can see every payment whose
+  footage is not yet safely in the cloud, and the card — never cleared — is
+  re-uploaded. Never a clawback. This was the one thing blocking
+  `REVIEW_VERIFICATION_GATE=cloud` (ADR 0001, exit condition 2).
+
 - **The episode id is derived from the directory basename only**, never from
   content. A content-derived id changes when bytes change, which makes
   corruption look like a new episode and silences `CHECKSUM-MISMATCH`. The
@@ -340,6 +348,11 @@ is the reason the rule is "reproduce", not "obey".
   for an agent — and it holds decisions and traps only, never status.
 
 ## Traps that have already cost time
+
+- **`herdr agent prompt` under Codex's bracketed-paste lands as a chip, not a
+  submission.** The pane shows `[Pasted Content N chars]` and sits idle; `--wait`
+  returns at once because nothing started. Send `herdr agent send-keys <agent>
+  enter` afterwards. Cost a round-trip on 2026-09-06.
 
 - **The corpus is per machine, and a degraded copy once produced green runs.**
   The five real sessions live in `docs/sample_data/` (gitignored) on the org

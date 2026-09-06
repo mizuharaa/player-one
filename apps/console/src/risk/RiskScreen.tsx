@@ -22,7 +22,7 @@ import { Link, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button.tsx';
 import { EmptyState, Panel, Problem } from '../components/ui/primitives.tsx';
-import { payout, risk, type ClearVerdict, type PayoutBill } from '../lib/api.ts';
+import { ApiError, payout, risk, type ClearVerdict, type PayoutBill } from '../lib/api.ts';
 import { count, vnd, when } from '../payout/format.ts';
 import { keys } from '../payout/period.ts';
 import {
@@ -36,7 +36,7 @@ import {
   SettleShell,
   TableSkeleton,
 } from '../payout/pieces.tsx';
-import { isNotOnServer, refusalKey } from '../payout/refusals.ts';
+import { isNotOnServer } from '../payout/refusals.ts';
 import { readOnlyReason, useFinanceRole } from '../payout/role.ts';
 import { FlagCard } from './pieces.tsx';
 
@@ -48,7 +48,7 @@ export function RiskScreen() {
   const search = useSearch({ strict: false }) as { period: string; bill?: string };
   const period = search.period;
   const [open, setOpen] = useState<string | null>(search.bill ?? null);
-  const [refused, setRefused] = useState<string | null>(null);
+  const [refused, setRefused] = useState<unknown>(null);
   const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period) });
 
   const ranked = [...(batch.data?.bills ?? [])].sort((a, b) => b.risk.score - a.risk.score);
@@ -57,10 +57,10 @@ export function RiskScreen() {
   return (
     <SettleShell period={period} tab="flags" mode={batch.data?.mode}>
       <p className="mb-4 max-w-[62ch] text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">{t('risk.intro')}</p>
-      <RefusedBanner refusedKey={refused} onDismiss={() => setRefused(null)} />
+      <RefusedBanner error={refused} onDismiss={() => setRefused(null)} />
 
       {batch.error ? (
-        <LoadFailed />
+        <LoadFailed error={batch.error} />
       ) : batch.isPending ? (
         <TableSkeleton />
       ) : flagged.length === 0 ? (
@@ -92,7 +92,7 @@ export function RiskScreen() {
   );
 }
 
-function Detail({ bill, period, onRefused }: { bill: PayoutBill; period: string; onRefused: (k: string | null) => void }) {
+function Detail({ bill, period, onRefused }: { bill: PayoutBill; period: string; onRefused: (error: unknown) => void }) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
   const client = useQueryClient();
@@ -110,7 +110,7 @@ function Detail({ bill, period, onRefused }: { bill: PayoutBill; period: string;
       void client.invalidateQueries({ queryKey: keys.batch(period) });
       void client.invalidateQueries({ queryKey: keys.preflight(period) });
     },
-    onError: (err) => onRefused(refusalKey(err)),
+    onError: (err) => onRefused(err),
   });
 
   const notOnServer = holds.error !== null && isNotOnServer(holds.error);
@@ -142,7 +142,7 @@ function Detail({ bill, period, onRefused }: { bill: PayoutBill; period: string;
           ) : notOnServer ? (
             <p className="text-[0.875rem] leading-relaxed text-[var(--muted-foreground)]">{t('risk.holds.notOnServer')}</p>
           ) : holds.error ? (
-            <Problem title={t('settle.loadFailed')} body={t('settle.loadFailed.body')} />
+            <Problem title={t('settle.loadFailed')} body={t('settle.loadFailed.body')} reference={holds.error instanceof ApiError ? holds.error.ref : undefined} />
           ) : holds.data === null || holds.data.history.length === 0 ? (
             <p className="text-[0.875rem] text-[var(--muted-foreground)]">{t('risk.holds.none')}</p>
           ) : (

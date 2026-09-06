@@ -126,6 +126,7 @@ export type ShadowDiff = {
   raised: number;
   still_open: number;
   findings_by_kind: Record<string, number>;
+  findings: { bill_id: string; kind: Finding['kind']; still_open: boolean }[];
 };
 
 /** Reads the intention a `shadowRun` stored, the ledger as it stands now, and writes the diff as its own run. */
@@ -153,10 +154,11 @@ export async function shadowDiff(db: Db, shadowRunId: string, options: { now?: D
   const findings = diffShadow(intended, actual);
   const period = { start: new Date(run.period_start), end: new Date(run.period_end) };
   const runId = await startRun(db, 'shadow_diff', period, now);
-  const result: ShadowDiff = { runId, shadowRunId, bills: intended.length, agreed: intended.length - findings.length, raised: 0, still_open: 0, findings_by_kind: {} };
+  const result: ShadowDiff = { runId, shadowRunId, bills: intended.length, agreed: intended.length - findings.length, raised: 0, still_open: 0, findings_by_kind: {}, findings: [] };
   await db.transaction(async (tx) => {
     for (const f of findings) {
       const id = await writeLine(tx, runId, f, now);
+      result.findings.push({ bill_id: f.billId!, kind: f.kind, still_open: id === null });
       if (id === null) result.still_open += 1;
       else {
         result.raised += 1;

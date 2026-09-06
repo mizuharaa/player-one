@@ -1886,6 +1886,10 @@ describe.skipIf(!hasDb())('the back office', () => {
       'task_commitments_window_open',
       'task_claims_commitment_required',
       'task_claims_commitment_open',
+      // 0024 closes the raw-SQL bypasses on the same tables; same reason, no route yet.
+      'task_commitments_terms_immutable',
+      'task_commitments_insert_active',
+      'task_commitments_no_delete',
     ]);
 
     for (const name of [...declared.map((d) => d.name), ...raised]) {

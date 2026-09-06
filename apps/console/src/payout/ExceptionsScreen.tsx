@@ -30,7 +30,6 @@ import {
   SettleShell,
   TableSkeleton,
 } from './pieces.tsx';
-import { refusalKey } from './refusals.ts';
 import { readOnlyReason, useFinanceRole } from './role.ts';
 
 const POLLING = new Set(['submitted', 'processing', 'unknown']);
@@ -60,7 +59,7 @@ export function ExceptionsScreen() {
    * exceptions would count as having read the preflight.
    */
   const pre = useQuery({ queryKey: ['payout', 'limits', period], queryFn: () => payout.preflight(period), staleTime: 5 * 60_000 });
-  const [refused, setRefused] = useState<string | null>(null);
+  const [refused, setRefused] = useState<unknown>(null);
 
   const bills = batch.data?.bills ?? [];
   const pending = bills.filter((b) => b.attempt?.status === 'pending_zlp');
@@ -74,10 +73,10 @@ export function ExceptionsScreen() {
   return (
     <SettleShell period={period} tab="exceptions" mode={batch.data?.mode}>
       <p className="mb-4 max-w-[62ch] text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">{t('settle.exceptions.intro')}</p>
-      <RefusedBanner refusedKey={refused} onDismiss={() => setRefused(null)} />
+      <RefusedBanner error={refused} onDismiss={() => setRefused(null)} />
 
       {batch.error ? (
-        <LoadFailed />
+        <LoadFailed error={batch.error} />
       ) : batch.isPending ? (
         <TableSkeleton />
       ) : total === 0 ? (
@@ -177,7 +176,7 @@ function AttemptRow({
   period: string;
   resolvable: boolean;
   onlyFailed?: boolean;
-  onRefused: (key: string | null) => void;
+  onRefused: (error: unknown) => void;
 }) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
@@ -209,7 +208,7 @@ function AttemptRow({
       void client.invalidateQueries({ queryKey: keys.preflight(period) });
       void client.invalidateQueries({ queryKey: keys.attempt(attempt.id) });
     },
-    onError: (err) => onRefused(refusalKey(err)),
+    onError: (err) => onRefused(err),
   });
 
   const inert = readOnly !== null ? t(readOnly) : !resolvable ? t('settle.resolve.pollerWorking') : null;

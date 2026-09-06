@@ -1,6 +1,7 @@
 /**
- * Throwaway measurement harness for the cloud upload leg at pilot scale.
- * Not part of the product; not committed. Run with `node`.
+ * Measurement harness for the cloud upload leg at pilot scale.
+ * Kept so the numbers can be re-measured against GreenNode HCM04 now that
+ * keys exist. Not part of the product. Run with `node`.
  */
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream, statSync } from 'node:fs';

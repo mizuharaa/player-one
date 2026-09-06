@@ -585,6 +585,11 @@ const en = {
     'That verdict is itself a second review, and a second review is final.',
   'bo.refused.review_disputes_unbilled_check':
     'That verdict is already on a bill or paid, and a bill is never revised.',
+  'bo.refused.tasks_commitment_shape_check': 'Commitment hours must be a non-empty list of positive hours with no missing values.',
+  'bo.refused.task_commitments_abandon_reason_check': 'Give a non-blank reason for abandoning the commitment.',
+  'bo.refused.task_commitments_terms_immutable': 'The claim, weekly hours and dates agreed on a commitment cannot be changed.',
+  'bo.refused.task_commitments_insert_active': 'A commitment must start active; close it afterwards to record the outcome.',
+  'bo.refused.task_commitments_no_delete': 'Commitment records cannot be deleted. Close the commitment instead.',
   'bo.refused.unknown': 'The server refused that change.',
   'bo.refused.settlements_not_in_exception': 'That settlement is not in exception, so there is nothing to release.',
   'bo.refused.settle_export_bill_in_exception':
@@ -1416,6 +1421,11 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.review_disputes_decided_check': '该审核尚未给出结果，无可申诉的内容。',
   'bo.refused.review_disputes_final_check': '该结果本身已是复审结果，复审为最终结论。',
   'bo.refused.review_disputes_unbilled_check': '该结果已生成账单或已支付，账单不可修改。',
+  'bo.refused.tasks_commitment_shape_check': '承诺时数必须为非空列表，所有时数均须大于零且不得缺失。',
+  'bo.refused.task_commitments_abandon_reason_check': '放弃承诺时必须填写非空白原因。',
+  'bo.refused.task_commitments_terms_immutable': '承诺约定的任务认领、每周时数和日期不能更改。',
+  'bo.refused.task_commitments_insert_active': '承诺必须以进行中状态建立，再通过关闭操作记录结果。',
+  'bo.refused.task_commitments_no_delete': '承诺记录不能删除，请关闭该承诺。',
   'bo.refused.unknown': '服务端拒绝了该操作。',
   'bo.refused.settlements_not_in_exception': '该结算记录不在异常状态，无需释放。',
   'bo.refused.settle_export_bill_in_exception':
@@ -2198,6 +2208,11 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.session_id_reused':
     'Mã đó đã thuộc về một phiên thu thập khác. Hãy tạo lại phiên.',
 
+  'bo.refused.tasks_commitment_shape_check': 'Danh sách số giờ cam kết phải có ít nhất một giá trị, tất cả đều lớn hơn không và không được để trống.',
+  'bo.refused.task_commitments_abandon_reason_check': 'Hãy nhập lý do không để trống khi từ bỏ cam kết.',
+  'bo.refused.task_commitments_terms_immutable': 'Không thể thay đổi lượt nhận nhiệm vụ, số giờ mỗi tuần và ngày đã thỏa thuận trong cam kết.',
+  'bo.refused.task_commitments_insert_active': 'Cam kết phải bắt đầu ở trạng thái đang thực hiện; sau đó đóng cam kết để ghi nhận kết quả.',
+  'bo.refused.task_commitments_no_delete': 'Không thể xóa hồ sơ cam kết. Hãy đóng cam kết.',
   'bo.refused.unknown': 'Máy chủ đã từ chối thay đổi đó.',
 
   'theme.toggle': 'Giao diện',

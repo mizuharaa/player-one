@@ -247,10 +247,9 @@ export type ApiOptions = {
    * actually threw. `bin/serve.ts` now passes `true` unless
    * `PLAYERONE_LOG=0`.
    *
-   * Anything Fastify's logger option accepts works here, so a deployment that
-   * wants a level or a destination can pass the object form.
+   * The switch is boolean, matching the environment flag the server passes.
    */
-  logger?: boolean | Record<string, unknown>;
+  logger?: boolean;
   /**
    * How a collector's one-time sign-in code reaches their phone (APP-01).
    *

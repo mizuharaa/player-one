@@ -89,7 +89,7 @@ describe.skipIf(!hasDb())('bin/payout-shadow.ts', () => {
   it('exits 1 and names the bill when the cycle was not paid as the rail intended', async () => {
     const d = await db();
     const ids = await seedPayout(d);
-    const { bill1 } = await seedBills(d, ids);
+    const { bill1, bill2 } = await seedBills(d, ids);
     const account1 = await seedAccount(d, ids, 1);
     await seedAccount(d, ids, 2);
 
@@ -105,6 +105,27 @@ describe.skipIf(!hasDb())('bin/payout-shadow.ts', () => {
     const diff = shadow(['diff', runId]);
     expect(diff.status, diff.out).toBe(1);
     expect(JSON.parse(diff.out)).toMatchObject({ bills: 2, agreed: 1, raised: 1, findings_by_kind: { SHADOW_UNPAID: 1 } });
+    expect(JSON.parse(diff.out).findings).toEqual([{ bill_id: bill2, kind: 'SHADOW_UNPAID', still_open: false }]);
+  });
+
+  it('still exits 1 and names unresolved bills when a repeated diff raises nothing new', async () => {
+    const d = await db();
+    const ids = await seedPayout(d);
+    const { bill1, bill2 } = await seedBills(d, ids);
+    await seedAccount(d, ids, 1);
+    await seedAccount(d, ids, 2);
+    const run = shadow(['run', iso(P1.start), iso(P1.end)]);
+    expect(run.status, run.out).toBe(0);
+    const { runId } = JSON.parse(run.out) as { runId: string };
+    expect(shadow(['diff', runId]).status).toBe(1);
+
+    const repeated = shadow(['diff', runId]);
+    expect(repeated.status, repeated.out).toBe(1);
+    expect(JSON.parse(repeated.out)).toMatchObject({ raised: 0, still_open: 2 });
+    expect(JSON.parse(repeated.out).findings).toEqual(expect.arrayContaining([
+      { bill_id: bill1, kind: 'SHADOW_UNPAID', still_open: true },
+      { bill_id: bill2, kind: 'SHADOW_UNPAID', still_open: true },
+    ]));
   });
 
   it('refuses what it cannot be asked, and never with a zero status', () => {

@@ -65,6 +65,7 @@ export function HomeScreen() {
     >
       {error ? (
         <Problem
+          reference={error instanceof ApiError ? error.ref : undefined}
           title="The shift figures did not load."
           body="Everything else on this screen still works. The counters come from the review database; if this keeps happening, the API cannot reach Postgres."
         />

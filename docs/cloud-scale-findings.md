@@ -28,7 +28,8 @@ is no network at all. Each 64 MiB part took 2.34 s and the next did not start
 until it finished. Read-back over the same link ran at **62.8 MB/s** — more
 than twice as fast — because a download streams continuously.
 
-GreenNode sells us 10 Gbps shared. At 28.6 MB/s we would use **0.23%** of it.
+GreenNode sells us 10 Gbps shared. At 28.6 MB/s we would use **2.29%** of it
+(10 Gbps is 1250 MB/s), leaving 97.71% headroom at the measured serial rate.
 The pipe is not the constraint and buying more of it would change nothing.
 
 Scale: 40,000 hours is roughly 560 TB, which at this rate is about **227 days**
@@ -59,19 +60,27 @@ needs. Wire overhead on the upload was **0.25%** (6,846.18 MB sent for
 
 ## What this costs per session, end to end
 
-One hourly camera file: 44 s hashing at import, 238 s upload, 109 s
-verification — **5.8 minutes**, and **2.004× the payload in traffic**
+One hourly camera file: 44.0 s hashing at import, 238.4 s upload, 108.8 s
+verification — 391.2 s, or **6.5 minutes**, and **2.004× the payload in traffic**
 (13,683 MB moved for 6,829 MB stored). A two-camera hourly session is roughly
-**12 minutes of pipeline time** before a reviewer can start.
+**13 minutes of pipeline time** before a reviewer can start.
 
 That 2× figure is the one to put in front of GreenNode when asking about
 egress: verification re-reads every byte by design, because their suggested
 "read the hash back from object metadata" returns the hash we sent rather than
 a hash of the bytes they stored, and proves nothing.
 
+## GreenNode answers — 2026-09-06
+
+International egress is a self-service dedicated package at 200 or 500 Mbps.
+The 500 Mbps package is 75,000,000 VND/month at −50%.
+
+The vServer↔vStorage internal link is 1 Gbps. Our measured serial upload uses
+~229 Mbps of it (22.9%), leaving 771 Mbps (77.1%) headroom.
+
 ## What was NOT tested
 
-- **GreenNode itself.** No S3 credentials exist yet. Everything here is MinIO
+- **GreenNode itself.** S3 keys now exist for HCM04. Everything measured here is MinIO
   on loopback, which flatters latency and says nothing about their throttling,
   their 200 PUT/s and 500 GET/s per-IP limits, or real internet loss.
 - **Concurrency.** The serial ceiling is measured; no concurrent variant was

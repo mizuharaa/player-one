@@ -42,7 +42,7 @@ import {
 } from './pieces.tsx';
 import { gateReasonKey, type GateState } from './gate.ts';
 import { useGate } from './PreflightScreen.tsx';
-import { refusalKey, settlementStateKey } from './refusals.ts';
+import { settlementStateKey } from './refusals.ts';
 import { readOnlyReason, useFinanceRole } from './role.ts';
 
 export function BillScreen() {
@@ -63,7 +63,7 @@ export function BillScreen() {
    * on every change to the batch, so it closes in front of the operator.
    */
   const { gate, snapshot, fetchedAt } = useGate(period, batch.data?.bills);
-  const [refused, setRefused] = useState<string | null>(null);
+  const [refused, setRefused] = useState<unknown>(null);
 
   const mode = batch.data?.mode;
   const bill = batch.data?.bills.find((b) => b.id === billId);
@@ -76,10 +76,10 @@ export function BillScreen() {
           {t('settle.bill.back')}
         </Link>
       </p>
-      <RefusedBanner refusedKey={refused} onDismiss={() => setRefused(null)} />
+      <RefusedBanner error={refused} onDismiss={() => setRefused(null)} />
 
       {batch.error ? (
-        <LoadFailed />
+        <LoadFailed error={batch.error} />
       ) : batch.isPending ? (
         <TableSkeleton />
       ) : bill === undefined ? (
@@ -127,7 +127,7 @@ export function BillScreen() {
                 {detail.isPending ? (
                   <TableSkeleton />
                 ) : detail.error ? (
-                  <LoadFailed />
+                  <LoadFailed error={detail.error} />
                 ) : detail.data === undefined || detail.data === null || detail.data.lines.length === 0 ? (
                   <EmptyState title={t('settle.bill.lines.title')} body={t('settle.bill.lines.empty')} />
                 ) : (
@@ -259,7 +259,7 @@ function PaymentPanel({
   /** Whether the snapshot said the batch could be sent — the wallet covered it. Gates the API rail only. */
   preflightOk: boolean;
   preflightAt: number;
-  onRefused: (key: string | null) => void;
+  onRefused: (error: unknown) => void;
 }) {
   const gated = gate.open;
   const gateKey = gateReasonKey(gate);
@@ -283,12 +283,12 @@ function PaymentPanel({
   const markPaid = useMutation({
     mutationFn: () => payout.markPaid(bill.id, { manual_reference: reference.trim(), amount_vnd: Number(typed) }),
     onSuccess: done,
-    onError: (err) => onRefused(refusalKey(err)),
+    onError: (err) => onRefused(err),
   });
   const pay = useMutation({
     mutationFn: () => payout.pay(bill.id),
     onSuccess: done,
-    onError: (err) => onRefused(refusalKey(err)),
+    onError: (err) => onRefused(err),
   });
 
   const matches = bill.amount_vnd !== null && typed !== '' && typed === String(bill.amount_vnd);

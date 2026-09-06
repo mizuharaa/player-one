@@ -139,3 +139,11 @@ required one would leave nothing on record to explain the gap.
 Rejected: it splits the review lane into two paths with different payment
 semantics, which is more surface than the deviation it avoids, and a reviewer
 whose verdict may not count is not exercising the real workflow.
+
+## Exit condition 2 — decided 2026-09-06
+
+A payment made under this deviation whose cloud copy later fails verification
+**stands**. The settlement moves to `exception` so finance sees it; the card is
+re-uploaded; there is no clawback. Option B of three, chosen by Daniel. With
+this, both exit conditions are met and the gate may flip.
+

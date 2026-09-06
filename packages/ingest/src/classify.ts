@@ -184,7 +184,7 @@ export function classify(input: ClassifyInput): {
    * is never replaced with a guess.
    */
   const declaredStart = m.declared.start_time;
-  if (m.parsed && declaredStart !== null) {
+  if (declaredStart !== null) {
     const startMs = Date.parse(declaredStart);
     if (Number.isFinite(startMs) && startMs < EARLIEST_PLAUSIBLE_START_MS) {
       add(

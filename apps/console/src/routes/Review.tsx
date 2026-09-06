@@ -69,6 +69,7 @@ export function ReviewScreen() {
    * Conflating the two is the defect — see `commitFailure`.
    */
   const [refused, setRefused] = useState<CommitFailure & { kind: 'refused' } | null>(null);
+  const [leaseError, setLeaseError] = useState<unknown>(null);
   const [held, setHeld] = useState(false);
   const [holdReason, setHoldReason] = useState('');
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -94,6 +95,7 @@ export function ReviewScreen() {
     setPartIndex(0);
     setPlaying(false);
     setLost(null);
+    setLeaseError(null);
     setRefused(null);
     setHeld(false);
     setHoldReason('');
@@ -148,7 +150,10 @@ export function ReviewScreen() {
     if (episodeId === null || lost !== null) return;
     const timer = setInterval(() => {
       api.heartbeat(episodeId).catch((err) => {
-        if (err instanceof ApiError && err.isReassigned) setLost('lease');
+        if (err instanceof ApiError && err.isReassigned) {
+          setLost('lease');
+          setLeaseError(err);
+        }
       });
     }, HEARTBEAT_MS);
     return () => clearInterval(timer);
@@ -289,8 +294,10 @@ export function ReviewScreen() {
      */
     onError: (err) => {
       const failure = commitFailure(err);
-      if (failure.kind === 'lease') setLost('lease');
-      else if (failure.kind === 'refused') setRefused(failure);
+      if (failure.kind === 'lease') {
+        setLost('lease');
+        setLeaseError(err);
+      } else if (failure.kind === 'refused') setRefused(failure);
     },
   });
 
@@ -570,6 +577,7 @@ export function ReviewScreen() {
           {lost === 'lease' ? (
             <div className="p-4">
               <Problem
+                reference={leaseError instanceof ApiError ? leaseError.ref : undefined}
                 title={t('state.leaseExpired.title')}
                 body={t('state.leaseExpired.body')}
                 action={
@@ -768,6 +776,7 @@ export function ReviewScreen() {
                   <Problem title={t('state.refused.held.title')} body={t('state.refused.held.body')} />
                 ) : (
                   <Problem
+                    reference={commit.error instanceof ApiError ? commit.error.ref : undefined}
                     title={t('state.refused.title')}
                     body={t(refused.key)}
                     action={
