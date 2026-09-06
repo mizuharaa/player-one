@@ -174,7 +174,7 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 | `PLAYERONE_ZNS_ENV` | `sandbox` | `production` refuses to boot with no ZNS credentials, because production with no ZNS account is not a development mode — it is a server that prints live sign-in codes into a production log. |
 | `PLAYERONE_ZNS_CODE_PARAM` | `otp` | The `template_data` key the six digits go in. Whatever the approved template names it. |
 | `PLAYERONE_ZNS_BASE_URL` | Zalo's | Override only to point at a proxy or a test double. |
-| `REVIEW_VERIFICATION_GATE` | `local` | Which integrity check QR-02's review gate reads. `local` is the ADR 0001 deviation; `cloud` requires read-back-verified uploads and retires that ADR. Do not set `cloud` before the settlement question in the ADR's exit section is answered. |
+| `REVIEW_VERIFICATION_GATE` | `cloud` | Which integrity check QR-02's review gate reads. `cloud` (the default since 2026-09-06) requires a read-back-verified upload before an episode can be reviewed; ADR 0001's exit conditions are met and policy B is in code. Set `local` only on a machine with no bucket — including any dev box running `seed-console.mjs`, whose seeded footage has no cloud copy and would otherwise never reach the queue. |
 
 The API serves JSON and media only. The back office is the SPA; see
 [`The back-office console`](#the-back-office-console) below.
@@ -543,7 +543,9 @@ Three shells, in this order:
 DATABASE_URL=... node packages/api/scripts/seed-console.mjs
 
 # 2. the API. The seed prints the PLAYERONE_MEDIA_ROOT to paste here.
-DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=dev  PLAYERONE_MEDIA_ROOT=...  pnpm serve
+#    REVIEW_VERIFICATION_GATE=local because seeded footage has no cloud copy;
+#    without it the gate (cloud by default) keeps every seeded episode out of the queue.
+DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=dev  PLAYERONE_MEDIA_ROOT=...  REVIEW_VERIFICATION_GATE=local  pnpm serve
 
 # 3. the console
 pnpm -F @playerone/console dev
