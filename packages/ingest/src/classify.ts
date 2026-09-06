@@ -13,8 +13,8 @@ import { hasClockFault, type StreamTiming, type Timing } from './timing.ts';
 
 /** ING-Q4 is still open: 504 ms is observed and apparently normal, so this is a knob, not a truth. */
 export const SKEW_THRESHOLD_MS = 1000;
-/** ING-Q3 is still open. Every sample session is 1.0.3. */
-export const KNOWN_FIRMWARE = ['1.0.3'];
+/** ING-Q3 is still open. Every sample session is 1.0.3; the bench unit reports 0.0.13. */
+export const KNOWN_FIRMWARE = ['1.0.3', '0.0.13'];
 /** ING-28 tolerance on the declared IMU rate. */
 const RATE_TOLERANCE = 0.05;
 

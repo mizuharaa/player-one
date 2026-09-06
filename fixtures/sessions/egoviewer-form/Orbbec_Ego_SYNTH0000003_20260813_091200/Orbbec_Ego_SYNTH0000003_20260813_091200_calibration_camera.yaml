@@ -1,0 +1,15 @@
+calibration_info:
+  format_version: 1.0
+  calibration_date: 2026-8-13
+  serial_number: SYNTHCAL001
+  num_cameras: 2
+  reference_camera: cam_0
+cameras:
+  - id: cam_0
+    name: IR_L
+    image_width: 1600
+    image_height: 1300
+  - id: cam_1
+    name: IR_R
+    image_width: 1600
+    image_height: 1300

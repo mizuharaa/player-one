@@ -273,7 +273,6 @@ const contiguous = (count: number): Part[] =>
     frames: FRAMES,
   }));
 
-await rm(out, { recursive: true, force: true });
 
 const fixtures: Opts[] = [
   { label: 'multipart', time: '090000', parts: contiguous(3) },
@@ -364,5 +363,9 @@ const fixtures: Opts[] = [
 ];
 
 console.log('writing fixtures:');
-for (const f of fixtures) console.log(`  ${await build(f)}`);
+for (const f of fixtures) {
+  // Only this label: unset-clock and egoviewer-form are hand-made and live beside these.
+  await rm(join(out, f.label), { recursive: true, force: true });
+  console.log(`  ${await build(f)}`);
+}
 console.log('done');

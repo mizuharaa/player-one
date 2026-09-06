@@ -54,13 +54,16 @@ export type Discovery = {
 
 // The device family is a captured field, not the literal 'ego': this layout is
 // PaXini's, not one product's, and the pilot fleet is not the last hardware.
+// `Orbbec_Ego` is named outright because it spans an underscore: the TF card
+// writes `ego_<serial>_…`, EgoViewer (host recording over USB, firmware 0.0.13)
+// writes `Orbbec_Ego_<serial>_…` with no `_partNNNN`. Measured 2026-09-03.
 const MANIFEST =
-  /^meta_(?<device>[A-Za-z0-9]+)_(?<serial>[^_]+)_(?<date>\d{8})_(?<time>\d{6})\.json$/;
+  /^meta_(?<device>Orbbec_Ego|[A-Za-z0-9]+)_(?<serial>[^_]+)_(?<date>\d{8})_(?<time>\d{6})\.json$/;
 const SESSION_FILE =
-  /^(?<device>[A-Za-z0-9]+)_(?<serial>[^_]+)_(?<date>\d{8})_(?<time>\d{6})_(?<rest>.+)$/;
+  /^(?<device>Orbbec_Ego|[A-Za-z0-9]+)_(?<serial>[^_]+)_(?<date>\d{8})_(?<time>\d{6})_(?<rest>.+)$/;
 const REST =
   /^(?<role>calibration_camera|calibration_imu|camera_[a-z0-9_]+?|imu|audio)(?:_part(?<part>\d{4}))?(?<pts>_pts)?\.(?<ext>[A-Za-z0-9]+)$/;
-const DIR_NAME = /^(?<device>[A-Za-z0-9]+)_(?<serial>[^_]+)_(?<date>\d{8})_(?<time>\d{6})$/;
+const DIR_NAME = /^(?<device>Orbbec_Ego|[A-Za-z0-9]+)_(?<serial>[^_]+)_(?<date>\d{8})_(?<time>\d{6})$/;
 const PAXINI_EPISODE = /^episode_\d+_\d{6}_\d+_\d+(_[a-z0-9]+)?\.hdf5$/;
 
 function classify(name: string): Omit<FileEntry, 'path' | 'bytes' | 'mtimeMs'> | null {

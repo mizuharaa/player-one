@@ -25,7 +25,7 @@ import { createHash } from 'node:crypto';
  * layout is PaXini's, not one product's, and the pilot fleet is not the last
  * hardware. Same regex as discover.ts's DIR_NAME, for the same reason.
  */
-const BASENAME = /^(?<device>[A-Za-z0-9]+)_(?<serial>[^_]+)_(?<date>\d{8})_(?<time>\d{6})$/;
+const BASENAME = /^(?<device>Orbbec_Ego|[A-Za-z0-9]+)_(?<serial>[^_]+)_(?<date>\d{8})_(?<time>\d{6})$/;
 
 export type SessionIdentity = {
   /** Uppercased. The basename wins over the manifest and the calibration, always. */
