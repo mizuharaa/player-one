@@ -31,13 +31,16 @@ built SPA talking to `/v1` over a cookie session. Decided 25 Aug 2026; see
 server-rendered console shipped on `feat/review-console`, whose view layer is
 replaced while every line of its server logic is kept.
 
-**Upload-centre client, Path C:** Electron 32 wrapping the same component
-library. Read-only card mount, better-sqlite3 batch state, resumable multipart
-upload. Offline tolerance is a property of shipping a compiled artifact to the
-centre, not of avoiding a compiler.
+**Upload-centre client, Path C:** there is no desktop client. The counter is
+the ingest CLI (`packages/ingest/bin/ingest.ts`, `pnpm ingest`) plus the API
+process running on the centre machine, which also carries the cloud leg
+(`packages/api/src/upload-worker.ts`); batch and upload state live in Postgres.
+No Electron package exists anywhere in the repo.
 
 **Collector app:** **React Native 0.82**, TypeScript strict, Expo prebuild and
-dev client, Android 9+ (API 28), in a **separate repository**. Kotlin
+dev client, Android 9+ (API 28). It lives in this repo at `apps/collector`,
+which is canonical; a separate `mizuharaa/player-one-app` repository exists and
+is a planned transplant target (e8408bc); no sync exists today. Kotlin
 TurboModule for every large transfer — foreground service, WorkManager, OkHttp,
 surviving app kill, Doze and OEM battery managers. Local state in SQLite with
 Drizzle, MMKV and TanStack Query, with an offline queue of claims, sessions and
@@ -46,7 +49,7 @@ for push, Sentry with scrubbed payloads. Release through Gradle 8, Fastlane
 match, Play internal testing.
 
 **Shared design system.** Tokens and the component contract are authored once in
-`packages/design` and consumed by the console, the Electron client and the app.
+`packages/design` and consumed by the console and the app.
 Now that both interactive surfaces are React, this is a real package rather than
 a copied theme file — that is the main reason the SPA decision was taken.
 
@@ -109,12 +112,12 @@ Vietnam, wired to a payment chain that can survive an audit.
 | Path | Route | State |
 |---|---|---|
 | A | Device → phone app → cloud | Primary for Vietnam. Blocked on D1. |
-| B | Device → cloud direct | P1. Blocked on D2. |
+| B | Device → cloud direct | P1. Not started. |
 | C | TF card → staffed upload centre | **Built.** The pilot runs on this. |
 
 **Upload centres are offline-tolerant by design.** They sit on a LAN, the link
 drops, and the counter workflow has to keep working. This is why the ingest
-engine must never require a database and why the console has no build step.
+engine must never require a database and why the server has no build step.
 
 **Data residency is a hard constraint.** Recordings stay in Vietnam. Reviewers in
 China reach in rather than data reaching out (PLT-10, Part 7).
@@ -132,11 +135,10 @@ gets written.
 
 ## Capabilities and Constraints
 
-**Built and tested** (342 tests; 182 of them pass with no database, which is a
-load-bearing property): the ingest and measurement engine, the episode store, the
-identity spine, both-token auth, the audit trail, the counter workflow, the
-session resolver, the review lane and its console, and the settlement row a
-verdict writes. Migrations 0000–0004.
+**What is built** is not listed here, on purpose: a snapshot in this file rotted
+and misled agents. Derive it from Git — `CLAUDE.md`'s *State* section gives the
+commands, and `CONTEXT.md` §5 carries a dated status. The no-database test run
+staying green remains a load-bearing property.
 
 **Rules that must survive any future change:**
 
@@ -162,16 +164,12 @@ verdict writes. Migrations 0000–0004.
 | Item | Blocks | Status |
 |---|---|---|
 | **D1** — Wi-Fi protocol between device and phone | The entire Path A upload flow | Promised, not received |
-| **D5** — Device SDK, API docs and user manual | "Everything" — device binding, pre-collection checks, firmware display | Promised 13 Aug, not received |
+| **D5** — Device SDK, API docs and user manual | Path A file offload | Kit received (`docs/sdks/`, gitignored: EgoLowBle 1.1.5, OrbbecSDK 2.9.0, firmware). Still missing: the record/playback interfaces (in the full SDK headers, not in this kit); whether any of them retrieves files from device storage is unconfirmed. See `docs/hw-captures/FINDINGS-2026-09-03.md`. |
 | **D11** — Whether background review needs online playback of raw video | Whether reviewers stream video, and so whether video leaves Vietnam in practice | **Unresolved on PaXini's side. Escalate.** |
-| **D2** — Storage target | Path B, cloud upload and verification | May now be resolved — confirm |
+| **D2** — Storage target | Path B, cloud upload and verification | **Resolved.** GreenNode vStorage HCM04; keys issued, first bytes stored and read back 2026-09-06. See `docs/cloud-scale-findings.md`. |
 
 **Known gaps, recorded rather than invented:**
 
-- **Reviewer identity does not exist yet.** The review console currently signs
-  reviewers in with upload-centre operator credentials. PLT-10 requires a scoped,
-  fully-logged remote reviewer role instead, because reviewers are in Shenzhen and
-  not at a VNG counter. This is the next architectural correction on the console.
 - `tasks` has no currency column, so what a task pays in is deployment
   configuration rather than data.
 - `collectors` has no display name; the console shows an external reference.
@@ -179,7 +177,6 @@ verdict writes. Migrations 0000–0004.
   is recorded in `docs/adr/0003-bo09-centres-machines-operators-stay-fixtures.md`
   with its trigger condition (second centre, or 500 collectors, whichever comes
   first).
-- Dispute and second review are P2 and deliberately not built.
 
 **Terminology.** Requirement IDs are the shared vocabulary between the brief, the
 code and the console: `APP-` collector app, `BO-` back office, `UPL-` upload,
@@ -196,9 +193,10 @@ comments cite them and so should any new surface.
   exist** — confirmed, so the drafted values are the design system's own choice
   and not corporate assets. Future work may refine them; it should not go hunting
   for an official palette.
-- **A mascot is confirmed in scope** — an animal, chosen over a robot, whose state
-  follows the time of day because upload centres run shifts. Her rendering belongs
-  to the design system, not here.
+- **A mascot is confirmed in scope by the owner** — an animal, chosen over a
+  robot, whose state follows the time of day because upload centres run shifts.
+  She is Cú (`DESIGN.md`); `cuStateAt()` in `packages/design/src/tokens.ts` picks
+  the state and `apps/console/src/components/identity/Cu.tsx` renders her.
 - **Localisation is a product commitment, not a preference.** Back-office in
   English and Chinese (LOC-02). Collector app in Vietnamese (LOC-01), English at
   P2 (LOC-05). Training, exam and task descriptions localised to Vietnamese with
@@ -221,10 +219,12 @@ comments cite them and so should any new surface.
 
 **In the repository:**
 
-- `fixtures/sessions/` — 22 synthetic sessions, one per failure mode, committed.
+- `fixtures/sessions/` — synthetic sessions, one per failure mode, committed.
   The MP4s are 32-byte stubs and cannot answer questions about real encoding.
 - `docs/sample_data/` — five real sessions from device `AZER76400FE`, 13 Aug 2026,
   about 630 MB. **Gitignored, not in the repo**; ask Alois.
+- `docs/sdks/` — PaXini's development kit (EgoLowBle, OrbbecSDK, firmware).
+  **Gitignored**, main worktree only; `apps/collector/DEVICE_DEPS.md` pins it.
 - `docs/review.md`, `docs/matching.md`, `docs/episode-identity.md`,
   `docs/RUNNING.md`, `docs/adr/0001-review-reads-local-verification.md`,
   `docs/design/product-draft.html`.
@@ -232,10 +232,10 @@ comments cite them and so should any new surface.
   re-litigated.
 
 **Absences that must not be filled with invention:** there are no customers, no
-testimonials, no benchmarks, no pricing beyond a task's unit price, and no device
-SDK or firmware documentation. There is no evidence about how PaXini's encoder
-writes MP4 files — `pnpm moov` answers that question against the real corpus and
-has not been run on it.
+testimonials, no comparison against other products (the repo's own measurements
+are in `docs/cloud-scale-findings.md`), and no pricing beyond a task's unit price. What the
+device SDK does not document — file retrieval from device storage — is recorded
+in `docs/hw-captures/FINDINGS-2026-09-03.md`, not guessed at.
 
 ## Product Principles
 
