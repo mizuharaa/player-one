@@ -603,6 +603,62 @@ const en = {
   'theme.light': 'Light',
   'theme.dark': 'Dark',
 
+  /* ---------------------------------------------------------------------
+     The guided tour (`components/guide/`).
+
+     Optional, dismissible, and never started by the console itself except
+     once on Home. The sentences are the point: each one stands beside the
+     element it names and says what that element is FOR, including the two
+     things this console is most often misread on - the shift gauge is
+     progress and not a verdict, and the settled figure is one person's own
+     decisions and not the programme's spend. */
+
+  'guide.title': 'Guided tour',
+  'guide.start': 'Show me around',
+  'guide.step': 'Step {{current}} of {{total}}',
+  'guide.back': 'Back',
+  'guide.next': 'Next',
+  'guide.done': 'Done',
+  'guide.close': 'Close tour',
+  'guide.panda': 'Truc, pointing at the item this step describes',
+  'guide.offscreen': 'This item is not on the screen right now. Continue to the next step.',
+  'guide.offer': 'First time here? A short tour shows what each part of this screen is for.',
+  'guide.offer.accept': 'Show me around',
+  'guide.offer.decline': 'Not now',
+
+  'guide.home.gauge':
+    'Your shift so far: episodes you have reviewed, against the target for the shift. The ring is progress. It is not a verdict.',
+  'guide.home.start':
+    'This claims the next episode in the queue and opens it. You hold it until you decide or release it.',
+  'guide.home.settled':
+    'The value of your own decisions in this period. It is not the programme spend and it is not a payment.',
+  'guide.shell.counters':
+    'How many episodes are waiting, and the average time one verdict takes. Both stay in the bar on every screen.',
+  'guide.shell.nav':
+    'The whole back office. A dot means the screen is not built yet; a half-filled square means it is built for part of its job.',
+  'guide.review.player':
+    'The footage and the playhead. Space plays and pauses. The arrow keys move five seconds; hold Shift for one frame.',
+  'guide.review.marks':
+    'Mark the start and the end of usable footage with I and O. The server measures the span; this screen never sends a duration.',
+  'guide.review.verdict':
+    'The three outcomes: pass, partial, reject. Keys 1, 2 and 3. Enter commits the one you chose.',
+  'guide.review.reasons':
+    'A reject needs at least one reason code. The collector reads these in Vietnamese, so pick the one that says what to change.',
+  'guide.pipeline.stage':
+    'Each stage of the ingest run, and what is waiting in it. The stage a card stops at is where the recording stopped.',
+  'guide.backoffice.tabs':
+    'Tasks, collectors and devices. Each tab is a list you can filter, and every change here is logged against your operator id.',
+  'guide.settle.period':
+    'One settlement cycle starts on this day. Every bill whose period starts inside it appears below.',
+  'guide.settle.bills':
+    'Every bill in the period. A total comes from its lines and the server rounds it; this screen adds nothing.',
+  'guide.risk.holds':
+    'Payments the engine has held, each with the plain sentence saying why. Release one only when you can say what changed.',
+  'guide.episodes.scope':
+    'Which episodes this screen is showing right now. It is a scope, not the whole catalogue.',
+  'guide.counter.plan':
+    'The counter workflow runs on the command line today. This page says what the screen will do when it is built.',
+
   // ---------------------------------------------------------------------
   // Settle and the payout console (SET-03 → SET-07; payout brief, Agent D).
   // Four screens on one period: the bills, the preflight that has to be read
@@ -1438,6 +1494,36 @@ const zh: Record<MessageKey, string> = {
   'theme.light': '浅色',
   'theme.dark': '深色',
 
+  'guide.title': '导览',
+  'guide.start': '带我看一遍',
+  'guide.step': '第 {{current}} 步，共 {{total}} 步',
+  'guide.back': '上一步',
+  'guide.next': '下一步',
+  'guide.done': '完成',
+  'guide.close': '关闭导览',
+  'guide.panda': '竹，正指向本步骤所说的位置',
+  'guide.offscreen': '该内容当前不在屏幕上。请继续下一步。',
+  'guide.offer': '第一次使用？简短导览会说明本页每个部分的用途。',
+  'guide.offer.accept': '带我看一遍',
+  'guide.offer.decline': '暂不',
+
+  'guide.home.gauge': '本班次进度：你已审核的片段数与本班次目标的对比。这个圆环表示进度，不是审核结论。',
+  'guide.home.start': '领取队列中的下一个片段并打开它。在你作出结论或释放它之前，它一直归你。',
+  'guide.home.settled': '本周期内你自己所作结论对应的金额。它不是项目的总支出，也不是一笔付款。',
+  'guide.shell.counters': '队列中还有多少片段，以及每条结论的平均用时。这两个数字在每个页面都会显示。',
+  'guide.shell.nav': '整个后台。圆点表示该页面尚未开发；半填充方块表示只完成了部分功能。',
+  'guide.review.player': '素材与播放头。空格键播放和暂停。方向键前后移动五秒；按住 Shift 时移动一帧。',
+  'guide.review.marks': '用 I 和 O 标记可用素材的起点和终点。时长由服务端测算；本页不会发送任何时长。',
+  'guide.review.verdict': '三种结论：通过、部分通过、拒绝。对应按键 1、2、3。按回车提交你选择的结论。',
+  'guide.review.reasons': '拒绝时至少要选一个原因代码。采集者看到的是越南语版本，请选择能说明需要改什么的那一条。',
+  'guide.pipeline.stage': '导入流程的每个阶段，以及其中还在等待的内容。停在哪个阶段，录制就是在哪里中断的。',
+  'guide.backoffice.tabs': '任务、采集者和设备。每个标签页都是可筛选的列表；这里的每次修改都会记录你的操作员账号。',
+  'guide.settle.period': '一个结算周期从这一天开始。周期起始日落在其中的账单都会显示在下方。',
+  'guide.settle.bills': '本周期内的全部账单。合计来自明细，由服务端取整；本页不做任何计算。',
+  'guide.risk.holds': '引擎暂扣的付款，以及说明原因的那句话。只有当你能说清变了什么时才释放。',
+  'guide.episodes.scope': '本页当前显示的是哪一部分片段。这是一个范围，不是全部目录。',
+  'guide.counter.plan': '柜台流程目前通过命令行完成。这里说明该页面建成后会做什么。',
+
   'settle.title': '结算',
   'settle.intro': '某个周期的账单、钱包余额与之的对比、引擎标记的内容，以及每笔付款的记录。这里的每个数字都来自服务端；本页不做任何加总或取整。',
   'settle.period': '周期起始日',
@@ -2218,6 +2304,53 @@ const vi: Record<MessageKey, string> = {
   'theme.toggle': 'Giao diện',
   'theme.light': 'Sáng',
   'theme.dark': 'Tối',
+
+  'guide.title': 'Hướng dẫn nhanh',
+  'guide.start': 'Xem qua một lượt',
+  'guide.step': 'Bước {{current}} trên {{total}}',
+  'guide.back': 'Quay lại',
+  'guide.next': 'Tiếp',
+  'guide.done': 'Xong',
+  'guide.close': 'Đóng hướng dẫn',
+  'guide.panda': 'Trúc đang chỉ vào mục mà bước này nói đến',
+  'guide.offscreen': 'Mục này hiện không có trên màn hình. Hãy sang bước tiếp theo.',
+  'guide.offer':
+    'Lần đầu vào đây? Một lượt xem ngắn sẽ cho biết từng phần của màn hình này dùng để làm gì.',
+  'guide.offer.accept': 'Xem qua một lượt',
+  'guide.offer.decline': 'Để sau',
+
+  'guide.home.gauge':
+    'Ca làm của bạn đến lúc này: số tập đã duyệt so với mục tiêu của ca. Vòng tròn là tiến độ, không phải kết luận duyệt.',
+  'guide.home.start':
+    'Nhận tập kế tiếp trong hàng đợi và mở nó. Tập đó thuộc về bạn cho đến khi bạn kết luận hoặc trả lại.',
+  'guide.home.settled':
+    'Giá trị các kết luận của riêng bạn trong kỳ này. Đây không phải chi phí của chương trình và cũng không phải một khoản chi.',
+  'guide.shell.counters':
+    'Số tập đang chờ trong hàng đợi và thời gian trung bình cho một kết luận. Cả hai luôn hiện trên mọi màn hình.',
+  'guide.shell.nav':
+    'Toàn bộ back office. Dấu chấm nghĩa là màn hình chưa được xây. Ô vuông tô một nửa nghĩa là mới xây được một phần.',
+  'guide.review.player':
+    'Đoạn ghi hình và con trỏ thời gian. Phím cách để phát và dừng. Phím mũi tên đi năm giây; giữ Shift để đi từng khung hình.',
+  'guide.review.marks':
+    'Đánh dấu điểm đầu và điểm cuối của phần dùng được bằng I và O. Máy chủ đo khoảng đó; màn hình này không gửi thời lượng.',
+  'guide.review.verdict':
+    'Ba kết luận: đạt, đạt một phần, loại. Phím 1, 2 và 3. Enter để ghi nhận kết luận bạn đã chọn.',
+  'guide.review.reasons':
+    'Kết luận loại phải có ít nhất một mã lý do. Người thu thập đọc các mã này bằng tiếng Việt, nên hãy chọn mã nói rõ cần sửa gì.',
+  'guide.pipeline.stage':
+    'Từng chặng của lần nạp dữ liệu và những gì còn chờ trong đó. Dừng ở chặng nào tức là bản ghi dừng ở đó.',
+  'guide.backoffice.tabs':
+    'Tác vụ, người thu thập và thiết bị. Mỗi thẻ là một danh sách có thể lọc, và mọi thay đổi ở đây đều ghi lại tài khoản của bạn.',
+  'guide.settle.period':
+    'Một kỳ quyết toán bắt đầu từ ngày này. Mọi hoá đơn có ngày bắt đầu kỳ nằm trong đó sẽ hiện bên dưới.',
+  'guide.settle.bills':
+    'Toàn bộ hoá đơn trong kỳ. Tổng tiền lấy từ các dòng và do máy chủ làm tròn; màn hình này không cộng thêm gì.',
+  'guide.risk.holds':
+    'Những khoản chi bị hệ thống giữ lại, kèm câu nói rõ lý do. Chỉ mở khoá khi bạn nói được điều gì đã thay đổi.',
+  'guide.episodes.scope':
+    'Phạm vi tập mà màn hình này đang hiển thị. Đây là một phạm vi, không phải toàn bộ danh mục.',
+  'guide.counter.plan':
+    'Quy trình quầy hiện chạy bằng dòng lệnh. Phần này nói màn hình sẽ làm gì khi được xây xong.',
 
   'settle.title': 'Thanh toán',
   'settle.intro':

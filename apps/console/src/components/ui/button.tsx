@@ -32,15 +32,40 @@ const button = cva(
   {
     variants: {
       variant: {
-        /** The one glow on the page. Sun means action. */
+        /**
+         * The one glow on the page. Sun means action.
+         *
+         * The label is **ink, not white**. White on sun-500 measures 2.61:1 —
+         * the label on the one thing a screen is asking for was the worst
+         * contrast on the screen — and ink (`--stage`, the console's single
+         * near-black, the same one the theatre and the top bar use) measures
+         * 7.19:1 on the same fill. `--stage` and not `--foreground`, because
+         * the fill does not change with the scheme and `--foreground` does:
+         * in dark mode a `--foreground` label would turn near-white and put
+         * the ratio back where it started.
+         *
+         * The states move the fill and not the ink, and they move it the way a
+         * physical button does — lighter under the pointer, darker under the
+         * press. Sun-700 is not used here: ink on it is 3.61:1, under the text
+         * floor even for the moment a finger is down.
+         */
         primary: cn(
-          'bg-[var(--sun-500)] text-white shadow-[var(--shadow-sun)]',
-          'hover:bg-[var(--sun-600)] active:bg-[var(--sun-700)]',
+          'bg-[var(--sun-500)] text-[var(--stage)] shadow-[var(--shadow-sun)]',
+          'hover:bg-[var(--sun-400)] active:bg-[var(--sun-600)]',
         ),
-        /** Tech blue: leads to data rather than doing something. */
+        /**
+         * Ink outline: the second thing on the screen worth doing.
+         *
+         * It was a filled tech-blue button, which made every secondary action
+         * look like a link to data — tech is what the machine is telling you,
+         * not something you do. Outlined ink says "an action, not the action",
+         * and inverting to a filled ink block on hover is the punch this world
+         * is built on.
+         */
         secondary: cn(
-          'bg-[var(--tech-500)] text-white',
-          'hover:bg-[var(--tech-600)] active:bg-[var(--tech-700)]',
+          'border border-[var(--foreground)] bg-transparent text-[var(--foreground)]',
+          'hover:bg-[var(--foreground)] hover:text-[var(--background)]',
+          'active:bg-[var(--foreground)] active:text-[var(--background)]',
         ),
         outline: cn(
           'border border-[var(--border-strong)] bg-[var(--card)] text-[var(--foreground)]',

@@ -8,16 +8,28 @@
  * values live here as data and each surface derives its own form:
  * `toCss()` for the web, the exported objects themselves for React Native.
  *
- * Four constraints, each one a decision rather than taste:
+ * Five constraints, each one a decision rather than taste:
  *
- * **Two brands, two jobs.** VNG's sun and PaXini's tech blue are not
- * interchangeable accents. Sun means *action and progress* — a button that
- * does something, a gauge filling toward a shift target. Tech means *data and
- * system* — links, references, anything the machine is telling you. Nothing
- * decorative uses either. The product owner stated the two colour worlds; the
- * hex values are this system's own choice, because no formal VNG or PaXini
- * brand guideline exists (confirmed, not assumed — do not go hunting for an
- * official palette).
+ * **Three flat fields, one job each.** VNG's sun and PaXini's tech blue are
+ * not interchangeable accents. Sun means *action* — a button that does
+ * something, the focus ring, the active destination. Tech means *data and
+ * system* — links, references, anything the machine is telling you. Bamboo,
+ * added with Trúc, means *the mascot and progress* — the shift gauge's ring, a
+ * fill moving toward a target, the panda's own prop. Progress moved off sun so
+ * that "this is doing something" and "this is how far along you are" stop
+ * sharing a colour. Nothing decorative uses any of the three, and none of them
+ * is ever a gradient: each field is flat. The product owner stated the two
+ * brand worlds; the hex values are this system's own choice, because no formal
+ * VNG or PaXini brand guideline exists (confirmed, not assumed — do not go
+ * hunting for an official palette).
+ *
+ * **Bamboo is never a verdict and never money.** In the wrong hands it is one
+ * hue away from the pass green, so it is barred from a verdict pill, a verdict
+ * glyph, a payment-status label and any money figure — measured, its hue sits
+ * 67° from `verdict.pass.fg`, and `contrast.test.ts` holds that gap. Progress
+ * drawn in bamboo always carries a text label, a unit and geometry of its own
+ * (a ring with a gap, plus a caption), so an arc can never be read as "passed"
+ * or "paid".
  *
  * **The three verdicts are never orange.** `pass`, `partial` and `reject`
  * decide whether a collector is paid, so they own their own hues and are used
@@ -36,11 +48,13 @@
  * **Both faces are self-hosted.** Upload centres sit on a LAN and the counter
  * workflow has to keep working with the link down. A webfont from a CDN would
  * make typography depend on the internet being up, which is the dependency the
- * rest of the system refuses. They arrive through `@fontsource-variable/*` and
- * are bundled, never fetched.
+ * rest of the system refuses. Both are bundled by Vite and never fetched: Be
+ * Vietnam Pro as static per-weight subsets from `@fontsource/be-vietnam-pro`
+ * (no variable package of it exists), JetBrains Mono from
+ * `@fontsource-variable/jetbrains-mono`.
  */
 
-/** VNG's sun. Actions, brand, progress. Never a verdict, never a surface. */
+/** VNG's sun. Action and brand. Never progress, never a verdict, never a surface. */
 export const sun = {
   50: '#FFF4EC',
   100: '#FFE4D1',
@@ -62,6 +76,39 @@ export const tech = {
   500: '#1B6EF3',
   600: '#0F55CC',
   700: '#0B3F99',
+} as const;
+
+/**
+ * Bamboo. Trúc the panda, and progress.
+ *
+ * Vietnamese *trúc* is bamboo and is the mascot's name; Chinese writes the
+ * same plant 竹. The ramp exists because progress used to be drawn in sun,
+ * which made a half-filled gauge and a primary button the same colour and left
+ * the reviewer to work out which of them was asking for a click.
+ *
+ * Three steps do the work, and each was chosen against a measured ratio rather
+ * than by eye:
+ *
+ * - **500 is a FILL and only a fill**, under ink text: `light.foreground` on it
+ *   measures 10.02:1. On white it is 1.82:1, so it is never text itself.
+ * - **600 is the stroke** — the gauge ring, a graphic outline: 3.34:1 on the
+ *   page and 3.01:1 on the muted fill, both clearing WCAG 1.4.11's 3:1 for a
+ *   non-text boundary. On the dark page it doubles as text ink at 5.71:1.
+ * - **700 is the light-scheme text ink**: 6.08:1 on white.
+ *
+ * And the exclusions, which matter more than the ratios: **never on a verdict
+ * pill, a verdict glyph, a payment-status label or a money figure.** Those
+ * belong to `verdict` and to the neutrals. See the header.
+ */
+export const bamboo = {
+  50: '#F5FCE3',
+  100: '#E9F8BF',
+  200: '#D6F28A',
+  300: '#C3EB5A',
+  400: '#B0E230',
+  500: '#9BD11C',
+  600: '#6E9A0F',
+  700: '#4C6C0A',
 } as const;
 
 /**
@@ -140,6 +187,8 @@ export const darkBrandTints = {
   sun100: '#3D2009',
   tech50: '#0C1A33',
   tech100: '#123061',
+  bamboo50: '#1B2408',
+  bamboo100: '#2C3D0C',
 } as const;
 
 /**
@@ -228,14 +277,29 @@ export const shadowDark = {
 } as const;
 
 /**
- * `Noto Sans SC` and `Microsoft YaHei` sit in the stack ahead of the generic
- * fallback because LOC-02 puts this console in front of Chinese reviewers, and
- * Plus Jakarta Sans has no CJK coverage. Without them a Chinese label falls
- * through to whatever the OS picks and the two languages stop looking like one
+ * Be Vietnam Pro carries the interface.
+ *
+ * It replaces Plus Jakarta Sans, and the reason is coverage rather than
+ * fashion: three of this console's screens are read in Vietnamese by the
+ * finance operators who pay collectors, and Vietnamese stacks two marks on one
+ * vowel — ế, ộ, ữ — inside a 32px table row. Be Vietnam Pro was drawn for
+ * that. It is a Vietnamese family with a real `vietnamese` subset, and its
+ * marks are cut flat and tight enough to clear the cap line without the row
+ * growing. Plus Jakarta had no such subset, so a Vietnamese label rendered
+ * from a fallback face and was a different typeface from the English beside it.
+ *
+ * `Noto Sans SC` and `Microsoft YaHei` stay in the stack ahead of the generic
+ * fallback because LOC-02 puts this console in front of Chinese reviewers and
+ * no Latin family has CJK coverage. Without them a Chinese label falls through
+ * to whatever the OS picks and the three languages stop looking like one
  * product.
+ *
+ * Mono is JetBrains Mono and it is for `.num` — measurement — only. A
+ * translated label is never mono: monospace for a column of figures somebody
+ * scans is a different thing from monospace as a costume for "technical".
  */
 export const font = {
-  sans: '"Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", Roboto, sans-serif',
+  sans: '"Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", Roboto, sans-serif',
   mono: '"JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace',
 } as const;
 
@@ -258,23 +322,41 @@ export const duration = {
 } as const;
 
 /**
- * Cú's four states, and the hours that own them.
+ * The mascot's four states, and the hours that own them.
  *
- * She reads the clock rather than a mood picker: upload centres run shifts and
- * reviewers work nights, so an owl forced onto the 06:00 shift is funny once a
- * day and never in the way. `cuStateAt` is exported rather than inlined
- * because the collector app needs the same answer from the same boundaries.
+ * Trúc reads the clock rather than a mood picker: upload centres run shifts and
+ * reviewers work nights, so a mascot forced onto the 06:00 shift is funny once
+ * a day and never in the way. `mascotStateAt` is exported rather than inlined
+ * because the collector app needs the same answer from the same boundaries at
+ * the same moment.
+ *
+ * The four names and the four boundaries are unchanged from Cú the owl, whom
+ * Trúc replaces. `nightOwl` keeps its name deliberately: `cú đêm` and 夜猫子
+ * are the idioms the shift is named after, and renaming the boundary would
+ * break every stored preference and every test that names it, for nothing.
  */
-export const CU_STATES = ['earlyBird', 'dayShift', 'goldenHour', 'nightOwl'] as const;
-export type CuState = (typeof CU_STATES)[number];
+export const MASCOT_STATES = ['earlyBird', 'dayShift', 'goldenHour', 'nightOwl'] as const;
+export type MascotState = (typeof MASCOT_STATES)[number];
 
-export function cuStateAt(date: Date = new Date()): CuState {
+export function mascotStateAt(date: Date = new Date()): MascotState {
   const h = date.getHours();
   if (h >= 5 && h < 9) return 'earlyBird';
   if (h >= 9 && h < 17) return 'dayShift';
   if (h >= 17 && h < 22) return 'goldenHour';
   return 'nightOwl';
 }
+
+/**
+ * The owl-era names, kept so `apps/collector` and any console route that has
+ * not been switched over still compile against the same four boundaries.
+ *
+ * @deprecated use `MASCOT_STATES`
+ */
+export const CU_STATES = MASCOT_STATES;
+/** @deprecated use `MascotState` */
+export type CuState = MascotState;
+/** @deprecated use `mascotStateAt` */
+export const cuStateAt = mascotStateAt;
 
 /**
  * The web form of everything above.
@@ -310,6 +392,9 @@ export function toCss(): string {
   --sun-100: ${darkBrandTints.sun100};
   --tech-50: ${darkBrandTints.tech50};
   --tech-100: ${darkBrandTints.tech100};
+  --bamboo-50: ${darkBrandTints.bamboo50};
+  --bamboo-100: ${darkBrandTints.bamboo100};
+  --bamboo-ink: ${bamboo[200]};
   --pass: ${verdict.pass.fgDark};
   --pass-bg: ${verdict.pass.bgDark};
   --partial: ${verdict.partial.fgDark};
@@ -322,6 +407,14 @@ ${shadows(shadowDark)}`;
   return `:root {
 ${ramp('sun', sun)}
 ${ramp('tech', tech)}
+${ramp('bamboo', bamboo)}
+  /* Ink for text on bamboo-50 / bamboo-100, per scheme: the web twin of
+     bambooInk in native.ts, there for the same reason techInk is. The two
+     lowest steps invert in dark mode, so a fixed bamboo-700 label on them goes
+     from 5.76:1 to unreadable the moment the operator flips the theme.
+     Measured: 700 on the light tints reads 5.76 and 5.39; 200 on the dark
+     tints reads 13.00 and 9.51. */
+  --bamboo-ink: ${bamboo[700]};
 
   --pass: ${verdict.pass.fg};
   --pass-bg: ${verdict.pass.bg};
