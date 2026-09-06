@@ -7,17 +7,31 @@ import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
-import { PART_SIZE, planParts, S3ObjectStore, verifyReadBack } from '../src/upload-worker.ts';
+import {
+  PART_SIZE,
+  planParts,
+  S3ObjectStore,
+  s3StoreFromEnv,
+  verifyReadBack,
+} from '../src/upload-worker.ts';
 
-const store = new S3ObjectStore({
-  endpoint: 'http://127.0.0.1:9000',
-  bucket: 'playerone-scale',
-  key: 'playerone',
-  secret: 'playerone123',
-});
+/** Whatever STORAGE_* names, MinIO on loopback when it names nothing. */
+const store =
+  s3StoreFromEnv() ??
+  new S3ObjectStore({
+    endpoint: 'http://127.0.0.1:9000',
+    bucket: 'playerone-scale',
+    key: 'playerone',
+    secret: 'playerone123',
+  });
 
-/** rx/tx on the MinIO container's eth0: bytes actually on the wire. */
-function wire(): { rx: number; tx: number } {
+/**
+ * rx/tx on the MinIO container's eth0: bytes actually on the wire. Only the
+ * loopback container can be read this way, so against a remote store this is
+ * null and the wire columns say `n/a` instead of a number nothing measured.
+ */
+function wire(): { rx: number; tx: number } | null {
+  if (process.env['STORAGE_ENDPOINT']) return null;
   const out = execFileSync('docker', ['exec', 'playerone-minio', 'cat', '/proc/net/dev'], {
     encoding: 'utf8',
   });
@@ -42,9 +56,11 @@ async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
     clearInterval(poll);
     const s = (Date.now() - t0) / 1000;
     const w1 = wire();
-    console.log(
-      `${label}: wall=${s.toFixed(1)}s up=${MB(w1.rx - w0.rx)}MB down=${MB(w1.tx - w0.tx)}MB peakRSS=${MB(peak)}MB`,
-    );
+    const net =
+      w0 === null || w1 === null
+        ? 'up=n/a down=n/a'
+        : `up=${MB(w1.rx - w0.rx)}MB down=${MB(w1.tx - w0.tx)}MB`;
+    console.log(`${label}: wall=${s.toFixed(1)}s ${net} peakRSS=${MB(peak)}MB`);
   }
 }
 
