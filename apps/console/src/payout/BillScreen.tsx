@@ -18,7 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button.tsx';
-import { EmptyState, Panel, Problem } from '../components/ui/primitives.tsx';
+import { EmptyState, Problem } from '../components/ui/primitives.tsx';
 import { IconArrow } from '../components/icons.tsx';
 import { payout, settle, type PayoutBill, type PayResult } from '../lib/api.ts';
 import { RiskBlock } from '../risk/pieces.tsx';
@@ -26,6 +26,7 @@ import { asStored, count, day, vnd, when } from './format.ts';
 import { keys } from './period.ts';
 import {
   AttemptPill,
+  FeatureBlock,
   Field,
   Fig,
   IssueList,
@@ -87,24 +88,32 @@ export function BillScreen() {
       ) : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <div className="space-y-6">
-            <Panel className="p-5">
-              <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-[var(--foreground)] pb-3">
                 <h2 className="num text-[1.5rem] font-extrabold tracking-[-0.02em]">{bill.collector_ref}</h2>
                 <span className="text-[0.8125rem] text-[var(--muted-foreground)]">
                   {t('settle.bill.period')}: <span className="num">{day(bill.period_start, locale)} – {day(bill.period_end, locale)}</span>
                 </span>
               </div>
-              <div className="mt-5 grid gap-5 sm:grid-cols-3">
+
+              {/*
+                This screen's one ink block: what a transfer would actually
+                move. The sentence beside it is the rounding rule, and it is
+                there because the figure above it in the stored column does not
+                equal it and an operator must not read that as a mistake.
+              */}
+              <FeatureBlock
+                className="mt-4"
+                label={t('settle.bill.amount')}
+                figure={vnd(bill.amount_vnd, locale)}
+                sentence={t('settle.wholeVnd')}
+              />
+
+              <dl className="mt-5 grid gap-5 sm:grid-cols-2">
                 <Fig label={t('settle.bill.total')} value={asStored(bill.total)} hint={t('settle.asStored', { currency: bill.currency })} />
-                <Fig
-                  label={t('settle.bill.amount')}
-                  value={vnd(bill.amount_vnd, locale)}
-                  tone="data"
-                  hint={t('settle.wholeVnd')}
-                />
                 <Fig label={t('settle.col.attempt')} value={<AttemptPill status={bill.attempt?.status ?? null} />} hint={t('settle.lines', { n: count(bill.lines, locale) })} />
-              </div>
-            </Panel>
+              </dl>
+            </div>
 
             {/*
               The lines, and the reason this table exists.
@@ -122,7 +131,7 @@ export function BillScreen() {
               UUIDs no control on this screen can act on; episode_id is the
               identifier SET-04 says the line carries.
             */}
-            <Panel className="p-5">
+            <div className="border-t border-[var(--border)] pt-5">
               <Section title={t('settle.bill.lines.title')}>
                 {detail.isPending ? (
                   <TableSkeleton />
@@ -170,9 +179,9 @@ export function BillScreen() {
                   </>
                 )}
               </Section>
-            </Panel>
+            </div>
 
-            <Panel className="p-5">
+            <div className="border-t border-[var(--border)] pt-5">
               <Section title={t('settle.bill.account')}>
                 {bill.account === null ? (
                   <p className="text-[0.9375rem]">{t('settle.bill.account.none')}</p>
@@ -188,22 +197,22 @@ export function BillScreen() {
                   </dl>
                 )}
               </Section>
-            </Panel>
+            </div>
 
-            <Panel className="p-5">
+            <div className="border-t border-[var(--border)] pt-5">
               <Section title={t('settle.bill.risk')}>
                 <RiskBlock summary={bill.risk} period={period} billId={bill.id} />
               </Section>
-            </Panel>
+            </div>
 
-            <Panel className="p-5">
+            <div className="border-t border-[var(--border)] pt-5">
               <Section title={t('settle.issue.title')}>
                 <IssueList issues={bill.issues} />
               </Section>
-            </Panel>
+            </div>
 
             {bill.attempt ? (
-              <Panel className="p-5">
+              <div className="border-t border-[var(--border)] pt-5">
                 <Section title={t('settle.bill.attempt')}>
                   <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
                     <Fig label={t('settle.bill.attempt.order')} value={bill.attempt.partner_order_id} />
@@ -217,7 +226,7 @@ export function BillScreen() {
                     <Fig label={t('settle.bill.attempt.settled')} value={when(bill.attempt.settled_at, locale)} />
                   </dl>
                 </Section>
-              </Panel>
+              </div>
             ) : null}
           </div>
 
@@ -307,8 +316,16 @@ function PaymentPanel({
   /** The API rail additionally needs the snapshot to have said the wallet covers the batch. */
   const apiInert = inert ?? (!preflightOk ? t('settle.batch.noneOk') : null);
 
+  /*
+    No container of its own. The lock notice inside it is already a bordered
+    callout, and a card wrapped around a callout is two boxes saying the same
+    thing — the nesting the rest of this screen was rebuilt to remove. The
+    section heading's rule marks it out exactly as "Lines" and "Risk" are
+    marked out, and it sticks so the amount stays beside the controls that
+    move it.
+  */
   return (
-    <Panel className="p-5 lg:sticky lg:top-20">
+    <div className="lg:sticky lg:top-20">
       <Section title={t('settle.pay.title')}>
         {result ? (
           <p className="mb-4 text-[0.9375rem] font-semibold" role="status">
@@ -403,6 +420,6 @@ function PaymentPanel({
           </div>
         </form>
       </Section>
-    </Panel>
+    </div>
   );
 }
