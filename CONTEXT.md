@@ -179,7 +179,7 @@ in the code.
 | Back office | Partial; BO-09 cut is deliberate | 80% |
 | Operations & alerting | Delivery seam built; PLT-12 stays open for the Part 8 capacity comparison and conditions 8 and 9 | 78% |
 | Payout & ZaloPay | Code complete, **never run against ZaloPay** | 70% |
-| Cloud leg (GreenNode) | Tested on MinIO only | 60% |
+| Cloud leg (GreenNode) | Real HCM04 run, read-back clean; not yet run from inside the VPC | 80% |
 | Collector app | 14 screens, mock Bluetooth, no Android build | 55% |
 | Reputation & tiers | Design written, schema drafted, no routes | 15% |
 | Deposit & commitment | Schema drafted only, no decision behind it | 10% |
@@ -190,9 +190,11 @@ in the code.
 
 1. **The device gives up no files over the network.** Measured on a real unit
    2026-09-03: BLE pairing and Wi-Fi handoff work exactly as documented, but
-   the open ports are streaming and control only. The record/playback part of
-   the SDK is explicitly outside the kit PaXini supplied. See
-   `docs/hw-captures/FINDINGS-2026-09-03.md`. **Blocks Path A entirely.**
+   the open ports are streaming and control only. The kit's record/playback
+   header records a live stream to a host file and plays a host file back; no
+   call in it lists or fetches files from the camera's own storage, which is
+   the part Path A needs. See `docs/hw-captures/FINDINGS-2026-09-03.md`.
+   **Blocks Path A entirely.**
 2. **No ZaloPay credentials exist on any machine.** The disbursement client is
    complete and exercised against a fake server; the sandbox suite is written,
    read-only by construction, and skips on every machine naming the four
@@ -204,19 +206,23 @@ in the code.
 4. **No ARM device**, so the BLE module is a mock behind a seam shaped 1:1 on
    PaXini's library. `apps/collector/DEVICE_DEPS.md` records the exact artifact
    and hash so a real build is reproducible.
-5. **GreenNode never touched in anger.** The storage-target decision is
-   recorded as "may now be resolved — confirm" and has not been confirmed.
+5. ~~GreenNode never touched in anger.~~ **Resolved 2026-09-06.** Keys issued,
+   bucket `playerone-pilot-test` created on HCM04, a 200.86 MB object written
+   and read back with `mismatches=[]`, resume proven across two kills, the
+   multipart-abort lifecycle rule set, tier confirmed Gold on a 200 GB POC
+   allocation. What is still unmeasured: anything from inside the GreenNode
+   VPC or from an upload centre — every rate on record was measured from the
+   United States and says nothing about the pilot. See
+   `docs/cloud-scale-findings.md`.
 6. **The review standard does not exist.** PaXini said on 2026-08-13 it must be
    rewritten during the pilot. Every risk threshold and reject reason is
    currently theory.
 
 ### Known documentation drift
 
-`PRODUCT.md` still claims 342 tests, migrations 0000–0004, that reviewer
-identity does not exist, and that dispute and second review are "P2 and
-deliberately not built". All four are wrong. Do not treat that file's
-*Capabilities and Constraints* section as current; its *Principles*, *Users* and
-*Operating Context* sections are still good.
+`PRODUCT.md` was corrected on 2026-09-06 (c4720ae) and its claims were checked
+against the code one by one. Treat it as current. Anything in it that turns out
+to be wrong is a bug in that file, not an expected gap.
 
 ---
 
