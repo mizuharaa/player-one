@@ -177,15 +177,19 @@ export const light = {
   foreground: '#17150F',
   mutedForeground: '#6E6A62',
   /**
-   * The third ink, and it is still ink.
+   * The hairline. A border, a divider, a control's hover edge — not a text ink.
    *
    * It was `#9C978E`, which measured 2.90:1 on the page, 2.79:1 on the surface
-   * and 2.62:1 on the muted fill — under the 4.5:1 floor on every ground it
-   * appears on, and it is not decoration: it carries the small uppercase labels
-   * on Home's figures, the review rail's headings and the tour's step count.
-   * `#746F66` is the lightest warm grey that clears 4.5:1 on all four light
-   * grounds (4.99 / 4.79 / 4.99 / 4.50), so it stays a step below
-   * `mutedForeground` (5.38 on the page) without being unreadable.
+   * and 2.62:1 on the muted fill, and at that value it was carrying the small
+   * uppercase labels on Home's figures, the review rail's headings and the
+   * tour's step count. `#726D64` is the lightest warm grey that clears 4.5:1
+   * on all four light grounds (4.99 / 4.79 / 4.99 / 4.50), so the value is
+   * safe now — but the job is not the value. Ten text declarations across
+   * seven console files were still setting type in it, one step below
+   * `mutedForeground` for no stated reason; they read `mutedForeground` now
+   * and this token draws edges. `contrast.test.ts` keeps holding it to the
+   * text floor anyway, because a border token that fell under it would also
+   * be a border nobody could see.
    */
   faintForeground: '#726D64',
 } as const;
@@ -427,6 +431,8 @@ export function toCss(): string {
   --bamboo-50: ${darkBrandTints.bamboo50};
   --bamboo-100: ${darkBrandTints.bamboo100};
   --bamboo-ink: ${bamboo[200]};
+  --sun-ink: ${sun[200]};
+  --tech-ink: ${tech[200]};
   --pass: ${verdict.pass.fgDark};
   --pass-bg: ${verdict.pass.bgDark};
   --partial: ${verdict.partial.fgDark};
@@ -447,6 +453,26 @@ ${ramp('bamboo', bamboo)}
      Measured: 700 on the light tints reads 5.76 and 5.39; 200 on the dark
      tints reads 13.00 and 9.51. */
   --bamboo-ink: ${bamboo[700]};
+
+  /* The same per-scheme ink for the other two fields, and for the same reason:
+     sun-50/100 and tech-50/100 invert in dark mode and the 700 steps do not.
+     Measured on the dark tints, tech-700 reads 1.80:1 on tech-50 (the risk
+     band and the payout attempt rows) and sun-700 reads 3.32:1 on sun-50 and
+     2.87:1 on sun-100 (Home's needs-a-human strip). The 200 steps read
+     10.08 / 7.53 and 11.63 / 10.04 on the same fills.
+
+     They are also the brand text ink on the neutral surfaces, which is the
+     other half of the same bug: tech-600 as a link measured 2.63:1 on the dark
+     card, and four call sites had each patched that by hand with a one-off
+     dark: variant. One token, both grounds - light 700 reads 9.61 / 8.67 on
+     the page and the muted fill, and 5.19 / 4.68; dark 200 reads 11.08 / 9.18
+     and 12.84 / 10.64. contrast.test.ts pins every pair.
+
+     sun-ink is not allowed on sun-100 in the light scheme: 4.27:1, the one
+     pair on these two ramps that does not clear AA. Nothing sets that fill
+     under text. */
+  --sun-ink: ${sun[700]};
+  --tech-ink: ${tech[700]};
 
   --pass: ${verdict.pass.fg};
   --pass-bg: ${verdict.pass.bg};

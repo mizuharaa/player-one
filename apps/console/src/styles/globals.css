@@ -55,6 +55,7 @@
   --color-sun-500: var(--sun-500);
   --color-sun-600: var(--sun-600);
   --color-sun-700: var(--sun-700);
+  --color-sun-ink: var(--sun-ink);
 
   --color-tech-50: var(--tech-50);
   --color-tech-100: var(--tech-100);
@@ -64,6 +65,7 @@
   --color-tech-500: var(--tech-500);
   --color-tech-600: var(--tech-600);
   --color-tech-700: var(--tech-700);
+  --color-tech-ink: var(--tech-ink);
 
   --color-bamboo-50: var(--bamboo-50);
   --color-bamboo-100: var(--bamboo-100);
@@ -203,20 +205,23 @@
     outline-color: var(--sun-400);
   }
 
-  /* Links are tech blue: they lead to data. */
+  /*
+   * Links are tech blue: they lead to data. `--tech-ink` and not `--tech-600`,
+   * because the ink has to move with the scheme the way the ground does:
+   * `tech-600` measures 2.63:1 on the dark card. There used to be a
+   * `:root[data-theme='dark'] a` override doing that by hand, and it only
+   * caught the *explicit* dark choice — an operator on system dark read every
+   * link at 2.63:1 and nothing said so.
+   */
   a {
-    color: var(--tech-600);
-    text-decoration-color: color-mix(in srgb, var(--tech-600) 35%, transparent);
+    color: var(--tech-ink);
+    text-decoration-color: color-mix(in srgb, var(--tech-ink) 35%, transparent);
     text-underline-offset: 0.2em;
     text-decoration-thickness: 1px;
   }
 
   a:hover {
     text-decoration-color: currentColor;
-  }
-
-  :root[data-theme='dark'] a {
-    color: var(--tech-300);
   }
 
   input:-webkit-autofill,

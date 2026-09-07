@@ -42,7 +42,7 @@ export function FlagCard({ flag, compact = false }: { flag: RiskFlag; compact?: 
           <dl className="mt-2 grid gap-x-4 gap-y-1 text-[0.8125rem] sm:grid-cols-[max-content_minmax(0,1fr)]">
             {Object.entries(flag.evidence).map(([key, value]) => (
               <div key={key} className="contents">
-                <dt className="num text-[var(--faint-foreground)]">{key}</dt>
+                <dt className="num text-[var(--muted-foreground)]">{key}</dt>
                 <dd className="num min-w-0 break-words">{fmt(value)}</dd>
               </div>
             ))}
@@ -81,7 +81,7 @@ export function RiskBlock({
         <Link
           to="/risk"
           search={{ period, bill: billId }}
-          className="text-[0.8125rem] font-semibold text-[var(--tech-600)]"
+          className="text-[0.8125rem] font-semibold text-[var(--tech-ink)]"
         >
           {t('settle.bill.risk.open')}
         </Link>

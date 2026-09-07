@@ -69,7 +69,7 @@ export function NotBuiltScreen({ surface }: { surface: Surface }) {
             <p className="mt-4 max-w-[58ch] text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
               {detail.purpose}
             </p>
-            <p className="num mt-4 text-[0.875rem] font-semibold text-[var(--tech-600)] dark:text-[var(--tech-300)]">
+            <p className="num mt-4 text-[0.875rem] font-semibold text-[var(--tech-ink)]">
               {detail.requirements}
             </p>
           </div>

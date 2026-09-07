@@ -1144,6 +1144,9 @@ const en = {
   'ui.a.home.error.title': 'The shift figures did not load.',
   'ui.a.home.error.body':
     'Everything else on this screen still works. The counters come from the review database; if this keeps happening, the API cannot reach Postgres.',
+  'ui.a.home.recent.error': 'Your recent verdicts did not load.',
+  /* Shown where a figure would be. Not a zero: nothing was measured. */
+  'ui.a.home.unavailable': 'No figure',
 
   'ui.a.notBuilt.today': 'How this is done today',
 
@@ -2010,6 +2013,8 @@ const zh: Record<MessageKey, string> = {
   'ui.a.home.error.title': '本班数据未能载入。',
   'ui.a.home.error.body':
     '本屏幕其余部分仍可使用。这些计数来自审核数据库；如果反复出现，说明接口无法连接 Postgres。',
+  'ui.a.home.recent.error': '最近的审核记录未能载入。',
+  'ui.a.home.unavailable': '暂无数据',
 
   'ui.a.notBuilt.today': '目前这项工作怎么做',
 
@@ -2997,6 +3002,8 @@ const vi: Record<MessageKey, string> = {
   'ui.a.home.error.title': 'Không tải được số liệu ca làm việc.',
   'ui.a.home.error.body':
     'Mọi phần khác của màn hình này vẫn dùng được. Các con số lấy từ cơ sở dữ liệu duyệt; nếu lỗi lặp lại thì API không kết nối được Postgres.',
+  'ui.a.home.recent.error': 'Không tải được các kết luận gần đây.',
+  'ui.a.home.unavailable': 'Chưa có số liệu',
 
   'ui.a.notBuilt.today': 'Hiện nay việc này được làm thế nào',
 

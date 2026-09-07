@@ -427,7 +427,7 @@ function BlockingTable({
         header: () => t('episodes.col.needs'),
         cell: (c) => (
           <span className="inline-flex items-center gap-1.5">
-            <IconAlert size={15} className="shrink-0 text-[var(--sun-700)]" />
+            <IconAlert size={15} className="shrink-0 text-[var(--sun-ink)]" />
             {t(`episodes.needs.${c.getValue()}`)}
           </span>
         ),
@@ -829,7 +829,7 @@ function OutcomeDrawer({ episodeId, onClose }: { episodeId: string; onClose: () 
               <dd className="m-0 mt-1.5 flex flex-col gap-1.5">
                 {data.reasons.map((r) => (
                   <span key={r.code} className="flex items-baseline gap-2">
-                    <span className="num shrink-0 text-[0.75rem] font-semibold text-[var(--tech-600)] dark:text-[var(--tech-300)]">
+                    <span className="num shrink-0 text-[0.75rem] font-semibold text-[var(--tech-ink)]">
                       {r.code}
                     </span>
                     <span className="text-[0.875rem]">{label(r)}</span>

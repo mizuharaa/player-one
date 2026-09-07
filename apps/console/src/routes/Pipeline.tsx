@@ -199,7 +199,7 @@ export function PipelineScreen() {
                   className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]"
                 >
                   <td className="px-4 py-3 text-[0.9375rem] font-semibold">{row.capability}</td>
-                  <td className="num px-4 py-3 text-[0.8125rem] text-[var(--tech-600)] dark:text-[var(--tech-300)]">
+                  <td className="num px-4 py-3 text-[0.8125rem] text-[var(--tech-ink)]">
                     {row.requirement}
                   </td>
                   <td className="px-4 py-3">

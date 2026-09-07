@@ -34,7 +34,7 @@ import { Panda } from '../components/identity/Panda.tsx';
 import { mascotStateAt, type MascotState } from '@playerone/design/tokens';
 import { IconAlert, IconArrow } from '../components/icons.tsx';
 import { durationShort, money, pace, stampLocal } from '../lib/format.ts';
-import { api, ApiError } from '../lib/api.ts';
+import { api, ApiError, type Shift } from '../lib/api.ts';
 import { defaultPeriod } from '../payout/period.ts';
 
 /**
@@ -60,33 +60,40 @@ function localClock(): string {
   });
 }
 
-interface Shift {
-  currency: string;
-  reviewer: string;
-  target: number;
-  decided: number;
-  approved: number;
-  payable_seconds: string;
-  median_seconds_to_verdict: string | null;
-  settled_amount: string;
-  queue_depth: number;
-  session_average_seconds: number | null;
-  needs_human: number;
-}
-
 export function HomeScreen() {
   const { t } = useTranslation();
 
-  const { data, isPending, error } = useQuery<Shift>({
+  /**
+   * `api.shift()` and not a `fetch` written out here.
+   *
+   * The hand-rolled version built its `ApiError` from `res.statusText` alone
+   * and never read the body, so the `ref` the server puts in a 500 —
+   * `{"error":"internal","ref":"req-…"}` — was thrown away before anything
+   * could show it. Measured: a mocked 500 rendered the red panel with no
+   * reference line under it, which left an operator with nothing to quote and
+   * the log line with nothing to be joined to. `call` in `api.ts` has parsed
+   * that body since it was written; this route was the one request that went
+   * around it.
+   */
+  const { data, isPending, error } = useQuery<Shift | null>({
     queryKey: ['shift'],
-    queryFn: async () => {
-      const res = await fetch('/api/review/shift', { credentials: 'same-origin' });
-      if (!res.ok) throw new ApiError(res.status, res.statusText);
-      return (await res.json()) as Shift;
-    },
+    queryFn: () => api.shift(),
     /** The shift figures move as the reviewer works; a minute is close enough. */
     refetchInterval: 60_000,
   });
+
+  /**
+   * The query is done and there are no figures.
+   *
+   * Every value on this screen used to fall back to a literal on error —
+   * `data?.decided ?? 0` under the gauge, `durationShort(data?.payable_seconds
+   * ?? '0')` in the ledger — so a 500 photographed as "0 episodes reviewed"
+   * and "0:00 payable". A reviewer cannot tell that apart from a shift where
+   * they have genuinely done nothing, and on this screen that difference is
+   * whether somebody has been paid. There is no measurement here, so the
+   * screen says so.
+   */
+  const unavailable = !isPending && !data;
 
   const state = mascotStateAt();
   const approvalRate =
@@ -138,7 +145,7 @@ export function HomeScreen() {
             {isPending ? (
               <Skeleton className="mt-4 h-[268px] w-[300px] rounded-full" />
             ) : (
-              <Gauge value={data?.decided ?? 0} target={data?.target ?? 60} state={state} />
+              <Gauge value={data?.decided ?? null} target={data?.target ?? null} state={state} />
             )}
           </Panel>
 
@@ -162,12 +169,14 @@ export function HomeScreen() {
             <dl className="m-0">
               <Figure
                 label={t('home.payable')}
-                value={isPending ? null : durationShort(data?.payable_seconds ?? '0')}
+                value={data ? durationShort(data.payable_seconds) : null}
+                unavailable={unavailable}
                 note={t('ui.a.home.payable.note')}
               />
               <Figure
                 label={t('home.approval')}
-                value={isPending ? null : approvalRate === null ? '—' : `${approvalRate}%`}
+                value={!data ? null : approvalRate === null ? '—' : `${approvalRate}%`}
+                unavailable={unavailable}
                 /*
                  * The note carries the programme's own number, because this is
                  * the only figure on the screen a reviewer can read as a grade
@@ -200,14 +209,16 @@ export function HomeScreen() {
               />
               <Figure
                 label={t('queue.average')}
-                value={isPending ? null : pace(data?.session_average_seconds)}
+                value={data ? pace(data.session_average_seconds) : null}
+                unavailable={unavailable}
                 note={t('ui.a.home.pace.note')}
               />
             </dl>
           </Panel>
 
           <Settled
-            amount={isPending ? null : money(data?.settled_amount, data?.currency ?? 'VND')}
+            amount={data ? money(data.settled_amount, data.currency) : null}
+            unavailable={unavailable}
           />
         </div>
       </div>
@@ -217,20 +228,20 @@ export function HomeScreen() {
         <Link
           to="/episodes"
           data-guide="home.needsHuman"
-          className="group mt-6 flex items-center gap-3.5 rounded-[var(--radius-lg)] border border-[var(--sun-300)] bg-[var(--sun-50)] px-5 py-4 no-underline transition-colors duration-150 ease-[var(--ease)] hover:border-[var(--sun-500)] hover:bg-[var(--sun-100)]"
+          className="group mt-6 flex items-center gap-3.5 rounded-[var(--radius-lg)] border border-[var(--sun-300)] bg-[var(--sun-50)] px-5 py-4 no-underline transition-colors duration-150 ease-[var(--ease)] hover:border-[var(--sun-500)]"
         >
-          <IconAlert size={20} className="shrink-0 text-[var(--sun-700)]" />
+          <IconAlert size={20} className="shrink-0 text-[var(--sun-ink)]" />
           <div className="min-w-0 flex-1">
-            <p className="text-[0.9375rem] font-bold text-[var(--sun-700)]">
+            <p className="text-[0.9375rem] font-bold text-[var(--sun-ink)]">
               <span className="num">{data.needs_human}</span> {t('home.needsHuman')}
             </p>
-            <p className="mt-0.5 text-[0.875rem] text-[var(--sun-700)]">
+            <p className="mt-0.5 text-[0.875rem] text-[var(--sun-ink)]">
               {t('home.needsHuman.body')}
             </p>
           </div>
           <IconArrow
             size={18}
-            className="shrink-0 text-[var(--sun-700)] transition-transform duration-150 ease-[var(--ease)] group-hover:translate-x-0.5"
+            className="shrink-0 text-[var(--sun-ink)] transition-transform duration-150 ease-[var(--ease)] group-hover:translate-x-0.5"
           />
         </Link>
       ) : null}
@@ -250,12 +261,16 @@ export function HomeScreen() {
  * of magnitude. The arrow is a real link to the screen that owns the money, so
  * the block is a door and not a poster.
  */
-function Settled({ amount }: { amount: string | null }) {
+function Settled({ amount, unavailable }: { amount: string | null; unavailable: boolean }) {
   const { t } = useTranslation();
   return (
     <div data-guide="home.settled" className="feature-block relative px-6 py-6">
       <p className="text-[0.875rem] font-semibold text-[var(--stage-mid)]">{t('home.settled')}</p>
-      {amount === null ? (
+      {unavailable ? (
+        <p className="mt-2 pr-14 text-[1.0625rem] text-[var(--stage-mid)]">
+          {t('ui.a.home.unavailable')}
+        </p>
+      ) : amount === null ? (
         <div className="mt-2 h-[2.75rem] w-40 animate-pulse rounded-[var(--radius-sm)] bg-white/10" />
       ) : (
         <p className="figure mt-1.5 pr-14 text-[var(--stage-fg)]">{amount}</p>
@@ -294,7 +309,7 @@ function Settled({ amount }: { amount: string | null }) {
  */
 function RecentVerdicts({ currency }: { currency: string }) {
   const { t } = useTranslation();
-  const { data, isPending } = useQuery({
+  const { data, isPending, error } = useQuery({
     queryKey: ['recent'],
     queryFn: () => api.recent(),
   });
@@ -311,6 +326,23 @@ function RecentVerdicts({ currency }: { currency: string }) {
             <Skeleton className="h-5 w-full" />
             <Skeleton className="h-5 w-5/6" />
             <Skeleton className="h-5 w-2/3" />
+          </div>
+        ) : error ? (
+          /*
+           * A failed query is not an empty table.
+           *
+           * This branch did not exist: `data` was undefined on a 500, `reviews`
+           * fell back to `[]`, and the screen printed "No verdicts yet this
+           * session" — which is a claim about the reviewer's work, made out of
+           * a database error. Same panel, same reference line as the figures
+           * above, so the operator has one id to read out for both.
+           */
+          <div className="p-4">
+            <Problem
+              reference={error instanceof ApiError ? error.ref : undefined}
+              title={t('ui.a.home.recent.error')}
+              body={t('ui.a.home.error.body')}
+            />
           </div>
         ) : reviews.length === 0 ? (
           <div className="hatch flex items-center justify-center px-5 py-10">
@@ -458,7 +490,20 @@ function Th({
  * `PandaStage` mounts a WebGL canvas, and a canvas inside an SVG is a rendering
  * path nothing else in this console depends on.
  */
-function Gauge({ value, target, state }: { value: number; target: number; state: MascotState }) {
+function Gauge({
+  value,
+  target,
+  state,
+}: {
+  /**
+   * `null` on both when the shift query failed. The ring then draws its track
+   * and nothing else, the count is a dash and the caption drops the target —
+   * rather than an empty arc reading "0 of 60", which is a measurement.
+   */
+  value: number | null;
+  target: number | null;
+  state: MascotState;
+}) {
   const { t } = useTranslation();
   const R = 104;
   const CX = 150;
@@ -495,14 +540,15 @@ function Gauge({ value, target, state }: { value: number; target: number; state:
   const track = `M ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${R} ${R} 0 1 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)}`;
 
   const arcLength = (SWEEP / 360) * 2 * Math.PI * R;
-  const ratio = target > 0 ? Math.min(value / target, 1) : 0;
-  const over = target > 0 && value > target;
+  const known = value !== null && target !== null;
+  const ratio = known && target > 0 ? Math.min(value / target, 1) : 0;
+  const over = known && target > 0 && value > target;
 
   return (
     <figure
       className="relative m-0 mt-3 w-[300px] max-w-full"
       role="img"
-      aria-label={t('ui.a.home.gauge', { value, target })}
+      aria-label={known ? t('ui.a.home.gauge', { value, target }) : t('ui.a.home.unavailable')}
     >
       <svg viewBox="0 0 300 196" width="300" className="block max-w-full">
         <path
@@ -573,12 +619,18 @@ function Gauge({ value, target, state }: { value: number; target: number; state:
         number.
       */}
       <p className="num relative m-0 text-center text-[2.75rem] font-extrabold leading-none tracking-[-0.03em]">
-        {value}
+        {value ?? '—'}
       </p>
 
       <figcaption className="mt-2 text-center text-[0.875rem] text-[var(--muted-foreground)]">
-        {t('home.reviewed')} · {t('home.target')}{' '}
-        <span className="num font-semibold text-[var(--foreground)]">{target}</span>
+        {t('home.reviewed')}
+        {target === null ? null : (
+          <>
+            {' · '}
+            {t('home.target')}{' '}
+            <span className="num font-semibold text-[var(--foreground)]">{target}</span>
+          </>
+        )}
       </figcaption>
     </figure>
   );
@@ -598,12 +650,20 @@ function Figure({
   value,
   note,
   trailing,
+  unavailable = false,
 }: {
   label: string;
   value: string | null;
   note: string;
   trailing?: React.ReactNode;
+  /**
+   * The query finished and produced nothing. Distinct from `value === null`,
+   * which is still loading: a skeleton that never resolves and a zero are the
+   * two ways this screen used to lie about a failed request.
+   */
+  unavailable?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 border-b border-[var(--border)] py-4 last:border-0">
       {/*
@@ -619,7 +679,11 @@ function Figure({
           {note}
         </span>
       </dt>
-      {value === null ? (
+      {unavailable ? (
+        <dd className="m-0 text-[0.9375rem] text-[var(--muted-foreground)]">
+          {t('ui.a.home.unavailable')}
+        </dd>
+      ) : value === null ? (
         <dd className="m-0">
           <Skeleton className="h-7 w-24" />
         </dd>

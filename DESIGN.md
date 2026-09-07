@@ -60,6 +60,39 @@ schemes, and names the ratio in the case.
 `native.ts`. The two lowest steps invert in dark mode like sun's and tech's, so
 a fixed ink on them stops working the moment the operator flips the theme.
 
+### Three inks, one per field: `--sun-ink`, `--tech-ink`, `--bamboo-ink`
+
+All three fields have the same problem and now the same answer. **Write brand
+text in the ink, never in a numbered step.** Each resolves to the 700 step in
+light and the 200 step in dark, and each is safe on its own two tints *and* on
+all four shell surfaces, so one token covers a pill label and a link.
+
+| | Light (700) | Dark (200) |
+|---|---|---|
+| `--tech-ink` | 8.55 / 7.51 on `tech-50` / `-100`; 9.61 on the page, 8.67 on muted | 10.08 / 7.53 on the inverted tints; 11.08 on the page, 9.18 on muted |
+| `--sun-ink` | 4.80 on `sun-50`; 5.19 on the page, 4.68 on muted | 11.63 / 10.04 on the inverted tints; 12.84 on the page, 10.64 on muted |
+
+What it replaced, measured in the dark scheme: `tech-700` on `tech-50` was
+**1.80:1** — the risk band pills on preflight and the payout attempt rows;
+`sun-700` on `sun-50` was **3.32:1**, and **2.87:1** on the `sun-100` Home's
+needs-a-human strip took on hover; and `tech-600` as a link or a data figure
+was **2.63:1** on the dark card. That last one had four hand-written
+`dark:text-[var(--tech-300)]` patches on it and eight sites without one, plus a
+`:root[data-theme='dark'] a` rule that only caught the *explicit* dark choice
+and left every operator on system dark reading links at 2.63:1.
+
+`--sun-ink` is barred from `sun-100` in the light scheme: 4.27:1, the one pair
+on these ramps that does not clear AA. The contrast test pins it as a failure so
+it stays out of the markup.
+
+**`--faint-foreground` is a hairline, not an ink.** A border, a divider, a
+control's hover edge. Its value clears AA on every ground it appears on, so
+this is a contract rule rather than a ratio: ten text declarations across seven
+console files were setting type one step below `--muted-foreground` for no
+stated reason, and they read `--muted-foreground` now. The one place it still
+touches `color` is the non-blocking flag glyph in `risk/pieces.tsx`, which is
+decoration beside a sentence that carries the meaning.
+
 **Bamboo is never a verdict and never money.** Not on a verdict pill, not on a
 verdict glyph, not on a payment-status label, not on any money figure. Measured,
 its hue sits **67° from `verdict.pass.fg`** (79° against 146°) and the contrast

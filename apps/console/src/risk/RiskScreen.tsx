@@ -99,7 +99,7 @@ export function RiskScreen() {
             <li key={b.id} className="border-b border-[var(--border)]">
               <div className="py-4">
                 <div className="flex flex-wrap items-center gap-3">
-                  <Link to="/settle/bills/$billId" params={{ billId: b.id }} search={{ period }} className="num text-[1.0625rem] font-bold text-[var(--tech-600)]">
+                  <Link to="/settle/bills/$billId" params={{ billId: b.id }} search={{ period }} className="num text-[1.0625rem] font-bold text-[var(--tech-ink)]">
                     {b.collector_ref}
                   </Link>
                   <BandPill band={b.risk.band} />

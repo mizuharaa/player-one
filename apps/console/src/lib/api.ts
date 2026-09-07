@@ -109,6 +109,29 @@ export interface RecentReview {
   amount: Decimal | null;
 }
 
+/**
+ * The shift counters behind Home's gauge and its ledger.
+ *
+ * This lived in `Home.tsx` next to a hand-rolled `fetch`, and that is what lost
+ * the reference on a 500: the route built its own `ApiError` from the status
+ * line alone, so `error.ref` was always `undefined` and `<Problem>` had nothing
+ * to quote. The type is here now and the request goes through `call`, which
+ * reads the body every other request on this seam already reads.
+ */
+export interface Shift {
+  currency: string;
+  reviewer: string;
+  target: number;
+  decided: number;
+  approved: number;
+  payable_seconds: Decimal;
+  median_seconds_to_verdict: Decimal | null;
+  settled_amount: Decimal;
+  queue_depth: number;
+  session_average_seconds: number | null;
+  needs_human: number;
+}
+
 export interface VerdictResult {
   episode_id: string;
   decision: Verdict;
@@ -415,6 +438,9 @@ export const api = {
   peek: () => call<Episode>('/api/review/next'),
 
   reasons: () => call<{ reasons: ReasonCode[] }>('/api/review/reasons'),
+
+  /** The shift counters on Home. */
+  shift: () => call<Shift>('/api/review/shift'),
 
   recent: () => call<{ currency: string; reviews: RecentReview[] }>('/api/review/recent'),
 

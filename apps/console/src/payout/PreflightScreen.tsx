@@ -263,7 +263,7 @@ export function PreflightScreen() {
               {flagged.map((b) => (
                 <li key={b.id} className="py-3">
                   <p className="num mb-1 text-[0.875rem] font-semibold">
-                    <Link to="/settle/bills/$billId" params={{ billId: b.id }} search={{ period }} className="text-[var(--tech-600)]">
+                    <Link to="/settle/bills/$billId" params={{ billId: b.id }} search={{ period }} className="text-[var(--tech-ink)]">
                       {b.collector_ref}
                     </Link>
                   </p>
@@ -490,7 +490,7 @@ function RunReport({
                   to="/settle/bills/$billId"
                   params={{ billId: r.bill_id }}
                   search={{ period }}
-                  className="num font-semibold text-[var(--tech-600)]"
+                  className="num font-semibold text-[var(--tech-ink)]"
                 >
                   {r.collector_ref}
                 </Link>
@@ -519,7 +519,7 @@ function RunReport({
                       to="/settle/bills/$billId"
                       params={{ billId: k.bill_id }}
                       search={{ period }}
-                      className="mr-3 text-[var(--tech-600)]"
+                      className="mr-3 text-[var(--tech-ink)]"
                     >
                       {collectorOf(k.bill_id)}
                     </Link>

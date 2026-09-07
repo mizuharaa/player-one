@@ -68,13 +68,13 @@ export function Field({
     tone === 'warn'
       ? 'font-semibold text-[var(--foreground)]'
       : tone === 'data'
-        ? 'text-[var(--tech-600)] dark:text-[var(--tech-300)]'
+        ? 'text-[var(--tech-ink)]'
         : '';
 
   if (stacked) {
     return (
       <div>
-        <dt className="text-[0.75rem] font-medium uppercase tracking-[0.06em] text-[var(--faint-foreground)]">
+        <dt className="text-[0.75rem] font-medium uppercase tracking-[0.06em] text-[var(--muted-foreground)]">
           {label}
         </dt>
         <dd className={cn('num mt-1 text-[1.0625rem] font-medium', valueTone)}>{value}</dd>
@@ -159,7 +159,7 @@ export function FlagRow({
       />
       <div className="min-w-0">
         <p className="text-[0.8125rem] font-medium text-[var(--foreground)]">{description}</p>
-        <p className="num mt-0.5 text-[0.75rem] text-[var(--faint-foreground)]">{code}</p>
+        <p className="num mt-0.5 text-[0.75rem] text-[var(--muted-foreground)]">{code}</p>
         {detail ? (
           <p className="mt-0.5 text-[0.8125rem] leading-snug text-[var(--muted-foreground)]">
             {detail}

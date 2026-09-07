@@ -284,7 +284,7 @@ function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
                 <Td className="font-semibold">{task.name}</Td>
                 <Td className="text-[var(--muted-foreground)]">{task.type ?? '—'}</Td>
                 {/* As stored. Not through Intl: this number multiplies into a payment. */}
-                <Td className="num text-[var(--tech-600)]">{task.unit_price}</Td>
+                <Td className="num text-[var(--tech-ink)]">{task.unit_price}</Td>
                 <Td className="num">{durationShort(task.target_effective_duration_s)}</Td>
                 <Td className="num">
                   {task.claimants} / {task.max_concurrent_claimants}
@@ -1010,7 +1010,7 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
                 </Td>
                 <Td className="num">
                   {d.bound_collector_ref ?? (
-                    <span className="font-sans text-[var(--faint-foreground)]">{t('bo.device.unbound')}</span>
+                    <span className="font-sans text-[var(--muted-foreground)]">{t('bo.device.unbound')}</span>
                   )}
                 </Td>
                 <Td className="space-x-2 whitespace-nowrap text-right">
@@ -1220,7 +1220,7 @@ function Pill({ tone, children }: { tone: Tone; children: React.ReactNode }) {
 }
 
 const FIELD_LABEL =
-  'text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]';
+  'text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--muted-foreground)]';
 const FIELD_INPUT =
   'mt-1 h-10 w-full rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 text-[0.9375rem]';
 

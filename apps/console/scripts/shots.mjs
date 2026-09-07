@@ -18,17 +18,42 @@ const MOBILE = { width: 390, height: 844 };
 
 const browser = await chromium.launch();
 
-/** Both credentials, every time: a machine token for where, an operator token for who. */
+/**
+ * Both credentials, every time: a machine token for where, an operator token
+ * for who — and it THROWS when either is refused.
+ *
+ * It used to swallow the failure: the URL wait carried a `.catch(() => {})`,
+ * so a refused sign-in resolved like a successful one and every screenshot
+ * after it was a picture of the sign-in page filed under the name of a screen.
+ * A run with a bad operator secret produced 30 PNGs and printed nothing but
+ * file names. What the server said is the useful part of that failure, so the
+ * refusal is read off the `/api/session` response and put in the message.
+ */
 async function signIn(page, operator) {
   await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' });
   await page.fill('input[name="machine_identifier"]', 'HCM-01');
   await page.fill('input[name="machine_secret"]', 'pw');
   await page.fill('input[name="external_ref"]', operator);
   await page.fill('input[name="operator_secret"]', 'pw');
-  await Promise.all([
-    page.waitForURL((u) => !u.pathname.includes('login'), { timeout: 15000 }).catch(() => {}),
+
+  const [res] = await Promise.all([
+    page.waitForResponse(
+      (r) => r.url().includes('/api/session') && r.request().method() === 'POST',
+      { timeout: 15000 },
+    ),
     page.click('button[type="submit"]'),
   ]);
+
+  if (!res.ok()) {
+    const said = await res.text().catch(() => '');
+    throw new Error(`sign-in as ${operator} refused: ${res.status()} ${said.slice(0, 200)}`);
+  }
+
+  /*
+   * The 200 is the session; the redirect is the app acting on it. Both have to
+   * happen before a shot, and a 200 that never leaves /login is its own bug.
+   */
+  await page.waitForURL((u) => !u.pathname.includes('login'), { timeout: 15000 });
 }
 
 /**
@@ -103,11 +128,12 @@ async function shoot(name, { viewport, theme, locale, path, prepare, operator = 
     await signIn(page, operator);
   }
 
-  await page.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
-  if (prepare) await prepare(page);
-  await page.waitForTimeout(1200);
+  try {
+    await page.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
+    if (prepare) await prepare(page);
+    await page.waitForTimeout(1200);
 
-  const file = `${OUT}/${name}.png`;
+    const file = `${OUT}/${name}.png`;
   /*
    * Desktop shots are full-page by default, because a console screen is
    * usually taller than 900px and the part below the fold is the part nobody
@@ -117,12 +143,20 @@ async function shoot(name, { viewport, theme, locale, path, prepare, operator = 
    * bottom of a mostly empty page — a picture of the layout's implementation
    * rather than of what anybody sees. Those shots are viewport captures.
    */
-  await page.screenshot({ path: file, fullPage: fullPage ?? viewport === DESKTOP });
-  console.log(`${file}${errors.length ? `   ⚠ ${errors.length} console errors` : ''}`);
-  for (const e of errors.slice(0, 4)) console.log(`      ${e}`);
-
-  await releaseClaim();
-  await context.close();
+    await page.screenshot({ path: file, fullPage: fullPage ?? viewport === DESKTOP });
+    console.log(`${file}${errors.length ? `   ⚠ ${errors.length} console errors` : ''}`);
+    for (const e of errors.slice(0, 4)) console.log(`      ${e}`);
+  } finally {
+    /*
+     * In a `finally` because a throw between the claim and here — a refused
+     * sign-in, a timed-out wait, a failed screenshot — otherwise walks away
+     * holding a ten-minute review lease, and the seed has exactly one
+     * claimable episode. That is the bug this file's own comment above
+     * describes, one level up.
+     */
+    await releaseClaim();
+    await context.close();
+  }
 }
 
 /** A signed-in session for one operator, closed however it ends. */
@@ -134,8 +168,9 @@ async function asOperator(operator, fn) {
     await fn(page);
   } catch (err) {
     console.log(`${operator}  SKIPPED  ${err.message}`);
+  } finally {
+    await context.close();
   }
-  await context.close();
 }
 
 /** A period is named by the Monday of its UTC week. */

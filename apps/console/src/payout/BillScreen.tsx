@@ -72,7 +72,7 @@ export function BillScreen() {
   return (
     <SettleShell period={period} tab="bills" mode={mode}>
       <p className="mb-4">
-        <Link to="/settle" search={{ period }} className="inline-flex items-center gap-1 text-[0.875rem] font-semibold text-[var(--tech-600)]">
+        <Link to="/settle" search={{ period }} className="inline-flex items-center gap-1 text-[0.875rem] font-semibold text-[var(--tech-ink)]">
           <IconArrow size={15} className="rotate-180" />
           {t('settle.bill.back')}
         </Link>
@@ -352,7 +352,7 @@ function PaymentPanel({
             />
           </div>
         ) : gated ? (
-          <p className="mb-3 text-[0.75rem] text-[var(--faint-foreground)]">
+          <p className="mb-3 text-[0.75rem] text-[var(--muted-foreground)]">
             {t('settle.preflight.ranAt', { at: when(new Date(preflightAt).toISOString(), locale) })}
           </p>
         ) : null}

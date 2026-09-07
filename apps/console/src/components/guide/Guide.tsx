@@ -231,7 +231,7 @@ export function Guide({ pathname }: { pathname: string }) {
           >
             {/* Prose with numerals in it, so it is not `.num`: mono is for a
                 column of figures somebody scans, not for a sentence. */}
-            <p className="text-[0.75rem] font-medium text-[var(--faint-foreground)]">
+            <p className="text-[0.75rem] font-medium text-[var(--muted-foreground)]">
               {t('guide.step', { current: index + 1, total: steps.length })}
             </p>
             <p className="mt-2 text-[0.9375rem] leading-relaxed">

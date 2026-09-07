@@ -6,8 +6,9 @@ sample-data/
 # point PLAYERONE_SESSIONS at them instead.
 docs/sample_data/
 
-# Screenshot rounds are evidence, not source.
-.impeccable/review/
+# Screenshot rounds and the probe scripts that produce them are evidence, not
+# source. The whole directory, so a one-off probe cannot be staged by accident.
+.impeccable/
 apps/console/dist/
 
 # Extracted vendor SDKs and the kit they come from: hundreds of MB, not source.

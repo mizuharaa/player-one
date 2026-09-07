@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bamboo, dark, darkBrandTints, light, ring, stage, sun, tech, verdict } from '../src/tokens.ts';
+import { bamboo, dark, darkBrandTints, light, ring, stage, sun, tech, toCss, verdict } from '../src/tokens.ts';
 import { nativeTheme } from '../src/native.ts';
 
 /**
@@ -239,6 +239,107 @@ describe('bamboo', () => {
 });
 
 /**
+ * `--sun-ink` and `--tech-ink`: the other two per-scheme brand inks.
+ *
+ * The bug they close is `bambooInk`'s and `techInk`'s, one ramp later. The two
+ * lowest steps of sun and tech invert in dark mode (`darkBrandTints`) and the
+ * 700 steps do not, so a label written as `tech-700` on `tech-50` is a fixed
+ * dark ink on a fill that went dark under it. Measured before the fix, in the
+ * DARK scheme:
+ *
+ * - the risk band and the payout attempt pills — `tech-700` on `tech-50` — 1.80:1
+ * - Home's needs-a-human strip — `sun-700` on `sun-50` — 3.32:1, and 2.87:1
+ *   on the `sun-100` the strip took on hover
+ * - every link and every `data`-toned figure — `tech-600` on the card — 2.63:1
+ *
+ * The last one is the same bug on the neutral ground rather than the tint, so
+ * one token carries both: the ink is checked here against the tint it labels
+ * AND against the four shell surfaces, in both schemes.
+ */
+describe('the sun and tech inks read in both schemes', () => {
+  /** What each scheme's `--sun-ink` / `--tech-ink` resolves to, from `toCss`. */
+  const INK = {
+    light: { sun: sun[700], tech: tech[700] },
+    dark: { sun: sun[200], tech: tech[200] },
+  } as const;
+
+  it('reproduces the four ratios that were measured before the fix', () => {
+    expect(ratio(tech[700], darkBrandTints.tech50)).toBe(1.8);
+    expect(ratio(sun[700], darkBrandTints.sun50)).toBe(3.32);
+    expect(ratio(sun[700], darkBrandTints.sun100)).toBe(2.87);
+    expect(ratio(tech[600], dark.card)).toBe(2.63);
+    for (const bad of [
+      ratio(tech[700], darkBrandTints.tech50),
+      ratio(sun[700], darkBrandTints.sun50),
+      ratio(sun[700], darkBrandTints.sun100),
+      ratio(tech[600], dark.card),
+    ])
+      expect(bad).toBeLessThan(TEXT_AA);
+  });
+
+  it('light: on their own tints at 8.55 / 7.51 and 4.80, and on all four shell grounds', () => {
+    atLeast(TEXT_AA, INK.light.tech, tech[50], 'risk band, notice');
+    atLeast(TEXT_AA, INK.light.tech, tech[100], 'tech pill');
+    expect(ratio(INK.light.tech, tech[50])).toBe(8.55);
+    expect(ratio(INK.light.tech, tech[100])).toBe(7.51);
+
+    atLeast(TEXT_AA, INK.light.sun, sun[50], 'needs-a-human strip');
+    expect(ratio(INK.light.sun, sun[50])).toBe(4.8);
+
+    for (const ground of [light.background, light.surface, light.card, light.muted]) {
+      atLeast(TEXT_AA, INK.light.tech, ground, 'link');
+      atLeast(TEXT_AA, INK.light.sun, ground, 'warn figure');
+    }
+    expect(ratio(INK.light.tech, light.background)).toBe(9.61);
+    expect(ratio(INK.light.tech, light.muted)).toBe(8.67);
+    expect(ratio(INK.light.sun, light.background)).toBe(5.19);
+    expect(ratio(INK.light.sun, light.muted)).toBe(4.68);
+  });
+
+  it('dark: on the inverted tints at 10.08 / 7.53 and 11.63 / 10.04, and on all four shell grounds', () => {
+    atLeast(TEXT_AA, INK.dark.tech, darkBrandTints.tech50, 'risk band, notice');
+    atLeast(TEXT_AA, INK.dark.tech, darkBrandTints.tech100, 'tech pill');
+    expect(ratio(INK.dark.tech, darkBrandTints.tech50)).toBe(10.08);
+    expect(ratio(INK.dark.tech, darkBrandTints.tech100)).toBe(7.53);
+
+    atLeast(TEXT_AA, INK.dark.sun, darkBrandTints.sun50, 'needs-a-human strip');
+    atLeast(TEXT_AA, INK.dark.sun, darkBrandTints.sun100, 'sun pill');
+    expect(ratio(INK.dark.sun, darkBrandTints.sun50)).toBe(11.63);
+    expect(ratio(INK.dark.sun, darkBrandTints.sun100)).toBe(10.04);
+
+    for (const ground of [dark.background, dark.surface, dark.card, dark.muted]) {
+      atLeast(TEXT_AA, INK.dark.tech, ground, 'link');
+      atLeast(TEXT_AA, INK.dark.sun, ground, 'warn figure');
+    }
+    expect(ratio(INK.dark.tech, dark.background)).toBe(11.08);
+    expect(ratio(INK.dark.tech, dark.muted)).toBe(9.18);
+    expect(ratio(INK.dark.sun, dark.background)).toBe(12.84);
+    expect(ratio(INK.dark.sun, dark.muted)).toBe(10.64);
+  });
+
+  /**
+   * The one pair on these two ramps that the ink does NOT clear, pinned so it
+   * stays out of the markup. Home's needs-a-human strip took `sun-100` on
+   * hover; the hover now moves the border and leaves the fill alone.
+   */
+  it('bars sun ink on sun-100 in the light scheme, at 4.27:1', () => {
+    expect(ratio(INK.light.sun, sun[100])).toBe(4.27);
+    expect(ratio(INK.light.sun, sun[100])).toBeLessThan(TEXT_AA);
+  });
+
+  it('is what `toCss` emits, per scheme, so the console reads these numbers', () => {
+    const css = toCss();
+    // The light block, once; the dark block twice — the media query and the
+    // explicit `[data-theme='dark']`, which is why a hand-written
+    // `:root[data-theme='dark']` override missed the operator on system dark.
+    expect(css.match(new RegExp(`--sun-ink: ${INK.light.sun};`, 'g'))).toHaveLength(1);
+    expect(css.match(new RegExp(`--tech-ink: ${INK.light.tech};`, 'g'))).toHaveLength(1);
+    expect(css.match(new RegExp(`--sun-ink: ${INK.dark.sun};`, 'g'))).toHaveLength(2);
+    expect(css.match(new RegExp(`--tech-ink: ${INK.dark.tech};`, 'g'))).toHaveLength(2);
+  });
+});
+
+/**
  * The primary button.
  *
  * White on sun-500 is 2.61:1 and shipped that way; the label on the one action
@@ -353,18 +454,24 @@ describe('shell text clears AA', () => {
         atLeast(TEXT_AA, n.foreground, ground, 'foreground');
         atLeast(TEXT_AA, n.mutedForeground, ground, 'muted foreground');
         /**
-         * The third ink is ink, not decoration: it carries the small uppercase
-         * labels on Home's figures, the review rail's headings and the tour's
-         * step count. It shipped at `#9C978E` / `#6C737C` and measured 2.90:1
-         * on the light page, 2.62:1 on the light muted fill and 3.30:1 on the
-         * dark one — under the floor on every ground it was used on, and
-         * nothing said so because this loop did not include it.
+         * The third one is the hairline — a border, a divider, a hover edge —
+         * and it is held to the TEXT floor anyway. It shipped at `#9C978E` /
+         * `#6C737C` and measured 2.90:1 on the light page, 2.62:1 on the light
+         * muted fill and 3.30:1 on the dark one, while ten text declarations
+         * across seven console files were written in it; nothing said so
+         * because this loop did not include it. Those declarations read
+         * `mutedForeground` now, and this case stays because an edge nobody
+         * can see is the same failure with a different name.
          */
         atLeast(TEXT_AA, n.faintForeground, ground, 'faint foreground');
       }
-      // Links are tech blue (globals.css). tech[600] on light, and the ramp
-      // does not invert above step 100, so dark reads the same step upward.
-      atLeast(TEXT_AA, scheme === 'dark' ? tech[300] : tech[600], n.background, 'link');
+      /*
+       * Links are tech blue (globals.css), and they are `--tech-ink` — the
+       * per-scheme step — rather than a fixed `tech-600` with a hand-written
+       * dark override beside it. Measured before that: `tech-600` on the dark
+       * card, 2.63:1.
+       */
+      atLeast(TEXT_AA, scheme === 'dark' ? tech[200] : tech[700], n.background, 'link');
     });
 
     it(`${scheme}: the faint ink stays a step lighter than the muted ink`, () => {

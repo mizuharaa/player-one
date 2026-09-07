@@ -150,8 +150,8 @@ export function SettleShell({
 
 const BAND_STYLE: Record<RiskBand, { pill: string; dots: number }> = {
   clear: { pill: 'bg-[var(--muted)] text-[var(--muted-foreground)]', dots: 0 },
-  notice: { pill: 'bg-[var(--tech-50)] text-[var(--tech-700)]', dots: 1 },
-  review: { pill: 'bg-[var(--sun-50)] text-[var(--sun-700)]', dots: 2 },
+  notice: { pill: 'bg-[var(--tech-50)] text-[var(--tech-ink)]', dots: 1 },
+  review: { pill: 'bg-[var(--sun-50)] text-[var(--sun-ink)]', dots: 2 },
   hold: { pill: 'bg-[var(--foreground)] text-[var(--background)]', dots: 3 },
 };
 
@@ -184,12 +184,12 @@ export function BandPill({ band, size = 'md' }: { band: RiskBand; size?: 'sm' | 
 
 /** Attempt states as words. `succeeded` is not green: the verdict hues are reserved. */
 const ATTEMPT_STYLE: Record<AttemptStatus | 'none', string> = {
-  none: 'bg-[var(--muted)] text-[var(--faint-foreground)]',
+  none: 'bg-[var(--muted)] text-[var(--muted-foreground)]',
   created: 'bg-[var(--muted)] text-[var(--muted-foreground)]',
-  submitted: 'bg-[var(--tech-50)] text-[var(--tech-700)]',
-  processing: 'bg-[var(--tech-50)] text-[var(--tech-700)]',
-  unknown: 'bg-[var(--sun-50)] text-[var(--sun-700)]',
-  pending_zlp: 'bg-[var(--sun-50)] text-[var(--sun-700)]',
+  submitted: 'bg-[var(--tech-50)] text-[var(--tech-ink)]',
+  processing: 'bg-[var(--tech-50)] text-[var(--tech-ink)]',
+  unknown: 'bg-[var(--sun-50)] text-[var(--sun-ink)]',
+  pending_zlp: 'bg-[var(--sun-50)] text-[var(--sun-ink)]',
   succeeded: 'bg-[var(--foreground)] text-[var(--background)]',
   failed: 'border border-[var(--border-strong)] bg-[var(--card)] text-[var(--foreground)]',
 };
@@ -313,7 +313,7 @@ export function Fig({
       <p
         className={cn(
           'num mt-0.5 text-[1.3125rem] font-medium tracking-[-0.02em]',
-          tone === 'warn' ? 'text-[var(--sun-700)]' : tone === 'data' ? 'text-[var(--tech-600)]' : '',
+          tone === 'warn' ? 'text-[var(--sun-ink)]' : tone === 'data' ? 'text-[var(--tech-ink)]' : '',
         )}
       >
         {value}

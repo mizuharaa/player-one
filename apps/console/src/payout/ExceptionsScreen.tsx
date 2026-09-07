@@ -140,12 +140,12 @@ function Head({ bill, period }: { bill: PayoutBill; period: string }) {
   const { t, i18n } = useTranslation();
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <Link to="/settle/bills/$billId" params={{ billId: bill.id }} search={{ period }} className="num text-[0.9375rem] font-semibold text-[var(--tech-600)]">
+      <Link to="/settle/bills/$billId" params={{ billId: bill.id }} search={{ period }} className="num text-[0.9375rem] font-semibold text-[var(--tech-ink)]">
         {bill.collector_ref}
       </Link>
       <span className="num text-[0.8125rem] text-[var(--muted-foreground)]">{vnd(bill.amount_vnd, i18n.language)}</span>
       <AttemptPill status={bill.attempt?.status ?? null} />
-      {bill.attempt ? <span className="num text-[0.75rem] text-[var(--faint-foreground)]">{bill.attempt.partner_order_id}</span> : null}
+      {bill.attempt ? <span className="num text-[0.75rem] text-[var(--muted-foreground)]">{bill.attempt.partner_order_id}</span> : null}
       <span className="sr-only">{t('settle.col.open')}</span>
     </div>
   );
@@ -234,7 +234,7 @@ function AttemptRow({
       {open ? (
         <div className="mt-3 grid gap-4 rounded-[var(--radius-base)] bg-[var(--muted)] p-4 lg:grid-cols-2">
           <div>
-            <h3 className="text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]">{t('settle.exceptions.events')}</h3>
+            <h3 className="text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--muted-foreground)]">{t('settle.exceptions.events')}</h3>
             {detail.data ? (
               detail.data.events.length === 0 ? (
                 <p className="mt-2 text-[0.8125rem] text-[var(--muted-foreground)]">—</p>
