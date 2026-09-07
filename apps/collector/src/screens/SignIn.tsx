@@ -5,7 +5,7 @@ import { ApiError } from '../api/types.ts';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { e164 } from '../phone.ts';
-import { Button, Choice, Field, Note, face, topInset } from '../ui.tsx';
+import { Button, Choice, Field, LegalLine, Note, face, topInset } from '../ui.tsx';
 import { Panda } from '../identity/Panda.tsx';
 import { useTheme } from '../theme.tsx';
 import type { MessageKey } from '../i18n.ts';
@@ -181,61 +181,6 @@ function ZaloMark({ label }: { label: string }) {
   );
 }
 
-/**
- * The two documents, under the button at both steps.
- *
- * ponytail: the targets are placeholders. There is no privacy policy URL and no
- * data-collection notice URL to open yet — when there is, it arrives the way
- * `LANDING_VIDEO_URL` does, as a build-time value, and `onPress` becomes
- * `Linking.openURL`. They are real controls with a role and a name now so the
- * line is reachable and announced rather than a pair of grey words.
- */
-function LegalLine() {
-  const theme = useTheme();
-  const tt = useT();
-  const link = (key: MessageKey) => (
-    <Pressable
-      accessibilityRole="link"
-      accessibilityLabel={tt(key)}
-      onPress={() => {}}
-      hitSlop={theme.space[2]}
-    >
-      <Text
-        style={{
-          color: theme.color.techInk,
-          fontFamily: face(theme),
-          fontSize: theme.fontSize.xs,
-          textDecorationLine: 'underline',
-        }}
-      >
-        {tt(key)}
-      </Text>
-    </Pressable>
-  );
-  return (
-    <View
-      style={{
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: theme.space[2],
-      }}
-    >
-      {link('legal.privacy')}
-      <Text
-        style={{
-          color: theme.color.faintForeground,
-          fontFamily: face(theme),
-          fontSize: theme.fontSize.xs,
-        }}
-      >
-        ·
-      </Text>
-      {link('legal.dataNotice')}
-    </View>
-  );
-}
 
 export function SignIn({
   onSignedIn,

@@ -94,6 +94,8 @@ const vi = {
     'Mã chỉ gửi được tới số Việt Nam qua Zalo. Số +86 chưa nhận được mã. Hãy đến điểm hỗ trợ để đăng nhập.',
   'signIn.zaloMark': 'Biểu tượng Zalo',
 
+  /* The sheet on the landing, which now carries a heading of its own. */
+  'landing.sheetTitle': 'Bắt đầu',
   'legal.privacy': 'Chính sách quyền riêng tư',
   'legal.dataNotice': 'Thông báo thu thập dữ liệu',
 
@@ -394,6 +396,7 @@ const en: Record<MessageKey, string> = {
     'The code can only be sent to a Vietnamese number, over Zalo. A +86 number cannot receive one yet. Go to a support point to sign in.',
   'signIn.zaloMark': 'Zalo logo',
 
+  'landing.sheetTitle': 'Get started',
   'legal.privacy': 'Privacy policy',
   'legal.dataNotice': 'Data collection notice',
 
@@ -678,6 +681,7 @@ const zh: Record<MessageKey, string> = {
   'signIn.chinaNote': '验证码只能通过 Zalo 发送至越南号码。+86 号码目前无法接收验证码。请前往服务点登录。',
   'signIn.zaloMark': 'Zalo 标志',
 
+  'landing.sheetTitle': '开始使用',
   'legal.privacy': '隐私政策',
   'legal.dataNotice': '数据收集说明',
 

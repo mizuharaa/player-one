@@ -39,3 +39,7 @@ CODEX_BRIDGE.md
 .claude/
 .vite-*.log
 .vite-*.err
+.api-*.log
+.api-*.err
+.vite-*.log
+.vite-*.err

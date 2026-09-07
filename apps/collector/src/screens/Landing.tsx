@@ -11,7 +11,7 @@ import {
 import poster from '../../assets/landing-poster.jpg';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Button, bottomInset, face, topInset, useReducedMotion } from '../ui.tsx';
+import { Button, LegalLine, bottomInset, face, topInset, useReducedMotion } from '../ui.tsx';
 
 /**
  * What the app is before there is a session: the film, three sentences, and
@@ -56,6 +56,9 @@ const LANDING_VIDEO_URL = env?.['LANDING_VIDEO_URL'] ?? '';
  * the server did not send would be a number the app made up.
  */
 const LANDING_CENTRE_CODE = env?.['LANDING_CENTRE_CODE'] ?? '';
+
+/** The mark's disc, in device pixels. Two of these overlapping by half. */
+const MARK = 14;
 
 /**
  * A DOM `<video>`, typed as a component so this file needs no DOM lib.
@@ -229,18 +232,50 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
         gap: theme.space[1],
       }}
     >
-      <Text
-        accessibilityRole="header"
-        style={{
-          color: theme.color.stage.over,
-          fontFamily: face(theme),
-          fontSize: theme.fontSize.base,
-          fontWeight: theme.fontWeight.bold,
-          letterSpacing: 0.6,
-        }}
-      >
-        {tt('app.name')}
-      </Text>
+      {/*
+        The mark and the word, the way the console's sign-in carries them.
+        This screen printed the word alone; the console draws the two discs
+        beside it, and they are the one place VNG's sun and PaXini's tech still
+        appear — the lockup, and nothing else in either app.
+
+        Two overlapping circles rather than an SVG, because that is all the
+        mark is and `react-native-svg` is not a dependency here. The overlap is
+        half a disc, which is what makes it read as one object instead of two
+        dots.
+      */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[2] }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', width: MARK * 1.5 }}>
+          <View
+            style={{
+              width: MARK,
+              height: MARK,
+              borderRadius: MARK,
+              backgroundColor: theme.color.sun[500],
+            }}
+          />
+          <View
+            style={{
+              width: MARK,
+              height: MARK,
+              borderRadius: MARK,
+              backgroundColor: theme.color.tech[500],
+              marginLeft: -MARK / 2,
+            }}
+          />
+        </View>
+        <Text
+          accessibilityRole="header"
+          style={{
+            color: theme.color.stage.over,
+            fontFamily: face(theme),
+            fontSize: theme.fontSize.base,
+            fontWeight: theme.fontWeight.bold,
+            letterSpacing: 0.6,
+          }}
+        >
+          {tt('app.name')}
+        </Text>
+      </View>
       {/* All that is left of the counter slip: one mono line under the mark,
           and only when the build was given a counter to print. No unit price —
           see LANDING_CENTRE_CODE above. */}
@@ -259,50 +294,92 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
     </View>
   );
 
+  /**
+   * The sheet, and it is the half of this screen that was missing.
+   *
+   * It used to be two buttons and a sentence laid straight on the film under a
+   * dashed rule, in white, with nothing behind them. Against the console's
+   * sign-in — which carries the mark, three sentences, a heading, the form and
+   * a legal line on a lavender ground — that read as an unfinished screen, and
+   * Daniel said so.
+   *
+   * So the actions rise off the film on the same ground the rest of the app
+   * stands on: a lavender sheet with a rounded top edge, lifted over the
+   * footage, carrying the same furniture the console's mobile sign-in carries.
+   * The film keeps the whole screen above it, which is what makes the sheet
+   * read as a card being handed over rather than as a footer.
+   *
+   * The dashed seam survives, moved inside the sheet's top edge. It is the
+   * counter slip's tear line and it is the one thing on this screen that says
+   * an account is opened by a person at a counter, which is the fact the
+   * button under it depends on.
+   *
+   * Ink on lavender now, not `stage.over` on film: nothing in this block sits
+   * on the footage any more, so the token that exists for type over a scrim
+   * would be the wrong one.
+   */
   const sheet = (
     <View
       style={{
+        backgroundColor: theme.color.background,
+        borderTopLeftRadius: theme.radius.xl,
+        borderTopRightRadius: theme.radius.xl,
         paddingHorizontal: theme.space[5],
-        paddingBottom: theme.space[5] + bottomInset(theme.space[6]),
+        paddingTop: theme.space[5],
+        paddingBottom: theme.space[4] + bottomInset(theme.space[5]),
         gap: theme.space[3],
       }}
     >
-      {/* The other half of the counter slip: one dotted seam across the foot of
-          the film, where the stub would tear. */}
+      {/* The tear line, where the counter slip's stub comes away. */}
       <View
         style={{
           borderTopWidth: 1,
           borderStyle: 'dashed',
-          borderColor: theme.color.stage.mid,
-          marginBottom: theme.space[2],
+          borderColor: theme.color.border,
+          marginBottom: theme.space[1],
         }}
       />
-      <Button label={tt('landing.signIn')} onPress={onSignIn} />
-      <Button
-        label={tt('landing.register')}
-        variant="secondary"
-        onDark
-        accessibilityHint={tt('landing.registerNote')}
-        onPress={onSignIn}
-      />
-      {/*
-        Registering and signing in are the same door, because a collector
-        account is opened by a person at a counter and not by this app. One
-        plain sentence is cheaper than a form that would fail. It is drawn in
-        `stage.over` and not a muted grey: `stage.mid` on the scrimmed film
-        measures 2.21:1 and this sentence is the one that explains the button
-        above it.
-      */}
+
       <Text
         style={{
-          color: theme.color.stage.over,
+          color: theme.color.foreground,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.xs,
-          lineHeight: theme.fontSize.xs * 1.5,
+          fontSize: theme.fontSize.lg,
+          fontWeight: theme.fontWeight.bold,
+          letterSpacing: -0.4,
+        }}
+      >
+        {tt('landing.sheetTitle')}
+      </Text>
+      <Text
+        style={{
+          color: theme.color.mutedForeground,
+          fontFamily: face(theme),
+          fontSize: theme.fontSize.sm,
+          lineHeight: theme.fontSize.sm * 1.5,
+          marginTop: -theme.space[1],
         }}
       >
         {tt('landing.registerNote')}
       </Text>
+
+      <Button label={tt('landing.signIn')} onPress={onSignIn} />
+      <Button
+        label={tt('landing.register')}
+        variant="secondary"
+        accessibilityHint={tt('landing.registerNote')}
+        onPress={onSignIn}
+      />
+
+      {/*
+        The same legal line the console's sign-in carries, in the same place
+        and for the same reason: signing in is the moment a person's data
+        starts being handled, and a notice above the control they are reaching
+        for is a notice they scroll past. The targets are placeholders and are
+        marked as such; see `LegalLine` on the sign-in screen, which this
+        matches deliberately rather than inventing a second treatment.
+      */}
+      <LegalLine />
     </View>
   );
 
