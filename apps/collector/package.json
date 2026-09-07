@@ -5,7 +5,9 @@
   "description": "Player One collector app (React Native). UI scaffold: the server and the device are mocked, there is no native project, and it does not launch on a phone yet — see README.md.",
   "type": "module",
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "web": "vite --config web/vite.config.ts",
+    "shots": "node web/shots.mjs"
   },
   "dependencies": {
     "@playerone/design": "workspace:*",
@@ -15,6 +17,11 @@
     "react-native": "^0.82.0"
   },
   "devDependencies": {
-    "@types/react": "^19.0.8"
+    "@fontsource/be-vietnam-pro": "^5.2.5",
+    "@types/react": "^19.0.8",
+    "@vitejs/plugin-react": "^4.3.4",
+    "react-dom": "^19.1.0",
+    "react-native-web": "^0.21.0",
+    "vite": "^6.0.7"
   }
 }
