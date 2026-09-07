@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential } from '../src/index.ts';
+import { objectKey, type ObjectStore } from '../src/upload-worker.ts';
 import { ZERO, add, fromDecimal, mul, quantise } from '../src/money.ts';
-import { open } from '@playerone/store';
+import { open, schema } from '@playerone/store';
 import { appDb, closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -100,7 +101,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
    * signed in.
    */
   async function harness(
-    options: { cycleDays?: number; each?: number; reject?: number } = {},
+    options: { cycleDays?: number; each?: number; reject?: number; objectStore?: ObjectStore } = {},
   ) {
     const d = await db();
     const each = options.each ?? 2;
@@ -138,7 +139,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       await liveClaim(d, ids.taskFactory, collector);
     }
 
-    const app = buildApi({ db: await appDb(), tokenSecret: SECRET, settlementCycleDays: options.cycleDays });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET, settlementCycleDays: options.cycleDays, objectStore: options.objectStore });
     await app.ready();
 
     const login = async (machine: string, operator: string) => {
@@ -285,6 +286,138 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
   // -------------------------------------------------------------------------
 
   describe('SET-07: generating a cycle', () => {
+    // PLAN 3b: database-backed; written here, NOT run by the archive-tier implementer.
+    // Claude runs this group on a throwaway database.
+    describe('archive tags after committed bill creation', () => {
+      const store = (): ObjectStore => ({
+        put: vi.fn(async () => 'uploaded' as const),
+        read: vi.fn(async () => null),
+        tag: vi.fn(async () => {}),
+      });
+
+      async function reviewedReceipts(h: Awaited<ReturnType<typeof harness>>) {
+        const [review] = await h.d.execute<{ settlement_id: string; episode_id: string; ingest_id: string }>(sql`
+          select s.id as settlement_id, r.episode_id, r.ingest_id
+            from settlements s
+            join episode_reviews r on r.id = s.episode_review_id
+            join episodes e on e.episode_id = r.episode_id
+            join collection_sessions cs on cs.id = e.collection_session_id
+           where cs.collector_id = ${h.ids.collector1}
+        `);
+        expect(review).toBeDefined();
+        const keys = ['left_part0001.mp4', 'right_part0001.mp4', 'manifest.json']
+          .map((file) => objectKey(review!.episode_id, review!.ingest_id, file));
+        await h.d.insert(schema.cloudVerifications).values(keys.map((key) => ({
+          objectKey: key, episodeId: review!.episode_id, ingestId: review!.ingest_id,
+          sha256: 'b'.repeat(64),
+        })));
+        return { ...review!, keys };
+      }
+
+      it('tags only the billed review ingest after commit, and tags nothing on replay', async () => {
+        const cloud = store();
+        const h = await harness({ each: 1, objectStore: cloud });
+        const reviewed = await reviewedReceipts(h);
+        const [ingest] = await h.d.select().from(schema.episodeIngests)
+          .where(eq(schema.episodeIngests.ingestId, reviewed.ingest_id));
+        const newer = uid();
+        await h.d.insert(schema.episodeIngests).values({
+          ...ingest!, ingestId: newer, contentFingerprint: 'c'.repeat(64),
+          ingestedAt: new Date(ingest!.ingestedAt.getTime() + 1_000),
+        });
+        await h.d.insert(schema.episodeReviews).values({
+          id: uid(), episodeId: reviewed.episode_id, ingestId: newer,
+          measuredDurationS: ingest!.measuredDurationS, reviewState: 'pending',
+        });
+        await h.d.update(schema.episodes).set({ latestIngestId: newer })
+          .where(eq(schema.episodes.episodeId, reviewed.episode_id));
+        const newerKeys = ['left_part0001.mp4', 'manifest.json']
+          .map((file) => objectKey(reviewed.episode_id, newer, file));
+        await h.d.insert(schema.cloudVerifications).values(newerKeys.map((key) => ({
+          objectKey: key, episodeId: reviewed.episode_id, ingestId: newer, sha256: 'c'.repeat(64),
+        })));
+
+        const observer = await open(dbUrl());
+        const visible: { bills: number; lines: number; state: string }[] = [];
+        vi.mocked(cloud.tag).mockImplementation(async () => {
+          // A separate connection cannot see uncommitted bills or lines.
+          const rows = await observer.execute<{ bills: number; lines: number; state: string }>(sql`
+            select (select count(*)::int from bills where collector_id = ${h.ids.collector1}) as bills,
+                   (select count(*)::int from bill_lines bl join bills b on b.id = bl.bill_id
+                     where b.collector_id = ${h.ids.collector1}) as lines,
+                   settlement_state as state
+              from settlements where id = ${reviewed.settlement_id}
+          `);
+          visible.push(...rows);
+        });
+        try {
+          const generated = await h.send('POST', '/api/settle/bills', period());
+          expect(generated.statusCode, generated.body).toBe(200);
+          expect(generated.json().created).toBe(2);
+          expect(vi.mocked(cloud.tag).mock.calls.sort()).toEqual(
+            reviewed.keys.map((key) => [key, { tier: 'archive' }]).sort(),
+          );
+          expect(visible).toEqual(reviewed.keys.map(() => ({ bills: 1, lines: 1, state: 'bill_generated' })));
+          const replay = await h.send('POST', '/api/settle/bills', period());
+          expect(replay.statusCode, replay.body).toBe(200);
+          expect(replay.json().created).toBe(0);
+          expect(cloud.tag).toHaveBeenCalledTimes(reviewed.keys.length);
+        } finally {
+          await observer.close();
+          await h.app.close();
+        }
+      });
+
+      it('tags nothing when bill generation rolls back at commit', async () => {
+        const cloud = store();
+        const h = await harness({ each: 1, objectStore: cloud });
+        await reviewedReceipts(h);
+        await h.d.execute(sql`
+          create function archive_test_refuse_bill() returns trigger language plpgsql as $$
+          begin raise exception 'archive_test_commit_failure'; end; $$
+        `);
+        try {
+          await h.d.execute(sql`
+            create constraint trigger archive_test_refuse_bill after insert on bills
+            deferrable initially deferred for each row execute function archive_test_refuse_bill()
+          `);
+          const generated = await h.send('POST', '/api/settle/bills', period());
+          expect(generated.statusCode).toBe(500);
+          expect(cloud.tag).not.toHaveBeenCalled();
+          const [counts] = await h.d.execute<{ bills: number; lines: number; pending: number }>(sql`
+            select (select count(*)::int from bills) as bills,
+                   (select count(*)::int from bill_lines) as lines,
+                   (select count(*)::int from settlements where settlement_state = 'pending_settlement') as pending
+          `);
+          expect(counts).toEqual({ bills: 0, lines: 0, pending: 2 });
+        } finally {
+          await h.d.execute(sql`drop trigger if exists archive_test_refuse_bill on bills`);
+          await h.d.execute(sql`drop function archive_test_refuse_bill()`);
+          await h.app.close();
+        }
+      });
+
+      it('keeps bill generation successful and bills present when tagging rejects', async () => {
+        const cloud = store();
+        vi.mocked(cloud.tag).mockRejectedValue(new Error('tag unavailable'));
+        const h = await harness({ each: 1, objectStore: cloud });
+        const reviewed = await reviewedReceipts(h);
+        try {
+          const generated = await h.send('POST', '/api/settle/bills', period());
+          expect(generated.statusCode, generated.body).toBe(200);
+          expect(generated.json().created).toBe(2);
+          expect(cloud.tag).toHaveBeenCalledTimes(reviewed.keys.length);
+          const [counts] = await h.d.execute<{ bills: number; lines: number }>(sql`
+            select (select count(*)::int from bills) as bills,
+                   (select count(*)::int from bill_lines) as lines
+          `);
+          expect(counts).toEqual({ bills: 2, lines: 2 });
+        } finally {
+          await h.app.close();
+        }
+      });
+    });
+
     it('writes one bill per collector, totalling exactly its own lines', async () => {
       const h = await harness();
       const res = await h.send('POST', '/api/settle/bills', period());

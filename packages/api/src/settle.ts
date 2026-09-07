@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { schema, type Db } from '@playerone/store';
 import { financeGuard, roleOf } from './actor.ts';
 import { mutate } from './audit.ts';
 import { MONEY_SCALE, ZERO, add, fromDecimal, quantise } from './money.ts';
+import { withTagDeadline, type ObjectStore } from './upload-worker.ts';
 
 /**
  * The rest of the money chain: SET-03, SET-05, SET-06, SET-07 and BO-08.
@@ -40,6 +41,7 @@ import { MONEY_SCALE, ZERO, add, fromDecimal, quantise } from './money.ts';
 type Reply = { code: (n: number) => { send: (b: unknown) => unknown } };
 
 export type SettleOptions = {
+  objectStore?: ObjectStore;
   /** What `tasks.unit_price` is denominated in. Same configuration as the review lane. */
   currency?: string;
   /**
@@ -55,6 +57,20 @@ export type SettleOptions = {
    */
   cycleDays?: number;
 };
+
+export async function tagArchivedObjects(
+  store: ObjectStore,
+  receipts: { object_key: string; episode_id: string }[],
+  log: Pick<FastifyBaseLogger, 'warn'>,
+): Promise<void> {
+  for (const receipt of receipts) {
+    try {
+      await withTagDeadline(store.tag(receipt.object_key, { tier: 'archive' }));
+    } catch (err) {
+      log.warn({ err, ...receipt }, 'Archive tag unconfirmed');
+    }
+  }
+}
 
 const PeriodQuery = z.object({
   period_start: z.coerce.date(),
@@ -553,8 +569,28 @@ export function registerSettle(
         skipped.set(lines[0]!.collectorRef, lines.length);
         continue;
       }
-      if (written !== undefined) created += 1;
-      else deferred.set(lines[0]!.collectorRef, lines.length);
+      if (written !== undefined) {
+        created += 1;
+        // ponytail: failed tags and post-bill repairs may remain Gold for the pilot.
+        // Retag from billed review/ingest pairs, never from untagged objects:
+        // those include first reviews, disputes and newer deliveries held in Gold.
+        if (options.objectStore !== undefined) {
+          try {
+            const receipts = await db.execute<{ object_key: string; episode_id: string }>(sql`
+              select cv.object_key, cv.episode_id
+                from bill_lines bl
+                join settlements s on s.id = bl.settlement_id
+                join episode_reviews r on r.id = s.episode_review_id
+                join cloud_verifications cv on cv.episode_id = r.episode_id
+                                           and cv.ingest_id = r.ingest_id
+               where bl.bill_id = ${written.id}
+            `);
+            await tagArchivedObjects(options.objectStore, receipts, req.log);
+          } catch (err) {
+            req.log.warn({ err, bill_id: written.id }, 'Archive receipt query failed; tagging unconfirmed');
+          }
+        }
+      } else deferred.set(lines[0]!.collectorRef, lines.length);
     }
 
     return reply.send({

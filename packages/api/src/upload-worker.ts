@@ -11,6 +11,7 @@ import {
   ListMultipartUploadsCommand,
   ListPartsCommand,
   PutObjectCommand,
+  PutObjectTaggingCommand,
   S3Client,
   UploadPartCommand,
 } from '@aws-sdk/client-s3';
@@ -52,10 +53,8 @@ import { safeJoin } from './media.ts';
 export type PutResult = 'uploaded' | 'kept';
 
 /**
- * The two calls the cloud leg makes, and no more.
- *
  * ponytail: two implementations (GreenNode over S3, the fs-backed test stub)
- * justify a 2-method interface. Everything S3-specific — multipart, resume,
+ * justify this interface. Everything S3-specific — multipart, resume,
  * metadata — lives inside `put` so the stub does not have to fake a protocol.
  */
 export interface ObjectStore {
@@ -83,6 +82,7 @@ export interface ObjectStore {
    * episode, and an unverified episode is never paid.
    */
   read(key: string, from?: number): Promise<AsyncIterable<Uint8Array> | null>;
+  tag(key: string, tags: Record<string, string>): Promise<void>;
 }
 
 /**
@@ -377,6 +377,20 @@ async function withRetry<T>(open: () => Promise<T>): Promise<T> {
   throw last;
 }
 
+export async function withTagDeadline(operation: Promise<unknown>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Object tag unconfirmed after 10 seconds')), 10_000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export class S3ObjectStore implements ObjectStore, DirectUploadStore {
   private readonly client: S3Client;
   private readonly bucket: string;
@@ -392,6 +406,18 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
       forcePathStyle: true,
       credentials: { accessKeyId: config.key, secretAccessKey: config.secret },
     });
+  }
+
+  async tag(key: string, tags: Record<string, string>): Promise<void> {
+    // The SDK's retry back-off ignores aborts; the race also bounds that wait.
+    await withTagDeadline(this.client.send(
+      new PutObjectTaggingCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Tagging: { TagSet: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })) },
+      }),
+      { abortSignal: AbortSignal.timeout(10_000) },
+    ));
   }
 
   async head(key: string): Promise<{ bytes: number; sha256: string | null } | null> {

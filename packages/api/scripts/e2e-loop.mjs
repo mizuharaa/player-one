@@ -81,7 +81,7 @@ const noRail = async () => {
 };
 
 /**
- * The cloud, as an fs-backed stub of the two-method `ObjectStore` seam.
+ * The cloud, as an fs-backed stub of the `ObjectStore` seam.
  *
  * `upload.test.ts` has a richer one — it can corrupt an object on write and
  * interrupt a run partway — and this is deliberately not that. Those knobs
@@ -97,6 +97,8 @@ const noRail = async () => {
  */
 class FsObjectStore {
   #meta = new Map();
+
+  async tag(_key, _tags) {}
 
   constructor(root) {
     this.root = root;

@@ -201,17 +201,30 @@ bucket can time that out.
 GreenNode is S3-compatible, so the AWS CLI sets it. Seven days, which is far
 longer than any legitimate resume (a 16 GB session is about 2.7 hours at the
 13 Mbps the brief assumes) and short enough that a dropped batch is not still
-billing next month:
+billing next month. The same configuration also transitions billed deliveries
+by tag. Replace `<archive class>` before applying it: GreenNode must name its
+Instant Archive class; `STANDARD_IA` and `DEEP_ARCHIVE` are the two strings
+HCM04 accepts.
+
+`PutBucketLifecycleConfiguration` replaces the whole rule set. Always put the
+rules together, preserve any other installed rules, and read the configuration
+back afterwards.
 
 ```bash
 cat > lifecycle.json <<'JSON'
 {
   "Rules": [
     {
-      "ID": "abort-incomplete-multipart-uploads",
+      "ID": "abort-stale-multipart",
       "Status": "Enabled",
       "Filter": { "Prefix": "" },
       "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+    },
+    {
+      "ID": "archive-billed-deliveries",
+      "Status": "Enabled",
+      "Filter": { "Tag": { "Key": "tier", "Value": "archive" } },
+      "Transitions": [{ "Days": 0, "StorageClass": "<archive class>" }]
     }
   ]
 }
@@ -235,6 +248,46 @@ aws s3api list-multipart-uploads          --endpoint-url "$STORAGE_ENDPOINT" --b
 
 The second command is the only way to see this cost. Run it when the storage
 bill does not match what `ListObjectsV2` says the bucket holds.
+
+After a new bill commits, the API tags every receipt key of each billed
+settlement's own reviewed ingest with `tier=archive`. Receipts must match both
+the review's episode and ingest; a newer delivery awaiting review is not
+eligible. Replaying bill generation or releasing an exception onto an existing
+bill does not tag again. With no object store configured, tagging is skipped.
+
+Tagging is best effort. Each call has a ten-second caller deadline as well as
+an abort signal; calls are sequential, so the worst-case delay per bill is ten
+seconds per receipt. A failed receipt query or tag is logged and never prevents
+a bill. A failed or timed-out tag is unconfirmed: the server may have applied
+it before losing the response, and the object may remain in Gold.
+
+The pilot accepts these Gold costs:
+
+- Footage awaiting first review, including newer deliveries of a reviewed episode.
+- Reviewed footage earning nothing, including rejected verdicts, and unresolved
+  disputes. These are not billed; their eventual disposition needs a retention policy.
+- Repair uploads after billing. Replacement objects are written without tags
+  and no new bill is created. A later fix can reapply the tag after read-back to
+  receipts whose settlement is already billed.
+
+An exception prevents only that settlement from newly establishing archive
+eligibility. It does not undo an earlier tag; a replacement settlement after a
+disagreed dispute can bill and tag the same ingest while the superseded
+settlement remains in exception. Failed tags may add to the Gold cost. Any later
+retag pass must derive eligible receipt keys from billed review/ingest pairs
+and reapply the tag; untagged objects alone are not a safe candidate list.
+
+Only HCM04's acceptance of the configuration has been observed. On the first
+real bill, check one billed object in this order:
+
+1. `GetObjectTagging` shows `tier=archive`.
+2. After lifecycle has had time to act, `HeadObject` reports the configured archive class.
+3. `GetObject` returns bytes whose sha256 matches the receipt.
+
+A successful bill proves none of these. Until the transition and read-back
+have been seen, archive behavior is unverified. Record the observations in
+`docs/cloud-scale-findings.md` when they happen. Retention periods, deletion,
+archive restoration and Path A tagging remain outside this change.
 
 ## Forcing the cloud to prove one batch again
 

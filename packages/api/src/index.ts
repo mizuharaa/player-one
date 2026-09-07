@@ -744,7 +744,7 @@ export function buildApi({
     objectStore: objectStore !== undefined && canPresign(objectStore) ? objectStore : undefined,
   });
   registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate, reviewerMediaEnabled });
-  registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays });
+  registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays, objectStore });
   registerPayout(app, db, requireActor, {
     cycleDays: settlementCycleDays,
     ...payout,

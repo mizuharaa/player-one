@@ -22,7 +22,7 @@ const sha = (b: Buffer): string => createHash('sha256').update(b).digest('hex');
  * and idempotent redelivery (UPL-15/16).
  *
  * No real S3 exists until the GreenNode contract is signed, so the cloud here
- * is `FsObjectStore` below — an fs-backed stub of the two-method `ObjectStore`
+ * is `FsObjectStore` below — an fs-backed stub of the `ObjectStore`
  * seam. What these tests prove is everything on OUR side of that seam: which
  * bytes move, what the verdict is based on (read-back, never metadata), what
  * the schema refuses, and that re-delivery never creates a second object set.
@@ -257,7 +257,7 @@ describe('a read-back that resumes', () => {
 // The stub cloud
 
 /**
- * The second implementation of the two-method seam. Fs-backed and deliberately
+ * The second implementation of the seam. Fs-backed and deliberately
  * able to misbehave in the two ways the real cloud can:
  *
  *   - `corruptOnPut` damages the stored bytes of a key while still recording
@@ -267,6 +267,12 @@ describe('a read-back that resumes', () => {
  *   - `failAfterWrites` interrupts an upload run partway, for UPL-16.
  */
 class FsObjectStore implements ObjectStore {
+  readonly tags = new Map<string, Record<string, string>>();
+
+  async tag(key: string, tags: Record<string, string>): Promise<void> {
+    this.tags.set(key, tags);
+  }
+
   readonly meta = new Map<string, { sha256: string }>();
   readonly writes = new Map<string, number>();
   /** Every key this store was asked to read back, in order. */
@@ -319,6 +325,12 @@ class FsObjectStore implements ObjectStore {
  * and record which byte each read was asked to start at.
  */
 class FlakyStore implements ObjectStore {
+  readonly tags = new Map<string, Record<string, string>>();
+
+  async tag(key: string, tags: Record<string, string>): Promise<void> {
+    this.tags.set(key, tags);
+  }
+
   readonly objects = new Map<string, Buffer>();
   /** Bytes to hand over before the socket dies, one entry per read; then whole reads. */
   cuts: number[] = [];
