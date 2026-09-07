@@ -123,12 +123,16 @@ async function shoot(name, { viewport, theme, locale, path, prepare, operator = 
     [theme, locale],
   );
 
-  // Sign in unless we are shooting the sign-in screen itself.
-  if (path !== '/login') {
-    await signIn(page, operator);
-  }
-
   try {
+    /*
+     * Inside the block, not before it. Signing in throws on a refusal now, and
+     * outside the `try` that throw walked past the `finally` that hands the
+     * lease back and closes the context — so the one run where authentication
+     * broke was also the run that leaked a claim on an episode and left a
+     * browser alive.
+     */
+    if (path !== '/login') await signIn(page, operator);
+
     await page.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
     if (prepare) await prepare(page);
     await page.waitForTimeout(1200);

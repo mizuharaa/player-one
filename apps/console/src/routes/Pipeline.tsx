@@ -98,7 +98,14 @@ const STATE_STYLE: Record<State, string> = {
   built: 'bg-[var(--bamboo-500)] text-[var(--stage)]',
   partial: 'bg-[var(--muted)] text-[var(--foreground)]',
   buildable: 'border border-[var(--border-strong)] text-[var(--muted-foreground)]',
-  blocked: 'bg-[var(--reject-bg)] text-[var(--reject)]',
+  /*
+   * Blocked is not rejected. `reject` is one of the three colours that decide
+   * whether a person is paid, and a requirement waiting on a hardware
+   * deliverable from PaXini has nothing to do with any collector's money. It
+   * is the machine reporting where the build stands, so it wears the system
+   * ink and says the word.
+   */
+  blocked: 'bg-[var(--tech-50)] text-[var(--tech-ink)]',
 };
 
 function StatePill({ state, size = 'md' }: { state: State; size?: 'sm' | 'md' }) {
@@ -205,8 +212,9 @@ export function PipelineScreen() {
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-2">
                       <StatePill state={row.state} />
+                      {/* The blocker's name is a reference, not a verdict. */}
                       {row.blocker ? (
-                        <span className="num text-[0.75rem] font-semibold text-[var(--reject)]">
+                        <span className="num text-[0.75rem] font-semibold text-[var(--tech-ink)]">
                           {row.blocker}
                         </span>
                       ) : null}
