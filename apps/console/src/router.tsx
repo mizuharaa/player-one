@@ -17,6 +17,7 @@ import { ReviewScreen } from './routes/Review.tsx';
 import { PipelineScreen } from './routes/Pipeline.tsx';
 import { LoginScreen } from './routes/Login.tsx';
 import { NotBuiltScreen } from './routes/NotBuilt.tsx';
+import { EpisodesScreen } from './routes/Episodes.tsx';
 import { BackOfficeScreen } from './routes/BackOffice.tsx';
 import { SettleScreen } from './payout/SettleScreen.tsx';
 import { PreflightScreen } from './payout/PreflightScreen.tsx';
@@ -88,11 +89,12 @@ const pipelineRoute = createRoute({
 });
 
 /**
- * The three destinations that exist in the product and not yet in the code.
+ * The counter, which exists in the product and not yet in the code.
  *
- * They route to a page that says what the surface is for, which requirement IDs
+ * It routes to a page that says what the surface is for, which requirement IDs
  * it covers, and how the work is done today — rather than 404ing or, worse,
- * showing an empty table that looks like a bug.
+ * showing an empty table that looks like a bug. The BO-09 cut behind it is
+ * ADR 0003 and has a trigger written into it.
  */
 const counterRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -101,11 +103,20 @@ const counterRoute = createRoute({
   component: () => <NotBuiltScreen surface="counter" />,
 });
 
+/**
+ * `/episodes` is the attention screen, not the not-built page and not BO-05.
+ *
+ * It answers the two questions the counter lane can answer — what is blocking
+ * one batch on this machine, and what is stuck anywhere in this centre — and
+ * says on screen that browsing every episode by task, collector, device,
+ * status and recording time needs a list endpoint that does not exist. The
+ * navigation marks it `partial` rather than dropping its dot for that reason.
+ */
 const episodesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/episodes',
   beforeLoad: requireSession,
-  component: () => <NotBuiltScreen surface="episodes" />,
+  component: EpisodesScreen,
 });
 
 /**

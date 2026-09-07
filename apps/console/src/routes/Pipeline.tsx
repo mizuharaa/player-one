@@ -11,12 +11,26 @@
  * implements and the surface it lives on, and a blocked row names the
  * deliverable that blocks it (D1, D2, D5) rather than saying "coming soon".
  * A blocked item with a named owner is a thing somebody can chase.
+ *
+ * **The stage track is the hero**, and the numbers on it are the one place
+ * this console uses section numbers: a recording passes through those seven
+ * steps in that order, so the sequence is the information and not decoration.
+ *
+ * **No verdict colour and no verdict glyph on this page.** `--pass`,
+ * `--partial` and their glyphs decide whether a collector is paid; a build
+ * state wearing them teaches an operator that the check mark means "done"
+ * somewhere it means "paid". Build progress is progress, so it is drawn in
+ * bamboo, and the half-filled square (`IconPartialBuilt`) is the
+ * implementation-status glyph rather than `IconPartial`. `blocked` keeps
+ * `--reject`: it is the only state here that means stop, there is no verdict
+ * anywhere on this screen to confuse it with, and the token is defined per
+ * scheme so it holds in both.
  */
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '../components/shell/AppShell.tsx';
 import { Panel } from '../components/ui/primitives.tsx';
 import { cn } from '../lib/cn.ts';
-import { IconPass, IconPartial, IconReject } from '../components/icons.tsx';
+import { IconPartialBuilt } from '../components/icons.tsx';
 
 type State = 'verified' | 'built' | 'partial' | 'buildable' | 'blocked';
 
@@ -69,13 +83,41 @@ const ROWS: Row[] = [
   { capability: 'Raw or proxy playback for review', requirement: 'QR-02 · PLT-10', state: 'blocked', surface: 'Review', blocker: 'D11' },
 ];
 
-const STATE_STYLE: Record<State, { fg: string; bg: string; Glyph: typeof IconPass | null }> = {
-  verified: { fg: 'var(--pass)', bg: 'var(--pass-bg)', Glyph: IconPass },
-  built: { fg: 'var(--pass)', bg: 'var(--pass-bg)', Glyph: IconPass },
-  partial: { fg: 'var(--partial)', bg: 'var(--partial-bg)', Glyph: IconPartial },
-  buildable: { fg: 'var(--tech-600)', bg: 'var(--tech-50)', Glyph: null },
-  blocked: { fg: 'var(--reject)', bg: 'var(--reject-bg)', Glyph: IconReject },
+/**
+ * How a state looks, and why in that order.
+ *
+ * `bamboo-500` is a fill under ink and never text (10.02:1 with `--stage` on
+ * it, and `--stage` does not move with the scheme, so the pair holds in both).
+ * `partial` is the neutral fill plus the half-filled square. `buildable` is a
+ * hairline and muted type — the work is ready and nobody has started it, which
+ * should read as the quietest state on the page rather than as a second brand
+ * colour.
+ */
+const STATE_STYLE: Record<State, string> = {
+  verified: 'bg-[var(--bamboo-500)] text-[var(--stage)]',
+  built: 'bg-[var(--bamboo-500)] text-[var(--stage)]',
+  partial: 'bg-[var(--muted)] text-[var(--foreground)]',
+  buildable: 'border border-[var(--border-strong)] text-[var(--muted-foreground)]',
+  blocked: 'bg-[var(--reject-bg)] text-[var(--reject)]',
 };
+
+function StatePill({ state, size = 'md' }: { state: State; size?: 'sm' | 'md' }) {
+  const { t } = useTranslation();
+  return (
+    <span
+      className={cn(
+        'inline-flex w-fit items-center gap-1 rounded-full font-bold',
+        size === 'sm'
+          ? 'px-2 py-0.5 text-[0.6875rem] uppercase tracking-[0.04em]'
+          : 'px-2.5 py-1 text-[0.75rem]',
+        STATE_STYLE[state],
+      )}
+    >
+      {state === 'partial' ? <IconPartialBuilt size={size === 'sm' ? 11 : 13} /> : null}
+      {t(`pipeline.state.${state}`)}
+    </span>
+  );
+}
 
 export function PipelineScreen() {
   const { t } = useTranslation();
@@ -89,46 +131,57 @@ export function PipelineScreen() {
   return (
     <AppShell>
       <header className="max-w-[62ch]">
-        <h1 className="text-[2.0625rem] font-extrabold leading-[1.12] tracking-[-0.03em]">
+        <h1 className="text-[2.625rem] font-extrabold leading-[1.05] tracking-[-0.035em]">
           {t('pipeline.title')}
         </h1>
-        <p className="mt-3 text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
+        <p className="mt-4 text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
           {t('pipeline.intro')}
         </p>
       </header>
 
-      <div className="mt-6 flex flex-wrap gap-2">
-        <Count value={counts.built} label={t('pipeline.built')} tone="pass" />
-        <Count value={counts.next} label={t('pipeline.next')} tone="partial" />
-        <Count value={counts.blocked} label={t('pipeline.blocked')} tone="reject" />
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Count value={counts.built} label={t('pipeline.built')} state="built" />
+        <Count value={counts.next} label={t('pipeline.next')} state="partial" />
+        <Count value={counts.blocked} label={t('pipeline.blocked')} state="blocked" />
       </div>
 
-      {/* The seven stages, as a track rather than seven identical cards. */}
-      <ol className="mt-8 flex gap-1 overflow-x-auto pb-2">
-        {STAGES.map((stage) => {
-          const style = STATE_STYLE[stage.state];
-          return (
+      {/* --- The hero: seven stages as one track, not seven identical cards. --- */}
+      <section data-guide="pipeline.stage" className="mt-9">
+        <h2 className="text-[0.9375rem] font-bold tracking-[-0.01em]">
+          {t('ui.a.pipeline.track')}
+        </h2>
+        <ol className="mt-3 flex list-none gap-2 overflow-x-auto p-0 pb-2">
+          {STAGES.map((stage) => (
             <li
               key={stage.n}
-              className="flex min-w-[128px] flex-1 flex-col gap-1.5 rounded-[var(--radius-base)] border border-[var(--border)] bg-[var(--card)] px-3.5 py-3"
+              className={cn(
+                'flex min-w-[150px] flex-1 flex-col gap-2 rounded-[var(--radius-base)] border p-4',
+                /*
+                  A blocked stage gets the hatch — the same drawn ground the
+                  empty states use. Step seven has no code behind it, and a
+                  plain tile that looks exactly like the six built ones is how
+                  somebody reads "cloud upload" as finished.
+                */
+                stage.state === 'blocked'
+                  ? 'hatch border-[var(--border)]'
+                  : 'border-[var(--border)] bg-[var(--card)]',
+              )}
             >
-              <span className="num text-[0.75rem] font-semibold text-[var(--faint-foreground)]">
+              <span className="num text-[0.8125rem] font-semibold text-[var(--muted-foreground)]">
                 {stage.n}
               </span>
-              <span className="text-[0.9375rem] font-bold leading-tight">{stage.name}</span>
-              <span
-                className="mt-auto inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[0.6875rem] font-bold uppercase tracking-[0.04em]"
-                style={{ color: style.fg, backgroundColor: style.bg }}
-              >
-                {style.Glyph ? <style.Glyph size={11} /> : null}
-                {t(`pipeline.state.${stage.state}`)}
+              <span className="text-[1.0625rem] font-bold leading-tight tracking-[-0.01em]">
+                {stage.name}
+              </span>
+              <span className="mt-auto pt-1.5">
+                <StatePill state={stage.state} size="sm" />
               </span>
             </li>
-          );
-        })}
-      </ol>
+          ))}
+        </ol>
+      </section>
 
-      <Panel className="mt-8 overflow-hidden">
+      <Panel className="mt-9 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse text-left">
             <thead>
@@ -140,54 +193,59 @@ export function PipelineScreen() {
               </tr>
             </thead>
             <tbody>
-              {ROWS.map((row) => {
-                const style = STATE_STYLE[row.state];
-                return (
-                  <tr
-                    key={row.capability}
-                    className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]"
-                  >
-                    <td className="px-4 py-3 text-[0.9375rem] font-semibold">{row.capability}</td>
-                    <td className="num px-4 py-3 text-[0.8125rem] text-[var(--tech-600)]">
-                      {row.requirement}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.75rem] font-bold"
-                        style={{ color: style.fg, backgroundColor: style.bg }}
-                      >
-                        {style.Glyph ? <style.Glyph size={13} /> : null}
-                        {t(`pipeline.state.${row.state}`)}
-                        {row.blocker ? <span className="num opacity-80">· {row.blocker}</span> : null}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-[0.8125rem] text-[var(--muted-foreground)]">
-                      {row.surface}
-                    </td>
-                  </tr>
-                );
-              })}
+              {ROWS.map((row) => (
+                <tr
+                  key={row.capability}
+                  className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]"
+                >
+                  <td className="px-4 py-3 text-[0.9375rem] font-semibold">{row.capability}</td>
+                  <td className="num px-4 py-3 text-[0.8125rem] text-[var(--tech-600)] dark:text-[var(--tech-300)]">
+                    {row.requirement}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center gap-2">
+                      <StatePill state={row.state} />
+                      {row.blocker ? (
+                        <span className="num text-[0.75rem] font-semibold text-[var(--reject)]">
+                          {row.blocker}
+                        </span>
+                      ) : null}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-[0.8125rem] text-[var(--muted-foreground)]">
+                    {row.surface}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       </Panel>
 
-      <p className="mt-4 max-w-[70ch] text-[0.8125rem] leading-relaxed text-[var(--muted-foreground)]">
-        D1 (Wi-Fi protocol) and D5 (device SDK and manual) are owed by PaXini and were promised on
-        13 August 2026. D11 — whether background review needs online playback of raw video — is
-        unresolved on PaXini&rsquo;s side and decides whether video effectively leaves Vietnam.
-      </p>
+      <section className="mt-6 max-w-[70ch]">
+        <h2 className="text-[0.9375rem] font-bold tracking-[-0.01em]">
+          {t('ui.a.pipeline.owed')}
+        </h2>
+        <p className="mt-2 text-[0.875rem] leading-relaxed text-[var(--muted-foreground)]">
+          <span className="num font-semibold text-[var(--foreground)]">D1</span> (Wi-Fi protocol)
+          and <span className="num font-semibold text-[var(--foreground)]">D5</span> (device SDK and
+          manual) are owed by PaXini and were promised on 13 August 2026.{' '}
+          <span className="num font-semibold text-[var(--foreground)]">D11</span> — whether
+          background review needs online playback of raw video — is unresolved on PaXini&rsquo;s
+          side and decides whether video effectively leaves Vietnam.
+        </p>
+      </section>
     </AppShell>
   );
 }
 
-function Count({ value, label, tone }: { value: number; label: string; tone: 'pass' | 'partial' | 'reject' }) {
+function Count({ value, label, state }: { value: number; label: string; state: State }) {
   return (
     <span
       className={cn(
-        'inline-flex items-baseline gap-1.5 rounded-full px-3 py-1.5 text-[0.875rem] font-semibold',
+        'inline-flex items-baseline gap-1.5 rounded-full px-3.5 py-1.5 text-[0.875rem] font-semibold',
+        STATE_STYLE[state],
       )}
-      style={{ color: `var(--${tone})`, backgroundColor: `var(--${tone}-bg)` }}
     >
       <span className="num text-[1.0625rem] font-bold">{value}</span>
       {label}
@@ -197,7 +255,7 @@ function Count({ value, label, tone }: { value: number; label: string; tone: 'pa
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th className="px-4 py-2.5 text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]">
+    <th className="px-4 py-2.5 text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--muted-foreground)]">
       {children}
     </th>
   );
