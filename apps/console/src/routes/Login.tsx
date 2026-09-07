@@ -109,11 +109,23 @@ type Failure = 'credentials' | 'mismatch' | 'network' | 'sign_in_rate_limited' |
 /**
  * The film.
  *
- * `apps/console/public/landing.mp4` (15.83s by `ffprobe`, 1280×720) ships with
- * the console,
+ * `apps/console/public/landing.mp4` (12.96s, 1280×720, 1.39 MB) ships with the
+ * console,
  * so the default is the real file and the screen is complete with no
  * environment set. `VITE_LANDING_VIDEO_URL` stays as the seam a deployment
  * uses to point at a longer cut or a CDN copy without a rebuild of this file.
+ *
+ * **The end card came off.** The 15.83s cut finished on its own outro — a
+ * second PlayerOne wordmark, a second brand mark, "VNG × PaXini" — and this
+ * panel `loop`s, so every sixteen seconds the left half of the sign-in became
+ * a title card carrying the product's name directly opposite the 56px `h1` of
+ * the same word, with Trúc's head over the partner's. That is precisely the
+ * duplication the note about the mark below congratulates itself for avoiding.
+ * The cut now ends at 12.95s on the last clean frame of the planting beat.
+ *
+ * Re-encoded while it was open, at CRF 26 rather than the original's quality:
+ * 2.33 MB to 1.39 MB, on a panel that is never seen except under a 60% ink
+ * scrim, which is 40% off the largest thing this screen fetches.
  */
 const VIDEO_URL: string =
   typeof import.meta.env.VITE_LANDING_VIDEO_URL === 'string' &&
