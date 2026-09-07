@@ -28,7 +28,20 @@ export function Panel({
   return (
     <div
       className={cn(
-        'rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow-sm)]',
+        /*
+         * Glass, as the world committed 2026-09-07 defines it: `--card` at the
+         * card fill over the lavender wash, with a `backdrop-filter` so the
+         * ground bends behind it. The page is tinted precisely so this reads
+         * as a material — over a white page a translucent card is white, and
+         * the effect collapses into a grey rectangle.
+         *
+         * The border is white rather than `--border`: what catches the light
+         * on a piece of glass is its edge, and a grey hairline on a
+         * translucent surface reads as a drawn box instead.
+         */
+        'rounded-[var(--radius-lg)] border border-white/70 shadow-[var(--shadow-sm)]',
+        'bg-[color-mix(in_srgb,var(--card)_calc(var(--glass-card)*100%),transparent)]',
+        'backdrop-blur-[var(--glass-card-blur)]',
         className,
       )}
       {...rest}

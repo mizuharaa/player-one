@@ -472,6 +472,11 @@ export function Home() {
         <Rule />
         <Title>{tt('home.more')}</Title>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2] }}>
+          {/* The task hall lost its bar slot to the forum (`shell/TabBar.tsx`
+              has the width measurement that forced the swap). It is one tap
+              from here, and everything it lists is already on this screen
+              above — the hall adds the progress bar and the claimant count. */}
+          <Chip label={tt('hall.title')} onPress={() => nav.push({ name: 'taskHall' })} />
           <Chip label={tt('home.incomeLink')} onPress={() => nav.selectTab('income')} />
           <Chip label={tt('home.myTasks')} onPress={() => nav.push({ name: 'myTasks' })} />
           <Chip label={tt('home.devices')} onPress={() => nav.push({ name: 'devices' })} />

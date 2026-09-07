@@ -120,6 +120,46 @@ export function GlyphUploads({ size = 22, color }: { size?: number; color: strin
   );
 }
 
+/**
+ * A speech bubble: the forum, where collectors talk to each other.
+ *
+ * Solid, like every other glyph in this set — the tail is a second filled
+ * shape rather than a notch, because a knockout would have to be painted in
+ * whatever is behind the glyph and the active tab paints ink behind it.
+ */
+export function GlyphForum({ size = 22, color }: { size?: number; color: string }) {
+  const { p, bar } = useGrid(size, color);
+  return (
+    <Frame size={size}>
+      <View style={bar(2.5, 3, 15, 11, 3.5)} />
+      <View
+        style={{
+          position: 'absolute',
+          left: p(5.5),
+          top: p(12.5),
+          width: 0,
+          height: 0,
+          borderTopWidth: p(4.5),
+          borderRightWidth: p(4.5),
+          borderTopColor: color,
+          borderRightColor: 'transparent',
+        }}
+      />
+    </Frame>
+  );
+}
+
+/** A plus, for the one compose action a screen is allowed. */
+export function GlyphPlus({ size = 22, color }: { size?: number; color: string }) {
+  const { bar } = useGrid(size, color);
+  return (
+    <Frame size={size}>
+      <View style={bar(8.9, 3, 2.2, 14, 1.1)} />
+      <View style={bar(3, 8.9, 14, 2.2, 1.1)} />
+    </Frame>
+  );
+}
+
 /** Three columns of a chart: the income line, per episode. */
 export function GlyphIncome({ size = 22, color }: { size?: number; color: string }) {
   const { bar } = useGrid(size, color);

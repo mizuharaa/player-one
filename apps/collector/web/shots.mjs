@@ -29,6 +29,13 @@ const OUT = fileURLToPath(new URL('../.impeccable/review/', import.meta.url));
 const VIEWPORT = { width: 390, height: 844 };
 /** The short end of the same range, where a hero has to give up height. */
 const SHORT = { width: 390, height: 640 };
+/**
+ * The narrow end of it. 320dp is where the navigation bar's slot arithmetic
+ * stops working and where Vietnamese — the longest of the three catalogues —
+ * decides whether a label fits or ellipsises. Every new surface gets a picture
+ * here, in Vietnamese, because that is the case that fails first.
+ */
+const NARROW = { width: 320, height: 640 };
 
 /**
  * `react-native-web` logs this on every mount because `BackHandler` is an
@@ -57,6 +64,11 @@ const T = {
     guide: 'Xem hướng dẫn',
     perMinute: 'đ/phút hiệu quả',
     upload: 'Tải lên',
+    forum: 'Diễn đàn',
+    groups: 'Nhóm chat',
+    filterAll: 'Tất cả',
+    filterAnswered: 'Đã trả lời',
+    compose: 'Viết bài mới',
   },
   en: {
     signIn: 'Sign in',
@@ -75,6 +87,11 @@ const T = {
     guide: 'Show me',
     perMinute: 'VND/effective minute',
     upload: 'Upload',
+    forum: 'Forum',
+    groups: 'Group chats',
+    filterAll: 'All',
+    filterAnswered: 'Answered',
+    compose: 'Write a post',
   },
   zh: {
     signIn: '登录',
@@ -93,6 +110,11 @@ const T = {
     guide: '看指引',
     perMinute: '越南盾/有效分钟',
     upload: '上传',
+    forum: '论坛',
+    groups: '群聊',
+    filterAll: '全部',
+    filterAnswered: '已回复',
+    compose: '发新帖',
   },
 };
 
@@ -281,11 +303,43 @@ async function session(browser, lang) {
   await shot(page, `guide-${lang}`);
   await tap(page, t.close);
 
-  await tap(page, t.tasks);
+  // The task hall, which is no longer a bar destination: the forum took its
+  // slot and it is a chip in Home's "Nơi khác trong ứng dụng" row. It is at the
+  // bottom of Home, hence the scroll — and reaching it this way is the check
+  // that the displaced destination is still reachable.
+  await scroll(page, 2400);
+  await tapButton(page, t.hall);
   await shot(page, `taskhall-${lang}`);
 
   await tap(page, t.perMinute);
   await shot(page, `taskdetail-${lang}`);
+  // Two pops now, not one: the hall is pushed on top of Home rather than being
+  // a root of its own, so the bar is only back when Home is.
+  await tapLabel(page, t.back);
+  await tapLabel(page, t.back);
+
+  // The forum, and the group chats hanging off its header. Both are previews
+  // with no service behind them; what these shots are for is the layout, the
+  // Vietnamese copy and the sentence each dead control answers with.
+  await tap(page, t.forum);
+  await shot(page, `forum-${lang}`);
+  await tapButton(page, t.filterAnswered);
+  await shot(page, `forum-answered-${lang}`);
+  await tapButton(page, t.filterAll);
+  // The floating compose action. It opens nothing, and says so.
+  await tapLabel(page, t.compose);
+  await shot(page, `forum-notconnected-${lang}`);
+
+  await tapButton(page, t.groups);
+  await shot(page, `groups-${lang}`);
+  await tap(page, 'Điểm hỗ trợ Quận 7');
+  await shot(page, `groupthread-${lang}`);
+  await tapLabel(page, t.back);
+  // The announcements channel, whose composer says operators only — the one
+  // place the collector/operator split is visible in this app.
+  await tap(page, 'Thông báo Player One');
+  await shot(page, `groupthread-announce-${lang}`);
+  await tapLabel(page, t.back);
   await tapLabel(page, t.back);
 
   await tap(page, t.uploads);
@@ -303,6 +357,19 @@ async function session(browser, lang) {
   // The estimated row: dashed, muted, labelled, below the confirmed ones.
   await scroll(page, 1400);
   await shot(page, `income-estimated-${lang}`);
+
+  // 320×640, in Vietnamese: the narrowest bar the pilot ships to, with the
+  // longest of the three catalogues in it. This is the picture the navigation
+  // decision was made against, so it is taken rather than argued.
+  if (lang === 'vi') {
+    await page.setViewportSize(NARROW);
+    await tap(page, t.forum);
+    await shot(page, 'forum-320-vi');
+    await tapButton(page, t.groups);
+    await shot(page, 'groups-320-vi');
+    await tap(page, 'Kịch bản: Nhà bếp');
+    await shot(page, 'groupthread-320-vi');
+  }
 
   await page.close();
 }

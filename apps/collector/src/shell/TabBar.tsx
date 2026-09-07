@@ -6,15 +6,15 @@ import { useTheme } from '../theme.tsx';
 import type { MessageKey } from '../i18n.ts';
 import { GlassBar, bottomInset, face } from '../ui.tsx';
 import {
+  GlyphForum,
   GlyphHome,
   GlyphIncome,
   GlyphSession,
-  GlyphTasks,
   GlyphUploads,
 } from '../glyphs.tsx';
 
 /**
- * The bottom bar: Home · Tasks · [● Session] · Uploads · Income.
+ * The bottom bar: Home · Forum · [● Session] · Uploads · Income.
  *
  * Four destinations and one action, which is why the middle one is drawn
  * differently. Material's navigation bar takes three to five destinations and
@@ -22,6 +22,41 @@ import {
  * thing a collector opens the app to do, so it is the raised centre button —
  * Android's FAB argument, applied to the one screen that ends in an APP-16
  * session identifier.
+ *
+ * ## Why the forum took the task hall's slot instead of becoming a fifth
+ *
+ * The community screens landed on a bar that was already full, and the width
+ * decided it rather than taste. This bar is inset `space[3]` from each edge and
+ * carries `space[2]` of its own padding, so at **320dp** — the short end of the
+ * Android range this pilot ships to, and the width PRODUCT.md's "legibility
+ * across a wide Android device range" is about — the row has 280dp of content.
+ * The centre column is a fixed `space[16]` = 64dp, because it holds the word
+ * under the raised button. That leaves **216dp for the destinations**:
+ *
+ * | Destinations | Each | Verdict |
+ * |---|---|---|
+ * | 4 (today) | 54dp | already under Android's 48dp target only in width-per-label, and the labels ellipsise |
+ * | 5 (a "More" slot) | 43dp | under the 48dp minimum touch width |
+ * | 6 (Forum + Groups as slots) | 36dp | under it by a third; "Trang chính" would be two characters |
+ *
+ * So a sixth and seventh slot is not a taste call, it fails a target-size
+ * floor, and a "More" slot fails the same one — it is a sixth slot with a
+ * vaguer name. Material's three-to-five is not exceeded here and was never the
+ * binding constraint; 320dp was.
+ *
+ * What was displaced, and why it was the hall. `Home` is task-first: its hero
+ * is the first claimable task and it lists the rest, including the ones at
+ * capacity. It is the only destination in this bar whose content is already
+ * rendered by another destination, so it is the only one that can leave
+ * without a collector losing a place. `taskHall` is still a route and still
+ * has its own screen — it carries the per-task progress bar and claimant count
+ * Home does not — reached from Home's "Nơi khác trong ứng dụng" row, one tap
+ * from where the collector already is.
+ *
+ * Group chats is **not** a bar destination and was never going to be: the same
+ * 216dp says so. It hangs off the forum's own header, which is also where it
+ * belongs — the forum and the groups are the one community surface, and the
+ * unread count rides on the control that opens it.
  *
  * **The centre button prepares. It does not record.** It pushes `sessionCreate`,
  * where task, device, scenario and the two APP-17b declarations are bound and
@@ -59,7 +94,9 @@ const TABS: {
   Glyph: ComponentType<{ size?: number; color: string }>;
 }[] = [
   { tab: 'home', key: 'tab.home', Glyph: GlyphHome },
-  { tab: 'taskHall', key: 'tab.tasks', Glyph: GlyphTasks },
+  // `forum.title` and not a `tab.forum` of its own: the bar label and the
+  // screen heading are the same word in all three catalogues.
+  { tab: 'forum', key: 'forum.title', Glyph: GlyphForum },
   { tab: 'uploads', key: 'tab.uploads', Glyph: GlyphUploads },
   { tab: 'income', key: 'tab.income', Glyph: GlyphIncome },
 ];

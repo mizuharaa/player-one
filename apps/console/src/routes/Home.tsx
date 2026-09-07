@@ -115,56 +115,102 @@ export function HomeScreen() {
         </div>
       ) : null}
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
-        {/* --- The gauge. The page's one hero. --- */}
-        <div>
-          <Panel data-guide="home.gauge" className="flex flex-col items-center px-6 pb-5 pt-6">
-            {/*
-              The page's `h1`, and it is the shift rather than the product
-              name: the operator knows what they signed into, and a screen
-              whose only heading is a logo gives a screen-reader user nothing
-              to orient on. Sized as a caption because the gauge under it is
-              the hero — heading level and visual weight are different axes.
+      {/* ---------------------------------------------------------------
+          The band, and it is the recomposition this screen was missing.
 
-              **The clock is printed next to the shift name.** "Golden hour" is
-              decided by `getHours()` on the machine that renders this page,
-              and PaXini's reviewers are an hour behind the counter in Ho Chi
-              Minh City. A reviewer in Shenzhen reading "Golden hour" with no
-              time beside it cannot tell whose evening it is; with the time
-              there, they can. The value refreshes with the shift query, once a
-              minute.
-            */}
-            <h1
-              className="text-[0.875rem] font-semibold text-[var(--muted-foreground)]"
-              title={t('ui.a.home.clock')}
-            >
+          The world changed on 2026-09-07 and for one round this page only
+          changed colour — same two panels, same gauge, same table, repainted
+          lavender. Daniel said it looked exactly like the previous version and
+          he was right: a palette is not a composition.
+
+          So the shift now opens on the work itself. A frame of collected
+          footage runs the full width under a measured ink scrim, and the three
+          things a reviewer needs on arrival sit on it: which shift this is and
+          what time that is on the machine deciding it, how far through the
+          target they are, and the way in. The gauge moved here from its own
+          panel — it is still the one hero and there is still exactly one, it
+          is simply no longer floating on paper next to the ledger.
+
+          The image is `landing-poster.jpg`, the same still the sign-in film
+          opens on. ponytail: when an episode still is reachable per reviewer,
+          this becomes the next episode in their own queue, which is a better
+          picture than a stock frame because it is the one they are about to
+          judge.
+          --------------------------------------------------------------- */}
+      <section
+        data-guide="home.gauge"
+        className="relative isolate overflow-hidden rounded-[var(--radius-xl)] shadow-[var(--shadow-lg)]"
+      >
+        <img
+          src="/landing-poster.jpg"
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 -z-10 h-full w-full object-cover"
+        />
+        {/*
+          The scrim, flat and measured, the same instrument the sign-in film
+          uses: `--stage` at 60% over the worst pixel a frame can hold — pure
+          white — composites to `rgb(112,113,115)`, where `--stage-over` reads
+          4.94:1. Every ink on this band is that token for that reason.
+        */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 -z-10 bg-[color-mix(in_srgb,var(--stage)_60%,transparent)]"
+        />
+
+        <div className="flex flex-col gap-6 p-6 text-[var(--stage-over)] lg:flex-row lg:items-center lg:gap-10 lg:p-9">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[0.875rem] font-semibold" title={t('ui.a.home.clock')}>
               {t('home.greeting')} · {t(SHIFT_KEY[state])} ·{' '}
               <span className="num">{localClock()}</span>
             </h1>
+            <p className="mt-3 text-[2.75rem] font-extrabold leading-[1.02] tracking-[-0.035em]">
+              {isPending ? '—' : (data?.decided ?? '—')}
+              <span className="text-[1.25rem] font-bold opacity-80">
+                {' '}
+                / {isPending ? '—' : (data?.target ?? '—')}
+              </span>
+            </p>
+            <p className="mt-1 text-[0.9375rem] opacity-90">{t('ui.a.home.gaugeCaption')}</p>
+            {/*
+              The arc, drawn small and wordless beside the figure.
 
-            {isPending ? (
-              <Skeleton className="mt-4 h-[268px] w-[300px] rounded-full" />
-            ) : (
-              <Gauge value={data?.decided ?? null} target={data?.target ?? null} state={state} />
-            )}
-          </Panel>
+              `Gauge` prints the count and a caption inside its own ring, which
+              is right when it is the page's hero on paper and wrong here: the
+              band already says "3 / 60" in 44px type, and the ring repeating it
+              was the same number twice, with its caption in a muted grey that
+              measures nothing readable on the ink scrim. `bare` keeps the arc
+              and Trúc and drops the type.
+            */}
 
-          <Button
-            asChild
-            variant="primary"
-            size="lg"
-            data-guide="home.start"
-            className="mt-3 w-full"
-          >
-            <Link to="/review">
-              {t('home.start')}
-              <Key>R</Key>
-            </Link>
-          </Button>
+            <Button asChild variant="primary" size="lg" data-guide="home.start" className="mt-6">
+              <Link to="/review">
+                {t('home.start')}
+                <Key>R</Key>
+              </Link>
+            </Button>
+          </div>
+
+          {isPending ? (
+            <Skeleton className="h-[212px] w-[212px] shrink-0 rounded-full" />
+          ) : (
+            <div className="shrink-0 self-center">
+              <Gauge value={data?.decided ?? null} target={data?.target ?? null} state={state} bare />
+            </div>
+          )}
         </div>
+      </section>
 
-        {/* --- The ledger, then the one ink block. --- */}
+      {/* ---------------------------------------------------------------
+          The ledger and the ink block, side by side now that the gauge has
+          gone up into the band. Two columns of equal weight rather than a
+          narrow rail beside a wide one: neither of these is subordinate to the
+          other, and the old 400px rail existed to hold a gauge that is no
+          longer in it.
+          --------------------------------------------------------------- */}
+      <div className="mt-5 grid items-start gap-5 lg:grid-cols-2">
         <div className="flex flex-col gap-4">
+          {/* column one: the ledger */}
           <Panel data-guide="home.figures" className="px-5 py-1.5">
             <dl className="m-0">
               <Figure
@@ -215,12 +261,14 @@ export function HomeScreen() {
               />
             </dl>
           </Panel>
-
-          <Settled
-            amount={data ? money(data.settled_amount, data.currency) : null}
-            unavailable={unavailable}
-          />
         </div>
+
+        {/* column two: the one ink block, which has its own sentence and its
+            own way out and so earns the weight. */}
+        <Settled
+          amount={data ? money(data.settled_amount, data.currency) : null}
+          unavailable={unavailable}
+        />
       </div>
 
       {/* --- The strip that is not a metric. --- */}
@@ -288,7 +336,7 @@ function Settled({ amount, unavailable }: { amount: string | null; unavailable: 
           'absolute right-5 top-5 grid h-11 w-11 place-items-center rounded-full border ' +
           'border-[var(--stage-line)] bg-[var(--stage-panel)] text-[var(--stage-fg)] no-underline ' +
           'transition-[background-color,border-color,transform] duration-150 ease-[var(--ease)] ' +
-          'hover:border-[var(--action)] hover:bg-[var(--sun-500)] hover:text-[var(--stage)] ' +
+          'hover:border-[var(--action)] hover:bg-[var(--action)] hover:text-[var(--action-ink)] ' +
           'active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]'
         }
       >
@@ -494,6 +542,7 @@ function Gauge({
   value,
   target,
   state,
+  bare = false,
 }: {
   /**
    * `null` on both when the shift query failed. The ring then draws its track
@@ -503,6 +552,15 @@ function Gauge({
   value: number | null;
   target: number | null;
   state: MascotState;
+  /**
+   * Draw the arc and Trúc, and none of the type.
+   *
+   * The ring prints its own count and caption, which is right where it is the
+   * hero on paper. In the band it is beside a 44px figure saying the same
+   * thing, and its caption is a muted grey with nothing readable to sit on
+   * over an ink scrim. This drops both; the band's own type says it once.
+   */
+  bare?: boolean;
 }) {
   const { t } = useTranslation();
   const R = 104;
@@ -568,7 +626,7 @@ function Gauge({
            * that means a collector was paid; the deeper step marks the
            * milestone without borrowing that meaning.
            */
-          stroke={over ? 'var(--bamboo-700)' : 'var(--bamboo-600)'}
+          stroke={over ? 'var(--lime-700)' : 'var(--lime-500)'}
           strokeWidth={STROKE}
           strokeLinecap="round"
           strokeDasharray={arcLength}
@@ -618,6 +676,8 @@ function Gauge({
         font stack and the locale's own digits instead of being a drawing of a
         number.
       */}
+{bare ? null : (
+        <>
       <p className="num relative m-0 text-center text-[2.75rem] font-extrabold leading-none tracking-[-0.03em]">
         {value ?? '—'}
       </p>
@@ -632,6 +692,8 @@ function Gauge({
           </>
         )}
       </figcaption>
+        </>
+      )}
     </figure>
   );
 }

@@ -680,7 +680,7 @@ const en = {
   'guide.episodes.scope':
     'Which episodes this screen is showing right now. It is a scope, not the whole catalogue.',
   'guide.counter.plan':
-    'The counter workflow runs on the command line today. This page says what the screen will do when it is built.',
+    'One question per step, and nothing is written until the last one. The rail says where you are, and every answer stays editable from the summary.',
 
   // ---------------------------------------------------------------------
   // Settle and the payout console (SET-03 → SET-07; payout brief, Agent D).
@@ -1154,6 +1154,8 @@ const en = {
   'login.legalData': 'Data collection notice',
 
   'ui.a.home.gauge': 'Reviewed {{value}} of {{target}} episodes this shift',
+  /* The caption under the band's figure, where the count is already drawn. */
+  'ui.a.home.gaugeCaption': 'episodes reviewed this shift',
   'ui.a.home.payable.note': 'Effective duration from decided reviews only.',
   'ui.a.home.approval.note': 'Passes and partial passes, against every decision today.',
   'ui.a.home.pace.note': 'Load to verdict. Instrumentation, never money.',
@@ -1234,6 +1236,173 @@ const en = {
   'episodes.gone': 'That episode is no longer on the server. Read the batch again.',
   'episodes.reload': 'Read again',
   'episodes.noMatch': 'No row in this scope matches the filter.',
+  /* ---------------------------------------------------------------------
+     The wizard grammar, shared by the counter's card intake and the back
+     office's task assignment. One decision per step, a rail that says where
+     you are, and a summary of every answer before anything is written.
+     --------------------------------------------------------------------- */
+
+  'wiz.step': 'Step',
+  'wiz.review': 'Check and commit',
+  'wiz.review.question': 'Check every answer before this is written.',
+  'wiz.unanswered': 'Not answered',
+  'wiz.edit': 'Change',
+  'wiz.back': 'Back',
+  'wiz.next': 'Next',
+  'wiz.needAnswer': 'Answer this question to go on.',
+  'wiz.failed.gone':
+    'The server no longer holds the row this step names. Reload the screen and start again.',
+  'wiz.failed.body':
+    'The server would not accept one of the answers. That is a fault in this console rather than in what you typed; quote the reference below when you report it.',
+  'wiz.failed.session':
+    'This session is not allowed to make that change. Sign in again, or ask an operator who holds the administrator role.',
+
+  /* ---------------------------------------------------------------------
+     The counter: card intake (BO-10, APP-17b).
+     --------------------------------------------------------------------- */
+
+  'counter.title': 'Card intake',
+  'counter.intro':
+    'A collector hands in a TF card. Record who handed it over, which camera it came out of, and what was recorded on it. Nothing is written until the last step.',
+  'counter.review.intro':
+    'Two rows go in: the handover of the card, and the recording declared against it. Change any answer from here.',
+  'counter.group.card': 'The card',
+  'counter.group.recording': 'The recording',
+
+  'counter.step.collector': 'Collector',
+  'counter.step.device': 'Camera',
+  'counter.step.card': 'Card',
+  'counter.step.task': 'Task',
+  'counter.step.scenario': 'Scenario',
+  'counter.step.declare': 'Declarations',
+
+  'counter.q.collector': 'Who handed this card over?',
+  'counter.q.device': 'Which camera did the card come out of?',
+  'counter.q.card': 'Which card is it, and when did it arrive?',
+  'counter.q.task': 'Which task was this recorded against?',
+  'counter.q.scenario': 'Where was it recorded, and when was the recording prepared?',
+  'counter.q.declare': 'What did the collector declare?',
+
+  'counter.note.collector':
+    'One card belongs to one collector, and that is the person at the counter. The centre, this machine and your own name come from the credentials you signed in with, so none of them is asked for here.',
+  'counter.note.device':
+    'Cameras move between collectors and cards move between cameras. Neither is inferred from whoever last held it, so the camera is named rather than guessed.',
+  'counter.note.card':
+    'The label on the card, as it is written on the card. The time is when it changed hands at this counter, not when anything was recorded.',
+  'counter.note.task':
+    'The task decides the rate. The collector has to hold a live claim on it already; if they do not, the server refuses the recording and says which of the three reasons it is.',
+  'counter.note.scenario':
+    'The prepare time is what the collector remembers. It is never matched against the footage automatically, because only a session the app created is, so an operator confirms the attribution after the card is imported.',
+  'counter.note.declare':
+    'Both answers are required. "No" is an answer and "nobody asked" is not, and the record has no way to say the second.',
+
+  'counter.field.card': 'TF card',
+  'counter.hint.card': 'As written on the card.',
+  'counter.field.handoverAt': 'Handed over at',
+  'counter.hint.handoverAt': 'Your own local time.',
+  'counter.field.preparedAt': 'Recording prepared at',
+  'counter.hint.preparedAt':
+    'Your own local time. There is no end time, and there is no field for one.',
+
+  'counter.declare.others': 'Other people appear in the footage',
+  'counter.declare.sensitive': 'Sensitive information appears in the footage',
+  'counter.declare.yes': 'Yes',
+  'counter.declare.no': 'No',
+
+  'counter.privacy.low': 'Low privacy risk',
+  'counter.privacy.medium': 'Medium privacy risk',
+  'counter.privacy.high': 'High privacy risk',
+
+  'counter.empty.collectors':
+    'No collectors have reached this machine. The roll is kept in the back office, and an empty one here usually means the reference sync has not arrived.',
+  'counter.empty.devices':
+    'No cameras have reached this machine. The fleet is kept in the back office, and an empty one here usually means the reference sync has not arrived.',
+  'counter.empty.tasks':
+    'No tasks have reached this machine. A recording is always recorded against a task, so nothing can be declared until one exists.',
+  'counter.empty.scenarios':
+    'No scenarios have reached this machine. Scenarios are reference data seeded with the service, so an empty list means the reference sync did not arrive.',
+
+  'counter.commit': 'Record the handover',
+  'counter.commit.session': 'Record the recording',
+  'counter.recorded':
+    'Already written, under the id this intake started with. Sending it again would change nothing. Start a new card if it is wrong.',
+  'counter.landed':
+    'The handover is on the record. Only the recording is still to be written, and the first three answers cannot change underneath it. Start a new card if one of them is wrong.',
+  'counter.refused.reference':
+    'This machine holds a reference list the server does not recognise. Reload the screen and choose again. Not found:',
+
+  'counter.done.title': 'Card recorded',
+  'counter.done.card':
+    'The card is not cleared. Nothing on this path deletes what is on it, and nothing will.',
+  'counter.done.match':
+    'This was recorded at the counter, so the footage is not matched to it by time. An operator confirms the attribution on Episodes once the card has been imported.',
+  'counter.done.nextCard': 'Next card',
+  'counter.done.nextSession': 'Another recording on this card',
+
+  /* ---------------------------------------------------------------------
+     The back office: creating a task and putting people on it (BO-01,
+     BO-02, APP-10, and the device custody period a settlement reads).
+     --------------------------------------------------------------------- */
+
+  'assign.title': 'New task',
+  'assign.review.intro':
+    'The task is created first, published if you asked for that, then claimed for each collector in turn. Change any answer from here.',
+  'assign.commit': 'Create the task',
+  'assign.group.task': 'The task',
+  'assign.group.people': 'The people',
+
+  'assign.step.name': 'Name',
+  'assign.step.rate': 'Rate',
+  'assign.step.capacity': 'Places',
+  'assign.step.publish': 'Publish',
+  'assign.step.claimants': 'Claimants',
+  'assign.step.cameras': 'Cameras',
+
+  'assign.q.name': 'What is this task called?',
+  'assign.q.rate': 'What does it pay?',
+  'assign.q.capacity': 'How many collectors may hold it at once?',
+  'assign.q.publish': 'Publish it now?',
+  'assign.q.claimants': 'Who is taking it on?',
+  'assign.q.cameras': 'Does a camera go out with anybody?',
+
+  'assign.note.name':
+    'The name is what a collector reads in the task hall. The type follows PaXini own taxonomy and has no fixed list.',
+  'assign.note.rate':
+    'A decimal, up to eight digits and four decimals, exactly as the column stores it. It multiplies into every payment, so nothing rounds it on the way in, and once the task is published the figure cannot move.',
+  'assign.note.capacity':
+    'The cap counts live claims. Releasing a claim gives the place back to the task.',
+  'assign.note.publish':
+    'A draft cannot be claimed: the database refuses a claim on a task that is not published. Leave it a draft to finish the details later and publish it from the table.',
+  'assign.note.claimants':
+    'A claim is this collector holding this task, and what they record against it is paid at its rate. Nobody is a real answer, because a published task can be left for the task hall to fill.',
+  'assign.note.cameras':
+    'A custody period, not a bind: this is what a settlement reads to say who held a camera on a given day. Any period still open on that camera is closed at the same instant.',
+
+  'assign.hint.type': 'PaXini taxonomy. No fixed list.',
+  'assign.hint.target': 'Optional. Effective seconds.',
+
+  'assign.publish.label': 'Publish this task now',
+  'assign.publish.now': 'Published',
+  'assign.publish.draft': 'Left as a draft',
+
+  'assign.claimants.none': 'Nobody',
+  'assign.claimants.empty':
+    'There are no collectors yet. Create one on the collectors tab, then come back.',
+  'assign.cameras.none': 'No camera goes out',
+  'assign.cameras.no': 'No camera',
+  'assign.cameras.noClaimants':
+    'Nobody is taking this task on, so there is no camera to hand out.',
+
+  'assign.done.title': 'Task created',
+  'assign.done.published': 'Published. Collectors can claim it.',
+  'assign.done.draft': 'Left as a draft. Publish it from the table when it is ready.',
+  'assign.done.nobody':
+    'Nobody was put on it. Collectors can claim it themselves from the task hall, or you can claim it for them from this tab.',
+  'assign.done.claimed': 'Holds the task.',
+  'assign.done.assigned': 'Camera handed out.',
+  'assign.done.someRefused':
+    'Part of what you asked for was refused. The task itself was created; the lines above say who was not put on it and why.',
+  'assign.done.close': 'Back to the tasks',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1677,7 +1846,8 @@ const zh: Record<MessageKey, string> = {
   'guide.settle.bills': '本周期内的全部账单。合计来自明细，由服务端取整；本页不做任何计算。',
   'guide.risk.holds': '引擎暂扣的付款，以及说明原因的那句话。只有当你能说清变了什么时才释放。',
   'guide.episodes.scope': '本页当前显示的是哪一部分片段。这是一个范围，不是全部目录。',
-  'guide.counter.plan': '柜台流程目前通过命令行完成。这里说明该页面建成后会做什么。',
+  'guide.counter.plan':
+    '每一步只问一个问题，最后一步之前不写入任何数据。左侧的进度栏说明您走到哪里了，每个答案都可以从汇总页改回来。',
 
   'settle.title': '结算',
   'settle.intro': '某个周期的账单、钱包余额与之的对比、引擎标记的内容，以及每笔付款的记录。这里的每个数字都来自服务端；本页不做任何加总或取整。',
@@ -2045,6 +2215,7 @@ const zh: Record<MessageKey, string> = {
   'login.legalData': '数据收集说明',
 
   'ui.a.home.gauge': '本班已审核 {{value}} 集，目标 {{target}} 集',
+  'ui.a.home.gaugeCaption': '本班已审核集数',
   'ui.a.home.payable.note': '仅统计已判定审核的有效时长。',
   'ui.a.home.approval.note': '通过与部分通过，占今天全部判定的比例。',
   'ui.a.home.pace.note': '从载入到判定。仅作观测，与金额无关。',
@@ -2116,6 +2287,153 @@ const zh: Record<MessageKey, string> = {
   'episodes.gone': '服务端上已经没有这一集了。请重新读取该批次。',
   'episodes.reload': '重新读取',
   'episodes.noMatch': '此范围内没有符合筛选条件的行。',
+  /* 向导语法：柜台收卡与后台任务派发共用。每一步只问一个问题。 */
+
+  'wiz.step': '第',
+  'wiz.review': '核对并提交',
+  'wiz.review.question': '写入之前，请逐项核对。',
+  'wiz.unanswered': '尚未填写',
+  'wiz.edit': '修改',
+  'wiz.back': '上一步',
+  'wiz.next': '下一步',
+  'wiz.needAnswer': '回答本题后才能继续。',
+  'wiz.failed.gone': '服务端已没有这一步所指的记录。请重新载入页面，从头再来。',
+  'wiz.failed.body':
+    '服务端不接受其中一项答案。这是控制台自身的缺陷，而不是您填错了；反馈时请附上下面的编号。',
+  'wiz.failed.session': '当前会话无权做此更改。请重新登录，或改用具备管理员角色的操作员。',
+
+  /* 柜台：收卡登记（BO-10、APP-17b）。 */
+
+  'counter.title': '收卡登记',
+  'counter.intro':
+    '采集者交回一张 TF 卡。请登记交卡人、卡取自哪台相机，以及卡上录了什么。最后一步之前不会写入任何数据。',
+  'counter.review.intro': '将写入两条记录：卡的交接，以及针对它申报的这次采集。可在此修改任一项。',
+  'counter.group.card': '这张卡',
+  'counter.group.recording': '这次采集',
+
+  'counter.step.collector': '采集者',
+  'counter.step.device': '相机',
+  'counter.step.card': '存储卡',
+  'counter.step.task': '任务',
+  'counter.step.scenario': '场景',
+  'counter.step.declare': '申报事项',
+
+  'counter.q.collector': '这张卡是谁交来的？',
+  'counter.q.device': '这张卡取自哪台相机？',
+  'counter.q.card': '是哪张卡，什么时候交到柜台的？',
+  'counter.q.task': '这次采集是针对哪个任务的？',
+  'counter.q.scenario': '在哪里采集的？采集是什么时候准备的？',
+  'counter.q.declare': '采集者是怎么申报的？',
+
+  'counter.note.collector':
+    '一张卡只属于一位采集者，也就是站在柜台前的这个人。中心、这台机器和您本人的身份都取自登录凭证，所以这里不会再问。',
+  'counter.note.device':
+    '相机会在采集者之间流转，卡也会在相机之间流转。两者都不按上一次谁拿着来推断，所以相机要明确指定。',
+  'counter.note.card':
+    '按卡上写的标识填写。这里的时间是卡在本柜台交接的时刻，不是录制的时刻。',
+  'counter.note.task':
+    '任务决定单价。采集者必须已经持有该任务的有效领取；若没有，服务端会拒绝这次采集，并说明是三种原因中的哪一种。',
+  'counter.note.scenario':
+    '准备时间是采集者回忆出来的。系统绝不会拿它去自动匹配素材，只有由手机应用创建的采集才会自动匹配，所以导入之后由操作员确认归属。',
+  'counter.note.declare':
+    '两项都必须回答。否是一个答案，没人问过不是，记录里也无法表达后者。',
+
+  'counter.field.card': 'TF 卡',
+  'counter.hint.card': '按卡上所写填写。',
+  'counter.field.handoverAt': '交卡时间',
+  'counter.hint.handoverAt': '您本地的时间。',
+  'counter.field.preparedAt': '采集准备时间',
+  'counter.hint.preparedAt': '您本地的时间。没有结束时间，也不设这个字段。',
+
+  'counter.declare.others': '画面中出现了其他人',
+  'counter.declare.sensitive': '画面中出现了敏感信息',
+  'counter.declare.yes': '是',
+  'counter.declare.no': '否',
+
+  'counter.privacy.low': '隐私风险低',
+  'counter.privacy.medium': '隐私风险中等',
+  'counter.privacy.high': '隐私风险高',
+
+  'counter.empty.collectors':
+    '本机还没有收到任何采集者名单。名册在后台维护，这里为空通常说明参考数据没有同步过来。',
+  'counter.empty.devices':
+    '本机还没有收到任何相机记录。设备在后台维护，这里为空通常说明参考数据没有同步过来。',
+  'counter.empty.tasks': '本机还没有收到任何任务。采集必须挂在任务下，没有任务就无法申报。',
+  'counter.empty.scenarios':
+    '本机还没有收到任何场景。场景是随服务预置的参考数据，为空即说明参考数据没有同步过来。',
+
+  'counter.commit': '登记交卡',
+  'counter.commit.session': '登记这次采集',
+  'counter.recorded':
+    '已按本次登记开始时的编号写入，再发一次也不会改变什么。若填错了，请另起一张卡重新登记。',
+  'counter.landed':
+    '交卡已入库。只剩这次采集还没写入，而前三项答案不能在它下面改动；若其中一项填错，请另起一张卡。',
+  'counter.refused.reference': '本机的参考数据与服务端不一致。请重新载入页面后再选。未找到：',
+
+  'counter.done.title': '卡已登记',
+  'counter.done.card': '卡不会被清空。这条链路上没有任何环节会删除卡上的内容，以后也不会有。',
+  'counter.done.match':
+    '这是在柜台登记的，所以素材不会按时间自动归到它名下。卡导入之后，由操作员在采集片段页确认归属。',
+  'counter.done.nextCard': '下一张卡',
+  'counter.done.nextSession': '这张卡上的另一次采集',
+
+  /* 后台：新建任务并把人派上去（BO-01、BO-02、APP-10，以及结算读取的设备保管期）。 */
+
+  'assign.title': '新建任务',
+  'assign.review.intro': '先创建任务，若选择发布则发布，然后逐个为采集者领取。可在此修改任一项。',
+  'assign.commit': '创建任务',
+  'assign.group.task': '任务本身',
+  'assign.group.people': '相关人员',
+
+  'assign.step.name': '名称',
+  'assign.step.rate': '单价',
+  'assign.step.capacity': '名额',
+  'assign.step.publish': '发布',
+  'assign.step.claimants': '领取人',
+  'assign.step.cameras': '相机',
+
+  'assign.q.name': '这个任务叫什么？',
+  'assign.q.rate': '它的报酬是多少？',
+  'assign.q.capacity': '同时最多允许几位采集者领取？',
+  'assign.q.publish': '现在就发布吗？',
+  'assign.q.claimants': '由谁来做？',
+  'assign.q.cameras': '有人要领走相机吗？',
+
+  'assign.note.name':
+    '名称是采集者在任务大厅里看到的文字。类型沿用 PaXini 自己的分类，没有固定清单。',
+  'assign.note.rate':
+    '一个小数，最多八位整数、四位小数，与数据库列的存法完全一致。它会乘进每一笔付款，所以录入时不做任何取整；任务一旦发布，这个数字就不能再改。',
+  'assign.note.capacity': '名额按当前有效的领取计数。释放一次领取，名额就还给任务。',
+  'assign.note.publish':
+    '草稿不能被领取：数据库会拒绝对未发布任务的领取。想稍后再补细节就先留作草稿，之后从表格里发布。',
+  'assign.note.claimants':
+    '领取表示这位采集者持有这个任务，他们据此录制的内容按该单价结算。不选任何人也是有效的答案，已发布的任务可以留给任务大厅去认领。',
+  'assign.note.cameras':
+    '这是保管期，不是绑定：结算据此判断某一天相机在谁手上。该相机上仍然开着的保管期，会在同一时刻被关闭。',
+
+  'assign.hint.type': 'PaXini 的分类，没有固定清单。',
+  'assign.hint.target': '可不填。按有效秒数计。',
+
+  'assign.publish.label': '现在发布这个任务',
+  'assign.publish.now': '已发布',
+  'assign.publish.draft': '留作草稿',
+
+  'assign.claimants.none': '无人',
+  'assign.claimants.empty': '目前还没有采集者。请先到采集者页建一位，再回到这里。',
+  'assign.cameras.none': '不发放相机',
+  'assign.cameras.no': '不发相机',
+  'assign.cameras.noClaimants': '没有人接这个任务，也就没有相机需要发放。',
+
+  'assign.done.title': '任务已创建',
+  'assign.done.published': '已发布，采集者可以领取。',
+  'assign.done.draft': '留作草稿。准备好后从表格里发布。',
+  'assign.done.nobody':
+    '没有给任何人派上。采集者可以自己在任务大厅领取，您也可以在本页代为领取。',
+  'assign.done.claimed': '已持有该任务。',
+  'assign.done.assigned': '相机已发放。',
+  'assign.done.someRefused':
+    '您所请求的内容有一部分被拒绝了。任务本身已经创建；上面每一行说明了谁没有派上，以及原因。',
+  'assign.done.close': '返回任务列表',
 };
 
 const vi: Record<MessageKey, string> = {
@@ -2608,7 +2926,7 @@ const vi: Record<MessageKey, string> = {
   'guide.episodes.scope':
     'Phạm vi tập mà màn hình này đang hiển thị. Đây là một phạm vi, không phải toàn bộ danh mục.',
   'guide.counter.plan':
-    'Quy trình quầy hiện chạy bằng dòng lệnh. Phần này nói màn hình sẽ làm gì khi được xây xong.',
+    'Mỗi bước chỉ hỏi một điều, và không ghi gì cho tới bước cuối. Thanh bên trái cho biết bạn đang ở đâu, và mọi câu trả lời đều sửa được từ trang tổng kết.',
 
   'settle.title': 'Thanh toán',
   'settle.intro':
@@ -3051,6 +3369,7 @@ const vi: Record<MessageKey, string> = {
   'login.legalData': 'Thông báo thu thập dữ liệu',
 
   'ui.a.home.gauge': 'Đã duyệt {{value}} trên {{target}} tập trong ca này',
+  'ui.a.home.gaugeCaption': 'tập đã duyệt trong ca này',
   'ui.a.home.payable.note': 'Thời lượng hữu ích, chỉ tính từ các lượt duyệt đã có kết luận.',
   'ui.a.home.approval.note': 'Số lượt đạt và đạt một phần, trên tổng số quyết định hôm nay.',
   'ui.a.home.pace.note': 'Từ lúc tải đến lúc có kết luận. Chỉ để theo dõi, không phải tiền.',
@@ -3124,6 +3443,162 @@ const vi: Record<MessageKey, string> = {
   'episodes.gone': 'Tập này không còn trên máy chủ. Hãy đọc lại lô.',
   'episodes.reload': 'Đọc lại',
   'episodes.noMatch': 'Không có dòng nào trong phạm vi này khớp với bộ lọc.',
+  /* Ngữ pháp của luồng nhiều bước: dùng chung cho quầy nhận thẻ và giao nhiệm vụ. */
+
+  'wiz.step': 'Bước',
+  'wiz.review': 'Kiểm lại rồi ghi',
+  'wiz.review.question': 'Kiểm lại từng câu trả lời trước khi ghi.',
+  'wiz.unanswered': 'Chưa trả lời',
+  'wiz.edit': 'Sửa',
+  'wiz.back': 'Quay lại',
+  'wiz.next': 'Tiếp',
+  'wiz.needAnswer': 'Hãy trả lời câu này rồi mới đi tiếp.',
+  'wiz.failed.gone': 'Máy chủ không còn dòng mà bước này gọi tên. Hãy tải lại màn hình và làm lại.',
+  'wiz.failed.body':
+    'Máy chủ không nhận một trong các câu trả lời. Đây là lỗi của bảng điều khiển chứ không phải của người nhập; khi báo lỗi hãy kèm mã tham chiếu bên dưới.',
+  'wiz.failed.session':
+    'Phiên này không được phép thực hiện thay đổi đó. Hãy đăng nhập lại, hoặc nhờ một người vận hành có vai trò quản trị.',
+
+  /* Quầy: nhận thẻ (BO-10, APP-17b). */
+
+  'counter.title': 'Nhận thẻ',
+  'counter.intro':
+    'Cộng tác viên nộp lại một thẻ TF. Hãy ghi ai nộp, thẻ lấy ra từ máy quay nào, và trên thẻ đã quay gì. Không có gì được ghi cho tới bước cuối.',
+  'counter.review.intro':
+    'Sẽ ghi hai dòng: việc bàn giao thẻ, và buổi quay được khai theo thẻ đó. Có thể sửa bất kỳ câu trả lời nào từ đây.',
+  'counter.group.card': 'Chiếc thẻ',
+  'counter.group.recording': 'Buổi quay',
+
+  'counter.step.collector': 'Cộng tác viên',
+  'counter.step.device': 'Máy quay',
+  'counter.step.card': 'Thẻ nhớ',
+  'counter.step.task': 'Nhiệm vụ',
+  'counter.step.scenario': 'Bối cảnh',
+  'counter.step.declare': 'Phần khai báo',
+
+  'counter.q.collector': 'Ai nộp chiếc thẻ này?',
+  'counter.q.device': 'Thẻ này lấy ra từ máy quay nào?',
+  'counter.q.card': 'Đây là thẻ nào, và nhận lúc mấy giờ?',
+  'counter.q.task': 'Nội dung này quay theo nhiệm vụ nào?',
+  'counter.q.scenario': 'Quay ở đâu, và buổi quay được chuẩn bị lúc nào?',
+  'counter.q.declare': 'Cộng tác viên khai những gì?',
+
+  'counter.note.collector':
+    'Một thẻ thuộc về một cộng tác viên, và đó là người đang đứng ở quầy. Trung tâm, máy này và tên của chính bạn lấy từ thông tin đăng nhập, nên không hỏi lại ở đây.',
+  'counter.note.device':
+    'Máy quay luân chuyển giữa các cộng tác viên và thẻ luân chuyển giữa các máy quay. Không suy ra theo kiểu lần trước ai giữ, nên máy quay phải được chỉ rõ.',
+  'counter.note.card':
+    'Ghi đúng nhãn trên thẻ. Thời gian ở đây là lúc thẻ đổi tay tại quầy này, không phải lúc quay.',
+  'counter.note.task':
+    'Nhiệm vụ quyết định đơn giá. Cộng tác viên phải đang giữ một lượt nhận nhiệm vụ đó; nếu không, máy chủ từ chối buổi quay và nói rõ là lý do nào trong ba lý do.',
+  'counter.note.scenario':
+    'Thời điểm chuẩn bị là điều cộng tác viên nhớ lại. Hệ thống không bao giờ tự khớp nó với dữ liệu quay, vì chỉ buổi quay do ứng dụng tạo mới được khớp tự động, nên sau khi nhập thẻ sẽ có người vận hành xác nhận.',
+  'counter.note.declare':
+    'Bắt buộc trả lời cả hai. Không là một câu trả lời, còn chưa ai hỏi thì không, và bản ghi cũng không có cách nào diễn đạt điều thứ hai.',
+
+  'counter.field.card': 'Thẻ TF',
+  'counter.hint.card': 'Ghi đúng như trên thẻ.',
+  'counter.field.handoverAt': 'Nhận lúc',
+  'counter.hint.handoverAt': 'Giờ địa phương của bạn.',
+  'counter.field.preparedAt': 'Buổi quay chuẩn bị lúc',
+  'counter.hint.preparedAt':
+    'Giờ địa phương của bạn. Không có thời điểm kết thúc, và cũng không có ô để nhập.',
+
+  'counter.declare.others': 'Có người khác xuất hiện trong hình',
+  'counter.declare.sensitive': 'Có thông tin nhạy cảm xuất hiện trong hình',
+  'counter.declare.yes': 'Có',
+  'counter.declare.no': 'Không',
+
+  'counter.privacy.low': 'Rủi ro riêng tư thấp',
+  'counter.privacy.medium': 'Rủi ro riêng tư trung bình',
+  'counter.privacy.high': 'Rủi ro riêng tư cao',
+
+  'counter.empty.collectors':
+    'Máy này chưa nhận được danh sách cộng tác viên nào. Danh sách nằm ở khu vực quản trị, và trống ở đây thường nghĩa là dữ liệu tham chiếu chưa đồng bộ về.',
+  'counter.empty.devices':
+    'Máy này chưa nhận được máy quay nào. Đội thiết bị nằm ở khu vực quản trị, và trống ở đây thường nghĩa là dữ liệu tham chiếu chưa đồng bộ về.',
+  'counter.empty.tasks':
+    'Máy này chưa nhận được nhiệm vụ nào. Buổi quay luôn phải gắn với một nhiệm vụ, nên chưa có nhiệm vụ thì chưa khai được gì.',
+  'counter.empty.scenarios':
+    'Máy này chưa nhận được bối cảnh nào. Bối cảnh là dữ liệu tham chiếu cài sẵn cùng dịch vụ, nên danh sách trống nghĩa là dữ liệu tham chiếu chưa về.',
+
+  'counter.commit': 'Ghi việc bàn giao',
+  'counter.commit.session': 'Ghi buổi quay',
+  'counter.recorded':
+    'Đã ghi rồi, theo mã mà lần nhận thẻ này bắt đầu. Gửi lại cũng không thay đổi gì. Nếu sai, hãy bắt đầu một thẻ mới.',
+  'counter.landed':
+    'Việc bàn giao đã vào sổ. Chỉ còn buổi quay là chưa ghi, và ba câu trả lời đầu không thể đổi bên dưới nó; nếu một trong ba sai, hãy bắt đầu một thẻ mới.',
+  'counter.refused.reference':
+    'Máy này đang giữ dữ liệu tham chiếu mà máy chủ không nhận ra. Hãy tải lại màn hình rồi chọn lại. Không tìm thấy:',
+
+  'counter.done.title': 'Đã ghi nhận thẻ',
+  'counter.done.card':
+    'Thẻ không bị xoá. Không khâu nào trên đường đi này xoá nội dung trên thẻ, và sẽ không bao giờ có.',
+  'counter.done.match':
+    'Việc này được ghi tại quầy, nên dữ liệu quay không tự khớp theo thời gian. Sau khi nhập thẻ, người vận hành xác nhận quy thuộc ở màn hình Tập ghi.',
+  'counter.done.nextCard': 'Thẻ tiếp theo',
+  'counter.done.nextSession': 'Một buổi quay khác trên thẻ này',
+
+  /* Quản trị: tạo nhiệm vụ và giao cho người (BO-01, BO-02, APP-10, và kỳ giữ máy mà thanh toán đọc). */
+
+  'assign.title': 'Nhiệm vụ mới',
+  'assign.review.intro':
+    'Tạo nhiệm vụ trước, đăng lên nếu bạn chọn thế, rồi lần lượt nhận nhiệm vụ cho từng cộng tác viên. Có thể sửa bất kỳ câu trả lời nào từ đây.',
+  'assign.commit': 'Tạo nhiệm vụ',
+  'assign.group.task': 'Nhiệm vụ',
+  'assign.group.people': 'Con người',
+
+  'assign.step.name': 'Tên',
+  'assign.step.rate': 'Đơn giá',
+  'assign.step.capacity': 'Số chỗ',
+  'assign.step.publish': 'Đăng',
+  'assign.step.claimants': 'Người nhận',
+  'assign.step.cameras': 'Máy quay',
+
+  'assign.q.name': 'Nhiệm vụ này tên là gì?',
+  'assign.q.rate': 'Nhiệm vụ này trả bao nhiêu?',
+  'assign.q.capacity': 'Cùng lúc cho phép mấy cộng tác viên giữ?',
+  'assign.q.publish': 'Đăng ngay bây giờ?',
+  'assign.q.claimants': 'Ai sẽ nhận việc này?',
+  'assign.q.cameras': 'Có ai mang máy quay về không?',
+
+  'assign.note.name':
+    'Tên là chữ mà cộng tác viên đọc thấy ở sảnh nhiệm vụ. Loại theo cách phân loại của PaXini và không có danh sách cố định.',
+  'assign.note.rate':
+    'Một số thập phân, tối đa tám chữ số phần nguyên và bốn chữ số phần lẻ, đúng như cột lưu. Nó nhân vào mọi khoản chi trả nên không làm tròn khi nhập; và một khi nhiệm vụ đã đăng thì con số này không đổi được nữa.',
+  'assign.note.capacity':
+    'Giới hạn đếm theo các lượt nhận đang còn hiệu lực. Trả lại một lượt nhận là trả chỗ về cho nhiệm vụ.',
+  'assign.note.publish':
+    'Bản nháp thì không nhận được: cơ sở dữ liệu từ chối lượt nhận trên nhiệm vụ chưa đăng. Cứ để nháp nếu muốn bổ sung chi tiết sau, rồi đăng từ bảng.',
+  'assign.note.claimants':
+    'Lượt nhận nghĩa là cộng tác viên này đang giữ nhiệm vụ này, và những gì họ quay theo đó được trả theo đơn giá của nó. Không chọn ai cũng là một câu trả lời thật, vì nhiệm vụ đã đăng có thể để sảnh nhiệm vụ tự lấp đầy.',
+  'assign.note.cameras':
+    'Đây là kỳ giữ máy chứ không phải việc gán máy: thanh toán đọc nó để biết ngày đó máy nằm trong tay ai. Kỳ nào còn mở trên máy quay đó sẽ được đóng lại ngay tại cùng thời điểm.',
+
+  'assign.hint.type': 'Cách phân loại của PaXini. Không có danh sách cố định.',
+  'assign.hint.target': 'Không bắt buộc. Tính bằng giây hữu hiệu.',
+
+  'assign.publish.label': 'Đăng nhiệm vụ này ngay',
+  'assign.publish.now': 'Đã đăng',
+  'assign.publish.draft': 'Để làm nháp',
+
+  'assign.claimants.none': 'Không ai',
+  'assign.claimants.empty':
+    'Chưa có cộng tác viên nào. Hãy tạo một người ở thẻ cộng tác viên rồi quay lại.',
+  'assign.cameras.none': 'Không phát máy quay',
+  'assign.cameras.no': 'Không phát máy',
+  'assign.cameras.noClaimants': 'Không ai nhận việc này, nên cũng không có máy quay nào để phát.',
+
+  'assign.done.title': 'Đã tạo nhiệm vụ',
+  'assign.done.published': 'Đã đăng. Cộng tác viên có thể nhận.',
+  'assign.done.draft': 'Để làm nháp. Khi nào xong thì đăng từ bảng.',
+  'assign.done.nobody':
+    'Chưa giao cho ai. Cộng tác viên có thể tự nhận ở sảnh nhiệm vụ, hoặc bạn nhận thay họ ngay ở thẻ này.',
+  'assign.done.claimed': 'Đang giữ nhiệm vụ.',
+  'assign.done.assigned': 'Đã phát máy quay.',
+  'assign.done.someRefused':
+    'Một phần yêu cầu đã bị từ chối. Bản thân nhiệm vụ đã được tạo; các dòng trên nói ai chưa được giao và vì sao.',
+  'assign.done.close': 'Về danh sách nhiệm vụ',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { en, zh, vi };

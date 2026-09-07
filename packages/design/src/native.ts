@@ -37,6 +37,7 @@ import {
   stage,
   sun,
   truc,
+  warn,
   tech,
   verdict,
 } from './tokens.ts';
@@ -128,6 +129,14 @@ export function nativeTheme(scheme: ColorScheme) {
        * coloured one, so it inverts with the scheme and the label always takes
        * `actionInk`.
        */
+      /**
+       * Attention that is not a verdict. The collector app needs it for the
+       * same reason the console did — an upload waiting on a gateway, a device
+       * that reported a fault — and it was missing here, so a screen that
+       * wanted it had to say it in words alone.
+       */
+      warn: isDark ? warn.fgDark : warn.fg,
+      warnBg: isDark ? warn.bgDark : warn.bg,
       action: isDark ? dark.foreground : light.foreground,
       actionInk: isDark ? dark.background : light.background,
       stage,

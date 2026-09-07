@@ -155,7 +155,7 @@ export function AppShell({
       {showOffer ? (
         <div className="border-b border-[var(--border)] bg-[var(--lavender-200)]">
           <div className="mx-auto flex w-full max-w-[1280px] flex-wrap items-center gap-3 px-4 py-2.5 sm:px-6">
-            <p className="min-w-0 flex-1 text-[0.875rem] text-[var(--bamboo-ink)]">
+            <p className="min-w-0 flex-1 text-[0.875rem] text-[var(--foreground)]">
               {t('guide.offer')}
             </p>
             <Button

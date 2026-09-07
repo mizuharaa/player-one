@@ -297,6 +297,37 @@ const vi = {
   'settlement.paid': 'Đã chi trả',
   'settlement.cannot_be_paid': 'Không thể chi trả',
   'settlement.unknown': 'Đang kiểm tra',
+
+  // The forum and the group chats. Both are previews with no server behind
+  // them, and the two "chưa kết nối" sentences below are the only honest thing
+  // the app can say when a control is pressed — so they are catalogue strings
+  // like every other sentence, not something a screen invents.
+  //
+  // `forum.title` is the bar label AND the screen heading. One string: the
+  // word is the same in all three catalogues and a second key would be a
+  // second thing to keep in step for nothing.
+  'forum.title': 'Diễn đàn',
+  'forum.filter.all': 'Tất cả',
+  'forum.filter.mine': 'Bài của tôi',
+  'forum.filter.answered': 'Đã trả lời',
+  'forum.reactions': 'thích',
+  'forum.replies': 'trả lời',
+  'forum.compose': 'Viết bài mới',
+  'forum.open': 'Mở bài viết',
+  'forum.empty': 'Chưa có bài nào ở mục này.',
+  'forum.notConnected':
+    'Diễn đàn đang ở bản xem trước. Bạn chưa gửi được bài hay trả lời. Chúng tôi sẽ báo khi mở.',
+
+  'groups.title': 'Nhóm chat',
+  'groups.open': 'Mở nhóm',
+  'groups.unread': 'Tin chưa đọc',
+  'groups.send': 'Gửi',
+  'groups.placeholder': 'Nhắn tin…',
+  'groups.notConnected': 'Chưa kết nối. Bạn chưa gửi được tin nhắn.',
+  'groups.operatorsOnly': 'Chỉ nhân viên vận hành đăng ở kênh này.',
+
+  'guide.forum.filters':
+    'Lọc bài viết ở đây: tất cả, bài của bạn, hoặc bài đã có người trả lời.',
 };
 
 export type MessageKey = keyof typeof vi;
@@ -561,6 +592,28 @@ const en: Record<MessageKey, string> = {
   'settlement.paid': 'Paid',
   'settlement.cannot_be_paid': 'Cannot be paid',
   'settlement.unknown': 'Being checked',
+
+  'forum.title': 'Forum',
+  'forum.filter.all': 'All',
+  'forum.filter.mine': 'My posts',
+  'forum.filter.answered': 'Answered',
+  'forum.reactions': 'reactions',
+  'forum.replies': 'replies',
+  'forum.compose': 'Write a post',
+  'forum.open': 'Open post',
+  'forum.empty': 'No posts under this filter.',
+  'forum.notConnected':
+    'The forum is a preview. You cannot post or reply yet. We will tell you when it opens.',
+
+  'groups.title': 'Group chats',
+  'groups.open': 'Open group',
+  'groups.unread': 'Unread messages',
+  'groups.send': 'Send',
+  'groups.placeholder': 'Message…',
+  'groups.notConnected': 'Not connected yet. You cannot send messages.',
+  'groups.operatorsOnly': 'Only operators post in this channel.',
+
+  'guide.forum.filters': 'Filter posts here: all of them, your own, or the ones with a reply.',
 };
 
 /**
@@ -815,6 +868,27 @@ const zh: Record<MessageKey, string> = {
   'settlement.paid': '已支付',
   'settlement.cannot_be_paid': '无法支付',
   'settlement.unknown': '正在核对',
+
+  'forum.title': '论坛',
+  'forum.filter.all': '全部',
+  'forum.filter.mine': '我的帖子',
+  'forum.filter.answered': '已回复',
+  'forum.reactions': '点赞',
+  'forum.replies': '回复',
+  'forum.compose': '发新帖',
+  'forum.open': '打开帖子',
+  'forum.empty': '此筛选下还没有帖子。',
+  'forum.notConnected': '论坛为预览版。暂时无法发帖或回复。开放时我们会通知你。',
+
+  'groups.title': '群聊',
+  'groups.open': '打开群聊',
+  'groups.unread': '未读消息',
+  'groups.send': '发送',
+  'groups.placeholder': '发消息…',
+  'groups.notConnected': '尚未接通。暂时无法发送消息。',
+  'groups.operatorsOnly': '此频道仅运营人员可发布。',
+
+  'guide.forum.filters': '在这里筛选帖子：全部、我的帖子，或已有回复的帖子。',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en, zh };

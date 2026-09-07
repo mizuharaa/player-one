@@ -48,7 +48,7 @@ const STEPS: Record<TabName, Step[]> = {
     { target: 'home.tasks', copy: 'guide.home.tasks' },
     { target: 'shell.tabs', copy: 'guide.home.tabs' },
   ],
-  taskHall: [{ target: 'hall.list', copy: 'guide.tasks.list' }],
+  forum: [{ target: 'forum.filters', copy: 'guide.forum.filters' }],
   uploads: [{ target: 'uploads.list', copy: 'guide.uploads.confirm' }],
   income: [{ target: 'income.list', copy: 'guide.income.split' }],
 };

@@ -15,6 +15,8 @@ import { ThemeProvider } from './theme.tsx';
 import { Agreements } from './screens/Agreements.tsx';
 import { Devices } from './screens/Devices.tsx';
 import { Exam } from './screens/Exam.tsx';
+import { Forum } from './screens/Forum.tsx';
+import { GroupChats, GroupThread } from './screens/Groups.tsx';
 import { Home } from './screens/Home.tsx';
 import { Income } from './screens/Income.tsx';
 import { MyTasks } from './screens/MyTasks.tsx';
@@ -50,6 +52,9 @@ const SCREENS: Record<RouteName, ComponentType> = {
   sessionCreate: SessionCreate,
   uploads: Uploads,
   income: Income,
+  forum: Forum,
+  groupChats: GroupChats,
+  groupThread: GroupThread,
 };
 
 /**

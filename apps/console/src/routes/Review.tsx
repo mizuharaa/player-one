@@ -759,7 +759,7 @@ export function ReviewScreen() {
                             : current.filter((c) => c !== r.code),
                         )
                       }
-                      className="mt-0.5 accent-[var(--sun-500)]"
+                      className="mt-0.5 accent-[var(--action)]"
                     />
                     <span>{i18n.language === 'zh' ? r.label_zh : r.label_en}</span>
                   </label>
@@ -781,7 +781,7 @@ export function ReviewScreen() {
               onChange={(e) => setNote(e.currentTarget.value)}
               placeholder={t('verdict.note')}
               rows={2}
-              className="mt-3 w-full resize-none rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 py-2 text-[0.875rem] focus:border-[var(--sun-500)] focus:outline-none"
+              className="mt-3 w-full resize-none rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 py-2 text-[0.875rem] focus:border-[var(--action)] focus:outline-none"
             />
 
             {/*
@@ -812,7 +812,7 @@ export function ReviewScreen() {
                               value={holdReason}
                               onChange={(e) => setHoldReason(e.currentTarget.value)}
                               rows={2}
-                              className="mt-1 w-full resize-none rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 py-2 text-[0.875rem] font-normal text-[var(--foreground)] focus:border-[var(--sun-500)] focus:outline-none"
+                              className="mt-1 w-full resize-none rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 py-2 text-[0.875rem] font-normal text-[var(--foreground)] focus:border-[var(--action)] focus:outline-none"
                             />
                           </label>
                           <Button
@@ -927,7 +927,7 @@ function Scrubber({
 
       {/* Amber, because it has to stay visible over arbitrary footage. */}
       <div
-        className="pointer-events-none absolute top-1.5 h-6 w-0.5 rounded-full bg-[var(--sun-400)]"
+        className="pointer-events-none absolute top-1.5 h-6 w-0.5 rounded-full bg-[var(--lime-500)]"
         style={{ left: `${pct(position)}%` }}
       />
     </div>

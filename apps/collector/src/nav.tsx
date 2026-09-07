@@ -24,7 +24,10 @@ export type Route =
   | { name: 'provisioning' }
   | { name: 'sessionCreate' }
   | { name: 'uploads' }
-  | { name: 'income' };
+  | { name: 'income' }
+  | { name: 'forum' }
+  | { name: 'groupChats' }
+  | { name: 'groupThread'; groupId: string };
 
 export type RouteName = Route['name'];
 
@@ -41,8 +44,14 @@ export type RouteName = Route['name'];
  * pushes `sessionCreate`, which is a task with an end (APP-16 binds a session),
  * not a place to sit. It is drawn as the centre button because preparing a
  * session is the thing a collector opens this app to do.
+ *
+ * **`taskHall` used to be the second of these and is not any more.** The
+ * forum took that slot when the community screens landed; the hall is pushed
+ * from Home's "Nơi khác trong ứng dụng" row instead, and Home already renders
+ * every task it lists. The measurement that forced a swap rather than a fifth
+ * destination is in `shell/TabBar.tsx`.
  */
-export const TAB_ROOTS = ['home', 'taskHall', 'uploads', 'income'] as const;
+export const TAB_ROOTS = ['home', 'forum', 'uploads', 'income'] as const;
 
 export type TabName = (typeof TAB_ROOTS)[number];
 
