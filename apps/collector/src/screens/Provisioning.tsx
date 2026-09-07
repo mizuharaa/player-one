@@ -42,7 +42,9 @@ export function Provisioning() {
           <Title>{d.deviceName}</Title>
           <Row label={tt('prov.rssi')} value={`${d.rssi} dBm`} />
           {connected === d.deviceAddress ? (
-            <Tag label={tt('prov.connected')} fg={theme.color.verdict.pass.fg} bg={theme.color.verdict.pass.bg} />
+            /* Tech, not the pass hue: a connected radio is the machine
+               reporting itself, and the verdict colours stay on review. */
+            <Tag label={tt('prov.connected')} fg={theme.color.techInk} bg={theme.color.tech[100]} />
           ) : (
             <Body muted>{tt('prov.connect')}</Body>
           )}
@@ -65,7 +67,7 @@ export function Provisioning() {
           />
           <Button
             label={tt('prov.readIp')}
-            kind="ghost"
+            variant="secondary"
             disabled={!sent}
             onPress={() =>
               void transport.requestIp().then((r) => {

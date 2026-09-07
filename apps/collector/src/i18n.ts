@@ -1,9 +1,10 @@
 /**
  * Every user-facing string in the collector app, Vietnamese first.
  *
- * LOC-01: the collector app is in Vietnamese, P0. English is P2 and rides
- * along because the catalogue pattern needs a second locale to prove the
- * completeness check does anything — same mechanism as
+ * LOC-01: the collector app is in Vietnamese, P0. English and Simplified
+ * Chinese ride along — English because the pilot's own staff read it, Chinese
+ * because PaXini's people do — and the completeness check holds all three to
+ * the same standard as the base. Same mechanism as
  * `packages/api/src/i18n.ts`, which this file deliberately mirrors: a flat
  * map of dotted keys, every locale holding every key, asserted by a test.
  *
@@ -12,7 +13,7 @@
  * fails the parity test.
  */
 
-export const LOCALES = ['vi', 'en'] as const;
+export const LOCALES = ['vi', 'en', 'zh'] as const;
 export type Locale = (typeof LOCALES)[number];
 
 export const DEFAULT_LOCALE: Locale = 'vi';
@@ -27,6 +28,38 @@ const vi = {
   'common.retry': 'Thử lại',
   'common.loadFailed': 'Không tải được dữ liệu. Kiểm tra kết nối rồi thử lại.',
   'common.actionFailed': 'Không thực hiện được. Vui lòng thử lại.',
+  'common.close': 'Đóng',
+  'common.next': 'Tiếp',
+  'common.done': 'Xong',
+
+  'tab.home': 'Trang chính',
+  'tab.tasks': 'Nhiệm vụ',
+  'tab.session': 'Phiên',
+  'tab.sessionHint': 'Mở phần chuẩn bị phiên thu thập. Không bắt đầu ghi hình.',
+  'tab.uploads': 'Tải lên',
+  'tab.income': 'Thu nhập',
+
+  // The three beats of the landing, one per scroll step. Short on purpose:
+  // they sit over moving footage and a sentence cannot be read there.
+  'landing.slogan1': 'Đeo camera.',
+  'landing.slogan2': 'Sống như mọi ngày.',
+  'landing.slogan3': 'Phút được duyệt, được trả.',
+  'landing.videoLabel': 'Video giới thiệu Player One',
+  'landing.centre': 'Điểm hỗ trợ',
+  'landing.signIn': 'Đăng nhập',
+  'landing.register': 'Đăng ký tại quầy',
+  'landing.registerNote':
+    'Tài khoản được mở tại quầy hỗ trợ. Hãy đăng nhập bằng số điện thoại bạn đã khai ở quầy.',
+  'landing.pandaLabel': 'Trúc, gấu trúc của Player One',
+
+  'shift.earlyBird': 'Ca sớm',
+  'shift.dayShift': 'Ca ngày',
+  'shift.goldenHour': 'Ca chiều',
+  'shift.nightOwl': 'Ca đêm',
+  'greeting.earlyBird': 'Chào buổi sớm',
+  'greeting.dayShift': 'Chào bạn',
+  'greeting.goldenHour': 'Chào buổi chiều',
+  'greeting.nightOwl': 'Chào ca đêm',
 
   'signIn.title': 'Đăng nhập',
   'signIn.intro':
@@ -85,6 +118,32 @@ const vi = {
   'home.training': 'Đào tạo & kiểm tra',
   'home.gateExam': 'Chưa đạt bài kiểm tra — chưa thể nhận nhiệm vụ.',
   'home.gateDevice': 'Chưa liên kết thiết bị — chưa thể tạo phiên thu thập.',
+  'home.reviewedCaption': 'tập đã duyệt',
+  'home.ringLoading': 'Đang đếm tập dữ liệu…',
+  'home.ringFailed': 'Chưa đếm được',
+  'home.claimable': 'Việc có thể nhận',
+  'home.take': 'Nhận việc',
+  'home.claimableEmpty': 'Hiện chưa có nhiệm vụ nào mở.',
+  'home.incomeLink': 'Thu nhập theo từng tập',
+  'home.more': 'Nơi khác trong ứng dụng',
+
+  'guide.open': 'Hướng dẫn nhanh',
+  'guide.offerTitle': 'Xem hướng dẫn nhanh?',
+  'guide.offerBody': 'Vài bước ngắn. Bạn có thể mở lại bất cứ lúc nào từ trang chính.',
+  'guide.offerYes': 'Xem hướng dẫn',
+  'guide.offerNo': 'Để sau',
+  'guide.step': 'Bước',
+  'guide.home.ring':
+    'Vòng nhỏ này đếm số tập đã duyệt trong danh sách máy chủ trả về. Không phải số phút, không phải tiền. Chạm để xem tất cả.',
+  'guide.home.tasks': 'Nhiệm vụ đang mở nằm ở đây. Chạm một thẻ để xem hướng dẫn và đơn giá.',
+  'guide.home.tabs':
+    'Nút đen ở giữa mở phần chuẩn bị phiên thu thập. Ứng dụng không bao giờ bắt đầu hay dừng ghi hình.',
+  'guide.tasks.list':
+    'Mỗi nhiệm vụ ghi rõ đơn giá, mục tiêu và số người đã nhận. Nhiệm vụ đã đủ người thì không nhận được nữa.',
+  'guide.uploads.confirm':
+    'Dữ liệu chỉ rời máy của bạn khi bạn tự xác nhận từng tập. Không có nút tải lên tất cả.',
+  'guide.income.split':
+    'Ước tính có viền đứt nét; đã xác nhận có viền liền và nhãn riêng. Mọi con số là của máy chủ.',
 
   'hall.title': 'Sảnh nhiệm vụ',
   'hall.perMinute': 'đ/phút hiệu quả',
@@ -169,6 +228,8 @@ const vi = {
     'Dữ liệu chỉ rời máy của bạn khi bạn xác nhận. Không bao giờ tự động, không bao giờ âm thầm.',
   'uploads.reason': 'Lý do',
   'uploads.empty': 'Chưa có tập dữ liệu nào.',
+  'uploads.session': 'Phiên',
+  'uploads.confirmCancel': 'Chưa tải lên',
 
   'state.pending_upload': 'Chờ tải lên',
   'state.uploading': 'Đang tải lên',
@@ -185,6 +246,12 @@ const vi = {
   'income.settlement': 'Thanh toán',
   'income.estimatedHint': 'Ước tính — con số cuối cùng do máy chủ quyết định sau khi duyệt.',
   'income.empty': 'Chưa có thu nhập nào.',
+  'income.intro': 'Từng tập một. Ứng dụng không cộng gộp và không tự tính tiền.',
+  'income.progress': 'Tiến trình',
+  'income.step.uploaded': 'Đã tải lên',
+  'income.step.underReview': 'Đang duyệt',
+  'income.step.reviewed': 'Đã duyệt',
+  'income.step.paid': 'Đã chi trả',
   'settlement.pending_review': 'Chờ duyệt',
   'settlement.pending_settlement': 'Chờ thanh toán',
   'settlement.bill_generated': 'Đã lập bảng kê',
@@ -217,10 +284,42 @@ const en: Record<MessageKey, string> = {
   'common.back': 'Back',
   'common.cancel': 'Cancel',
   'common.loading': 'Loading…',
-  'common.language': 'Tiếng Việt',
+  // The chip names the language it switches TO, in that language: the cycle is
+  // vi → en → zh → vi, so English offers Chinese and Chinese offers Vietnamese.
+  'common.language': '中文',
   'common.retry': 'Try again',
   'common.loadFailed': 'Could not load this. Check the connection and try again.',
   'common.actionFailed': 'That did not go through. Please try again.',
+  'common.close': 'Close',
+  'common.next': 'Next',
+  'common.done': 'Done',
+
+  'tab.home': 'Home',
+  'tab.tasks': 'Tasks',
+  'tab.session': 'Session',
+  'tab.sessionHint': 'Opens collection-session preparation. It does not start recording.',
+  'tab.uploads': 'Uploads',
+  'tab.income': 'Income',
+
+  'landing.slogan1': 'Wear it.',
+  'landing.slogan2': 'Live your day.',
+  'landing.slogan3': 'Reviewed minutes, paid.',
+  'landing.videoLabel': 'Player One introduction video',
+  'landing.centre': 'Support point',
+  'landing.signIn': 'Sign in',
+  'landing.register': 'Register at the counter',
+  'landing.registerNote':
+    'Accounts are opened at a support counter. Sign in with the number you gave there.',
+  'landing.pandaLabel': 'Trúc, the Player One panda',
+
+  'shift.earlyBird': 'Early shift',
+  'shift.dayShift': 'Day shift',
+  'shift.goldenHour': 'Evening shift',
+  'shift.nightOwl': 'Night shift',
+  'greeting.earlyBird': 'Early start',
+  'greeting.dayShift': 'Hello',
+  'greeting.goldenHour': 'Good afternoon',
+  'greeting.nightOwl': 'Working late',
 
   'signIn.title': 'Sign in',
   'signIn.intro':
@@ -279,6 +378,32 @@ const en: Record<MessageKey, string> = {
   'home.training': 'Training & exam',
   'home.gateExam': 'Exam not passed yet — tasks cannot be claimed.',
   'home.gateDevice': 'No device bound yet — a collection session cannot be created.',
+  'home.reviewedCaption': 'episodes reviewed',
+  'home.ringLoading': 'Counting episodes…',
+  'home.ringFailed': 'Count unavailable',
+  'home.claimable': 'Work you can claim',
+  'home.take': 'Claim',
+  'home.claimableEmpty': 'No task is open right now.',
+  'home.incomeLink': 'Income, per episode',
+  'home.more': 'Elsewhere in the app',
+
+  'guide.open': 'Quick guide',
+  'guide.offerTitle': 'A quick tour?',
+  'guide.offerBody': 'A few short steps. You can reopen it any time from the home screen.',
+  'guide.offerYes': 'Show me',
+  'guide.offerNo': 'Not now',
+  'guide.step': 'Step',
+  'guide.home.ring':
+    'This small ring counts the reviewed episodes in the list the server returned. Not minutes, and not money. Tap it for the full list.',
+  'guide.home.tasks': 'Open tasks sit here. Tap a card for its instructions and unit price.',
+  'guide.home.tabs':
+    'The black button in the middle opens session preparation. The app never starts or stops recording.',
+  'guide.tasks.list':
+    'Every task states its unit price, its target and how many people have claimed it. A task at capacity cannot be claimed.',
+  'guide.uploads.confirm':
+    'Data leaves your phone only when you confirm each episode yourself. There is no upload-all button.',
+  'guide.income.split':
+    'Estimated rows are dashed; confirmed rows are solid and labelled. Every figure is the server’s.',
 
   'hall.title': 'Task hall',
   'hall.perMinute': 'VND/effective minute',
@@ -363,6 +488,8 @@ const en: Record<MessageKey, string> = {
     'Data leaves your phone only when you confirm it. Never automatically, never silently.',
   'uploads.reason': 'Reason',
   'uploads.empty': 'No episodes yet.',
+  'uploads.session': 'Session',
+  'uploads.confirmCancel': 'Not uploaded',
 
   'state.pending_upload': 'Pending upload',
   'state.uploading': 'Uploading',
@@ -379,6 +506,12 @@ const en: Record<MessageKey, string> = {
   'income.settlement': 'Settlement',
   'income.estimatedHint': 'An estimate — the final figure is the server’s, after review.',
   'income.empty': 'No income yet.',
+  'income.intro': 'One episode at a time. The app adds nothing up and computes no money.',
+  'income.progress': 'Progress',
+  'income.step.uploaded': 'Uploaded',
+  'income.step.underReview': 'Under review',
+  'income.step.reviewed': 'Reviewed',
+  'income.step.paid': 'Paid',
   'settlement.pending_review': 'Awaiting review',
   'settlement.pending_settlement': 'Awaiting settlement',
   'settlement.bill_generated': 'On a bill',
@@ -398,7 +531,253 @@ const en: Record<MessageKey, string> = {
   'settlement.unknown': 'Being checked',
 };
 
-export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en };
+/**
+ * Simplified Chinese. PaXini supplies the device and reviews the footage, and
+ * their staff read this app during the pilot; the register is plain and
+ * declarative, the same as the Vietnamese, with no honorific padding.
+ */
+const zh: Record<MessageKey, string> = {
+  'app.name': 'Player One',
+
+  'common.back': '返回',
+  'common.cancel': '取消',
+  'common.loading': '加载中…',
+  'common.language': 'Tiếng Việt',
+  'common.retry': '重试',
+  'common.loadFailed': '数据加载失败。请检查网络后重试。',
+  'common.actionFailed': '操作没有成功。请重试。',
+  'common.close': '关闭',
+  'common.next': '下一步',
+  'common.done': '完成',
+
+  'tab.home': '首页',
+  'tab.tasks': '任务',
+  'tab.session': '采集场次',
+  'tab.sessionHint': '打开采集场次准备页。不会开始录制。',
+  'tab.uploads': '上传',
+  'tab.income': '收入',
+
+  'landing.slogan1': '戴上它。',
+  'landing.slogan2': '照常生活。',
+  'landing.slogan3': '审核通过，按分钟付酬。',
+  'landing.videoLabel': 'Player One 介绍视频',
+  'landing.centre': '服务点',
+  'landing.signIn': '登录',
+  'landing.register': '到服务台注册',
+  'landing.registerNote': '账号由服务台工作人员开通。用你在服务台留下的手机号登录即可。',
+  'landing.pandaLabel': '小竹，Player One 的熊猫',
+
+  'shift.earlyBird': '早班',
+  'shift.dayShift': '白班',
+  'shift.goldenHour': '傍晚班',
+  'shift.nightOwl': '夜班',
+  'greeting.earlyBird': '早上好',
+  'greeting.dayShift': '你好',
+  'greeting.goldenHour': '下午好',
+  'greeting.nightOwl': '夜班辛苦',
+
+  'signIn.title': '登录',
+  'signIn.intro': '输入你的手机号。我们通过 Zalo 发送一次性验证码。不需要密码。',
+  'signIn.phone': '手机号',
+  'signIn.sendCode': '发送验证码',
+  'signIn.codeSent': '如果这个号码已注册，验证码会通过 Zalo 很快送达。请打开 Zalo 查看。',
+  'signIn.code': '一次性验证码',
+  'signIn.submit': '登录',
+  'signIn.badCode': '验证码错误或已过期。请重新获取。',
+  'signIn.rateLimited': '尝试次数过多。请等几分钟后再试。',
+  'signIn.unavailable': '目前无法发送登录验证码。请联系服务点。',
+  'signIn.restoring': '正在恢复登录状态…',
+
+  'register.title': '注册',
+  'register.intro': '创建采集员账号，用来领取任务，并按有效分钟获得报酬。',
+  'register.name': '姓名',
+  'register.phone': '手机号',
+  'register.submit': '创建账号',
+  'register.missing': '请填写姓名和手机号。',
+
+  'agreements.title': '六项协议',
+  'agreements.intro': '接受全部六项协议后注册才算完成。每一次接受都会连同版本号和时间一起记录。',
+  'agreements.version': '版本',
+  'agreements.submit': '全部接受',
+  'agreements.incomplete': '六项协议都必须接受。',
+  'agreement.user': '用户协议',
+  'agreement.privacy': '隐私协议',
+  'agreement.data_collection': '数据采集授权',
+  'agreement.commercial_use': '数据商用授权',
+  'agreement.manual_review': '人工审核流程说明',
+  'agreement.offline_settlement': '线下人工结算说明',
+
+  'training.title': '培训',
+  'training.body':
+    '培训内容由 PaXini 提供、VNG 本地化：如何佩戴设备、离线采集与 TF 卡、切换 Wi-Fi 与热点、上传队列、后台权限、电量与存储、不要为了上传打断真实工作、场景授权与周围人员、异常上报。',
+  'training.placeholder': '仅为框架 — PaXini 交付后会替换成正式内容。',
+  'training.done': '完成培训',
+
+  'exam.title': '考核',
+  'exam.intro': '没有通过考核就不能领取任务。服务器也会检查这一点。',
+  'exam.q1': '我已了解如何正确佩戴设备并录制。',
+  'exam.q2': '拍摄他人或私人场所之前，我会先征得同意。',
+  'exam.q3': '我明白数据只有经我自己确认后才会上传。',
+  'exam.submit': '提交',
+  'exam.passed': '已通过。你现在可以领取任务。',
+  'exam.failed': '未通过。请复习培训内容后重试。',
+
+  'home.tasks': '任务大厅',
+  'home.myTasks': '我的任务',
+  'home.devices': '我的设备',
+  'home.session': '创建采集场次',
+  'home.uploads': '上传',
+  'home.income': '收入',
+  'home.training': '培训与考核',
+  'home.gateExam': '尚未通过考核 — 还不能领取任务。',
+  'home.gateDevice': '尚未绑定设备 — 还不能创建采集场次。',
+  'home.reviewedCaption': '集已审核',
+  'home.ringLoading': '正在统计数据集…',
+  'home.ringFailed': '暂时统计不出',
+  'home.claimable': '可领取的工作',
+  'home.take': '领取',
+  'home.claimableEmpty': '目前没有开放的任务。',
+  'home.incomeLink': '按集查看收入',
+  'home.more': '应用里的其他地方',
+
+  'guide.open': '快速指引',
+  'guide.offerTitle': '看一下快速指引？',
+  'guide.offerBody': '几个简短的步骤。你随时可以从首页重新打开。',
+  'guide.offerYes': '看指引',
+  'guide.offerNo': '以后再说',
+  'guide.step': '步骤',
+  'guide.home.ring':
+    '这个小圆环统计服务器返回的列表里已审核的数据集数量。不是分钟数，也不是钱。点一下可以查看全部。',
+  'guide.home.tasks': '开放的任务在这里。点一张卡片，可以看到说明和单价。',
+  'guide.home.tabs': '中间的黑色按钮打开采集场次准备页。应用永远不会开始或停止录制。',
+  'guide.tasks.list': '每个任务都写明单价、目标和已领取人数。人数已满的任务不能再领。',
+  'guide.uploads.confirm': '只有你逐集确认，数据才会离开手机。没有“全部上传”按钮。',
+  'guide.income.split': '预估用虚线框；已确认用实线框并单独标注。所有数字都来自服务器。',
+
+  'hall.title': '任务大厅',
+  'hall.perMinute': '越南盾/有效分钟',
+  'hall.progress': '进度',
+  'hall.slots': '领取人数',
+  'hall.full': '人数已满',
+  'hall.open': '可领取',
+
+  'scenario.home': '在家',
+  'scenario.office': '办公室',
+  'scenario.shop': '商店',
+  'scenario.warehouse': '仓库',
+
+  'detail.title': '任务详情',
+  'detail.instructions': '说明',
+  'detail.privacy': '隐私提示',
+  'detail.payment': '计酬规则',
+  'detail.target': '目标',
+  'detail.minutes': '分钟',
+  'detail.claim': '领取任务',
+  'detail.claimed': '已领取这个任务',
+  'detail.needExam': '领取任务前需要先通过考核。',
+  'detail.full': '这个任务的领取人数已满。',
+  'detail.claiming': '正在领取…',
+  'detail.needAgreements': '领取任务前需要接受全部六项协议。',
+  'detail.needTraining': '领取任务前需要先完成培训。',
+  'detail.notSupplied': 'PaXini 尚未提供这部分内容。',
+
+  'mine.title': '我的任务',
+  'mine.empty': '还没有领取任何任务。',
+  'mine.claimedAt': '领取时间',
+
+  'devices.title': '我的设备',
+  'devices.empty': '还没有绑定设备。',
+  'devices.serial': '序列号',
+  'devices.scanQr': '扫描二维码',
+  'devices.qrMock': '模拟扫描器 — 返回一个示例序列号。',
+  'devices.typed': '或者手动输入设备上印的序列号',
+  'devices.bind': '绑定设备',
+  'devices.boundAt': '绑定时间',
+  'devices.provision': '通过蓝牙配置 Wi-Fi',
+
+  'prov.title': '设备配置',
+  'prov.hint': '手机通过蓝牙把 Wi-Fi 发给设备；设备返回用于取数据的 IP 地址。',
+  'prov.scan': '搜索设备',
+  'prov.connect': '连接',
+  'prov.connected': '已连接',
+  'prov.ssid': 'Wi-Fi 名称（SSID）',
+  'prov.password': 'Wi-Fi 密码',
+  'prov.send': '发送 Wi-Fi 配置',
+  'prov.sent': '配置已发送',
+  'prov.readIp': '读取 IP 地址',
+  'prov.ip': '设备 IP 地址',
+  'prov.failed': '没有读到 IP',
+  'prov.rssi': 'RSSI',
+
+  'session.title': '创建采集场次',
+  'session.intro': '一个场次在录制之前绑定任务、采集员、设备和场景。',
+  'session.task': '任务',
+  'session.device': '设备',
+  'session.scenario': '场景',
+  'session.declare': '录制前必须回答的两项声明：',
+  'session.othersTitle': '画面里可能出现其他人吗？',
+  'session.sensitiveTitle': '画面里可能出现敏感信息吗？',
+  'session.yes': '会',
+  'session.no': '不会',
+  'session.needClaim': '请先领取一个任务。',
+  'session.needDevice': '请先绑定设备。',
+  'session.needDeclarations': '两项声明都要回答。',
+  'session.create': '创建场次',
+  'session.created': '场次已创建',
+  'session.id': '场次编号',
+  'session.noRecord': '应用永远不会开始或停止录制。录制按钮在设备上，在你手里。',
+
+  'uploads.title': '上传',
+  'uploads.size': '大小',
+  'uploads.upload': '上传',
+  'uploads.confirmTitle': '确认上传？',
+  'uploads.confirmBody': '只有你确认，数据才会离开手机。绝不自动上传，绝不悄悄上传。',
+  'uploads.reason': '原因',
+  'uploads.empty': '还没有数据集。',
+  'uploads.session': '场次',
+  'uploads.confirmCancel': '未上传',
+
+  'state.pending_upload': '待上传',
+  'state.uploading': '上传中',
+  'state.uploaded': '已上传',
+  'state.under_review': '审核中',
+  'state.review_passed': '审核通过',
+  'state.review_failed': '审核未通过',
+
+  'income.title': '收入',
+  'income.estimated': '预估',
+  'income.confirmed': '已确认',
+  'income.minutes': '有效分钟',
+  'income.amount': '金额',
+  'income.settlement': '结算',
+  'income.estimatedHint': '这是预估 — 最终数字由服务器在审核后决定。',
+  'income.empty': '还没有收入。',
+  'income.intro': '一次一集。应用不做汇总，也不计算金额。',
+  'income.progress': '进程',
+  'income.step.uploaded': '已上传',
+  'income.step.underReview': '审核中',
+  'income.step.reviewed': '已审核',
+  'income.step.paid': '已支付',
+  'settlement.pending_review': '等待审核',
+  'settlement.pending_settlement': '等待结算',
+  'settlement.bill_generated': '已列入账单',
+  'settlement.manually_paid': '已人工支付',
+  'settlement.exception': '有问题，正在处理',
+
+  'settlement.uploaded': '已上传，等待审核',
+  'settlement.approved': '已通过，等待出账单',
+  'settlement.not_paid': '未被接受',
+  'settlement.on_a_bill': '已列入账单',
+  'settlement.action_needed': '需要你处理',
+  'settlement.waiting_on_us': '我们正在处理',
+  'settlement.on_hold': '暂时挂起',
+  'settlement.being_rechecked': '正在重新审核',
+  'settlement.paid': '已支付',
+  'settlement.cannot_be_paid': '无法支付',
+  'settlement.unknown': '正在核对',
+};
+
+export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en, zh };
 
 /** Every locale holds every key. Asserted by a test, not hoped for. */
 export function missingKeys(locale: Locale): MessageKey[] {
@@ -410,3 +789,12 @@ export function missingKeys(locale: Locale): MessageKey[] {
 }
 
 export const t = (locale: Locale, key: MessageKey): string => MESSAGES[locale][key];
+
+/**
+ * The language chip's one behaviour: vi → en → zh → vi.
+ *
+ * Here rather than in the chip, because `LOCALES` is the list and a cycle that
+ * names the locales again is a second list to keep in step with the first.
+ */
+export const nextLocale = (locale: Locale): Locale =>
+  LOCALES[(LOCALES.indexOf(locale) + 1) % LOCALES.length] ?? DEFAULT_LOCALE;

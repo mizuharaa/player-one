@@ -27,7 +27,14 @@ import type { MessageKey } from '../i18n.ts';
  * pretend to: `signIn.codeSent` tells them to check Zalo, and the way out is a
  * person at a counter.
  */
-export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
+export function SignIn({
+  onSignedIn,
+  onBack,
+}: {
+  onSignedIn: () => void;
+  /** Back to the landing. Sign-in is not a route, so it cannot use the stack. */
+  onBack?: () => void;
+}) {
   const api = useApi();
   const tt = useT();
   const [phone, setPhone] = useState('');
@@ -60,14 +67,24 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   });
 
   return (
-    <Screen title={tt('signIn.title')}>
+    <Screen title={tt('signIn.title')} onBack={onBack}>
       <Body muted>{tt('signIn.intro')}</Body>
       <Card>
-        <Field label={tt('signIn.phone')} value={phone} onChangeText={setPhone} />
+        <Field
+          label={tt('signIn.phone')}
+          value={phone}
+          onChangeText={setPhone}
+          keyboardType="phone-pad"
+        />
         {sent ? (
           <>
             <Note text={tt('signIn.codeSent')} />
-            <Field label={tt('signIn.code')} value={code} onChangeText={setCode} />
+            <Field
+              label={tt('signIn.code')}
+              value={code}
+              onChangeText={setCode}
+              keyboardType="number-pad"
+            />
           </>
         ) : null}
         {problem !== null ? <Note text={tt(problem)} /> : null}

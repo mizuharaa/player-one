@@ -1,9 +1,11 @@
 import { View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+import type { IncomeEntry } from '../api/types.ts';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, ListScreen, Row, Tag, Title } from '../ui.tsx';
+import { useGuideTarget } from '../guide/Guide.tsx';
+import { Body, Hatch, ListScreen, Note, Row, Tag, Timeline, Title } from '../ui.tsx';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -45,25 +47,83 @@ const settlementLabel = (tt: (key: MessageKey) => string, state: string): string
   return key === undefined ? state : tt(key);
 };
 
+/** The settlement states that mean money actually moved. */
+const PAID = new Set(['manually_paid', 'paid']);
+
+/**
+ * One episode's life, as far as the server has told us.
+ *
+ * Wise's checkmark timeline, and its rule about weight: a step is bold only
+ * once it has happened. "Reviewed" is ticked when the entry is confirmed —
+ * `kind === 'confirmed'` is exactly "a reviewer decided" — and "Paid" only when
+ * the settlement state says so. Nothing here infers a step from a figure being
+ * present: an estimate has an amount too, and drawing that as reviewed would be
+ * the app telling a collector they had been paid.
+ */
+const lifecycle = (
+  tt: (key: MessageKey) => string,
+  entry: IncomeEntry,
+): { key: string; label: string; done: boolean; note?: string }[] => {
+  const reviewed = entry.kind === 'confirmed';
+  const paid = entry.settlementState !== null && PAID.has(entry.settlementState);
+  return [
+    { key: 'uploaded', label: tt('income.step.uploaded'), done: true },
+    { key: 'review', label: tt('income.step.underReview'), done: true },
+    {
+      key: 'reviewed',
+      label: tt('income.step.reviewed'),
+      done: reviewed,
+      note: reviewed ? undefined : tt('income.estimatedHint'),
+    },
+    {
+      key: 'paid',
+      label: tt('income.step.paid'),
+      done: paid,
+      note:
+        entry.settlementState === null ? undefined : settlementLabel(tt, entry.settlementState),
+    },
+  ];
+};
+
 /**
  * APP-33/34: per-episode effective minutes, amount and settlement state —
  * with estimated and confirmed visually unmistakable: confirmed sits in a
- * solid card with the pass verdict's colours; estimated is dashed, muted, and
- * labelled. Every figure is the server's; the app computes nothing, sums
- * nothing, rounds nothing.
+ * solid card with the pass verdict's label; estimated is dashed, muted, and
+ * labelled in words as well as geometry. Every figure is the server's; the app
+ * computes nothing, sums nothing, rounds nothing.
+ *
+ * There is deliberately **no total and no balance** on this screen. Grab's rule:
+ * typed rows, never netted. A single wallet figure would be the app doing
+ * arithmetic on money, which is the one thing this client must never do — and
+ * it would net a reviewed payment against an estimate that a reviewer may yet
+ * cut to nothing.
  */
 export function Income() {
   const api = useApi();
   const tt = useT();
   const theme = useTheme();
   const income = useQuery({ queryKey: ['income'], queryFn: () => api.income() });
+  const listTarget = useGuideTarget('income.list');
 
   return (
     <ListScreen
       title={tt('income.title')}
       data={income.data ?? []}
       keyOf={(entry) => entry.episodeId}
-      empty={income.data !== undefined ? <Body muted>{tt('income.empty')}</Body> : null}
+      header={
+        <View ref={listTarget} collapsable={false}>
+          <Body muted>{tt('income.intro')}</Body>
+        </View>
+      }
+      empty={
+        income.isError ? (
+          <Note text={tt('common.loadFailed')} />
+        ) : income.data === undefined ? (
+          <Body muted>{tt('common.loading')}</Body>
+        ) : (
+          <Hatch text={tt('income.empty')} />
+        )
+      }
       renderItem={(entry) => {
         const confirmed = entry.kind === 'confirmed';
         return (
@@ -71,25 +131,53 @@ export function Income() {
             style={{
               backgroundColor: confirmed ? theme.color.card : theme.color.surface,
               borderWidth: 1,
+              // Geometry as well as a label: a dashed edge for a figure that is
+              // still an estimate, a solid one for a figure a reviewer decided.
               borderStyle: confirmed ? 'solid' : 'dashed',
               borderColor: confirmed ? theme.color.border : theme.color.borderStrong,
               borderRadius: theme.radius.base,
               padding: theme.space[4],
-              gap: theme.space[2],
+              gap: theme.space[3],
             }}
           >
-            <Title>{entry.episodeId}</Title>
-            {confirmed ? (
-              <Tag label={tt('income.confirmed')} fg={theme.color.verdict.pass.fg} bg={theme.color.verdict.pass.bg} />
-            ) : (
-              <Tag label={tt('income.estimated')} fg={theme.color.mutedForeground} bg={theme.color.muted} />
-            )}
-            <Row label={tt('income.minutes')} value={entry.effectiveMinutes ?? '—'} />
-            <Row label={tt('income.amount')} value={entry.amountVnd !== null ? `${entry.amountVnd} ₫` : '—'} />
-            {entry.settlementState !== null ? (
-              <Row label={tt('income.settlement')} value={settlementLabel(tt, entry.settlementState)} />
-            ) : null}
-            {!confirmed ? <Body muted>{tt('income.estimatedHint')}</Body> : null}
+            <View style={{ gap: theme.space[2] }}>
+              <Title>{entry.episodeId}</Title>
+              {confirmed ? (
+                <Tag
+                  label={tt('income.confirmed')}
+                  fg={theme.color.verdict.pass.fg}
+                  bg={theme.color.verdict.pass.bg}
+                />
+              ) : (
+                <Tag
+                  label={tt('income.estimated')}
+                  fg={theme.color.mutedForeground}
+                  bg={theme.color.muted}
+                />
+              )}
+              <Row label={tt('income.minutes')} value={entry.effectiveMinutes ?? '—'} />
+              <Row
+                label={tt('income.amount')}
+                value={entry.amountVnd !== null ? `${entry.amountVnd} ₫` : '—'}
+              />
+              {entry.settlementState !== null ? (
+                <Row
+                  label={tt('income.settlement')}
+                  value={settlementLabel(tt, entry.settlementState)}
+                />
+              ) : null}
+            </View>
+            <View
+              style={{
+                borderTopWidth: 1,
+                borderTopColor: theme.color.border,
+                paddingTop: theme.space[3],
+                gap: theme.space[2],
+              }}
+            >
+              <Body muted>{tt('income.progress')}</Body>
+              <Timeline steps={lifecycle(tt, entry)} />
+            </View>
           </View>
         );
       }}
