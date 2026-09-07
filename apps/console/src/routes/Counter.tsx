@@ -65,6 +65,7 @@ import {
 } from '../components/icons.tsx';
 import { ApiError, counter, type Reference } from '../lib/api.ts';
 import { localNow, stampLocal } from '../lib/format.ts';
+import { uuid } from '../lib/uuid.ts';
 
 export function CounterScreen() {
   const { t } = useTranslation();
@@ -141,8 +142,8 @@ function Intake({ reference }: { reference: Reference }) {
    * was lost has to be retried under the SAME id, and a fresh one on the second
    * click is not a retry, it is a second handover for one card.
    */
-  const [handoverId, setHandoverId] = useState(() => crypto.randomUUID());
-  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
+  const [handoverId, setHandoverId] = useState(() => uuid());
+  const [sessionId, setSessionId] = useState(() => uuid());
 
   /**
    * The handover row exists.
@@ -221,7 +222,7 @@ function Intake({ reference }: { reference: Reference }) {
 
   /** A second recording on the card already on the desk: same handover, new session. */
   const anotherSession = () => {
-    setSessionId(crypto.randomUUID());
+    setSessionId(uuid());
     setTaskId(null);
     setScenarioId(null);
     setPreparedAt(localNow());
@@ -234,8 +235,8 @@ function Intake({ reference }: { reference: Reference }) {
 
   /** A different collector at the counter: everything starts again. */
   const anotherCard = () => {
-    setHandoverId(crypto.randomUUID());
-    setSessionId(crypto.randomUUID());
+    setHandoverId(uuid());
+    setSessionId(uuid());
     setLanded(false);
     setCollectorId(null);
     setDeviceId(null);

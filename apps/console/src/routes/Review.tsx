@@ -37,6 +37,7 @@ import { api, ApiError, type Claim, type ReasonCode, type Verdict } from '../lib
 import { commitFailure, type CommitFailure } from './refusal.ts';
 import { duration, money, signedPercent, signedSeconds } from '../lib/format.ts';
 import { cn } from '../lib/cn.ts';
+import { uuid } from '../lib/uuid.ts';
 
 const RATES = [0.5, 0.75, 1, 1.5, 2, 3, 4] as const;
 const HEARTBEAT_MS = 60_000;
@@ -51,7 +52,7 @@ export function ReviewScreen() {
   const queryClient = useQueryClient();
 
   const [episode, setEpisode] = useState<Claim | null>(null);
-  const [verdictId, setVerdictId] = useState<string>(() => crypto.randomUUID());
+  const [verdictId, setVerdictId] = useState<string>(() => uuid());
   const [spans, setSpans] = useState<Span[]>([]);
   const [decision, setDecision] = useState<Verdict | null>(null);
   const [reasons, setReasons] = useState<string[]>([]);
@@ -87,7 +88,7 @@ export function ReviewScreen() {
   /** Reset everything that belongs to one episode. */
   const adopt = useCallback((claim: Claim | null) => {
     setEpisode(claim);
-    setVerdictId(crypto.randomUUID());
+    setVerdictId(uuid());
     setSpans([]);
     setDecision(null);
     setReasons([]);

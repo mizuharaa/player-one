@@ -41,6 +41,7 @@ import {
 import { IconCamera, IconChevron, IconPerson, IconTask } from '../components/icons.tsx';
 import { ApiError, backOffice, type BoCollector, type BoDevice } from '../lib/api.ts';
 import { refusalKey } from './refusal.ts';
+import { uuid } from '../lib/uuid.ts';
 
 /** One collector's two writes, and what the server said to each. */
 type Outcome = {
@@ -74,12 +75,12 @@ export function TaskAssign({
    * in a ref, so ticking a collector, unticking it and ticking it again does
    * not mint a third id for one claim.
    */
-  const [taskId] = useState(() => crypto.randomUUID());
+  const [taskId] = useState(() => uuid());
   const ids = useRef(new Map<string, { claim: string; assignment: string }>());
   const idsFor = (collectorId: string) => {
     const held = ids.current.get(collectorId);
     if (held !== undefined) return held;
-    const fresh = { claim: crypto.randomUUID(), assignment: crypto.randomUUID() };
+    const fresh = { claim: uuid(), assignment: uuid() };
     ids.current.set(collectorId, fresh);
     return fresh;
   };

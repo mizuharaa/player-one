@@ -30,6 +30,7 @@ import { durationShort, localNow } from '../lib/format.ts';
 import { refusalKey } from './refusal.ts';
 import { TaskAssign } from './TaskAssign.tsx';
 import { cn } from '../lib/cn.ts';
+import { uuid } from '../lib/uuid.ts';
 import {
   ApiError,
   backOffice,
@@ -352,7 +353,7 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
   const [consenting, setConsenting] = useState<string | null>(null);
   const [declaring, setDeclaring] = useState<string | null>(null);
   const [declared, setDeclared] = useState<{ collectorId: string; result: BoPayoutDeclared } | null>(null);
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  const [requestId, setRequestId] = useState(() => uuid());
 
   const { data, isPending, error } = useQuery({
     queryKey: ['bo', 'collectors'],
@@ -379,7 +380,7 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
     mutationFn: backOffice.createCollector,
     onSuccess: () => {
       setCreating(false);
-      setRequestId(crypto.randomUUID());
+      setRequestId(uuid());
       done();
     },
     onError: failed,
@@ -413,7 +414,7 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
    * explicit "not this request" the rotation was missing.
    */
   const cancelOrOpen = () => {
-    if (creating) setRequestId(crypto.randomUUID());
+    if (creating) setRequestId(uuid());
     setCreating(!creating);
   };
 
@@ -733,7 +734,7 @@ function PayoutDeclaration({
 }) {
   const { t } = useTranslation();
   const [method, setMethod] = useState<BoPayoutDeclaration['method']>('WALLET');
-  const [id] = useState(() => crypto.randomUUID());
+  const [id] = useState(() => uuid());
 
   return (
     <form
@@ -807,7 +808,7 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
   const client = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  const [requestId, setRequestId] = useState(() => uuid());
 
   const devices = useQuery({ queryKey: ['bo', 'devices'], queryFn: backOffice.devices });
   /** Binding needs the roll of collectors; the same list the other tab reads. */
@@ -839,7 +840,7 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
     mutationFn: backOffice.createDevice,
     onSuccess: () => {
       setCreating(false);
-      setRequestId(crypto.randomUUID());
+      setRequestId(uuid());
       done();
     },
     onError: failed,
@@ -856,7 +857,7 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
    * explicit "not this request" the rotation was missing.
    */
   const cancelOrOpen = () => {
-    if (creating) setRequestId(crypto.randomUUID());
+    if (creating) setRequestId(uuid());
     setCreating(!creating);
   };
 
