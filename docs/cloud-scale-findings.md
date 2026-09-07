@@ -149,6 +149,46 @@ now also the shape of the bill. Two consequences for the quotation request:
 Neither changes the design. Verification stays a full read-back; the
 alternative is trusting a hash we sent ourselves.
 
+### Storage classes and lifecycle transitions — probed 2026-09-07
+
+Two probes against `playerone-pilot-test`, both cleaned up, both from the
+org PC over the US link. **Configuration acceptance was observed; no object
+was watched actually transitioning, and no archived object was read back.**
+That second half is still untested.
+
+Storage class strings, by `PutObject` with `StorageClass` set, then
+`HeadObject`, then delete:
+
+| String | Result |
+|---|---|
+| `STANDARD_IA` | accepted; `HeadObject` reports `STANDARD_IA` |
+| `DEEP_ARCHIVE` | accepted; `HeadObject` reports `DEEP_ARCHIVE` |
+| `GLACIER_IR`, `GLACIER`, `INSTANT_ARCHIVE`, `ARCHIVE_INSTANT`, `COLD` | `InvalidArgument`, HTTP 400 |
+
+The default class reads back as `STANDARD_TIERING`, which the portal shows
+as Gold. **Which of `STANDARD_IA` and `DEEP_ARCHIVE` GreenNode calls Instant
+Archive is not knowable from the API** and is a question for them; the class
+string therefore stays out of code and in the bucket's lifecycle rule.
+
+Lifecycle rules, by `PutBucketLifecycleConfiguration` carrying the existing
+`abort-stale-multipart` rule plus one probe rule, `GetBucketLifecycleConfiguration`
+to confirm, then a put of the original rules alone:
+
+| Rule | Result |
+|---|---|
+| transition by prefix, after 1 day, to `STANDARD_IA` | accepted and read back |
+| transition by prefix, after 1 day, to `DEEP_ARCHIVE` | accepted and read back |
+| transition by **object tag** `reviewed=true`, after 0 days, to `STANDARD_IA` | accepted and read back |
+
+After the third probe the configuration read back byte-identical to the
+original single rule. Tag-filtered transitions being accepted is what lets
+archive tiering be event-driven: code tags an object when its footage has
+done its job, and one bucket rule does the move.
+
+`PutBucketLifecycleConfiguration` **replaces the whole rule set.** Any rule
+added later has to be put together with `abort-stale-multipart`, or that
+rule is gone and the orphaned-part cost it exists to reap comes back.
+
 ## What was NOT tested
 
 - **GreenNode itself.** S3 keys now exist for HCM04. Everything measured here is MinIO
