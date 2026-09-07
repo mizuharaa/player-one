@@ -18,6 +18,21 @@
   --tech-500: #1B6EF3;
   --tech-600: #0F55CC;
   --tech-700: #0B3F99;
+  --bamboo-50: #F5FCE3;
+  --bamboo-100: #E9F8BF;
+  --bamboo-200: #D6F28A;
+  --bamboo-300: #C3EB5A;
+  --bamboo-400: #B0E230;
+  --bamboo-500: #9BD11C;
+  --bamboo-600: #6E9A0F;
+  --bamboo-700: #4C6C0A;
+  /* Ink for text on bamboo-50 / bamboo-100, per scheme: the web twin of
+     bambooInk in native.ts, there for the same reason techInk is. The two
+     lowest steps invert in dark mode, so a fixed bamboo-700 label on them goes
+     from 5.76:1 to unreadable the moment the operator flips the theme.
+     Measured: 700 on the light tints reads 5.76 and 5.39; 200 on the dark
+     tints reads 13.00 and 9.51. */
+  --bamboo-ink: #4C6C0A;
 
   --pass: #0D763B;
   --pass-bg: #E8F8EE;
@@ -35,7 +50,7 @@
   --border-strong: #D5D1CC;
   --foreground: #17150F;
   --muted-foreground: #6E6A62;
-  --faint-foreground: #9C978E;
+  --faint-foreground: #726D64;
 
   --stage: #101215;
   --stage-panel: #191C21;
@@ -55,7 +70,7 @@
   --shadow-sun: 0 8px 24px rgba(255,122,26,.32);
   --scrim: rgba(0, 0, 0, .72);
 
-  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", Roboto, sans-serif;
+  --font-sans: "Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
   --ease: cubic-bezier(.22,.61,.36,1);
   --duration-instant: 90ms;
@@ -75,11 +90,14 @@
   --border-strong: #3A4048;
   --foreground: #ECEEF1;
   --muted-foreground: #9BA2AB;
-  --faint-foreground: #6C737C;
+  --faint-foreground: #848B94;
   --sun-50: #2A1608;
   --sun-100: #3D2009;
   --tech-50: #0C1A33;
   --tech-100: #123061;
+  --bamboo-50: #1B2408;
+  --bamboo-100: #2C3D0C;
+  --bamboo-ink: #D6F28A;
   --pass: #14B459;
   --pass-bg: #0D2A1A;
   --partial: #9B83FD;
@@ -104,11 +122,14 @@
   --border-strong: #3A4048;
   --foreground: #ECEEF1;
   --muted-foreground: #9BA2AB;
-  --faint-foreground: #6C737C;
+  --faint-foreground: #848B94;
   --sun-50: #2A1608;
   --sun-100: #3D2009;
   --tech-50: #0C1A33;
   --tech-100: #123061;
+  --bamboo-50: #1B2408;
+  --bamboo-100: #2C3D0C;
+  --bamboo-ink: #D6F28A;
   --pass: #14B459;
   --pass-bg: #0D2A1A;
   --partial: #9B83FD;

@@ -53,10 +53,24 @@ export function ThemeSwitch() {
       type="button"
       onClick={cycle}
       title={`${t('theme.toggle')}: ${choice}`}
+      /*
+       * Every state is written in `currentColor` rather than in a named
+       * colour, because this control appears twice on two different grounds:
+       * on the ink top bar, where it inherits `--stage-fg`, and on the
+       * sign-in panel, where it inherits `--foreground`. A control that hard
+       * codes white is invisible on the second one, which is exactly what
+       * happened the first time this bar went dark.
+       *
+       * Five states, all declared: held back at 70%, full strength with a
+       * wash of its own colour under the pointer, a deeper wash while
+       * pressed, the sun ring on focus, and the shared disabled treatment.
+       */
       className={cn(
-        'grid h-8 w-8 shrink-0 place-items-center rounded-full',
-        'text-[var(--muted-foreground)] transition-colors duration-150',
-        'hover:bg-[var(--muted)] hover:text-[var(--foreground)]',
+        'grid h-8 w-8 shrink-0 place-items-center rounded-full text-current/70',
+        'transition-colors duration-150 ease-[var(--ease)]',
+        'hover:bg-current/10 hover:text-current active:bg-current/16',
+        'focus-visible:outline-2 focus-visible:outline-offset-2',
+        'disabled:pointer-events-none disabled:opacity-45',
       )}
     >
       {/* Sun, moon, or half — drawn in the same 20px grid as every other icon. */}

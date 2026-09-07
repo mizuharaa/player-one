@@ -14,8 +14,14 @@
  * - **The stage.** The collector never reviews footage, so the theatre has no
  *   meaning in the app. It is exported anyway, because APP-24's upload-record
  *   screens show video thumbnails and want the same surround.
+ * - **The typeface.** `font.sans` on the web names Be Vietnam Pro, which
+ *   reaches the browser as a bundled woff2. React Native resolves a family
+ *   name against fonts linked into the native build, so naming it here on a
+ *   project with no native build yet would render nothing and silently fall
+ *   back. See `font` below.
  */
 import {
+  bamboo,
   dark,
   darkBrandTints,
   duration,
@@ -78,8 +84,44 @@ export function nativeTheme(scheme: ColorScheme) {
           bg: isDark ? verdict.reject.bgDark : verdict.reject.bg,
         },
       },
+      /**
+       * Bamboo: the mascot and progress. Never a verdict, never a payment
+       * status, never a money figure — see the header of `tokens.ts`. The two
+       * lowest steps invert in dark mode like sun and tech, because a pale
+       * lime tint on a dark phone is a glare rather than a fill.
+       */
+      bamboo: {
+        ...bamboo,
+        ...(isDark ? { 50: darkBrandTints.bamboo50, 100: darkBrandTints.bamboo100 } : {}),
+      },
+      /**
+       * The ink for anything sitting on `bamboo[50]` or `bamboo[100]` — the
+       * app's earning ring caption and its progress labels — resolved here for
+       * the same reason `techInk` is. Measured: `bamboo[700]` reads 5.76:1 on
+       * the light tint and 5.39:1 on `bamboo[100]`; `bamboo[200]` reads 13.00:1
+       * and 9.51:1 on the two dark tints.
+       */
+      bambooInk: isDark ? bamboo[200] : bamboo[700],
       stage,
     },
+    /**
+     * The faces, by name.
+     *
+     * ponytail: `sans` is the platform's own UI face, not Be Vietnam Pro. No
+     * font asset is linked into a native build here because there is no native
+     * build here yet, and a `fontFamily` naming a family Android cannot find
+     * renders in Roboto with no warning — the same silent fallback the web
+     * stack exists to avoid. At the first native build, link the upstream
+     * full-coverage TTFs — `BeVietnamPro-Regular.ttf`, `-Medium`, `-SemiBold`,
+     * `-Bold` from the Google Fonts release (OFL) — through
+     * `react-native.config.js` assets, then replace `'System'` with
+     * `'Be Vietnam Pro'` here: one line, one place. NOT the Fontsource files:
+     * those are per-script `.woff2` subsets (`latin`, `vietnamese`, …), and
+     * linking one of them into a native build drops every other script.
+     * `mono` is the same bargain: `JetBrainsMono-Regular.ttf` links alongside
+     * it and replaces `'monospace'`.
+     */
+    font: { sans: 'System', mono: 'monospace' },
     /**
      * sp-equivalent sizes. RN scales these by the system font setting on its
      * own, which is why they are plain numbers and not a clamped scale.

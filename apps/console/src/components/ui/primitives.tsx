@@ -10,7 +10,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/cn.ts';
 import { IconAlert, IconPartial, IconPass, IconReject } from '../icons.tsx';
-import { Cu } from '../identity/Cu.tsx';
+import { Panda } from '../identity/Panda.tsx';
 
 /**
  * A surface.
@@ -58,9 +58,15 @@ export function Field({
   tone?: 'default' | 'warn' | 'data';
   stacked?: boolean;
 }) {
+  /*
+   * `warn` is a discrepancy the machine measured (the device claims 24 s more
+   * than the media holds), not a verdict. It used to borrow `--reject`, which
+   * put a verdict hue on a row that decides nothing about payment. It is set
+   * in weight instead, and the caller's glyph carries the meaning.
+   */
   const valueTone =
     tone === 'warn'
-      ? 'text-[var(--reject)]'
+      ? 'font-semibold text-[var(--foreground)]'
       : tone === 'data'
         ? 'text-[var(--tech-600)] dark:text-[var(--tech-300)]'
         : '';
@@ -167,9 +173,11 @@ export function FlagRow({
 /**
  * An empty state that teaches rather than apologises.
  *
- * Cú carries these — the queue reaching zero is the one moment in the reviewer's
- * day worth marking, and an owl with nothing to watch says it without a
- * congratulation nobody asked for.
+ * Trúc carries these, on a hatched ground. The hatch is the point: an empty
+ * table on this console can mean "nothing to do" or it can mean "the query is
+ * wrong and somebody is not being paid", and white space reads as the second.
+ * A drawn surface says the screen rendered and is empty on purpose. The panda
+ * marks the queue reaching zero without a congratulation nobody asked for.
  */
 export function EmptyState({
   title,
@@ -181,8 +189,8 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="mx-auto flex max-w-[42ch] flex-col items-center py-16 text-center">
-      <Cu size={104} />
+    <div className="hatch mx-auto flex max-w-[42ch] flex-col items-center rounded-[var(--radius-lg)] border border-[var(--border)] px-8 py-16 text-center">
+      <Panda size={104} />
       <h2 className="mt-5 text-[1.3125rem] font-bold tracking-[-0.02em]">{title}</h2>
       <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">{body}</p>
       {action ? <div className="mt-6">{action}</div> : null}
