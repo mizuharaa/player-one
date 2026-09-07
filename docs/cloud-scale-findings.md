@@ -192,7 +192,7 @@ adopted **the same `uploadId` the first killed run created**
 behave as they do on MinIO; no orphan second upload was started. While those
 67,108,864 bytes were held, `ListObjectsV2` on the key reported **0 objects** —
 the invisible storage cost `docs/RUNNING.md` warns about reproduces exactly on
-GreenNode, and the lifecycle rule that reaps it is still not set on this bucket.
+GreenNode. The lifecycle rule that reaps it was set on 2026-09-06 (below).
 
 The third run skipped the held part and sent parts 2 and 3 — **133,747,753 of
 200,856,617 bytes, 66.6%, skipping 67,108,864 bytes (33.4%)**. Then
@@ -253,8 +253,10 @@ pilot's. No multi-gigabyte local file was built.
   DNS once in this session. It was skipped deliberately: it would re-measure the
   same rate for 34× as long.
 - **Whether the `InvalidPart` reproduces.** One occurrence.
-- **The bucket lifecycle rule** for aborting incomplete multipart uploads. Still
-  not set on `playerone-pilot-test`, and the orphan-parts behaviour it exists to
-  reap has now been seen on GreenNode and not only on MinIO.
+- ~~The bucket lifecycle rule~~ Set 2026-09-06 by `PutBucketLifecycleConfiguration`
+  over S3, which HCM04 accepts; read back as `abort-stale-multipart`, Enabled,
+  prefix `""`, `DaysAfterInitiation: 7`. Before the put, the same read answered
+  `NoSuchLifecycleConfiguration`. Seven days is the value `docs/RUNNING.md`
+  prescribes and is far longer than any legitimate resume.
 - **Concurrency.** Still no concurrent variant, still unquantified.
 - Sustained multi-file batches, GreenNode's throttling behaviour, and cost.
