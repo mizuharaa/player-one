@@ -32,8 +32,6 @@ export type TickResult = {
 export type TickOptions = {
   /** PLAYERONE_RISK_ENGINE=0 makes a tick a no-op that says so. */
   enabled?: boolean;
-  /** Collectors are re-evaluated when their last run is older than this. */
-  collectorStaleMs?: number;
   /** Hard cap per subject type per tick, so a backlog drains in bounded passes. */
   limit?: number;
   now?: () => Date;
@@ -66,7 +64,7 @@ export async function tick(db: Db, engine: RiskEngine, o: TickOptions = {}): Pro
   for (const id of (await episodesDue(db)).slice(0, limit)) {
     if (await run(`episode ${id}`, () => engine.evaluateEpisode(id))) result.evaluated.episodes += 1;
   }
-  const stale = new Date(now().getTime() - (o.collectorStaleMs ?? 60 * 60 * 1000));
+  const stale = new Date(now().getTime() - 60 * 60 * 1000);
   for (const id of (await collectorsDue(db, stale)).slice(0, limit)) {
     if (await run(`collector ${id}`, () => engine.evaluateCollector(id))) result.evaluated.collectors += 1;
   }

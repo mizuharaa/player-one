@@ -111,19 +111,13 @@ export const UPLOAD_API_REFUSALS = new Set([
  * Part 8: ~16 GB per recorded hour, ~23 GB per collector-day, and the device
  * segments video hourly. 64 GiB is therefore about four recorded hours in one
  * delivery — comfortably past anything the pilot produces and far short of a
- * number that could only come from a client that is wrong about itself. It is
- * an option and not a constant because storage cost is a real operational
- * knob and the projections in Part 8 are projections.
+ * number that could only come from a client that is wrong about itself.
  */
 export const MAX_DELIVERY_BYTES = 64 * 1024 * 1024 * 1024;
 
 export type CollectorUploadOptions = {
   /** Absent until a storage endpoint exists; the routes answer 503 saying so. */
   objectStore?: (ObjectStore & DirectUploadStore) | undefined;
-  /** How long a signed URL a phone is handed stays valid. */
-  presignTtlS?: number;
-  /** The ceiling one registration may declare. */
-  maxDeliveryBytes?: number;
 };
 
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
@@ -209,8 +203,8 @@ export function registerCollectorUpload(
   options: CollectorUploadOptions = {},
 ): void {
   const opts = { preHandler: requireActor };
-  const ttl = options.presignTtlS ?? PRESIGN_TTL_S;
-  const ceiling = options.maxDeliveryBytes ?? MAX_DELIVERY_BYTES;
+  const ttl = PRESIGN_TTL_S;
+  const ceiling = MAX_DELIVERY_BYTES;
 
   /**
    * The collector, always, and from the token only.

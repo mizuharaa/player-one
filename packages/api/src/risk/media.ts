@@ -1,5 +1,4 @@
 import { access } from 'node:fs/promises';
-import { join } from 'node:path';
 import type { EpisodeRecord } from '@playerone/contracts';
 import { measureAudio } from '../../../../tools/analysers/audio.ts';
 import { corpusCheck } from '../../../../tools/analysers/corpus-check.ts';
@@ -129,7 +128,3 @@ export async function measureEpisodeMedia(
   }
   return facts;
 }
-
-/** Where an episode's session folder would be. Exported for the routes' "is the media here" answer. */
-export const sessionDirOf = (mediaRoot: string, sourceBasename: string): string | null =>
-  safeJoin(mediaRoot, sourceBasename, '.') ?? join(mediaRoot, sourceBasename);

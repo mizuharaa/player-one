@@ -158,14 +158,6 @@ export type TransportCause = 'timeout' | 'network' | 'malformed';
 /** ZaloPay's four transaction states (§0.2 F4). 4 is the trap: only an operator moves it. */
 export type ZlpStatus = 1 | 2 | 3 | 4;
 
-export type ZLP_STATUS_NAME = 'SUCCESS' | 'FAIL' | 'PROCESSING' | 'PENDING';
-export const ZLP_STATUS: Readonly<Record<ZlpStatus, ZLP_STATUS_NAME>> = {
-  1: 'SUCCESS',
-  2: 'FAIL',
-  3: 'PROCESSING',
-  4: 'PENDING',
-};
-
 /** Verbatim from §2.2. */
 export type TransferFundResult =
   | { kind: 'accepted'; zlpOrderId: string; status: ZlpStatus }

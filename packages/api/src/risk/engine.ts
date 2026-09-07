@@ -60,8 +60,6 @@ export type RiskEngineOptions = {
   dbRole?: string | null;
   prnu?: PrnuEnrolmentSource;
   tools?: MediaTools;
-  /** How far back the volume and operator signals look. */
-  windowDays?: number;
   now?: () => Date;
 };
 
@@ -108,13 +106,13 @@ type Written = Flag & { id: string };
 
 export class RiskEngine {
   private readonly db: Db;
-  private readonly o: Required<Pick<RiskEngineOptions, 'holdsEnabled' | 'windowDays' | 'now'>> & RiskEngineOptions;
+  private readonly o: Required<Pick<RiskEngineOptions, 'holdsEnabled' | 'now'>> & RiskEngineOptions;
 
   constructor(db: Db, options: RiskEngineOptions = {}) {
     this.db = db;
     const role = options.dbRole === undefined ? 'playerone_risk' : options.dbRole;
     if (role !== null && !/^[a-z_][a-z0-9_]*$/.test(role)) throw new Error(`unsafe role name ${role}`);
-    this.o = { holdsEnabled: false, windowDays: 90, now: () => new Date(), ...options, dbRole: role };
+    this.o = { holdsEnabled: false, now: () => new Date(), ...options, dbRole: role };
   }
 
   get holdsEnabled(): boolean {
@@ -166,7 +164,7 @@ export class RiskEngine {
 
   private window(): { from: Date; to: Date } {
     const to = this.o.now();
-    return { from: new Date(to.getTime() - this.o.windowDays * 86_400_000), to };
+    return { from: new Date(to.getTime() - 90 * 86_400_000), to };
   }
 
   // -------------------------------------------------------------------------

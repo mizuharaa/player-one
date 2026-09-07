@@ -37,9 +37,6 @@ export const severityOf = (points: number, bands: Bands): Severity => {
   return band === 'clear' ? 'info' : band;
 };
 
-const BAND_ORDER: Record<Band, number> = { clear: 0, notice: 1, review: 2, hold: 3 };
-export const worseBand = (a: Band, b: Band): Band => (BAND_ORDER[a] >= BAND_ORDER[b] ? a : b);
-
 /**
  * The band of a set of flags, with the one rule the brief says must be code
  * and not a comment: PROV.SYNTHETIC_HEURISTIC may never be the sole cause of

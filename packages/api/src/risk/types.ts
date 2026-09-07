@@ -71,11 +71,6 @@ export const strListParam = (t: Tuning, key: string, fallback: readonly string[]
   return Array.isArray(v) && v.every((x) => typeof x === 'string') ? (v as string[]) : [...fallback];
 };
 
-export const boolParam = (t: Tuning, key: string, fallback: boolean): boolean => {
-  const v = t.params[key];
-  return typeof v === 'boolean' ? v : fallback;
-};
-
 export const objParam = (t: Tuning, key: string): Record<string, unknown> => {
   const v = t.params[key];
   return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
