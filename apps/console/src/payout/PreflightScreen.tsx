@@ -29,13 +29,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button.tsx';
-import { Panel, Problem } from '../components/ui/primitives.tsx';
+import { Problem } from '../components/ui/primitives.tsx';
 import { ApiError, payout, type BatchRun, type PayoutBill, type RiskBand } from '../lib/api.ts';
 import { RiskBlock } from '../risk/pieces.tsx';
 import { count, vnd, when } from './format.ts';
 import { batchFingerprint, gateReasonKey, preflightGate, PREFLIGHT_WINDOW_MS, type GateState, type PreflightSnapshot } from './gate.ts';
 import { keys } from './period.ts';
-import { BandPill, Field, Fig, LoadFailed, Reason, Section, SettleShell, TableSkeleton } from './pieces.tsx';
+import { BandPill, FeatureBlock, Field, Fig, LoadFailed, Reason, Section, SettleShell, TableSkeleton } from './pieces.tsx';
 import { constraintKey, isNotOnServer, refusalKey } from './refusals.ts';
 import { readOnlyReason, useFinanceRole } from './role.ts';
 
@@ -129,51 +129,68 @@ export function PreflightScreen() {
     <SettleShell period={period} tab="preflight" mode={mode}>
       <p className="mb-4 max-w-[62ch] text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">{t('settle.preflight.intro')}</p>
 
-      {/* --- The one hero: can the batch be sent. --- */}
-      <Panel className="p-5 sm:p-6">
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <Fig
-            label={t('settle.preflight.balance')}
-            value={p.balance_vnd === null ? '—' : vnd(p.balance_vnd, locale)}
-            hint={p.balance_vnd === null ? t('settle.preflight.balance.none') : undefined}
-          />
-          <Fig label={t('settle.preflight.total')} value={vnd(p.total_vnd, locale)} tone="data" />
-          <Fig label={t('settle.preflight.required')} value={vnd(p.required_vnd, locale)} hint={t('settle.preflight.required.hint')} />
-          <Fig
-            label={t('settle.preflight.shortfall')}
-            value={vnd(p.shortfall_vnd, locale)}
-            tone={p.shortfall_vnd > 0 ? 'warn' : 'default'}
-          />
-        </div>
-        <div className="mt-5 border-t border-[var(--border)] pt-4">
-          {p.ok ? (
-            <p className="text-[0.9375rem] font-semibold" role="status">
-              {t('settle.preflight.ok', { payable: count(p.payable, locale), bills: count(p.bills, locale) })}
-            </p>
-          ) : (
-            <>
-              <p className="text-[0.9375rem] font-semibold text-[var(--sun-700)]" role="status">
-                {t('settle.preflight.refused')}
+      {/*
+        The screen's one ink block, and the whole reason this screen exists:
+        the period's total, the sentence that says a transfer can still be
+        refused, and — as its action — the server's own verdict on whether the
+        batch may be sent at all. The balance, the requirement and the
+        shortfall stay on paper underneath: they explain the figure, they are
+        not four figures of equal weight.
+      */}
+      <FeatureBlock
+        label={t('settle.preflight.total')}
+        figure={vnd(p.total_vnd, locale)}
+        sentence={t('ui.b.settle.total.sentence')}
+        action={
+          <div>
+            {p.ok ? (
+              <p className="text-[0.9375rem] font-semibold text-[var(--stage-fg)]" role="status">
+                {t('settle.preflight.ok', { payable: count(p.payable, locale), bills: count(p.bills, locale) })}
               </p>
-              {p.refusal ? (
-                <p className="mt-1 text-[0.8125rem] text-[var(--muted-foreground)]">
-                  {t('settle.preflight.serverSaid')}: <span className="num text-[var(--foreground)]">{p.refusal}</span>
+            ) : (
+              <>
+                <p className="text-[0.9375rem] font-semibold text-[var(--sun-400)]" role="status">
+                  {t('settle.preflight.refused')}
                 </p>
-              ) : null}
-            </>
-          )}
-          <p className="mt-2 text-[0.75rem] text-[var(--faint-foreground)]">
-            {t('settle.preflight.ranAt', { at: when(new Date(pre.dataUpdatedAt).toISOString(), locale) })} ·{' '}
-            <button type="button" className="font-semibold text-[var(--tech-600)]" onClick={() => void pre.refetch()}>
-              {t('settle.preflight.rerun')}
-            </button>
-          </p>
-        </div>
-      </Panel>
+                {p.refusal ? (
+                  <p className="mt-1 text-[0.8125rem] text-[var(--stage-mid)]">
+                    {t('settle.preflight.serverSaid')}:{' '}
+                    <span className="num text-[var(--stage-fg)]">{p.refusal}</span>
+                  </p>
+                ) : null}
+              </>
+            )}
+            <p className="mt-2 text-[0.75rem] text-[var(--stage-mid)]">
+              {t('settle.preflight.ranAt', { at: when(new Date(pre.dataUpdatedAt).toISOString(), locale) })} ·{' '}
+              <button
+                type="button"
+                className="font-semibold text-[var(--sun-400)] underline underline-offset-2"
+                onClick={() => void pre.refetch()}
+              >
+                {t('settle.preflight.rerun')}
+              </button>
+            </p>
+          </div>
+        }
+      />
+
+      <dl className="mt-5 grid gap-5 border-t border-[var(--border)] pt-5 sm:grid-cols-3">
+        <Fig
+          label={t('settle.preflight.balance')}
+          value={p.balance_vnd === null ? '—' : vnd(p.balance_vnd, locale)}
+          hint={p.balance_vnd === null ? t('settle.preflight.balance.none') : undefined}
+        />
+        <Fig label={t('settle.preflight.required')} value={vnd(p.required_vnd, locale)} hint={t('settle.preflight.required.hint')} />
+        <Fig
+          label={t('settle.preflight.shortfall')}
+          value={vnd(p.shortfall_vnd, locale)}
+          tone={p.shortfall_vnd > 0 ? 'warn' : 'default'}
+        />
+      </dl>
 
       {/* --- The counts. --- */}
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        <Panel className="p-5">
+      <div className="mt-6 grid gap-6 border-t border-[var(--border)] pt-5 md:grid-cols-3 md:gap-8">
+        <div>
           <Section title={t('settle.preflight.bands')}>
             <ul className="space-y-2">
               {BANDS.map((band) => (
@@ -184,8 +201,8 @@ export function PreflightScreen() {
               ))}
             </ul>
           </Section>
-        </Panel>
-        <Panel className="p-5">
+        </div>
+        <div>
           <Section title={t('settle.preflight.accounts')}>
             <ul className="space-y-2 text-[0.875rem]">
               {(
@@ -203,8 +220,8 @@ export function PreflightScreen() {
               ))}
             </ul>
           </Section>
-        </Panel>
-        <Panel className="p-5">
+        </div>
+        <div>
           <Section title={t('settle.preflight.limits')}>
             <ul className="space-y-2 text-[0.875rem]">
               <li className="flex items-center justify-between gap-3">
@@ -218,7 +235,7 @@ export function PreflightScreen() {
             </ul>
             {others.length > 0 ? (
               <>
-                <h3 className="mt-4 text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]">{t('settle.preflight.others')}</h3>
+                <h3 className="mt-4 text-[0.8125rem] font-semibold text-[var(--foreground)]">{t('settle.preflight.others')}</h3>
                 <ul className="mt-2 space-y-1.5 text-[0.8125rem]">
                   {others.map((k) => (
                     <li key={k} className="flex items-center justify-between gap-3">
@@ -230,11 +247,11 @@ export function PreflightScreen() {
               </>
             ) : null}
           </Section>
-        </Panel>
+        </div>
       </div>
 
       {/* --- The anomaly list. --- */}
-      <Panel className="mt-6 p-5">
+      <div className="mt-8 border-t border-[var(--border)] pt-5">
         <Section title={t('settle.preflight.anomalies')}>
           <p className="text-[0.8125rem] leading-snug text-[var(--muted-foreground)]">
             {t('settle.preflight.anomalies.hint', { n: count(ranked.length, locale) })}
@@ -256,21 +273,21 @@ export function PreflightScreen() {
             </ol>
           )}
         </Section>
-      </Panel>
+      </div>
 
       {/* --- What happens next. --- */}
-      <div className="mt-6">
+      <div className="mt-8 border-t border-[var(--border)] pt-5">
         {mode === 'api' ? (
           <ApiBatch snapshot={p} fetchedAt={pre.dataUpdatedAt} bills={bills} period={period} />
         ) : (
-          <Panel className="p-5">
-            <p className="text-[0.9375rem] leading-relaxed">{t('settle.preflight.continue.manual')}</p>
+          <div>
+            <p className="max-w-[62ch] text-[0.9375rem] leading-relaxed">{t('settle.preflight.continue.manual')}</p>
             <Button asChild variant="primary" className="mt-4">
               <Link to="/settle" search={{ period }}>
                 {t('settle.tab.bills')}
               </Link>
             </Button>
-          </Panel>
+          </div>
         )}
       </div>
     </SettleShell>
@@ -324,7 +341,7 @@ function ApiBatch({ snapshot: p, fetchedAt, bills, period }: { snapshot: Preflig
   const report: (BatchRun & { aborted: boolean }) | null | undefined = run.data;
 
   return (
-    <Panel className="p-5">
+    <div>
       <Section title={t('settle.batch.title')}>
         <p className="text-[1.0625rem] font-semibold">
           {t('settle.batch.sentence', { n: count(p.payable, locale), total: vnd(p.total_vnd, locale) })}
@@ -372,7 +389,7 @@ function ApiBatch({ snapshot: p, fetchedAt, bills, period }: { snapshot: Preflig
 
         {report ? <RunReport report={report} collectorOf={collectorOf} period={period} /> : null}
       </Section>
-    </Panel>
+    </div>
   );
 }
 

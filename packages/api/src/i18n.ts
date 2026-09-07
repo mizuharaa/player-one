@@ -1091,6 +1091,17 @@ const en = {
    * and there was nothing to quote.
    */
   'bo.error.reference': 'Reference:',
+  /**
+   * The console restyle's own strings (`ui.b.*`): the sentences that stand
+   * beside the two ink figures. A figure earns the console's one dark block
+   * only when it carries its own sentence, so these are load-bearing rather
+   * than captions.
+   */
+  'ui.b.settle.total.sentence':
+    'What this batch would send. The server decides each transfer, and a bill can still be refused at the moment it is paid.',
+  'ui.b.risk.holds.count': 'Bills on hold',
+  'ui.b.risk.holds.sentence':
+    'No transfer leaves while a hold is open. Clearing one needs a verdict and a written reason; the engine appends a row and never edits one.',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1871,6 +1882,12 @@ const zh: Record<MessageKey, string> = {
     '无法连接 Zalo，因此未发送验证码。请让采集者再试一次；如果反复出现，说明与 Zalo 的链路已中断。',
   'bo.refused.zns_refused':
     'Zalo 拒绝发送验证码，给出的原因本服务器无法识别。原因记录在服务器日志中；请一边查阅日志一边让采集者再试。',
+  // 控制台改版自己的字符串（ui.b.*）：两个深色区块里数字旁边的句子。
+  'ui.b.settle.total.sentence':
+    '本批次将要发出的金额。每一笔转账由服务端决定，账单在支付的那一刻仍可能被拒绝。',
+  'ui.b.risk.holds.count': '被暂停的账单',
+  'ui.b.risk.holds.sentence':
+    '只要暂停仍未解除，就不会有任何转账发出。解除暂停需要一个结论和一段书面理由；风险引擎只追加记录，从不修改已有记录。',
 };
 
 const vi: Record<MessageKey, string> = {
@@ -2772,6 +2789,12 @@ const vi: Record<MessageKey, string> = {
     'Không kết nối được tới Zalo nên không gửi được mã. Hãy nhờ cộng tác viên thử lại; nếu vẫn vậy thì đường tới Zalo đang hỏng.',
   'bo.refused.zns_refused':
     'Zalo từ chối gửi mã với một lý do máy chủ này không hiểu. Lý do nằm trong nhật ký máy chủ; hãy nhờ cộng tác viên thử lại trong khi có người đọc nhật ký.',
+  // Chuỗi riêng của bản dựng lại giao diện (ui.b.*): câu đứng cạnh hai con số trên nền mực.
+  'ui.b.settle.total.sentence':
+    'Số tiền lô này sẽ gửi. Máy chủ quyết định từng lần chuyển, và một hóa đơn vẫn có thể bị từ chối ngay lúc chi trả.',
+  'ui.b.risk.holds.count': 'Hóa đơn đang bị giữ',
+  'ui.b.risk.holds.sentence':
+    'Không khoản chuyển nào đi khi lệnh giữ còn mở. Gỡ một lệnh giữ cần một kết luận và một lý do viết ra; bộ máy chỉ thêm dòng mới, không bao giờ sửa dòng cũ.',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { en, zh, vi };
