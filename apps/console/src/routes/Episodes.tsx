@@ -165,7 +165,7 @@ export function EpisodesScreen() {
       </header>
 
       {/* --- The window this screen loaded, and the batch inside it. --- */}
-      <Panel className="mt-7 px-5 py-4">
+      <Panel className="mt-8 px-5 py-4">
         {batches.isPending ? (
           <Skeleton className="h-10 w-full max-w-[30rem]" />
         ) : batches.error ? (
@@ -299,7 +299,7 @@ function Scope({
 }) {
   const { t } = useTranslation();
   return (
-    <section className="mt-9">
+    <section className="mt-10">
       <h2 className="text-[1.3125rem] font-bold tracking-[-0.02em]">{title}</h2>
       <p className="mt-1.5 max-w-[72ch] text-[0.875rem] leading-relaxed text-[var(--muted-foreground)]">
         {scope}

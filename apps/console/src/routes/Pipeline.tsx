@@ -156,7 +156,7 @@ export function PipelineScreen() {
       </div>
 
       {/* --- The hero: seven stages as one track, not seven identical cards. --- */}
-      <section data-guide="pipeline.stage" className="mt-9">
+      <section data-guide="pipeline.stage" className="mt-10">
         <h2 className="text-[0.9375rem] font-bold tracking-[-0.01em]">
           {t('ui.a.pipeline.track')}
         </h2>
@@ -191,7 +191,7 @@ export function PipelineScreen() {
         </ol>
       </section>
 
-      <Panel className="mt-9 overflow-hidden">
+      <Panel className="mt-10 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse text-left">
             <thead>

@@ -216,7 +216,7 @@ export function Wizard({
               how an operator with a collector waiting learns to commit and fix
               it afterwards — and on this lane there is no afterwards.
             */}
-            <dl className="mt-7 max-w-[42rem] border-t border-[var(--border)]">
+            <dl className="mt-8 max-w-[42rem] border-t border-[var(--border)]">
               {steps.map((s, index) => (
                 <div key={s.id} className="border-b border-[var(--border)]">
                   <button
@@ -276,7 +276,7 @@ export function Wizard({
               </p>
             ) : null}
 
-            <div className="mt-7 max-w-[42rem]">{step.pane}</div>
+            <div className="mt-8 max-w-[42rem]">{step.pane}</div>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Button variant="outline" disabled={at === 0} onClick={() => setAt(at - 1)}>
@@ -524,7 +524,7 @@ export function YesNo({
   return (
     <fieldset>
       <legend className="text-[1.0625rem] font-semibold">{label}</legend>
-      <div className="mt-2.5 flex gap-2">
+      <div className="mt-3 flex gap-2">
         {[true, false].map((option) => (
           <label
             key={String(option)}

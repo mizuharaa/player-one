@@ -411,7 +411,7 @@ function Landed({ result, onClose }: { result: Result; onClose: () => void }) {
           {t('assign.done.nobody')}
         </p>
       ) : (
-        <ul className="mt-7 border-t border-[var(--border)]">
+        <ul className="mt-8 border-t border-[var(--border)]">
           {result.outcomes.map((o) => (
             <li key={o.collector} className="border-b border-[var(--border)] py-3.5">
               <p className="num text-[0.9375rem] font-semibold">{o.collector}</p>

@@ -372,7 +372,7 @@ export function Section({ title, children, className }: { title: ReactNode; chil
       <h2 className="border-b border-[var(--border-strong)] pb-1 text-[0.8125rem] font-semibold text-[var(--foreground)]">
         {title}
       </h2>
-      <div className="mt-2.5">{children}</div>
+      <div className="mt-3">{children}</div>
     </section>
   );
 }

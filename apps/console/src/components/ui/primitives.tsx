@@ -293,7 +293,7 @@ export function Problem({
               {t('bo.error.reference')} {reference}
             </p>
           ) : null}
-          {action ? <div className="mt-3.5">{action}</div> : null}
+          {action ? <div className="mt-4">{action}</div> : null}
         </div>
       </div>
     </div>

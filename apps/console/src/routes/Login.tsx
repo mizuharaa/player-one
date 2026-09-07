@@ -690,7 +690,7 @@ export function LoginScreen() {
             {failure ? (
               <p
                 role="alert"
-                className="mb-2.5 rounded-[var(--radius-base)] bg-[var(--reject-bg)] px-3.5 py-2.5 text-[0.875rem] font-medium text-[var(--reject)]"
+                className="mb-3 rounded-[var(--radius-base)] bg-[var(--reject-bg)] px-3.5 py-2.5 text-[0.875rem] font-medium text-[var(--reject)]"
               >
                 {failure === 'mismatch'
                   ? t('login.mismatch')
