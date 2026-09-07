@@ -14,20 +14,6 @@
     "source": "https://www.flickr.com/photos/66335021@N00/3484353131"
   },
   {
-    "file": "laundry-line.jpg",
-    "title": "Washing Dishes at the Auberge de Nomad - Bani - Sahel Region - Burkina Faso.jpg",
-    "creator": "Adam Jones, Ph.D.",
-    "license": "CC BY-SA 3.0",
-    "source": "https://commons.wikimedia.org/wiki/File:Washing_Dishes_at_the_Auberge_de_Nomad_-_Bani_-_Sahel_Region_-_Burkina_Faso.jpg"
-  },
-  {
-    "file": "market-street.jpg",
-    "title": "Italian Market Philadelphia Vegetables 3264px.jpg",
-    "creator": "Photo by Derek Ramsey (Ram-Man)",
-    "license": "CC BY-SA 2.5",
-    "source": "https://commons.wikimedia.org/wiki/File:Italian_Market_Philadelphia_Vegetables_3264px.jpg"
-  },
-  {
     "file": "ironing-hands.jpg",
     "title": "A Local Taylor ironing cloth.jpg",
     "creator": "Lomwiko Francis",
@@ -82,5 +68,33 @@
     "creator": "PlayerOne demo film",
     "license": "ours",
     "source": "apps/console/public/landing.mp4"
+  },
+  {
+    "file": "ref-kitchen.jpg",
+    "title": "chopping vegetables in a kitchen",
+    "creator": "supplied by the product owner as a reference",
+    "license": "UNCLEARED — placeholder only",
+    "source": "pasted into the design conversation 2026-09-07"
+  },
+  {
+    "file": "ref-yoga.jpg",
+    "title": "headset worn at home",
+    "creator": "supplied by the product owner as a reference",
+    "license": "UNCLEARED — placeholder only",
+    "source": "pasted into the design conversation 2026-09-07"
+  },
+  {
+    "file": "ref-cleaning.jpg",
+    "title": "household cleaning",
+    "creator": "supplied by the product owner as a reference",
+    "license": "UNCLEARED — placeholder only",
+    "source": "pasted into the design conversation 2026-09-07"
+  },
+  {
+    "file": "ref-headset.jpg",
+    "title": "headset, studio",
+    "creator": "supplied by the product owner as a reference",
+    "license": "UNCLEARED — placeholder only",
+    "source": "pasted into the design conversation 2026-09-07"
   }
 ]
