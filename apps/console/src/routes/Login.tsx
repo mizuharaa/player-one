@@ -503,7 +503,7 @@ export function LoginScreen() {
           className="pointer-events-none absolute inset-0 -z-10 overflow-hidden lg:hidden"
         >
           <div className="absolute -left-[15%] -top-[10%] h-[70vw] w-[85vw] rounded-full bg-[var(--bamboo-50)] opacity-60 blur-[64px]" />
-          <div className="absolute -right-[20%] top-[26%] h-[60vw] w-[75vw] rounded-full bg-[var(--sun-50)] opacity-50 blur-[64px]" />
+          <div className="absolute -right-[20%] top-[26%] h-[60vw] w-[75vw] rounded-full bg-[var(--warn-bg)] opacity-50 blur-[64px]" />
         </div>
 
         <div className="flex items-center justify-end gap-1">

@@ -94,8 +94,8 @@ const ROWS: Row[] = [
  * colour.
  */
 const STATE_STYLE: Record<State, string> = {
-  verified: 'bg-[var(--bamboo-500)] text-[var(--stage)]',
-  built: 'bg-[var(--bamboo-500)] text-[var(--stage)]',
+  verified: 'bg-[var(--lime-500)] text-[var(--stage)]',
+  built: 'bg-[var(--lime-500)] text-[var(--stage)]',
   partial: 'bg-[var(--muted)] text-[var(--foreground)]',
   buildable: 'border border-[var(--border-strong)] text-[var(--muted-foreground)]',
   /*

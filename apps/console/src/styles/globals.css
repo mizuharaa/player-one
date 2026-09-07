@@ -77,6 +77,32 @@
   --color-bamboo-700: var(--bamboo-700);
   --color-bamboo-ink: var(--bamboo-ink);
 
+  /*
+   * The world committed 2026-09-07. Lavender is the page, lime is the one
+   * accent, and `action` is the primary control as a role rather than a
+   * colour — so `bg-action text-action-ink` is the pill and nothing has to
+   * know it is near-black.
+   */
+  --color-lavender-50: var(--lavender-50);
+  --color-lavender-100: var(--lavender-100);
+  --color-lavender-200: var(--lavender-200);
+  --color-lavender-300: var(--lavender-300);
+  --color-lavender-400: var(--lavender-400);
+
+  --color-lime-200: var(--lime-200);
+  --color-lime-500: var(--lime-500);
+  --color-lime-600: var(--lime-600);
+  --color-lime-700: var(--lime-700);
+  --color-lime-ink: var(--lime-ink);
+
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+
+  --color-action: var(--action);
+  --color-action-ink: var(--action-ink);
+
+  --color-field-border: var(--field-border);
+
   --color-pass: var(--pass);
   --color-pass-bg: var(--pass-bg);
   --color-partial: var(--partial);

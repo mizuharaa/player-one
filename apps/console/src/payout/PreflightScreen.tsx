@@ -149,7 +149,7 @@ export function PreflightScreen() {
               </p>
             ) : (
               <>
-                <p className="text-[0.9375rem] font-semibold text-[var(--sun-400)]" role="status">
+                <p className="text-[0.9375rem] font-semibold text-[var(--foreground)]" role="status">
                   {t('settle.preflight.refused')}
                 </p>
                 {p.refusal ? (
@@ -164,7 +164,7 @@ export function PreflightScreen() {
               {t('settle.preflight.ranAt', { at: when(new Date(pre.dataUpdatedAt).toISOString(), locale) })} ·{' '}
               <button
                 type="button"
-                className="font-semibold text-[var(--sun-400)] underline underline-offset-2"
+                className="font-semibold text-[var(--foreground)] underline underline-offset-2"
                 onClick={() => void pre.refetch()}
               >
                 {t('settle.preflight.rerun')}

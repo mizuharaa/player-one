@@ -30,7 +30,7 @@ export function FlagCard({ flag, compact = false }: { flag: RiskFlag; compact?: 
     <article className={cn('flex gap-2.5', compact ? 'py-1.5' : 'py-3')}>
       <IconAlert
         size={16}
-        className={cn('mt-0.5 shrink-0', strong ? 'text-[var(--sun-600)]' : 'text-[var(--faint-foreground)]')}
+        className={cn('mt-0.5 shrink-0', strong ? 'text-[var(--foreground)]' : 'text-[var(--faint-foreground)]')}
       />
       <div className="min-w-0 flex-1">
         <p className="text-[0.9375rem] leading-snug">{flagSentence(flag, locale)}</p>

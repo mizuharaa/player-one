@@ -427,7 +427,7 @@ function BlockingTable({
         header: () => t('episodes.col.needs'),
         cell: (c) => (
           <span className="inline-flex items-center gap-1.5">
-            <IconAlert size={15} className="shrink-0 text-[var(--sun-ink)]" />
+            <IconAlert size={15} className="shrink-0 text-[var(--warn)]" />
             {t(`episodes.needs.${c.getValue()}`)}
           </span>
         ),

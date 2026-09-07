@@ -89,9 +89,9 @@ export function PillNav({ current }: { current: string }) {
             className={cn(
               'group inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[0.875rem] font-semibold no-underline',
               'transition-colors duration-150 ease-[var(--ease)]',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sun-400)]',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
               here
-                ? 'bg-[var(--sun-500)] text-[var(--stage)] hover:bg-[var(--sun-400)] active:bg-[var(--sun-600)]'
+                ? 'bg-[var(--action)] text-[var(--action-ink)] hover:opacity-90 active:opacity-95'
                 : 'text-white/72 hover:bg-white/10 hover:text-white active:bg-white/16',
             )}
           >

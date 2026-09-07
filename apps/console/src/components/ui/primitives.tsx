@@ -154,7 +154,7 @@ export function FlagRow({
         size={16}
         className={cn(
           'mt-0.5 shrink-0',
-          blocking ? 'text-[var(--reject)]' : 'text-[var(--sun-600)]',
+          blocking ? 'text-[var(--reject)]' : 'text-[var(--foreground)]',
         )}
       />
       <div className="min-w-0">

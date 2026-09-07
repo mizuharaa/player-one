@@ -22,129 +22,107 @@ Tailwind v4 reads the CSS variables through an `@theme inline` block in
 the same values the app does. **Do not add a colour to a component.** A value
 that exists only in a `.tsx` file is a value the collector app cannot have.
 
-## Three flat fields, one job each
+## The world: a lavender ground, an ink action, one lime accent
 
-They are not interchangeable accents, and none of them is ever a gradient.
+Committed 2026-09-07, replacing a warm white shell whose primary was VNG's
+orange. The product owner pinned it from a reference screen — a soft periwinkle
+wash under frosted cards — and the change is a **replacement of the visual
+world**, not a refinement of the old one. What did not move: product truth, the
+three verdicts, every requirement citation, and every behaviour.
 
-| Ramp | Means | Appears on |
+This was allowed to happen because `PRODUCT.md` says it was: VNG's orange and
+PaXini's blue were named by the product owner as brand *directions*, and it
+records in the same breath that **no formal guideline or binding hex values
+exist**, so the old ramps were the design system's own choice. A system is
+allowed to change its own mind. It is not allowed to change a partner's mark,
+and it did not.
+
+| Role | Value | Job |
 |---|---|---|
-| **Sun** `#FF7A1A` (VNG) | Action | Primary buttons, focus rings, the playhead, the active nav pill |
-| **Tech** `#1B6EF3` (PaXini) | Data and system | Links, collector and requirement references, the operator chip |
-| **Bamboo** `#9BD11C` (Trúc) | The mascot, and progress | The shift gauge ring, a fill moving toward a target, the panda's own prop |
+| **Lavender** `50–400` | the page itself | `--background` is `lavender-100`, `--surface` is `lavender-50`. Not an accent — the ground. |
+| **Ink** `--action` / `--action-ink` | the primary action | A near-black pill with a light label, inverting with the scheme. |
+| **Lime** `200/500/600/700` | progress, emphasis, the focus ring | 500 fills, 600 strokes, 700 is ink on light and 200 on dark. |
+| **Sun** `#FF7A1A`, **Tech** `#1B6EF3` | the partner mark, and nothing else | VNG and PaXini, in the lockup. Never action, never a link, never progress, never type. |
+| **Bamboo** `#9BD11C` | Trúc's stalk | The plant the mascot carries. It lost progress to lime. |
 
-**Progress moved off sun.** It used to be sun's second job, which made a
-half-filled gauge and a primary button the same colour and left the reviewer to
-work out which of them was asking for a click. Sun keeps action; bamboo takes
-progress and arrives with the mascot it is named after — Vietnamese *trúc* is
-bamboo, Chinese writes the same plant 竹.
+**Why the ground is tinted, and why that is the load-bearing decision.** A
+translucent card over a white page *is* white — there is nothing behind it to
+show through and the blur has nothing to bend, so the material reads as a grey
+rectangle and the whole world collapses into cards with rounded corners. The
+wash exists so that glass has something to be glass over. Change the page back
+to white and every surface in the product stops working, which is why
+`contrast.test.ts` asserts `light.background === lavender[100]` rather than
+leaving it as a coincidence.
 
-Nothing decorative uses any of the three. There is exactly one glowing element
-per viewport — the primary action, carrying `--shadow-sun` — and if a second
-appears one of them is wrong.
+**Glass is a specific effect, not decoration.** `packages/design/src/tokens.ts`
+carries it as two numbers per weight — `fill`, how much white sits over the
+page, and `blur`, how far the ground is smeared behind it — with a card weight
+and a denser bar weight, because a floating bar passes over scrolling content
+and a card does not. The craft floor names blur-as-decoration as a default to
+refuse; the pinned brief overrides it, and writing the effect down as a measured
+material rather than a vibe is how it stays earned.
 
-**One exception, granted 2026-09-07, and it is narrow.** The sign-in screens —
-`/login` in the console and the collector's `SignIn` — carry an ambient ground
-below the split: two heavily blurred fields of `bamboo-50` and `sun-50` at
-about half opacity, behind the form. That is decorative use of two of the three
-ramps and it is what the rule above forbids, so it is written down here rather
-than argued around. Daniel asked for it directly, with a reference screen, and
-overrode the rule for these two surfaces.
+React Native has neither `backdrop-filter` nor a blur it can apply without a
+native module, and this repo does not add native modules. So on the collector
+app `fill` composites straight over the wash and the varying lavender behind it
+does the work the blur would have done. That is the honest translation, not a
+degradation: what people read as glass is the ground showing through, and the
+blur only softens it.
 
-The exception carries its own limits, and they are the reason it is survivable.
-They are stated as outcomes and not as recipes, because the two apps cannot use
-the same recipe: the console has CSS `blur`, React Native does not, and the
-first version of this list said "the palest step only" and "never above `lg`" —
-two console implementation details that the collector app could not meet and
-that said nothing about whether either wash was any good. The auditor caught
-that. What actually matters is what the ground does to the page:
+**One accent, spent once.** Lime is the only saturated colour left outside the
+verdicts and the mark. A screen gets one lime moment — a progress arc, a live
+figure, the active nav pill — and if a second appears one of them is wrong. This
+is the same rule the old world had for sun's glow, carried across.
 
-- **It must barely move the page.** The worst point of the composite — every
-  field overlapping, at full strength — sits under 1.2:1 against
-  `--background`. A wash you can name a colour for is a ramp step doing a job,
-  and these are not doing one.
-- **Every ink over it still clears AA**, in both schemes: body text and the
-  muted ink that carries the field labels and the legal line.
-- **It uses the two ramp steps that invert with the scheme**, 50 and 100.
-  That is not a taste rule, it is the whole safety property: the higher steps
-  are fixed values, so a 200 over a dark page is a pale disc on near-black. It
-  shipped that way for one afternoon in the collector app and measured 3.73:1
-  for body text and 1.68:1 for the muted ink.
-- **Never on or behind an ink, a control, a pill or a chip.** It is the ground
-  the form stands on and nothing else. The rule that sun means action and
-  bamboo means progress is untouched everywhere a reader has to act on it.
-- **Only on a sign-in surface**, and on the web only below the split, where the
-  film is not already the atmosphere.
-- **Measured, not asserted.** `packages/design/test/contrast.test.ts` composites
-  the worst point of both implementations — the console's two blurred fields and
-  the collector's fourteen concentric discs — in both schemes, and pins all of
-  the above. A wash that costs a contrast ratio fails a test before it reaches a
-  screen.
-- **Still not a gradient on an ink.** No ramp is ever interpolated to another
-  colour, on this screen or anywhere else. That half of the rule did not move.
+### What each lime step may and may not do
 
-### Bamboo's three steps, and what it may never touch
-
-Three steps carry a job and each was chosen against a measured ratio.
-`packages/design/test/contrast.test.ts` holds every number below, in both
-schemes, and names the ratio in the case.
+Each was chosen against a measurement, not picked and then checked.
+`packages/design/test/contrast.test.ts` holds every number and names it.
 
 | Step | Job | Measured |
 |---|---|---|
-| `bamboo-500` | A **fill**, under ink text. Never text itself. | ink on it 10.02:1; it on white 1.82:1 |
-| `bamboo-600` | The **stroke** — the gauge ring, a graphic outline. Text on the dark page. | 3.34:1 on the page, 3.20:1 on the surface, 3.01:1 on the muted track; 5.71:1 as text on `dark.background` |
-| `bamboo-700` | Text **ink** on the light page. | 6.08:1 on white, 5.76:1 on `bamboo-50` |
+| `lime-500` | a **fill**, under ink text. Never text itself. | ink on it 13.54:1; it on the page 1.16:1 |
+| `lime-600` | the **stroke** — a ring, a graphic edge. Also the focus ring. | 3.71:1 on the page, 3.44:1 on muted |
+| `lime-700` | **ink** on the light page | 4.94 / 5.70 / 4.59 on page, card and muted |
+| `lime-200` | **ink** on the dark page | 16.12:1 on the dark page |
 
-`--bamboo-ink` is the per-scheme label colour for anything sitting on
-`bamboo-50` / `bamboo-100` — `bamboo-700` in light, `bamboo-200` in dark
-(13.00:1 and 9.51:1 on the inverted tints) — the web twin of `bambooInk` in
-`native.ts`. The two lowest steps invert in dark mode like sun's and tech's, so
-a fixed ink on them stops working the moment the operator flips the theme.
+`--lime-ink` is the per-scheme label for anything sitting on a lime tint, the
+web twin of `limeInk` in `native.ts`.
 
-### Three inks, one per field: `--sun-ink`, `--tech-ink`, `--bamboo-ink`
+**The two demotions are pinned as refusals**, not left to discipline. On the
+lavender page `bamboo-600` reads 2.89:1 and `sun-700` reads 4.49:1 — both under
+their floors, the second by a hundredth, which is exactly the `faintForeground`
+trap this project has already been caught by once. Neither ramp was retuned,
+because neither has the job any more; instead there is a test asserting each
+falls short, so a future edit that wires progress back to bamboo or an action
+back to sun fails before it reaches a screen.
 
-All three fields have the same problem and now the same answer. **Write brand
-text in the ink, never in a numbered step.** Each resolves to the 700 step in
-light and the 200 step in dark, and each is safe on its own two tints *and* on
-all four shell surfaces, so one token covers a pill label and a link.
+**A wrong test, recorded.** The first version of the mark's case asserted 3:1
+between `sun-500` and `tech-500`. They measure 1.76:1 and always did: two
+saturated hues in a lockup are told apart by hue and by the overlap that draws
+them, not by luminance. The assertion was wrong to make, and what is checked
+now is that each disc separates from the page it is drawn on.
 
-| | Light (700) | Dark (200) |
-|---|---|---|
-| `--tech-ink` | 8.55 / 7.51 on `tech-50` / `-100`; 9.61 on the page, 8.67 on muted | 10.08 / 7.53 on the inverted tints; 11.08 on the page, 9.18 on muted |
-| `--sun-ink` | 4.80 on `sun-50`; 5.19 on the page, 4.68 on muted | 11.63 / 10.04 on the inverted tints; 12.84 on the page, 10.64 on muted |
+### The sign-in wash, folded into the world
 
-What it replaced, measured in the dark scheme: `tech-700` on `tech-50` was
-**1.80:1** — the risk band pills on preflight and the payout attempt rows;
-`sun-700` on `sun-50` was **3.32:1**, and **2.87:1** on the `sun-100` Home's
-needs-a-human strip took on hover; and `tech-600` as a link or a data figure
-was **2.63:1** on the dark card. That last one had four hand-written
-`dark:text-[var(--tech-300)]` patches on it and eight sites without one, plus a
-`:root[data-theme='dark'] a` rule that only caught the *explicit* dark choice
-and left every operator on system dark reading links at 2.63:1.
+The narrow exception granted on 2026-09-07 — two blurred fields of `bamboo-50`
+and `sun-50` behind the sign-in forms — is **retired as an exception** because
+the world it was an exception to is gone. The whole product stands on a wash
+now. What survives from it is the discipline it was granted under, and that
+discipline is now the rule for every glass surface in the system:
 
-`--sun-ink` is barred from `sun-100` in the light scheme: 4.27:1, the one pair
-on these ramps that does not clear AA. The contrast test pins it as a failure so
-it stays out of the markup.
-
-**`--faint-foreground` is a hairline, not an ink.** A border, a divider, a
-control's hover edge. Its value clears AA on every ground it appears on, so
-this is a contract rule rather than a ratio: ten text declarations across seven
-console files were setting type one step below `--muted-foreground` for no
-stated reason, and they read `--muted-foreground` now. The one place it still
-touches `color` is the non-blocking flag glyph in `risk/pieces.tsx`, which is
-decoration beside a sentence that carries the meaning.
-
-**Bamboo is never a verdict and never money.** Not on a verdict pill, not on a
-verdict glyph, not on a payment-status label, not on any money figure. Measured,
-its hue sits **67° from `verdict.pass.fg`** (79° against 146°) and the contrast
-test holds every step of the ramp at least 40° away from both pass inks. And
-progress drawn in bamboo always carries a text label, a unit and geometry of its
-own — a ring with a gap, plus a caption — so an arc can never be read as
-"passed" or "paid".
-
-The product owner stated the two brand worlds. **The hex values are this
-system's own choice**: no formal VNG or PaXini brand guideline exists. That is
-confirmed, not assumed. Refine them freely; do not go hunting for an official
-palette that is not there.
+- **The ground barely moves the page.** Adjacent wash steps sit under 1.2:1 of
+  each other.
+- **Every ink over glass still clears AA**, in both schemes, measured against
+  the *deepest* ground the surface can sit on — the worst case, not the
+  average.
+- **Never on or behind a control's own fill.** The ground is what a surface
+  stands on; a pill, a chip or a button paints its own.
+- **Measured, not asserted.** Both implementations are composited in the test —
+  the console's `backdrop-filter` and the collector's flat overlay — in both
+  schemes.
+- **Still no gradient on an ink.** No ramp is ever interpolated to another
+  colour. That half of the old rule did not move and never will.
 
 ## The three verdicts own their hues
 
@@ -276,8 +254,13 @@ conveys state, never decoration, and there is no page-load sequence.
 Authored motion is a closed list, and `/review` is not on it:
 
 - **The gauge sweep** — 900ms, once, on Home. The one number worth watching move.
-- **Trúc** — breathing, a blink every 3–6s, his head following the pointer, and
-  the glide to a coach mark's target during the guided tour.
+- **Trúc** — breathing, a blink every 3–6s, his head following the pointer, a
+  jump with a squash on the landing when he is pressed, and, during the guided
+  tour, a walk to the coach mark's target with a bob and a roll timed to the
+  ground he covers, then a few small nods while the step's sentence is new. The
+  nods run once per step and stop; a mascot that never stops moving beside a
+  sentence is a reason not to read the sentence. Each behaviour is a named
+  function of time in `PandaStage.tsx`, all of them inside the one `useFrame`.
 - **The landing hero** — the sign-in page's parallax, desktop only, and a
   progressive enhancement: the form is usable before it runs and without it.
 - **`.lease-expiring`** — a slow 1.6s pulse, so a lease running out reads as a
@@ -399,11 +382,18 @@ It renders `public/truc.glb` — one mesh, one material, about 22k vertices — 
 falls back, in order, to a panda built from spheres and capsules while the model
 loads or if its fetch fails, and to the flat SVG when there is no WebGL at all. A
 slow LAN degrades to a different fidelity, never to a hole in the page. It
-breathes, blinks every 3–6 seconds, turns its head toward the pointer, takes a
-`mood` (`idle | happy | thinking | pointing`), and with an `anchor: DOMRect`
-becomes a fixed transparent layer over the whole viewport and glides to that
-rect, turning toward it. DPR is capped at 1.5, the loop stops when the tab is
-hidden, and the loader's allocations are disposed on unmount.
+breathes, blinks every 3–6 seconds, turns its head toward the pointer, jumps
+when pressed, takes a `mood` (`idle | happy | thinking | pointing`), and with an
+`anchor: DOMRect` becomes a fixed transparent layer over the whole viewport and
+walks to that rect, turning toward it. That layer is drawn **above** the coach
+mark's card (`z-60` against the card's `z-50`), because a character who walks to
+the element and is then painted over by the sentence about it is the bug the
+whole behaviour exists to avoid; it costs the card nothing, because the layer
+and every descendant are `pointer-events: none` and the card's buttons are still
+what `elementFromPoint` returns at their own centres. He is given the card's own
+rect as well, and stands beside it rather than on it. DPR is capped at 1.5, the
+loop stops when the tab is hidden, and the loader's allocations are disposed on
+unmount.
 
 He appears in the shift gauge, empty states, loading states, the sign-in panel,
 the not-built pages and the guided tour. **He never appears on the review

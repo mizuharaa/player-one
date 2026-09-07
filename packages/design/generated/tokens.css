@@ -26,6 +26,28 @@
   --bamboo-500: #9BD11C;
   --bamboo-600: #6E9A0F;
   --bamboo-700: #4C6C0A;
+  --lavender-50: #F5F6FC;
+  --lavender-100: #EDEEF7;
+  --lavender-200: #DFE2F2;
+  --lavender-300: #C9CEE8;
+  --lavender-400: #A8AFD4;
+  --lime-200: #DFF7A6;
+  --lime-500: #B8F04A;
+  --lime-600: #63851C;
+  --lime-700: #566F17;
+
+  /*
+   * The action, as a role rather than a colour. It is the ink pill this world
+   * uses for a primary control, and it is a token so the one place that
+   * decides changes once. Sun was this until 2026-09-07.
+   */
+  --action: #14151A;
+  --action-ink: #EDEEF7;
+
+  --glass-card: 0.62;
+  --glass-card-blur: 18px;
+  --glass-bar: 0.92;
+  --glass-bar-blur: 24px;
   /* Ink for text on bamboo-50 / bamboo-100, per scheme: the web twin of
      bambooInk in native.ts, there for the same reason techInk is. The two
      lowest steps invert in dark mode, so a fixed bamboo-700 label on them goes
@@ -60,17 +82,21 @@
   --partial-bg: #F0EDFF;
   --reject: #C41C21;
   --reject-bg: #FDECEC;
-  --ring: #E8620A;
+  --ring: #63851C;
+  --lime-ink: #566F17;
+  --warn: #7E5200;
+  --warn-bg: #FFF4E0;
 
-  --background: #FFFFFF;
-  --surface: #FBFAF9;
+  --background: #EDEEF7;
+  --surface: #F5F6FC;
   --card: #FFFFFF;
-  --muted: #F4F3F1;
-  --border: #E7E4E0;
-  --border-strong: #D5D1CC;
-  --foreground: #17150F;
-  --muted-foreground: #6E6A62;
-  --faint-foreground: #726D64;
+  --muted: #E4E6F1;
+  --border: #D5D8EA;
+  --border-strong: #BFC4DC;
+  --field-border: #767DA0;
+  --foreground: #14151A;
+  --muted-foreground: #4F5468;
+  --faint-foreground: #5E6275;
 
   --stage: #101215;
   --stage-panel: #191C21;
@@ -103,15 +129,16 @@
 /* System preference, unless the operator has explicitly chosen light. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-  --background: #0E1013;
-  --surface: #131619;
-  --card: #181B1F;
-  --muted: #1F2328;
-  --border: #2A2F35;
-  --border-strong: #3A4048;
-  --foreground: #ECEEF1;
-  --muted-foreground: #9BA2AB;
-  --faint-foreground: #848B94;
+  --background: #101119;
+  --surface: #161824;
+  --card: #1C1F2C;
+  --muted: #242838;
+  --border: #2E3346;
+  --border-strong: #3D4358;
+  --field-border: #6E7794;
+  --foreground: #ECEDF5;
+  --muted-foreground: #A2A8BE;
+  --faint-foreground: #8E94AC;
   --sun-50: #2A1608;
   --sun-100: #3D2009;
   --tech-50: #0C1A33;
@@ -127,7 +154,14 @@
   --partial-bg: #1E1840;
   --reject: #EB6F73;
   --reject-bg: #331416;
-  --ring: #FF9450;
+  --ring: #B8F04A;
+  --action: #ECEDF5;
+  --action-ink: #101119;
+  --lavender-100: #161824;
+  --lavender-200: #242838;
+  --lime-ink: #DFF7A6;
+  --warn: #FFD08A;
+  --warn-bg: #3A2A14;
   --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
   --shadow: 0 4px 16px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
   --shadow-lg: 0 18px 48px rgba(0,0,0,.6);
@@ -137,15 +171,16 @@
 
 /* An explicit choice wins in both directions. */
 :root[data-theme='dark'] {
-  --background: #0E1013;
-  --surface: #131619;
-  --card: #181B1F;
-  --muted: #1F2328;
-  --border: #2A2F35;
-  --border-strong: #3A4048;
-  --foreground: #ECEEF1;
-  --muted-foreground: #9BA2AB;
-  --faint-foreground: #848B94;
+  --background: #101119;
+  --surface: #161824;
+  --card: #1C1F2C;
+  --muted: #242838;
+  --border: #2E3346;
+  --border-strong: #3D4358;
+  --field-border: #6E7794;
+  --foreground: #ECEDF5;
+  --muted-foreground: #A2A8BE;
+  --faint-foreground: #8E94AC;
   --sun-50: #2A1608;
   --sun-100: #3D2009;
   --tech-50: #0C1A33;
@@ -161,7 +196,14 @@
   --partial-bg: #1E1840;
   --reject: #EB6F73;
   --reject-bg: #331416;
-  --ring: #FF9450;
+  --ring: #B8F04A;
+  --action: #ECEDF5;
+  --action-ink: #101119;
+  --lavender-100: #161824;
+  --lavender-200: #242838;
+  --lime-ink: #DFF7A6;
+  --warn: #FFD08A;
+  --warn-bg: #3A2A14;
   --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
   --shadow: 0 4px 16px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
   --shadow-lg: 0 18px 48px rgba(0,0,0,.6);

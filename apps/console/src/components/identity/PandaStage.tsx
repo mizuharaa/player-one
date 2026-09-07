@@ -59,6 +59,25 @@ export type PandaMood = 'idle' | 'happy' | 'thinking' | 'pointing';
 const MODEL_URL = '/truc.glb';
 
 /**
+ * The anchored layer's stacking order: **above** the coach mark's card, which
+ * is `z-50`.
+ *
+ * He shipped below it, on the reasoning that the card's buttons had to be the
+ * hit target — and the result was a tour whose character walked to the element
+ * and was then painted over by the sentence describing it. The card is 340px
+ * wide and stands at the target's own edge; he stands beside that same target,
+ * so the card is very often exactly on top of him.
+ *
+ * Nothing is lost by putting him on top, because he takes no pointer event at
+ * any depth: the wrapper is `pointer-events: none` and `[&_*]:pointer-events-none`
+ * makes every descendant inert, R3F's two container divs and the canvas
+ * included. Verified with `document.elementFromPoint` at the centres of Close
+ * tour, Back and Next on every step of every route's tour, with his layer over
+ * them: each button is what the point resolves to, not the canvas.
+ */
+const ANCHOR_Z = 60;
+
+/**
  * `/review` again, checked at the component rather than at the call site.
  *
  * Read from `window.location` and not from the router so that this module has
@@ -88,8 +107,108 @@ const GL_OPTIONS = { alpha: true, antialias: true, powerPreference: 'high-perfor
  */
 const FRONT_Y = -Math.PI / 2;
 
-/** How long a greeting runs, in seconds of the render clock. */
+/*
+ * How he moves: timings in seconds of the render clock, distances in world
+ * units, angles in radians.
+ *
+ * These are the one kind of number a `.tsx` in this console is allowed to write
+ * down. They are not colours, radii, shadows or transition durations — those
+ * are `tokens.ts` and only `tokens.ts` — they are the shape of a character's
+ * motion, and there is nothing in the token file that could hold them. Each is
+ * named and says what it is for, and the four behaviours below are the only
+ * things that read them, so the loop reads as a list of what he is doing.
+ */
+
+/** How long a greeting runs: the jump and its landing together. */
 const GREET = 0.9;
+/** The share of a greeting spent off the ground. The rest is the landing. */
+const JUMP_FLIGHT = 0.7;
+/** How high the arc goes. He is two units tall. */
+const JUMP_RISE = 0.34;
+/** How far the landing compresses him, as a fraction of his height. */
+const JUMP_SQUASH = 0.16;
+
+/** Nearer than this to his mark he is standing, not walking. */
+const WALK_MIN = 0.06;
+/** The distance over which the gait fades in, and out again as he arrives. */
+const WALK_SETTLE = 0.4;
+/** Paces per unit of ground covered. The bob is timed to the ground, not the clock. */
+const WALK_CADENCE = 1.2;
+/** How far a pace lifts him, and how far it rolls him. */
+const WALK_BOB = 0.07;
+const WALK_ROLL = 0.06;
+
+/** How long he talks for when a coach mark's step arrives, and then stops. */
+const TALK = 2.2;
+/** Nods in that time, and how far each one moves the head and tilts it. */
+const TALK_BEATS = 5;
+const TALK_NOD = 0.055;
+const TALK_TILT = 0.03;
+
+/** How far beside the target he stands, and how far below it. */
+const STAND_X = 0.8;
+const STAND_Y = 0.55;
+/** Half his own width when anchored, which is the room he needs beside a card. */
+const STAND_CLEAR = 0.34;
+
+/** The idle breath: cycles per second, and how much of him it moves. */
+const BREATH_RATE = 1.7;
+const BREATH_DEPTH = 0.018;
+
+/** Breathing. It never reaches zero, so he is never a still image. */
+function breathe(t: number): number {
+  return Math.sin(t * BREATH_RATE) * BREATH_DEPTH;
+}
+
+/**
+ * The walk.
+ *
+ * `travelled` is how far he has come and `gait` is how far he still has to go.
+ * The bob and the roll are timed to the ground he has covered rather than to
+ * the clock, which is the whole difference between walking somewhere and
+ * sliding there: stop the ground and the legs stop with it. Both fade out over
+ * the last `WALK_SETTLE` of the journey, so he arrives and settles rather than
+ * switching off mid-pace.
+ */
+function walkPose(travelled: number, gait: number): { lift: number; roll: number } {
+  const weight = gait < WALK_MIN ? 0 : Math.min(gait / WALK_SETTLE, 1);
+  const pace = travelled * WALK_CADENCE * Math.PI * 2;
+  return {
+    lift: Math.abs(Math.sin(pace)) * WALK_BOB * weight,
+    roll: Math.sin(pace) * WALK_ROLL * weight,
+  };
+}
+
+/**
+ * The jump a press asks for: an arc up and over, then a squash on the landing.
+ *
+ * `p` runs 0 → 1 across `GREET`; anything outside that is a panda standing on
+ * the ground, which is what makes this safe to call every frame.
+ */
+function jumpPose(p: number): { lift: number; squash: number } {
+  if (p < 0 || p >= 1) return { lift: 0, squash: 0 };
+  if (p < JUMP_FLIGHT) return { lift: Math.sin((p / JUMP_FLIGHT) * Math.PI) * JUMP_RISE, squash: 0 };
+  /* Touchdown: compress, and come back up. Zero at both ends, so it joins the arc. */
+  const land = (p - JUMP_FLIGHT) / (1 - JUMP_FLIGHT);
+  return { lift: 0, squash: Math.sin(land * Math.PI) * JUMP_SQUASH };
+}
+
+/**
+ * Talking: a few small nods when a step's sentence appears, fading to nothing.
+ *
+ * It runs once per step and then stops. He is standing beside a card somebody
+ * is reading, and a mascot that never stops moving next to a sentence is a
+ * reason not to read the sentence — so this is deliberately smaller than the
+ * head-follow it sits on top of.
+ */
+function talkPose(p: number): { nod: number; tilt: number } {
+  if (p < 0 || p >= 1) return { nod: 0, tilt: 0 };
+  const fade = 1 - p;
+  return {
+    nod: Math.sin(p * Math.PI * 2 * TALK_BEATS) * TALK_NOD * fade,
+    tilt: Math.sin(p * Math.PI * TALK_BEATS) * TALK_TILT * fade,
+  };
+}
 
 /**
  * Where the cursor is, tracked on `window` rather than on the canvas.
@@ -393,12 +512,18 @@ function anchorToWorld(rect: DOMRect, camera: THREE.Camera, out: THREE.Vector3) 
 function Truc({
   mood,
   anchor,
+  avoid,
+  step,
   still,
   greet,
   near,
 }: {
   mood: PandaMood;
   anchor?: DOMRect;
+  /** The coach mark's own card. He stands beside it, never on it. */
+  avoid?: DOMRect;
+  /** Which coach-mark step he is standing beside. A change is a new sentence. */
+  step?: number;
   still: boolean;
   /** Set to `-1` by a tap on him; the loop stamps it with its own clock. */
   greet: { current: number };
@@ -421,10 +546,30 @@ function Truc({
   const greetFrom = useRef(-1);
   useEffect(trackCursor, []);
 
+  /*
+   * Talking is stamped the same way a greeting is: a ref says "start", and the
+   * loop is the only thing that reads the clock. `step` and not `anchor` is
+   * what starts it — the rect is re-measured on every scroll event and is a
+   * new object each time, so watching the rect would restart him on a scroll
+   * wheel click rather than on the sentence changing.
+   */
+  const talk = useRef(0);
+  const talkFrom = useRef(-1);
+  useEffect(() => {
+    if (step !== undefined) talk.current = -1;
+  }, [step]);
+
+  /** Ground covered, which is what the walk's bob is timed to. */
+  const walked = useRef(0);
+  /** The head's own aim, kept apart so the talking nod can ride on top of it. */
+  const aim = useRef(0);
+
   /** Next blink, in seconds from the clock the loop reads. 3–6s, never regular. */
   const nextBlink = useRef(3 + Math.random() * 3);
   const target = useMemo(() => new THREE.Vector3(), []);
   const look = useMemo(() => new THREE.Vector3(), []);
+  /** Where the card is, in the same world the target is measured in. */
+  const spot = useMemo(() => new THREE.Vector3(), []);
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
@@ -448,9 +593,34 @@ function Truc({
       anchorToWorld(anchor, camera, look);
       const halfHeight = Math.tan((camera as THREE.PerspectiveCamera).fov * (Math.PI / 360)) * 6.4;
       const halfWidth = halfHeight * state.viewport.aspect;
+      let x = look.x - STAND_X;
+      const y = look.y - STAND_Y;
+      /*
+       * Which side of the target he stands on.
+       *
+       * He is drawn over the card now, so the spot that used to be merely
+       * shared is a spot where he covers the sentence: the card is placed at
+       * the target's own left edge and just below it, which is exactly where
+       * he was standing. Measured on `/episodes` and on Home's last step, he
+       * sat on the middle of the paragraph and on the Back button.
+       *
+       * So: his usual side, the other side of the thing he is pointing at, or
+       * — if the card fills both — just clear of the card's own edge.
+       */
+      if (avoid) {
+        anchorToWorld(avoid, camera, spot);
+        /* World units per screen pixel on the plane he stands on. */
+        const perPx = halfWidth / (window.innerWidth / 2);
+        const clearX = (avoid.width / 2) * perPx + STAND_CLEAR;
+        const clearY = (avoid.height / 2) * perPx + STAND_CLEAR;
+        const onCard = (at: number) =>
+          Math.abs(at - spot.x) < clearX && Math.abs(y - spot.y) < clearY;
+        if (onCard(x)) x = look.x + STAND_X;
+        if (onCard(x)) x = spot.x - clearX;
+      }
       target.set(
-        THREE.MathUtils.clamp(look.x - 0.8, -halfWidth + 0.5, halfWidth - 0.5),
-        THREE.MathUtils.clamp(look.y - 0.55, -halfHeight + 0.4, halfHeight - 0.4),
+        THREE.MathUtils.clamp(x, -halfWidth + 0.5, halfWidth - 0.5),
+        THREE.MathUtils.clamp(y, -halfHeight + 0.4, halfHeight - 0.4),
         0,
       );
     } else {
@@ -476,24 +646,44 @@ function Truc({
       if (breath.current) {
         breath.current.scale.set(1, 1, 1);
         breath.current.position.y = 0;
+        /* Feet flat and shoulders level: no pace of a walk left half-taken. */
+        breath.current.rotation.z = 0;
       }
       if (eyes.current) eyes.current.scale.y = 1;
       return;
     }
 
-    g.position.lerp(target, 1 - Math.exp(-6 * delta));
+    /*
+     * The walk. How far he still has to go decides whether he is walking at
+     * all; how far he moves this frame is what the pace is timed to, so the
+     * bob belongs to the ground rather than to the clock and he arrives having
+     * walked instead of having slid.
+     */
+    const gait = g.position.distanceTo(target);
+    const advance = 1 - Math.exp(-6 * delta);
+    if (gait > WALK_MIN) walked.current += gait * advance;
+    g.position.lerp(target, advance);
+    const walk = walkPose(walked.current, gait);
 
     /*
      * A tap on him. The flag is set by a listener that only *watches* the
      * event, so the control underneath still receives it; the loop stamps the
-     * start against its own clock and the burst decays on its own.
+     * start against its own clock and the burst decays on its own. The step
+     * change that starts him talking is stamped in exactly the same way.
      */
     if (greet.current === -1) {
       greetFrom.current = t;
       greet.current = 0;
     }
+    if (talk.current === -1) {
+      talkFrom.current = t;
+      talk.current = 0;
+    }
     const greeting = greetFrom.current >= 0 ? (t - greetFrom.current) / GREET : 2;
-    const hello = greeting < 1 ? Math.sin(greeting * Math.PI) : 0;
+    const jump = jumpPose(greeting);
+    /* Only beside a coach mark. Nothing on any other screen has a sentence. */
+    const saying = anchor && talkFrom.current >= 0 ? (t - talkFrom.current) / TALK : 2;
+    const talking = talkPose(saying);
 
     /* And which way he faces: at the anchor, or at the cursor. */
     const yaw = Math.atan2(look.x - g.position.x, Math.max(look.z - g.position.z, 1.5));
@@ -504,20 +694,27 @@ function Truc({
       const reach = near.current ? 1.25 : 1;
       h.rotation.y +=
         (THREE.MathUtils.clamp(yaw * reach, -0.9, 0.9) - h.rotation.y) * (1 - Math.exp(-5 * delta));
-      h.rotation.x += (pitch - h.rotation.x) * (1 - Math.exp(-5 * delta));
-      if (hello > 0) h.rotation.z = Math.sin(greeting * Math.PI * 3) * 0.14;
+      /*
+       * The aim is smoothed; the nod is added after it. Smoothing the sum
+       * would damp a 2 Hz nod almost out of existence, and adding to
+       * `rotation.x` each frame would accumulate instead of oscillating.
+       */
+      aim.current += (pitch - aim.current) * (1 - Math.exp(-5 * delta));
+      h.rotation.x = aim.current + talking.nod;
+      if (greeting < 1) h.rotation.z = Math.sin(greeting * Math.PI * 3) * 0.14;
       else if (mood === 'thinking') h.rotation.z = Math.sin(t * 0.9) * 0.06 + 0.1;
+      else if (saying < 1) h.rotation.z = talking.tilt;
       else h.rotation.z += (0 - h.rotation.z) * (1 - Math.exp(-5 * delta));
     }
 
-    /* Breathing, and the one squash-and-stretch in the console. */
+    /* Breathing, the jump, and the one squash-and-stretch in the console. */
     const b = breath.current;
     if (b) {
-      const air = Math.sin(t * 1.7) * 0.018;
-      if (hello > 0) {
-        /* The greeting outranks the mood: one hop, and he settles again. */
-        b.scale.set(1 + 0.1 * (1 - hello), 1 + 0.14 * hello, 1 + 0.1 * (1 - hello));
-        b.position.y = hello * 0.22;
+      const air = breathe(t);
+      if (greeting < 1) {
+        /* The greeting outranks the mood: an arc up, and a squash on landing. */
+        b.scale.set(1 + jump.squash * 0.6, 1 - jump.squash, 1 + jump.squash * 0.6);
+        b.position.y = jump.lift;
       } else if (mood === 'happy') {
         const bounce = Math.abs(Math.sin(t * 4.2));
         b.scale.set(1 + 0.09 * (1 - bounce), 1 + 0.12 * bounce, 1 + 0.09 * (1 - bounce));
@@ -525,9 +722,10 @@ function Truc({
       } else {
         const lean = near.current ? 0.03 : 0;
         b.scale.set(1 - air * 0.5, 1 + air + lean, 1 - air * 0.5);
-        b.position.y += (0 - b.position.y) * (1 - Math.exp(-6 * delta));
+        /* Chased fast, or the bob lags the footfall and reads as a float. */
+        b.position.y += (walk.lift - b.position.y) * (1 - Math.exp(-16 * delta));
       }
-      if (mood === 'pointing') b.rotation.z = Math.sin(t * 2.4) * 0.03;
+      b.rotation.z = walk.roll;
     }
 
     /*
@@ -576,6 +774,8 @@ export function PandaStage({
   mood = 'idle',
   size = 180,
   anchor,
+  avoid,
+  step,
   className,
   label,
   onPress,
@@ -585,6 +785,18 @@ export function PandaStage({
   size?: number;
   /** The element the guided tour is talking about, in page coordinates. */
   anchor?: DOMRect;
+  /**
+   * The coach mark's own card, so he can stand beside it instead of on it.
+   * He is drawn above the card (see `ANCHOR_Z`), which makes the spot he used
+   * to share with it a spot where he covers the sentence.
+   */
+  avoid?: DOMRect;
+  /**
+   * Which step of the tour is showing. He says each one once: a change starts
+   * the talking, and he is quiet again before the reader has finished the card.
+   * The rect cannot carry this — it is re-measured on every scroll.
+   */
+  step?: number;
   className?: string;
   /** Sets `role="img"`; without it the canvas is decoration and is hidden. */
   label?: string;
@@ -743,7 +955,7 @@ export function PandaStage({
       )}
       style={
         anchor
-          ? { position: 'fixed', inset: 0, zIndex: 40, pointerEvents: 'none' }
+          ? { position: 'fixed', inset: 0, zIndex: ANCHOR_Z, pointerEvents: 'none' }
           : { width: size, height: size, pointerEvents: onPress ? 'auto' : 'none' }
       }
       role={!onPress && label ? 'img' : undefined}
@@ -770,7 +982,15 @@ export function PandaStage({
         <ambientLight intensity={1.5} />
         <directionalLight position={[3, 5, 4]} intensity={2.1} />
         <directionalLight position={[-4, 1, -2]} intensity={0.5} />
-        <Truc mood={mood} anchor={anchor} still={still} greet={greet} near={near} />
+        <Truc
+          mood={mood}
+          anchor={anchor}
+          avoid={avoid}
+          step={step}
+          still={still}
+          greet={greet}
+          near={near}
+        />
       </Canvas>
         </StageBoundary>
       )}

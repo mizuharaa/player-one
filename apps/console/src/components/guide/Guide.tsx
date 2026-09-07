@@ -200,7 +200,7 @@ export function Guide({ pathname }: { pathname: string }) {
                     width: rect.width + PAD * 2,
                     height: rect.height + PAD * 2,
                     boxShadow: '0 0 0 9999px var(--scrim)',
-                    outline: '2px solid var(--sun-500)',
+                    outline: '2px solid var(--ring)',
                   }
                 : /*
                      No target on the page. The scrim becomes a plain fill
@@ -212,15 +212,29 @@ export function Guide({ pathname }: { pathname: string }) {
             }
           />
 
-          {/* Trúc walks to the element and looks at it. Never on /review. */}
+          {/* Trúc walks to the element, looks at it, and says the step. Never
+              on /review. `index` is what tells him the sentence changed; the
+              rect cannot, because it is re-measured on every scroll. He is
+              drawn above this card, so he is also told where it is and stands
+              beside it rather than on the sentence. */}
           {rect && mascot ? (
             <Suspense fallback={null}>
-              <PandaStage mood="pointing" anchor={rect} label={t('guide.panda')} />
+              <PandaStage
+                mood="pointing"
+                anchor={rect}
+                /* Where the card will be, from the same numbers that place it. */
+                avoid={card ? new DOMRect(card.left, card.top, CARD.width, CARD.height) : undefined}
+                step={index}
+                label={t('guide.panda')}
+              />
             </Suspense>
           ) : null}
 
           <section
-            /* Above the panda's fixed layer (z-40) so the card's buttons are the hit target. */
+            /* Below the panda's fixed layer, which is z-60, and that is the
+               point: he walked to the element and the card was drawn over him.
+               The card keeps its buttons anyway, because his layer takes no
+               pointer event at any depth — see `ANCHOR_Z` in `PandaStage`. */
             className="fixed z-50 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow-lg)]"
             style={
               card

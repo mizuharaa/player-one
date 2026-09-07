@@ -188,15 +188,26 @@ comments cite them and so should any new surface.
 
 - **Name:** PlayerOne. A joint venture between **VNG PT Lab** (platform) and
   **PaXini** (hardware and, in Phase 1, review).
-- **Colour, as stated by the product owner:** VNG is orange / sun / peach; PaXini
-  is tech blue and white. **No formal brand guideline or binding hex values
-  exist** — confirmed, so the drafted values are the design system's own choice
-  and not corporate assets. Future work may refine them; it should not go hunting
+- **Colour.** VNG is orange / sun / peach and PaXini is tech blue and white, as
+  the product owner stated them. **No formal brand guideline or binding hex
+  values exist** — confirmed — so those were directions, not corporate assets,
+  and the drafted ramps were the design system's own choice. Do not go hunting
   for an official palette.
+
+  **The product's own palette is no longer built from them.** On 2026-09-07 the
+  owner replaced the visual world with a lavender ground, a near-black action
+  and a single lime accent, pinned from a reference screen. Sun and tech survive
+  as **the partner mark and nothing else**; they are never action, a link,
+  progress or type. `DESIGN.md` owns the new world and the measurements behind
+  it. The two partner colours themselves are unchanged and are not ours to
+  change.
 - **A mascot is confirmed in scope by the owner** — an animal, chosen over a
   robot, whose state follows the time of day because upload centres run shifts.
-  She is Cú (`DESIGN.md`); `cuStateAt()` in `packages/design/src/tokens.ts` picks
-  the state and `apps/console/src/components/identity/Cu.tsx` renders her.
+  He is **Trúc**, a panda — Vietnamese *trúc* is bamboo, which Chinese writes with
+  the same character 竹. He replaced Cú the owl; `mascotStateAt()` in
+  `packages/design/src/tokens.ts` picks the state, `PandaStage.tsx` renders the
+  glTF model in the console and `identity/Panda.tsx` draws the flat one both apps
+  fall back to. This entry said "Cú" and named a file that no longer exists.
 - **Localisation is a product commitment, not a preference.** Back-office in
   English and Chinese (LOC-02). Collector app in Vietnamese (LOC-01), English at
   P2 (LOC-05). Training, exam and task descriptions localised to Vietnamese with

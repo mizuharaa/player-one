@@ -131,7 +131,7 @@ export function SettleShell({
             className="flex items-start gap-2 rounded-[var(--radius-base)] border border-[var(--border)] bg-[var(--muted)] px-3 py-2 text-[0.8125rem] leading-snug"
             role="status"
           >
-            <IconAlert size={16} className="mt-0.5 shrink-0 text-[var(--sun-600)]" />
+            <IconAlert size={16} className="mt-0.5 shrink-0 text-[var(--foreground)]" />
             <span>
               <strong className="font-semibold">{t('settle.readonly')}.</strong> {t(reason)}
             </span>
@@ -151,7 +151,7 @@ export function SettleShell({
 const BAND_STYLE: Record<RiskBand, { pill: string; dots: number }> = {
   clear: { pill: 'bg-[var(--muted)] text-[var(--muted-foreground)]', dots: 0 },
   notice: { pill: 'bg-[var(--tech-50)] text-[var(--tech-ink)]', dots: 1 },
-  review: { pill: 'bg-[var(--sun-50)] text-[var(--sun-ink)]', dots: 2 },
+  review: { pill: 'bg-[var(--warn-bg)] text-[var(--warn)]', dots: 2 },
   hold: { pill: 'bg-[var(--foreground)] text-[var(--background)]', dots: 3 },
 };
 
@@ -188,8 +188,8 @@ const ATTEMPT_STYLE: Record<AttemptStatus | 'none', string> = {
   created: 'bg-[var(--muted)] text-[var(--muted-foreground)]',
   submitted: 'bg-[var(--tech-50)] text-[var(--tech-ink)]',
   processing: 'bg-[var(--tech-50)] text-[var(--tech-ink)]',
-  unknown: 'bg-[var(--sun-50)] text-[var(--sun-ink)]',
-  pending_zlp: 'bg-[var(--sun-50)] text-[var(--sun-ink)]',
+  unknown: 'bg-[var(--warn-bg)] text-[var(--warn)]',
+  pending_zlp: 'bg-[var(--warn-bg)] text-[var(--warn)]',
   succeeded: 'bg-[var(--foreground)] text-[var(--background)]',
   failed: 'border border-[var(--border-strong)] bg-[var(--card)] text-[var(--foreground)]',
 };
@@ -235,7 +235,7 @@ export function IssueList({ issues, className }: { issues: PayoutIssue[]; classN
     <ul className={cn('space-y-1.5', className)}>
       {issues.map((issue) => (
         <li key={issue} className="flex gap-2 text-[0.875rem] leading-snug">
-          <IconAlert size={16} className="mt-0.5 shrink-0 text-[var(--sun-600)]" />
+          <IconAlert size={16} className="mt-0.5 shrink-0 text-[var(--foreground)]" />
           <span>{t(`settle.issue.${issue}`)}</span>
         </li>
       ))}
@@ -313,7 +313,7 @@ export function Fig({
       <p
         className={cn(
           'num mt-0.5 text-[1.3125rem] font-medium tracking-[-0.02em]',
-          tone === 'warn' ? 'text-[var(--sun-ink)]' : tone === 'data' ? 'text-[var(--tech-ink)]' : '',
+          tone === 'warn' ? 'text-[var(--warn)]' : tone === 'data' ? 'text-[var(--tech-ink)]' : '',
         )}
       >
         {value}

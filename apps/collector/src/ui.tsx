@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   StatusBar,
+  StyleSheet,
   Text,
   TextInput,
   View,
@@ -21,10 +22,16 @@ import { useTheme } from './theme.tsx';
  * radius comes from the theme — nativeTheme(scheme) over packages/design
  * tokens — never from a literal in a screen file.
  *
- * The world these draw: white paper, hairline borders, one ink block per
- * screen and only where a figure carries its sentence and its action. Sun is
- * action, tech is what the machine reports, bamboo is the mascot and progress.
- * Nothing here is a gradient, a glass panel or a coloured left border.
+ * The world these draw, committed 2026-09-07 (`DESIGN.md`): a lavender wash is
+ * the page, surfaces above it are glass, the primary action is an ink pill and
+ * lime is the one accent — progress, emphasis and the focus ring. Sun and tech
+ * are the VNG and PaXini partner marks and appear nowhere in here; bamboo is
+ * Trúc's own stalk and nothing else. Still no gradients.
+ *
+ * `background` is the page and `surface` is the raised step above it, which is
+ * the reverse of what these components used to do. A control — a chip, a
+ * field, an empty state — paints `surface`; a page paints `background`; a card
+ * paints glass over whatever it is standing on.
  */
 
 /**
@@ -111,9 +118,20 @@ export function useReducedMotion(): boolean {
   return reduced;
 }
 
-/** How tall the bottom tab bar is, so scrolling content can clear it. */
+/** The floating bar's own height: one 48dp row plus the pill's padding. */
+const barHeight = (theme: NativeTheme): number =>
+  theme.space[12] + theme.space[3] + theme.space[2];
+
+/**
+ * How much room scrolling content must leave under the tab bar.
+ *
+ * The bar floats now, so this is three things and not one: the gesture-bar
+ * inset it is lifted by, the pill itself, and `space[5]` — the amount the
+ * raised session button hangs above the pill, which is also the gap the last
+ * row of content needs so it does not sit under the glass.
+ */
 export const tabBarHeight = (theme: NativeTheme): number =>
-  theme.space[16] + bottomInset(theme.space[6]);
+  bottomInset(theme.space[6]) + barHeight(theme) + theme.space[5];
 
 function Header({
   title,
@@ -135,9 +153,10 @@ function Header({
         paddingHorizontal: theme.space[4],
         paddingTop: topInset(theme.space[6]) + theme.space[2],
         paddingBottom: theme.space[3],
+        // No rule under it. The page and its header are one lavender ground
+        // now, and a hairline across a continuous wash draws a bar where the
+        // world has none — the surfaces that float on it are what carry edges.
         backgroundColor: theme.color.background,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.color.border,
         gap: theme.space[1],
       }}
     >
@@ -149,11 +168,14 @@ function Header({
           hitSlop={theme.space[3]}
           style={{ alignSelf: 'flex-start', minHeight: theme.space[6], justifyContent: 'center' }}
         >
+          {/* Ink, not tech blue: tech is PaXini's mark now and is not a link
+              colour anywhere in this app. */}
           <Text
             style={{
-              color: theme.color.tech[500],
+              color: theme.color.foreground,
               fontFamily: face(theme),
               fontSize: theme.fontSize.sm,
+              fontWeight: theme.fontWeight.medium,
             }}
           >
             ← {tt('common.back')}
@@ -196,7 +218,8 @@ export function Screen({
   const theme = useTheme();
   const nav = useNav();
   return (
-    <View style={{ flex: 1, backgroundColor: theme.color.surface }}>
+    // `background` is the page — the lavender wash the glass above it needs.
+    <View style={{ flex: 1, backgroundColor: theme.color.background }}>
       <Header title={title} right={right} onBack={onBack} />
       <ScrollView
         contentContainerStyle={{
@@ -241,7 +264,7 @@ export function ListScreen<T>({
   const theme = useTheme();
   const nav = useNav();
   return (
-    <View style={{ flex: 1, backgroundColor: theme.color.surface }}>
+    <View style={{ flex: 1, backgroundColor: theme.color.background }}>
       <Header title={title} right={right} />
       <FlatList
         data={data as T[]}
@@ -263,19 +286,104 @@ export function ListScreen<T>({
   );
 }
 
+/**
+ * The glass, as the one thing it actually is.
+ *
+ * `theme.color.card` laid over whatever the surface is standing on, at
+ * `theme.glass.*.fill`. In the light scheme `card` is white, so this is
+ * literally the "white overlay" the token describes; in dark it is the
+ * scheme's own raised near-black, because a 62% white film over a near-black
+ * page is a hole punched into daylight rather than a pane of glass.
+ *
+ * `theme.glass.*.blur` is deliberately not consumed. React Native has no
+ * backdrop blur without a native module and this repo adds none
+ * (DEVICE_DEPS.md); what reads as glass is the ground showing through and
+ * varying, and the blur only softens it. That is the honest translation the
+ * token's own comment asks for.
+ *
+ * A layer rather than an `rgba()` string, for two reasons: the alpha belongs
+ * to the fill and not to the content, so `opacity` on the container — which
+ * would fade the type with it — is wrong; and mixing a colour in a `.tsx` is
+ * how a value that the console cannot have gets invented. The parent clips it,
+ * so the parent owns `borderRadius` and `overflow: 'hidden'`, and the parent
+ * must draw it before whatever sits on top of it.
+ *
+ * Exported because Home's hero is a photograph with a glass strip under it,
+ * which is neither a `Card` nor a `GlassBar` but is made of the same material.
+ */
+export function Frost({ fill }: { fill: number }) {
+  const theme = useTheme();
+  return (
+    <View
+      pointerEvents="none"
+      importantForAccessibility="no-hide-descendants"
+      style={[StyleSheet.absoluteFill, { backgroundColor: theme.color.card, opacity: fill }]}
+    />
+  );
+}
+
+/** The box a card is, minus its fill — shared by `Card` and `CardLink`. */
+const cardBox = (theme: NativeTheme) => ({
+  borderColor: theme.color.border,
+  borderWidth: 1,
+  borderRadius: theme.radius.lg,
+  padding: theme.space[4],
+  gap: theme.space[2],
+  // The frost layer is absolutely positioned and has to be cut to the radius.
+  overflow: 'hidden' as const,
+});
+
 export function Card({ children }: { children: ReactNode }) {
+  const theme = useTheme();
+  return (
+    <View style={cardBox(theme)}>
+      <Frost fill={theme.glass.card.fill} />
+      {children}
+    </View>
+  );
+}
+
+/**
+ * The floating navigation bar's surface, and the only place in this app where
+ * the ground behind glass genuinely varies.
+ *
+ * It takes `glass.bar.fill` rather than `glass.card.fill` for the reason the
+ * token has two weights at all: a card sits on the page and knows what is
+ * behind it, and this passes over whatever is being scrolled. Measured at the
+ * two extremes of what can pass under it in the light scheme — a near-black
+ * photograph composites the bar to #C7C7C7, a white one to #FFFFFF — where
+ * `foreground` reads 10.78:1 and 18.23:1.
+ *
+ * It lives here and not in `shell/TabBar.tsx` because the frost layer is
+ * private to this file, and because the bar's height is the number
+ * `tabBarHeight` has to agree with.
+ */
+export function GlassBar({ children }: { children: ReactNode }) {
   const theme = useTheme();
   return (
     <View
       style={{
-        backgroundColor: theme.color.card,
-        borderColor: theme.color.border,
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        minHeight: barHeight(theme),
         borderWidth: 1,
-        borderRadius: theme.radius.base,
-        padding: theme.space[4],
-        gap: theme.space[2],
+        borderColor: theme.color.border,
+        borderRadius: theme.radius.pill,
+        paddingTop: theme.space[3],
+        paddingBottom: theme.space[2],
+        paddingHorizontal: theme.space[2],
+        overflow: 'hidden',
+        // ponytail: elevation only. `nativeTheme()` exports depth as Material
+        // elevation levels and no shadow offsets — `shadow`/`shadowDark` in
+        // tokens.ts are CSS strings and are not carried across, deliberately
+        // (`native.ts`, "Shadows"). So Android draws a real shadow here and
+        // react-native-web draws none; the hairline border is what holds the
+        // pill's edge in the harness. Give this a `shadow*` token and it can
+        // have one in both.
+        elevation: theme.elevation.floating,
       }}
     >
+      <Frost fill={theme.glass.bar.fill} />
       {children}
     </View>
   );
@@ -306,15 +414,21 @@ export function CardLink({
       accessibilityHint={hint}
       onPress={onPress}
       style={({ pressed }) => ({
-        backgroundColor: pressed ? theme.color.muted : theme.color.card,
+        ...cardBox(theme),
+        // Pressed, the glass clears and the muted fill under it shows through.
+        // A denser frost would have been the prettier idea and is not a press:
+        // measured, 0.62 and 0.78 of white over the lavender page are #F8F9FC
+        // and #FBFBFD, which nobody's thumb can tell apart.
+        backgroundColor: pressed ? theme.color.muted : undefined,
         borderColor: pressed ? theme.color.borderStrong : theme.color.border,
-        borderWidth: 1,
-        borderRadius: theme.radius.base,
-        padding: theme.space[4],
-        gap: theme.space[2],
       })}
     >
-      {children}
+      {({ pressed }) => (
+        <>
+          {pressed ? null : <Frost fill={theme.glass.card.fill} />}
+          {children}
+        </>
+      )}
     </Pressable>
   );
 }
@@ -408,11 +522,15 @@ export function Row({ label, value }: { label: string; value: string }) {
  * 17sp semibold label. Stacked pairs sit 12dp apart, which is the column's
  * gap and not this component's business.
  *
- * - **primary** — sun-500 fill, ink type, sun-600 pressed, muted fill with
- *   faint ink when disabled. One per screen; it is the thing the screen is for.
- * - **secondary** — a 1.5dp outline, ink on paper and white on footage
- *   (`onDark`), muted fill when pressed. The alternative that is genuinely
- *   available, not a demotion.
+ * - **primary** — the **ink pill**: `action` fill, `actionInk` label, both of
+ *   which invert with the scheme. It is not sun any more and sun is not an
+ *   action colour anywhere in this app. Muted fill with faint ink when
+ *   disabled. One per screen; it is the thing the screen is for.
+ * - **secondary** — a **glass pill**: the same frost a card is made of, with a
+ *   hairline edge and ink type, so the alternative reads as genuinely
+ *   available rather than as a demotion. On footage (`onDark`) it stays a
+ *   white outline with no frost — a 62% white film over a recording is a
+ *   white blink, not glass.
  * - **ghost** — the word alone, for a way out: cancel, later, close. 48dp
  *   rather than 56 because it is not a commitment, and 48 is Android's floor
  *   for a target.
@@ -448,23 +566,31 @@ export function Button({
   // get lighter because the phone is in dark mode.
   const ink = onDark ? theme.color.stage.fg : theme.color.foreground;
   const primary = variant === 'primary';
-  // Sun on sun would be an invisible ring, so the primary's is the same ink
-  // its label is already drawn in. Everywhere else the ring is the sun, as it
-  // is on `Field`.
-  const ring = primary
-    ? theme.color.stage.ground
-    : onDark
-      ? theme.color.stage.fg
-      : theme.color.sun[600];
+  const secondary = variant === 'secondary';
+  /**
+   * The ring is `lime[600]` — the focus ring the world committed, and the same
+   * step `packages/design/src/tokens.ts` resolves `ring.light` to. Measured on
+   * every ground it can land on here: 3.71:1 on the light page, 4.39:1 on the
+   * dark one, 4.26:1 and 3.67:1 on the two ink pills, all over SC 1.4.11's
+   * 3:1. On footage it stays the stage ink, because the film behind it is not
+   * a ground this file can measure.
+   */
+  const ring = onDark ? theme.color.stage.fg : theme.color.lime[600];
 
-  const surface = (pressed: boolean): string => {
+  /**
+   * The frost weight the secondary is filled with, or `undefined` where the
+   * control paints its own opaque fill instead. `null` means no glass at all.
+   */
+  const frost = secondary && !onDark && !disabled ? theme.glass.card.fill : null;
+
+  const surface = (pressed: boolean): string | undefined => {
     if (primary) {
       if (disabled) return theme.color.muted;
-      return pressed ? theme.color.sun[600] : theme.color.sun[500];
+      return theme.color.action;
     }
-    if (!pressed || disabled) return 'transparent';
-    // `muted` is a near-white paper tint and flashing it over footage would be
-    // a white blink; `stage.panel` is the same step of the ink scale.
+    if (!pressed || disabled) return undefined;
+    // `muted` is a pale lavender tint and flashing it over footage would be a
+    // white blink; `stage.panel` is the same step of the ink scale.
     return onDark ? theme.color.stage.panel : theme.color.muted;
   };
 
@@ -475,13 +601,11 @@ export function Button({
       onDark
       ? theme.color.stage.mid
       : theme.color.faintForeground
-    : // The primary fill is `sun[500]` and the sun ramp does NOT invert between
-      // schemes, so the ink on it cannot come from the scheme either. It used
-      // to: `background` is white in light mode, and white on sun[500] is
-      // 2.61:1 — the app's most-tapped control failing AA on the default
-      // theme. `stage.ground` on sun[500] measures 7.19:1.
+    : // `actionInk` is the pair of `action` and both invert with the scheme, so
+      // the label can never be the 2.61:1 white-on-sun this control shipped as
+      // once. Measured now: 15.78:1 light, 16.12:1 dark.
       primary
-      ? theme.color.stage.ground
+      ? theme.color.actionInk
       : ink;
 
   return (
@@ -498,33 +622,44 @@ export function Button({
         backgroundColor: surface(pressed),
         // Constant width, colour-only change: a ring that appears by growing
         // the border pushes every sibling in the row by 2dp.
-        borderWidth: variant === 'secondary' ? 1.5 : 2,
+        borderWidth: secondary ? 1.5 : 2,
         borderColor: focused
           ? ring
-          : variant === 'secondary'
+          : secondary
             ? disabled
               ? theme.color.borderStrong
-              : ink
+              : onDark
+                ? ink
+                : // A glass pill takes the system's hairline, not a full-weight
+                  // ink outline: the frost is what makes it a surface and an
+                  // ink edge around it reads as a second primary.
+                  theme.color.borderStrong
             : 'transparent',
         borderRadius: theme.radius.pill,
         paddingHorizontal: theme.space[5],
         minHeight: variant === 'ghost' ? theme.space[12] : theme.space[12] + theme.space[2],
         alignItems: 'center',
         justifyContent: 'center',
-        opacity: pressed && primary ? 0.95 : 1,
+        overflow: 'hidden',
+        opacity: pressed && primary ? 0.85 : 1,
       })}
     >
-      <Text
-        numberOfLines={1}
-        style={{
-          color: labelColor,
-          fontFamily: face(theme),
-          fontSize: theme.fontSize.md,
-          fontWeight: theme.fontWeight.semibold,
-        }}
-      >
-        {label}
-      </Text>
+      {({ pressed }) => (
+        <>
+          {frost === null || pressed ? null : <Frost fill={frost} />}
+          <Text
+            numberOfLines={1}
+            style={{
+              color: labelColor,
+              fontFamily: face(theme),
+              fontSize: theme.fontSize.md,
+              fontWeight: theme.fontWeight.semibold,
+            }}
+          >
+            {label}
+          </Text>
+        </>
+      )}
     </Pressable>
   );
 }
@@ -533,8 +668,11 @@ export function Button({
  * A small pill. Static by default; give it `onPress` and it becomes a control
  * with a 48dp target and a `selected` state.
  *
- * `selected` is the sun pill the tab bar and the language switch both use:
- * action, per the token contract. Nothing decorative is a chip.
+ * `selected` is the ink pill, the same mark the primary button and the active
+ * tab carry: it is where the collector's action is. Unselected sits on
+ * `surface`, the raised step, because the page is the lavender wash now and a
+ * chip painted in the page colour is a chip with only a border. Nothing
+ * decorative is a chip.
  */
 export function Chip({
   label,
@@ -551,7 +689,7 @@ export function Chip({
   const body = (
     <Text
       style={{
-        color: selected ? theme.color.stage.ground : theme.color.foreground,
+        color: selected ? theme.color.actionInk : theme.color.foreground,
         fontFamily: face(theme),
         fontSize: theme.fontSize.sm,
         fontWeight: theme.fontWeight.medium,
@@ -561,7 +699,7 @@ export function Chip({
     </Text>
   );
   const box = {
-    backgroundColor: selected ? theme.color.sun[500] : theme.color.background,
+    backgroundColor: selected ? theme.color.action : theme.color.surface,
     borderWidth: selected ? 0 : 1,
     borderColor: theme.color.borderStrong,
     borderRadius: theme.radius.pill,
@@ -687,8 +825,10 @@ export function Hatch({ text }: { text: string }) {
       style={{
         borderWidth: 1,
         borderColor: theme.color.border,
-        borderRadius: theme.radius.base,
-        backgroundColor: theme.color.background,
+        borderRadius: theme.radius.lg,
+        // `surface`, not `background`: the page IS `background` now, and an
+        // empty state painted in the page colour is a border round nothing.
+        backgroundColor: theme.color.surface,
         overflow: 'hidden',
         padding: theme.space[6],
         alignItems: 'center',
@@ -718,7 +858,7 @@ export function Hatch({ text }: { text: string }) {
       </View>
       <View
         style={{
-          backgroundColor: theme.color.background,
+          backgroundColor: theme.color.surface,
           paddingHorizontal: theme.space[3],
           paddingVertical: theme.space[2],
         }}
@@ -745,9 +885,11 @@ export function Hatch({ text }: { text: string }) {
  * and the task-first decision demoted it: the collector opens the app to find
  * work, and how many episodes have been reviewed is a fact they glance at, not
  * the thing they came for. What survives is the fact and the shape: a small
- * bamboo arc filled to the reviewed fraction, the count and its caption beside
+ * lime arc filled to the reviewed fraction, the count and its caption beside
  * it, and one tap to the full list where every episode still carries its own
- * state (APP-24).
+ * state (APP-24). The arc was bamboo until 2026-09-07; progress is lime now
+ * and bamboo is only the stalk Trúc carries. Measured, `lime[600]` reads
+ * 3.44:1 on the muted track in light and 3.41:1 in dark, over 1.4.11's 3:1.
  *
  * **`ring` is optional and that is the whole point.** While `api.episodes()`
  * is loading or has failed there is no fraction to draw, so nothing is drawn
@@ -803,7 +945,7 @@ export function RingChip({
             <View key={`t${i}`} style={[seat(i), { backgroundColor: theme.color.muted }]} />
           ))}
           {Array.from({ length: lit }, (_, i) => (
-            <View key={i} style={[seat(i), { backgroundColor: theme.color.bamboo[600] }]} />
+            <View key={i} style={[seat(i), { backgroundColor: theme.color.lime[600] }]} />
           ))}
         </View>
       )}
@@ -876,9 +1018,13 @@ export function Choice({
         flexDirection: 'row',
         alignItems: 'center',
         gap: theme.space[2],
-        backgroundColor: selected ? theme.color.tech[100] : theme.color.background,
+        // Lime, not tech: tech is PaXini's mark now. `lime[500]` is a fill and
+        // only a fill, so the label on it is the fixed near-black ink the
+        // token was measured against — 13.94:1, and it does not move with the
+        // scheme because `lime` does not either.
+        backgroundColor: selected ? theme.color.lime[500] : theme.color.surface,
         borderWidth: 1,
-        borderColor: selected ? theme.color.tech[500] : theme.color.borderStrong,
+        borderColor: selected ? theme.color.lime[600] : theme.color.borderStrong,
         borderRadius: theme.radius.pill,
         paddingVertical: theme.space[2],
         paddingHorizontal: theme.space[4],
@@ -888,7 +1034,7 @@ export function Choice({
     >
       <Text
         style={{
-          color: selected ? theme.color.techInk : theme.color.foreground,
+          color: selected ? theme.color.stage.ground : theme.color.foreground,
           fontFamily: face(theme),
           fontSize: theme.fontSize.sm,
           fontWeight: selected ? theme.fontWeight.semibold : theme.fontWeight.regular,
@@ -937,11 +1083,12 @@ export function Field({
         accessibilityLabel={label}
         placeholderTextColor={theme.color.faintForeground}
         style={{
-          backgroundColor: theme.color.background,
-          // The focus ring is the sun, as everywhere else in this system. It is
-          // drawn as a second border colour rather than an outline because RN
-          // has no outline; the width does not change, so nothing reflows.
-          borderColor: focused ? theme.color.sun[600] : theme.color.borderStrong,
+          backgroundColor: theme.color.surface,
+          // The focus ring is `lime[600]`, as everywhere else in this system.
+          // It is drawn as a second border colour rather than an outline
+          // because RN has no outline; the width does not change, so nothing
+          // reflows.
+          borderColor: focused ? theme.color.lime[600] : theme.color.borderStrong,
           borderWidth: focused ? 2 : 1,
           borderRadius: theme.radius.sm,
           paddingVertical: theme.space[3] - (focused ? 1 : 0),
@@ -983,7 +1130,16 @@ export function Tag({ label, fg, bg }: { label: string; fg: string; bg: string }
   );
 }
 
-/** The machine telling the collector something: tech blue, per the token contract. */
+/**
+ * The machine telling the collector something.
+ *
+ * It was a tech-blue tint, and tech is PaXini's partner mark now — not a
+ * system colour and not a notice colour. So the notice is drawn in the
+ * neutral one step off the page: `muted`, which inverts with the scheme the
+ * way the tint it replaces did. Measured, `foreground` on it reads 14.66:1 in
+ * light and 12.54:1 in dark. Nothing about which sentences go in here changed
+ * — it still carries the gates and the failures, and it still announces.
+ */
 export function Note({ text }: { text: string }) {
   const theme = useTheme();
   return (
@@ -993,16 +1149,14 @@ export function Note({ text }: { text: string }) {
       // an action, so a screen reader has to be told to read them.
       accessibilityLiveRegion="polite"
       style={{
-        backgroundColor: theme.color.tech[50],
-        borderRadius: theme.radius.sm,
+        backgroundColor: theme.color.muted,
+        borderRadius: theme.radius.base,
         padding: theme.space[3],
       }}
     >
-      {/* `techInk` and not `tech[700]`: the fill inverts in dark mode and that
-          step does not, which measured 1.80:1. See `native.ts`. */}
       <Text
         style={{
-          color: theme.color.techInk,
+          color: theme.color.foreground,
           fontFamily: face(theme),
           fontSize: theme.fontSize.sm,
           lineHeight: theme.fontSize.sm * 1.5,

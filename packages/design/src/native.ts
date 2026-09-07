@@ -27,6 +27,9 @@ import {
   darkBrandTints,
   duration,
   fontSize,
+  glass,
+  lavender,
+  lime,
   fontWeight,
   light,
   radius,
@@ -104,6 +107,29 @@ export function nativeTheme(scheme: ColorScheme) {
        * and 9.51:1 on the two dark tints.
        */
       bambooInk: isDark ? bamboo[200] : bamboo[700],
+      /**
+       * The wash the whole app stands on, and the one accent over it.
+       *
+       * `lavender` is the page rather than an accent ramp; on the dark scheme
+       * its two lightest steps invert to the dark surfaces, the same way sun's
+       * and tech's do, so a card drawn on `lavender[100]` is a lighter card in
+       * light and a lighter-than-page card in dark without a second branch at
+       * the call site.
+       */
+      lavender: {
+        ...lavender,
+        ...(isDark ? { 50: dark.surface, 100: dark.muted } : {}),
+      },
+      lime,
+      /** The ink for anything sitting on a lime tint. 4.94:1 light, 16.12:1 dark. */
+      limeInk: isDark ? lime[200] : lime[700],
+      /**
+       * The primary action, as a role. It is an ink pill in this world, not a
+       * coloured one, so it inverts with the scheme and the label always takes
+       * `actionInk`.
+       */
+      action: isDark ? dark.foreground : light.foreground,
+      actionInk: isDark ? dark.background : light.background,
       stage,
     },
     /**
@@ -144,6 +170,12 @@ export function nativeTheme(scheme: ColorScheme) {
      * of one brand tint and these are its falloff.
      */
     ambient,
+    /**
+     * Glass, as the two numbers it is rather than a look. React Native has no
+     * backdrop blur without a native module, so `fill` composites straight over
+     * the wash and the varying ground does the work the blur would have done.
+     */
+    glass,
     /**
      * Trúc's two light furs. Not under `color` with the scheme neutrals,
      * because that is exactly the mistake this fixes: they are the animal's

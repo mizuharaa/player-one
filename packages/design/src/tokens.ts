@@ -129,6 +129,81 @@ export const bamboo = {
  * — and differ only in lightness. A green pill still means paid in a dark
  * room; it is only light enough to read there.
  */
+/**
+ * Lavender: the ground the whole product now stands on.
+ *
+ * This is not an accent ramp with a job, it is the *page*. Daniel pinned the
+ * world on 2026-09-07 from a reference screen — a soft periwinkle wash under
+ * frosted cards — and replaced a warm white shell that had been neutral by
+ * default rather than by decision. A tinted ground is the one change that
+ * makes every surface above it read as glass, because glass is only legible
+ * when what is behind it varies.
+ *
+ * The steps are the wash, not a scale of accents: 50 is where the page is
+ * lightest, 200 is where it is deepest, and 300 and 400 exist for a border and
+ * a hairline that have to survive on top of both.
+ */
+export const lavender = {
+  50: '#F5F6FC',
+  100: '#EDEEF7',
+  200: '#DFE2F2',
+  300: '#C9CEE8',
+  400: '#A8AFD4',
+} as const;
+
+/**
+ * Lime: the one accent, and the only saturated colour left outside the
+ * verdicts and the two partner marks.
+ *
+ * It replaces sun as *progress and emphasis* and it does not replace sun as
+ * action — action is ink now, a near-black pill, which is what the reference
+ * world does and what a lavender ground wants. Sun and tech survive only in
+ * the partner mark, where they are VNG's and PaXini's colours rather than the
+ * product's.
+ *
+ * Three steps, three jobs, each measured:
+ *
+ * | Step | Job | Measured |
+ * |---|---|---|
+ * | `500` | a **fill** under ink text; never text | ink on it 13.54:1, and 1.16:1 on the page, which is what a fill should be |
+ * | `600` | the **stroke** — a ring, a graphic edge | 3.71:1 on the page, 3.44:1 on muted |
+ * | `700` | **ink** on the light page | 4.94 / 5.70 / 4.59 on page, card and muted |
+ *
+ * `200` is the dark scheme's ink, 16.12:1 on the dark page.
+ */
+export const lime = {
+  200: '#DFF7A6',
+  500: '#B8F04A',
+  600: '#63851C',
+  700: '#566F17',
+} as const;
+
+/**
+ * Warn: a human should look at this, and it is not a verdict.
+ *
+ * The console had a whole family of these — a payout attempt waiting on
+ * ZaloPay, an episode with a preflight issue, Home's needs-a-human strip — and
+ * every one of them was drawn in sun, because sun used to mean "attention" as
+ * well as "action". Sun is the VNG mark now and nothing else, so the meaning
+ * needed a colour of its own rather than borrowing one.
+ *
+ * It is deliberately **not** a verdict step. `partial` is violet and means a
+ * reviewer judged footage partly usable; a payment waiting on a gateway is not
+ * a partial pass, and putting them in one hue would let a money screen imply a
+ * review outcome nobody recorded.
+ *
+ * Amber, because it is the one attention hue that collides with neither the
+ * lime accent nor any of the three verdicts. Measured: the light ink reads
+ * 5.87 / 6.29 / 6.79 / 5.46 on page, surface, card and muted, and 6.23 on its
+ * own tint; the dark ink reads 13.12 on the dark page and 9.62 on its tint.
+ */
+export const warn = {
+  fg: '#7E5200',
+  bg: '#FFF4E0',
+  fgDark: '#FFD08A',
+  bgDark: '#3A2A14',
+} as const;
+
 export const verdict = {
   pass: { fg: '#0D763B', fgDark: '#14B459', bg: '#E8F8EE', bgDark: '#0D2A1A' },
   partial: { fg: '#613AFB', fgDark: '#9B83FD', bg: '#F0EDFF', bgDark: '#1E1840' },
@@ -196,12 +271,19 @@ export const stage = {
 
 /** Light is the shell's default: staffed upload centres are lit rooms. */
 export const light = {
-  background: '#FFFFFF',
-  surface: '#FBFAF9',
+  /*
+   * The page is tinted now, and that is the whole point of the world. A white
+   * page cannot carry glass: a translucent card over white is white, and the
+   * blur has nothing behind it to bend. `lavender-100` is the page and
+   * `lavender-50` the raised surface, so a card lifts by getting *lighter*
+   * toward white rather than by growing a shadow.
+   */
+  background: '#EDEEF7',
+  surface: '#F5F6FC',
   card: '#FFFFFF',
-  muted: '#F4F3F1',
-  border: '#E7E4E0',
-  borderStrong: '#D5D1CC',
+  muted: '#E4E6F1',
+  border: '#D5D8EA',
+  borderStrong: '#BFC4DC',
   /**
    * The boundary of a control a person types into, and the only border in the
    * system held to a ratio.
@@ -216,9 +298,9 @@ export const light = {
    * secrets, with no reveal and no caps-lock hint, so the edge is all a person
    * has.
    */
-  fieldBorder: '#8F8A81',
-  foreground: '#17150F',
-  mutedForeground: '#6E6A62',
+  fieldBorder: '#767DA0',
+  foreground: '#14151A',
+  mutedForeground: '#4F5468',
   /**
    * The hairline. A border, a divider, a control's hover edge — not a text ink.
    *
@@ -234,7 +316,7 @@ export const light = {
    * text floor anyway, because a border token that fell under it would also
    * be a border nobody could see.
    */
-  faintForeground: '#726D64',
+  faintForeground: '#5E6275',
 } as const;
 
 /**
@@ -245,18 +327,23 @@ export const light = {
  * inks (`fgDark`) and on the focus ring (`ring`).
  */
 export const dark = {
-  background: '#0E1013',
-  surface: '#131619',
-  card: '#181B1F',
-  muted: '#1F2328',
-  border: '#2A2F35',
-  borderStrong: '#3A4048',
-  /** 3.35:1 on the dark card, where `borderStrong` read 1.65:1. */
-  fieldBorder: '#666E79',
-  foreground: '#ECEEF1',
-  mutedForeground: '#9BA2AB',
-  /** Same argument, inverted: `#6C737C` read 3.30:1 on the muted fill. */
-  faintForeground: '#848B94',
+  /*
+   * Cool, and carrying the same violet bias the light scheme took. A neutral
+   * grey dark scheme under a lavender world reads as a different product with
+   * the lights off; these are the same hue at the other end of the lightness
+   * range, so glass over them still bends something.
+   */
+  background: '#101119',
+  surface: '#161824',
+  card: '#1C1F2C',
+  muted: '#242838',
+  border: '#2E3346',
+  borderStrong: '#3D4358',
+  /** 4.24:1 on the dark page and 3.69:1 on the card. */
+  fieldBorder: '#6E7794',
+  foreground: '#ECEDF5',
+  mutedForeground: '#A2A8BE',
+  faintForeground: '#8E94AC',
 } as const;
 
 /** The two brand steps that must invert, or a tint becomes a glare. */
@@ -281,7 +368,57 @@ export const darkBrandTints = {
  * keeps its own override in globals.css, because near-black is a different
  * ground again.
  */
-export const ring = { light: sun[600], dark: sun[400] } as const;
+/**
+ * The focus ring, and it moved off sun with everything else.
+ *
+ * Sun was the most visible orange left on a page that is no longer an orange
+ * product, and a ring is the one thing on a screen that must not look like it
+ * belongs to a partner brand. `lime-600` measures 3.71:1 on the light page and
+ * 3.44:1 on the muted fill, both over SC 1.4.11's 3:1 for a control boundary;
+ * `lime-500` on the dark page is far past it.
+ */
+export const ring = { light: lime[600], dark: lime[500] } as const;
+
+/**
+ * Glass: the material this world is made of, as two numbers rather than a look.
+ *
+ * The reference Daniel pinned is a frosted card on a tinted wash, and the
+ * craft floor rightly calls out blur used as decoration — so it is written
+ * down here as a specific effect with a specific job. A card is translucent so
+ * that the lavender behind it shows through and *varies* across the card,
+ * which is the only reason a surface reads as glass rather than as grey.
+ *
+ * `fill` is how much white sits over the page, `blur` how far the ground is
+ * smeared behind it. React Native has neither `backdrop-filter` nor a blur it
+ * can apply without a native module, so there `fill` is composited straight
+ * over the wash and the varying ground does the work the blur would have done.
+ * That is the honest translation, not a degraded one: the effect people read
+ * as glass is the ground showing through, and the blur only softens it.
+ *
+ * Two weights, because a card and a floating bar are not the same object: a
+ * bar sits over scrolling content and has to stay legible against whatever
+ * passes under it, so it is denser.
+ */
+export const glass = {
+  card: { fill: 0.62, blur: '18px' },
+  /*
+   * The bar is nearly opaque, and that is not a retreat from the material.
+   *
+   * A card sits on the page, where 62% of white over the wash still lets the
+   * lavender vary across it — that variation is the whole effect. A floating
+   * bar sits over *scrolling content*, and on the web a 24px backdrop blur
+   * turns whatever passes under it into a soft field. React Native has no
+   * backdrop blur without a native module, so at 0.78 the text passing beneath
+   * was simply legible through the bar: measured on the collector's dashboard,
+   * a task title read cleanly through the navigation. That is not glass, it is
+   * a transparency bug.
+   *
+   * At 0.92 the ground still tints the bar and the edge still catches light,
+   * and nothing underneath resolves into words. The web keeps its blur on top
+   * of the same number and loses nothing.
+   */
+  bar: { fill: 0.92, blur: '24px' },
+} as const;
 
 /**
  * A fixed rem scale, not fluid. Operators view at a consistent DPI on fixed
@@ -517,12 +654,34 @@ export function toCss(): string {
   --reject: ${verdict.reject.fgDark};
   --reject-bg: ${verdict.reject.bgDark};
   --ring: ${ring.dark};
+  --action: ${dark.foreground};
+  --action-ink: ${dark.background};
+  --lavender-100: ${dark.surface};
+  --lavender-200: ${dark.muted};
+  --lime-ink: ${lime[200]};
+  --warn: ${warn.fgDark};
+  --warn-bg: ${warn.bgDark};
 ${shadows(shadowDark)}`;
 
   return `:root {
 ${ramp('sun', sun)}
 ${ramp('tech', tech)}
 ${ramp('bamboo', bamboo)}
+${ramp('lavender', lavender)}
+${ramp('lime', lime)}
+
+  /*
+   * The action, as a role rather than a colour. It is the ink pill this world
+   * uses for a primary control, and it is a token so the one place that
+   * decides changes once. Sun was this until 2026-09-07.
+   */
+  --action: ${light.foreground};
+  --action-ink: ${light.background};
+
+  --glass-card: ${glass.card.fill};
+  --glass-card-blur: ${glass.card.blur};
+  --glass-bar: ${glass.bar.fill};
+  --glass-bar-blur: ${glass.bar.blur};
   /* Ink for text on bamboo-50 / bamboo-100, per scheme: the web twin of
      bambooInk in native.ts, there for the same reason techInk is. The two
      lowest steps invert in dark mode, so a fixed bamboo-700 label on them goes
@@ -558,6 +717,9 @@ ${ramp('bamboo', bamboo)}
   --reject: ${verdict.reject.fg};
   --reject-bg: ${verdict.reject.bg};
   --ring: ${ring.light};
+  --lime-ink: ${lime[700]};
+  --warn: ${warn.fg};
+  --warn-bg: ${warn.bg};
 
 ${neutrals(light)}
 

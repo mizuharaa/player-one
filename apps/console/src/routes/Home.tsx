@@ -228,20 +228,20 @@ export function HomeScreen() {
         <Link
           to="/episodes"
           data-guide="home.needsHuman"
-          className="group mt-6 flex items-center gap-3.5 rounded-[var(--radius-lg)] border border-[var(--sun-300)] bg-[var(--sun-50)] px-5 py-4 no-underline transition-colors duration-150 ease-[var(--ease)] hover:border-[var(--sun-500)]"
+          className="group mt-6 flex items-center gap-3.5 rounded-[var(--radius-lg)] border border-[var(--lavender-300)] bg-[var(--lavender-200)] px-5 py-4 no-underline transition-colors duration-150 ease-[var(--ease)] hover:border-[var(--action)]"
         >
-          <IconAlert size={20} className="shrink-0 text-[var(--sun-ink)]" />
+          <IconAlert size={20} className="shrink-0 text-[var(--warn)]" />
           <div className="min-w-0 flex-1">
-            <p className="text-[0.9375rem] font-bold text-[var(--sun-ink)]">
+            <p className="text-[0.9375rem] font-bold text-[var(--warn)]">
               <span className="num">{data.needs_human}</span> {t('home.needsHuman')}
             </p>
-            <p className="mt-0.5 text-[0.875rem] text-[var(--sun-ink)]">
+            <p className="mt-0.5 text-[0.875rem] text-[var(--warn)]">
               {t('home.needsHuman.body')}
             </p>
           </div>
           <IconArrow
             size={18}
-            className="shrink-0 text-[var(--sun-ink)] transition-transform duration-150 ease-[var(--ease)] group-hover:translate-x-0.5"
+            className="shrink-0 text-[var(--warn)] transition-transform duration-150 ease-[var(--ease)] group-hover:translate-x-0.5"
           />
         </Link>
       ) : null}
@@ -288,8 +288,8 @@ function Settled({ amount, unavailable }: { amount: string | null; unavailable: 
           'absolute right-5 top-5 grid h-11 w-11 place-items-center rounded-full border ' +
           'border-[var(--stage-line)] bg-[var(--stage-panel)] text-[var(--stage-fg)] no-underline ' +
           'transition-[background-color,border-color,transform] duration-150 ease-[var(--ease)] ' +
-          'hover:border-[var(--sun-500)] hover:bg-[var(--sun-500)] hover:text-[var(--stage)] ' +
-          'active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sun-400)]'
+          'hover:border-[var(--action)] hover:bg-[var(--sun-500)] hover:text-[var(--stage)] ' +
+          'active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]'
         }
       >
         <IconArrow size={19} />

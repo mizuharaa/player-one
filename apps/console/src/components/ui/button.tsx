@@ -33,25 +33,24 @@ const button = cva(
     variants: {
       variant: {
         /**
-         * The one glow on the page. Sun means action.
+         * The primary, and it is an ink pill rather than a coloured one.
          *
-         * The label is **ink, not white**. White on sun-500 measures 2.61:1 —
-         * the label on the one thing a screen is asking for was the worst
-         * contrast on the screen — and ink (`--stage`, the console's single
-         * near-black, the same one the theatre and the top bar use) measures
-         * 7.19:1 on the same fill. `--stage` and not `--foreground`, because
-         * the fill does not change with the scheme and `--foreground` does:
-         * in dark mode a `--foreground` label would turn near-white and put
-         * the ratio back where it started.
+         * It was `sun-500` with an ink label and one sun glow — the old world's
+         * single loudest element. The world committed 2026-09-07 puts its
+         * primary in near-black on a lavender ground, so this reads `--action`
+         * and `--action-ink`, which are roles: they invert with the scheme, and
+         * nothing here has to know the fill is near-black. Measured 15.78:1 in
+         * light and 16.12:1 in dark, against sun's 7.19:1.
          *
-         * The states move the fill and not the ink, and they move it the way a
-         * physical button does — lighter under the pointer, darker under the
-         * press. Sun-700 is not used here: ink on it is 3.61:1, under the text
-         * floor even for the moment a finger is down.
+         * There is no coloured glow any more. A near-black pill on a tinted
+         * page separates by value alone, and `--shadow-sun` was a halo in a
+         * colour this product no longer uses. The states move opacity rather
+         * than the fill, because an ink pill has no lighter and darker step to
+         * move between without becoming a grey.
          */
         primary: cn(
-          'bg-[var(--sun-500)] text-[var(--stage)] shadow-[var(--shadow-sun)]',
-          'hover:bg-[var(--sun-400)] active:bg-[var(--sun-600)]',
+          'bg-[var(--action)] text-[var(--action-ink)] shadow-[var(--shadow)]',
+          'hover:opacity-90 active:opacity-95',
           /*
            * A disabled primary must not read as a *locked* primary. At 45%
            * opacity the sun fill turns a washed apricot that looks like a

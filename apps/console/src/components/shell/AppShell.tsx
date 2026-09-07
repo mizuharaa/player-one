@@ -122,7 +122,7 @@ export function AppShell({
                   'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[0.8125rem] font-semibold',
                   'text-white/72 transition-colors duration-150 ease-[var(--ease)]',
                   'hover:bg-white/10 hover:text-white active:bg-white/16',
-                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sun-400)]',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
                   'disabled:pointer-events-none disabled:opacity-45',
                 )}
               >
@@ -153,7 +153,7 @@ export function AppShell({
         recovery and it never comes back.
       */}
       {showOffer ? (
-        <div className="border-b border-[var(--border)] bg-[var(--bamboo-50)]">
+        <div className="border-b border-[var(--border)] bg-[var(--lavender-200)]">
           <div className="mx-auto flex w-full max-w-[1280px] flex-wrap items-center gap-3 px-4 py-2.5 sm:px-6">
             <p className="min-w-0 flex-1 text-[0.875rem] text-[var(--bamboo-ink)]">
               {t('guide.offer')}
