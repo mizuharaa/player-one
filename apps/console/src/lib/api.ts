@@ -908,3 +908,111 @@ export const risk = {
       body: JSON.stringify(body),
     }),
 };
+
+/* -------------------------------------------------------------------------
+   The counter's episode lane (`packages/api/src/episodes.ts`).
+
+   These four routes are mounted at the API root rather than under `/api`, and
+   they do not share one scope — which is the whole reason the screen that
+   reads them has to say which scope each list is in:
+
+   - `/upload-batches` and `/upload-batches/:id/exceptions` are **machine**
+     scoped, through `actor.machine.uploadDeviceId`. The list window is the
+     server's own default of 100, capped at 500, and its time filters read
+     `import_started_at` — import time, never recording time.
+   - `/episodes/stuck` is **upload-centre** scoped, through
+     `actor.operator.uploadCentreId`, and has no window at all.
+   - `/api/episodes/:id/outcome` is scoped by the episode id it is given.
+
+   Every field below is a field the server already sends; nothing here is
+   derived, and nothing is inferred from a batch's candidate sessions.
+   ---------------------------------------------------------------------- */
+
+/** One row of `GET /upload-batches`. The two counts are per resolution state. */
+export interface BatchRow {
+  id: string;
+  handoverId: string;
+  batchStatus: 'importing' | 'imported' | 'uploading' | 'verifying' | 'verified' | 'closed' | 'failed';
+  importStartedAt: string;
+  importCompletedAt: string | null;
+  resolved: number;
+  quarantined: number;
+}
+
+/**
+ * `GET /upload-batches/:id/exceptions`.
+ *
+ * `blocking` is what holds the batch open; `summary` counts the same batch
+ * including the parked episodes, which block nothing (0018) and are still
+ * worth an operator's eye. `episodes_per_session` is null when the delivery
+ * declared no session, and is the one figure to read even when nothing is
+ * wrong.
+ */
+export interface BatchExceptions {
+  batch_id: string;
+  summary: {
+    episodes: number;
+    sessions: number;
+    quarantined: number;
+    awaiting_confirmation: number;
+    parked: number;
+    episodes_per_session: number | null;
+  };
+  blocking: {
+    episode_id: string;
+    /**
+     * `YYYYMMDD_HHMMSS` from the recording directory's basename, not an ISO
+     * instant — `episodes.session_started_at` is a text column (schema.ts:109).
+     * `Episodes.tsx`'s `stamp()` is what reads it; `new Date()` cannot.
+     */
+    session_started_at: string | null;
+    resolution_state: string;
+    needs: 'assignment' | 'confirmation';
+  }[];
+  sessions: { id: string; prepareTime: string; sessionOrigin: string; collectorId: string }[];
+}
+
+/** `GET /episodes/stuck`. An episode can carry both holds at once. */
+export interface StuckEpisode {
+  episode_id: string;
+  device_serial: string;
+  /** The basename stamp again, `YYYYMMDD_HHMMSS`. Never parsed as a date. */
+  session_started_at: string;
+  resolution_state: string;
+  park: {
+    park_id: string;
+    reason: string | null;
+    parked_at: string;
+    parked_by: string | null;
+    release_with: string;
+  } | null;
+  held: { review_id: string; held_at: string; release_with: string } | null;
+}
+
+/** `GET /api/episodes/:id/outcome`. All three labels are non-null since 0018. */
+export interface EpisodeOutcome {
+  episode_id: string;
+  collector_id: string | null;
+  ingest_id: string | null;
+  review_state: string | null;
+  reviewed_at: string | null;
+  reviewer_note: string | null;
+  reasons: { code: string; category: string; label_en: string; label_vi: string; label_zh: string }[];
+}
+
+export const episodes = {
+  /** The machine's own batches, newest first, in the server's default window. */
+  batches: () => call<{ batches: BatchRow[] }>('/upload-batches'),
+  exceptions: (batchId: string) => call<BatchExceptions>(`/upload-batches/${batchId}/exceptions`),
+  stuck: () => call<{ episodes: StuckEpisode[] }>('/episodes/stuck'),
+  outcome: (episodeId: string) => call<EpisodeOutcome>(`/api/episodes/${episodeId}/outcome`),
+  /**
+   * PLT-05's human resolution path. The reason is mandatory at the database,
+   * so the form makes it mandatory too rather than letting the write fail.
+   */
+  resolve: (episodeId: string, body: { collection_session_id: string; reason: string }) =>
+    call<{ episode_id: string; resolution_state: string; resolution_method: string }>(
+      `/episodes/${episodeId}/resolve`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+};
