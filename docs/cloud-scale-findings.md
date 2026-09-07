@@ -100,8 +100,21 @@ for 6,829 MB stored); and for ~640 TB in Phase 1, the per-GB rate for Gold and
 Instant Archive, whether a committed-volume rate exists, and whether Instant
 Archive's free-egress allowance counts reads made from inside the VPC.
 
-Answered, on the storage plan only. **The 300 Mbps question was not answered
-and is still open.**
+Both answered. The bandwidth half had in fact been answered on 2026-09-06
+(above) and a later edit of this file wrongly called it open; it is not.
+
+**Bandwidth, confirmed from the portal 2026-09-07.** International bandwidth
+is a self-service package under vServer, Bandwidths, Create: 10, 20, 50, 200,
+500, 1000, 2000, 3000, 4000 and 5000 Mbps international, attached to a server
+by adding its IP to the package. 200 and 500 Mbps are the ones GreenNode
+points at; 500 Mbps lists at 150,000,000 VND/month and is offered at
+75,000,000 (-50%). A domestic 500 Mbps package alongside it is 2,400,000
+(from 4,800,000). So the 300 Mbps figure on the vStorage quota page is the
+shared default, not a ceiling. Separately, the vServer flavor decides the
+internal link: every `s-general` flavor from 1x2 to 16x32 is "up to 1 Gbps",
+and the `-n10` flavors (`s-general-8x16-n10`, `s-general-16x32-n10`,
+`s1-standard-8x32-n10`) are "up to 10 Gbps". That is the resize GreenNode
+meant.
 
 - Provision the 640 TB in Gold and let a lifecycle policy move objects down to
   Instant Archive. That is what we intended; it is the standard S3 lifecycle
