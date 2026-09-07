@@ -92,6 +92,50 @@ nothing about the pilot. At 1 Gbps a verification read-back of one hourly
 camera file (6,829 MB) is about 55 s; twenty collectors' eight-hour days,
 two cameras, are about five hours of read-back on one instance per day.
 
+### Storage plan and egress — answered 2026-09-07
+
+Asked: is the 300 Mbps international cap raisable and at what cost, given
+verification re-reads every stored byte (2.0× upload, measured 13,683 MB moved
+for 6,829 MB stored); and for ~640 TB in Phase 1, the per-GB rate for Gold and
+Instant Archive, whether a committed-volume rate exists, and whether Instant
+Archive's free-egress allowance counts reads made from inside the VPC.
+
+Answered, on the storage plan only. **The 300 Mbps question was not answered
+and is still open.**
+
+- Provision the 640 TB in Gold and let a lifecycle policy move objects down to
+  Instant Archive. That is what we intended; it is the standard S3 lifecycle
+  transition and needs the Instant Archive `StorageClass` string, which is
+  still to be tested with one `PutObject` when we get there.
+- API requests — GET, PUT, DELETE — are free. Charges apply to download and
+  egress traffic only.
+- **Internal reads are charged as downloads.** Their words: "internal reads
+  are also treated as downloads, as the data must be downloaded under the hood
+  to be processed." So a vServer inside HCM04 reading an object from vStorage
+  pays the download rate, the same as a reader on the internet.
+- At ~640 TB the account qualifies for a committed-volume discount; per-GB
+  rates for both tiers come as a custom quotation against a commitment term.
+
+**What "internal reads are downloads" does to the cost model.** Verification
+reads back 100% of every stored byte by design (the metadata-hash shortcut was
+rejected above because it proves nothing). Every byte stored is therefore also
+a byte downloaded, once, at the download rate — before any reviewer streams
+anything. At 640 TB stored that is 640 TB of billable download for
+verification alone. The "2×" traffic figure was measured as bandwidth; it is
+now also the shape of the bill. Two consequences for the quotation request:
+
+1. Ask for the download rate as a line item, and ask whether a
+   verification-only read pattern — each object read exactly once, in full,
+   within hours of being written — can be priced differently from ad-hoc
+   egress. That is the question that moves the number.
+2. Ask whether Instant Archive's free-egress allowance (2× stored) is
+   consumed by these internal verification reads. Under the answer above it
+   is, which means the allowance is spent by our own integrity check before
+   any real egress happens.
+
+Neither changes the design. Verification stays a full read-back; the
+alternative is trusting a hash we sent ourselves.
+
 ## What was NOT tested
 
 - **GreenNode itself.** S3 keys now exist for HCM04. Everything measured here is MinIO
