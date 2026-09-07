@@ -5,18 +5,22 @@
  * teaches an operator a false map that changes under them later, and shipping an
  * empty table looks like a bug on a screen where a bug means somebody is not
  * being paid. So the page says what the surface is for, which requirement IDs
- * it covers, and how the work is done today — which for all three is the command
- * line, and that is a real answer.
+ * it covers, and how the work is done today — which is the command line, and
+ * that is a real answer rather than "coming soon".
+ *
+ * `/episodes` used to arrive here. It does not any more: the attention scopes
+ * of BO-05 are built (`routes/Episodes.tsx`) and that screen carries its own
+ * sentence about the part of BO-05 that is not. `/counter` stays here by
+ * decision, ADR 0003, and the decision has a trigger written into it.
  */
 import { useTranslation } from 'react-i18next';
 import { Link } from '@tanstack/react-router';
 import { AppShell } from '../components/shell/AppShell.tsx';
-import { Panel } from '../components/ui/primitives.tsx';
 import { Button } from '../components/ui/button.tsx';
-import { Cu } from '../components/identity/Cu.tsx';
+import { Panda } from '../components/identity/Panda.tsx';
 import { IconArrow } from '../components/icons.tsx';
 
-type Surface = 'counter' | 'episodes' | 'settle';
+type Surface = 'counter' | 'settle';
 
 const DETAIL: Record<
   Surface,
@@ -29,14 +33,6 @@ const DETAIL: Record<
     requirements: 'BO-09 · BO-10 · PLT-05 · UPL-08',
     today:
       'The whole counter workflow exists as API endpoints and is driven by the ingest CLI. `pnpm ingest` imports a card; the handover and session endpoints are exercised by a machine client. The BO-09 cut is deliberate; ADR 0003 records it and its trigger — a second centre, or 500 collectors, whichever comes first.',
-  },
-  episodes: {
-    titleKey: 'nav.episodes',
-    purpose:
-      'Browsing every recording, with the filters operations asked for, and resolving the ones the attribution step refused to guess on.',
-    requirements: 'BO-06 · BO-07 · PLT-05',
-    today:
-      'Episodes are queryable through `/upload-batches/:id/exceptions` and resolved through `/episodes/:id/resolve`. An unresolved episode is somebody’s unpaid recording sitting still, which is why Home surfaces the count even without this screen.',
   },
   settle: {
     titleKey: 'nav.settle',
@@ -54,37 +50,51 @@ export function NotBuiltScreen({ surface }: { surface: Surface }) {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-[54rem] py-6">
-        <div className="flex flex-wrap items-start gap-6">
-          <Cu size={116} className="shrink-0" />
+      <div className="mx-auto max-w-[56rem] py-4">
+        <div className="flex flex-wrap items-start gap-x-8 gap-y-5">
+          {/*
+            Trúc at golden hour: this page is a person finding a door that is
+            not there yet, and the mascot is what says the screen rendered on
+            purpose. He is decoration here and carries no label, so he is out
+            of the accessibility tree.
+          */}
+          <Panda size={128} state="goldenHour" className="shrink-0" />
           <div className="min-w-0 flex-1">
-            <p className="text-[0.75rem] font-semibold uppercase tracking-[0.08em] text-[var(--faint-foreground)]">
+            <p className="text-[0.875rem] font-semibold text-[var(--muted-foreground)]">
               {t('nav.notBuilt')}
             </p>
-            <h1 className="mt-1 text-[2.0625rem] font-extrabold tracking-[-0.03em]">
+            <h1 className="mt-1 text-[2.625rem] font-extrabold leading-[1.05] tracking-[-0.035em]">
               {t(detail.titleKey)}
             </h1>
-            <p className="mt-3 max-w-[58ch] text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
+            <p className="mt-4 max-w-[58ch] text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
               {detail.purpose}
             </p>
-            <p className="num mt-3 text-[0.875rem] font-semibold text-[var(--tech-600)]">
+            <p className="num mt-4 text-[0.875rem] font-semibold text-[var(--tech-600)] dark:text-[var(--tech-300)]">
               {detail.requirements}
             </p>
           </div>
         </div>
 
-        <Panel className="mt-8 p-6">
-          <h2 className="text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]">
-            How this is done today
+        {/*
+          The hatch is the same ground the empty states use: this page is a
+          drawn absence, not a page that failed to load. `data-guide` is the
+          anchor the tour points at on `/counter`.
+        */}
+        <section
+          data-guide="counter.plan"
+          className="hatch mt-8 rounded-[var(--radius-lg)] border border-[var(--border)] p-6"
+        >
+          <h2 className="text-[0.9375rem] font-bold tracking-[-0.01em]">
+            {t('ui.a.notBuilt.today')}
           </h2>
           <p className="mt-2 max-w-[68ch] text-[0.9375rem] leading-relaxed">{detail.today}</p>
-        </Panel>
+        </section>
 
         <div className="mt-6 flex flex-wrap gap-3">
           <Button asChild variant="primary">
             <Link to="/review">{t('home.start')}</Link>
           </Button>
-          <Button asChild variant="outline">
+          <Button asChild variant="secondary">
             <Link to="/pipeline">
               {t('pipeline.title')}
               <IconArrow size={17} />

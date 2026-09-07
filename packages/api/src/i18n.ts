@@ -1102,6 +1102,103 @@ const en = {
   'ui.b.risk.holds.count': 'Bills on hold',
   'ui.b.risk.holds.sentence':
     'No transfer leaves while a hold is open. Clearing one needs a verdict and a written reason; the engine appends a row and never edits one.',
+
+  // ---------------------------------------------------------------------
+  // The sign-in hero, Home, the not-built page, Pipeline and /episodes.
+  //
+  // `ui.a.*` are strings that were English literals inside the `.tsx` files.
+  // A literal in a component is a string a Chinese reviewer never sees in
+  // their own language, and the completeness test cannot find it to complain
+  // about, so it survives every review. Moving one here is not a rewrite of
+  // the sentence: the English value below is the sentence that was on screen.
+
+  'login.hero':
+    'The back office for PlayerOne. Operators import cards, reviewers judge footage, and finance pays for the minutes that pass review.',
+  'login.video.region': 'Demo video',
+  'login.slogan.1': 'Wear it.',
+  'login.slogan.2': 'Live your day.',
+  'login.slogan.3': 'Reviewed minutes, paid.',
+  'login.network':
+    'The service did not answer. Check the machine is on the centre network and try again.',
+
+  'ui.a.home.gauge': 'Reviewed {{value}} of {{target}} episodes this shift',
+  'ui.a.home.payable.note': 'Effective duration from decided reviews only.',
+  'ui.a.home.approval.note': 'Passes and partial passes, against every decision today.',
+  'ui.a.home.pace.note': 'Load to verdict. Instrumentation, never money.',
+  'ui.a.home.clock': 'This machine\'s clock.',
+  'ui.a.home.approval.target': 'Programme target 85–90%.',
+  'ui.a.home.recent.time': 'Time',
+  'ui.a.home.recent.episode': 'Episode',
+  'ui.a.home.recent.verdict': 'Verdict',
+  'ui.a.home.recent.duration': 'Measured → effective',
+  'ui.a.home.recent.amount': 'Amount',
+  'ui.a.home.recent.pace': 'Pace',
+  /**
+   * DESIGN.md, "Copy". This sentence is not decoration and must survive any
+   * rewrite: the figure above it is one reviewer's own decisions and somebody
+   * reading it as the programme's budget would be wrong by orders of
+   * magnitude. The English is byte-identical to the sentence DESIGN.md pins.
+   */
+  'ui.a.home.settled.note': 'Your decisions only. Not the programme\'s spend.',
+  'ui.a.home.settled.open': 'Open settlement',
+  'ui.a.home.error.title': 'The shift figures did not load.',
+  'ui.a.home.error.body':
+    'Everything else on this screen still works. The counters come from the review database; if this keeps happening, the API cannot reach Postgres.',
+
+  'ui.a.notBuilt.today': 'How this is done today',
+
+  'ui.a.pipeline.track': 'What a recording passes through',
+  'ui.a.pipeline.owed': 'Waiting on PaXini',
+
+  'episodes.title': 'Episodes needing attention',
+  'episodes.intro':
+    'Browsing every episode by task, collector, device, status and recording time (BO-05) needs a list endpoint that does not exist yet.',
+  'episodes.batch': 'Batches imported on this machine, last 100',
+  'episodes.batch.pick': 'Batch',
+  'episodes.batch.none': 'No batches have been imported on this machine.',
+  'episodes.batch.failed': 'The batch list did not load.',
+  'episodes.blocking': 'Blocking, this batch',
+  'episodes.blocking.scope':
+    'Episodes that hold the chosen batch open. Scoped to this machine, by import time.',
+  'episodes.stuck': 'Stuck, this centre',
+  'episodes.stuck.scope':
+    'Parked or held work anywhere in this upload centre, whichever batch it arrived on.',
+  'episodes.empty': 'No attention items in this scope.',
+  'episodes.filter': 'Filter these rows',
+  'episodes.col.episode': 'Episode',
+  'episodes.col.session': 'Session start',
+  'episodes.col.state': 'Attribution',
+  'episodes.col.needs': 'Needs',
+  'episodes.col.device': 'Card',
+  'episodes.col.hold': 'Hold',
+  'episodes.needs.assignment': 'A session to attribute it to',
+  'episodes.needs.confirmation': 'A person to confirm the match',
+  'episodes.hold.parked': 'Parked',
+  'episodes.hold.held': 'Held in review',
+  'episodes.summary.episodes': 'Episodes',
+  'episodes.summary.sessions': 'Sessions',
+  'episodes.summary.quarantined': 'Quarantined',
+  'episodes.summary.awaiting': 'Awaiting confirmation',
+  'episodes.summary.parked': 'Parked out of review',
+  'episodes.summary.perSession': 'Episodes per session',
+  'episodes.resolve': 'Attribute',
+  'episodes.resolve.title': 'Attribute this episode',
+  'episodes.resolve.session': 'Session',
+  'episodes.resolve.reason': 'Why this session',
+  'episodes.resolve.reasonHint': 'The database refuses a resolution that carries no reason.',
+  'episodes.resolve.done': 'Attributed. The batch has been read again.',
+  'episodes.outcome': 'Review outcome',
+  'episodes.outcome.state': 'Verdict',
+  'episodes.outcome.pending': 'No verdict yet on the delivery that counts.',
+  'episodes.outcome.collector': 'Collector',
+  'episodes.outcome.decided': 'Decided',
+  'episodes.outcome.note': 'Reviewer note',
+  'episodes.outcome.reasons': 'Reason codes',
+  'episodes.outcome.failed': 'The outcome did not load.',
+  'episodes.close': 'Close',
+  'episodes.gone': 'That episode is no longer on the server. Read the batch again.',
+  'episodes.reload': 'Read again',
+  'episodes.noMatch': 'No row in this scope matches the filter.',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1888,6 +1985,84 @@ const zh: Record<MessageKey, string> = {
   'ui.b.risk.holds.count': '被暂停的账单',
   'ui.b.risk.holds.sentence':
     '只要暂停仍未解除，就不会有任何转账发出。解除暂停需要一个结论和一段书面理由；风险引擎只追加记录，从不修改已有记录。',
+
+  'login.hero': 'PlayerOne 的后台。操作员导入存储卡，审核员判断素材，财务按审核通过的分钟数付款。',
+  'login.video.region': '演示视频',
+  'login.slogan.1': '戴上它。',
+  'login.slogan.2': '照常生活。',
+  'login.slogan.3': '审核通过的每一分钟，都有报酬。',
+  'login.network': '服务没有应答。请确认本机在中心网络内，然后重试。',
+
+  'ui.a.home.gauge': '本班已审核 {{value}} 集，目标 {{target}} 集',
+  'ui.a.home.payable.note': '仅统计已判定审核的有效时长。',
+  'ui.a.home.approval.note': '通过与部分通过，占今天全部判定的比例。',
+  'ui.a.home.pace.note': '从载入到判定。仅作观测，与金额无关。',
+  'ui.a.home.clock': '本机时钟。',
+  'ui.a.home.approval.target': '项目目标 85–90%。',
+  'ui.a.home.recent.time': '时间',
+  'ui.a.home.recent.episode': '集',
+  'ui.a.home.recent.verdict': '判定',
+  'ui.a.home.recent.duration': '实测 → 有效',
+  'ui.a.home.recent.amount': '金额',
+  'ui.a.home.recent.pace': '用时',
+  'ui.a.home.settled.note': '仅限你本人的判定，不是整个项目的支出。',
+  'ui.a.home.settled.open': '打开结算',
+  'ui.a.home.error.title': '本班数据未能载入。',
+  'ui.a.home.error.body':
+    '本屏幕其余部分仍可使用。这些计数来自审核数据库；如果反复出现，说明接口无法连接 Postgres。',
+
+  'ui.a.notBuilt.today': '目前这项工作怎么做',
+
+  'ui.a.pipeline.track': '一段录制会经过哪些环节',
+  'ui.a.pipeline.owed': '等待 PaXini 交付',
+
+  'episodes.title': '需要处理的集',
+  'episodes.intro':
+    '按任务、采集者、设备、状态和录制时间浏览全部集（BO-05），需要一个目前还不存在的列表接口。',
+  'episodes.batch': '本机导入的批次，最近 100 个',
+  'episodes.batch.pick': '批次',
+  'episodes.batch.none': '本机还没有导入过任何批次。',
+  'episodes.batch.failed': '批次列表未能载入。',
+  'episodes.blocking': '阻塞项，本批次',
+  'episodes.blocking.scope': '使所选批次无法关闭的集。范围限于本机，按导入时间。',
+  'episodes.stuck': '停滞项，本中心',
+  'episodes.stuck.scope': '本上传中心内被搁置或被扣住的工作，不论来自哪个批次。',
+  'episodes.empty': '此范围内没有需要处理的项。',
+  'episodes.filter': '筛选这些行',
+  'episodes.col.episode': '集',
+  'episodes.col.session': '会话开始时间',
+  'episodes.col.state': '归属',
+  'episodes.col.needs': '待办',
+  'episodes.col.device': '存储卡',
+  'episodes.col.hold': '扣留',
+  'episodes.needs.assignment': '需要指定所属会话',
+  'episodes.needs.confirmation': '需要有人确认这次匹配',
+  'episodes.hold.parked': '已搁置',
+  'episodes.hold.held': '审核中被扣留',
+  'episodes.summary.episodes': '集数',
+  'episodes.summary.sessions': '会话数',
+  'episodes.summary.quarantined': '已隔离',
+  'episodes.summary.awaiting': '待确认',
+  'episodes.summary.parked': '已移出审核队列',
+  'episodes.summary.perSession': '每个会话的集数',
+  'episodes.resolve': '指定归属',
+  'episodes.resolve.title': '为这一集指定所属会话',
+  'episodes.resolve.session': '会话',
+  'episodes.resolve.reason': '为什么选这个会话',
+  'episodes.resolve.reasonHint': '没有写明理由时，数据库会拒绝这次归属。',
+  'episodes.resolve.done': '已指定归属。该批次已重新读取。',
+  'episodes.outcome': '审核结果',
+  'episodes.outcome.state': '判定结果',
+  'episodes.outcome.pending': '当前交付还没有结论。',
+  'episodes.outcome.collector': '采集者',
+  'episodes.outcome.decided': '判定时间',
+  'episodes.outcome.note': '审核员备注',
+  'episodes.outcome.reasons': '原因代码',
+  'episodes.outcome.failed': '结果未能载入。',
+  'episodes.close': '关闭',
+  'episodes.gone': '服务端上已经没有这一集了。请重新读取该批次。',
+  'episodes.reload': '重新读取',
+  'episodes.noMatch': '此范围内没有符合筛选条件的行。',
 };
 
 const vi: Record<MessageKey, string> = {
@@ -2795,6 +2970,88 @@ const vi: Record<MessageKey, string> = {
   'ui.b.risk.holds.count': 'Hóa đơn đang bị giữ',
   'ui.b.risk.holds.sentence':
     'Không khoản chuyển nào đi khi lệnh giữ còn mở. Gỡ một lệnh giữ cần một kết luận và một lý do viết ra; bộ máy chỉ thêm dòng mới, không bao giờ sửa dòng cũ.',
+
+  'login.hero':
+    'Hệ thống hậu cần của PlayerOne. Nhân viên nhập thẻ nhớ, người duyệt đánh giá video, và tài chính trả tiền theo số phút được duyệt.',
+  'login.video.region': 'Video giới thiệu',
+  'login.slogan.1': 'Đeo camera.',
+  'login.slogan.2': 'Sống như mọi ngày.',
+  'login.slogan.3': 'Phút được duyệt, được trả.',
+  'login.network':
+    'Dịch vụ không trả lời. Hãy kiểm tra máy có nằm trong mạng của trung tâm rồi thử lại.',
+
+  'ui.a.home.gauge': 'Đã duyệt {{value}} trên {{target}} tập trong ca này',
+  'ui.a.home.payable.note': 'Thời lượng hữu ích, chỉ tính từ các lượt duyệt đã có kết luận.',
+  'ui.a.home.approval.note': 'Số lượt đạt và đạt một phần, trên tổng số quyết định hôm nay.',
+  'ui.a.home.pace.note': 'Từ lúc tải đến lúc có kết luận. Chỉ để theo dõi, không phải tiền.',
+  'ui.a.home.clock': 'Đồng hồ của máy này.',
+  'ui.a.home.approval.target': 'Mục tiêu chương trình 85–90%.',
+  'ui.a.home.recent.time': 'Thời điểm',
+  'ui.a.home.recent.episode': 'Tập',
+  'ui.a.home.recent.verdict': 'Kết luận',
+  'ui.a.home.recent.duration': 'Đo được → hiệu lực',
+  'ui.a.home.recent.amount': 'Số tiền',
+  'ui.a.home.recent.pace': 'Thời gian xử lý',
+  'ui.a.home.settled.note': 'Chỉ các quyết định của bạn. Không phải chi phí của cả chương trình.',
+  'ui.a.home.settled.open': 'Mở phần thanh toán',
+  'ui.a.home.error.title': 'Không tải được số liệu ca làm việc.',
+  'ui.a.home.error.body':
+    'Mọi phần khác của màn hình này vẫn dùng được. Các con số lấy từ cơ sở dữ liệu duyệt; nếu lỗi lặp lại thì API không kết nối được Postgres.',
+
+  'ui.a.notBuilt.today': 'Hiện nay việc này được làm thế nào',
+
+  'ui.a.pipeline.track': 'Một bản ghi đi qua những bước nào',
+  'ui.a.pipeline.owed': 'Đang chờ PaXini',
+
+  'episodes.title': 'Các tập cần xử lý',
+  'episodes.intro':
+    'Việc duyệt toàn bộ tập theo nhiệm vụ, cộng tác viên, thiết bị, trạng thái và thời gian ghi (BO-05) cần một API danh sách hiện chưa có.',
+  'episodes.batch': 'Các lô đã nhập trên máy này, 100 lô gần nhất',
+  'episodes.batch.pick': 'Lô',
+  'episodes.batch.none': 'Máy này chưa nhập lô nào.',
+  'episodes.batch.failed': 'Không tải được danh sách lô.',
+  'episodes.blocking': 'Đang chặn, trong lô này',
+  'episodes.blocking.scope':
+    'Những tập khiến lô đã chọn chưa đóng được. Phạm vi: máy này, theo thời gian nhập.',
+  'episodes.stuck': 'Đang kẹt, tại trung tâm này',
+  'episodes.stuck.scope':
+    'Việc bị tạm dừng hoặc bị giữ ở bất kỳ đâu trong trung tâm này, thuộc lô nào cũng tính.',
+  'episodes.empty': 'Không có mục nào cần xử lý trong phạm vi này.',
+  'episodes.filter': 'Lọc các dòng này',
+  'episodes.col.episode': 'Tập',
+  'episodes.col.session': 'Bắt đầu phiên',
+  'episodes.col.state': 'Quy kết',
+  'episodes.col.needs': 'Cần',
+  'episodes.col.device': 'Thẻ nhớ',
+  'episodes.col.hold': 'Đang giữ',
+  'episodes.needs.assignment': 'Cần gán vào một phiên',
+  'episodes.needs.confirmation': 'Cần người xác nhận kết quả khớp',
+  'episodes.hold.parked': 'Đã tạm dừng',
+  'episodes.hold.held': 'Bị giữ khi duyệt',
+  'episodes.summary.episodes': 'Số tập',
+  'episodes.summary.sessions': 'Số phiên',
+  'episodes.summary.quarantined': 'Bị cách ly',
+  'episodes.summary.awaiting': 'Chờ xác nhận',
+  'episodes.summary.parked': 'Đã đưa ra khỏi hàng chờ duyệt',
+  'episodes.summary.perSession': 'Số tập mỗi phiên',
+  'episodes.resolve': 'Gán phiên',
+  'episodes.resolve.title': 'Gán tập này cho một phiên',
+  'episodes.resolve.session': 'Phiên',
+  'episodes.resolve.reason': 'Vì sao chọn phiên này',
+  'episodes.resolve.reasonHint': 'Cơ sở dữ liệu từ chối nếu việc gán không có lý do.',
+  'episodes.resolve.done': 'Đã gán. Lô này đã được đọc lại.',
+  'episodes.outcome': 'Kết quả duyệt',
+  'episodes.outcome.state': 'Kết luận',
+  'episodes.outcome.pending': 'Bản giao đang tính chưa có kết luận.',
+  'episodes.outcome.collector': 'Cộng tác viên',
+  'episodes.outcome.decided': 'Thời điểm quyết định',
+  'episodes.outcome.note': 'Ghi chú của người duyệt',
+  'episodes.outcome.reasons': 'Mã lý do',
+  'episodes.outcome.failed': 'Không tải được kết quả.',
+  'episodes.close': 'Đóng',
+  'episodes.gone': 'Tập này không còn trên máy chủ. Hãy đọc lại lô.',
+  'episodes.reload': 'Đọc lại',
+  'episodes.noMatch': 'Không có dòng nào trong phạm vi này khớp với bộ lọc.',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { en, zh, vi };

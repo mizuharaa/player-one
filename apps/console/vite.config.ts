@@ -32,7 +32,20 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: Object.fromEntries(
-      ['/api', '/auth', '/media', '/whoami', '/reference'].map((path) => [
+      /*
+       * `/upload-batches` and `/episodes/` are the counter lane, and they are
+       * mounted at the API root rather than under `/api` (episodes.ts). The
+       * attention screen reads all three of them, so they proxy like the rest.
+       *
+       * The trailing slash on `/episodes/` is load-bearing and cost a debug
+       * round trip: `/episodes` is also a **client route**, and proxying that
+       * prefix sent the browser's own navigation to the API, which answered
+       * `{"error":"not_found"}` in place of the screen. The API mounts
+       * `/episodes/stuck` and `/episodes/:id/resolve` and nothing at the bare
+       * path, so the slash separates them exactly. Any reverse proxy in front
+       * of a built console has to make the same split.
+       */
+      ['/api', '/auth', '/media', '/whoami', '/reference', '/upload-batches', '/episodes/'].map((path) => [
         path,
         {
           target: process.env['PLAYERONE_API'] ?? 'http://127.0.0.1:8080',

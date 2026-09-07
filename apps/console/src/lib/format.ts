@@ -82,8 +82,49 @@ export function signedSeconds(claimed: string | null, measured: string): string 
   return `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}s`;
 }
 
-/** `31.4s` — the pace figure in the top bar. */
+/**
+ * `31.4s` — the pace figure in the top bar and the Home ledger.
+ *
+ * **`0.0s` is not a measurement, so it prints as `—`.** `time_to_verdict_s`
+ * is null on every row the console did not time itself, and it is a hard zero
+ * on rows a script decided — the seeded verdicts carry 0.022s and 0.043s,
+ * which are the cost of an HTTP round trip, not a person watching footage.
+ * Both printed as "0.0s", which claims the reviewer decided instantly; that is
+ * the one thing this figure must never say. So the rule is written on the
+ * *rendered* string rather than on the input: whatever rounds to nothing gets
+ * a dash. That covers an exact zero and everything under 50ms with one branch
+ * and no threshold anybody has to remember.
+ *
+ * The guard is here and not at the three call sites — `AppShell`'s top bar,
+ * the Home ledger and the recent table all take the same value from the same
+ * two columns — so it cannot be applied in two places and forgotten in a
+ * third. It stays a *display* rule: nothing here reaches money, which is what
+ * the note beside this figure on Home says in the operator's own words.
+ */
 export function pace(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return '—';
-  return `${seconds.toFixed(1)}s`;
+  const rounded = seconds.toFixed(1);
+  return rounded === '0.0' ? '—' : `${rounded}s`;
+}
+
+/**
+ * An instant, on the clock of the machine reading it.
+ *
+ * `reviewedAt` is a UTC instant and the reviewer is not in UTC, so it is
+ * formatted through `Intl` with no explicit locale or zone: the browser's own.
+ * Day and month are kept because the recent list reaches back past midnight on
+ * a night shift, and a bare `23:40` two rows under a `00:10` reads as going
+ * backwards. 24-hour, because this console never prints a 12-hour clock.
+ */
+export function stampLocal(iso: string | null | undefined): string {
+  if (iso === null || iso === undefined) return '—';
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '—';
+  return at.toLocaleString(undefined, {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }
