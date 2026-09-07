@@ -1,66 +1,10 @@
 [
   {
-    "file": "kitchen-cooking.jpg",
-    "title": "You Are the Cream in my Coffee - July 2011 - Or is it Tagliatelle?",
-    "creator": "Gareth1953 All Right Now",
-    "license": "CC BY 2.0",
-    "source": "https://www.flickr.com/photos/40837632@N05/5898548249"
-  },
-  {
     "file": "kitchen-chopping.jpg",
     "title": "chop chop",
     "creator": "marc kjerland",
     "license": "CC BY-SA 2.0",
     "source": "https://www.flickr.com/photos/22251370@N02/4669287509"
-  },
-  {
-    "file": "gardening-planting.jpg",
-    "title": "20120601-DM-LSC-0301",
-    "creator": "USDAgov",
-    "license": "CC PDM 1.0",
-    "source": "https://www.flickr.com/photos/41284017@N08/7339539908"
-  },
-  {
-    "file": "gardening-watering.jpg",
-    "title": "water on plant",
-    "creator": "s1ng0",
-    "license": "CC BY-SA 2.0",
-    "source": "https://www.flickr.com/photos/57471276@N05/5523849206"
-  },
-  {
-    "file": "home-cleaning.jpg",
-    "title": "Recycling #2",
-    "creator": "Rubbermaid Products",
-    "license": "CC BY 2.0",
-    "source": "https://www.flickr.com/photos/28040596@N08/4052091501"
-  },
-  {
-    "file": "laundry.jpg",
-    "title": "laundry night",
-    "creator": "ginnerobot",
-    "license": "CC BY-SA 2.0",
-    "source": "https://www.flickr.com/photos/78011127@N00/4425756825"
-  },
-  {
-    "file": "market.jpg",
-    "title": "Vege Seller @ Pudu Market, KL",
-    "creator": "kevinpoh",
-    "license": "CC BY 2.0",
-    "source": "https://www.flickr.com/photos/7679455@N03/11630633115"
-  },
-  {
-    "file": "workshop.jpg",
-    "title": "Top view of Serbian Opanak",
-    "creator": "Ivan Radic",
-    "license": "CC BY 2.0",
-    "source": "https://www.flickr.com/photos/26344495@N05/49482915302"
-  },
-  {
-    "file": "desk-work.jpg",
-    "title": "Workspace @ Nottingham Flat",
-    "creator": "David Wellbeloved",
-    "license": "CC BY 2.0",
-    "source": "https://www.flickr.com/photos/35339157@N00/5378333486"
   },
   {
     "file": "bookshelf.jpg",
@@ -70,17 +14,73 @@
     "source": "https://www.flickr.com/photos/66335021@N00/3484353131"
   },
   {
-    "file": "coffee.jpg",
-    "title": "Pouring water",
-    "creator": "Paula Satijn",
-    "license": "CC BY-ND 2.0",
-    "source": "https://www.flickr.com/photos/8457667@N08/27340393980"
+    "file": "laundry-line.jpg",
+    "title": "Washing Dishes at the Auberge de Nomad - Bani - Sahel Region - Burkina Faso.jpg",
+    "creator": "Adam Jones, Ph.D.",
+    "license": "CC BY-SA 3.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Washing_Dishes_at_the_Auberge_de_Nomad_-_Bani_-_Sahel_Region_-_Burkina_Faso.jpg"
   },
   {
-    "file": "walking-street.jpg",
-    "title": "CL Society 334: Walking and reading",
-    "creator": "francisco_osorio",
-    "license": "CC BY 2.0",
-    "source": "https://www.flickr.com/photos/30330906@N04/12442362925"
+    "file": "market-street.jpg",
+    "title": "Italian Market Philadelphia Vegetables 3264px.jpg",
+    "creator": "Photo by Derek Ramsey (Ram-Man)",
+    "license": "CC BY-SA 2.5",
+    "source": "https://commons.wikimedia.org/wiki/File:Italian_Market_Philadelphia_Vegetables_3264px.jpg"
+  },
+  {
+    "file": "ironing-hands.jpg",
+    "title": "A Local Taylor ironing cloth.jpg",
+    "creator": "Lomwiko Francis",
+    "license": "CC BY-SA 4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:A_Local_Taylor_ironing_cloth.jpg"
+  },
+  {
+    "file": "hf-garden.jpg",
+    "title": "Collector in a head-mounted camera, planting",
+    "creator": "Generated for PlayerOne (Higgsfield, nano_banana_pro)",
+    "license": "generated placeholder",
+    "source": "prompt in the commit message for this file"
+  },
+  {
+    "file": "hf-garden2.jpg",
+    "title": "Collector in a head-mounted camera, planting (variant)",
+    "creator": "Generated for PlayerOne (Higgsfield, nano_banana_pro)",
+    "license": "generated placeholder",
+    "source": "prompt in the commit message for this file"
+  },
+  {
+    "file": "film-face.jpg",
+    "title": "Frame from landing.mp4 — portrait",
+    "creator": "PlayerOne demo film",
+    "license": "ours",
+    "source": "apps/console/public/landing.mp4"
+  },
+  {
+    "file": "film-kitchen.jpg",
+    "title": "Frame from landing.mp4 — kitchen, wide",
+    "creator": "PlayerOne demo film",
+    "license": "ours",
+    "source": "apps/console/public/landing.mp4"
+  },
+  {
+    "file": "film-chop.jpg",
+    "title": "Frame from landing.mp4 — kitchen, chopping",
+    "creator": "PlayerOne demo film",
+    "license": "ours",
+    "source": "apps/console/public/landing.mp4"
+  },
+  {
+    "file": "film-books.jpg",
+    "title": "Frame from landing.mp4 — bookshelf",
+    "creator": "PlayerOne demo film",
+    "license": "ours",
+    "source": "apps/console/public/landing.mp4"
+  },
+  {
+    "file": "film-garden.jpg",
+    "title": "Frame from landing.mp4 — planting",
+    "creator": "PlayerOne demo film",
+    "license": "ours",
+    "source": "apps/console/public/landing.mp4"
   }
 ]
