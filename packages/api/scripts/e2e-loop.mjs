@@ -39,6 +39,7 @@ import { sql } from 'drizzle-orm';
 import { contentFingerprint, deriveEpisodeId } from '../../contracts/src/identity.ts';
 import { ingest } from '../../ingest/src/ingest.ts';
 import { open } from '../../store/src/index.ts';
+import { s3StoreFromEnv } from '../src/upload-worker.ts';
 import { wholeVnd } from '../src/payout/domain/attempts.ts';
 import { verifyExport } from '../src/payout/domain/export.ts';
 import { shadowDiff, shadowRun } from '../src/payout/recon/index.ts';
@@ -225,7 +226,8 @@ async function runLoop({ label, mediaRoot, basename, record, spans, prepareTime,
     tokenSecret: 'k',
     mediaRoot,
     currency: 'VND',
-    objectStore: new FsObjectStore(cloudRoot),
+    // The real store when STORAGE_* names one, so this loop can be run against HCM04.
+    objectStore: s3StoreFromEnv() ?? new FsObjectStore(cloudRoot),
     /**
      * QR-02 as written, rather than the ADR 0001 deviation.
      *
