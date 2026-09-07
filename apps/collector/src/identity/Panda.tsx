@@ -150,9 +150,16 @@ export function Panda({
     ]).start();
   };
 
+  /*
+   * His colours, and none of them is the page's. `fur` and `lightFill` were
+   * `--muted` and `--background`, which are scheme neutrals — so on a dark
+   * page they both went near-black and Trúc was drawn black on black. He
+   * rendered as a grey ghost on the sign-in screen, where he is the only
+   * figure on it.
+   */
   const ink = theme.color.stage.ground;
-  const fur = theme.color.muted;
-  const lightFill = theme.color.background;
+  const fur = theme.truc.coat;
+  const lightFill = theme.truc.highlight;
 
   /** How much of each eye the lid covers, before a blink is added to it. */
   const lidRest = s === 'earlyBird' ? 0.5 : s === 'goldenHour' ? 0.34 : 0;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bamboo, dark, darkBrandTints, light, ring, stage, sun, tech, toCss, verdict } from '../src/tokens.ts';
+import { ambient, bamboo, dark, darkBrandTints, light, ring, stage, sun, tech, toCss, truc, verdict } from '../src/tokens.ts';
 import { nativeTheme } from '../src/native.ts';
 
 /**
@@ -504,14 +504,19 @@ describe('shell text clears AA', () => {
  * measured off the built pages, and both are asserted so a lighter scrim
  * cannot be chosen later without this failing.
  */
-describe('type over footage clears AA on the worst frame', () => {
-  const composite = (ink: string, alpha: number, under: string): string => {
-    const [i, u] = [channels(ink), channels(under)];
-    return `#${i
-      .map((c, n) => Math.round((alpha * c + (1 - alpha) * u[n]!) * 255).toString(16).padStart(2, '0'))
-      .join('')}`;
-  };
+/**
+ * `ink` laid over `under` at `alpha`, as the compositor does it: straight
+ * source-over in sRGB, which is what a browser paints for an `opacity` on a
+ * solid fill and for a flat scrim over a frame of video.
+ */
+const composite = (ink: string, alpha: number, under: string): string => {
+  const [i, u] = [channels(ink), channels(under)];
+  return `#${i
+    .map((c, n) => Math.round((alpha * c + (1 - alpha) * u[n]!) * 255).toString(16).padStart(2, '0'))
+    .join('')}`;
+};
 
+describe('type over footage clears AA on the worst frame', () => {
   for (const [surface, alpha] of [
     ['the console sign-in', 0.6],
     ['the collector landing', 0.62],
@@ -530,5 +535,124 @@ describe('type over footage clears AA on the worst frame', () => {
 
   it('and `over` stays off the surfaces, where `fg` is the considered ink', () => {
     expect(contrast(stage.over, stage.ground)).toBeGreaterThan(contrast(stage.fg, stage.ground));
+  });
+});
+
+/**
+ * The sign-in wash, which `DESIGN.md` allows as a named exception to "nothing
+ * decorative uses any of the three" — and allows only while this measures.
+ *
+ * Two blurred fields sit behind the form below `lg`: `bamboo-50` at 60% and
+ * `sun-50` at 50%. The blur has no effect on the worst case, because the worst
+ * case is the middle of a field where the blur has nothing to average with; and
+ * the two overlap, so the ground under the worst pixel is both of them, sun
+ * composited on top of bamboo composited on the page.
+ *
+ * Both floors are the text floor. Nothing on this ground is large type, and the
+ * muted ink carries the field labels and the legal line, which are the two
+ * things a person actually has to read to sign in.
+ */
+describe('the sign-in wash costs no contrast', () => {
+  for (const [scheme, neutrals, tints] of [
+    ['light', light, { bamboo: bamboo[50], sun: sun[50] }],
+    ['dark', dark, { bamboo: darkBrandTints.bamboo50, sun: darkBrandTints.sun50 }],
+  ] as const) {
+    it(`${scheme}: body and muted ink clear AA on the worst point of the wash`, () => {
+      const under = composite(tints.bamboo, 0.6, neutrals.background);
+      const worst = composite(tints.sun, 0.5, under);
+
+      atLeast(TEXT_AA, neutrals.foreground, worst, `${scheme} body ink on the wash`);
+      atLeast(TEXT_AA, neutrals.mutedForeground, worst, `${scheme} muted ink on the wash`);
+    });
+  }
+
+  /**
+   * The collector app draws the same ground a different way, so it is measured
+   * a different way.
+   *
+   * React Native has no CSS blur, so there the wash is `ambient.rings`
+   * concentric discs of one tint at `ambient.step` alpha each; they composite
+   * to `1 - (1 - step) ** rings` at the centre, which is the number to test
+   * against. It uses the 100 step because 50 at that alpha is invisible on a
+   * phone.
+   *
+   * This shipped for one afternoon on the **200** step, which is a fixed value
+   * on both ramps and therefore a pale tan disc over a near-black page: the
+   * composite measured `#83795a`, body text 3.73:1 and the muted ink 1.68:1.
+   * Both under the floor, on the screen a collector signs in from. The 50 and
+   * 100 steps are the two that invert with the scheme, which is why the rule
+   * in `DESIGN.md` names them and why this case exists.
+   */
+  for (const [scheme, neutrals, tints] of [
+    ['light', light, { bamboo: bamboo[100], sun: sun[100] }],
+    ['dark', dark, { bamboo: darkBrandTints.bamboo100, sun: darkBrandTints.sun100 }],
+  ] as const) {
+    it(`${scheme}: the collector's discs clear AA at the alpha they composite to`, () => {
+      const alpha = 1 - (1 - ambient.step) ** ambient.rings;
+      const under = composite(tints.bamboo, alpha, neutrals.background);
+      const worst = composite(tints.sun, alpha, under);
+
+      atLeast(TEXT_AA, neutrals.foreground, worst, `${scheme} body ink on the collector wash`);
+      atLeast(TEXT_AA, neutrals.mutedForeground, worst, `${scheme} muted ink on the collector wash`);
+      expect(contrast(worst, neutrals.background)).toBeLessThan(1.2);
+    });
+  }
+
+  /*
+   * And the limit that keeps either of them a ground rather than a colour: the
+   * wash must never move the page enough to matter. This is the one number
+   * `DESIGN.md` states as the outcome, so both implementations answer to it.
+   */
+  it('neither wash moves the page it sits on', () => {
+    const web = composite(sun[50], 0.5, composite(bamboo[50], 0.6, light.background));
+    expect(contrast(web, light.background)).toBeLessThan(1.2);
+
+    const alpha = 1 - (1 - ambient.step) ** ambient.rings;
+    const native = composite(sun[100], alpha, composite(bamboo[100], alpha, light.background));
+    expect(contrast(native, light.background)).toBeLessThan(1.2);
+  });
+});
+
+/**
+ * Trúc is black and white, and stays black and white.
+ *
+ * His furs used to come from `--muted` and `--background` in the collector app,
+ * which are scheme neutrals — so on a dark page both went near-black and the
+ * mascot was drawn black on black. He is the only figure on the sign-in screen
+ * and he rendered as a grey ghost on the ground he was standing on.
+ */
+describe("Trúc's furs do not answer to the page", () => {
+  it('his light furs read against his black in both schemes', () => {
+    atLeast(TEXT_AA, truc.coat, stage.ground, 'coat on his ink');
+    atLeast(TEXT_AA, truc.highlight, stage.ground, 'highlight on his ink');
+  });
+
+  it('and his coat is not pure white, so he does not vanish on the light page', () => {
+    expect(contrast(truc.coat, light.background)).toBeGreaterThan(1);
+    expect(contrast(truc.highlight, truc.coat)).toBeLessThan(1.2);
+  });
+});
+
+/**
+ * The one border in the system held to a ratio.
+ *
+ * WCAG 2.1 SC 1.4.11 asks 3:1 of the visual information that identifies a
+ * component, and a text field's edge is the whole of what identifies it. This
+ * project already holds the *focus ring* to exactly that rule and quotes the
+ * number; the field's resting border was never put through the same check and
+ * measured **1.52:1** in light and **1.65:1** in dark — the separator colour
+ * doing an identification job because nothing else existed.
+ */
+describe('a field edge is a control boundary, not a separator', () => {
+  for (const [scheme, n] of [['light', light], ['dark', dark]] as const) {
+    it(`${scheme}: the field border clears the control floor on both grounds`, () => {
+      atLeast(CONTROL_AA, n.fieldBorder, n.background, `${scheme} field border on the page`);
+      atLeast(CONTROL_AA, n.fieldBorder, n.card, `${scheme} field border on a card`);
+    });
+  }
+
+  it('and it is a step past the separator it replaced, which does not clear it', () => {
+    expect(contrast(light.borderStrong, light.background)).toBeLessThan(CONTROL_AA);
+    expect(contrast(dark.borderStrong, dark.card)).toBeLessThan(CONTROL_AA);
   });
 });

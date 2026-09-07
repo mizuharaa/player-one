@@ -141,6 +141,25 @@ export type VerdictName = keyof typeof verdict;
  * The theatre. Present in both themes, because it is about the footage and not
  * about the operator's ambient light.
  */
+/**
+ * Trúc's own two furs, which do not move with the scheme.
+ *
+ * A panda is black and white whatever the page behind him is doing. His black
+ * is `stage.ground` — the one near-black both apps already use — and these are
+ * the light half: `coat` for the head and body, `highlight` for the belly, the
+ * muzzle, the eye whites and the catchlights, one step apart so the muzzle
+ * still reads against the head.
+ *
+ * `coat` is not pure white on purpose: a pure-white panda vanishes on the
+ * white page. The console's flat drawing has held these two values since it
+ * was drawn; they live here now because the collector app's version took its
+ * furs from `--muted` and `--background` instead, which are scheme colours —
+ * so on a dark page Trúc was drawn black on black. Measured on the collector
+ * sign-in, where he is 80px in the middle of the screen and rendered as a grey
+ * ghost against the ground he was standing on.
+ */
+export const truc = { coat: '#F4F3F1', highlight: '#FFFFFF' } as const;
+
 export const stage = {
   ground: '#101215',
   panel: '#191C21',
@@ -155,7 +174,16 @@ export const stage = {
    * under the type is whatever the collector filmed, and a kitchen window is
    * near enough to white. Measured against the worst case — a pure-white pixel
    * under the landing's 62% scrim — `fg` gives **4.52:1** and this token gives
-   * **5.26:1**. Both clear AA, but 0.02 of margin is not a margin: it is the
+   * **5.26:1**.
+   *
+   * There are two scrims and they are deliberately different, so neither figure
+   * here describes the other surface: the collector landing is 62% because the
+   * film fills the whole screen behind the type, and the console sign-in is 60%
+   * because the film is half of a split and the type sits in its quietest
+   * corner. At 60% the same two inks give 4.22:1 and 4.94:1, quoted where they
+   * belong in `Login.tsx`. An audit read the mismatch as drift; it is not.
+   *
+   * Both clear AA, but 0.02 of margin is not a margin: it is the
    * `faintForeground` mistake again, where a ratio that rounded to 4.5 was
    * really 4.49999. The extra step costs nothing on a photograph, where the
    * difference between #ECEEF1 and white is invisible.
@@ -174,6 +202,21 @@ export const light = {
   muted: '#F4F3F1',
   border: '#E7E4E0',
   borderStrong: '#D5D1CC',
+  /**
+   * The boundary of a control a person types into, and the only border in the
+   * system held to a ratio.
+   *
+   * WCAG 2.1 SC 1.4.11 asks 3:1 of the visual information needed to identify a
+   * component, and a text field's edge is the whole of what identifies it.
+   * `borderStrong` is a *separator* — it divides a card from the page, where
+   * nothing has to be identified — and at 1.52:1 on white it was never going
+   * to carry this job; it was doing it by default because nothing else
+   * existed. Measured: this reads 3.43:1 on `background` and on `card`, where
+   * the old value read 1.52:1. Two of the four boxes on the sign-in are
+   * secrets, with no reveal and no caps-lock hint, so the edge is all a person
+   * has.
+   */
+  fieldBorder: '#8F8A81',
   foreground: '#17150F',
   mutedForeground: '#6E6A62',
   /**
@@ -208,6 +251,8 @@ export const dark = {
   muted: '#1F2328',
   border: '#2A2F35',
   borderStrong: '#3A4048',
+  /** 3.35:1 on the dark card, where `borderStrong` read 1.65:1. */
+  fieldBorder: '#666E79',
   foreground: '#ECEEF1',
   mutedForeground: '#9BA2AB',
   /** Same argument, inverted: `#6C737C` read 3.30:1 on the muted fill. */
@@ -281,6 +326,37 @@ export const space = {
   16: '64px',
   20: '80px',
 } as const;
+
+/**
+ * The ambient ground: how the wash behind a sign-in form is built.
+ *
+ * A sign-in screen carries a soft wash of a brand tint behind the form
+ * (`DESIGN.md`, "One exception, granted 2026-09-07", which allows an ambient
+ * ground on the two sign-in surfaces while the ban on decorative and gradient
+ * use of the three inks holds everywhere else). React
+ * Native has no CSS blur, so the wash is `rings` concentric discs of one tint,
+ * each drawn at the same low `step` alpha: they composite to
+ * `1 - (1 - step) ** rings` at the centre and fall off one step per ring
+ * outward, which is what reads as a blur. Three discs at three chosen alphas
+ * was the first version and it read as three rings.
+ *
+ * The two numbers trade against each other: the ceiling is what the ink has to
+ * survive, and the ring count is what stops the falloff reading as a target.
+ * Three discs, then eight, both showed their edges on the dark page, where a
+ * warm tint over near-black has nothing to hide a 5% band in. Fourteen at 0.026
+ * composite to the same 0.31 in steps small enough to disappear.
+ *
+ * `step` is chosen against the text that can end up over it: at a 0.31
+ * composite, `sun[200]` gives #FFECDD on the light page
+ * and #6A5748 on the dark one, where the foreground ink measures about 15:1
+ * and about 7:1. Raising either number is how a decorative wash starts costing
+ * contrast.
+ *
+ * Decorative only, behind the form, never under an ink or on a control. Not
+ * emitted by `toCss()`: the console draws its own wash in CSS, where a real
+ * blur exists and these numbers do not apply.
+ */
+export const ambient = { step: 0.026, rings: 14 } as const;
 
 export const radius = {
   sm: '8px',
@@ -414,6 +490,7 @@ export function toCss(): string {
   --muted: ${n.muted};
   --border: ${n.border};
   --border-strong: ${n.borderStrong};
+  --field-border: ${n.fieldBorder};
   --foreground: ${n.foreground};
   --muted-foreground: ${n.mutedForeground};
   --faint-foreground: ${n.faintForeground};`;

@@ -42,6 +42,46 @@ Nothing decorative uses any of the three. There is exactly one glowing element
 per viewport — the primary action, carrying `--shadow-sun` — and if a second
 appears one of them is wrong.
 
+**One exception, granted 2026-09-07, and it is narrow.** The sign-in screens —
+`/login` in the console and the collector's `SignIn` — carry an ambient ground
+below the split: two heavily blurred fields of `bamboo-50` and `sun-50` at
+about half opacity, behind the form. That is decorative use of two of the three
+ramps and it is what the rule above forbids, so it is written down here rather
+than argued around. Daniel asked for it directly, with a reference screen, and
+overrode the rule for these two surfaces.
+
+The exception carries its own limits, and they are the reason it is survivable.
+They are stated as outcomes and not as recipes, because the two apps cannot use
+the same recipe: the console has CSS `blur`, React Native does not, and the
+first version of this list said "the palest step only" and "never above `lg`" —
+two console implementation details that the collector app could not meet and
+that said nothing about whether either wash was any good. The auditor caught
+that. What actually matters is what the ground does to the page:
+
+- **It must barely move the page.** The worst point of the composite — every
+  field overlapping, at full strength — sits under 1.2:1 against
+  `--background`. A wash you can name a colour for is a ramp step doing a job,
+  and these are not doing one.
+- **Every ink over it still clears AA**, in both schemes: body text and the
+  muted ink that carries the field labels and the legal line.
+- **It uses the two ramp steps that invert with the scheme**, 50 and 100.
+  That is not a taste rule, it is the whole safety property: the higher steps
+  are fixed values, so a 200 over a dark page is a pale disc on near-black. It
+  shipped that way for one afternoon in the collector app and measured 3.73:1
+  for body text and 1.68:1 for the muted ink.
+- **Never on or behind an ink, a control, a pill or a chip.** It is the ground
+  the form stands on and nothing else. The rule that sun means action and
+  bamboo means progress is untouched everywhere a reader has to act on it.
+- **Only on a sign-in surface**, and on the web only below the split, where the
+  film is not already the atmosphere.
+- **Measured, not asserted.** `packages/design/test/contrast.test.ts` composites
+  the worst point of both implementations — the console's two blurred fields and
+  the collector's fourteen concentric discs — in both schemes, and pins all of
+  the above. A wash that costs a contrast ratio fails a test before it reaches a
+  screen.
+- **Still not a gradient on an ink.** No ramp is ever interpolated to another
+  colour, on this screen or anywhere else. That half of the rule did not move.
+
 ### Bamboo's three steps, and what it may never touch
 
 Three steps carry a job and each was chosen against a measured ratio.

@@ -37,3 +37,5 @@ CODEX_BRIDGE.md
 # Agent workflow scripts: they carry local machine credentials (a dev Postgres
 # password) and are per-machine anyway. This repository is public.
 .claude/
+.vite-*.log
+.vite-*.err

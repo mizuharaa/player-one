@@ -21,6 +21,7 @@
  *   back. See `font` below.
  */
 import {
+  ambient,
   bamboo,
   dark,
   darkBrandTints,
@@ -32,6 +33,7 @@ import {
   space,
   stage,
   sun,
+  truc,
   tech,
   verdict,
 } from './tokens.ts';
@@ -136,6 +138,18 @@ export function nativeTheme(scheme: ColorScheme) {
     radius: Object.fromEntries(
       Object.entries(radius).map(([k, v]) => [k, Number.parseInt(v, 10)]),
     ) as Record<keyof typeof radius, number>,
+    /**
+     * The alphas the sign-in screen's ambient ground is drawn at. Straight
+     * from `tokens.ts`: RN has no CSS blur, so that wash is concentric discs
+     * of one brand tint and these are its falloff.
+     */
+    ambient,
+    /**
+     * Trúc's two light furs. Not under `color` with the scheme neutrals,
+     * because that is exactly the mistake this fixes: they are the animal's
+     * colours and they do not answer to the page.
+     */
+    truc,
     /** Material elevation levels, since Android is the app's first target. */
     elevation: { flat: 0, raised: 2, floating: 6, modal: 12 },
     duration: Object.fromEntries(

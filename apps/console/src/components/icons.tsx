@@ -114,6 +114,13 @@ export const IconLanguage = (p: IconProps) => (
   </Icon>
 );
 
+/** The disclosure on a select we draw ourselves. Nothing else uses it. */
+export const IconChevron = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m5.5 8 4.5 4.5L14.5 8" />
+  </Icon>
+);
+
 export const IconKeyboard = (p: IconProps) => (
   <Icon {...p}>
     <rect x="2" y="5.5" width="16" height="9" rx="1.8" />

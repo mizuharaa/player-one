@@ -1,9 +1,13 @@
 import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
 import { ApiError } from '../api/types.ts';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
-import { Body, Button, Card, Field, Note, Screen } from '../ui.tsx';
+import { e164 } from '../phone.ts';
+import { Button, Choice, Field, Note, face, topInset } from '../ui.tsx';
+import { Panda } from '../identity/Panda.tsx';
+import { useTheme } from '../theme.tsx';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -26,7 +30,213 @@ import type { MessageKey } from '../i18n.ts';
  * collector so an operator can find them. The app cannot see that and must not
  * pretend to: `signIn.codeSent` tells them to check Zalo, and the way out is a
  * person at a counter.
+ *
+ * **The +86 note is keyed off the picker, not off the server.** `zns.ts`
+ * accepts Vietnamese numbers only, so a +86 number will never receive a code.
+ * Saying so is safe *because* the person chose +86 themselves: the sentence is
+ * a fact about the country code in front of them and not an answer about
+ * whether any number is enrolled, so it leaks nothing the 204 is protecting.
+ * It does not block the submit — the request still goes, and still gets the
+ * same 204 as every other number.
+ *
+ * **Composition**: an ambient ground — the one granted in `DESIGN.md` under
+ * "One exception, granted 2026-09-07" — one large heading, one
+ * prominent field, the legal line, a full-width pill. It does not use `Screen`,
+ * whose header bar is for a destination the collector navigated to; this is the
+ * app's front door and the heading is the page.
  */
+
+/**
+ * The two the pilot accepts, and not a country list.
+ *
+ * Vietnam is where the collectors are. China is here because PaXini is in
+ * Shenzhen and Daniel asked for both. With exactly two entries a modal with a
+ * search field is machinery for nothing, so this is a two-item disclosure.
+ */
+const VN = { code: '+84', label: 'signIn.country.vn' as MessageKey };
+const CN = { code: '+86', label: 'signIn.country.cn' as MessageKey };
+
+/**
+ * The ambient ground: two washes of a brand tint, behind the form.
+ *
+ * React Native has no CSS `filter: blur`, so a blurred blob is drawn as
+ * concentric discs of one tint whose alpha falls off outward — `theme.ambient`,
+ * whose two numbers were chosen against the ink that sits over them. It is
+ * decorative and nothing else: no pointer events, nothing for a screen reader,
+ * and never a fill under a control.
+ *
+ * **The 100 step, and not the 200.** 200 is a fixed value on both ramps, so on
+ * a dark page it painted a pale tan disc over near-black: measured at
+ * `#83795a` under the worst overlap, where the body ink reads 3.73:1 and the
+ * muted ink 1.68:1 — both under AA, on the screen a collector signs in from.
+ * The 50 and 100 steps are the two that invert with the scheme
+ * (`darkBrandTints`), so taking the tint from `theme.color` at 100 makes the
+ * wash scheme-correct by construction rather than by a second branch here.
+ * Measured after: body 16.72:1 and muted 4.93:1 in light, 14.18:1 and 6.40:1
+ * in dark. `packages/design/test/contrast.test.ts` pins all four.
+ */
+function Wash({ tint, size, style }: { tint: string; size: number; style: ViewStyle }) {
+  const theme = useTheme();
+  const { step, rings } = theme.ambient;
+  return (
+    <View
+      style={[
+        { position: 'absolute', width: size, height: size },
+        // Absolute children with no insets of their own are placed by the
+        // parent's alignment, which is how the discs stay concentric.
+        { alignItems: 'center', justifyContent: 'center' },
+        style,
+      ]}
+    >
+      {Array.from({ length: rings }, (_, i) => {
+        // Widest first, each one 70% of the way in by the innermost, all at
+        // the same alpha: the falloff comes from how many of them overlap.
+        const scale = 1 - (i * 0.7) / (rings - 1);
+        return (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              width: size * scale,
+              height: size * scale,
+              borderRadius: theme.radius.pill,
+              backgroundColor: tint,
+              opacity: step,
+            }}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+function AmbientGround() {
+  const theme = useTheme();
+  return (
+    <View
+      pointerEvents="none"
+      importantForAccessibility="no-hide-descendants"
+      style={{ ...StyleSheet.absoluteFillObject, overflow: 'hidden' }}
+    >
+      <Wash
+        tint={theme.color.sun[100]}
+        size={theme.space[20] * 4}
+        style={{ top: -theme.space[16], right: -theme.space[16] }}
+      />
+      <Wash
+        tint={theme.color.bamboo[100]}
+        size={theme.space[20] * 3}
+        style={{ top: theme.space[20] * 3, left: -theme.space[20] }}
+      />
+    </View>
+  );
+}
+
+/**
+ * The Zalo mark, so a collector knows which app the code lands in.
+ *
+ * Drawn from Views: `react-native-svg` is not a dependency of this app and a
+ * remote image would make the mark depend on the network the collector has not
+ * signed in over yet. It is the recognisable part — the blue bubble with its
+ * tail — reduced to what holds at 24dp, not a reproduction of the wordmark.
+ */
+function ZaloMark({ label }: { label: string }) {
+  const theme = useTheme();
+  const size = theme.space[6];
+  return (
+    <View
+      accessibilityRole="image"
+      accessibilityLabel={label}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: theme.radius.sm,
+        backgroundColor: theme.color.tech[500],
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <View
+        style={{
+          position: 'absolute',
+          left: theme.space[1],
+          bottom: -theme.space[1],
+          width: theme.space[2],
+          height: theme.space[2],
+          backgroundColor: theme.color.tech[500],
+          transform: [{ rotate: '45deg' }],
+        }}
+      />
+      <Text
+        style={{
+          color: theme.color.stage.fg,
+          fontFamily: face(theme),
+          fontSize: theme.fontSize.sm,
+          fontWeight: theme.fontWeight.bold,
+        }}
+      >
+        Z
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * The two documents, under the button at both steps.
+ *
+ * ponytail: the targets are placeholders. There is no privacy policy URL and no
+ * data-collection notice URL to open yet — when there is, it arrives the way
+ * `LANDING_VIDEO_URL` does, as a build-time value, and `onPress` becomes
+ * `Linking.openURL`. They are real controls with a role and a name now so the
+ * line is reachable and announced rather than a pair of grey words.
+ */
+function LegalLine() {
+  const theme = useTheme();
+  const tt = useT();
+  const link = (key: MessageKey) => (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={tt(key)}
+      onPress={() => {}}
+      hitSlop={theme.space[2]}
+    >
+      <Text
+        style={{
+          color: theme.color.techInk,
+          fontFamily: face(theme),
+          fontSize: theme.fontSize.xs,
+          textDecorationLine: 'underline',
+        }}
+      >
+        {tt(key)}
+      </Text>
+    </Pressable>
+  );
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: theme.space[2],
+      }}
+    >
+      {link('legal.privacy')}
+      <Text
+        style={{
+          color: theme.color.faintForeground,
+          fontFamily: face(theme),
+          fontSize: theme.fontSize.xs,
+        }}
+      >
+        ·
+      </Text>
+      {link('legal.dataNotice')}
+    </View>
+  );
+}
+
 export function SignIn({
   onSignedIn,
   onBack,
@@ -37,10 +247,17 @@ export function SignIn({
 }) {
   const api = useApi();
   const tt = useT();
+  const theme = useTheme();
+  const [country, setCountry] = useState(VN);
+  const [picking, setPicking] = useState(false);
+  const [pickerFocused, setPickerFocused] = useState(false);
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
   const [problem, setProblem] = useState<MessageKey | null>(null);
+
+  /** E.164, which is what `api.requestSignInCode` and `api.signIn` both take. */
+  const number = e164(country.code, phone);
 
   /** One message per named refusal, and one fallback that admits nothing. */
   const failed = (err: unknown): void => {
@@ -52,7 +269,7 @@ export function SignIn({
   };
 
   const request = useMutation({
-    mutationFn: () => api.requestSignInCode(phone.trim()),
+    mutationFn: () => api.requestSignInCode(number),
     onSuccess: () => {
       setProblem(null);
       setSent(true);
@@ -61,24 +278,154 @@ export function SignIn({
   });
 
   const verify = useMutation({
-    mutationFn: () => api.signIn(phone.trim(), code.trim()),
+    mutationFn: () => api.signIn(number, code.trim()),
     onSuccess: onSignedIn,
     onError: failed,
   });
 
+  const pick = (next: typeof VN) => {
+    setCountry(next);
+    setPicking(false);
+  };
+
   return (
-    <Screen title={tt('signIn.title')} onBack={onBack}>
-      <Body muted>{tt('signIn.intro')}</Body>
-      <Card>
-        <Field
-          label={tt('signIn.phone')}
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
-        />
+    <View style={{ flex: 1, backgroundColor: theme.color.background }}>
+      <AmbientGround />
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingHorizontal: theme.space[5],
+          paddingTop: topInset(theme.space[6]) + theme.space[2],
+          paddingBottom: theme.space[6],
+          gap: theme.space[4],
+        }}
+      >
+        {onBack === undefined ? null : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={tt('common.back')}
+            onPress={onBack}
+            hitSlop={theme.space[3]}
+            style={{
+              alignSelf: 'flex-start',
+              minHeight: theme.space[6],
+              justifyContent: 'center',
+            }}
+          >
+            <Text
+              style={{
+                color: theme.color.tech[500],
+                fontFamily: face(theme),
+                fontSize: theme.fontSize.sm,
+              }}
+            >
+              ← {tt('common.back')}
+            </Text>
+          </Pressable>
+        )}
+
+        <View style={{ paddingTop: theme.space[10], gap: theme.space[3] }}>
+          <Text
+            accessibilityRole="header"
+            style={{
+              color: theme.color.foreground,
+              fontFamily: face(theme),
+              fontSize: theme.fontSize['2xl'],
+              lineHeight: theme.fontSize['2xl'] * 1.15,
+              fontWeight: theme.fontWeight.display,
+              letterSpacing: -1,
+            }}
+          >
+            {tt('signIn.title')}
+          </Text>
+          <Text
+            style={{
+              color: theme.color.mutedForeground,
+              fontFamily: face(theme),
+              fontSize: theme.fontSize.base,
+              lineHeight: theme.fontSize.base * 1.5,
+            }}
+          >
+            {tt('signIn.intro')}
+          </Text>
+        </View>
+
+        {/* The code and the number share one row, the way a phone number is
+            actually written. `alignItems: flex-end` is what keeps the picker
+            level with the input rather than with the field's label. */}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space[2] }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${tt('signIn.countryCode')}: ${tt(country.label)}`}
+            accessibilityState={{ expanded: picking }}
+            onPress={() => setPicking(!picking)}
+            onFocus={() => setPickerFocused(true)}
+            onBlur={() => setPickerFocused(false)}
+            style={({ pressed }) => ({
+              minHeight: theme.space[12],
+              justifyContent: 'center',
+              // The focus ring is a colour change on a border that is already
+              // there, as on `Field`, so gaining focus never moves the row.
+              borderWidth: pickerFocused ? 2 : 1,
+              borderColor: pickerFocused ? theme.color.sun[600] : theme.color.borderStrong,
+              borderRadius: theme.radius.sm,
+              paddingHorizontal: theme.space[3] - (pickerFocused ? 1 : 0),
+              backgroundColor: pressed ? theme.color.muted : theme.color.background,
+            })}
+          >
+            <Text
+              style={{
+                color: theme.color.foreground,
+                fontFamily: face(theme),
+                fontSize: theme.fontSize.base,
+                fontWeight: theme.fontWeight.medium,
+              }}
+            >
+              {country.code} ▾
+            </Text>
+          </Pressable>
+          <View style={{ flexGrow: 1, flexShrink: 1 }}>
+            <Field
+              label={tt('signIn.phone')}
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+            />
+          </View>
+        </View>
+
+        {picking ? (
+          <View style={{ gap: theme.space[2] }}>
+            <Choice
+              label={tt(VN.label)}
+              describedBy={tt('signIn.countryCode')}
+              selected={country.code === VN.code}
+              onPress={() => pick(VN)}
+            />
+            <Choice
+              label={tt(CN.label)}
+              describedBy={tt('signIn.countryCode')}
+              selected={country.code === CN.code}
+              onPress={() => pick(CN)}
+            />
+          </View>
+        ) : null}
+
+        {country.code === CN.code ? <Note text={tt('signIn.chinaNote')} /> : null}
+
         {sent ? (
           <>
-            <Note text={tt('signIn.codeSent')} />
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space[2] }}>
+              {/* The note's own padding is 12dp: this drops the mark onto the
+                  middle of the sentence's first line rather than its box. */}
+              <View style={{ paddingTop: theme.space[2] }}>
+                <ZaloMark label={tt('signIn.zaloMark')} />
+              </View>
+              <View style={{ flexGrow: 1, flexShrink: 1 }}>
+                <Note text={tt('signIn.codeSent')} />
+              </View>
+            </View>
             <Field
               label={tt('signIn.code')}
               value={code}
@@ -87,13 +434,52 @@ export function SignIn({
             />
           </>
         ) : null}
+
         {problem !== null ? <Note text={tt(problem)} /> : null}
-        {sent ? (
-          <Button label={tt('signIn.submit')} onPress={() => verify.mutate()} />
-        ) : (
-          <Button label={tt('signIn.sendCode')} onPress={() => request.mutate()} />
-        )}
-      </Card>
-    </Screen>
+
+        {/*
+          Trúc, in the room the pinned button leaves behind.
+
+          On a 390×844 phone the field ends around a third of the way down and
+          the button is at the foot, so without him this screen is a heading, a
+          field and four hundred pixels of nothing — which reads as a screen
+          that failed to load rather than as one that is waiting for a number.
+          The Corner reference fills that space with a keypad; this app cannot,
+          because the keypad is the platform's and only appears once the field
+          has focus.
+
+          He waves because this is the door. He is tappable and the tap does
+          nothing but make him react — that is the whole of the "gamified feel"
+          the brief asked for and the reason there are no coins, no XP and no
+          streak anywhere in this app. He is inside the flexible gap, so on a
+          short phone the gap collapses and he goes with it rather than pushing
+          the button off the screen.
+        */}
+        <View
+          style={{
+            flexGrow: 1,
+            minHeight: theme.space[6],
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Panda
+            size={theme.space[20]}
+            pose="wave"
+            onPress={() => {}}
+            label={tt('landing.pandaLabel')}
+          />
+        </View>
+
+        <View style={{ gap: theme.space[3] }}>
+          {sent ? (
+            <Button label={tt('signIn.submit')} onPress={() => verify.mutate()} />
+          ) : (
+            <Button label={tt('signIn.sendCode')} onPress={() => request.mutate()} />
+          )}
+          <LegalLine />
+        </View>
+      </ScrollView>
+    </View>
   );
 }

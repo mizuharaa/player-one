@@ -85,6 +85,17 @@ const button = cva(
         sm: 'h-8 rounded-[var(--radius-sm)] px-3 text-[0.8125rem]',
         md: 'h-10 rounded-[var(--radius-base)] px-4 text-[0.9375rem]',
         lg: 'h-12 rounded-[var(--radius-base)] px-6 text-[1.0625rem]',
+        /**
+         * The welcome-screen primary: 56px on a pill.
+         *
+         * A sign-in button is the only control on its screen, so it reads as a
+         * destination rather than as one option among several — which is why it
+         * gets a height and a radius nothing inside the console uses. `/login`
+         * composed these two values inline and left a comment saying it would
+         * become a variant when a second screen wanted the same size. The
+         * collector's sign-in wants it. This is that condition.
+         */
+        xl: 'h-14 rounded-[var(--radius-pill)] px-8 text-[1.0625rem]',
         /** Square, for a toolbar glyph. Still 32px+, still keyboard-reachable. */
         icon: 'h-9 w-9 rounded-[var(--radius-sm)]',
       },

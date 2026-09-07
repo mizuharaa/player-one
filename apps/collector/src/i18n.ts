@@ -73,6 +73,29 @@ const vi = {
   'signIn.rateLimited': 'Bạn đã thử quá nhiều lần. Hãy đợi ít phút rồi thử lại.',
   'signIn.unavailable': 'Hiện chưa gửi được mã đăng nhập. Hãy liên hệ điểm hỗ trợ.',
   'signIn.restoring': 'Đang khôi phục phiên đăng nhập…',
+  // The two country codes the pilot accepts, and nothing else. +86 is present
+  // because collectors' phones are not all Vietnamese; `signIn.chinaNote` is
+  // what makes it honest rather than a dead end nobody explained.
+  //
+  // That note has to say the code CANNOT arrive, not that it needs an account.
+  // `packages/api/src/zns.ts` normalises `84` plus nine digits and returns null
+  // for anything else, so a +86 number is refused by the normaliser before any
+  // gateway is asked and a Zalo account would not change it. An earlier
+  // wording said the number "needs a Zalo account", which reads as a condition
+  // somebody could go and satisfy. It is not one.
+  //
+  // It is keyed off the country code the person themselves picked and never
+  // off a server response, so it leaks nothing that the deliberate 204 on
+  // `request-code` is protecting.
+  'signIn.countryCode': 'Mã quốc gia',
+  'signIn.country.vn': 'Việt Nam +84',
+  'signIn.country.cn': 'Trung Quốc +86',
+  'signIn.chinaNote':
+    'Mã chỉ gửi được tới số Việt Nam qua Zalo. Số +86 chưa nhận được mã. Hãy đến điểm hỗ trợ để đăng nhập.',
+  'signIn.zaloMark': 'Biểu tượng Zalo',
+
+  'legal.privacy': 'Chính sách quyền riêng tư',
+  'legal.dataNotice': 'Thông báo thu thập dữ liệu',
 
   'register.title': 'Đăng ký',
   'register.intro': 'Tạo tài khoản người thu thập để nhận nhiệm vụ và được trả công theo phút hiệu quả.',
@@ -333,6 +356,15 @@ const en: Record<MessageKey, string> = {
   'signIn.rateLimited': 'Too many attempts. Wait a few minutes and try again.',
   'signIn.unavailable': 'Sign-in codes cannot be sent right now. Contact a support point.',
   'signIn.restoring': 'Restoring your session…',
+  'signIn.countryCode': 'Country code',
+  'signIn.country.vn': 'Vietnam +84',
+  'signIn.country.cn': 'China +86',
+  'signIn.chinaNote':
+    'The code can only be sent to a Vietnamese number, over Zalo. A +86 number cannot receive one yet. Go to a support point to sign in.',
+  'signIn.zaloMark': 'Zalo logo',
+
+  'legal.privacy': 'Privacy policy',
+  'legal.dataNotice': 'Data collection notice',
 
   'register.title': 'Register',
   'register.intro': 'Create a collector account to claim tasks and be paid per effective minute.',
@@ -587,6 +619,14 @@ const zh: Record<MessageKey, string> = {
   'signIn.rateLimited': '尝试次数过多。请等几分钟后再试。',
   'signIn.unavailable': '目前无法发送登录验证码。请联系服务点。',
   'signIn.restoring': '正在恢复登录状态…',
+  'signIn.countryCode': '国家代码',
+  'signIn.country.vn': '越南 +84',
+  'signIn.country.cn': '中国 +86',
+  'signIn.chinaNote': '验证码只能通过 Zalo 发送至越南号码。+86 号码目前无法接收验证码。请前往服务点登录。',
+  'signIn.zaloMark': 'Zalo 标志',
+
+  'legal.privacy': '隐私政策',
+  'legal.dataNotice': '数据收集说明',
 
   'register.title': '注册',
   'register.intro': '创建采集员账号，用来领取任务，并按有效分钟获得报酬。',

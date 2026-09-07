@@ -75,6 +75,14 @@ const en = {
   'app.language': 'Language',
 
   'login.title': 'Sign in to review',
+  /* The operator imports cards; only the reviewer reviews. */
+  'login.titleOperator': 'Sign in to the upload centre',
+  /* Group headings, not field names — the legends are drawn now, and a
+     legend that repeats its first field's label makes a screen reader say
+     "Machine identifier group, Machine identifier". */
+  'login.groupMachine': 'Machine',
+  'login.groupOperator': 'Operator',
+  'login.groupReviewer': 'Reviewer',
   'login.intro':
     'Two credentials, as everywhere else in this service: the machine proves where, the operator proves who.',
   'login.machine': 'Machine identifier',
@@ -1121,6 +1129,15 @@ const en = {
   'login.network':
     'The service did not answer. Check the machine is on the centre network and try again.',
 
+  /*
+   * The legal line under the submit. A lead sentence and two named links,
+   * each translated as a whole unit — see the note in `Login.tsx` for why the
+   * links are not embedded in the sentence.
+   */
+  'login.legal': 'By signing in you accept how PlayerOne handles your data.',
+  'login.legalPrivacy': 'Privacy policy',
+  'login.legalData': 'Data collection notice',
+
   'ui.a.home.gauge': 'Reviewed {{value}} of {{target}} episodes this shift',
   'ui.a.home.payable.note': 'Effective duration from decided reviews only.',
   'ui.a.home.approval.note': 'Passes and partial passes, against every decision today.',
@@ -1214,6 +1231,10 @@ const zh: Record<MessageKey, string> = {
   'app.language': '语言',
 
   'login.title': '登录以进行审核',
+  'login.titleOperator': '登录上传中心',
+  'login.groupMachine': '机器',
+  'login.groupOperator': '操作员',
+  'login.groupReviewer': '审核员',
   'login.intro': '与本服务其他部分一致，需要两组凭据：机器凭据证明地点，操作员凭据证明身份。',
   'login.machine': '机器标识',
   'login.machineSecret': '机器密钥',
@@ -1996,6 +2017,10 @@ const zh: Record<MessageKey, string> = {
   'login.slogan.3': '审核通过的每一分钟，都有报酬。',
   'login.network': '服务没有应答。请确认本机在中心网络内，然后重试。',
 
+  'login.legal': '登录即表示您接受 PlayerOne 处理您数据的方式。',
+  'login.legalPrivacy': '隐私政策',
+  'login.legalData': '数据收集说明',
+
   'ui.a.home.gauge': '本班已审核 {{value}} 集，目标 {{target}} 集',
   'ui.a.home.payable.note': '仅统计已判定审核的有效时长。',
   'ui.a.home.approval.note': '通过与部分通过，占今天全部判定的比例。',
@@ -2078,6 +2103,10 @@ const vi: Record<MessageKey, string> = {
   'app.language': 'Ngôn ngữ',
 
   'login.title': 'Đăng nhập để duyệt',
+  'login.titleOperator': 'Đăng nhập trung tâm tải lên',
+  'login.groupMachine': 'Máy',
+  'login.groupOperator': 'Nhân viên',
+  'login.groupReviewer': 'Người duyệt',
   'login.intro':
     'Hai thông tin xác thực, như mọi nơi khác trong dịch vụ này: máy chứng minh địa điểm, nhân viên chứng minh danh tính.',
   'login.machine': 'Mã máy',
@@ -2984,6 +3013,10 @@ const vi: Record<MessageKey, string> = {
   'login.slogan.3': 'Phút được duyệt, được trả.',
   'login.network':
     'Dịch vụ không trả lời. Hãy kiểm tra máy có nằm trong mạng của trung tâm rồi thử lại.',
+
+  'login.legal': 'Khi đăng nhập, bạn chấp nhận cách PlayerOne xử lý dữ liệu của bạn.',
+  'login.legalPrivacy': 'Chính sách quyền riêng tư',
+  'login.legalData': 'Thông báo thu thập dữ liệu',
 
   'ui.a.home.gauge': 'Đã duyệt {{value}} trên {{target}} tập trong ca này',
   'ui.a.home.payable.note': 'Thời lượng hữu ích, chỉ tính từ các lượt duyệt đã có kết luận.',
