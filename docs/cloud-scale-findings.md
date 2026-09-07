@@ -129,10 +129,15 @@ byte counts below come from the file and the part plan, not from a counter.
 ### The bucket
 
 Created by `CreateBucket` at 15:45:05 UTC. The account held zero buckets
-before. `HeadObject` reports the storage class as `STANDARD_TIERING`; whether
-that string is HCM04's name for Gold cannot be told from the S3 response, which
-carries no tier name of its own — it needs confirming against the portal or
-GreenNode. No Instant Archive was touched.
+before. `HeadObject` reports the storage class as `STANDARD_TIERING`; the
+portal (read 2026-09-06) shows the project as **Gold**, 200 GB, a POC
+allocation with 0 credits on the account — it has to become a paid package
+before real footage lands. No Instant Archive was touched.
+
+The portal lists the endpoint as `hcm04-vstorage.vngcloud.vn` (hyphen,
+42.1.110.199). That host answers our S3 keys with 403. `hcm04.vstorage.vngcloud.vn`
+(dot, 42.1.110.200) is the one the keys work on and the one in `.env.local`;
+keep it.
 
 **`CreateBucket` refuses `region: 'auto'`.** `S3ObjectStore` builds its client
 with `region: 'auto'`, and the SDK turns that into
