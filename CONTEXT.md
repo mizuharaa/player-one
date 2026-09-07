@@ -177,7 +177,7 @@ in the code.
 | Review lane | Built, incl. dispute + second review | 88% |
 | Risk & anti-fraud | Built, thresholds unproven | 85% |
 | Back office | Partial; BO-09 cut is deliberate | 80% |
-| Operations & alerting | Partial; no alert reaches a person yet | 78% |
+| Operations & alerting | Delivery seam built; PLT-12 stays open for the Part 8 capacity comparison and conditions 8 and 9 | 78% |
 | Payout & ZaloPay | Code complete, **never run against ZaloPay** | 70% |
 | Cloud leg (GreenNode) | Tested on MinIO only | 60% |
 | Collector app | 14 screens, mock Bluetooth, no Android build | 55% |

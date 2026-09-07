@@ -167,6 +167,8 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 | `PLAYERONE_SECURE_COOKIES` | off | Turn on wherever there is TLS. Off by default because a `Secure` cookie is never sent over plain HTTP and the symptom is a sign-in that silently does nothing. It is also this repo's single "there is TLS in front of this process" signal: with it on, the API sends HSTS, and `PLAYERONE_REVIEWER_MEDIA=1` is allowed. |
 | `PLAYERONE_REVIEWER_MEDIA` | **off** | Whether a PLT-10 reviewer session may stream raw footage. Leave it off. Brief D11 records remote online playback of raw video as unresolved and escalated, and Part 7.3 says the Phase 1 arrangement is remote access and not data transfer — so a reviewer gets review metadata and no bytes until Legal signs the playback architecture. With it off a reviewer session is also refused the claim and the verdict with `451`, because a verdict on footage nobody watched is a payment on a review that did not happen. Counter operators are unaffected. Setting it to `1` without `PLAYERONE_SECURE_COOKIES=1` refuses to start: a twelve-hour bearer cookie must not cross the internet in clear. |
 | `PLAYERONE_DB_POOL` | `10` | A single connection serialises the claim queue: `for update skip locked` has nothing to skip. |
+| `PLAYERONE_ALERT_WEBHOOK` | | Alert delivery URL. Unset means log-only: each notice is delivered to the alert worker's own stdout, not the API server's log. |
+| `PLAYERONE_ALERT_INTERVAL_MS` | `60000` | Time between alert worker ticks, in milliseconds. |
 | `HOST` / `PORT` | `127.0.0.1` / `8080` | |
 | `STORAGE_ENDPOINT` | | The S3-compatible endpoint of the cloud store (GreenNode, once the contract is signed). Unset, the upload routes answer 503 saying so and everything else runs. |
 | `STORAGE_BUCKET` / `STORAGE_KEY` / `STORAGE_SECRET` | | Required together with `STORAGE_ENDPOINT`; a partial set fails closed at boot naming what is missing. |
@@ -412,9 +414,44 @@ Two things to know:
 
 `GET /api/alerts` answers PLT-12's nine conditions — PaXini's PRD §11.4 list,
 adopted verbatim — as one derived query over rows the platform already writes.
-Any operator session may read it. There is no alerts table, no worker and no
-notification channel: for a twenty-device pilot it is a screen somebody looks
-at.
+Any operator session may read it. There is no alerts table. A separate alert
+worker reads the same conditions at boot and every minute, delivering firing
+and cleared transitions to `PLAYERONE_ALERT_WEBHOOK`, or its own stdout when
+that variable is unset.
+
+```
+DATABASE_URL=... node packages/api/bin/alert-worker.ts          # one tick every PLAYERONE_ALERT_INTERVAL_MS (60 s)
+DATABASE_URL=... node packages/api/bin/alert-worker.ts --once   # one tick, a report, exit 0 (1 if delivery or evaluation failed)
+```
+
+A firing condition is normal output, so `--once` still exits 0 when delivery
+succeeds. Missing `DATABASE_URL` exits 2. Use `--once` to prove the wiring, not
+on a cron: it starts with empty state every run, so a firing condition would be
+re-sent on every invocation. Transition-only delivery needs the long-running
+process. The worker stops on SIGINT/SIGTERM
+and closes its database connection.
+
+The webhook receives JSON `{ text, id, state, observed, threshold, at }` with
+`content-type: application/json`; `state` is `firing` or `cleared`, and `at` is
+the delivery attempt's ISO timestamp. This is our schema; receivers needing a
+different shape require a relay, which this worker does not provide. Requests
+time out after ten seconds. A failed notice is retried on later ticks, and the
+newest notice for a condition replaces any older one still queued, so the last
+thing the receiver is sent always agrees with that condition's current state
+once delivery recovers. One failed notice does not block the rest. Nothing is
+suppressed for repeating an earlier message: a send that throws may still have
+arrived, so what the receiver actually saw is never known, and a duplicate
+sentence is cheaper than leaving them on a stale one. One ordering hazard is
+outside this worker's control: a request abandoned at the ten-second timeout can
+still complete at the receiver later, after a newer notice has landed. Every
+payload carries `at` so a receiver that cares can order on it. State and pending notices
+live in memory, so a restart drops pending notices and re-notifies conditions
+still firing once. A transition to `no_signal` is not
+a recovery and sends no cleared notice.
+
+This closes only PLT-12's delivery half. The Part 8 capacity comparison and
+conditions 8 and 9 remain open. Thresholds are unchanged: a single cloud
+transport failure still does not fire the condition whose threshold is three.
 
 ```json
 { "at": "2026-08-29T…", "alerts": [
