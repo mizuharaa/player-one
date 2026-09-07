@@ -9,6 +9,8 @@ import { AGREEMENTS, type CollectorApi } from './api/types.ts';
 import { ApiProvider } from './api/context.tsx';
 import { LocaleProvider } from './locale.tsx';
 import { NavProvider, useNav, type Route, type RouteName } from './nav.tsx';
+import { GuideProvider, useGuideTarget } from './guide/Guide.tsx';
+import { TabBar } from './shell/TabBar.tsx';
 import { ThemeProvider } from './theme.tsx';
 import { Agreements } from './screens/Agreements.tsx';
 import { Devices } from './screens/Devices.tsx';
@@ -21,6 +23,7 @@ import { Register } from './screens/Register.tsx';
 import { SessionCreate } from './screens/SessionCreate.tsx';
 import { TaskDetail } from './screens/TaskDetail.tsx';
 import { TaskHall } from './screens/TaskHall.tsx';
+import { Landing } from './screens/Landing.tsx';
 import { SignIn } from './screens/SignIn.tsx';
 import { Training } from './screens/Training.tsx';
 import { Uploads } from './screens/Uploads.tsx';
@@ -49,10 +52,33 @@ const SCREENS: Record<RouteName, ComponentType> = {
   income: Income,
 };
 
+/**
+ * The shell: the current screen, and the bottom bar when it is a tab root.
+ *
+ * A pushed screen — a task's detail, device setup, session preparation — does
+ * not render the bar. Two navigation models on one screen is how a collector
+ * loses track of what Back will do, and the bar's job is switching between the
+ * four places, not stepping back out of one.
+ */
 function Current() {
-  const { route } = useNav();
-  const Screen = SCREENS[route.name];
-  return <Screen />;
+  const nav = useNav();
+  const theme = useTheme();
+  const Screen = SCREENS[nav.route.name];
+  const tabsTarget = useGuideTarget('shell.tabs');
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.color.surface }}>
+      <Screen />
+      {nav.isTabRoot ? (
+        <View
+          ref={tabsTarget}
+          collapsable={false}
+          style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}
+        >
+          <TabBar />
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 const queryClient = new QueryClient();
@@ -121,8 +147,10 @@ async function startRoute(api: CollectorApi): Promise<Route> {
  * shows its own `common.loadFailed`.
  */
 function Session() {
-  /** `null` while restoring, `'out'` at the sign-in screen, else where to open. */
+  /** `null` while restoring, `'out'` at the landing, else where to open. */
   const [state, setState] = useState<Route | 'out' | null>(null);
+  /** Whether the landing has handed over to the sign-in form. */
+  const [signingIn, setSigningIn] = useState(false);
   // Created once, so `onUnauthorized` can close over `setState`.
   const [api] = useState<CollectorApi>(() =>
     USE_MOCK_API
@@ -176,18 +204,28 @@ function Session() {
       <QueryClientProvider client={queryClient}>
         {state === 'out' ? (
           /**
-           * Sign-in is not a `Route` and has no entry in `SCREENS`: it is not
-           * somewhere a collector navigates to, it is what the app is when
-           * there is no session. So the route registry's completeness check is
-           * untouched. It still needs a `NavProvider` above it because
-           * `ui.tsx`'s header reads nav.
+           * Neither the landing nor sign-in is a `Route`, and neither has an
+           * entry in `SCREENS`: they are not somewhere a collector navigates
+           * to, they are what the app is when there is no session. So the route
+           * registry's completeness check is untouched. They still need a
+           * `NavProvider` above them because `ui.tsx`'s header reads nav.
+           *
+           * The landing comes first and sign-in is one tap behind it. That tap
+           * is the only thing between them: the landing's hero is progressive
+           * enhancement and its "Đăng nhập" button is live from the first frame.
            */
           <NavProvider initial={{ name: 'register' }}>
-            <SignIn onSignedIn={() => void enter()} />
+            {signingIn ? (
+              <SignIn onSignedIn={() => void enter()} onBack={() => setSigningIn(false)} />
+            ) : (
+              <Landing onSignIn={() => setSigningIn(true)} />
+            )}
           </NavProvider>
         ) : (
           <NavProvider initial={state}>
-            <Current />
+            <GuideProvider>
+              <Current />
+            </GuideProvider>
           </NavProvider>
         )}
       </QueryClientProvider>

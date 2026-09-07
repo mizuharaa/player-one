@@ -25,7 +25,12 @@ export function Register() {
       <Body muted>{tt('register.intro')}</Body>
       <Card>
         <Field label={tt('register.name')} value={name} onChangeText={setName} />
-        <Field label={tt('register.phone')} value={phone} onChangeText={setPhone} />
+        <Field
+          label={tt('register.phone')}
+          value={phone}
+          onChangeText={setPhone}
+          keyboardType="phone-pad"
+        />
         {missing ? <Note text={tt('register.missing')} /> : null}
         <Button label={tt('register.submit')} onPress={() => register.mutate()} />
       </Card>

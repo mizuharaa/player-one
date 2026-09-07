@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { useNav, useRoute } from '../nav.tsx';
 import { useT } from '../locale.tsx';
-import { Body, Button, Card, Note, Row, Screen, Title } from '../ui.tsx';
+import { Body, Button, Card, FeatureBlock, Note, Row, Screen, Title } from '../ui.tsx';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -84,10 +84,27 @@ export function TaskDetail() {
 
   return (
     <Screen title={tt('detail.title')}>
+      <Title>{task.data.title}</Title>
+
+      {/*
+        The screen's one ink block, and the only place in this app a figure is
+        set large. It earns it: the unit price is what the whole task is worth
+        to a collector, the sentence under it is the server's own payment rule,
+        and the claim button directly below is the action it leads to. A figure
+        without both of those would be the hero-metric template and does not go
+        here.
+
+        It is display only. The app never multiplies it by anything — money is
+        computed once, on the server, and arrives per episode on Income.
+      */}
+      <FeatureBlock
+        label={tt('hall.perMinute')}
+        value={task.data.unitPriceVndPerMinute}
+        sentence={task.data.paymentRule || tt('detail.notSupplied')}
+      />
+
       <Card>
-        <Title>{task.data.title}</Title>
         <Row label={tt('session.scenario')} value={tt(`scenario.${task.data.scenario}`)} />
-        <Row label={tt('hall.perMinute')} value={task.data.unitPriceVndPerMinute} />
         <Row label={tt('detail.target')} value={`${task.data.targetMinutes} ${tt('detail.minutes')}`} />
         <Row label={tt('hall.slots')} value={`${task.data.claimants}/${task.data.maxClaimants}`} />
       </Card>
@@ -98,10 +115,6 @@ export function TaskDetail() {
       <Card>
         <Title>{tt('detail.privacy')}</Title>
         <Body>{task.data.privacyNotice || tt('detail.notSupplied')}</Body>
-      </Card>
-      <Card>
-        <Title>{tt('detail.payment')}</Title>
-        <Body>{task.data.paymentRule || tt('detail.notSupplied')}</Body>
       </Card>
       {!examPassed ? <Note text={tt('detail.needExam')} /> : null}
       {full && !alreadyClaimed ? <Note text={tt('detail.full')} /> : null}

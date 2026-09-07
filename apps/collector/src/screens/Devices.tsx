@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
-import { Body, Button, Card, Field, Note, Row, Screen, Title } from '../ui.tsx';
+import { Body, Button, Card, Field, Hatch, Note, Row, Screen, Title } from '../ui.tsx';
 
 /**
  * APP-14/18: bind by QR or typed serial; list what is bound. The QR path is a
@@ -32,7 +32,7 @@ export function Devices() {
   return (
     <Screen title={tt('devices.title')}>
       {devices.data !== undefined && devices.data.length === 0 ? (
-        <Body muted>{tt('devices.empty')}</Body>
+        <Hatch text={tt('devices.empty')} />
       ) : null}
       {(devices.data ?? []).map((d) => (
         <Card key={d.serial}>
@@ -41,7 +41,7 @@ export function Devices() {
         </Card>
       ))}
       <Card>
-        <Button label={tt('devices.scanQr')} kind="ghost" onPress={() => setSerial(MOCK_QR_SERIAL)} />
+        <Button label={tt('devices.scanQr')} variant="secondary" onPress={() => setSerial(MOCK_QR_SERIAL)} />
         <Body muted>{tt('devices.qrMock')}</Body>
         <Field label={tt('devices.typed')} value={serial} onChangeText={setSerial} />
         <Button
@@ -53,7 +53,7 @@ export function Devices() {
       </Card>
       <Button
         label={tt('devices.provision')}
-        kind="ghost"
+        variant="secondary"
         disabled={(devices.data ?? []).length === 0}
         onPress={() => nav.push({ name: 'provisioning' })}
       />

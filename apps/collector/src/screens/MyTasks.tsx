@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
-import { Body, CardLink, ListScreen, Row, Title } from '../ui.tsx';
+import { Body, CardLink, Hatch, ListScreen, Row, Title } from '../ui.tsx';
 
 /** APP-11: claimed tasks and their state. */
 export function MyTasks() {
@@ -20,7 +20,13 @@ export function MyTasks() {
       title={tt('mine.title')}
       data={claims.data ?? []}
       keyOf={(claim) => claim.id}
-      empty={claims.data !== undefined ? <Body muted>{tt('mine.empty')}</Body> : null}
+      empty={
+        claims.data === undefined ? (
+          <Body muted>{tt('common.loading')}</Body>
+        ) : (
+          <Hatch text={tt('mine.empty')} />
+        )
+      }
       renderItem={(claim) => (
         <CardLink
           label={titleOf(claim.taskId)}
