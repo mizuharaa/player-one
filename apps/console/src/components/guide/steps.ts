@@ -35,7 +35,7 @@
  * settle.bills        the bill table
  * risk.holds          the held payments
  * episodes.scope      the sentence saying which scope is on screen
- * counter.plan        what the counter screen will be
+ * counter.plan        the intake wizard's step rail
  * ```
  *
  * A step whose target is not on the page keeps its sentence and says so

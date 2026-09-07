@@ -64,6 +64,7 @@ const ROWS: Row[] = [
   { capability: 'Duration measurement', requirement: 'UPL-14 · §5.3.3', state: 'built', surface: 'Engine — no screen' },
   { capability: 'Episode identity and quarantine', requirement: 'UPL-06 · UPL-08', state: 'built', surface: 'Engine — no screen' },
   { capability: 'Session attribution', requirement: 'PLT-05 · SET-08', state: 'built', surface: 'Counter' },
+  { capability: 'Card intake at the counter', requirement: 'BO-10 · APP-17b', state: 'built', surface: 'Counter' },
   { capability: 'Both-token operator auth', requirement: 'PRD §8.3.2', state: 'built', surface: 'All' },
   { capability: 'Audit trail', requirement: 'SEC-04', state: 'built', surface: 'All' },
   { capability: 'Review verdicts', requirement: 'QR-01 · QR-03', state: 'built', surface: 'Review' },
@@ -71,6 +72,8 @@ const ROWS: Row[] = [
   { capability: 'Tasks, collectors and devices', requirement: 'BO-01 → BO-04', state: 'built', surface: 'Back office' },
   { capability: 'Settlement row', requirement: 'SET-02 · SET-04', state: 'partial', surface: 'Settle' },
   { capability: 'Bill export and mark paid', requirement: 'SET-05 · BO-14', state: 'buildable', surface: 'Settle' },
+  // BO-09 is the ADR 0003 cut — centres, machines and operators stay seeded.
+  // It is a different requirement from the intake row above, on the same surface.
   { capability: 'Upload-centre management', requirement: 'BO-09', state: 'buildable', surface: 'Counter' },
   { capability: 'Scoped remote reviewer role', requirement: 'PLT-10', state: 'buildable', surface: 'All' },
   // APP-05's gate is enforced in the database; the training and the exam itself are not built.

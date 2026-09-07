@@ -128,3 +128,15 @@ export function stampLocal(iso: string | null | undefined): string {
     hour12: false,
   });
 }
+
+/**
+ * Now, as `<input type="datetime-local">` wants it: local wall-clock, no zone.
+ *
+ * The counter and the back office both need it — one to stamp a handover, one
+ * to record an agreement — and both then read the value back as the operator's
+ * own time, which is where the person in front of them was standing.
+ */
+export function localNow(): string {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}

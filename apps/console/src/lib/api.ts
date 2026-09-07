@@ -425,6 +425,115 @@ export const backOffice = {
   bindDevice: (id: string, collectorId: string) =>
     send(`/api/devices/${id}/bind`, { collector_id: collectorId }),
   unbindDevice: (id: string) => send(`/api/devices/${id}/unbind`),
+
+  /**
+   * APP-10, taken by an operator on the collector's behalf.
+   *
+   * The id is minted by the caller and the write is idempotent on it, like
+   * every other create on this seam. There is deliberately no `claims()` read
+   * beside this: the API has no operator-reachable list of claims — `GET
+   * /api/me/claims` is scoped to a collector's own token — so the console can
+   * create a claim and cannot enumerate one. `GET /api/tasks` carries the live
+   * claimant *count*, which is what the table shows.
+   */
+  claimTask: (taskId: string, body: { id: string; collector_id: string }) =>
+    send(`/api/tasks/${taskId}/claims`, body),
+
+  /**
+   * Who holds this camera from now on: a custody period, not a bind.
+   *
+   * `bindDevice` is "who has it in their hands"; this is what settlement reads
+   * to answer "who had it on 13 August". One POST does both halves of a swap,
+   * so the caller never closes a period itself.
+   */
+  assignDevice: (deviceId: string, body: { id: string; collector_id: string; valid_from: string }) =>
+    send(`/api/devices/${deviceId}/assignments`, body),
+};
+
+/* -------------------------------------------------------------------------
+   The counter (BO-10). Two writes and one read, and the two writes are
+   deliberately separate objects: the handover is the card arriving, the
+   session is what was recorded on it. `CLAUDE.md` calls that split a decision
+   — the app binds a session before recording (APP-16), the operator creates
+   the handover when the card arrives — and in the pilot the operator creates
+   both, which is why every session written from here is stamped
+   `session_origin = 'handover'` by the server.
+   ---------------------------------------------------------------------- */
+
+/**
+ * The offline cache's reference data, as `GET /reference/sync` sends it.
+ *
+ * Rows straight off the tables, so the keys are the schema's camelCase and not
+ * the snake_case the hand-written routes use. Its scope is the other thing
+ * worth knowing: **authorisation** is centre-scoped and the payload is not, so
+ * a collector who claimed from one task hall can hand a card over at whichever
+ * centre they reach. ADR 0003 carries that argument; `reference_scope` says it
+ * on the wire.
+ */
+export interface Reference {
+  fetched_at: string;
+  upload_centre_id: string;
+  reference_scope: 'global';
+  collectors: {
+    id: string;
+    externalRef: string;
+    status: 'pending' | 'qualified' | 'suspended';
+    examResult: 'pass' | 'fail' | null;
+  }[];
+  devices: {
+    id: string;
+    hardwareSerial: string;
+    status: 'active' | 'faulty' | 'retired';
+    firmwareVersion: string | null;
+    boundCollectorId: string | null;
+  }[];
+  tasks: {
+    id: string;
+    name: string;
+    type: string | null;
+    unitPrice: Decimal;
+    status: 'draft' | 'published' | 'taken_down';
+  }[];
+  scenarios: { id: string; code: string; privacyRiskLevel: 'low' | 'medium' | 'high' }[];
+}
+
+/** What `POST /handovers` takes. Centre, operator and machine come from the tokens. */
+export interface HandoverBody {
+  id: string;
+  collector_id: string;
+  device_id: string;
+  tf_card_id: string;
+  handover_time: string;
+}
+
+/**
+ * What `POST /handovers/:id/sessions` takes.
+ *
+ * `others_in_frame` and `sensitive_info_present` are booleans with no default,
+ * on purpose and all the way down: the column is NOT NULL, the server's schema
+ * is `z.boolean()` rather than `.default(false)`, and the wizard makes it a
+ * required choice. "Nobody asked" is not one of the answers.
+ *
+ * There is **no `session_ended_at`**, here or anywhere. An operator cannot
+ * supply a truthful end, and a retroactively typed end that decides payment
+ * attribution is the failure the brief warns about.
+ */
+export interface SessionBody {
+  id: string;
+  task_id: string;
+  scenario_id: string;
+  collection_point_id?: string;
+  others_in_frame: boolean;
+  sensitive_info_present: boolean;
+  prepare_time: string;
+  client_version?: string;
+}
+
+export const counter = {
+  reference: () => call<Reference>('/reference/sync'),
+  handover: (body: HandoverBody) => send('/handovers', body),
+  session: (handoverId: string, body: SessionBody) =>
+    send(`/handovers/${handoverId}/sessions`, body),
 };
 
 export const api = {

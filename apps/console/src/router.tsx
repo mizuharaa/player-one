@@ -16,8 +16,8 @@ import { HomeScreen } from './routes/Home.tsx';
 import { ReviewScreen } from './routes/Review.tsx';
 import { PipelineScreen } from './routes/Pipeline.tsx';
 import { LoginScreen } from './routes/Login.tsx';
-import { NotBuiltScreen } from './routes/NotBuilt.tsx';
 import { EpisodesScreen } from './routes/Episodes.tsx';
+import { CounterScreen } from './routes/Counter.tsx';
 import { BackOfficeScreen } from './routes/BackOffice.tsx';
 import { SettleScreen } from './payout/SettleScreen.tsx';
 import { PreflightScreen } from './payout/PreflightScreen.tsx';
@@ -89,18 +89,22 @@ const pipelineRoute = createRoute({
 });
 
 /**
- * The counter, which exists in the product and not yet in the code.
+ * The counter: the card-intake wizard (BO-10).
  *
- * It routes to a page that says what the surface is for, which requirement IDs
- * it covers, and how the work is done today — rather than 404ing or, worse,
- * showing an empty table that looks like a bug. The BO-09 cut behind it is
- * ADR 0003 and has a trigger written into it.
+ * It used to route to the not-built page under ADR 0003. That ADR's cut is
+ * **BO-09** — creating upload centres, binding machines and operators — and it
+ * says so in its own title and its own decision. The handover lane is BO-10,
+ * `POST /handovers` and `POST /handovers/:id/sessions` have been built and
+ * tested since `counter.ts` landed, and nothing in the ADR reserves this path
+ * for the screen it eventually owes. So the stub is gone and the endpoints
+ * have a face. If BO-09's screen is ever built, the ADR's own item 3 offers
+ * `/centres` as the alternative and that is where it goes.
  */
 const counterRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/counter',
   beforeLoad: requireSession,
-  component: () => <NotBuiltScreen surface="counter" />,
+  component: CounterScreen,
 });
 
 /**

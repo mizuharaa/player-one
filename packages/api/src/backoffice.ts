@@ -230,6 +230,13 @@ export const REFUSALS = new Set([
   'device_assignments_no_overlap',
   'device_assignments_device_id_devices_id_fk',
   'device_assignments_collector_id_collectors_id_fk',
+  /*
+   * Sent as a 409 by the assignment route and missing from this set until now.
+   * It has sentences in all three locales, so it always reached the operator
+   * correctly; what it did not do was satisfy this file's own rule that both
+   * lists hold every refusal. Found while building the assignment wizard.
+   */
+  'device_assignments_id_reused',
   /**
    * QR-08 (0016). Raised by `POST /api/review/dispute`, which lives in
    * review.ts and answers them the same way this file does.

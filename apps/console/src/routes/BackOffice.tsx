@@ -23,11 +23,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { MESSAGES } from '@playerone/api/i18n';
 import { AppShell } from '../components/shell/AppShell.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { EmptyState, Panel, Problem, Skeleton } from '../components/ui/primitives.tsx';
-import { durationShort } from '../lib/format.ts';
+import { durationShort, localNow } from '../lib/format.ts';
+import { refusalKey } from './refusal.ts';
+import { TaskAssign } from './TaskAssign.tsx';
 import { cn } from '../lib/cn.ts';
 import {
   ApiError,
@@ -42,20 +43,6 @@ import {
 
 type Tab = 'tasks' | 'collectors' | 'devices';
 const TABS: Tab[] = ['tasks', 'collectors', 'devices'];
-
-/**
- * The one place a server refusal becomes a sentence in the reader's language.
- *
- * The catalogue itself is the list of refusals it can name — a hand-kept copy
- * of the server's set is a third place to add a constraint to, and the one
- * nobody remembers. A 409 whose constraint has no sentence falls through to the
- * generic line, which is exactly what an unknown refusal should look like.
- */
-const refusalKey = (error: unknown): string => {
-  const detail = error instanceof ApiError ? error.detail : undefined;
-  const key = `bo.refused.${String(detail)}`;
-  return typeof detail === 'string' && key in MESSAGES.en ? key : 'bo.refused.unknown';
-};
 
 export function BackOfficeScreen() {
   const { t } = useTranslation();
@@ -135,18 +122,35 @@ export function BackOfficeScreen() {
 function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
   const { t } = useTranslation();
   const client = useQueryClient();
-  const [creating, setCreating] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
   /**
-   * The id this form will submit under, minted once and kept until a create
-   * actually lands. See the comment at the `id:` below for why a retry has to
-   * carry the same one.
+   * Creating a task is a sequence, so it is a wizard and not a row of inputs
+   * above the table.
+   *
+   * There used to be an inline create form here. It is gone rather than kept
+   * beside the wizard: two ways to create the same row is the duplication that
+   * ends with one of them missing a field, and the sequence the wizard walks —
+   * create, publish, claim, hand out a camera — is the order the server's own
+   * triggers impose. The table is untouched; it is what this tab shows when the
+   * wizard is closed.
    */
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  const [assigning, setAssigning] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
 
   const { data, isPending, error } = useQuery({
     queryKey: ['bo', 'tasks'],
     queryFn: backOffice.tasks,
+  });
+
+  /** The wizard needs the roll and the fleet: it claims for people and hands out cameras. */
+  const roll = useQuery({
+    queryKey: ['bo', 'collectors'],
+    queryFn: backOffice.collectors,
+    enabled: assigning,
+  });
+  const fleet = useQuery({
+    queryKey: ['bo', 'devices'],
+    queryFn: backOffice.devices,
+    enabled: assigning,
   });
 
   const done = () => {
@@ -172,31 +176,22 @@ function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
     onError: failed,
   });
 
-  const create = useMutation({
-    mutationFn: backOffice.createTask,
-    onSuccess: () => {
-      setCreating(false);
-      // Landed, so the next form is a new request rather than a replay of this one.
-      setRequestId(crypto.randomUUID());
-      done();
-    },
-    onError: failed,
-  });
-
-  /**
-   * Closing the form ends this request; opening it starts a new one.
-   *
-   * The id is minted once and kept while the form is open, because a retry of
-   * a submit that may already have landed has to carry the same one. It was
-   * only rotated on success, so an id that came back `*_id_reused` stayed in
-   * the form: cancel, reopen, and the operator resubmits the same poisoned id
-   * for ever, with a page reload as the only way out. Cancelling is the
-   * explicit "not this request" the rotation was missing.
-   */
-  const cancelOrOpen = () => {
-    if (creating) setRequestId(crypto.randomUUID());
-    setCreating(!creating);
-  };
+  if (assigning) {
+    if (roll.isPending || fleet.isPending) return <TableSkeleton />;
+    if (roll.error) return <LoadFailed error={roll.error} />;
+    if (fleet.error) return <LoadFailed error={fleet.error} />;
+    return (
+      <TaskAssign
+        collectors={roll.data?.collectors ?? []}
+        devices={fleet.data?.devices ?? []}
+        onLanded={done}
+        onClose={() => {
+          setAssigning(false);
+          done();
+        }}
+      />
+    );
+  }
 
   if (error) return <LoadFailed error={error} />;
   if (isPending) return <TableSkeleton />;
@@ -206,63 +201,10 @@ function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
   return (
     <>
       <div className="mb-3 flex justify-end">
-        <Button variant={creating ? 'ghost' : 'primary'} onClick={cancelOrOpen}>
-          {creating ? t('bo.cancel') : t('bo.task.new')}
+        <Button variant="primary" onClick={() => setAssigning(true)}>
+          {t('bo.task.new')}
         </Button>
       </div>
-
-      {creating ? (
-        <Panel className="mb-6 p-5">
-          <form
-            className="grid gap-4 sm:grid-cols-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const form = new FormData(e.currentTarget);
-              const target = String(form.get('target') ?? '').trim();
-              create.mutate({
-                /**
-                 * Held for as long as the form is open, not minted per submit.
-                 * The id is what makes a create idempotent, so a request whose
-                 * reply was lost has to be retried under the SAME id — a fresh
-                 * one on the second click is not a retry, it is a second task.
-                 */
-                id: requestId,
-                name: String(form.get('name')),
-                type: String(form.get('type')),
-                unit_price: String(form.get('price')),
-                ...(target === '' ? {} : { target_effective_duration_s: target }),
-                max_concurrent_claimants: Number(form.get('claimants')),
-              });
-            }}
-          >
-            <Field label={t('bo.task.name')} name="name" required />
-            <Field label={t('bo.task.type')} name="type" required />
-            <Field
-              label={t('bo.task.rate')}
-              name="price"
-              required
-              inputMode="decimal"
-              pattern="\d{1,8}(\.\d{1,4})?"
-              hint={t('bo.task.priceNote')}
-            />
-            <Field label={t('bo.task.target')} name="target" inputMode="decimal" pattern="\d{1,12}(\.\d{1,6})?" />
-            <Field
-              label={t('bo.task.maxClaimants')}
-              name="claimants"
-              type="number"
-              min={1}
-              max={2147483647}
-              defaultValue={1}
-              required
-            />
-            <div className="flex items-end">
-              <Button type="submit" variant="primary" disabled={create.isPending}>
-                {create.isPending ? t('bo.working') : t('bo.task.create')}
-              </Button>
-            </div>
-          </form>
-        </Panel>
-      ) : null}
 
       {tasks.length === 0 ? (
         <EmptyState title={t('bo.empty')} body={t('bo.intro')} />
@@ -1107,12 +1049,6 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
 /* -------------------------------------------------------------------------
    The small shared pieces of this screen.
    ---------------------------------------------------------------------- */
-
-/** `<input type="datetime-local">` wants local wall-clock, with no zone on it. */
-function localNow(): string {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-}
 
 /**
  * A table on paper.

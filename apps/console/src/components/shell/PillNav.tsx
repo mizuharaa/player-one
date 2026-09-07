@@ -1,18 +1,20 @@
 /**
  * The seven destinations, as pills on the ink bar.
  *
- * Two of them do not have a finished screen behind them, and they appear
- * anyway, marked, rather than being hidden until they exist. A back office that
+ * One of them does not have a finished screen behind it, and it appears
+ * anyway, marked, rather than being hidden until it exists. A back office that
  * shows only what is finished teaches an operator a false map of the product
  * and then moves the furniture later; showing the whole shape with honest
  * states is how nobody clicks into a dead link.
  *
- * **Two different marks, because they are two different states.** `/counter` is
- * not built at all and carries a dot. `/episodes` is partly built — the
- * attention scopes exist, BO-05's full browse does not — and carries
- * `IconPartialBuilt`, a half-filled square. It is emphatically **not**
+ * **The marks say which state a destination is in.** `/episodes` is partly
+ * built — the attention scopes exist, BO-05's full browse does not — and
+ * carries `IconPartialBuilt`, a half-filled square. It is emphatically **not**
  * `IconPartial`, which is a verdict glyph: a payment symbol in the navigation
- * is one glance from meaning something about money.
+ * is one glance from meaning something about money. `/counter` carried a plain
+ * dot while it was a stub; the intake wizard is built against BO-10's two
+ * endpoints, so the dot is gone. The `false` case stays in the type because
+ * the next honest stub will want it.
  *
  * `aria-current="page"` rather than styling alone, so the active destination is
  * announced and not merely coloured. The label is `aria-label` as well as
@@ -49,7 +51,7 @@ type Destination = {
 
 const DESTINATIONS: Destination[] = [
   { to: '/', key: 'nav.home', Icon: IconHome, built: true },
-  { to: '/counter', key: 'nav.counter', Icon: IconCounter, built: false },
+  { to: '/counter', key: 'nav.counter', Icon: IconCounter, built: true },
   { to: '/review', key: 'nav.review', Icon: IconReview, built: true },
   { to: '/episodes', key: 'nav.episodes', Icon: IconEpisodes, built: 'partial' },
   { to: '/settle', key: 'nav.settle', Icon: IconSettle, built: true },

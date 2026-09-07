@@ -2289,7 +2289,7 @@ const zh: Record<MessageKey, string> = {
   'episodes.noMatch': '此范围内没有符合筛选条件的行。',
   /* 向导语法：柜台收卡与后台任务派发共用。每一步只问一个问题。 */
 
-  'wiz.step': '第',
+  'wiz.step': '步骤',
   'wiz.review': '核对并提交',
   'wiz.review.question': '写入之前，请逐项核对。',
   'wiz.unanswered': '尚未填写',

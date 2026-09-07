@@ -33,9 +33,10 @@ export default defineConfig({
     port: 5173,
     proxy: Object.fromEntries(
       /*
-       * `/upload-batches` and `/episodes/` are the counter lane, and they are
-       * mounted at the API root rather than under `/api` (episodes.ts). The
-       * attention screen reads all three of them, so they proxy like the rest.
+       * `/handovers`, `/upload-batches` and `/episodes/` are the counter lane,
+       * and they are mounted at the API root rather than under `/api`
+       * (counter.ts, episodes.ts). The intake wizard and the attention screen
+       * read all of them, so they proxy like the rest.
        *
        * The trailing slash on `/episodes/` is load-bearing and cost a debug
        * round trip: `/episodes` is also a **client route**, and proxying that
@@ -45,7 +46,7 @@ export default defineConfig({
        * path, so the slash separates them exactly. Any reverse proxy in front
        * of a built console has to make the same split.
        */
-      ['/api', '/auth', '/media', '/whoami', '/reference', '/upload-batches', '/episodes/'].map((path) => [
+      ['/api', '/auth', '/media', '/whoami', '/reference', '/handovers', '/upload-batches', '/episodes/'].map((path) => [
         path,
         {
           target: process.env['PLAYERONE_API'] ?? 'http://127.0.0.1:8080',

@@ -187,6 +187,83 @@ export const IconPartialBuilt = (p: IconProps) => (
 );
 
 /* ---------------------------------------------------------------------------
+   The wizard rail's step glyphs.
+
+   A step in a rail is named twice — in words and in a shape — because an
+   operator who has done the intake fifty times reads the shape and an operator
+   on their first shift reads the word. Each of these is the object the step is
+   about, on the same 20x20 grid at the same 1.9 stroke as everything above.
+   ------------------------------------------------------------------------- */
+
+/** The collector: a person, because the step asks who handed the card over. */
+export const IconPerson = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="10" cy="6.6" r="3.1" />
+    <path d="M3.9 16.8c0-2.9 2.7-4.7 6.1-4.7s6.1 1.8 6.1 4.7" />
+  </Icon>
+);
+
+/** The Ego camera: a head-worn band with one lens on it. */
+export const IconCamera = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M2.6 12.4a7.4 7.4 0 0 1 14.8 0" />
+    <rect x="2.6" y="12.4" width="14.8" height="3.6" rx="1.8" />
+    <circle cx="10" cy="7.4" r="1.6" />
+  </Icon>
+);
+
+/**
+ * The TF card, drawn with its cut corner.
+ *
+ * Not `IconCounter`, which is a card crossing a desk and means the whole
+ * destination. This one is the object in the operator's hand.
+ */
+export const IconCard = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 3h6.6L15 6.4V17H5z" />
+    <path d="M7.6 6.2v3M10 6.2v3M12.4 7.6v1.6" />
+  </Icon>
+);
+
+/** The task: a line of work with its rate, as a docket. */
+export const IconTask = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="4" y="3" width="12" height="14" rx="1.8" />
+    <path d="M7.2 7.4h5.6M7.2 10.4h5.6M7.2 13.4h3.2" />
+  </Icon>
+);
+
+/** The scenario: where the recording happened. */
+export const IconScene = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M10 17.2s5.4-4.6 5.4-8.4a5.4 5.4 0 1 0-10.8 0c0 3.8 5.4 8.4 5.4 8.4z" />
+    <circle cx="10" cy="8.6" r="2" />
+  </Icon>
+);
+
+/** The two APP-17b declarations: what the collector was asked, and answered. */
+export const IconDeclare = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M10 2.8 16.2 5v5.2c0 3.4-2.6 6-6.2 7-3.6-1-6.2-3.6-6.2-7V5z" />
+    <path d="M7.6 9.9 9.4 11.7l3.2-3.4" />
+  </Icon>
+);
+
+/**
+ * A step that is answered, in the rail.
+ *
+ * Deliberately not `IconPass`. That glyph is a verdict — it decides what a
+ * collector is paid — and a payment symbol standing beside "Collector" in a
+ * form's progress rail is one glance from meaning something about money. This
+ * is the house stroke, on the house grid, and it says "answered".
+ */
+export const IconTick = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m4.6 10.4 3.6 3.6 7.2-8" />
+  </Icon>
+);
+
+/* ---------------------------------------------------------------------------
    The three verdicts. Heavier stroke, and each is a distinct *shape* — a check,
    a half-filled ring, a cross — so the outcome survives a monochrome print, a
    red/green colour deficiency, and a 13px pill.
