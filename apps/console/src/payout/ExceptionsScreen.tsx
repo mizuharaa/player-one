@@ -15,7 +15,7 @@ import { Link, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import type { ReactNode } from 'react';
 import { Button } from '../components/ui/button.tsx';
-import { EmptyState, Panel } from '../components/ui/primitives.tsx';
+import { EmptyState } from '../components/ui/primitives.tsx';
 import { payout, type PayoutBill } from '../lib/api.ts';
 import { count, elapsed, vnd, when } from './format.ts';
 import { keys } from './period.ts';
@@ -82,7 +82,7 @@ export function ExceptionsScreen() {
       ) : total === 0 ? (
         <EmptyState title={t('settle.exceptions.empty')} body={t('settle.exceptions.empty.body')} />
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-8">
           <Group title={t('settle.exceptions.pending')} body={t('settle.exceptions.pending.body')} bills={pending}>
             {(b) => <AttemptRow bill={b} period={period} resolvable onRefused={setRefused} />}
           </Group>
@@ -119,20 +119,20 @@ function Group({ title, body, bills, children }: { title: string; body: string; 
   const { i18n } = useTranslation();
   if (bills.length === 0) return null;
   return (
-    <Panel className="p-5">
-      <div className="flex items-baseline justify-between gap-3">
+    <section>
+      <div className="flex items-baseline justify-between gap-3 border-b border-[var(--foreground)] pb-2">
         <h2 className="text-[1.0625rem] font-bold tracking-[-0.01em]">{title}</h2>
         <span className="num text-[0.8125rem] text-[var(--muted-foreground)]">{count(bills.length, i18n.language)}</span>
       </div>
-      <p className="mt-1 max-w-[70ch] text-[0.875rem] leading-relaxed text-[var(--muted-foreground)]">{body}</p>
-      <ul className="mt-3 divide-y divide-[var(--border)]">
+      <p className="mt-2 max-w-[70ch] text-[0.875rem] leading-relaxed text-[var(--muted-foreground)]">{body}</p>
+      <ul className="mt-2 divide-y divide-[var(--border)]">
         {bills.map((b) => (
           <li key={b.id} className="py-3">
             {children(b)}
           </li>
         ))}
       </ul>
-    </Panel>
+    </section>
   );
 }
 

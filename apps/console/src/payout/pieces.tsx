@@ -20,7 +20,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '../components/shell/AppShell.tsx';
 import { Button } from '../components/ui/button.tsx';
-import { Panel, Problem, Skeleton } from '../components/ui/primitives.tsx';
+import { Problem, Skeleton } from '../components/ui/primitives.tsx';
 import { IconAlert } from '../components/icons.tsx';
 import { cn } from '../lib/cn.ts';
 import { ApiError, type AttemptStatus, type PayoutIssue, type PayoutMode, type RiskBand, type VerifyStatus } from '../lib/api.ts';
@@ -59,16 +59,17 @@ export function SettleShell({
 
   return (
     <AppShell>
-      <header className="max-w-[62ch]">
+      <header className="border-b border-[var(--foreground)] pb-5">
         <h1 className="text-[2.0625rem] font-extrabold leading-[1.12] tracking-[-0.03em]">
           {t('settle.title')}
         </h1>
-        <p className="mt-3 text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
+        <p className="mt-3 max-w-[62ch] text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
           {t('settle.intro')}
         </p>
       </header>
 
       <form
+        data-guide="settle.period"
         className="mt-6 flex flex-wrap items-end gap-3"
         onSubmit={(e) => {
           e.preventDefault();
@@ -77,7 +78,11 @@ export function SettleShell({
         }}
       >
         <label className="block">
-          <span className={LABEL}>{t('settle.period')}</span>
+          {/* Block, so the label sits above its field. As an inline span it ran
+              straight into the date input's left edge — "Kỳ bắt đầu từ" had its
+              last letter behind the box — and it was the only label on these
+              screens not stacked over its value. */}
+          <span className={cn(LABEL, 'block')}>{t('settle.period')}</span>
           <input
             type="date"
             name="period"
@@ -106,7 +111,7 @@ export function SettleShell({
               'rounded-full px-4 py-1.5 text-[0.9375rem] font-semibold no-underline',
               'transition-colors duration-150 ease-[var(--ease)]',
               tab === name
-                ? 'bg-[var(--sun-50)] text-[var(--sun-700)]'
+                ? 'bg-[var(--foreground)] text-[var(--background)]'
                 : 'text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]',
             )}
           >
@@ -243,30 +248,42 @@ export function IssueList({ issues, className }: { issues: PayoutIssue[]; classN
    scrolls sideways.
    ---------------------------------------------------------------------- */
 
-export const LABEL =
-  'text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]';
+/**
+ * A label above a value.
+ *
+ * It was a tracked uppercase eyebrow, and it sat above every figure, every
+ * field and every section on five screens. One named kicker is a system; an
+ * eyebrow on everything is grammar nobody chose, and at 12px tracked caps a
+ * Vietnamese label with two marks on one vowel is the hardest line on the
+ * page to read. Sentence case, at the body's own size, in the muted ink.
+ */
+export const LABEL = 'text-[0.8125rem] font-semibold text-[var(--muted-foreground)]';
 export const INPUT =
   'mt-1 h-10 w-full rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 text-[0.9375rem]';
 
+/**
+ * A table on paper: hairlines, no card, no shadow.
+ *
+ * A shadowed rounded container around a column of figures adds nothing the
+ * operator scanning that column can use, and four of them stacked down a
+ * settlement screen is the panel grid this console refuses. The rule under
+ * the head is ink; the rules between rows are hairlines. It still scrolls
+ * inside its own box so the page never scrolls sideways.
+ */
 export function Table({ children, minWidth = 760 }: { children: ReactNode; minWidth?: number }) {
   return (
-    <Panel className="overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left" style={{ minWidth }}>
-          {children}
-        </table>
-      </div>
-    </Panel>
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-left" style={{ minWidth }}>
+        {children}
+      </table>
+    </div>
   );
 }
 
 export function Th({ children, className, ...rest }: React.ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
-      className={cn(
-        'px-4 py-2.5 text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]',
-        className,
-      )}
+      className={cn('px-3 pb-2 text-[0.8125rem] font-semibold text-[var(--muted-foreground)]', className)}
       {...rest}
     >
       {children}
@@ -275,7 +292,7 @@ export function Th({ children, className, ...rest }: React.ThHTMLAttributes<HTML
 }
 
 export function Td({ className, children }: { className?: string; children: ReactNode }) {
-  return <td className={cn('px-4 py-3 align-top text-[0.875rem]', className)}>{children}</td>;
+  return <td className={cn('px-3 py-2.5 align-top text-[0.875rem]', className)}>{children}</td>;
 }
 
 /** A label above a server figure. Mono, tabular: these are read in columns. */
@@ -295,7 +312,7 @@ export function Fig({
       <p className={LABEL}>{label}</p>
       <p
         className={cn(
-          'num mt-1 text-[1.3125rem] font-semibold tracking-[-0.02em]',
+          'num mt-0.5 text-[1.3125rem] font-medium tracking-[-0.02em]',
           tone === 'warn' ? 'text-[var(--sun-700)]' : tone === 'data' ? 'text-[var(--tech-600)]' : '',
         )}
       >
@@ -306,12 +323,56 @@ export function Fig({
   );
 }
 
+/**
+ * The one ink block a screen is allowed.
+ *
+ * `.feature-block` is `stage.ground` — the same near-black as the top bar and
+ * the review theatre, because the console has one dark and reuses it rather
+ * than owning two that nearly match. The rule for using it is narrow and it is
+ * the reason this is not a "stat card": a figure earns the ink only when it
+ * carries **its sentence and its action**. A big number with a small label and
+ * an accent underneath is the template this refuses, and one of these per
+ * screen is the ceiling.
+ */
+export function FeatureBlock({
+  label,
+  figure,
+  sentence,
+  action,
+  className,
+  ...rest
+}: {
+  label: ReactNode;
+  figure: ReactNode;
+  sentence: ReactNode;
+  action?: ReactNode;
+} & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn(
+        'feature-block px-5 py-5 ring-1 ring-[var(--stage-line)] sm:px-6',
+        className,
+      )}
+      {...rest}
+    >
+      <p className="text-[0.8125rem] font-semibold text-[var(--stage-mid)]">{label}</p>
+      <p className="figure mt-1 text-[var(--stage-fg)]">{figure}</p>
+      <p className="mt-2 max-w-[54ch] text-[0.875rem] leading-relaxed text-[var(--stage-mid)]">
+        {sentence}
+      </p>
+      {action ? <div className="mt-4">{action}</div> : null}
+    </div>
+  );
+}
+
 /** A section heading inside a panel. */
 export function Section({ title, children, className }: { title: ReactNode; children: ReactNode; className?: string }) {
   return (
     <section className={className}>
-      <h2 className="text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]">{title}</h2>
-      <div className="mt-2">{children}</div>
+      <h2 className="border-b border-[var(--border-strong)] pb-1 text-[0.8125rem] font-semibold text-[var(--foreground)]">
+        {title}
+      </h2>
+      <div className="mt-2.5">{children}</div>
     </section>
   );
 }
@@ -362,13 +423,14 @@ export function Reason({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
+/** The shape a table is about to take: the same ink rule, five rows of it. */
 export function TableSkeleton() {
   return (
-    <Panel className="p-4">
+    <div className="border-t border-[var(--foreground)] pt-3">
       {[0, 1, 2, 3, 4].map((i) => (
-        <Skeleton key={i} className="mb-2 h-10 w-full last:mb-0" />
+        <Skeleton key={i} className="mb-2 h-9 w-full last:mb-0" />
       ))}
-    </Panel>
+    </div>
   );
 }
 

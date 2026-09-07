@@ -64,16 +64,23 @@ export function BackOfficeScreen() {
 
   return (
     <AppShell>
-      <header className="max-w-[62ch]">
+      <header className="border-b border-[var(--foreground)] pb-5">
         <h1 className="text-[2.0625rem] font-extrabold leading-[1.12] tracking-[-0.03em]">
           {t('bo.title')}
         </h1>
-        <p className="mt-3 text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
+        <p className="mt-3 max-w-[62ch] text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
           {t('bo.intro')}
         </p>
       </header>
 
-      <div className="mt-6 flex flex-wrap items-center gap-1" role="tablist">
+      {/*
+        Three tables and no hero. This screen is an operations desk, not a
+        dashboard: the quietest thing that answers "which of the three am I
+        looking at" is the right one, and the selected tab is inverted ink
+        rather than a brand tint so sun keeps meaning *action* on a page whose
+        primary button sits four inches below it.
+      */}
+      <div data-guide="backoffice.tabs" className="mt-6 flex flex-wrap items-center gap-1" role="tablist">
         {TABS.map((name) => (
           <button
             key={name}
@@ -88,7 +95,7 @@ export function BackOfficeScreen() {
               'rounded-full px-4 py-1.5 text-[0.9375rem] font-semibold',
               'transition-colors duration-150 ease-[var(--ease)]',
               tab === name
-                ? 'bg-[var(--sun-50)] text-[var(--sun-700)]'
+                ? 'bg-[var(--foreground)] text-[var(--background)]'
                 : 'text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]',
             )}
           >
@@ -112,7 +119,7 @@ export function BackOfficeScreen() {
         </div>
       ) : null}
 
-      <div className="mt-6">
+      <div className="mt-5">
         {tab === 'tasks' ? <Tasks onRefused={setRefused} /> : null}
         {tab === 'collectors' ? <Collectors onRefused={setRefused} /> : null}
         {tab === 'devices' ? <Devices onRefused={setRefused} /> : null}
@@ -198,7 +205,7 @@ function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-3 flex justify-end">
         <Button variant={creating ? 'ghost' : 'primary'} onClick={cancelOrOpen}>
           {creating ? t('bo.cancel') : t('bo.task.new')}
         </Button>
@@ -273,7 +280,7 @@ function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
         >
           {tasks.map((task) => (
             <Rows key={task.id}>
-              <tr className="border-b border-[var(--border)] hover:bg-[var(--muted)]">
+              <tr className="border-b border-[var(--border)] transition-colors duration-150 ease-[var(--ease)] hover:bg-[var(--muted)]">
                 <Td className="font-semibold">{task.name}</Td>
                 <Td className="text-[var(--muted-foreground)]">{task.type ?? '—'}</Td>
                 {/* As stored. Not through Intl: this number multiplies into a payment. */}
@@ -283,7 +290,7 @@ function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
                   {task.claimants} / {task.max_concurrent_claimants}
                 </Td>
                 <Td>
-                  <Pill tone={task.status === 'published' ? 'pass' : task.status === 'draft' ? 'partial' : 'reject'}>
+                  <Pill tone={task.status === 'published' ? 'live' : task.status === 'draft' ? 'waiting' : 'stopped'}>
                     {t(`bo.task.state.${task.status}`)}
                   </Pill>
                 </Td>
@@ -481,7 +488,7 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-3 flex justify-end">
         <Button variant={creating ? 'ghost' : 'primary'} onClick={cancelOrOpen}>
           {creating ? t('bo.cancel') : t('bo.collector.new')}
         </Button>
@@ -538,7 +545,7 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
             const missing = names.filter((n) => !accepted.has(n));
             return (
               <Rows key={c.id}>
-                <tr className="border-b border-[var(--border)] hover:bg-[var(--muted)]">
+                <tr className="border-b border-[var(--border)] transition-colors duration-150 ease-[var(--ease)] hover:bg-[var(--muted)]">
                   <Td className="num font-semibold">{c.external_ref}</Td>
                   <Td>
                     <select
@@ -558,7 +565,7 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
                     </select>
                   </Td>
                   <Td>
-                    <Pill tone={c.exam_result === 'pass' ? 'pass' : c.exam_result === 'fail' ? 'reject' : 'partial'}>
+                    <Pill tone={c.exam_result === 'pass' ? 'live' : c.exam_result === 'fail' ? 'stopped' : 'waiting'}>
                       {exam(c.exam_result)}
                     </Pill>
                   </Td>
@@ -588,10 +595,10 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
                   */}
                   <Td>
                     {c.payout_account === null ? (
-                      <Pill tone="reject">{t('bo.collector.payout.none')}</Pill>
+                      <Pill tone="stopped">{t('bo.collector.payout.none')}</Pill>
                     ) : (
                       <>
-                        <Pill tone={c.payout_account.verify_status === 'verified' ? 'pass' : 'partial'}>
+                        <Pill tone={c.payout_account.verify_status === 'verified' ? 'live' : 'waiting'}>
                           {t(`settle.verify.${c.payout_account.verify_status}`)}
                         </Pill>
                         <span className="num ml-2 text-[0.8125rem] text-[var(--muted-foreground)]">
@@ -920,7 +927,7 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-3 flex justify-end">
         <Button
           variant={creating ? 'ghost' : 'primary'}
           disabled={types.length === 0}
@@ -989,12 +996,12 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
         >
           {rows.map((d) => (
             <Rows key={d.id}>
-              <tr className="border-b border-[var(--border)] hover:bg-[var(--muted)]">
+              <tr className="border-b border-[var(--border)] transition-colors duration-150 ease-[var(--ease)] hover:bg-[var(--muted)]">
                 <Td className="num font-semibold">{d.hardware_serial}</Td>
                 <Td className="text-[var(--muted-foreground)]">{d.device_type_code ?? '—'}</Td>
                 <Td className="num">{d.firmware_version ?? '—'}</Td>
                 <Td>
-                  <Pill tone={d.status === 'active' ? 'pass' : d.status === 'faulty' ? 'reject' : 'partial'}>
+                  <Pill tone={d.status === 'active' ? 'live' : d.status === 'faulty' ? 'stopped' : 'waiting'}>
                     {t(`bo.device.state.${d.status}`)}
                   </Pill>
                   {d.fault_note ? (
@@ -1107,27 +1114,35 @@ function localNow(): string {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 
+/**
+ * A table on paper.
+ *
+ * Not a card: three tables that each sit in their own rounded, shadowed
+ * container is the dashboard-of-panels this console refuses, and a shadow
+ * under a table adds nothing an operator scanning a column can use. The
+ * structure is hairlines — one strong rule under the head, one hairline
+ * between rows — on the page's own white. The table still scrolls inside its
+ * own container so the page never scrolls sideways.
+ */
 function Table({ head, children }: { head: string[]; children: React.ReactNode }) {
   return (
-    <Panel className="overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-left">
-          <thead>
-            <tr className="border-b border-[var(--border)]">
-              {head.map((label, i) => (
-                <th
-                  key={`${label}-${i}`}
-                  className="px-4 py-2.5 text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]"
-                >
-                  {label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>{children}</tbody>
-        </table>
-      </div>
-    </Panel>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[760px] border-collapse text-left">
+        <thead>
+          <tr className="border-b border-[var(--foreground)]">
+            {head.map((label, i) => (
+              <th
+                key={`${label}-${i}`}
+                className="px-3 pb-2 text-[0.8125rem] font-semibold text-[var(--muted-foreground)]"
+              >
+                {label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
   );
 }
 
@@ -1139,7 +1154,7 @@ function Rows({ children }: { children: React.ReactNode }) {
 function EditRow({ span, children }: { span: number; children: React.ReactNode }) {
   return (
     <tr className="border-b border-[var(--border)] bg-[var(--muted)]">
-      <td colSpan={span} className="px-4 py-4">
+      <td colSpan={span} className="px-3 py-4">
         {children}
       </td>
     </tr>
@@ -1147,15 +1162,58 @@ function EditRow({ span, children }: { span: number; children: React.ReactNode }
 }
 
 function Td({ className, children }: { className?: string; children: React.ReactNode }) {
-  return <td className={cn('px-4 py-3 text-[0.875rem]', className)}>{children}</td>;
+  return <td className={cn('px-3 py-2.5 text-[0.875rem]', className)}>{children}</td>;
 }
 
-function Pill({ tone, children }: { tone: 'pass' | 'partial' | 'reject'; children: React.ReactNode }) {
+/**
+ * A lifecycle state, as a pill with its own glyph.
+ *
+ * It used to be drawn in the three verdict hues, and that was wrong twice
+ * over. `--pass` / `--partial` / `--reject` belong to §6.9's three review
+ * outcomes and to nothing else — a published task rendered in the same green
+ * as a passed episode teaches an operator that green means "good" everywhere,
+ * on a console where one of those greens decides whether somebody is paid.
+ * And the payout column here is a *payment-status label*, which the palette
+ * bars from the brand ramps for the same reason.
+ *
+ * So these three climb in weight rather than hue — inverted ink, then the
+ * page's own muted fill, then an outline — and each carries a distinct shape:
+ * a filled disc, a half-filled disc, a bar. The axis reads with no colour at
+ * all, which is what a printed roster or a colour-blind operator gets.
+ */
+type Tone = 'live' | 'waiting' | 'stopped';
+
+const TONE_STYLE: Record<Tone, string> = {
+  live: 'bg-[var(--foreground)] text-[var(--background)]',
+  waiting: 'bg-[var(--muted)] text-[var(--muted-foreground)]',
+  stopped: 'border border-[var(--border-strong)] bg-[var(--card)] text-[var(--foreground)]',
+};
+
+function ToneGlyph({ tone }: { tone: Tone }) {
+  if (tone === 'stopped') {
+    return <span aria-hidden="true" className="h-[2px] w-2.5 rounded-full bg-current" />;
+  }
   return (
     <span
-      className="inline-flex items-center rounded-full px-2.5 py-1 text-[0.75rem] font-bold"
-      style={{ color: `var(--${tone})`, backgroundColor: `var(--${tone}-bg)` }}
+      aria-hidden="true"
+      className="relative h-2.5 w-2.5 overflow-hidden rounded-full border border-current"
     >
+      <span
+        className={cn('absolute inset-y-0 left-0 bg-current', tone === 'live' ? 'right-0' : 'right-1/2')}
+      />
+    </span>
+  );
+}
+
+function Pill({ tone, children }: { tone: Tone; children: React.ReactNode }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[0.75rem] font-semibold',
+        TONE_STYLE[tone],
+      )}
+    >
+      <ToneGlyph tone={tone} />
       {children}
     </span>
   );

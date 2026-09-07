@@ -18,7 +18,64 @@ const MOBILE = { width: 390, height: 844 };
 
 const browser = await chromium.launch();
 
-async function shoot(name, { viewport, theme, locale, path, prepare }) {
+/** Both credentials, every time: a machine token for where, an operator token for who. */
+async function signIn(page, operator) {
+  await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' });
+  await page.fill('input[name="machine_identifier"]', 'HCM-01');
+  await page.fill('input[name="machine_secret"]', 'pw');
+  await page.fill('input[name="external_ref"]', operator);
+  await page.fill('input[name="operator_secret"]', 'pw');
+  await Promise.all([
+    page.waitForURL((u) => !u.pathname.includes('login'), { timeout: 15000 }).catch(() => {}),
+    page.click('button[type="submit"]'),
+  ]);
+}
+
+/**
+ * Watch a page's claims, and hand the lease back before the context closes.
+ *
+ * `/review` claims an episode and holds a ten-minute lease, and the seed
+ * leaves exactly one claimable episode — so a shot that walks away still
+ * holding it makes every later review shot photograph "Nothing to review".
+ * That is what the first two runs of this file produced, and it survived the
+ * next run too, because the lease outlives the process.
+ *
+ * The screen's own release rides `pagehide` and `navigator.sendBeacon`, and
+ * neither survives `context.close()` reliably: the event never fires, and a
+ * beacon dispatched by hand is still in flight when the browser goes. So the
+ * claim's own `episode_id` is read off the response and released with an
+ * awaited request instead. Same endpoint the app uses; just a call that can be
+ * waited for.
+ */
+async function watchClaims(page) {
+  let episodeId = null;
+  /**
+   * Read the claim on the way through, not afterwards: a `response` listener
+   * that awaits `res.json()` can find the body already gone, and it fails
+   * quietly — which looks exactly like a screen that never claimed anything.
+   */
+  await page.route('**/api/review/claim', async (route) => {
+    const response = await route.fetch();
+    const body = await response.text();
+    try {
+      const parsed = JSON.parse(body);
+      if (typeof parsed?.episode_id === 'string') episodeId = parsed.episode_id;
+    } catch {
+      /* 204, or not JSON: nothing was claimed. */
+    }
+    await route.fulfill({ response, body });
+  });
+  return async () => {
+    if (episodeId === null) return;
+    const status = await page
+      .evaluate((id) => fetch(`/api/review/release/${id}`, { method: 'POST' }).then((r) => r.status), episodeId)
+      .catch(() => 'threw');
+    if (status !== 200 && status !== 204) console.log(`      lease NOT released (${status})`);
+    episodeId = null;
+  };
+}
+
+async function shoot(name, { viewport, theme, locale, path, prepare, operator = 'op-1' }) {
   const context = await browser.newContext({
     viewport,
     deviceScaleFactor: 2,
@@ -29,6 +86,7 @@ async function shoot(name, { viewport, theme, locale, path, prepare }) {
   const errors = [];
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   page.on('pageerror', (e) => errors.push(String(e)));
+  const releaseClaim = await watchClaims(page);
 
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
   await page.evaluate(
@@ -42,15 +100,7 @@ async function shoot(name, { viewport, theme, locale, path, prepare }) {
 
   // Sign in unless we are shooting the sign-in screen itself.
   if (path !== '/login') {
-    await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' });
-    await page.fill('input[name="machine_identifier"]', 'HCM-01');
-    await page.fill('input[name="machine_secret"]', 'pw');
-    await page.fill('input[name="external_ref"]', 'op-1');
-    await page.fill('input[name="operator_secret"]', 'pw');
-    await Promise.all([
-      page.waitForURL((u) => !u.pathname.includes('login'), { timeout: 15000 }).catch(() => {}),
-      page.click('button[type="submit"]'),
-    ]);
+    await signIn(page, operator);
   }
 
   await page.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
@@ -61,8 +111,81 @@ async function shoot(name, { viewport, theme, locale, path, prepare }) {
   await page.screenshot({ path: file, fullPage: viewport === DESKTOP });
   console.log(`${file}${errors.length ? `   ⚠ ${errors.length} console errors` : ''}`);
   for (const e of errors.slice(0, 4)) console.log(`      ${e}`);
+
+  await releaseClaim();
   await context.close();
 }
+
+/** A signed-in session for one operator, closed however it ends. */
+async function asOperator(operator, fn) {
+  const context = await browser.newContext({ viewport: DESKTOP, locale: 'en-US' });
+  const page = await context.newPage();
+  try {
+    await signIn(page, operator);
+    await fn(page);
+  } catch (err) {
+    console.log(`${operator}  SKIPPED  ${err.message}`);
+  }
+  await context.close();
+}
+
+/** A period is named by the Monday of its UTC week. */
+function mondayUtc(weeksBack) {
+  const now = new Date();
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) - 7 * weeksBack);
+  return d.toISOString().slice(0, 10);
+}
+
+const CANDIDATES = [0, 1, 2, 3, 4, 5].map(mondayUtc);
+let PERIOD = CANDIDATES[0];
+
+/**
+ * Issue the bills, then find the period that has them.
+ *
+ * Two operators, because the console will not let one do both. `op-1` issues:
+ * `settlements_issuer_not_payer` means whoever raises a bill may not pay it,
+ * so billing from inside a finance session photographs that refusal instead of
+ * the screen. `fin-1` reads: `financeGuard` covers the payout lane's **reads**
+ * as well, so an `op-1` session sees no bills at all — which is why the first
+ * version of this, which counted rows as `op-1`, always concluded that every
+ * period was empty.
+ *
+ * And the period is found rather than assumed. It is the Monday of the current
+ * **UTC** week, while the seed's verdicts are stamped when the database was
+ * seeded — so the instant UTC crosses into a Monday, the default period goes
+ * empty and every settle, preflight, flags and exceptions shot is of an empty
+ * state. That happened here, mid-run, at 00:00 UTC. A pinned date would rot
+ * within the week, so this walks back a week at a time until a period has
+ * bills.
+ */
+async function findAndBillThePeriod() {
+  await asOperator('op-1', async (page) => {
+    for (const period of CANDIDATES.slice(0, 2)) {
+      await page.goto(`${BASE}/settle?period=${period}`, { waitUntil: 'networkidle' });
+      await page
+        .getByRole('button', { name: /generate bills/i })
+        .click()
+        .catch(() => {});
+      await page.waitForTimeout(1500);
+    }
+  });
+
+  await asOperator('fin-1', async (page) => {
+    for (const period of CANDIDATES) {
+      await page.goto(`${BASE}/settle?period=${period}`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(800);
+      if ((await page.locator('tbody tr').count()) > 0) {
+        PERIOD = period;
+        return;
+      }
+    }
+  });
+
+  console.log(`settle period    ${PERIOD}`);
+}
+
+await findAndBillThePeriod();
 
 const shots = [
   ['login-desktop', { viewport: DESKTOP, theme: 'light', locale: 'en', path: '/login' }],
@@ -96,6 +219,32 @@ const shots = [
     { viewport: MOBILE.width ? DESKTOP : DESKTOP, theme: 'light', locale: 'zh', path: '/review', prepare: async (p) => p.waitForTimeout(2500) },
   ],
   ['review-mobile', { viewport: MOBILE, theme: 'light', locale: 'en', path: '/review', prepare: async (p) => p.waitForTimeout(2500) }],
+  // The keyboard path, driven with no pointer at all: mark in, seek, mark out,
+  // then verdict 1. Enter is deliberately NOT pressed — committing here would
+  // take the seed's one claimable episode out of the queue for every other run.
+  [
+    'review-keyboard-desktop',
+    {
+      viewport: DESKTOP,
+      theme: 'light',
+      locale: 'en',
+      path: '/review',
+      prepare: async (page) => {
+        await page.waitForTimeout(2500);
+        await page.keyboard.press('i');
+        /** ArrowRight is the seek. Twelve nudges of five seconds, no pointer. */
+        for (let i = 0; i < 12; i += 1) {
+          await page.keyboard.press('ArrowRight');
+          await page.waitForTimeout(60);
+        }
+        await page.waitForTimeout(400);
+        await page.keyboard.press('o');
+        await page.waitForTimeout(200);
+        await page.keyboard.press('1');
+        await page.waitForTimeout(300);
+      },
+    },
+  ],
   // The back office is three tabs on one screen, so it takes three shots: the
   // tab is not in the URL and a single one would only ever show the tasks table.
   ['backoffice-tasks-desktop', { viewport: DESKTOP, theme: 'light', locale: 'en', path: '/backoffice' }],
@@ -130,40 +279,52 @@ const shots = [
   ['notbuilt-desktop', { viewport: DESKTOP, theme: 'light', locale: 'en', path: '/counter' }],
   // Settle and the payout console. The seed's three verdicts sit in the
   // current week, so the first shot generates the period's bills and the
-  // rest read them. `op-1` is not finance: every payment control renders
-  // disabled with its reason, which is the state worth a picture.
+  // rest read them.
+  //
+  // These run as `fin-1`, the seed's finance operator, and they have to.
+  // `financeGuard` covers every route on the payout lane, **reads included** —
+  // it was tightened when a counter operator at an unrelated centre was
+  // measured getting 200 on a collector's bank details and the whole period's
+  // batch. So an `op-1` session does not get a read-only view of these
+  // screens; it gets 403 and "this period did not load", and every shot of
+  // Settle, Preflight, Exceptions and Risk taken as `op-1` is a picture of an
+  // error box rather than of the screen.
   [
     'settle-bills-desktop',
-    {
+    { operator: 'fin-1',
       viewport: DESKTOP,
       theme: 'light',
       locale: 'en',
-      path: '/settle',
-      prepare: async (p) => {
-        await p.getByRole('button', { name: /generate bills/i }).click();
-        await p.waitForTimeout(1500);
-      },
+      path: `/settle?period=${PERIOD}`,
     },
   ],
-  ['settle-bills-mobile-vi', { viewport: MOBILE, theme: 'light', locale: 'vi', path: '/settle' }],
-  ['settle-preflight-desktop-dark-zh', { viewport: DESKTOP, theme: 'dark', locale: 'zh', path: '/settle/preflight' }],
-  ['settle-preflight-mobile', { viewport: MOBILE, theme: 'light', locale: 'en', path: '/settle/preflight' }],
+  ['settle-bills-mobile-vi', { operator: 'fin-1', viewport: MOBILE, theme: 'light', locale: 'vi', path: `/settle?period=${PERIOD}` }],
+  ['settle-preflight-desktop-dark-zh', { operator: 'fin-1', viewport: DESKTOP, theme: 'dark', locale: 'zh', path: `/settle/preflight?period=${PERIOD}` }],
+  [
+    'settle-preflight-desktop',
+    { operator: 'fin-1', viewport: DESKTOP, theme: 'light', locale: 'en', path: `/settle/preflight?period=${PERIOD}` },
+  ],
+  ['settle-preflight-mobile', { operator: 'fin-1', viewport: MOBILE, theme: 'light', locale: 'en', path: `/settle/preflight?period=${PERIOD}` }],
   [
     'settle-bill-desktop',
-    {
+    { operator: 'fin-1',
       viewport: DESKTOP,
       theme: 'light',
       locale: 'en',
-      path: '/settle',
+      path: `/settle?period=${PERIOD}`,
+      // Follow the row's own link rather than clicking it: something in the
+      // shell sits over the table's last column and the click never lands,
+      // which is why this shot has been missing from the folder.
       prepare: async (p) => {
-        await p.getByRole('link', { name: /^open$/i }).first().click();
+        const href = await p.getByRole('link', { name: /^open$/i }).first().getAttribute('href');
+        await p.goto(`${BASE}${href}`, { waitUntil: 'networkidle' });
         await p.waitForTimeout(1200);
       },
     },
   ],
-  ['settle-exceptions-desktop-vi', { viewport: DESKTOP, theme: 'light', locale: 'vi', path: '/settle/exceptions' }],
-  ['risk-desktop-dark', { viewport: DESKTOP, theme: 'dark', locale: 'en', path: '/risk' }],
-  ['risk-mobile-zh', { viewport: MOBILE, theme: 'light', locale: 'zh', path: '/risk' }],
+  ['settle-exceptions-desktop-vi', { operator: 'fin-1', viewport: DESKTOP, theme: 'light', locale: 'vi', path: `/settle/exceptions?period=${PERIOD}` }],
+  ['risk-desktop-dark', { operator: 'fin-1', viewport: DESKTOP, theme: 'dark', locale: 'en', path: `/risk?period=${PERIOD}` }],
+  ['risk-mobile-zh', { operator: 'fin-1', viewport: MOBILE, theme: 'light', locale: 'zh', path: `/risk?period=${PERIOD}` }],
 ];
 
 for (const [name, options] of shots) {
@@ -173,5 +334,42 @@ for (const [name, options] of shots) {
     console.log(`${name}  FAILED  ${err.message}`);
   }
 }
+
+/**
+ * "Nothing to review", photographed honestly.
+ *
+ * The empty state is the one screen the mascot is barred from — nothing
+ * cartoon stands next to footage, and the queue reaching zero is still that
+ * screen — so it is worth a picture. It cannot be faked by pointing at an
+ * empty database, because the seeded one is not empty. Instead a first context
+ * claims the only claimable episode and keeps its lease, and a second context
+ * then asks for work and is told there is none. The holder hands the lease
+ * back afterwards so the next run of this file still finds an episode.
+ */
+async function shootEmptyQueue() {
+  const holder = await browser.newContext({ viewport: DESKTOP, locale: 'en-US' });
+  const page = await holder.newPage();
+  const releaseClaim = await watchClaims(page);
+  try {
+    await signIn(page, 'op-1');
+    await page.goto(`${BASE}/review`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(2500);
+
+    await shoot('review-empty-desktop', {
+      viewport: DESKTOP,
+      theme: 'light',
+      locale: 'en',
+      path: '/review',
+      prepare: async (p) => p.waitForTimeout(2500),
+    });
+
+  } catch (err) {
+    console.log(`review-empty-desktop  FAILED  ${err.message}`);
+  }
+  await releaseClaim();
+  await holder.close();
+}
+
+await shootEmptyQueue();
 
 await browser.close();

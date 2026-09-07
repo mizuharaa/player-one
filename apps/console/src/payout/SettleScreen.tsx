@@ -26,7 +26,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { Button } from '../components/ui/button.tsx';
-import { EmptyState, Panel } from '../components/ui/primitives.tsx';
+import { EmptyState } from '../components/ui/primitives.tsx';
 import { cn } from '../lib/cn.ts';
 import { payout, settle, type IncomePeriod, type PayoutBill } from '../lib/api.ts';
 import { BAND_ORDER } from '../risk/sentences.ts';
@@ -236,7 +236,7 @@ export function SettleScreen() {
       ) : rows.length === 0 ? (
         <EmptyState title={t('settle.empty')} body={t('settle.empty.body')} />
       ) : (
-        <>
+        <div data-guide="settle.bills">
           <Table minWidth={900}>
             <thead>
               {table.getHeaderGroups().map((hg) => (
@@ -255,7 +255,7 @@ export function SettleScreen() {
                             onClick={h.column.getToggleSortingHandler()}
                             aria-label={t('settle.sort', { column: String(h.column.columnDef.header) })}
                             className={cn(
-                              'inline-flex items-center gap-1 rounded-[var(--radius-sm)] uppercase tracking-[0.06em]',
+                              'inline-flex items-center gap-1 rounded-[var(--radius-sm)]',
                               sorted ? 'text-[var(--foreground)]' : '',
                             )}
                           >
@@ -285,13 +285,11 @@ export function SettleScreen() {
               ))}
             </tbody>
           </Table>
-          <Panel className="mt-4 px-4 py-3">
-            <p className="text-[0.8125rem] leading-relaxed text-[var(--muted-foreground)]">
-              {t('settle.asStored', { currency: bills[0]?.currency ?? 'VND' })} {t('settle.withheld.note')}{' '}
-              {t('settle.lines', { n: count(bills.length, i18n.language) })}.
-            </p>
-          </Panel>
-        </>
+          <p className="mt-4 max-w-[80ch] text-[0.8125rem] leading-relaxed text-[var(--muted-foreground)]">
+            {t('settle.asStored', { currency: bills[0]?.currency ?? 'VND' })} {t('settle.withheld.note')}{' '}
+            {t('settle.lines', { n: count(bills.length, i18n.language) })}.
+          </p>
+        </div>
       )}
     </SettleShell>
   );
