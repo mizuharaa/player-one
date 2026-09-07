@@ -24,6 +24,7 @@ import {
   startHeartbeat,
 } from '../src/index.ts';
 import { riskConfigFromEnv } from '../src/risk/config.ts';
+import { storageQuotaFromEnv } from '../src/alerts.ts';
 import { zaloPayClientFromEnv } from '../src/payout/zalopay/client.ts';
 
 const required = (name: string): string => {
@@ -42,6 +43,7 @@ const port = Number(env['PORT'] ?? 8080);
 const mediaRoot = env['PLAYERONE_MEDIA_ROOT'];
 const machineIdentifier = env['PLAYERONE_MACHINE_IDENTIFIER'];
 const machineSecret = env['PLAYERONE_MACHINE_SECRET'];
+const storageQuotaBytes = storageQuotaFromEnv(env);
 
 /**
  * `buildApi` refuses the two together — reviewer media on with the session
@@ -78,6 +80,7 @@ if (verificationGate !== 'local' && verificationGate !== 'cloud') {
 
 const app = buildApi({
   db,
+  storageQuotaBytes,
   tokenSecret,
   /**
    * On unless `PLAYERONE_LOG=0`. A deployed server that logs nothing cannot be

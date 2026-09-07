@@ -17,6 +17,7 @@ const descriptions: Record<string, string> = {
   card_import_failures: 'card imports failed in the last 24 hours',
   cloud_write_failures: 'cloud transports failed in the last 24 hours',
   checksum_failures: 'episodes failed read-back',
+  storage_near_quota: 'GB of verified source bytes in the cloud (threshold is 80% of the allocation)',
 };
 
 export function noticesFor(last: Map<string, AlertState>, next: Alert[]): AlertNotice[] {
@@ -58,6 +59,7 @@ export async function post(notice: AlertNotice, log: (line: string) => void = co
 }
 
 type DeliveryOptions = {
+  storageQuotaBytes?: number;
   last: Map<string, AlertState>;
   pending: Map<string, AlertNotice>;
   post?: (n: AlertNotice) => Promise<void>;
@@ -68,7 +70,7 @@ export async function deliverAlerts(
   db: Db,
   o: DeliveryOptions,
 ): Promise<{ delivered: AlertNotice[]; failed: AlertNotice[] }> {
-  const alerts = await readAlerts(db);
+  const alerts = await readAlerts(db, { storageQuotaBytes: o.storageQuotaBytes });
   const notices = noticesFor(o.last, alerts);
   for (const alert of alerts) o.last.set(alert.id, alert.state);
   for (const notice of notices) o.pending.set(notice.id, notice);

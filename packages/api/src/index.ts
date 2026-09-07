@@ -159,6 +159,7 @@ declare module 'fastify' {
 
 export type ApiOptions = {
   db: Db;
+  storageQuotaBytes?: number;
   /** Token signing key. Fails closed at construction rather than defaulting. */
   tokenSecret: string;
   /**
@@ -339,6 +340,7 @@ const canPresign = (s: ObjectStore): s is ObjectStore & DirectUploadStore =>
 
 export function buildApi({
   db,
+  storageQuotaBytes,
   tokenSecret,
   logger = false,
   toleranceMs = DEFAULT_TOLERANCE_MS,
@@ -727,7 +729,7 @@ export function buildApi({
   // The band the payout side reads means "there is a live hold", not "the score is in the hold band".
   const riskReader = { billSummary: (billId: string) => riskEngine.payoutSummary(billId) };
 
-  registerAlerts(app, db, requireActor);
+  registerAlerts(app, db, requireActor, { storageQuotaBytes });
   registerBackOffice(app, db, requireActor);
   registerCounter(app, db, requireActor, currency);
   registerEpisodes(app, db, requireActor, toleranceMs);

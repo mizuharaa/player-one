@@ -1,6 +1,7 @@
 import { argv, exit } from 'node:process';
 import { open, redact } from '@playerone/store';
 import { deliverAlerts, runAlertWorker } from '../src/alert-delivery.ts';
+import { storageQuotaFromEnv } from '../src/alerts.ts';
 
 const env = process.env;
 const databaseUrl = env['DATABASE_URL'] ?? '';
@@ -9,13 +10,14 @@ if (databaseUrl === '') {
   exit(2);
 }
 
+const storageQuotaBytes = storageQuotaFromEnv(env);
 const db = await open(databaseUrl, { max: Number(env['PLAYERONE_DB_POOL'] ?? 4) });
 const intervalMs = Number(env['PLAYERONE_ALERT_INTERVAL_MS'] ?? 60_000);
 
 if (argv.includes('--once')) {
   let code = 1;
   try {
-    const report = await deliverAlerts(db, { last: new Map(), pending: new Map() });
+    const report = await deliverAlerts(db, { last: new Map(), pending: new Map(), storageQuotaBytes });
     console.log(`alerts delivered ${report.delivered.length}, failed ${report.failed.length}`);
     code = report.failed.length === 0 ? 0 : 1;
   } catch (err) {
@@ -26,7 +28,7 @@ if (argv.includes('--once')) {
   exit(code);
 }
 
-const worker = runAlertWorker(db, { intervalMs });
+const worker = runAlertWorker(db, { intervalMs, storageQuotaBytes });
 const shutdown = async (signal: string) => {
   console.log(`${signal}: stopping`);
   worker.stop();

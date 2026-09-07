@@ -169,6 +169,7 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 | `PLAYERONE_DB_POOL` | `10` | A single connection serialises the claim queue: `for update skip locked` has nothing to skip. |
 | `PLAYERONE_ALERT_WEBHOOK` | | Alert delivery URL. Unset means log-only: each notice is delivered to the alert worker's own stdout, not the API server's log. |
 | `PLAYERONE_ALERT_INTERVAL_MS` | `60000` | Time between alert worker ticks, in milliseconds. |
+| `PLAYERONE_STORAGE_QUOTA_BYTES` | | Cloud storage allocation in bytes, supplied to both the API and alert worker. Unset or empty makes `storage_near_quota` `no_signal`; a malformed value (not digits only or not a safe integer) or one below 1,250,000,000 bytes refuses to boot. Set `200000000000` for today's POC and change it when the allocation converts. The comparison uses whole GB of Path C verified source bytes, a lower bound on cloud storage use. |
 | `HOST` / `PORT` | `127.0.0.1` / `8080` | |
 | `STORAGE_ENDPOINT` | | The S3-compatible endpoint of the cloud store (GreenNode, once the contract is signed). Unset, the upload routes answer 503 saying so and everything else runs. |
 | `STORAGE_BUCKET` / `STORAGE_KEY` / `STORAGE_SECRET` | | Required together with `STORAGE_ENDPOINT`; a partial set fails closed at boot naming what is missing. |
@@ -466,7 +467,8 @@ Two things to know:
 ## Operational alerts
 
 `GET /api/alerts` answers PLT-12's nine conditions — PaXini's PRD §11.4 list,
-adopted verbatim — as one derived query over rows the platform already writes.
+adopted verbatim — plus a tenth, `storage_near_quota`, as one derived query over
+rows the platform already writes.
 Any operator session may read it. There is no alerts table. A separate alert
 worker reads the same conditions at boot and every minute, delivering firing
 and cleared transitions to `PLAYERONE_ALERT_WEBHOOK`, or its own stdout when
@@ -502,8 +504,9 @@ live in memory, so a restart drops pending notices and re-notifies conditions
 still firing once. A transition to `no_signal` is not
 a recovery and sends no cleared notice.
 
-This closes only PLT-12's delivery half. The Part 8 capacity comparison and
-conditions 8 and 9 remain open. Thresholds are unchanged: a single cloud
+Alert delivery and the capacity alert against the allocation are built. The
+Part 8 intake comparison and conditions 8 and 9 remain open. The nine PRD
+thresholds are unchanged: a single cloud
 transport failure still does not fire the condition whose threshold is three.
 
 ```json
@@ -513,11 +516,19 @@ transport failure still does not fire the condition whose threshold is three.
 ```
 
 `state` is `firing` when `observed >= threshold`, `ok` when it is not, and
-`no_signal` when **nothing in this system records the fact**. Two of the nine
+`no_signal` when **the condition lacks a required signal**. Two of the nine PRD conditions
 are `no_signal` today and say so rather than reading a reassuring zero:
 `review_cannot_read_cloud` (the review lane reads local media — ADR 0001 — so
 there is no cloud read to fail) and `cross_border_timeouts` (nothing times the
 link).
+
+`storage_near_quota` counts Path C verified source bytes, a lower bound that
+excludes manifests, files outside the inventory, Path A uploads and unverified
+objects. It compares floored whole GB against the floored 80% allocation mark,
+an accepted approximation: 159.5 GB against 200 GB stays `ok` at 159 versus 160,
+while 160 GB against 201 GB fires at 160 versus 160. Without
+`PLAYERONE_STORAGE_QUOTA_BYTES`, both figures are null and the condition is
+`no_signal`; with a quota and no receipts, it reads zero.
 
 The other seven read rows. `cloud_write_failures` counts
 `episode.cloud_transport_failed` audit events from the last day — an upload
