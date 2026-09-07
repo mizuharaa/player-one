@@ -12,10 +12,12 @@ talking to the Fastify API over two HttpOnly cookies. No public users, no SEO.
 It runs on fixed machines at Vietnamese upload centres and, for reviewers, over
 a scoped remote session from Shenzhen.
 
-**Three audiences, two languages.** Operators and finance (VNG, en/vi),
-reviewers (PaXini, zh). Every string lives in `packages/api/src/i18n.ts` under
-one key for all three locales; a parity test fails the build if a locale is
-missing a key. Collectors never see this app — their surface is the phone app.
+**Three audiences, three languages.** Operators and finance (VNG, en and vi),
+reviewers (PaXini, zh). Vietnamese is a console locale, not a collector-only one:
+the payout screens are read in Vietnamese by the finance operators who pay
+collectors. Every string lives in `packages/api/src/i18n.ts` under one key for
+all three locales; a parity test fails the build if a locale is missing a key.
+Collectors never see this app — their surface is the phone app.
 
 ## Screens, and their real state
 

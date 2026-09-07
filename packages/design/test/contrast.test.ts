@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dark, darkBrandTints, light, ring, stage, sun, tech, verdict } from '../src/tokens.ts';
+import { bamboo, dark, darkBrandTints, light, ring, stage, sun, tech, verdict } from '../src/tokens.ts';
 import { nativeTheme } from '../src/native.ts';
 
 /**
@@ -51,8 +51,14 @@ export const contrast = (a: string, b: string): number => {
 /** Rounded the way a reporting tool rounds, so a failure prints a comparable number. */
 const ratio = (a: string, b: string): number => Math.round(contrast(a, b) * 100) / 100;
 
+/**
+ * The floor is compared against the UNROUNDED ratio. `#746F66` on the muted
+ * fill measured 4.49999:1, which `ratio` prints as 4.5 and which is under the
+ * floor; a check on the rounded figure passed it. The rounded figure is still
+ * what a failure prints, because that is the number a reporting tool shows.
+ */
 const atLeast = (floor: number, ink: string, ground: string, what: string) =>
-  expect(ratio(ink, ground), `${what}: ${ink} on ${ground}`).toBeGreaterThanOrEqual(floor);
+  expect(contrast(ink, ground), `${what}: ${ink} on ${ground} = ${ratio(ink, ground)}`).toBeGreaterThanOrEqual(floor);
 
 describe('the formula itself', () => {
   /**
@@ -133,6 +139,156 @@ describe('verdict pills clear AA in both themes', () => {
 });
 
 /**
+ * The hue of a colour, 0–360. Lifted out of the verdict block below because
+ * bamboo's whole risk is a hue and not a ratio: lime sits near enough to the
+ * pass green that a ring drawn in it could be read as "passed", which is why
+ * the gap between them is asserted rather than eyeballed.
+ */
+const hue = (hex: string): number => {
+  const [r, g, b] = channels(hex);
+  const max = Math.max(r!, g!, b!);
+  const d = max - Math.min(r!, g!, b!);
+  if (d === 0) return 0;
+  const h =
+    max === r! ? (g! - b!) / d + (g! < b! ? 6 : 0) : max === g! ? (b! - r!) / d + 2 : (r! - g!) / d + 4;
+  return Math.round((h * 60 + 360) % 360);
+};
+
+/**
+ * Bamboo — the mascot and progress — and the sun button it must never be
+ * confused with.
+ *
+ * Every number in a test name below was measured by running this file, not
+ * copied from a comment. Three steps of the ramp carry a job and the other
+ * five are there so a fill has somewhere to go; the jobs are what is pinned:
+ *
+ * - 500 is a fill and only a fill.
+ * - 600 is a stroke on the light page and text on the dark one.
+ * - 700 is text on the light page.
+ *
+ * The exclusions — never a verdict pill, a verdict glyph, a payment-status
+ * label or a money figure — are stated in `tokens.ts` and cannot be measured
+ * here. What can be measured is the reason for them, and that is the last case.
+ */
+describe('bamboo', () => {
+  it('500 is a fill under ink text, at 10.02:1, and is never text itself (1.82:1 on white)', () => {
+    atLeast(TEXT_AA, light.foreground, bamboo[500], 'ink on the bamboo fill');
+    expect(ratio(light.foreground, bamboo[500])).toBe(10.02);
+    // The other direction is the mistake this case exists to keep out.
+    expect(ratio(bamboo[500], light.background)).toBe(1.82);
+    expect(ratio(bamboo[500], light.background)).toBeLessThan(CONTROL_AA);
+  });
+
+  it('600 is the ring stroke: 3.34:1 on the page, 3.20:1 on the surface, 3.01:1 on the muted track', () => {
+    for (const ground of [light.background, light.surface, light.card, light.muted])
+      atLeast(CONTROL_AA, bamboo[600], ground, 'gauge ring');
+    expect(ratio(bamboo[600], light.background)).toBe(3.34);
+    expect(ratio(bamboo[600], light.surface)).toBe(3.2);
+    // ★★ pinned: the gauge's track is `--muted` flat, with no opacity or blend
+    // under the arc. A track that is anything else invalidates this number.
+    expect(ratio(bamboo[600], light.muted)).toBe(3.01);
+  });
+
+  it('600 is text ink on the dark page, at 5.71:1', () => {
+    for (const ground of [dark.background, dark.surface, dark.card, dark.muted])
+      atLeast(TEXT_AA, bamboo[600], ground, 'bamboo text, dark');
+    expect(ratio(bamboo[600], dark.background)).toBe(5.71);
+  });
+
+  it('700 is text ink on the light page, at 6.08:1, and on its own tints at 5.76 / 5.39:1', () => {
+    for (const ground of [light.background, light.surface, light.card, light.muted])
+      atLeast(TEXT_AA, bamboo[700], ground, 'bamboo text, light');
+    expect(ratio(bamboo[700], light.background)).toBe(6.08);
+    atLeast(TEXT_AA, bamboo[700], bamboo[50], 'bamboo text on its lightest tint');
+    expect(ratio(bamboo[700], bamboo[50])).toBe(5.76);
+    expect(ratio(bamboo[700], bamboo[100])).toBe(5.39);
+  });
+
+  it('the dark tints invert like sun and tech, and bamboo[200] reads on them at 13.00 / 9.51:1', () => {
+    atLeast(TEXT_AA, bamboo[200], darkBrandTints.bamboo50, 'dark-scheme bamboo tint');
+    atLeast(TEXT_AA, bamboo[200], darkBrandTints.bamboo100, 'dark-scheme bamboo tint');
+    expect(ratio(bamboo[200], darkBrandTints.bamboo50)).toBe(13);
+    expect(ratio(bamboo[200], darkBrandTints.bamboo100)).toBe(9.51);
+  });
+
+  it('the native theme resolves bamboo and bambooInk in both schemes', () => {
+    for (const scheme of ['light', 'dark'] as const) {
+      const theme = nativeTheme(scheme);
+      atLeast(TEXT_AA, theme.color.bambooInk, theme.color.bamboo[50], 'bamboo caption');
+      atLeast(TEXT_AA, theme.color.bambooInk, theme.color.bamboo[100], 'bamboo progress label');
+    }
+  });
+
+  /**
+   * The one that matters most. A progress arc in bamboo sits on the same
+   * screens as a pass pill, and if the two hues converge the arc starts
+   * meaning "paid". 67° is the measured gap; the floor is 40° because that is
+   * roughly where two fills stop being tellable apart at pill size.
+   */
+  it('sits 67° from the pass verdict, and every step of the ramp is at least 40° away', () => {
+    expect(hue(verdict.pass.fg)).toBe(146);
+    expect(hue(bamboo[600])).toBe(79);
+    expect(146 - hue(bamboo[600])).toBe(67);
+    for (const [step, hex] of Object.entries(bamboo)) {
+      const gap = Math.abs(hue(verdict.pass.fg) - hue(hex));
+      expect(gap, `bamboo[${step}] is ${gap}° from the pass verdict`).toBeGreaterThanOrEqual(40);
+      const gapDark = Math.abs(hue(verdict.pass.fgDark) - hue(hex));
+      expect(gapDark, `bamboo[${step}] is ${gapDark}° from the dark pass verdict`).toBeGreaterThanOrEqual(40);
+    }
+  });
+});
+
+/**
+ * The primary button.
+ *
+ * White on sun-500 is 2.61:1 and shipped that way; the label on the one action
+ * a screen is asking for was under the floor. The ink is `light.foreground` in
+ * both schemes, because the fill does not change with the scheme.
+ */
+describe('the primary action', () => {
+  it('carries ink at 7.19:1 on sun-500, and never white at 2.61:1', () => {
+    // `stage.ground` is the ink the button actually sets (`text-[var(--stage)]`
+    // in button.tsx): it is the one near-black and it does not move with the
+    // scheme, which `--foreground` does. On the same fill `light.foreground`
+    // would read 7.00:1 — either clears AA; the component uses the stage one.
+    atLeast(TEXT_AA, stage.ground, sun[500], 'primary label');
+    expect(ratio(stage.ground, sun[500])).toBe(7.19);
+    expect(ratio(light.foreground, sun[500])).toBe(7);
+    expect(ratio('#FFFFFF', sun[500])).toBe(2.61);
+    expect(ratio('#FFFFFF', sun[500])).toBeLessThan(TEXT_AA);
+  });
+
+  it('keeps its ink above AA through hover (8.58:1) and active (5.52:1)', () => {
+    atLeast(TEXT_AA, stage.ground, sun[400], 'primary label, hover');
+    expect(ratio(stage.ground, sun[400])).toBe(8.58);
+    atLeast(TEXT_AA, stage.ground, sun[600], 'primary label, active');
+    expect(ratio(stage.ground, sun[600])).toBe(5.52);
+    // And why sun-700 is not one of the states: 3.61:1, under the text floor.
+    expect(ratio(stage.ground, sun[700])).toBe(3.61);
+  });
+});
+
+/**
+ * The ink top bar: white type and a sun pill on `stage.ground`, in both
+ * schemes. The bar is the same near-black as the theatre — one dark, reused.
+ */
+describe('the ink top bar', () => {
+  it('white type at 100% and at 72% both clear AA on the ink ground', () => {
+    atLeast(TEXT_AA, '#FFFFFF', stage.ground, 'active nav label');
+    // 72% white over `stage.ground` composites to #BCBDBD.
+    atLeast(TEXT_AA, '#BCBDBD', stage.ground, 'inactive nav label');
+    expect(ratio('#BCBDBD', stage.ground)).toBe(9.96);
+  });
+
+  it('the active pill is sun-500 with ink on it, at 7.19:1', () => {
+    atLeast(TEXT_AA, stage.ground, sun[500], 'active pill label');
+    expect(ratio(stage.ground, sun[500])).toBe(7.19);
+    // And the pill itself is tellable from the bar it sits on.
+    atLeast(CONTROL_AA, sun[500], stage.ground, 'active pill boundary');
+  });
+});
+
+/**
  * The collector app's two blue surfaces.
  *
  * `Note` carries the exam gate, the device gate, the agreements gate and a
@@ -196,10 +352,31 @@ describe('shell text clears AA', () => {
       for (const ground of [n.background, n.surface, n.card, n.muted]) {
         atLeast(TEXT_AA, n.foreground, ground, 'foreground');
         atLeast(TEXT_AA, n.mutedForeground, ground, 'muted foreground');
+        /**
+         * The third ink is ink, not decoration: it carries the small uppercase
+         * labels on Home's figures, the review rail's headings and the tour's
+         * step count. It shipped at `#9C978E` / `#6C737C` and measured 2.90:1
+         * on the light page, 2.62:1 on the light muted fill and 3.30:1 on the
+         * dark one — under the floor on every ground it was used on, and
+         * nothing said so because this loop did not include it.
+         */
+        atLeast(TEXT_AA, n.faintForeground, ground, 'faint foreground');
       }
       // Links are tech blue (globals.css). tech[600] on light, and the ramp
       // does not invert above step 100, so dark reads the same step upward.
       atLeast(TEXT_AA, scheme === 'dark' ? tech[300] : tech[600], n.background, 'link');
+    });
+
+    it(`${scheme}: the faint ink stays a step lighter than the muted ink`, () => {
+      // Light: 5.14 / 4.93 / 5.14 / 4.63 against 5.38 / 5.16 / 5.38 / 4.85.
+      // Dark:  5.54 / 5.28 / 5.02 / 4.59 against 7.39 / 7.05 / 6.71 / 6.13.
+      // Raising a ratio by making the three inks the same colour would pass
+      // every case above and delete the hierarchy they exist to draw.
+      expect(contrast(n.faintForeground, n.background)).toBeLessThan(
+        contrast(n.mutedForeground, n.background),
+      );
+      // The tightest pair, unrounded: the previous light ink sat at 4.49999.
+      expect(contrast(n.faintForeground, n.muted)).toBeGreaterThanOrEqual(4.5);
     });
   }
 

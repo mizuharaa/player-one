@@ -148,6 +148,37 @@ export const IconRefresh = (p: IconProps) => (
   </Icon>
 );
 
+/**
+ * "Show me around": a signpost, not a question mark.
+ *
+ * A `?` is help — a place you go when something has already gone wrong. This
+ * offers a walk through a screen that is working, which is a different thing,
+ * so it is an arm pointing off a post.
+ */
+export const IconGuide = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M10 17V4.5" />
+    <path d="M10 6.2h5.6l1.6 2.1-1.6 2.1H10" />
+    <path d="M7.2 17h5.6" />
+  </Icon>
+);
+
+/**
+ * Half built, as a nav marker — and deliberately NOT `IconPartial`.
+ *
+ * `IconPartial` is a verdict glyph. It means a reviewer judged part of an
+ * episode usable and it decides what a collector is paid; borrowing it to say
+ * "this screen is only partly finished" would put a payment symbol in the
+ * navigation, where the two meanings are one glance apart. This is a square
+ * with half of it filled: an implementation status, in a shape no verdict uses.
+ */
+export const IconPartialBuilt = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3.6" y="3.6" width="12.8" height="12.8" rx="2.4" />
+    <path d="M10 3.6v12.8H6a2.4 2.4 0 0 1-2.4-2.4V6A2.4 2.4 0 0 1 6 3.6z" fill="currentColor" stroke="none" />
+  </Icon>
+);
+
 /* ---------------------------------------------------------------------------
    The three verdicts. Heavier stroke, and each is a distinct *shape* — a check,
    a half-filled ring, a cross — so the outcome survives a monochrome print, a

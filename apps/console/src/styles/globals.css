@@ -9,8 +9,22 @@
  */
 
 /* Self-hosted, bundled, never fetched at runtime. An upload centre on a LAN
-   with the link down must render in the right typeface. */
-@import '@fontsource-variable/plus-jakarta-sans';
+   with the link down must render in the right typeface.
+
+   Be Vietnam Pro has no variable build, so the weights are imported one file
+   at a time. Each of these six carries the three subsets the console needs and
+   nothing else — `vietnamese`, `latin` and `latin-ext` — because Vietnamese
+   stacks two marks on one vowel (ế, ộ, ữ) inside a 32px table row and the
+   payout screens are read in Vietnamese. Without the `vietnamese` subset those
+   rows fall through to a system face and stop being the same typeface as the
+   English beside them. The OFL licence travels with the package under
+   `node_modules/@fontsource/be-vietnam-pro/LICENSE`. */
+@import '@fontsource/be-vietnam-pro/400.css';
+@import '@fontsource/be-vietnam-pro/500.css';
+@import '@fontsource/be-vietnam-pro/600.css';
+@import '@fontsource/be-vietnam-pro/700.css';
+@import '@fontsource/be-vietnam-pro/800.css';
+@import '@fontsource/be-vietnam-pro/900.css';
 @import '@fontsource-variable/jetbrains-mono';
 
 @import '@playerone/design/tokens.css';
@@ -50,6 +64,16 @@
   --color-tech-500: var(--tech-500);
   --color-tech-600: var(--tech-600);
   --color-tech-700: var(--tech-700);
+
+  --color-bamboo-50: var(--bamboo-50);
+  --color-bamboo-100: var(--bamboo-100);
+  --color-bamboo-200: var(--bamboo-200);
+  --color-bamboo-300: var(--bamboo-300);
+  --color-bamboo-400: var(--bamboo-400);
+  --color-bamboo-500: var(--bamboo-500);
+  --color-bamboo-600: var(--bamboo-600);
+  --color-bamboo-700: var(--bamboo-700);
+  --color-bamboo-ink: var(--bamboo-ink);
 
   --color-pass: var(--pass);
   --color-pass-bg: var(--pass-bg);
@@ -256,5 +280,58 @@
 
   .lease-expiring {
     animation: lease-pulse 1.6s ease-in-out infinite;
+  }
+
+  /**
+   * The empty state's ground: a diagonal hatch, drawn rather than washed.
+   *
+   * An empty table on this console is ambiguous — it can mean "nothing to do"
+   * or it can mean "the query is wrong and somebody is not being paid" — so
+   * emptiness is given a surface of its own instead of being white space that
+   * looks like a failed render. The stops are hard, so this is a ruled pattern
+   * and not a gradient: no colour blends into another anywhere in it.
+   */
+  .hatch {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      var(--border) 0,
+      var(--border) 1px,
+      transparent 1px,
+      transparent 9px
+    );
+  }
+
+  /**
+   * The one ink block a screen is allowed.
+   *
+   * `stage.ground` again — the console has one dark and reuses it, so the block
+   * on Home and the region around the footage are the same near-black rather
+   * than two that nearly match. It carries a figure, the sentence that says
+   * what the figure is not, and the link to the screen that owns it; a figure
+   * with a small label and an accent underneath is the template this refuses.
+   */
+  .feature-block {
+    background: var(--stage);
+    color: var(--stage-fg);
+    color-scheme: dark;
+    border-radius: var(--radius-lg);
+    /*
+     * The one ink block per screen has to read as a block in the dark
+     * scheme too: `stage.ground` (#101215) on `dark.background` (#0E1013) is
+     * 1.2:1, so without an edge the block dissolves and its 42px figure
+     * floats. The stage's own hairline draws the edge; on the light shell it
+     * sits on ink and costs nothing.
+     */
+    border: 1px solid var(--stage-line);
+  }
+
+  .feature-block .figure {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+    font-size: 2.625rem;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    font-weight: 500;
   }
 }

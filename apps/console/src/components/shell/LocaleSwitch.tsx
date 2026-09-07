@@ -11,6 +11,7 @@
  * Same control the back office uses for a status, so nothing new to style.
  */
 import { useTranslation } from 'react-i18next';
+import { cn } from '../../lib/cn.ts';
 import { HTML_LANG } from '@playerone/api/i18n';
 import { LOCALES, setLocale, type Locale } from '../../lib/i18n.ts';
 
@@ -26,7 +27,22 @@ export function LocaleSwitch() {
       title={t('app.language')}
       value={current}
       onChange={(e) => setLocale(e.target.value as Locale)}
-      className="h-8 shrink-0 rounded-[var(--radius-sm)] border border-[var(--border-strong)] bg-[var(--card)] px-2 text-[0.8125rem] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+      /*
+       * Drawn in `currentColor` on a transparent ground, so the one control
+       * works on the ink top bar and on the light sign-in panel without a
+       * prop saying which. The *popup* is the browser's own drawing and
+       * follows `color-scheme`, which `.on-stage` sets on the bar — a light
+       * list dropping out of a near-black bar is the tell that a control was
+       * skinned rather than themed.
+       */
+      className={cn(
+        'h-8 shrink-0 rounded-[var(--radius-sm)] border bg-transparent px-2',
+        'text-[0.8125rem] font-semibold text-current/85',
+        'border-current/25 transition-colors duration-150 ease-[var(--ease)]',
+        'hover:border-current/45 hover:text-current active:border-current/60',
+        'focus-visible:outline-2 focus-visible:outline-offset-2',
+        'disabled:pointer-events-none disabled:opacity-45',
+      )}
     >
       {LOCALES.map((l) => (
         <option key={l} value={l} lang={HTML_LANG[l]}>
