@@ -82,7 +82,7 @@ for (const t of ['audit_events','settlements','episode_review_spans','episode_re
   await db.execute(sql.raw(`truncate ${t} cascade`));
 
 const id = Object.fromEntries(
-  ['centre','machine','operator','finance','collector','dtype','device','task','scenario'].map((k) => [k, uid()]),
+  ['centre','machine','operator','finance','reviewer','collector','dtype','device','task','scenario'].map((k) => [k, uid()]),
 );
 const hash = await hashCredential(SECRET);
 await db.execute(sql`insert into upload_centres (id,region,name,status) values (${id.centre},'HCM','D7','active')`);
@@ -97,6 +97,20 @@ await db.execute(sql`insert into operators (id,upload_centre_id,external_ref,rol
 // screens are finance's, and `settle_generate_by_finance` refuses finance the
 // generate: whoever issues a bill is the operator 0013 will not let pay it.
 await db.execute(sql`insert into operators (id,upload_centre_id,external_ref,role,credential_hash) values (${id.finance},${id.centre},'fin-1','finance',${hash})`);
+// A third account, because the sign-in screen has three doors and only two of
+// them opened. PLT-10 puts PaXini's reviewers in Shenzhen, not at a VNG
+// counter, so choosing "Reviewer" on `/login` drops the machine fieldset and
+// posts one credential — and `session.ts` looks that up with
+// `role = 'reviewer'`, which nothing here created. Every reviewer sign-in
+// against a seeded database answered 401 with `credentials`, which is the same
+// sentence a wrong password gets, so it read as a typo rather than as an
+// account that was never made.
+//
+// `upload_centre_id` is null on purpose and the schema requires it to be
+// possible: a reviewer belongs to no centre, which is the whole point of the
+// role, and the partial indexes on `operators` are written around exactly that
+// (`upload_centre_id is not null or role = 'reviewer'`).
+await db.execute(sql`insert into operators (id,upload_centre_id,external_ref,role,credential_hash) values (${id.reviewer},null,'rev-1','reviewer',${hash})`);
 await db.execute(sql`insert into collectors (id,external_ref,status) values (${id.collector},'c-1','qualified')`);
 await db.execute(sql`insert into device_types (id,code,generation) values (${id.dtype},'ego_headset','gen1')`);
 await db.execute(sql`insert into devices (id,device_type_id,hardware_serial,status) values (${id.device},${id.dtype},'AZER76400FE','active')`);
@@ -302,8 +316,14 @@ this seed ran with; in PowerShell write it "$env:DATABASE_URL"):
 
   pnpm -F @playerone/console dev
 
-Sign in with  HCM-01 / ${SECRET}  and  op-1 / ${SECRET}  for the counter and
-the review lane, or  fin-1 / ${SECRET}  for the settle and payout screens.
+Sign in as "Upload centre" with  HCM-01 / ${SECRET}  and one of:
+
+  op-1  / ${SECRET}   the counter, the review lane, episodes, back office, pipeline
+  fin-1 / ${SECRET}   the settle, payout and risk screens
+
+or switch the toggle to "Reviewer" and use  rev-1 / ${SECRET}  with no machine
+— a reviewer belongs to no upload centre, which is why that half of the form
+asks for one credential instead of two.
 `);
 
 await app.close();
