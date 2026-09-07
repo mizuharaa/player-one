@@ -573,15 +573,28 @@ cookie session. `DESIGN.md` at the repo root owns the visual system and
 `docs/adr/0002-back-office-is-a-react-spa.md` says why it is a built SPA rather
 than server-rendered markup. Read both before changing anything visual.
 
-Three shells, in this order:
+One command, against a throwaway database that has had `pnpm db:migrate` run
+on it:
 
 ```
-# 1. a real queue to develop against
-DATABASE_URL=... node packages/api/scripts/seed-console.mjs
+DATABASE_URL=... pnpm demo
+```
+
+It seeds, starts the API with the right variables, starts the Vite dev server,
+and prints what it created and which credentials reach which screens. Add
+`PORT=8099` if something already holds 8080; the console's proxy is told the
+same number. Ctrl-C stops both servers and leaves the data.
+
+The three shells it replaces, when you want them separately:
+
+```
+# 1. a queue, a settlement cycle and a payment to develop against
+DATABASE_URL=... pnpm seed
 
 # 2. the API. The seed prints the PLAYERONE_MEDIA_ROOT to paste here.
 #    REVIEW_VERIFICATION_GATE=local because seeded footage has no cloud copy;
-#    without it the gate (cloud by default) keeps every seeded episode out of the queue.
+#    without it the gate (cloud by default) keeps every seeded episode out of the queue,
+#    and /review reads "Nothing to review" on a database that has a queue in it.
 DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=dev  PLAYERONE_MEDIA_ROOT=...  REVIEW_VERIFICATION_GATE=local  pnpm serve
 
 # 3. the console
@@ -589,6 +602,19 @@ pnpm -F @playerone/console dev
 ```
 
 Then <http://localhost:5173>, and sign in with `HCM-01` / `pw` and `op-1` / `pw`.
+
+**The seed's footage is the real sample corpus when it can find one.** It
+locates it exactly as the tests do — `PLAYERONE_SESSIONS`, else
+`docs/sample_data/` — measures each session with the real ingest engine, and
+serves the media out of the corpus directory through a directory junction, so
+nothing is copied. Without a corpus it falls back to `fixtures/sessions/`,
+whose MP4s are 32-byte stubs: every measurement is still real and **playback
+will not work**. Which of the two it used is the first thing it prints when it
+finishes. Two of the five real sessions — 072538 and 073055, the two the device
+never closed — carry `MEDIA-TRUNCATED`, which `defect_codes` marks
+`blocks_review`, so the corpus supplies three reviewable sessions and the seed
+tops the rest up from the fixtures. The top-ups take the already-decided
+verdicts; what is left waiting in a queue is real footage.
 
 `op-1`'s role is `administrator`. BO-11 (migration 0020) put the nine shaping
 routes — tasks, collectors, devices, bind, unbind, assignments — behind that
@@ -604,11 +630,31 @@ generates a cycle is the one 0013 refuses when the bill is paid — the generate
 is the one route on that lane which answers 409 for `fin-1` and 200 for `op-1`.
 
 `seed-console.mjs` **truncates every table**, so point it at a throwaway
-database. It puts six episodes through the real counter path and commits three
-verdicts through the real endpoints, so Home's approval rate, payable time and
-settled value are computed from rows the production code wrote rather than from
-rows a fixture invented. It makes its own footage with ffmpeg and therefore says
-nothing about PaXini's encoder — same caveat as `verify-review.mjs`.
+database. Everything it makes goes through the real routes and the real people,
+so no seeded row can be shaped differently from a real one:
+
+| It seeds | Through | So that |
+|---|---|---|
+| 6 episodes on two cards, two collectors, two tasks | `POST /upload-batches/:id/episodes` | both review lanes have depth and the resolver is not scoped by a single handover |
+| 4 verdicts — good, partial, bad, and one in the privacy lane | `POST /api/review/verdict` | Home's approval rate, payable time and settled value are computed, not invented |
+| 2 episodes still waiting | — | `/review` is not a dead end, and what waits is real footage |
+| A third card with two declared sessions, plus a quarantined delivery | `POST /handovers/:id/sessions` twice | the resolver refuses to guess, which is what puts rows on `/episodes` and on Home's "needs a human" strip |
+| Bills for the current period | `POST /api/settle/bills` **as `op-1`** | `settle_generate_by_finance` refuses a cycle run by whoever will pay it |
+| One verified payout account | `POST /api/payout/collectors/:id/accounts` **as `op-1`** | `payout_separation_of_duty` refuses a payment by whoever declared the account |
+| One recorded manual payment | `POST /api/payout/bills/:id/mark-paid` **as `fin-1`** | there is a payout attempt to look at |
+| One risk tick | `tick()`, the worker's own function | the flags on `/risk` are the engine's, not a fixture's |
+
+Two things it deliberately does **not** do. The second collector gets no payout
+account, because `no_account` is a real refusal and `/settle/exceptions` is
+where it is meant to be read. And no batch reaches `uploading` or `verified`:
+there is no bucket on a dev machine, so no cloud state is faked.
+
+The one seam it stands in for is ZaloPay: this machine has no credentials, so
+`packages/api/test/payout/domain/stub-client.ts` answers the Verify Account
+call and the stored `m_u_id` is `mu-seed-0001`, the manual reference is
+`SEED-DEMO-…` and the declared name is `SEED DEMO C-1`. That is a service
+double, not a bypass — `payout_attempts_account_unverified` still refuses every
+destination it did not verify.
 
 **Always go through the Vite dev server, never straight at `:8080`.** The session
 is two `HttpOnly`, `SameSite=Strict` cookies, so the browser only sends them to

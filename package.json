@@ -10,6 +10,8 @@
     "test": "vitest run --testTimeout=30000",
     "ingest": "node packages/ingest/bin/ingest.ts",
     "serve": "node packages/api/bin/serve.ts",
+    "demo": "node packages/api/scripts/demo.mjs",
+    "seed": "node packages/api/scripts/seed-console.mjs",
     "moov": "node packages/api/scripts/moov.ts",
     "fixtures": "node packages/ingest/scripts/make-fixtures.ts",
     "bench": "node packages/ingest/scripts/bench.ts",
