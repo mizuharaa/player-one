@@ -147,6 +147,23 @@ export const stage = {
   line: '#2A2F36',
   fg: '#ECEEF1',
   mid: '#9AA1AC',
+  /**
+   * Type drawn over *footage*, under a scrim. Pure white, and only here.
+   *
+   * `fg` is right on a surface whose colour is known — `ground` and `panel` are
+   * fixed, so 4.5:1 is a fact. A film is not a surface: the brightest pixel
+   * under the type is whatever the collector filmed, and a kitchen window is
+   * near enough to white. Measured against the worst case — a pure-white pixel
+   * under the landing's 62% scrim — `fg` gives **4.52:1** and this token gives
+   * **5.26:1**. Both clear AA, but 0.02 of margin is not a margin: it is the
+   * `faintForeground` mistake again, where a ratio that rounded to 4.5 was
+   * really 4.49999. The extra step costs nothing on a photograph, where the
+   * difference between #ECEEF1 and white is invisible.
+   *
+   * Never on a surface. On `ground` it is a needlessly hot white where `fg` is
+   * the considered one; `contrast.test.ts` holds both.
+   */
+  over: '#FFFFFF',
 } as const;
 
 /** Light is the shell's default: staffed upload centres are lit rooms. */
@@ -446,6 +463,7 @@ ${neutrals(light)}
   --stage-line: ${stage.line};
   --stage-fg: ${stage.fg};
   --stage-mid: ${stage.mid};
+  --stage-over: ${stage.over};
 
 ${Object.entries(radius)
   .map(([k, v]) => `  --radius-${k}: ${v};`)

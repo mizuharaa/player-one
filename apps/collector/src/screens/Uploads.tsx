@@ -27,7 +27,15 @@ const stateColors = (theme: NativeTheme, state: EpisodeState): { fg: string; bg:
     case 'review_failed':
       return theme.color.verdict.reject;
     case 'under_review':
-      return theme.color.verdict.partial;
+      /*
+       * Not `partial`. A partial pass is an outcome a collector is paid on,
+       * and "somebody is looking at it" is not an outcome at all — wearing
+       * that violet said the episode had already been half judged. It is the
+       * machine reporting where the work is, which is what tech blue is for.
+       * The label is what separates it from the two upload states, the way it
+       * separates those two from each other.
+       */
+      return { fg: theme.color.techInk, bg: theme.color.tech[50] };
     case 'uploading':
     case 'uploaded':
       // `techInk`, for the same reason `Note` uses it: `tech[100]` inverts in

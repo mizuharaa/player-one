@@ -83,6 +83,52 @@ function onReviewRoute(): boolean {
 /** The options the stage's real renderer is built with; the probe uses the same. */
 const GL_OPTIONS = { alpha: true, antialias: true, powerPreference: 'high-performance' } as const;
 
+/**
+ * The quarter turn that puts the model's face toward the camera. See `useTruc`.
+ */
+const FRONT_Y = -Math.PI / 2;
+
+/** How long a greeting runs, in seconds of the render clock. */
+const GREET = 0.9;
+
+/**
+ * Where the cursor is, tracked on `window` rather than on the canvas.
+ *
+ * R3F's own `pointer` only moves when the canvas receives a pointer event, and
+ * this canvas never does: it is `pointer-events: none` everywhere, because the
+ * tour's layer covers the whole viewport and must never take a click away from
+ * the button under it. So the head-follow this component was written around was
+ * dead on every screen — measured, `pointer` stayed at (0, 0) and the head
+ * never turned once.
+ *
+ * A `window` listener fixes it and is the better behaviour anyway: he follows
+ * the cursor across the whole page instead of only while it is inside his own
+ * 240px box. Nothing here captures an event; it only observes one, so what is
+ * underneath still gets the click.
+ *
+ * One listener however many stages are mounted, refcounted, and `passive` so it
+ * can never delay a scroll.
+ */
+const cursor = { ndcX: 0, ndcY: 0, clientX: -1, clientY: -1, seen: false };
+let watchers = 0;
+
+function readCursor(event: PointerEvent): void {
+  cursor.clientX = event.clientX;
+  cursor.clientY = event.clientY;
+  cursor.ndcX = (event.clientX / window.innerWidth) * 2 - 1;
+  cursor.ndcY = -((event.clientY / window.innerHeight) * 2 - 1);
+  cursor.seen = true;
+}
+
+function trackCursor(): () => void {
+  if (watchers === 0) window.addEventListener('pointermove', readCursor, { passive: true });
+  watchers += 1;
+  return () => {
+    watchers -= 1;
+    if (watchers === 0) window.removeEventListener('pointermove', readCursor);
+  };
+}
+
 function webglAvailable(): boolean {
   let gl: WebGL2RenderingContext | null = null;
   try {
@@ -189,13 +235,14 @@ function useTruc(): THREE.Group | null {
         group.scale.setScalar(k);
         group.position.set(-centre.x * k, -box.min.y * k - 1, -centre.z * k);
         /*
-         * The model is authored facing -Z and the primitive panda faces +Z, so
-         * without this half turn the coach mark stands with its back to the
-         * reader — which is what it did the first time it was shot. Measured
-         * from a render, not assumed: the turnaround sheet's front view is the
-         * pose the camera has to see.
+         * The model is authored facing +X, so it needs a quarter turn, not a
+         * half one. Measured, not assumed: the glTF was rendered at 0°, 90°,
+         * 180° and 270° against this same camera and read off the four images.
+         * 0° and 180° are profiles, 90° is his back, and 270° is the face the
+         * turnaround sheet calls the front. A half turn shipped first and put
+         * the coach mark's back to the reader on every screen it appeared on.
          */
-        group.rotation.y = Math.PI;
+        group.rotation.y = FRONT_Y;
         group.traverse((node) => {
           const mesh = node as THREE.Mesh;
           if (mesh.isMesh) mesh.frustumCulled = false;
@@ -343,7 +390,21 @@ function anchorToWorld(rect: DOMRect, camera: THREE.Camera, out: THREE.Vector3) 
  * component is not mounted at all — the still pose is a single rendered frame
  * with no loop behind it.
  */
-function Truc({ mood, anchor, still }: { mood: PandaMood; anchor?: DOMRect; still: boolean }) {
+function Truc({
+  mood,
+  anchor,
+  still,
+  greet,
+  near,
+}: {
+  mood: PandaMood;
+  anchor?: DOMRect;
+  still: boolean;
+  /** Set to `-1` by a tap on him; the loop stamps it with its own clock. */
+  greet: { current: number };
+  /** Whether the cursor is over his box. Drives the lean, not a click. */
+  near: { current: boolean };
+}) {
   /*
    * Anchored, he is a coach mark standing beside a chip in a toolbar, so he is
    * a third the height he is in the shift gauge. At full size a 2-unit
@@ -356,7 +417,9 @@ function Truc({ mood, anchor, still }: { mood: PandaMood; anchor?: DOMRect; stil
   const head = useRef<THREE.Group>(null);
   const eyes = useRef<THREE.Group>(null);
   const model = useTruc();
-  const { camera, pointer } = useThree();
+  const { camera } = useThree();
+  const greetFrom = useRef(-1);
+  useEffect(trackCursor, []);
 
   /** Next blink, in seconds from the clock the loop reads. 3–6s, never regular. */
   const nextBlink = useRef(3 + Math.random() * 3);
@@ -392,7 +455,11 @@ function Truc({ mood, anchor, still }: { mood: PandaMood; anchor?: DOMRect; stil
       );
     } else {
       target.set(0, 0, 0);
-      look.set(pointer.x * 3, pointer.y * 2, 4);
+      /*
+       * He watches the cursor wherever it is on the page. Before it has moved
+       * once he looks straight out, rather than snapping to a corner.
+       */
+      look.set(cursor.seen ? cursor.ndcX * 3 : 0, cursor.seen ? cursor.ndcY * 2 : 0, 4);
     }
 
     if (still) {
@@ -416,14 +483,30 @@ function Truc({ mood, anchor, still }: { mood: PandaMood; anchor?: DOMRect; stil
 
     g.position.lerp(target, 1 - Math.exp(-6 * delta));
 
-    /* And which way he faces: at the anchor, or at the pointer. */
+    /*
+     * A tap on him. The flag is set by a listener that only *watches* the
+     * event, so the control underneath still receives it; the loop stamps the
+     * start against its own clock and the burst decays on its own.
+     */
+    if (greet.current === -1) {
+      greetFrom.current = t;
+      greet.current = 0;
+    }
+    const greeting = greetFrom.current >= 0 ? (t - greetFrom.current) / GREET : 2;
+    const hello = greeting < 1 ? Math.sin(greeting * Math.PI) : 0;
+
+    /* And which way he faces: at the anchor, or at the cursor. */
     const yaw = Math.atan2(look.x - g.position.x, Math.max(look.z - g.position.z, 1.5));
-    const pitch = anchor ? 0 : -pointer.y * 0.18;
+    const pitch = anchor ? 0 : -(cursor.seen ? cursor.ndcY : 0) * 0.18;
     const h = head.current;
     if (h) {
-      h.rotation.y += (THREE.MathUtils.clamp(yaw, -0.9, 0.9) - h.rotation.y) * (1 - Math.exp(-5 * delta));
+      /* Nearer the cursor, he turns further: the lean that says he noticed. */
+      const reach = near.current ? 1.25 : 1;
+      h.rotation.y +=
+        (THREE.MathUtils.clamp(yaw * reach, -0.9, 0.9) - h.rotation.y) * (1 - Math.exp(-5 * delta));
       h.rotation.x += (pitch - h.rotation.x) * (1 - Math.exp(-5 * delta));
-      if (mood === 'thinking') h.rotation.z = Math.sin(t * 0.9) * 0.06 + 0.1;
+      if (hello > 0) h.rotation.z = Math.sin(greeting * Math.PI * 3) * 0.14;
+      else if (mood === 'thinking') h.rotation.z = Math.sin(t * 0.9) * 0.06 + 0.1;
       else h.rotation.z += (0 - h.rotation.z) * (1 - Math.exp(-5 * delta));
     }
 
@@ -431,12 +514,17 @@ function Truc({ mood, anchor, still }: { mood: PandaMood; anchor?: DOMRect; stil
     const b = breath.current;
     if (b) {
       const air = Math.sin(t * 1.7) * 0.018;
-      if (mood === 'happy') {
+      if (hello > 0) {
+        /* The greeting outranks the mood: one hop, and he settles again. */
+        b.scale.set(1 + 0.1 * (1 - hello), 1 + 0.14 * hello, 1 + 0.1 * (1 - hello));
+        b.position.y = hello * 0.22;
+      } else if (mood === 'happy') {
         const bounce = Math.abs(Math.sin(t * 4.2));
         b.scale.set(1 + 0.09 * (1 - bounce), 1 + 0.12 * bounce, 1 + 0.09 * (1 - bounce));
         b.position.y = bounce * 0.18;
       } else {
-        b.scale.set(1 - air * 0.5, 1 + air, 1 - air * 0.5);
+        const lean = near.current ? 0.03 : 0;
+        b.scale.set(1 - air * 0.5, 1 + air + lean, 1 - air * 0.5);
         b.position.y += (0 - b.position.y) * (1 - Math.exp(-6 * delta));
       }
       if (mood === 'pointing') b.rotation.z = Math.sin(t * 2.4) * 0.03;
@@ -503,6 +591,57 @@ export function PandaStage({
   const [reduced, setReduced] = useState(false);
   const [running, setRunning] = useState(true);
   const [webgl, setWebgl] = useState(webglAvailable);
+  const host = useRef<HTMLDivElement>(null);
+  const greet = useRef(0);
+  const near = useRef(false);
+
+  /**
+   * Watching for a tap on him, without ever taking one.
+   *
+   * He is a mascot and not a control, and on the sign-in screen he stands over
+   * the seam with half of himself above the form. So this listens on `window`
+   * and compares the point against his own box: the reaction is ours and the
+   * click still belongs to whatever is underneath. Making the canvas itself
+   * clickable is what put a transparent layer over the tour's Next button.
+   *
+   * The tour's panda is excluded. There he is a coach mark standing beside the
+   * thing being explained, and every press in that moment belongs to the card.
+   */
+  useEffect(() => {
+    if (anchor) return;
+    const box = () => host.current?.getBoundingClientRect() ?? null;
+    const inside = (r: DOMRect | null, x: number, y: number) =>
+      r !== null && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+
+    const move = (event: PointerEvent) => {
+      near.current = inside(box(), event.clientX, event.clientY);
+    };
+    const press = (event: PointerEvent) => {
+      if (!inside(box(), event.clientX, event.clientY)) return;
+      /*
+       * On the sign-in screen he overhangs the form by half his width, so a
+       * press inside his box can really be a press on a field. If a control is
+       * the thing on top at that point, the press was not for him.
+       */
+      const on = document.elementFromPoint(event.clientX, event.clientY);
+      if (on?.closest('a, button, input, select, textarea, label, [role="button"], [tabindex]')) return;
+      greet.current = -1;
+    };
+    const leave = () => {
+      near.current = false;
+    };
+
+    window.addEventListener('pointermove', move, { passive: true });
+    window.addEventListener('pointerdown', press, { passive: true });
+    window.addEventListener('pointercancel', leave, { passive: true });
+    document.addEventListener('pointerleave', leave, { passive: true });
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerdown', press);
+      window.removeEventListener('pointercancel', leave);
+      document.removeEventListener('pointerleave', leave);
+    };
+  }, [anchor]);
 
   useEffect(() => {
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -546,12 +685,17 @@ export function PandaStage({
 
   return (
     <div
+      ref={host}
       /*
        * `pointer-events: none` on the wrapper is not enough: R3F renders two
        * container divs of its own inside it and re-enables pointer events on
        * both, so the full-viewport canvas of an anchored panda sat over the
        * guide's Next button and ate every click (measured with
        * elementFromPoint → CANVAS). Every descendant is inert, the canvas too.
+       *
+       * He is still interactive; he just never takes the event. The effect
+       * above watches `window` and compares the point against this box, so a
+       * tap on him makes him hop and the field behind him still gets its click.
        */
       className={cn('[&_*]:pointer-events-none', className)}
       style={
@@ -583,7 +727,7 @@ export function PandaStage({
         <ambientLight intensity={1.5} />
         <directionalLight position={[3, 5, 4]} intensity={2.1} />
         <directionalLight position={[-4, 1, -2]} intensity={0.5} />
-        <Truc mood={mood} anchor={anchor} still={still} />
+        <Truc mood={mood} anchor={anchor} still={still} greet={greet} near={near} />
       </Canvas>
         </StageBoundary>
       )}
