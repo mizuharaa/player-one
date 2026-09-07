@@ -164,7 +164,7 @@ staying green remains a load-bearing property.
 | Item | Blocks | Status |
 |---|---|---|
 | **D1** — Wi-Fi protocol between device and phone | The entire Path A upload flow | Promised, not received |
-| **D5** — Device SDK, API docs and user manual | Path A file offload | Kit received (`docs/sdks/`, gitignored: EgoLowBle 1.1.5, OrbbecSDK 2.9.0, firmware). Still missing: the record/playback interfaces (in the full SDK headers, not in this kit); whether any of them retrieves files from device storage is unconfirmed. See `docs/hw-captures/FINDINGS-2026-09-03.md`. |
+| **D5** — Device SDK, API docs and user manual | Path A file offload | Kit received (`docs/sdks/`, gitignored: EgoLowBle 1.1.5, OrbbecSDK 2.9.0, firmware). The kit's `RecordPlayback.hpp` records a live stream to a host file and plays a host file back; nothing in it lists or retrieves files from the device's own storage. See `docs/hw-captures/FINDINGS-2026-09-03.md`. |
 | **D11** — Whether background review needs online playback of raw video | Whether reviewers stream video, and so whether video leaves Vietnam in practice | **Unresolved on PaXini's side. Escalate.** |
 | **D2** — Storage target | Path B, cloud upload and verification | **Resolved.** GreenNode vStorage HCM04; keys issued, first bytes stored and read back 2026-09-06. See `docs/cloud-scale-findings.md`. |
 
