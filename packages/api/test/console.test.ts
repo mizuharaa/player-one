@@ -44,8 +44,14 @@ describe('the message catalogue', () => {
      * completeness check above pass. Every non-English locale is held to it,
      * so a Vietnamese column added in a hurry is caught the same way a Chinese
      * one would be.
+     *
+     * `login.trucTitle` is the mascot's name and the second entry this set has
+     * ever needed. *Trúc* is the Vietnamese for bamboo, so the Vietnamese
+     * column is identical to the English by construction and there is nothing
+     * to translate — Chinese writes the same plant 竹 and does differ. A name
+     * that reads the same in two languages is not a column somebody pasted.
      */
-    const sameOnPurpose = new Set<MessageKey>(['app.name']);
+    const sameOnPurpose = new Set<MessageKey>(['app.name', 'login.trucTitle']);
     const others = LOCALES.filter((l): l is Exclude<Locale, 'en'> => l !== 'en');
     expect(others.length).toBeGreaterThanOrEqual(2);
     for (const locale of others) {

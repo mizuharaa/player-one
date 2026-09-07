@@ -81,6 +81,21 @@ const en = {
      legend that repeats its first field's label makes a screen reader say
      "Machine identifier group, Machine identifier". */
   'login.groupMachine': 'Machine',
+  /*
+   * Field labels inside a group, and they are short because the group already
+   * said the noun. "Machine" above "Machine identifier" is the word twice, four
+   * pixels apart, in two sizes — which is what made this form read as broken.
+   */
+  'login.fieldIdentifier': 'Identifier',
+  'login.fieldReference': 'Reference',
+  'login.fieldSecret': 'Secret',
+  /* Trúc's launcher and the placeholder behind it. No model is wired up. */
+  'login.trucOpen': 'Ask Trúc',
+  'login.trucTitle': 'Trúc',
+  'login.trucBody':
+    'Trúc cannot answer yet. When he can, this is where you will ask him what a verdict means, why a card was refused, or where a payment went.',
+  'login.trucSoon': 'Not connected yet',
+  'login.trucClose': 'Close',
   'login.groupOperator': 'Operator',
   'login.groupReviewer': 'Reviewer',
   'login.intro':
@@ -1233,6 +1248,14 @@ const zh: Record<MessageKey, string> = {
   'login.title': '登录以进行审核',
   'login.titleOperator': '登录上传中心',
   'login.groupMachine': '机器',
+  'login.fieldIdentifier': '标识',
+  'login.fieldReference': '编号',
+  'login.fieldSecret': '密钥',
+  'login.trucOpen': '询问小竹',
+  'login.trucTitle': '小竹',
+  'login.trucBody': '小竹暂时还不能回答。接通后，你可以在这里询问某个判定的含义、存储卡为何被拒，或某笔付款去了哪里。',
+  'login.trucSoon': '尚未接通',
+  'login.trucClose': '关闭',
   'login.groupOperator': '操作员',
   'login.groupReviewer': '审核员',
   'login.intro': '与本服务其他部分一致，需要两组凭据：机器凭据证明地点，操作员凭据证明身份。',
@@ -2105,6 +2128,15 @@ const vi: Record<MessageKey, string> = {
   'login.title': 'Đăng nhập để duyệt',
   'login.titleOperator': 'Đăng nhập trung tâm tải lên',
   'login.groupMachine': 'Máy',
+  'login.fieldIdentifier': 'Mã',
+  'login.fieldReference': 'Mã số',
+  'login.fieldSecret': 'Khóa',
+  'login.trucOpen': 'Hỏi Trúc',
+  'login.trucTitle': 'Trúc',
+  'login.trucBody':
+    'Trúc chưa trả lời được. Khi kết nối xong, đây là nơi bạn hỏi một kết luận nghĩa là gì, vì sao một thẻ bị từ chối, hay một khoản tiền đã đi đâu.',
+  'login.trucSoon': 'Chưa kết nối',
+  'login.trucClose': 'Đóng',
   'login.groupOperator': 'Nhân viên',
   'login.groupReviewer': 'Người duyệt',
   'login.intro':

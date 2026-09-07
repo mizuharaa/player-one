@@ -52,6 +52,16 @@ const button = cva(
         primary: cn(
           'bg-[var(--sun-500)] text-[var(--stage)] shadow-[var(--shadow-sun)]',
           'hover:bg-[var(--sun-400)] active:bg-[var(--sun-600)]',
+          /*
+           * A disabled primary must not read as a *locked* primary. At 45%
+           * opacity the sun fill turns a washed apricot that looks like a
+           * button somebody has switched off, on a screen where the only
+           * reason it is ever disabled is that a request is in flight for a
+           * few hundred milliseconds. So while it is working it keeps its
+           * colour and loses only its glow and its lift, which is what a
+           * control that is busy actually looks like.
+           */
+          'disabled:opacity-100 disabled:shadow-none disabled:brightness-[0.97]',
         ),
         /**
          * Ink outline: the second thing on the screen worth doing.

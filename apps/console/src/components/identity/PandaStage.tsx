@@ -578,6 +578,7 @@ export function PandaStage({
   anchor,
   className,
   label,
+  onPress,
 }: {
   mood?: PandaMood;
   /** Ignored when `anchor` is set; the layer is the viewport then. */
@@ -587,6 +588,21 @@ export function PandaStage({
   className?: string;
   /** Sets `role="img"`; without it the canvas is decoration and is hidden. */
   label?: string;
+  /**
+   * Makes him a control rather than a mascot, and changes what he is.
+   *
+   * With this set the wrapper is a real `<button>`: it takes focus, answers
+   * Enter and Space, carries `label` as its accessible name and calls this on
+   * a press — as well as running the same greeting a tap has always run. The
+   * canvas inside stays inert, so the click lands on the button and not on a
+   * WebGL surface.
+   *
+   * Without it he is what he has always been: decoration that reacts and never
+   * takes an event, watched from `window` so the field behind him keeps its
+   * click. Both shapes exist because both are true somewhere — the shift gauge
+   * and the coach mark have nothing to open.
+   */
+  onPress?: () => void;
 }) {
   const [reduced, setReduced] = useState(false);
   const [running, setRunning] = useState(true);
@@ -608,7 +624,7 @@ export function PandaStage({
    * thing being explained, and every press in that moment belongs to the card.
    */
   useEffect(() => {
-    if (anchor) return;
+    if (anchor || onPress) return;
     const box = () => host.current?.getBoundingClientRect() ?? null;
     const inside = (r: DOMRect | null, x: number, y: number) =>
       r !== null && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
@@ -641,7 +657,7 @@ export function PandaStage({
       window.removeEventListener('pointercancel', leave);
       document.removeEventListener('pointerleave', leave);
     };
-  }, [anchor]);
+  }, [anchor, onPress]);
 
   useEffect(() => {
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -683,9 +699,27 @@ export function PandaStage({
     </div>
   );
 
+  const Host = onPress ? 'button' : 'div';
+
   return (
-    <div
-      ref={host}
+    <Host
+      ref={host as React.Ref<HTMLDivElement & HTMLButtonElement>}
+      {...(onPress
+        ? {
+            type: 'button' as const,
+            onClick: () => {
+              /* The same hop a tap has always produced, then the thing it opens. */
+              greet.current = -1;
+              onPress();
+            },
+            onPointerEnter: () => {
+              near.current = true;
+            },
+            onPointerLeave: () => {
+              near.current = false;
+            },
+          }
+        : {})}
       /*
        * `pointer-events: none` on the wrapper is not enough: R3F renders two
        * container divs of its own inside it and re-enables pointer events on
@@ -697,13 +731,22 @@ export function PandaStage({
        * above watches `window` and compares the point against this box, so a
        * tap on him makes him hop and the field behind him still gets its click.
        */
-      className={cn('[&_*]:pointer-events-none', className)}
+      className={cn(
+        '[&_*]:pointer-events-none',
+        onPress &&
+          cn(
+            'rounded-[var(--radius-pill)] transition-transform duration-150 ease-[var(--ease)]',
+            'hover:scale-105 active:scale-95',
+            'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--ring)]',
+          ),
+        className,
+      )}
       style={
         anchor
           ? { position: 'fixed', inset: 0, zIndex: 40, pointerEvents: 'none' }
-          : { width: size, height: size, pointerEvents: 'none' }
+          : { width: size, height: size, pointerEvents: onPress ? 'auto' : 'none' }
       }
-      role={label ? 'img' : undefined}
+      role={!onPress && label ? 'img' : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
     >
@@ -731,7 +774,7 @@ export function PandaStage({
       </Canvas>
         </StageBoundary>
       )}
-    </div>
+    </Host>
   );
 }
 

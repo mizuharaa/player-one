@@ -89,20 +89,15 @@
  * in the chunk `/review` loads — the same argument that keeps three.js behind
  * `React.lazy`.
  */
-import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
 import { Mark } from '../components/identity/Mark.tsx';
-import { Panda } from '../components/identity/Panda.tsx';
-import type { PandaMood } from '../components/identity/PandaStage.tsx';
+import { TrucAsk } from '../components/identity/TrucAsk.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { LocaleSwitch } from '../components/shell/LocaleSwitch.tsx';
 import { ThemeSwitch } from '../components/shell/ThemeSwitch.tsx';
 import { cn } from '../lib/cn.ts';
-
-const PandaStage = lazy(() =>
-  import('../components/identity/PandaStage.tsx').then((m) => ({ default: m.PandaStage })),
-);
 
 type Failure = 'credentials' | 'mismatch' | 'network' | 'sign_in_rate_limited' | null;
 
@@ -144,29 +139,6 @@ const POSTER_URL = '/landing-poster.jpg';
  */
 const SCRIM = 'bg-[color-mix(in_srgb,var(--stage)_60%,transparent)]';
 
-/**
- * How big Trúc's canvas is, and why the number is so much larger than he looks.
- *
- * He used to be 240px pinned to the bottom-right corner and translated half his
- * width off it, so the seam cut him down the middle and half the mascot was
- * drawn over the form. He is centred in the film column now.
- *
- * The box is not the panda. `PandaStage` normalises any model into a two-unit
- * box and the camera sits at z=6.4 with a 34° field, which makes the visible
- * plane about 3.9 units tall — so a panda whose widest dimension is his arms
- * fills roughly 40% of the square he is given. 520px of canvas is therefore
- * about 210px of drawn panda, which on a 720px column is a character rather
- * than an icon. Raising this number was the cheap knob; the alternative was a
- * second camera distance, and the camera is shared with the coach mark and the
- * shift gauge, where the framing is already right.
- *
- * `lg` and up only, and `overflow-hidden` on the wrapper. Below the split the
- * film is a 30svh band, and a figure standing in a band that short lands on
- * the face of whoever the film is showing — measured at 962×961, where he sat
- * squarely on the collector's cheek. A band is a header, not a stage.
- */
-const PANDA = 520;
-
 /** Whether the operator has asked the machine to stop moving things. */
 function useReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
@@ -186,7 +158,6 @@ export function LoginScreen() {
   const [failure, setFailure] = useState<Failure>(null);
   const [busy, setBusy] = useState(false);
   const [role, setRole] = useState<'operator' | 'reviewer'>('operator');
-  const [mood, setMood] = useState<PandaMood>('idle');
   const reviewer = role === 'reviewer';
   const reduced = useReducedMotion();
 
@@ -261,7 +232,6 @@ export function LoginScreen() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
-    setMood('happy');
     setFailure(null);
 
     const form = new FormData(event.currentTarget);
@@ -288,11 +258,9 @@ export function LoginScreen() {
           ? body.reason
           : 'credentials',
       );
-      setMood('idle');
     } catch {
       /* The LAN dropped, or the API is not running. Say which is possible. */
       setFailure('network');
-      setMood('idle');
     } finally {
       setBusy(false);
     }
@@ -428,21 +396,22 @@ export function LoginScreen() {
           </div>
 
           {/*
-            Trúc, standing on the seam.
+            Trúc, in the corner, as something you can ask.
 
-            `pointer-events` are off inside `PandaStage`, so he never takes a
-            click away from the field behind him. He is the mascot and not a
-            control, so he carries no label and is hidden from the
-            accessibility tree; the flat `Panda` holds his place while the
-            three.js chunk arrives, at the same size and in the same spot, so
-            nothing shifts when it does. He lives inside the pinned panel
-            rather than on the page, so he stays on the seam for the whole
-            scroll instead of leaving with the first screen.
+            He was 520px in the middle of this panel, which drew a cartoon
+            panda across the mouth and chin of the collector the film is about
+            — in every language, in both roles, at every scroll position. A
+            mascot that covers the product is not a mascot, and the film is the
+            one thing on this screen doing the selling.
+
+            So he is a 52px launcher in the corner the composition does not
+            use, and pressing him opens a dialogue. Nothing answers yet and the
+            dialogue says so; see `TrucAsk.tsx`. That also takes three.js off
+            this route entirely — the sign-in no longer loads a WebGL context
+            to draw a mascot it was covering the film with.
           */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 hidden justify-center overflow-hidden lg:flex">
-            <Suspense fallback={<Panda size={PANDA} />}>
-              <PandaStage mood={mood} size={PANDA} />
-            </Suspense>
+          <div className="absolute bottom-8 right-4 z-10 hidden sm:block lg:bottom-10 lg:right-8">
+            <TrucAsk />
           </div>
         </div>
       </div>
@@ -557,7 +526,7 @@ export function LoginScreen() {
           and every pixel of it is reachable.
         */}
         <div className="min-h-0 w-full flex-1 overflow-y-auto">
-          <div className="mx-auto flex min-h-full w-full max-w-[27rem] flex-col justify-center lg:py-8">
+          <div className="mx-auto flex min-h-full w-full max-w-[27rem] flex-col justify-center py-2 lg:py-5">
           {/*
             The name, once, at a size that means it. Be Vietnam Pro at 800 —
             the display weight in the token scale — and tracked in, because a
@@ -567,7 +536,7 @@ export function LoginScreen() {
             the mark is already on the band above, and 34px of wordmark is 34px
             the fields need on an 844px phone.
           */}
-          <h1 className="sr-only lg:not-sr-only lg:text-[3.5rem] lg:font-extrabold lg:leading-[1.02] lg:tracking-[-0.035em]">
+          <h1 className="sr-only lg:not-sr-only lg:text-[2.25rem] lg:font-extrabold lg:leading-[1.05] lg:tracking-[-0.03em]">
             PlayerOne
           </h1>
           {/*
@@ -585,28 +554,33 @@ export function LoginScreen() {
             nothing — the one word on the screen naming what they are about to
             do named somebody else's job.
           */}
-          <h2 className="text-[1.3125rem] font-bold tracking-[-0.02em] lg:mt-8">
+          <h2 className="text-[1.3125rem] font-bold tracking-[-0.02em] lg:mt-4">
             {t(reviewer ? 'login.title' : 'login.titleOperator')}
           </h2>
           <p className="mt-1 max-w-[42ch] text-[0.875rem] leading-snug text-[var(--muted-foreground)] lg:mt-1.5 lg:leading-relaxed">
             {t(reviewer ? 'login.reviewerIntro' : 'login.intro')}
           </p>
 
+          {/*
+            One rhythm, and it is the thing that was wrong.
+
+            The gaps used to be 4px between a group's name and its first
+            label, 4px between that label and its field, 12px to the next
+            label and 43px to the next group — four different distances with
+            no relationship, so a group heading sat almost touching the label
+            under it and the whole column read as a rendering fault rather
+            than as a form. It is 8 / 24 / 36 now: a label sits 8px above its
+            own field, fields inside a group are 24px apart, and groups are
+            36px apart. Every number is a multiple of four and each one is
+            clearly larger than the one inside it, which is the only property
+            that makes a grouping legible without a rule or a box.
+          */}
           <form
-            id="signin"
             onSubmit={submit}
-            onFocus={() => setMood((m) => (m === 'happy' ? m : 'thinking'))}
-            /* Only when focus actually leaves the form. Without the
-               `relatedTarget` check, tabbing from one field to the next blurs
-               and focuses in the same tick and the mascot flickers. */
-            onBlur={(event) => {
-              if (event.currentTarget.contains(event.relatedTarget)) return;
-              setMood((m) => (m === 'happy' ? m : 'idle'));
-            }}
-            className="mt-3 flex flex-col gap-2.5 lg:mt-6 lg:gap-5"
+            className="mt-4 flex flex-col gap-6 lg:mt-4 lg:gap-6"
           >
-            <fieldset className="flex flex-col gap-1.5 lg:gap-2">
-              <legend className="text-[0.8125rem] font-semibold text-[var(--muted-foreground)]">
+            <fieldset className="flex flex-col gap-2">
+              <legend className="mb-0.5 text-[0.6875rem] font-bold uppercase tracking-[0.09em] text-[var(--faint-foreground)]">
                 {t('login.role')}
               </legend>
               {/*
@@ -650,13 +624,13 @@ export function LoginScreen() {
                 */}
                 <Input
                   name="machine_identifier"
-                  label={t('login.machine')}
+                  label={t('login.fieldIdentifier')}
                   autoComplete="section-machine username"
                   autoFocus
                 />
                 <Input
                   name="machine_secret"
-                  label={t('login.machineSecret')}
+                  label={t('login.fieldSecret')}
                   type="password"
                   autoComplete="section-machine current-password"
                 />
@@ -666,42 +640,41 @@ export function LoginScreen() {
             <Fieldset legend={reviewer ? t('login.groupReviewer') : t('login.groupOperator')}>
               <Input
                 name="external_ref"
-                label={reviewer ? t('login.reviewer') : t('login.operator')}
+                label={t('login.fieldReference')}
                 autoComplete="username"
               />
               <Input
                 name="operator_secret"
-                label={reviewer ? t('login.reviewerSecret') : t('login.operatorSecret')}
+                label={t('login.fieldSecret')}
                 type="password"
                 autoComplete="current-password"
               />
             </Fieldset>
 
 
-          </form>
-          </div>
-        </div>
 
-        {/* ---------------------------------------------------------------
-            The bar, and it is a sibling of the scrolling area rather than
-            something floating over it.
+            {/* ---------------------------------------------------------------
+                The submit is the last thing in the form, in ordinary flow, and
+                that is the whole of it.
 
-            It was `position: sticky` inside the form, which is the shape that
-            put it *over* the fields. Making it static was not enough on its
-            own — it was still inside the box that scrolls, so it simply
-            scrolled away with them and at 1024×640 the button went under the
-            fold. The row has to be outside the scroller, which means the
-            button is outside the `<form>`, which is what `form="signin"` is
-            for: a submit control anywhere in the document, bound to the form
-            by id. Every browser this console supports has done that since
-            2011.
+                Three shapes were tried before this one. Sticky below `lg`,
+                which drew the bar over the fields. Sticky at every width with
+                the column scrolling, which did the same thing in more places.
+                Then a fixed row outside the scroller, bound back to the form
+                with `form="signin"` — which stopped covering anything and was
+                still wrong, because a submit that never moves while the form
+                behind it scrolls reads as a toolbar bolted to the bottom of
+                the window rather than as the end of what you are filling in.
+                Daniel said so three times and he was right three times.
 
-            So the column is three rows — a header strip, the fields, and this
-            — and the last two never overlap. The submit, the refusal and both
-            policy links are on screen at first paint at every viewport, with
-            no scrolling and in all three languages.
-            --------------------------------------------------------------- */}
-          <div className="mt-1 border-t border-[var(--border)] pt-2 lg:pb-1 lg:pt-3">
+                A sign-in form is not long enough to need a pinned action. It
+                is a heading, four boxes and a button, and the button goes
+                after the boxes the way it does on every form anybody has ever
+                filled in. If the viewport is too short to hold all of it, the
+                page scrolls — which is what a page does, and which every login
+                screen on the web already asks of you.
+                --------------------------------------------------------------- */}
+            <div className="pt-1">
             {/*
               The refusal sits with the button, above it, and not at the end
               of the fields.
@@ -731,7 +704,6 @@ export function LoginScreen() {
 
             <Button
               type="submit"
-              form="signin"
               variant="primary"
               size="xl"
               disabled={busy}
@@ -759,13 +731,16 @@ export function LoginScreen() {
               write, and a link that goes nowhere is better than a link that
               confidently goes to the wrong page.
             */}
-            <div className="mt-2.5 flex flex-col items-center gap-1 text-[0.75rem] leading-relaxed text-[var(--muted-foreground)] lg:mt-3.5 lg:items-start">
-              <p className="text-center lg:text-left">{t('login.legal')}</p>
-              <p className="flex flex-wrap justify-center gap-x-4 gap-y-1 lg:justify-start">
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[0.75rem] leading-relaxed text-[var(--muted-foreground)]">
+              <span>{t('login.legal')}</span>
+              <span className="flex flex-wrap justify-center gap-x-4 gap-y-1">
                 <Legal href="#privacy">{t('login.legalPrivacy')}</Legal>
                 <Legal href="#data-collection">{t('login.legalData')}</Legal>
-              </p>
+              </span>
             </div>
+            </div>
+          </form>
+          </div>
         </div>
       </main>
     </div>
@@ -819,8 +794,8 @@ function Legal({ href, children }: { href: string; children: React.ReactNode }) 
  */
 function Fieldset({ legend, children }: { legend: string; children: React.ReactNode }) {
   return (
-    <fieldset className="flex flex-col gap-1.5 lg:gap-3">
-      <legend className="mb-1 text-[0.6875rem] font-bold uppercase tracking-[0.09em] text-[var(--faint-foreground)]">
+    <fieldset className="flex flex-col gap-5">
+      <legend className="mb-0.5 text-[0.6875rem] font-bold uppercase tracking-[0.09em] text-[var(--faint-foreground)]">
         {legend}
       </legend>
       {children}
@@ -882,8 +857,8 @@ function Input({
   autoFocus?: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-0.5 lg:gap-1">
-      <span className="text-[0.8125rem] font-semibold text-[var(--muted-foreground)]">{label}</span>
+    <label className="flex flex-col gap-2">
+      <span className="text-[0.8125rem] font-semibold text-[var(--foreground)]">{label}</span>
       <input
         name={name}
         type={type}
@@ -909,7 +884,7 @@ function Input({
              scroll-into-view honours, and it works for both scrollers here:
              the pinned column at `lg` and the document below it. */
           'scroll-mb-40',
-          'num h-[3.25rem] rounded-[var(--radius-base)] border border-[var(--field-border)] bg-[var(--card)] px-4',
+          'num h-12 rounded-[var(--radius-base)] border border-[var(--field-border)] bg-[var(--card)] px-4',
           'text-[0.9375rem] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]',
           'transition-colors duration-150 ease-[var(--ease)]',
           'hover:border-[var(--foreground)]',
