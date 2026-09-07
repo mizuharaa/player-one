@@ -167,7 +167,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
   });
 
   const sloganStyle = {
-    color: theme.color.stage.fg,
+    color: theme.color.stage.over,
     fontFamily: face(theme),
     fontSize: theme.fontSize['2xl'],
     lineHeight: theme.fontSize['2xl'] * 1.15,
@@ -232,7 +232,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
       <Text
         accessibilityRole="header"
         style={{
-          color: theme.color.stage.fg,
+          color: theme.color.stage.over,
           fontFamily: face(theme),
           fontSize: theme.fontSize.base,
           fontWeight: theme.fontWeight.bold,
@@ -247,7 +247,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
       {LANDING_CENTRE_CODE === '' ? null : (
         <Text
           style={{
-            color: theme.color.stage.mid,
+            color: theme.color.stage.over,
             fontFamily: theme.font.mono,
             fontSize: theme.fontSize.xs,
             letterSpacing: 1,
@@ -289,13 +289,13 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
         Registering and signing in are the same door, because a collector
         account is opened by a person at a counter and not by this app. One
         plain sentence is cheaper than a form that would fail. It is drawn in
-        `stage.fg` and not a muted grey: `stage.mid` on the scrimmed film
+        `stage.over` and not a muted grey: `stage.mid` on the scrimmed film
         measures 2.21:1 and this sentence is the one that explains the button
         above it.
       */}
       <Text
         style={{
-          color: theme.color.stage.fg,
+          color: theme.color.stage.over,
           fontFamily: face(theme),
           fontSize: theme.fontSize.xs,
           lineHeight: theme.fontSize.xs * 1.5,
@@ -307,10 +307,18 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.color.stage.ground }}>
+    <View style={{ flex: 1, backgroundColor: theme.color.stage.ground, overflow: 'hidden' }}>
       <Animated.View
         style={[
           StyleSheet.absoluteFill,
+          /*
+           * Clipped, because the film grows. The scale runs 1 → 1.06 as the
+           * hero collapses, and on a 390px screen that is 413.4px of video
+           * with nothing holding it: measured, the document's `scrollWidth`
+           * went to 402 and the page could be dragged sideways. The scroll
+           * that reveals the form must never become a scroll in two axes.
+           */
+          { overflow: 'hidden' },
           reduced ? {} : { transform: [{ scale: filmScale }] },
         ]}
       >

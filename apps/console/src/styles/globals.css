@@ -87,6 +87,7 @@
   --color-stage-line: var(--stage-line);
   --color-stage-fg: var(--stage-fg);
   --color-stage-mid: var(--stage-mid);
+  --color-stage-over: var(--stage-over);
 
   --radius-sm: var(--radius-sm);
   --radius-DEFAULT: var(--radius-base);
@@ -145,7 +146,8 @@
   :root[data-theme='dark'] ::selection,
   .on-stage ::selection {
     background: var(--sun-700);
-    color: #fff;
+    /* The one white in the system, and it is a token like everything else. */
+    color: var(--stage-over);
   }
 
   html {

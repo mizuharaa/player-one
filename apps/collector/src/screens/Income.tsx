@@ -143,10 +143,22 @@ export function Income() {
             <View style={{ gap: theme.space[2] }}>
               <Title>{entry.episodeId}</Title>
               {confirmed ? (
+                /*
+                 * Ink, not the pass green.
+                 *
+                 * Confirmed money and a passed episode are two different
+                 * facts, and a partial pass produces confirmed money too — so
+                 * a green tag on this row told a collector their episode
+                 * passed when it may have half passed. APP-34 asks only that
+                 * confirmed and estimated be unmistakable, and the solid card
+                 * against the dashed one already says it; the tag says which
+                 * in words. The verdict hues stay on the verdict, which is on
+                 * the episode's own row in Uploads.
+                 */
                 <Tag
                   label={tt('income.confirmed')}
-                  fg={theme.color.verdict.pass.fg}
-                  bg={theme.color.verdict.pass.bg}
+                  fg={theme.color.background}
+                  bg={theme.color.foreground}
                 />
               ) : (
                 <Tag

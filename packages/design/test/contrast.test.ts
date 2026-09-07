@@ -386,3 +386,42 @@ describe('shell text clears AA', () => {
     atLeast(TEXT_AA, stage.mid, stage.ground, 'stage mid');
   });
 });
+
+/**
+ * Type over footage, which is the one ground this file cannot look up.
+ *
+ * A surface has a colour; a film has whatever the collector pointed the camera
+ * at. So the worst case is assumed rather than sampled — a pure white pixel —
+ * and the scrim the two landings actually use is composited over it here. The
+ * console's sign-in film sits at 60% and the collector's at 62%; both were
+ * measured off the built pages, and both are asserted so a lighter scrim
+ * cannot be chosen later without this failing.
+ */
+describe('type over footage clears AA on the worst frame', () => {
+  const composite = (ink: string, alpha: number, under: string): string => {
+    const [i, u] = [channels(ink), channels(under)];
+    return `#${i
+      .map((c, n) => Math.round((alpha * c + (1 - alpha) * u[n]!) * 255).toString(16).padStart(2, '0'))
+      .join('')}`;
+  };
+
+  for (const [surface, alpha] of [
+    ['the console sign-in', 0.6],
+    ['the collector landing', 0.62],
+  ] as const) {
+    it(`${surface}, at ${Math.round(alpha * 100)}%`, () => {
+      const worst = composite(stage.ground, alpha, '#FFFFFF');
+      atLeast(TEXT_AA, stage.over, worst, `${surface}: type over the film`);
+      /*
+       * And the reason the token exists: `fg` measures 4.52:1 on the collector's
+       * scrim and 4.20:1 on the console's — one of them under the floor, the
+       * other 0.02 above it. Neither is a margin worth shipping over a film.
+       */
+      expect(contrast(stage.over, worst)).toBeGreaterThan(contrast(stage.fg, worst));
+    });
+  }
+
+  it('and `over` stays off the surfaces, where `fg` is the considered ink', () => {
+    expect(contrast(stage.over, stage.ground)).toBeGreaterThan(contrast(stage.fg, stage.ground));
+  });
+});

@@ -179,13 +179,22 @@ export function HomeScreen() {
                  * rather than turning a target into a score.
                  */
                 note={`${t('ui.a.home.approval.note')} ${t('ui.a.home.approval.target')}`}
+                /*
+                 * The count, and not a verdict pill.
+                 *
+                 * It read as `good` above 85% and `partial` below it, which
+                 * spent two of the three colours that decide whether one person
+                 * is paid on an aggregate of everyone. A rate is not a verdict:
+                 * there is no episode behind this pill to pass or fail, and a
+                 * reviewer who learns that green-here means good has learned
+                 * the wrong thing about green-there. The sentence under the
+                 * figure carries the judgement instead.
+                 */
                 trailing={
                   approvalRate === null ? null : (
-                    <VerdictPill verdict={approvalRate >= 85 ? 'good' : 'partial'} size="sm">
-                      <span className="num">
-                        {data?.approved ?? 0}/{data?.decided ?? 0}
-                      </span>
-                    </VerdictPill>
+                    <span className="num rounded-full bg-[var(--muted)] px-2 py-0.5 text-[0.75rem] font-semibold text-[var(--muted-foreground)]">
+                      {data?.approved ?? 0}/{data?.decided ?? 0}
+                    </span>
                   )
                 }
               />
@@ -507,7 +516,13 @@ function Gauge({ value, target, state }: { value: number; target: number; state:
           className="gauge-fill"
           d={track}
           fill="none"
-          stroke={over ? 'var(--pass)' : 'var(--bamboo-600)'}
+          /*
+           * Bamboo whether or not the target is behind you. Turning the ring
+           * pass-green at 60 episodes made a shift's progress wear the colour
+           * that means a collector was paid; the deeper step marks the
+           * milestone without borrowing that meaning.
+           */
+          stroke={over ? 'var(--bamboo-700)' : 'var(--bamboo-600)'}
           strokeWidth={STROKE}
           strokeLinecap="round"
           strokeDasharray={arcLength}
