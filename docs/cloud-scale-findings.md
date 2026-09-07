@@ -78,6 +78,20 @@ The 500 Mbps package is 75,000,000 VND/month at −50%.
 The vServer↔vStorage internal link is 1 Gbps. Our measured serial upload uses
 ~229 Mbps of it (22.9%), leaving 771 Mbps (77.1%) headroom.
 
+**GreenNode's answer, 2026-09-06.** The 1 Gbps is per vServer instance
+(flavor); a bigger flavor buys more, by resize. The vStorage quota page for
+HCM04 gives, per farm: download 10 Gbps domestic (shared) / 300 Mbps
+international, upload 10 Gbps domestic (shared) / 300 Mbps international.
+What that means here: an upload centre in Vietnam is domestic, so GreenNode's
+side is not its ceiling; the centre's own uplink is. The 300 Mbps international
+figure touches only two things, this US-based dev box and any raw video
+streamed to Shenzhen (D11, which data residency argues against anyway). The
+0.236 MB/s (1.9 Mbps) measured below from Massachusetts is 0.6% of that
+international cap, so it is the transpacific path, not a quota, and says
+nothing about the pilot. At 1 Gbps a verification read-back of one hourly
+camera file (6,829 MB) is about 55 s; twenty collectors' eight-hour days,
+two cameras, are about five hours of read-back on one instance per day.
+
 ## What was NOT tested
 
 - **GreenNode itself.** S3 keys now exist for HCM04. Everything measured here is MinIO
