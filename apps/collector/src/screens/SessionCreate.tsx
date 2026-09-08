@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
+import { useNav } from '../nav.tsx';
 import { Body, Button, Card, Choice, Note, Row, Screen, Title } from '../ui.tsx';
 
 /**
@@ -18,10 +19,12 @@ function YesNo({
   question,
   value,
   onChange,
+  disabled,
 }: {
   question: string;
   value: boolean | null;
   onChange: (v: boolean) => void;
+  disabled: boolean;
 }) {
   const tt = useT();
   const theme = useTheme();
@@ -33,12 +36,14 @@ function YesNo({
           label={tt('session.yes')}
           describedBy={question}
           selected={value === true}
+          disabled={disabled}
           onPress={() => onChange(true)}
         />
         <Choice
           label={tt('session.no')}
           describedBy={question}
           selected={value === false}
+          disabled={disabled}
           onPress={() => onChange(false)}
         />
       </View>
@@ -48,6 +53,9 @@ function YesNo({
 
 export function SessionCreate() {
   const api = useApi();
+  const nav = useNav();
+  const submitting = useRef(false);
+  useEffect(() => api.beginSessionAttempt(), [api]);
   const tt = useT();
   const theme = useTheme();
 
@@ -80,7 +88,11 @@ export function SessionCreate() {
         sensitiveInfo: sensitive,
       });
     },
-    onSuccess: (session) => setCreatedId(session.id),
+    onSuccess: (session) => {
+      setCreatedId(session.id);
+      nav.reset({ name: 'sessionCreate' });
+    },
+    onError: () => { submitting.current = false; },
   });
 
   const pick = <T,>(
@@ -98,11 +110,26 @@ export function SessionCreate() {
           label={label(item)}
           describedBy={describedBy}
           selected={selected === key(item)}
-          onPress={() => onPick(key(item))}
+          disabled={create.isPending}
+          onPress={() => { if (!submitting.current) onPick(key(item)); }}
         />
       ))}
     </View>
   );
+
+  if (createdId !== null) {
+    return (
+      <Screen title={tt('session.created')}>
+        <Card>
+          <Row label={tt('session.id')} value={createdId} />
+          <Row label={tt('session.task')} value={task?.title ?? ''} />
+          <Row label={tt('session.device')} value={deviceSerial ?? ''} />
+        </Card>
+        <Note text={tt('session.noRecord')} />
+        <Button label={tt('session.home')} onPress={() => nav.reset({ name: 'home' })} />
+      </Screen>
+    );
+  }
 
   return (
     <Screen title={tt('session.title')}>
@@ -132,24 +159,25 @@ export function SessionCreate() {
 
       <Card>
         <Title>{tt('session.declare')}</Title>
-        <YesNo question={tt('session.othersTitle')} value={others} onChange={setOthers} />
-        <YesNo question={tt('session.sensitiveTitle')} value={sensitive} onChange={setSensitive} />
+        <YesNo question={tt('session.othersTitle')} value={others} disabled={create.isPending}
+          onChange={(v) => { if (!submitting.current) setOthers(v); }} />
+        <YesNo question={tt('session.sensitiveTitle')} value={sensitive} disabled={create.isPending}
+          onChange={(v) => { if (!submitting.current) setSensitive(v); }} />
         {others === null || sensitive === null ? <Note text={tt('session.needDeclarations')} /> : null}
       </Card>
 
-      {createdId !== null ? (
-        <Card>
-          <Title>{tt('session.created')}</Title>
-          <Row label={tt('session.id')} value={createdId} />
-        </Card>
-      ) : null}
+      {create.isError ? <Note text={tt('common.actionFailed')} /> : null}
 
       <Button
         label={tt('session.create')}
         disabled={
-          task === undefined || device === undefined || others === null || sensitive === null
+          create.isPending || task === undefined || device === undefined || others === null || sensitive === null
         }
-        onPress={() => create.mutate()}
+        onPress={() => {
+          if (submitting.current) return;
+          submitting.current = true;
+          create.mutate();
+        }}
       />
       <Note text={tt('session.noRecord')} />
     </Screen>

@@ -294,20 +294,23 @@ export function Choice({
   selected,
   onPress,
   describedBy,
+  disabled = false,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
   /** Prefixed to the spoken name when the visible label is not self-describing. */
   describedBy?: string;
+  disabled?: boolean;
 }) {
   const theme = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
       accessibilityLabel={describedBy === undefined ? label : `${describedBy}: ${label}`}
-      onPress={onPress}
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
       style={{
         flexDirection: 'row',
         alignItems: 'center',

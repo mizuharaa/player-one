@@ -142,6 +142,10 @@ const vi = {
   'prov.failed': 'Chưa đọc được IP',
   'prov.rssi': 'RSSI',
 
+  'reminder.title': 'Trước mỗi phiên thu thập',
+  'reminder.body': 'Tránh ghi lại thẻ căn cước, thẻ ngân hàng, mật khẩu, thông tin nhạy cảm trên màn hình, trẻ em, thông tin y tế riêng tư, địa chỉ nhà chi tiết.',
+  'reminder.continue': 'Tiếp tục tạo phiên',
+  'session.home': 'Về trang chính',
   'session.title': 'Tạo phiên thu thập',
   'session.intro': 'Một phiên gắn nhiệm vụ + người thu thập + thiết bị + bối cảnh, trước khi ghi hình.',
   'session.task': 'Nhiệm vụ',
@@ -336,6 +340,10 @@ const en: Record<MessageKey, string> = {
   'prov.failed': 'Could not read an IP',
   'prov.rssi': 'RSSI',
 
+  'reminder.title': 'Before each collection session',
+  'reminder.body': 'avoid capturing ID cards, bank cards, passwords, screen-sensitive information, children, medical privacy, detailed home addresses.',
+  'reminder.continue': 'Continue to session creation',
+  'session.home': 'Back to Home',
   'session.title': 'Create collection session',
   'session.intro': 'A session binds task + collector + device + scenario, before recording.',
   'session.task': 'Task',

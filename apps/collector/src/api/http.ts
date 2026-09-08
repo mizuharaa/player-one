@@ -76,7 +76,10 @@ export class HttpCollectorApi implements CollectorApi {
    * call turns "the request timed out, tap again" into a second row: a second
    * claim, or two collection sessions for one recording.
    *
-   * ponytail: a Map for the life of the client, not a persisted outbox. It
+   * Claims live for the client lifetime; session ids are cleared when a new
+   * creation attempt begins. Within that attempt, retries keep their identity.
+   *
+   * ponytail: an in-memory Map, not a persisted outbox. It
    * covers the case that actually happens — the collector taps again on the
    * screen they are standing on. A retry after the app is killed gets a new id
    * and is refused by the server's own guards (`task_claims_capacity`,
@@ -292,6 +295,12 @@ export class HttpCollectorApi implements CollectorApi {
   }
 
   // -- sessions (APP-16, APP-17b) ------------------------------------------
+
+  beginSessionAttempt(): void {
+    for (const key of this.ids.keys()) {
+      if (key.startsWith('session:')) this.ids.delete(key);
+    }
+  }
 
   async createSession(input: SessionInput): Promise<CollectionSession> {
     /**

@@ -253,6 +253,8 @@ export class MockCollectorApi implements CollectorApi {
     return { ...device };
   }
 
+  beginSessionAttempt(): void {}
+
   async createSession(input: SessionInput): Promise<CollectionSession> {
     const me = this.mustProfile();
     // APP-15: no device binding, no collection preparation.

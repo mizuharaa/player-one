@@ -187,6 +187,7 @@ export interface CollectorApi {
   myClaims(): Promise<Claim[]>;
   boundDevices(): Promise<BoundDevice[]>;
   bindDevice(serial: string): Promise<BoundDevice>;
+  beginSessionAttempt(): void;
   createSession(input: SessionInput): Promise<CollectionSession>;
   sessions(): Promise<CollectionSession[]>;
   episodes(): Promise<EpisodeUpload[]>;

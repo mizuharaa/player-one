@@ -26,6 +26,19 @@
 /** A Postgres `numeric` as it arrives. Display it; never total it. */
 export type Decimal = string;
 
+export interface BrowsedEpisode {
+  episode_id: string;
+  task_name: string | null;
+  collector_ref: string | null;
+  device_serial: string | null;
+  resolution_state: 'resolved' | 'quarantined';
+  first_seen_at: string;
+  session_started_at: string;
+}
+
+export const browseEpisodes = (search: string) =>
+  call<{ episodes: BrowsedEpisode[]; truncated: boolean }>(`/api/episodes${search ? `?${search}` : ''}`);
+
 export type Verdict = 'good' | 'partial' | 'bad';
 
 export interface Flag {

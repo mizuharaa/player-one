@@ -17,6 +17,7 @@ import { ReviewScreen } from './routes/Review.tsx';
 import { PipelineScreen } from './routes/Pipeline.tsx';
 import { LoginScreen } from './routes/Login.tsx';
 import { NotBuiltScreen } from './routes/NotBuilt.tsx';
+import { EpisodesScreen, episodeSearch } from './routes/Episodes.tsx';
 import { BackOfficeScreen } from './routes/BackOffice.tsx';
 import { SettleScreen } from './payout/SettleScreen.tsx';
 import { PreflightScreen } from './payout/PreflightScreen.tsx';
@@ -105,7 +106,8 @@ const episodesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/episodes',
   beforeLoad: requireSession,
-  component: () => <NotBuiltScreen surface="episodes" />,
+  validateSearch: episodeSearch,
+  component: EpisodesScreen,
 });
 
 /**

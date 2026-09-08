@@ -19,6 +19,7 @@ import { MyTasks } from './screens/MyTasks.tsx';
 import { Provisioning } from './screens/Provisioning.tsx';
 import { Register } from './screens/Register.tsx';
 import { SessionCreate } from './screens/SessionCreate.tsx';
+import { SessionReminder } from './screens/SessionReminder.tsx';
 import { TaskDetail } from './screens/TaskDetail.tsx';
 import { TaskHall } from './screens/TaskHall.tsx';
 import { SignIn } from './screens/SignIn.tsx';
@@ -45,6 +46,7 @@ const SCREENS: Record<RouteName, ComponentType> = {
   devices: Devices,
   provisioning: Provisioning,
   sessionCreate: SessionCreate,
+  sessionReminder: SessionReminder,
   uploads: Uploads,
   income: Income,
 };

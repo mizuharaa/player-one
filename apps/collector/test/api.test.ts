@@ -655,6 +655,60 @@ describe('what the client sends, and what it refuses to', () => {
     expect((calls[2]?.body as { id: string }).id).not.toBe(first);
   });
 
+  /**
+   * PRV-02. The reminder is shown before every session, and "every" is what
+   * this is about rather than the screen itself.
+   *
+   * The id above is cached per declaration for the life of the client, which is
+   * what makes a retry a replay. But the client outlives the screen: a
+   * collector who records, comes back through Home and the reminder, and gives
+   * the same answers would replay the FIRST session instead of starting a
+   * second one, and the reminder would have been shown for a recording that
+   * never existed. `SessionCreate` calls this on mount, so an attempt is the
+   * unit the cache is scoped to.
+   */
+  it('starts a new session id per attempt and keeps the claim id across them', async () => {
+    const { fn, calls } = fakeFetch({
+      'POST /api/me/sessions': {
+        status: 201,
+        body: { id: 's-9', collector_id: 'c-1', created_at: '2026-08-30T05:00:00.000Z' },
+      },
+      'POST /api/me/tasks/t-1/claims': {
+        status: 201,
+        body: { id: 'cl-1', task_id: 't-1', claimed_at: '2026-08-30T05:00:00.000Z' },
+      },
+    });
+    const api = new HttpCollectorApi(BASE, fakeStore('tok-good'), () => {}, fn);
+    const declaration = {
+      taskId: 't-1',
+      deviceSerial: 'EGO-0007',
+      scenario: 'home',
+      othersInFrame: false,
+      sensitiveInfo: false,
+    } as const;
+
+    await api.claimTask('t-1');
+    await api.createSession(declaration);
+    const firstClaim = (calls[0]?.body as { id: string }).id;
+    const first = (calls[1]?.body as { id: string }).id;
+
+    // Two visits, identical answers, two recordings: two sessions.
+    api.beginSessionAttempt();
+    await api.createSession(declaration);
+    expect((calls[2]?.body as { id: string }).id).not.toBe(first);
+
+    // Within the second visit a retry is still a replay, or the server's
+    // `onConflictDoNothing` contract is unreachable from this side.
+    await api.createSession(declaration);
+    expect((calls[3]?.body as { id: string }).id).toBe((calls[2]?.body as { id: string }).id);
+
+    // Only sessions are scoped to an attempt. A claim is not: tapping claim
+    // again after a timeout must still be one claim, and `task_claims_capacity`
+    // is what a second one would hit.
+    await api.claimTask('t-1');
+    expect((calls[4]?.body as { id: string }).id).toBe(firstClaim);
+  });
+
   it('sends both APP-17b declarations and never the phone on register', async () => {
     const store = fakeStore('tok-good');
     const { fn, calls } = fakeFetch({

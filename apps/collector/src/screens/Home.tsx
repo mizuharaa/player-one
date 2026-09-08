@@ -22,7 +22,7 @@ export function Home() {
     { key: 'home.tasks', route: { name: 'taskHall' } },
     { key: 'home.myTasks', route: { name: 'myTasks' } },
     { key: 'home.devices', route: { name: 'devices' } },
-    { key: 'home.session', route: { name: 'sessionCreate' } },
+    { key: 'home.session', route: { name: 'sessionReminder' } },
     { key: 'home.uploads', route: { name: 'uploads' } },
     { key: 'home.income', route: { name: 'income' } },
     { key: 'home.training', route: { name: 'training' } },
