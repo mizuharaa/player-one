@@ -319,35 +319,17 @@
   }
 
   /**
-   * The reveal: a section arriving as the page is read.
+   * The reveal is GSAP's now, and it lives in `Home.tsx`.
    *
-   * The whole rule lives inside `prefers-reduced-motion: no-preference`, which
-   * is the load-bearing part. Written the other way round — a hidden default
-   * plus a media query that switches the transition off — an operator who has
-   * asked for no motion gets a screen of invisible sections held down by an
-   * `opacity: 0` nothing ever clears. This way the reduced-motion render has no
-   * start state to recover from: every section is in place in the first frame,
-   * and two frames two seconds apart are identical.
-   *
-   * It is a rise from an already-visible layout position, on the one ease and
-   * at `--duration-slow`. Home applies it below the fold only: the band at the
-   * top of that screen is on the first paint, and animating what is already
-   * there is a page-load sequence rather than a scroll one.
+   * It was a CSS class with an `opacity: 0` start state that an
+   * `IntersectionObserver` cleared, which is the arrangement with the failure
+   * mode this project cares about: if the observer never runs — no
+   * `IntersectionObserver`, a scroll container the root margin does not match,
+   * a script that threw — the page keeps a hidden section that nothing ever
+   * shows. Held in `gsap.matchMedia` instead, the hidden state is only ever
+   * created by the engine that is going to clear it: no GSAP, no start state,
+   * and the screen is complete in its first frame.
    */
-  @media (prefers-reduced-motion: no-preference) {
-    .reveal {
-      opacity: 0;
-      transform: translateY(16px);
-      transition:
-        opacity var(--duration-slow) var(--ease),
-        transform var(--duration-slow) var(--ease);
-    }
-
-    .reveal-in {
-      opacity: 1;
-      transform: none;
-    }
-  }
 
   /* A lease that is running out. Slow, so it reads as a warning, not an alarm. */
   @keyframes lease-pulse {
@@ -670,5 +652,105 @@
     .landing[data-motion='paused'] .prism {
       opacity: 0;
     }
+  }
+}
+/* ---------------------------------------------------------------
+   The dashboard's own two blocks: its display type, and the frame the
+   one photograph sits in.
+
+   Appended rather than folded into the rules above, so this file stays
+   two people's work without either of them restructuring the other's.
+   --------------------------------------------------------------- */
+@layer components {
+  /**
+   * Home's headlines, in the display face, with an optical weight per size.
+   *
+   * Same argument as the landing's slogan and the same direction: Hanken
+   * Grotesk is variable, so the weight comes *down* as the size goes up —
+   * a stroke that reads as bold at 17px reads as heavy at 42px. Two classes
+   * and not one, because Home has exactly two headline sizes and a third
+   * would be a scale nobody asked for.
+   *
+   * The display face is headlines only. Labels, body, controls and every
+   * `.num` measurement stay in the UI voice — a display face on a column
+   * heading is a costume, and on a figure it fights the tabular digits the
+   * whole `.num` rule exists for.
+   */
+  .headline,
+  .headline-sm {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    text-wrap: balance;
+  }
+
+  .headline {
+    font-size: 2.0625rem;
+    font-weight: 610;
+    letter-spacing: -0.024em;
+    line-height: 1.05;
+  }
+
+  @media (min-width: 640px) {
+    .headline {
+      font-size: 2.625rem;
+      font-weight: 520;
+      letter-spacing: -0.028em;
+    }
+  }
+
+  .headline-sm {
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: -0.012em;
+    line-height: 1.3;
+  }
+
+  /**
+   * The photograph's frame, and the reason the picture is no longer a
+   * backdrop.
+   *
+   * It used to run full-bleed behind the type under a 60% ink scrim, which
+   * is the arrangement the product owner described as hiding the image: at
+   * that strength the frame is a texture and the band is a dark rectangle.
+   * The picture now has a box of its own beside the words, at full strength,
+   * and nothing is set on top of it — so there is no scrim to measure and no
+   * contrast that depends on which frame the parallax has scrolled to.
+   *
+   * `--h` is the frame's height rather than an aspect ratio: the band's left
+   * column is type whose height depends on the translation, and a ratio-sized
+   * picture beside it leaves a different gap in every locale.
+   */
+  .photo-frame {
+    position: relative;
+    overflow: hidden;
+    /* No radius of its own: the panel clips, so the band has one edge and not
+       two that nearly agree. `--muted` shows only while the file is decoding. */
+    background: var(--muted);
+    height: var(--h);
+  }
+
+  /*
+   * The parallax pans the crop; it does not move the picture.
+   *
+   * Two earlier versions both failed the same check and it was right both
+   * times. A box 12% taller than the frame is `scrollHeight > clientHeight`,
+   * and a `scale` is worse rather than better — Chrome counts transformed
+   * overflow into the scrollable area, so 1.2 reported 49px of clipping on x.
+   * Either way `rhythm.mjs` sees content cut off by its own container, which is
+   * the fault it exists to find, and a check that has to be argued with on
+   * every run stops being run.
+   *
+   * `object-position` has no such cost: the element's box is exactly its
+   * frame, nothing overflows anything, and what moves is which part of the
+   * photograph the `cover` crop is showing. That is also the truer effect —
+   * the picture stays put and the framing drifts.
+   */
+  .photo-frame > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 50%;
   }
 }

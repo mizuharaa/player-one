@@ -254,6 +254,18 @@ in *optional insights*, because he is an additional channel and never the only
 one. A reviewer who reads the first two hundred pixels has read the two things
 that can cost somebody money.
 
+**A picture is beside the words, never behind them.** Home's band ran that
+photograph full-bleed under a 60% ink scrim, and the product owner named the
+result: the image was hidden. At that strength a frame is a texture, the band
+is a dark rectangle, and the only picture on the screen is the thing you cannot
+see. It has a frame of its own beside the type now, at full strength and flush
+to the panel's edge, and three things follow from that. There is no scrim, so
+no ink whose ratio depends on which frame the parallax has reached. The primary
+pill loses the `--stage-over` hairline it needed only because a near-black
+control on a near-black scrim measured 1.02:1 against its own band. And
+`.feature-block` is the one ink block on the screen again, rather than the
+second of two near-blacks two hundred pixels apart.
+
 **No still is ever drawn beside an episode.** A picture next to an episode id is
 a claim about what is in that recording, and this console has no per-episode
 frame to make it with. The tiles in `public/tiles/` carry a `CREDITS.json`, and
@@ -272,14 +284,27 @@ Authored motion is a closed list, and `/review` is not on it:
   reaches the viewport rather than when the page loads. The arc carries its true
   offset whether or not that ever happens, so a gauge nobody scrolls to reads
   the right number instead of reading zero.
-- **`.reveal`** — Home's sections rise into place as the page is read, once
-  each, at `--duration-slow` on the one ease. The whole rule lives inside a
-  `prefers-reduced-motion: no-preference` block, which is the load-bearing part:
-  written the other way round, an operator who asked for no motion gets a screen
-  of invisible sections held down by an `opacity: 0` nothing ever clears. It is
-  applied below the fold only — the band at the top of Home is on the first
-  paint, and animating what is already there is a page-load sequence rather than
-  a scroll one.
+- **Home's scroll choreography** — GSAP, dynamically imported so the tween
+  engine stays out of `/review`'s chunk, and entirely inside one
+  `gsap.matchMedia('(prefers-reduced-motion: no-preference)')`. Sections rise
+  once each at `--duration-slow` on the one ease, read out of the cascade rather
+  than retyped, and the photograph's `cover` crop drifts against the scroll,
+  scrubbed. **Only the sections that start below the fold are ever hidden**, and
+  the hidden state is set by the engine that is going to clear it — so reduced
+  motion, a blocked chunk and an unmount all leave a screen that is complete in
+  its first frame. This replaced a `.reveal` class with an `opacity: 0` default
+  that an `IntersectionObserver` cleared, which had the failure the rule above
+  describes: an observer that never runs leaves a section nothing ever shows.
+  Measured, both ways — with the chunk aborted at the network and under
+  `prefers-reduced-motion: reduce`, every section renders at full opacity with
+  no inline style at all.
+
+  The `ScrollTrigger.refresh()` on a `ResizeObserver` is not housekeeping. Built
+  once and never refreshed, the triggers cache positions from a page that is
+  still growing — the shift query lands, the ledger fills, the recent table
+  replaces its skeletons, `TrucPanel` swaps an SVG for a canvas — and two
+  sections of a payments screen held `opacity: 0` through a whole scroll to the
+  bottom before they began to clear. That was measured, not reasoned about.
 - **Trúc** — breathing, a blink every 3–6s, his head following the pointer, a
   jump with a squash on the landing when he is pressed, and, during the guided
   tour, a walk to the coach mark's target with a bob and a roll timed to the

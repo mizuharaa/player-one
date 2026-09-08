@@ -5,7 +5,7 @@
  * results → recent work → optional insights. Imagery and motion serve that
  * order and never reorder it: the picture is where the next action is, because
  * that is the only place on this screen a photograph is the subject rather than
- * a decoration, and the reveal on scroll runs down the page in the order above.
+ * a decoration, and the choreography runs down the page in the order above.
  * An operator who reads only the first two hundred pixels has read the two
  * things that can cost somebody money.
  *
@@ -56,14 +56,20 @@
  *
  * ## Motion, and what a still frame has to hold
  *
- * The reveal is one CSS utility living entirely inside a
- * `prefers-reduced-motion: no-preference` block, so under reduced motion there
- * is no hidden start state to recover from: the screen is complete and
- * readable in one frame, and two frames two seconds apart are identical. The
- * gauge sweep is the console's one authored performance and is triggered when
- * the ring reaches the viewport rather than on load — and the arc carries its
- * true offset whether or not the class is ever added, so a gauge that is never
- * scrolled to still reads the right number instead of reading zero.
+ * The choreography is GSAP, imported at run time so the tween engine stays out
+ * of `/review`'s chunk, and the whole of it is inside one
+ * `gsap.matchMedia('(prefers-reduced-motion: no-preference)')`. That is the
+ * load-bearing part and it is why this is not a CSS class with an
+ * `opacity: 0` default: **the hidden start state is created only by the engine
+ * that is going to clear it.** Reduced motion, a blocked import, a script that
+ * threw — every one of those leaves the screen complete in its first frame
+ * rather than leaving a section held down by an `opacity: 0` nothing clears.
+ * `matchMedia.revert()` on unmount puts every inline style back.
+ *
+ * The gauge sweep stays CSS and stays the console's one authored performance:
+ * it is triggered when the ring reaches the viewport rather than on load, and
+ * the arc carries its true offset whether or not the class is ever added, so a
+ * gauge that is never scrolled to reads the right number instead of zero.
  */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -118,16 +124,16 @@ function clockAt(at: number): string {
 /**
  * Has this element reached the viewport yet — and it only ever answers once.
  *
- * Two jobs, one observer. Sections use it at the fold to add `reveal-in`, and
- * `TrucPanel` uses it a viewport early to decide when the three.js chunk and
- * the glTF are worth fetching. It latches: a section that has been read does
- * not fade out again when it leaves, and a model that has been loaded is not
- * unloaded behind the operator's back.
+ * Two jobs, one observer. The gauge uses it to start its sweep when the ring is
+ * on screen, and `TrucPanel` uses it a viewport early to decide when the
+ * three.js chunk and the glTF are worth fetching. It latches: a sweep that has
+ * run does not run again, and a model that has been loaded is not unloaded
+ * behind the operator's back.
  *
- * `seen` starts false and the hidden start state exists **only** inside a
- * `prefers-reduced-motion: no-preference` block, so a browser with no
- * `IntersectionObserver` — or an observer that never fires — costs a reveal
- * and never costs the content.
+ * Neither caller can cost content. The gauge draws its true arc whether or not
+ * `seen` ever turns true, and the panel holds the flat panda at the same size
+ * until the chunk lands — so a browser with no `IntersectionObserver`, or an
+ * observer that never fires, costs a performance and never costs a figure.
  */
 function useOnScreen<T extends HTMLElement>(
   rootMargin = '0px',
@@ -158,18 +164,148 @@ function useOnScreen<T extends HTMLElement>(
   return [ref, seen];
 }
 
-/** A section that rises into place once, on the way down the page. */
-function Reveal({
-  children,
-  className,
-  ...rest
-}: { children: ReactNode } & React.HTMLAttributes<HTMLElement>) {
-  const [ref, seen] = useOnScreen<HTMLElement>('0px 0px -8% 0px');
+/** A section the choreography picks up. Visible at rest; GSAP finds it by attribute. */
+function Reveal({ children, ...rest }: { children: ReactNode } & React.HTMLAttributes<HTMLElement>) {
   return (
-    <section ref={ref} className={cn('reveal', seen && 'reveal-in', className)} {...rest}>
+    <section data-choreo="" {...rest}>
       {children}
     </section>
   );
+}
+
+/**
+ * The scroll choreography, and the one rule it is built around.
+ *
+ * **Nothing is hidden by the stylesheet.** Every hidden start state on this
+ * screen is set by GSAP, inside `matchMedia`, at the moment it creates the
+ * tween that will clear it — so the three ways this goes wrong all fail safe:
+ * an operator who asked for no motion never enters the block, a browser that
+ * cannot fetch the chunk never runs it, and `matchMedia.revert()` on unmount
+ * or on a media change puts the inline styles back. A `.reveal { opacity: 0 }`
+ * in CSS has none of those, and this route shipped one.
+ *
+ * `gsap.matchMedia` rather than a `matchMedia('...').matches` branch: it owns
+ * the teardown, so an operator who turns reduced motion on mid-session gets the
+ * styles reverted rather than gets whatever frame the tween had reached.
+ *
+ * The import is dynamic for the same reason `Login.tsx`'s is — a static
+ * `import 'gsap'` puts the tween engine in the shared chunk, and `/review` is
+ * the one screen in this console where nothing moves at all.
+ *
+ * Two behaviours and no more:
+ *
+ * - **the sections rise**, once each, when they reach the lower eighth of the
+ *   viewport. **Only the ones that start below it are ever hidden** — a section
+ *   already on screen is left alone rather than faded in, because animating
+ *   what is already there is a page-load sequence and this screen does not have
+ *   one.
+ * - **the photograph drifts** against the scroll, scrubbed. It is the one
+ *   scrubbed tween on the screen, it moves a picture and never a surface type
+ *   is set on, and what travels is the `cover` crop rather than the element,
+ *   so nothing overflows its frame at either end of the range.
+ *
+ * **The refresh is not optional, and leaving it out was measured.** Triggers
+ * cache their document positions when they are built, and this page is still
+ * growing at that moment: the shift query lands, the ledger fills, the recent
+ * table replaces three skeleton rows with as many verdicts as there are, and
+ * `TrucPanel` swaps a flat SVG for a three.js canvas. Built once and never
+ * refreshed, both below-fold sections held `opacity: 0` through a scroll to the
+ * bottom of the page and only began to clear at the very end of it — two
+ * sections of a payments screen invisible, which is exactly the failure this
+ * whole arrangement exists to make impossible. A `ResizeObserver` on the root
+ * calls `ScrollTrigger.refresh()` whenever the page changes height, and the
+ * observer is disconnected by the same `revert()` that puts the styles back.
+ */
+function useChoreography(root: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const el = root.current;
+    if (el === null) return;
+
+    let media: { revert: () => void } | null = null;
+    let cancelled = false;
+
+    void (async () => {
+      const [{ gsap }, { ScrollTrigger }, { CustomEase }] = await Promise.all([
+        import('gsap'),
+        import('gsap/ScrollTrigger'),
+        import('gsap/CustomEase'),
+      ]);
+      /* Unmounted while the chunk was in flight: build nothing. */
+      if (cancelled) return;
+      gsap.registerPlugin(ScrollTrigger, CustomEase);
+
+      /*
+       * The ease and the duration are the tokens, read off the cascade rather
+       * than retyped here. GSAP has no `cubic-bezier()` ease of its own, so
+       * `--ease` is converted to the path form `CustomEase` takes — the same
+       * four control numbers, in the notation the plugin wants — and
+       * `--duration-slow` is the milliseconds the rest of the console's slow
+       * transitions run at. A hand-picked `power3.out` and a `0.42` would be a
+       * second motion system living in a `.tsx`, which is exactly what
+       * `tokens.ts` exists to prevent.
+       */
+      const tokens = getComputedStyle(document.documentElement);
+      const curve = tokens.getPropertyValue('--ease').match(/-?[\d.]+/g);
+      const ease =
+        curve && curve.length === 4
+          ? CustomEase.create('playerone', `M0,0 C${curve.join(',')} 1,1`)
+          : 'power3.out';
+      const duration =
+        (Number.parseFloat(tokens.getPropertyValue('--duration-slow')) || 320) / 1000;
+
+      const m = gsap.matchMedia();
+      m.add('(prefers-reduced-motion: no-preference)', () => {
+        /*
+         * `gsap.set` on what is below the start, and nothing on what is not.
+         * `gsap.from` would hide every section including the ones already being
+         * read, and it hides them at build time whether or not their trigger is
+         * ever going to fire.
+         */
+        const below = [...el.querySelectorAll<HTMLElement>('[data-choreo]')].filter(
+          (section) => section.getBoundingClientRect().top > window.innerHeight * 0.88,
+        );
+        gsap.set(below, { opacity: 0, y: 16 });
+        ScrollTrigger.batch(below, {
+          start: 'top 88%',
+          once: true,
+          onEnter: (batch) =>
+            gsap.to(batch, { opacity: 1, y: 0, duration, ease, stagger: duration / 4, overwrite: true }),
+        });
+
+        /* The page is still growing when the triggers are built. See above. */
+        const observer = new ResizeObserver(() => ScrollTrigger.refresh());
+        observer.observe(el);
+
+        const photo = el.querySelector<HTMLElement>('[data-choreo-photo]');
+        if (photo !== null) {
+          gsap.fromTo(
+            photo,
+            { objectPosition: '50% 36%' },
+            {
+              objectPosition: '50% 64%',
+              /* Linear, because a scrubbed tween's curve is the scroll's. */
+              ease: 'none',
+              scrollTrigger: {
+                trigger: photo.parentElement ?? photo,
+                start: 'top bottom',
+                end: 'bottom top',
+                scrub: duration,
+              },
+            },
+          );
+        }
+
+        /* `matchMedia`'s own cleanup, so the observer dies with the styles. */
+        return () => observer.disconnect();
+      });
+      media = m;
+    })();
+
+    return () => {
+      cancelled = true;
+      media?.revert();
+    };
+  }, [root]);
 }
 
 export function HomeScreen() {
@@ -213,240 +349,256 @@ export function HomeScreen() {
   const approvalRate =
     data && data.decided > 0 ? Math.round((data.approved / data.decided) * 100) : null;
 
+  /** Everything the choreography touches is inside this element and nowhere else. */
+  const page = useRef<HTMLDivElement>(null);
+  useChoreography(page);
+
   return (
     <AppShell
       queueDepth={data?.queue_depth}
       averageSeconds={data?.session_average_seconds}
       operator={data?.reviewer}
     >
-      {error ? (
-        <div className="mb-5">
-          <Problem
-            reference={error instanceof ApiError ? error.ref : undefined}
-            title={t('ui.a.home.error.title')}
-            body={t('ui.a.home.error.body')}
-          />
-        </div>
-      ) : null}
-
-      {/* --- 1. Attention needed. First, and reachable without the panda. --- */}
-      <Attention
-        needsHuman={data?.needs_human ?? null}
-        isPending={isPending}
-        unavailable={unavailable}
-        asOf={asOf}
-      />
-
-      {/* ---------------------------------------------------------------
-          2. The next action, and the one place a photograph is the subject.
-
-          A frame of collected footage runs the full width under a measured ink
-          scrim, and what stands on it is only what an arriving reviewer has to
-          act on: which shift this is, how much work is waiting, and the way in.
-          Progress is not here — progress is a result, and results are the next
-          section down.
-
-          Nothing in this band moves. It is above the fold, so a reveal here
-          would be a page-load sequence rather than a scroll one; and animating
-          a surface that type sits on would invalidate the contrast measured on
-          it. The image is `landing-poster.jpg`, the same still the sign-in film
-          opens on. ponytail: when an episode still is reachable per reviewer,
-          this becomes the next episode in their own queue, which is a better
-          picture than a stock frame because it is the one they are about to
-          judge.
-          --------------------------------------------------------------- */}
-      <section className="relative isolate mt-5 overflow-hidden rounded-[var(--radius-xl)] shadow-[var(--shadow-lg)]">
-        <img
-          src="/landing-poster.jpg"
-          alt=""
-          aria-hidden="true"
-          /* The largest thing on the screen and above the fold: never lazy. */
-          decoding="async"
-          className="absolute inset-0 -z-10 h-full w-full object-cover"
-        />
-        {/*
-          The scrim, flat and measured, the same instrument the sign-in film
-          uses: `--stage` at 60% over the worst pixel a frame can hold — pure
-          white — composites to `rgb(112,113,115)`, where `--stage-over` reads
-          4.94:1. Every ink on this band is that token for that reason.
-        */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 -z-10 bg-[color-mix(in_srgb,var(--stage)_60%,transparent)]"
-        />
-
-        <div className="flex flex-col gap-6 p-6 text-[var(--stage-over)] sm:p-8 lg:flex-row lg:items-end lg:gap-10 lg:p-12">
-          <div className="min-w-0 flex-1">
-            <p className="text-[0.8125rem] font-semibold">
-              {t('home.greeting')} · {t(SHIFT_KEY[state])}
-              {asOf === null ? null : (
-                <>
-                  {' · '}
-                  <span className="num">{t('ui.a.home.asOf', { time: asOf })}</span>
-                </>
-              )}
-            </p>
-            <h1 className="mt-3 max-w-[18ch] text-[2.0625rem] font-extrabold leading-[1.05] tracking-[-0.03em] sm:text-[2.625rem]">
-              {t('ui.a.home.next.title')}
-            </h1>
-            <p className="mt-3 max-w-[46ch] text-[0.9375rem] leading-relaxed">
-              {t('ui.a.home.next.body')}
-            </p>
+      {/* The choreography's root. Everything it can touch is inside it. */}
+      <div ref={page}>
+        {error ? (
+          <div className="mb-5">
+            <Problem
+              reference={error instanceof ApiError ? error.ref : undefined}
+              title={t('ui.a.home.error.title')}
+              body={t('ui.a.home.error.body')}
+            />
           </div>
+        ) : null}
 
-          <div className="flex shrink-0 flex-col items-start gap-5 lg:items-end">
-            {/*
-              The queue, which is what makes the button a decision rather than a
-              habit — and it is the programme's own bottleneck. A dash when the
-              request failed: there is no measurement, so there is no number.
-            */}
-            <div className="lg:text-right">
-              {isPending ? (
-                <Skeleton className="h-[2.625rem] w-24" />
-              ) : (
-                <p className="num text-[2.625rem] font-extrabold leading-none tracking-[-0.03em]">
-                  {unavailable ? '—' : data?.queue_depth}
-                </p>
-              )}
-              <p className="mt-1.5 text-[0.875rem]">
-                {unavailable ? t('ui.a.home.unavailable') : t('ui.a.home.queueWaiting')}
+        {/* --- 1. Attention needed. First, and reachable without the panda. --- */}
+        <Attention
+          needsHuman={data?.needs_human ?? null}
+          isPending={isPending}
+          unavailable={unavailable}
+          asOf={asOf}
+        />
+
+        {/* ---------------------------------------------------------------
+            2. The next action, and the one place a photograph is the subject.
+
+            **The picture is beside the words, not behind them.** It ran
+            full-bleed under a 60% ink scrim, and at that strength the frame is a
+            texture: the band read as a dark rectangle and the photograph — the
+            only picture on the screen — was the thing you could not see. The
+            product owner named it, and named the cost precisely: the image was
+            hidden. So the band is glass, like every other surface in this world,
+            and the frame has a box of its own at full strength beside the type,
+            about two fifths of the width and the full height of the panel.
+
+            Three things fall out of that and all three are improvements:
+
+            - **No scrim, so no contrast that depends on a frame.** The type is
+              `--foreground` on `--card`, the same pair as every other panel here,
+              instead of `--stage-over` on a composite of ink and whatever pixel
+              the photograph happens to hold.
+            - **The pill loses its hairline.** `ring-1 ring-[var(--stage-over)]`
+              existed only because a near-black `--action` pill on a near-black
+              scrim measured 1.02:1 against its own band. On glass the pill is the
+              highest-contrast object on the screen and needs nothing added.
+            - **`.feature-block` is the one ink block again.** The scrimmed band
+              was a second near-black two hundred pixels above the settled value,
+              which is the arrangement DESIGN.md forbids.
+
+            What stands here is still only what an arriving reviewer has to act
+            on: which shift this is, how much work is waiting, and the way in.
+            Progress is not here — progress is a result, and results are the next
+            section down.
+
+            The image is `landing-poster.jpg`, the same still the sign-in film
+            opens on. It carries `alt=""` because it is a demo frame and not this
+            reviewer's queue: a caption on it would be a claim about footage
+            nobody has. ponytail: when an episode still is reachable per reviewer
+            this becomes the next episode in their own queue, which is both a
+            better picture and a true one.
+            --------------------------------------------------------------- */}
+        <Panel className="mt-5 overflow-hidden p-0 shadow-[var(--shadow)]">
+          <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,40%)]">
+            <div className="order-2 flex min-w-0 flex-col justify-center p-6 sm:p-8 lg:order-1 lg:p-10">
+              <p className="text-[0.8125rem] font-semibold text-[var(--muted-foreground)]">
+                {t('home.greeting')} · {t(SHIFT_KEY[state])}
+                {asOf === null ? null : (
+                  <>
+                    {' · '}
+                    <span className="num">{t('ui.a.home.asOf', { time: asOf })}</span>
+                  </>
+                )}
               </p>
+              <h1 className="headline mt-3 max-w-[18ch]">{t('ui.a.home.next.title')}</h1>
+              <p className="mt-3 max-w-[46ch] text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">
+                {t('ui.a.home.next.body')}
+              </p>
+
+              <div className="mt-6 flex flex-wrap items-center gap-x-8 gap-y-4">
+                <Button asChild variant="primary" size="lg" data-guide="home.start">
+                  <Link to="/review">
+                    {t('home.start')}
+                    <Key>R</Key>
+                  </Link>
+                </Button>
+
+                {/*
+                  The queue, which is what makes the button a decision rather than
+                  a habit — and it is the programme's own bottleneck. Beside the
+                  pill rather than above it, because the two are one reading: this
+                  many are waiting, and here is the way in. A dash when the
+                  request failed: there is no measurement, so there is no number.
+                */}
+                <div>
+                  {isPending ? (
+                    <Skeleton className="h-[2.0625rem] w-20" />
+                  ) : (
+                    <p className="num text-[2.0625rem] font-extrabold leading-none tracking-[-0.03em]">
+                      {unavailable ? '—' : data?.queue_depth}
+                    </p>
+                  )}
+                  <p className="mt-1.5 text-[0.8125rem] text-[var(--muted-foreground)]">
+                    {unavailable ? t('ui.a.home.unavailable') : t('ui.a.home.queueWaiting')}
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/*
-              The ink pill needs an edge here, and only here.
+              The picture. `--h` rather than an aspect ratio because the column
+              beside it is translated type whose height is not the same in three
+              languages, and a ratio-sized frame leaves a different gap in each.
 
-              `--action` is near-black on the light shell, and this band is a
-              near-black scrim in both schemes: measured on rendered pixels, the
-              pill read **1.02:1** against the band around it. Its label was
-              fine — light ink on near-black is 15.78:1 — but WCAG 1.4.11 asks
-              3:1 of the boundary that identifies a control, and what an
-              operator saw was a line of type apparently floating on the
-              photograph. The hairline is `--stage-over`, the one white in the
-              system and the same token the type on this band uses, which
-              measures 5.26:1 against the worst pixel the scrim can produce. In
-              the dark scheme the pill inverts to near-white and carries its own
-              edge at 15.52:1; the ring costs nothing there.
+              Flush to the panel's edge rather than inset in a margin. Two
+              reasons, and the second is the one that was measured: a picture with
+              its own margin has to match the type column's padding at three
+              breakpoints and in three languages or the band reads as two boxes
+              that nearly line up — and the product owner's complaint about this
+              console names exactly that. The panel already clips, so the corner
+              radius is the panel's and there is one edge instead of two.
+
+              Above the fold and the largest thing on the screen, so it is never
+              lazy. The parallax that moves it is GSAP's and is scrubbed against
+              the scroll; what moves is the `cover` crop rather than the
+              element, so the box fits its frame exactly and nothing here is
+              content cut off by its own container.
             */}
-            <Button
-              asChild
-              variant="primary"
-              size="lg"
-              data-guide="home.start"
-              className="ring-1 ring-[var(--stage-over)]"
-            >
-              <Link to="/review">
-                {t('home.start')}
-                <Key>R</Key>
-              </Link>
-            </Button>
+            <div className="photo-frame order-1 [--h:200px] sm:[--h:240px] lg:order-2 lg:[--h:auto]">
+              <img
+                src="/landing-poster.jpg"
+                alt=""
+                aria-hidden="true"
+                decoding="async"
+                data-choreo-photo=""
+              />
+            </div>
           </div>
-        </div>
-      </section>
+        </Panel>
 
-      {/* --- 3. What the shift has done. --- */}
-      <Reveal className="mt-8">
-        <h2 className="text-[1.0625rem] font-bold tracking-[-0.02em]">
-          {t('ui.a.home.results')}
-        </h2>
+        {/* --- 3. What the shift has done. --- */}
+        <Reveal className="mt-8">
+          <h2 className="headline-sm">
+            {t('ui.a.home.results')}
+          </h2>
 
-        <div className="mt-3 grid items-start gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
-          <Panel data-guide="home.gauge" className="flex justify-center px-5 py-6">
-            {isPending ? (
-              <Skeleton className="h-[248px] w-[248px] rounded-full" />
-            ) : (
-              <Gauge value={data?.decided ?? null} target={data?.target ?? null} />
-            )}
-          </Panel>
+          <div className="mt-3 grid items-start gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+            <Panel data-guide="home.gauge" className="flex justify-center px-5 py-6">
+              {isPending ? (
+                <Skeleton className="h-[248px] w-[248px] rounded-full" />
+              ) : (
+                <Gauge value={data?.decided ?? null} target={data?.target ?? null} />
+              )}
+            </Panel>
 
-          <Panel data-guide="home.figures" className="px-5 py-1.5">
-            <dl className="m-0">
-              <Figure
-                label={t('home.payable')}
-                value={data ? durationShort(data.payable_seconds) : null}
-                unavailable={unavailable}
-                note={t('ui.a.home.payable.note')}
-              />
-              <Figure
-                label={t('home.approval')}
-                value={!data ? null : approvalRate === null ? '—' : `${approvalRate}%`}
-                unavailable={unavailable}
-                /*
-                 * The note carries the programme's own number, because this is
-                 * the only figure on the screen a reviewer can read as a grade
-                 * and there is nothing on it to grade against. ≥85–90%
-                 * qualification is the phase-1 target in PRODUCT.md; without
-                 * it, 67% is either a disaster or a Tuesday and the screen does
-                 * not say which. It is the *programme's* rate over 40,000
-                 * hours, not a quota for one shift, and the sentence says so
-                 * rather than turning a target into a score.
-                 */
-                note={`${t('ui.a.home.approval.note')} ${t('ui.a.home.approval.target')}`}
-                /*
-                 * The count, and not a verdict pill.
-                 *
-                 * It read as `good` above 85% and `partial` below it, which
-                 * spent two of the three colours that decide whether one person
-                 * is paid on an aggregate of everyone. A rate is not a verdict:
-                 * there is no episode behind this pill to pass or fail, and a
-                 * reviewer who learns that green-here means good has learned
-                 * the wrong thing about green-there. The sentence under the
-                 * figure carries the judgement instead.
-                 */
-                trailing={
-                  approvalRate === null ? null : (
-                    <span className="num rounded-full bg-[var(--muted)] px-2 py-0.5 text-[0.75rem] font-semibold text-[var(--muted-foreground)]">
-                      {data?.approved ?? 0}/{data?.decided ?? 0}
-                    </span>
-                  )
-                }
-              />
-              {/*
-                The median, which the payload has carried since it was written
-                and this screen never showed.
+            <Panel data-guide="home.figures" className="px-5 py-1.5">
+              <dl className="m-0">
+                <Figure
+                  label={t('home.payable')}
+                  value={data ? durationShort(data.payable_seconds) : null}
+                  unavailable={unavailable}
+                  note={t('ui.a.home.payable.note')}
+                />
+                <Figure
+                  label={t('home.approval')}
+                  value={!data ? null : approvalRate === null ? '—' : `${approvalRate}%`}
+                  unavailable={unavailable}
+                  /*
+                   * The note carries the programme's own number, because this is
+                   * the only figure on the screen a reviewer can read as a grade
+                   * and there is nothing on it to grade against. ≥85–90%
+                   * qualification is the phase-1 target in PRODUCT.md; without
+                   * it, 67% is either a disaster or a Tuesday and the screen does
+                   * not say which. It is the *programme's* rate over 40,000
+                   * hours, not a quota for one shift, and the sentence says so
+                   * rather than turning a target into a score.
+                   */
+                  note={`${t('ui.a.home.approval.note')} ${t('ui.a.home.approval.target')}`}
+                  /*
+                   * The count, and not a verdict pill.
+                   *
+                   * It read as `good` above 85% and `partial` below it, which
+                   * spent two of the three colours that decide whether one person
+                   * is paid on an aggregate of everyone. A rate is not a verdict:
+                   * there is no episode behind this pill to pass or fail, and a
+                   * reviewer who learns that green-here means good has learned
+                   * the wrong thing about green-there. The sentence under the
+                   * figure carries the judgement instead.
+                   */
+                  trailing={
+                    approvalRate === null ? null : (
+                      <span className="num rounded-full bg-[var(--muted)] px-2 py-0.5 text-[0.75rem] font-semibold text-[var(--muted-foreground)]">
+                        {data?.approved ?? 0}/{data?.decided ?? 0}
+                      </span>
+                    )
+                  }
+                />
+                {/*
+                  The median, which the payload has carried since it was written
+                  and this screen never showed.
 
-                A mean over a handful of verdicts is moved several seconds by
-                one episode somebody left open while they took a call; the
-                median is not, which is the whole reason the server computes it.
-                Both are here because they answer different questions and the
-                pair is what says whether a shift was steady. `null` when no
-                review on this shift was timed — the server leaves untimed rows
-                out of it rather than counting them as zero, and so does this.
-              */}
-              <Figure
-                label={t('ui.a.home.median')}
-                value={data ? pace(numberOrNull(data.median_seconds_to_verdict)) : null}
-                unavailable={unavailable}
-                note={t('ui.a.home.median.note')}
-              />
-              <Figure
-                label={t('queue.average')}
-                value={data ? pace(data.session_average_seconds) : null}
-                unavailable={unavailable}
-                note={t('ui.a.home.pace.note')}
-              />
-            </dl>
-          </Panel>
-        </div>
+                  A mean over a handful of verdicts is moved several seconds by
+                  one episode somebody left open while they took a call; the
+                  median is not, which is the whole reason the server computes it.
+                  Both are here because they answer different questions and the
+                  pair is what says whether a shift was steady. `null` when no
+                  review on this shift was timed — the server leaves untimed rows
+                  out of it rather than counting them as zero, and so does this.
+                */}
+                <Figure
+                  label={t('ui.a.home.median')}
+                  value={data ? pace(numberOrNull(data.median_seconds_to_verdict)) : null}
+                  unavailable={unavailable}
+                  note={t('ui.a.home.median.note')}
+                />
+                <Figure
+                  label={t('queue.average')}
+                  value={data ? pace(data.session_average_seconds) : null}
+                  unavailable={unavailable}
+                  note={t('ui.a.home.pace.note')}
+                />
+              </dl>
+            </Panel>
+          </div>
 
-        <Settled
-          className="mt-5"
-          amount={data ? money(data.settled_amount, data.currency) : null}
+          <Settled
+            className="mt-5"
+            amount={data ? money(data.settled_amount, data.currency) : null}
+            unavailable={unavailable}
+          />
+        </Reveal>
+
+        {/* --- 4. The work itself, row by row. --- */}
+        <RecentVerdicts currency={data?.currency ?? 'VND'} />
+
+        {/* --- 5. Optional insights, and the only place a mascot speaks. --- */}
+        <TrucPanel
+          needsHuman={data?.needs_human ?? null}
           unavailable={unavailable}
+          isPending={isPending}
+          asOf={asOf}
+          state={state}
         />
-      </Reveal>
-
-      {/* --- 4. The work itself, row by row. --- */}
-      <RecentVerdicts currency={data?.currency ?? 'VND'} />
-
-      {/* --- 5. Optional insights, and the only place a mascot speaks. --- */}
-      <TrucPanel
-        needsHuman={data?.needs_human ?? null}
-        unavailable={unavailable}
-        isPending={isPending}
-        asOf={asOf}
-        state={state}
-      />
+      </div>
     </AppShell>
   );
 }
@@ -625,7 +777,7 @@ function RecentVerdicts({ currency }: { currency: string }) {
 
   return (
     <Reveal className="mt-8" data-guide="home.recent">
-      <h2 className="text-[1.0625rem] font-bold tracking-[-0.02em]">{t('recent.title')}</h2>
+      <h2 className="headline-sm">{t('recent.title')}</h2>
 
       <Panel className="mt-3 overflow-hidden">
         {isPending ? (
@@ -797,8 +949,8 @@ function TrucPanel({
         : { text: t('home.needsHuman'), figure: String(needsHuman), muted: false };
 
   return (
-    <section ref={ref} className={cn('reveal mt-8', near && 'reveal-in')}>
-      <h2 className="text-[1.0625rem] font-bold tracking-[-0.02em]">{t('ui.a.home.insights')}</h2>
+    <section ref={ref} data-choreo="" className="mt-8">
+      <h2 className="headline-sm">{t('ui.a.home.insights')}</h2>
       <p className="mt-1 max-w-[68ch] text-[0.875rem] text-[var(--muted-foreground)]">
         {t('ui.a.home.truc.lede')}
       </p>
