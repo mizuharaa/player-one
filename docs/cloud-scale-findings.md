@@ -189,6 +189,27 @@ done its job, and one bucket rule does the move.
 added later has to be put together with `abort-stale-multipart`, or that
 rule is gone and the orphaned-part cost it exists to reap comes back.
 
+### The whole pipeline on a real recording, against HCM04 — 2026-09-08
+
+`packages/api/scripts/e2e-loop.mjs` with `STORAGE_*` set to the pilot bucket
+and `PLAYERONE_SESSIONS` at the real corpus, on a throwaway database
+`po_e2e_real`, from the org PC over the US link. Both passes ran: the
+synthetic session, then the real `ego_AZER76400FE_20260813_072310`.
+
+**131 checks passed, exit 0.** The real session ingested as `flagged`, its
+eleven files went to the bucket under `episodes/<episode>/<ingest>/` (both
+cameras, audio, the IMU stream, every PTS sidecar, both calibration files and
+the manifest, 40.6 MB), every one was read back with its sha256 matching, the
+episode was held out of review until then, reviewed, billed at 159.9996 VND,
+marked paid manually against reference `VCB-realcorp-0001` for 159 VND (the
+floor), the collector's own view read paid, and two shadow cycles diffed
+clean. The bucket was snapshotted before and the eleven objects deleted
+after; it holds what it held before. The database was dropped.
+
+This is the first time the built pieces have been proven together on
+PaXini's own encoder output against GreenNode rather than on synthetic
+footage or a stand-in store.
+
 ## What was NOT tested
 
 - **GreenNode itself.** S3 keys now exist for HCM04. Everything measured here is MinIO
