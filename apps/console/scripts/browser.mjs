@@ -50,6 +50,44 @@ const LOCK = join(tmpdir(), 'playerone-browser.lock');
 const STALE_MS = 45 * 60 * 1000;
 const POLL_MS = 1500;
 
+/**
+ * Flags that cut what a headless browser costs while idle. GPU and the
+ * software rasterizer are pure waste with no screen; background networking and
+ * metrics are noise. Renderer backgrounding is deliberately left ON — it is
+ * what throttles a page nobody is looking at.
+ */
+const ARGS = [
+  '--disable-gpu',
+  '--disable-software-rasterizer',
+  '--disable-extensions',
+  '--disable-dev-shm-usage',
+  '--mute-audio',
+  '--no-first-run',
+  '--disable-background-networking',
+  '--metrics-recording-only',
+];
+
+/**
+ * A context with motion off, which is the single biggest saving available.
+ *
+ * **Pages burn CPU, not browsers.** An idle browser is nearly free; one open
+ * page running `requestAnimationFrame` pins a core, because headless Chrome
+ * does not vsync-throttle rAF and this project's pages run a permanent GSAP
+ * ticker. A page left open for a ten-minute verification therefore costs a
+ * whole core for ten minutes. `reducedMotion: 'reduce'` makes the page skip
+ * the GSAP import entirely, so the loop never starts.
+ *
+ * Pass `motion: true` only when the measurement is genuinely about animation.
+ */
+export async function newPage(browser, { motion = false, ...options } = {}) {
+  const context = await browser.newContext({
+    reducedMotion: motion ? 'no-preference' : 'reduce',
+    ...options,
+  });
+  const page = await context.newPage();
+  return { context, page };
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** A lock whose owner died is not a lock. Windows has no `kill -0`, so ask. */
