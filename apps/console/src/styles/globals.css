@@ -26,6 +26,10 @@
 @import '@fontsource/be-vietnam-pro/800.css';
 @import '@fontsource/be-vietnam-pro/900.css';
 @import '@fontsource-variable/jetbrains-mono';
+/* Display face, headlines only. Variable, so one file covers 100-900 and the
+   landing can set an optical weight per size instead of picking a static cut.
+   OFL, licence at `node_modules/@fontsource-variable/hanken-grotesk/LICENSE`. */
+@import '@fontsource-variable/hanken-grotesk';
 
 @import '@playerone/design/tokens.css';
 
@@ -124,6 +128,7 @@
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
 
   --ease-out-quint: var(--ease);
 }

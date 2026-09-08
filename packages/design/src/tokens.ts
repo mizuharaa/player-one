@@ -550,6 +550,27 @@ export const shadowDark = {
 export const font = {
   sans: '"Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", Roboto, sans-serif',
   mono: '"JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace',
+  /**
+   * Display is Hanken Grotesk, and it is for headlines only — the landing's
+   * slogan, a screen title, the one number a page is about. Never a label,
+   * never body, never a control.
+   *
+   * It was chosen against a shortlist the product owner's reference implied
+   * (a wide-aperture neo-grotesque, PP Neue Montreal in feel), and the
+   * shortlist collapsed to one on a constraint nothing else survives: of
+   * Schibsted Grotesk, Instrument Sans, Onest and this, **only Hanken
+   * Grotesk ships a Vietnamese subset**. The other three cover latin and
+   * latin-ext, so `Kiểm tra` sets the K, i, m and t in the display face and
+   * every diacritic vowel in the fallback — two faces inside one word, on a
+   * product whose operators work in Vietnamese. A display face that breaks on
+   * half the product's own language is not a display face.
+   *
+   * Be Vietnam Pro keeps everything else. It is the UI voice and it is better
+   * at small sizes than this is; the pairing is a display face over a text
+   * face, not a replacement.
+   */
+  display:
+    '"Hanken Grotesk Variable", "Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
 } as const;
 
 /**
@@ -739,6 +760,7 @@ ${shadows(shadow)}
 
   --font-sans: ${font.sans};
   --font-mono: ${font.mono};
+  --font-display: ${font.display};
   --ease: ${ease};
 ${Object.entries(duration)
   .map(([k, v]) => `  --duration-${k}: ${v};`)
