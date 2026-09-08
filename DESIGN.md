@@ -124,65 +124,75 @@ discipline is now the rule for every glass surface in the system:
 - **Still no gradient on an ink.** No ramp is ever interpolated to another
   colour. That half of the old rule did not move and never will.
 
-### The prism's spectrum, granted to one element
+### The landing's disc, granted a spectrum
 
 **The product owner overruled this file for the landing's burst on 2026-09-07,
 and this is the record of it.** He asked for a rainbow and said in the same
 breath that the four-tint version — white, lime, bamboo and lavender, reasoned
-from the rule above — was not it. The exception is granted to `.prism` in
-`apps/console/src/styles/globals.css` and to nothing else, and it is written
-here rather than left as a code comment for the same reason every other
-exception is.
+from the rule above — was not it. He then chose the whole direction, **The
+Drift**, against two alternates on 2026-09-08. The exception is granted to
+`.prism` in `apps/console/src/styles/globals.css` and to nothing else.
 
 What it does **not** grant, and these are the parts of the rule that did not
 move:
 
 - **Sun and tech are untouched.** The partner mark is still the only place
-  either appears, and the mark itself is on this very screen, 30px from the
-  burst. A spectrum that reached for VNG's orange and PaXini's blue would be
-  the mark used as decoration with extra steps.
+  either appears, and the mark itself is on this very screen.
 - **The three verdicts are untouched.** Pass green, partial violet and reject
   red still appear on verdicts and nowhere else.
-- **No new colour was added.** Every spoke is `--lime-500` with its hue turned
-  and its lightness and chroma taken from the token —
-  `oklch(from var(--lime-500) l c calc(h + N))`, where the only value written
-  is an angle. `--lime-500` is `#B8F04A`, which is `oklch(0.8865 0.1976 126.4)`,
-  so the nine spokes are that lightness and that chroma at 126.4°, 171.4°,
-  216.4°, 261.4°, 306.4°, 351.4°, 36.4°, 81.4° and a white leading spoke of
-  `--stage-over`. Out-of-gamut hues are gamut-mapped by the browser. This is
-  one colour dispersed, which is what a prism does to one beam, and it is why
-  the collector app can still have every value on this screen.
-- **Still no gradient on an ink, and still no gradient lettering.** The burst
-  is a field behind the type, at `mix-blend-mode: screen` over `--stage`. No
-  ramp is interpolated to another colour and no glyph is painted with any of
-  it.
+- **No new colour was added.** Every hue in all three variants is
+  `oklch(from var(--lime-500) calc(l - 0.2) c calc(h + N))` — the token's own
+  chroma, its lightness dropped once, and an angle. One colour dispersed,
+  which is what a prism does to one beam. The drop in lightness is the light
+  ground's requirement rather than a taste: a `multiply` filter has to carry
+  value, and `--lime-500`'s own 0.887 multiplies over the page to nothing.
+- **Still no gradient on an ink, and still no gradient lettering.**
 
-**Its measured limits.** The type is protected by `.type-halo`, not by the
-burst being dim, and the numbers are from rendered pixels with the burst lit:
+**It is a disc on a light page, not a spoke field on a stage.** The landing
+sits on `--background` like the rest of the console. The disc is a hard-edged
+circle of about 58vh centred on the headline, at `mix-blend-mode: multiply`, so
+it tints the tiles it overlaps and leaves the ones outside it alone. `screen`
+was right over near-black and is invisible over a page; the compositing was
+re-derived, not translated.
+
+**Three variants, and each names a kind of work.** The key line — the one about
+money — reads *Kitchen* / *Garden* / *Cleaning minutes, paid.*, and the disc
+changes with it. The call to action cycles them on hover and on focus.
+
+**It ignites on the button, and nothing else.** `.landing:hover` was the whole
+180vh scroll region, so the burst was lit from the moment a pointer entered the
+page. Pause is a *condition* of igniting rather than a rule arguing with it
+afterwards, because `:has()` takes its argument's specificity and a plain
+`[data-motion='paused']` rule loses to it — measured at opacity 1 with the
+control pressed before it was written the other way.
+
+**Two layering facts, both found by measuring and both cheap to lose.** The
+disc carries no `z-index`: with one, Chromium composited it over the button and
+the slogan painted *after* it, and no `z-index` on those was high enough to get
+back on top — 9 was tried. And the type block is `position: relative` with no
+`z-index`, because a static box paints below every positioned sibling. Document
+order does the layering: tiles, halo, disc, type.
+
+**Its measured limits**, from rendered pixels, disc lit, sampling only the
+pixels a glyph actually covers — the difference of a render with the glyphs and
+one without:
 
 | Measured, worst frame | Value |
 |---|---|
-| Brightest pixel anywhere inside the slogan block, glyphs hidden | `rgb(16,18,21)` — `--stage` exactly |
-| `--stage-over` on that ground | **18.76:1**, identical in all 18 runs (3 viewports × 3 languages × 2 schemes) |
-| Pause button's label on its own fill | 17.10:1 |
-| Skip link's label on its own fill | 18.76:1 |
-| Worst boundary either control has, on any ground, lit or unlit | **7.21:1** |
+| Ink on its ground under a glyph, worst of 54 runs (3 viewports × 3 languages × 2 schemes × 3 variants) | **5.12:1** |
+| Per variant | garden 5.22:1 · cleaning 5.44:1 · kitchen 5.12:1 |
+| Worst boundary any landing control has on any ground, lit or unlit, all variants | **3.97:1** |
+| Worst label on any landing control | **6.49:1** |
+| Burst opacity at rest / CTA hover / CTA keyboard focus / tile hover / paused | 0 / 1 / 1 / 0 / 0 |
 
-That last row is the one the spectrum actually cost, and it took two fixes.
-The pause pill was a translucent `--stage` behind a `--stage-line` hairline: at
-rest that boundary is 1.37:1, and with a spoke passing behind it at 1280×720 the
-ground measured `rgb(173,174,175)` and the hairline fell to 1.11:1. It is an
-opaque `--stage` fill behind a `--stage-mid` border now, so the border carries
-the boundary on the dark field (7.21:1) and the fill carries it on a lit spoke
-(8.35:1). The white skip pill had the mirror-image fault — invisible against a
-white spoke — and takes a `--stage` border for the same reason. Both are
-measured in both states at three viewports and nothing reads under 7.21:1.
-
-**It is off at rest, and that is a measurement too.** `opacity` computes to `0`
-with the pointer anywhere on the landing that is not a tile, and `1` with the
-pointer on a tile. It used to be lit by `.landing:hover, .landing:focus-within`
-— `.landing` being the whole 180vh scroll region, so "lit" meant "the pointer
-is somewhere on the page", which is always.
+**The slogan's ground is a blurred rectangle of `--background`**, not the
+near-black halo the stage version used. It is invisible on the page and its
+only job is that a photograph can never be the thing under a letter — without
+it the darkest ground under a glyph measured 1.08:1 at 390×844. It is a
+rounded rectangle and not an ellipse because what it covers is a rectangle:
+an ellipse similar to the block reaches its corners only at √2 of its
+half-dimensions, which needs a box twice the block, and at 390px twice the
+block is larger than the phone and bleached four tiles to white smears.
 
 ## The three verdicts own their hues
 
@@ -426,14 +436,17 @@ Authored motion is a closed list, and `/review` is not on it:
   nods run once per step and stop; a mascot that never stops moving beside a
   sentence is a reason not to read the sentence. Each behaviour is a named
   function of time in `PandaStage.tsx`, all of them inside the one `useFrame`.
-- **The landing hero** — the sign-in page's parallax, desktop only, and a
-  progressive enhancement: the form is usable before it runs and without it.
-  Its burst (`.prism`) ignites on **a tile being hovered**, not on the section
-  being hovered: `.landing` is the whole 180vh scroll region, so the first
-  version was lit from the moment the pointer entered the page and never went
-  off. It decays back to dark over `--duration-slow` when the pointer leaves
-  the tile, it is not built at all under `prefers-reduced-motion`, and the
-  pause control turns it off with the drift.
+- **The landing** — one choreography in three beats, not three entrances.
+  Desktop only, scrubbed against scroll, and every tween starts from an
+  already-visible default so a blocked tween engine leaves a finished page
+  rather than an invisible one. The field opens out; the marquee band rises
+  and its letters come out of a blur, once; the sign-in panel's parts arrive
+  in reading order 40ms apart on an exponential ease-out. The tiles' own idle
+  drift and their wave entrance are CSS, so they survive GSAP being blocked.
+  The disc ignites on the call to action, on hover and on keyboard focus.
+  Nothing is built at all under `prefers-reduced-motion`: the band is not
+  rendered, the disc is `display: none`, the drift is removed rather than
+  shortened, and two screenshots 2.2s apart are byte-identical.
 - **`.lease-expiring`** — a slow 1.6s pulse, so a lease running out reads as a
   warning rather than an alarm.
 

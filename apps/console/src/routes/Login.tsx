@@ -561,6 +561,11 @@ export function LoginScreen() {
               <div
                 key={tile.src}
                 className="tile"
+                /* Near tiles take the deeper shadow and sit over the far ones.
+                   Depth is scale, crop, shadow and order here — the blur is
+                   only a confirmation, because a tile nobody can identify is
+                   not depth. */
+                data-depth={tile.d >= 0.6 ? 'near' : undefined}
                 style={
                   {
                     '--x': tile.x,
@@ -725,11 +730,22 @@ export function LoginScreen() {
                 else, and this label stands on the disc: measured at 1280×720
                 with the rays lit, `--muted-foreground` on a spoke read under
                 the floor and the word simply went missing. The ink outline is
-                the console's own quiet-second treatment, it draws a boundary
-                the disc cannot erase, and it inverts to a filled ink block on
-                hover — which is the same punch the primary has, one step down.
+                the console's own quiet-second treatment and it inverts to a
+                filled ink block on hover, which is the same punch the primary
+                has, one step down.
+
+                **And it carries its own ground.** `secondary` is
+                `bg-transparent` everywhere else in the console, which is right
+                on a page whose ground does not move. Here the ground does
+                move: the disc lights under it and changes hue three ways. A
+                transparent control on a surface that changes is a control
+                whose contrast is decided by a decoration, which is the same
+                bug as the 1.11:1 pause pill against a lit spoke. `--background`
+                is opaque, so what the label stands on is the page in every
+                variant and in both schemes, and the measured worst case is one
+                number rather than six.
               */}
-              <Button variant="secondary" size="lg" asChild>
+              <Button variant="secondary" size="lg" asChild className="bg-[var(--background)]">
                 <a href="#signin">{t('login.ctaSecondary')}</a>
               </Button>
             </div>

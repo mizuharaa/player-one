@@ -461,6 +461,14 @@
     --tile: 66px;
     position: absolute;
     inset: 0;
+    /*
+     * Its own stacking context, so the per-tile depth order below stays
+     * inside the field. Without it a near tile's `z-index` would compete with
+     * the disc in the panel's context, and the disc's layering is the one
+     * thing on this screen that is already known to break when a `z-index`
+     * gets near it.
+     */
+    isolation: isolate;
   }
 
   @media (min-width: 640px) {
@@ -524,7 +532,18 @@
     rotate: var(--tilt);
     border-radius: var(--radius-base);
     border: 1px solid var(--border);
-    box-shadow: var(--shadow-lg);
+    /*
+     * Depth in the shadow, and the shadow is the token. `--shadow` is
+     * `0 4px 16px` plus a 1px contact shadow and `--shadow-lg` is
+     * `0 18px 48px` plus `0 4px 12px` — both carry a real vertical offset and
+     * a soft blur, which is what makes them read as height rather than as a
+     * halo. A near tile is lifted further off the page than a far one, and
+     * that plus scale, crop and order is where the depth comes from now.
+     */
+    box-shadow: var(--shadow);
+    /* Near over far. The whole range is 0-1, so this is 0 to 10 and never
+       leaves the field's own stacking context. */
+    z-index: calc(var(--d) * 10);
     background: var(--card);
     overflow: hidden;
 
@@ -549,6 +568,10 @@
    * every tile stays inside the panel at the far end of every loop, which is
    * what keeps the field from pushing a scrollbar onto the document.
    */
+  .tile[data-depth='near'] {
+    box-shadow: var(--shadow-lg);
+  }
+
   .tile:nth-child(3n + 2) {
     --drift: tile-drift-b;
     --drift-dur: 21s;
@@ -660,12 +683,17 @@
      * exactly what makes a scatter read as a grid that has been scaled.
      */
     /*
-     * 2px at the far end, not 3. At 3px the smallest tiles stopped being
-     * photographs of anything — and a scatter whose far members are unreadable
-     * smears is not depth, it is a defect. Depth here is carried mostly by the
-     * size and crop variance; the blur only confirms it.
+     * 1.1px at the far end, down from 3.
+     *
+     * At 3px the smallest tiles stopped being photographs of anything, and
+     * the scatter *is* the product here — a tile nobody can identify as a
+     * room is not depth, it is noise. So the blur is pulled back to where
+     * every tile still reads as a real scene, and the depth it used to be
+     * carrying moved to things that cost the subject nothing: the size and
+     * aspect variance, the crop tightness, the shadow's offset and the near
+     * tiles sitting over the far ones.
      */
-    filter: blur(calc((1 - var(--d)) * 2px));
+    filter: blur(calc((1 - var(--d)) * 1.1px));
     opacity: calc(0.66 + var(--d) * 0.34);
     scale: var(--zoom);
   }
@@ -755,13 +783,31 @@
    */
   .type-halo {
     position: absolute;
-    inset: -50%;
+    /*
+     * A blurred rectangle, not an ellipse, and the shape is the whole point.
+     *
+     * What has to be covered is a rectangle of text. An ellipse similar to
+     * that rectangle only reaches its corners at √2 of its half-dimensions,
+     * so covering a 544x330 block with one needs a box twice the block — and
+     * on a 390px screen, where the block is 86vw, twice it is larger than the
+     * phone. Measured in `login-mobile.png` with the ellipse: four tiles
+     * bleached to white smears, which is the "sometimes hide it" complaint
+     * wearing a different hat. Measured with a *smaller* ellipse: 3.98:1 at
+     * 1440x900 in dark, under the floor, because a smaller ellipse stops
+     * covering the corners it existed to cover.
+     *
+     * A rounded rectangle covers a rectangle by construction. It reaches 8%
+     * past the block instead of 100% past it, `--radius-xl` keeps its corners
+     * off the tiles, and one blur turns its edge into a fade — the same soft
+     * boundary the gradient was for, at about a tenth of the area. It is
+     * `--background`, so on the page it is invisible; over a tile it is the
+     * page coming forward, which is exactly its job.
+     */
+    inset: -8% -5%;
     pointer-events: none;
-    background: radial-gradient(
-      closest-side,
-      var(--background) 0 75%,
-      color-mix(in srgb, var(--background) 0%, transparent) 100%
-    );
+    border-radius: var(--radius-xl);
+    background: var(--background);
+    filter: blur(26px);
   }
 
   /*
@@ -953,15 +999,21 @@
      * an `aria-hidden` field of photographs is not something a keyboard
      * reaches, and a real button is a different question.
      */
-    .landing:has(.landing-cta:hover) .prism,
-    .landing:has(.landing-cta:focus-visible) .prism {
+    /*
+     * `:not([data-motion='paused'])` is on the ignition rule rather than the
+     * pause rule beating it, and that is a specificity fact rather than a
+     * style: `:has()` takes the specificity of its most specific argument, so
+     * `.landing:has(.landing-cta:hover) .prism` scores (0,4,0) and
+     * `.landing[data-motion='paused'] .prism` scores (0,2,1) and loses.
+     * Measured before it was written this way — with the control pressed and
+     * the pointer on the button, the disc's computed opacity was 1. Pause has
+     * to be a condition of igniting, not a rule that argues with it
+     * afterwards.
+     */
+    .landing:not([data-motion='paused']):has(.landing-cta:hover) .prism,
+    .landing:not([data-motion='paused']):has(.landing-cta:focus-visible) .prism {
       opacity: 1;
       scale: 1;
-    }
-
-    /* Paused means paused: the button stops igniting it too. */
-    .landing[data-motion='paused'] .prism {
-      opacity: 0;
     }
   }
 
