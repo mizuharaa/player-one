@@ -25,6 +25,7 @@
  * painted behind it.
  */
 import { chromium } from 'playwright';
+import { acquireLock, guard } from './browser.mjs';
 
 const BASE = process.env.CONSOLE_URL ?? 'http://127.0.0.1:5190';
 
@@ -257,16 +258,20 @@ const TEXT = {
     ['h1', 'h1'],
     ['marker on lime', 'mark.marker'],
     ['lead', 'section p', 0],
-    ['fact label', 'dl dt', 0],
-    ['fact body', 'dl dd', 0],
-    ['section h2', 'h2', 0],
+    ['audiences line', 'section p', 1],
+    ['apk note', 'section p', 2],
+    ['section h2', 'h2:not(.sr-only)', 0],
     ['video caption', 'figure figcaption', 0],
     ['step number', 'ol li span', 0],
     ['step body', 'ol li p', 0],
-    ['cell body on card', 'div.items-start > div > p', 0],
+    /* The panel pair: `--stage-fg` on `--stage`, the console's near-black,
+       which is a ground this route did not carry before 2026-09-08. */
+    ['panel caption', 'figure.on-stage figcaption', 0],
+    ['bento cell body', '[class*="col-span-7"] > p', 0],
     ['ink cell body', '.feature-block p'],
-    ['question', 'dl dt', 3],
-    ['answer', 'dl dd', 3],
+    /* The FAQ is `<details>` on `--muted` now, not a `<dl>` on the page. */
+    ['faq question', 'details summary', 0],
+    ['faq answer', 'details p', 0],
     ['nav sign-in label', 'header a'],
   ],
 };
@@ -279,16 +284,103 @@ const CONTROLS = {
   ],
   '/discover': [
     ['nav sign-in pill', 'header a'],
-    ['primary CTA', 'section a[href="#how"]'],
-    ['secondary CTA', 'section a[href="/login"]', 0],
+    /*
+     * The hero's two peers. The APK control is `disabled` while the build is
+     * unpublished, so what is measured is the faded state a visitor actually
+     * sees — a disabled control still has to be identifiable against its
+     * ground under WCAG 1.4.11, and a primary that is invisible when it is
+     * unavailable is worse than one that is merely quiet.
+     */
+    ['apk CTA (disabled)', 'section button[disabled]', 0],
+    ['console CTA', 'section a[href="/login"]', 0],
+    ['faq row', 'details', 0],
   ],
 };
 
+/**
+ * The cursor's worst frame, and why the endpoints are not enough.
+ *
+ * `components/CustomCursor.tsx` reveals a clone of the hovered control in
+ * `--lime-500` through a radial mask, inside a disc of `--stage`. At rest and
+ * at full size that pair is 13.5:1. **In between it is a different pair**: the
+ * disc eases from 12px to 140px over about fifteen frames, and if the mask does
+ * not ease with it, accent type lands on the near-white page for a fifth of a
+ * second at roughly 1.6:1.
+ *
+ * So this samples the live composite at five points across the growth and
+ * reports, for each, the worst contrast between a lime pixel and any colour
+ * within three pixels of it that is not lime. It is a pixel probe and not a
+ * token pair, because the fault it is looking for exists only in the composite.
+ *
+ * It measures the light scheme at 1440 only: the disc is `--stage` and the
+ * accent is `--lime-500`, and neither changes with the scheme, so the dark
+ * ground is the easier case and the wide viewport is where the lens has room.
+ */
+async function cursorFrames(page) {
+  const target = page.locator('header a[href="/login"]').first();
+  const box = await target.boundingBox();
+  if (box === null) return;
+  const cx = Math.round(box.x + box.width / 2);
+  const cy = Math.round(box.y + box.height / 2);
+
+  /* Two moves: the first arms `mousemove`, the second is the one being timed. */
+  await page.mouse.move(cx - 200, cy);
+  await page.mouse.move(cx, cy);
+
+  const R = 90;
+  for (const t of [50, 100, 150, 250, 500]) {
+    await page.waitForTimeout(t === 50 ? 50 : 50);
+    const png = await grab(page, {
+      x: Math.max(0, cx - R),
+      y: Math.max(0, cy - R),
+      w: R * 2,
+      h: R * 2,
+    });
+    const isLime = (c) => Math.abs(c[0] - 0xb8) < 40 && Math.abs(c[1] - 0xf0) < 40 && Math.abs(c[2] - 0x4a) < 40;
+    let worst = Infinity;
+    let pair = null;
+    let lit = 0;
+    for (let y = 3; y < png.height - 3; y += 1) {
+      for (let x = 3; x < png.width - 3; x += 1) {
+        const c = at(png, x, y);
+        if (!isLime(c)) continue;
+        lit += 1;
+        for (const [dx, dy] of [[3, 0], [-3, 0], [0, 3], [0, -3]]) {
+          const n = at(png, x + dx, y + dy);
+          if (isLime(n)) continue;
+          const r = ratio(c, n);
+          if (r < worst) {
+            worst = r;
+            pair = [hex(c), hex(n)];
+          }
+        }
+      }
+    }
+    console.log(
+      lit === 0
+        ? `  LENS  t+${String(t).padStart(3)}ms            (no accent pixels yet)`
+        : `  LENS  t+${String(t).padStart(3)}ms            ${worst.toFixed(2)}:1   ${pair?.[0]} beside ${pair?.[1]}  (${lit}px lit)`,
+    );
+  }
+  await page.mouse.move(4, 4);
+}
+
+/*
+ * One browser on this machine at a time, and closed on every exit path.
+ * Three of these scripts run from different panes with no coordination;
+ * together they saturated the box at 70-80% CPU and cost one run four
+ * measurements to a 30s screenshot timeout caused purely by contention.
+ * A throw between here and the close used to leak the browser outright.
+ */
+const releaseLock = await acquireLock();
 const browser = await chromium.launch();
+guard(browser, releaseLock);
 
 for (const theme of ['light', 'dark']) {
   for (const [w, h] of [
     [1440, 900],
+    /* 1280 is the upload-centre machine and it was not being measured. */
+    [1280, 720],
     [390, 844],
   ]) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
@@ -319,6 +411,15 @@ for (const theme of ['light', 'dark']) {
             );
         } catch (e) {
           console.log(`  TEXT  ${label.padEnd(22)}  ERR ${String(e).slice(0, 70)}`);
+        }
+      }
+      if (route === '/discover' && theme === 'light' && w === 1440) {
+        try {
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await page.waitForTimeout(300);
+          await cursorFrames(page);
+        } catch (e) {
+          console.log(`  LENS  ERR ${String(e).slice(0, 90)}`);
         }
       }
       for (const [label, sel, i = 0] of CONTROLS[route]) {

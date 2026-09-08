@@ -7,6 +7,7 @@
  * things a typecheck cannot see. Run `seed-console.mjs` first.
  */
 import { chromium } from 'playwright';
+import { acquireLock, guard } from './browser.mjs';
 import { mkdir } from 'node:fs/promises';
 
 const BASE = process.env.CONSOLE_URL ?? 'http://localhost:5173';
@@ -16,7 +17,16 @@ await mkdir(OUT, { recursive: true });
 const DESKTOP = { width: 1440, height: 900 };
 const MOBILE = { width: 390, height: 844 };
 
+/*
+ * One browser on this machine at a time, and closed on every exit path.
+ * Three of these scripts run from different panes with no coordination;
+ * together they saturated the box at 70-80% CPU and cost one run four
+ * measurements to a 30s screenshot timeout caused purely by contention.
+ * A throw between here and the close used to leak the browser outright.
+ */
+const releaseLock = await acquireLock();
 const browser = await chromium.launch();
+guard(browser, releaseLock);
 
 /**
  * Both credentials, every time: a machine token for where, an operator token

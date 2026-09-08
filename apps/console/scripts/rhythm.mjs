@@ -27,6 +27,7 @@
  *   COLLECTOR_URL=http://localhost:5178 node scripts/rhythm.mjs
  */
 import { chromium } from 'playwright';
+import { acquireLock, guard } from './browser.mjs';
 
 const CONSOLE_URL = process.env.CONSOLE_URL ?? 'http://localhost:5190';
 const COLLECTOR_URL = process.env.COLLECTOR_URL ?? '';
@@ -207,7 +208,16 @@ async function audit(page, url, label, width, height) {
   return total;
 }
 
+/*
+ * One browser on this machine at a time, and closed on every exit path.
+ * Three of these scripts run from different panes with no coordination;
+ * together they saturated the box at 70-80% CPU and cost one run four
+ * measurements to a 30s screenshot timeout caused purely by contention.
+ * A throw between here and the close used to leak the browser outright.
+ */
+const releaseLock = await acquireLock();
 const browser = await chromium.launch();
+guard(browser, releaseLock);
 const context = await browser.newContext();
 const page = await context.newPage();
 let findings = 0;
