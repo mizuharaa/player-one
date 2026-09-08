@@ -124,6 +124,66 @@ discipline is now the rule for every glass surface in the system:
 - **Still no gradient on an ink.** No ramp is ever interpolated to another
   colour. That half of the old rule did not move and never will.
 
+### The prism's spectrum, granted to one element
+
+**The product owner overruled this file for the landing's burst on 2026-09-07,
+and this is the record of it.** He asked for a rainbow and said in the same
+breath that the four-tint version — white, lime, bamboo and lavender, reasoned
+from the rule above — was not it. The exception is granted to `.prism` in
+`apps/console/src/styles/globals.css` and to nothing else, and it is written
+here rather than left as a code comment for the same reason every other
+exception is.
+
+What it does **not** grant, and these are the parts of the rule that did not
+move:
+
+- **Sun and tech are untouched.** The partner mark is still the only place
+  either appears, and the mark itself is on this very screen, 30px from the
+  burst. A spectrum that reached for VNG's orange and PaXini's blue would be
+  the mark used as decoration with extra steps.
+- **The three verdicts are untouched.** Pass green, partial violet and reject
+  red still appear on verdicts and nowhere else.
+- **No new colour was added.** Every spoke is `--lime-500` with its hue turned
+  and its lightness and chroma taken from the token —
+  `oklch(from var(--lime-500) l c calc(h + N))`, where the only value written
+  is an angle. `--lime-500` is `#B8F04A`, which is `oklch(0.8865 0.1976 126.4)`,
+  so the nine spokes are that lightness and that chroma at 126.4°, 171.4°,
+  216.4°, 261.4°, 306.4°, 351.4°, 36.4°, 81.4° and a white leading spoke of
+  `--stage-over`. Out-of-gamut hues are gamut-mapped by the browser. This is
+  one colour dispersed, which is what a prism does to one beam, and it is why
+  the collector app can still have every value on this screen.
+- **Still no gradient on an ink, and still no gradient lettering.** The burst
+  is a field behind the type, at `mix-blend-mode: screen` over `--stage`. No
+  ramp is interpolated to another colour and no glyph is painted with any of
+  it.
+
+**Its measured limits.** The type is protected by `.type-halo`, not by the
+burst being dim, and the numbers are from rendered pixels with the burst lit:
+
+| Measured, worst frame | Value |
+|---|---|
+| Brightest pixel anywhere inside the slogan block, glyphs hidden | `rgb(16,18,21)` — `--stage` exactly |
+| `--stage-over` on that ground | **18.76:1**, identical in all 18 runs (3 viewports × 3 languages × 2 schemes) |
+| Pause button's label on its own fill | 17.10:1 |
+| Skip link's label on its own fill | 18.76:1 |
+| Worst boundary either control has, on any ground, lit or unlit | **7.21:1** |
+
+That last row is the one the spectrum actually cost, and it took two fixes.
+The pause pill was a translucent `--stage` behind a `--stage-line` hairline: at
+rest that boundary is 1.37:1, and with a spoke passing behind it at 1280×720 the
+ground measured `rgb(173,174,175)` and the hairline fell to 1.11:1. It is an
+opaque `--stage` fill behind a `--stage-mid` border now, so the border carries
+the boundary on the dark field (7.21:1) and the fill carries it on a lit spoke
+(8.35:1). The white skip pill had the mirror-image fault — invisible against a
+white spoke — and takes a `--stage` border for the same reason. Both are
+measured in both states at three viewports and nothing reads under 7.21:1.
+
+**It is off at rest, and that is a measurement too.** `opacity` computes to `0`
+with the pointer anywhere on the landing that is not a tile, and `1` with the
+pointer on a tile. It used to be lit by `.landing:hover, .landing:focus-within`
+— `.landing` being the whole 180vh scroll region, so "lit" meant "the pointer
+is somewhere on the page", which is always.
+
 ## The three verdicts own their hues
 
 `--pass` · `--partial` · `--reject`, each with a `-bg`, and each with **two
@@ -221,6 +281,60 @@ shrinks inside a rail looks worse, not better. The scale is tight on purpose —
 this surface has far more type elements than a brand page and exaggerated
 contrast reads as noise.
 
+### A display face, for headlines only
+
+**Hanken Grotesk Variable**, `--font-display`, added 2026-09-07 because the
+product owner asked for "a great minimalistic font, modern, cool" on the
+landing and showed a reference to say what he meant. It is a third family and
+it earns that by doing a job neither of the other two does: Be Vietnam Pro is
+the UI voice and reads as one at 52px, and there is no display cut of it.
+
+**It was chosen on one constraint.** It is the only face on the shortlist that
+ships a Vietnamese subset. Vietnamese stacks two marks on one vowel and a
+display face without them sets "Đeo camera." with its consonants in one
+typeface and its diacritic vowels in another, mid-word — which is worse than
+having no display face at all. Self-hosted and bundled like the other two, from
+`@fontsource-variable/hanken-grotesk`, OFL.
+
+**It is variable, and that is used rather than decorative.** Large display type
+wants a lighter weight than small display type: the strokes grow with the glyph
+and the counters do not, so a weight that is right at 31px is heavy at 52px.
+The landing's scale sets an optical weight at every step, running the opposite
+way to the size.
+
+| Role | 390px | 640px | 1024px |
+|---|---|---|---|
+| slogan | 1.9375rem / 600 / -0.018em | 2.625rem / 520 / -0.028em | 3.25rem / 440 / -0.034em |
+| key line | 2.3125rem / 650 / -0.02em | 3.125rem / 560 / -0.03em | 3.875rem / 480 / -0.036em |
+
+Two roles at a ratio of about 1.19, three steps each, and nothing on that
+screen takes a fourth size. Tracking tightens as the size grows, which is most
+of the difference between display type that looks expensive and display type
+that looks like a browser default. `text-wrap: balance` on both. The values
+live in one `.landing`-scoped block in `globals.css`, not spread through the
+component as arbitrary Tailwind sizes.
+
+**The dashboard takes the same two rules and only two sizes.** `.headline` and
+`.headline-sm` in `globals.css` — Home's band title at 2.0625/610/-0.024em
+rising to 2.625/520/-0.028em at 640px, and its four section headings at
+1.0625/700/-0.012em. The weight runs the opposite way to the size there too,
+and the larger step lands on exactly the landing's own 2.625/520/-0.028em, so
+the two screens share a value rather than nearly agreeing.
+
+**Where it may go: headlines only.** The landing slogan, the sign-in `h1`, and
+Home's band title and section headings. Be Vietnam Pro keeps every label,
+field, sentence, table and control, and `--font-mono` stays restricted to
+`.num`. A display face on a form label is how a tool starts looking like a
+brochure.
+
+**No figure on Home is in the display face, and that is the rule colliding with
+itself.** "The one number a card is about" would be display type on most
+products; here every number on that screen is a measured quantity — the queue
+depth, the gauge count, the approval rate, the settled value — and a measured
+quantity is `.num`, which is mono and tabular because reviewers scan columns of
+these for the one that is wrong. `.num` wins. When Home carries a figure that
+is not a measurement, that is the one the display face gets.
+
 ### The `.num` class is load-bearing
 
 Every measured quantity — durations, amounts, counts, requirement IDs, episode
@@ -314,6 +428,12 @@ Authored motion is a closed list, and `/review` is not on it:
   function of time in `PandaStage.tsx`, all of them inside the one `useFrame`.
 - **The landing hero** — the sign-in page's parallax, desktop only, and a
   progressive enhancement: the form is usable before it runs and without it.
+  Its burst (`.prism`) ignites on **a tile being hovered**, not on the section
+  being hovered: `.landing` is the whole 180vh scroll region, so the first
+  version was lit from the moment the pointer entered the page and never went
+  off. It decays back to dark over `--duration-slow` when the pointer leaves
+  the tile, it is not built at all under `prefers-reduced-motion`, and the
+  pause control turns it off with the drift.
 - **`.lease-expiring`** — a slow 1.6s pulse, so a lease running out reads as a
   warning rather than an alarm.
 

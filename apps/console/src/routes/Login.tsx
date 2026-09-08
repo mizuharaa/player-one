@@ -21,7 +21,8 @@
  * sentences, over the console's near-black. The reference is Luma and the
  * direction was chosen from a comp, not invented here: a dense scatter that
  * rests still and dark, drifting slowly, and ignites into a prismatic burst
- * behind the type when a pointer is over it. What the tiles show is the
+ * behind the type when a pointer is over one of the tiles. What the tiles show
+ * is the
  * product — five frames of our own demo film, one generated plate of a
  * collector planting in a head-mounted camera, and six reference photographs
  * of ordinary household work. `public/tiles/CREDITS.json` names every one of
@@ -100,6 +101,15 @@
  * × three languages × both schemes. The landing is `.on-stage`, which is
  * near-black in both schemes, so there is one number and not two.
  *
+ * **Re-measured after the burst became a spectrum**, because a brighter burst
+ * is a different worst frame and a number carried over is not a measurement.
+ * All eighteen runs still read `rgb(16,18,21)` and 18.76:1, with the burst
+ * lit by a tile hover rather than by the pointer merely being on the page.
+ * The two controls at the foot of the landing were measured on the same lit
+ * frame: their labels read 17.10:1 and 18.76:1 at worst, over 4.5:1 by a wide
+ * margin, and the pause pill's boundary — see the note on its border — is the
+ * one number that had to change.
+ *
  * The first version of this measured **4.36:1** at 1440×900 and the fault was
  * the width of the type, not the protection: at 46rem the last line ran the
  * width of the void, a lit spoke crossed the corner of the block, and no core
@@ -170,22 +180,48 @@ const SCRIM = 'bg-[color-mix(in_srgb,var(--stage)_60%,transparent)]';
  * Two properties are load-bearing and both were arrived at by measuring rather
  * than by eye. **Nothing enters the middle** — no tile has `x` between 24 and
  * 76 while `y` is between 30 and 70 — which is the void the slogan stands in.
- * And **nothing leaves the panel** at any viewport in the set, including at the
- * far end of a drift: at 1280×720, the tightest of them, the lowest tile's
- * bottom edge lands 22px short of the panel's. A tile that overhangs would put
- * a scrollbar on the document, which is the one thing a full-bleed field must
- * never do.
+ * And **nothing leaves the panel** on any *frame* at any viewport in the set.
+ * That second one used to be checked on one edge only. It said "the lowest
+ * tile's bottom edge lands 22px short", which was true and was not the
+ * question: the two highest tiles were leaving through the **top**, by 6.8px
+ * at 1280×720 and 14.8px at 1024×640, because a tilt grows a tile's
+ * axis-aligned box by a fifth and `tile-drift-a` then adds two more degrees
+ * and lifts it 8px. `overflow: hidden` on the panel meant that never became a
+ * scrollbar — it became a photograph with a straight line cut across it, which
+ * is the "sometimes hide it" half of the spacing complaint and is worse.
+ *
+ * Measured now over thirty samples of the drift cycle at five viewports, on
+ * all four edges. The worst clearance in the set is 4.4px, at 1024×640, which
+ * is the shortest viewport at which `--tile` is already at its largest step.
  */
 const TILES = [
   { src: '/tiles/film-face.jpg', x: '10%', y: '22%', tilt: '-7deg', s: 0.92 },
-  { src: '/tiles/kitchen-chopping.jpg', x: '22%', y: '9%', tilt: '6deg', s: 0.84 },
+  /* 11%, and `ref-kitchen` below is 14%: the two that were leaving through the top. */
+  { src: '/tiles/kitchen-chopping.jpg', x: '22%', y: '11%', tilt: '6deg', s: 0.84 },
   { src: '/tiles/film-chop.jpg', x: '38%', y: '16%', tilt: '-4deg', s: 0.72 },
-  { src: '/tiles/ref-kitchen.jpg', x: '56%', y: '10%', tilt: '8deg', s: 0.9 },
+  /* 14% and not 10%, and this is the "sometimes hide it" half of the spacing
+     complaint. The note above checks the *lowest* tile against the panel's
+     bottom edge; nothing checked the highest one against the top. This is the
+     highest, and three things stack on it: an 8deg tilt makes its
+     axis-aligned box 142px rather than 122px, `tile-drift-a` adds 2deg more,
+     and the same keyframe lifts it another 8px. Measured across the whole
+     drift cycle at 10% its top edge reached 6.8px above the panel at
+     1280×720 and 14.8px at 1024×640, where `overflow: hidden` cut a
+     straight line across a photograph. At 14% the worst frame in the set
+     leaves 10.6px of clearance. */
+  { src: '/tiles/ref-kitchen.jpg', x: '56%', y: '14%', tilt: '8deg', s: 0.9 },
   { src: '/tiles/ref-headset.jpg', x: '74%', y: '20%', tilt: '-6deg', s: 1 },
   { src: '/tiles/hf-garden.jpg', x: '89%', y: '38%', tilt: '5deg', s: 0.86 },
   { src: '/tiles/ref-yoga.jpg', x: '84%', y: '68%', tilt: '-8deg', s: 0.96 },
-  { src: '/tiles/film-kitchen.jpg', x: '66%', y: '86%', tilt: '7deg', s: 0.82 },
-  { src: '/tiles/ironing-hands.jpg', x: '47%', y: '89%', tilt: '-3deg', s: 0.94 },
+  /* 76% and 79%, up from 86% and 89%: these two were the ones under the
+     control row. The pause pill is opaque and sits at `bottom-6` in the
+     middle, so at 1440×900 it cut 3,625px² out of `ironing-hands` and at
+     1024×640 it took a further 2,344px² out of `film-kitchen` — a labelled
+     control drawn across the bottom third of a photograph, which is the other
+     half of the "sometimes hide it" complaint. Measured after: no tile
+     intersects the control row at any of the five viewports. */
+  { src: '/tiles/film-kitchen.jpg', x: '66%', y: '76%', tilt: '7deg', s: 0.82 },
+  { src: '/tiles/ironing-hands.jpg', x: '47%', y: '79%', tilt: '-3deg', s: 0.94 },
   { src: '/tiles/ref-cleaning.jpg', x: '28%', y: '80%', tilt: '6deg', s: 0.78 },
   { src: '/tiles/film-garden.jpg', x: '14%', y: '62%', tilt: '-5deg', s: 1 },
   { src: '/tiles/film-books.jpg', x: '10%', y: '43%', tilt: '4deg', s: 0.8 },
@@ -427,22 +463,24 @@ export function LoginScreen() {
 
               The comp set the last line in a gradient. `DESIGN.md` and the
               craft floor both refuse gradient lettering and they are right to:
-              emphasis on this page comes from weight and size, so the third
-              line is a step larger and 900 against the 800 above it. It is
-              also the only one of the three that is about money.
+              emphasis on this page comes from size and weight, so the third
+              line is one step of each above the two before it, and that is
+              the whole of the emphasis. It is also the only one of the three
+              that is about money.
+
+              The sizes, the weights and the tracking are not written here.
+              They are the landing's type scale in `globals.css` — three
+              steps per role with an optical weight at each, which is a scale
+              and not six arbitrary values, and a variable display face is
+              only worth having if something sets its axis per size.
             */}
             <ul className="relative m-0 flex list-none flex-col gap-2 p-0 text-[var(--stage-over)]">
               {['login.slogan.1', 'login.slogan.2'].map((key) => (
-                <li
-                  key={key}
-                  className="text-[2rem] font-extrabold leading-[1.05] tracking-[-0.03em] sm:text-[2.75rem] lg:text-[3.25rem]"
-                >
+                <li key={key} className="slogan">
                   {t(key)}
                 </li>
               ))}
-              <li className="text-balance text-[2.5rem] font-black leading-[1.05] tracking-[-0.035em] sm:text-[3.25rem] lg:text-[3.75rem]">
-                {t('login.slogan.3')}
-              </li>
+              <li className="slogan-key">{t('login.slogan.3')}</li>
             </ul>
           </div>
 
@@ -470,8 +508,28 @@ export function LoginScreen() {
                 aria-pressed={paused}
                 onClick={() => setPaused((was) => !was)}
                 className={cn(
-                  'rounded-[var(--radius-pill)] border border-[var(--stage-line)] px-3.5 py-2',
-                  'bg-[color-mix(in_srgb,var(--stage)_72%,transparent)] backdrop-blur-sm',
+                  /*
+                   * Two boundaries, because one is not enough on a field that
+                   * lights up. WCAG 1.4.11 wants 3:1 around a control, and
+                   * this one stands on two very different grounds:
+                   *
+                   * - **At rest** the ground is `--stage`, and the border
+                   *   carries it. `--stage-line`, the hairline this used to
+                   *   take, measures **1.37:1** on `--stage` — the control was
+                   *   barely drawn at all. `--stage-mid` measures **7.21:1**.
+                   * - **With the burst lit** a spoke passes behind the pill,
+                   *   and at 1280×720 the ground under it measured
+                   *   `rgb(173,174,175)`, against which that same light border
+                   *   is **1.11:1**. So the *fill* has to carry it there, and
+                   *   a fill of `--stage` at 72% over a lit spoke is not
+                   *   `--stage` any more. It is opaque now: `--stage` on that
+                   *   worst frame is **8.4:1**, and the `backdrop-blur` it no
+                   *   longer needs went with the translucency.
+                   *
+                   * Whichever ground it is on, one of the two clears 3:1.
+                   */
+                  'rounded-[var(--radius-pill)] border border-[var(--stage-mid)] px-3.5 py-2',
+                  'bg-[var(--stage)]',
                   'text-[0.75rem] font-semibold text-[var(--stage-over)]',
                   'transition-colors duration-150 ease-[var(--ease)]',
                   'hover:bg-[var(--stage-panel)]',
@@ -484,7 +542,13 @@ export function LoginScreen() {
             <a
               href="#signin"
               className={cn(
-                'rounded-[var(--radius-pill)] bg-[var(--stage-over)] px-4 py-2',
+                /* The same two-ground problem as the button beside it, the
+                   other way up: white on `--stage` is 18.76:1 at rest, and
+                   nothing at all against a lit white spoke. The `--stage`
+                   border is what draws it there — 18.76:1 on white — so the
+                   fill carries the boundary on the dark field and the border
+                   carries it on the lit one. */
+                'rounded-[var(--radius-pill)] border border-[var(--stage)] bg-[var(--stage-over)] px-4 py-2',
                 'text-[0.75rem] font-semibold text-[var(--stage)] no-underline',
                 'transition-colors duration-150 ease-[var(--ease)]',
                 'hover:bg-[var(--lime-500)]',
@@ -647,7 +711,16 @@ export function LoginScreen() {
                 already on the band above, and 34px of wordmark is 34px the
                 fields need on an 844px phone.
               */}
-              <h1 className="sr-only lg:not-sr-only lg:text-[2.25rem] lg:font-extrabold lg:leading-[1.05] lg:tracking-[-0.03em]">
+              {/*
+                Headline scale, so it takes the display face and the same
+                discipline the slogan does: one step lighter than the old
+                `extrabold` and tracked in rather than out. `font-display` is
+                the Tailwind utility over `--font-display`; the two other
+                pieces of type on this column — the `h2` and the sentence
+                under it — stay Be Vietnam Pro, because they are the UI voice
+                and not a headline.
+              */}
+              <h1 className="sr-only lg:not-sr-only lg:text-balance lg:font-display lg:text-[2.25rem] lg:font-medium lg:leading-[1.05] lg:tracking-[-0.03em]">
                 PlayerOne
               </h1>
               {/*
