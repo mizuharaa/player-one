@@ -218,7 +218,15 @@ async function audit(page, url, label, width, height) {
 const releaseLock = await acquireLock();
 const browser = await chromium.launch();
 guard(browser, releaseLock);
-const context = await browser.newContext();
+/*
+ * `reducedMotion: 'reduce'` — this audit measures boxes, not movement, and
+ * every animated surface in this console is built so that reduced motion
+ * leaves a complete page at rest. It also stops the page's own
+ * `requestAnimationFrame` loops at source: headless Chrome does not
+ * vsync-throttle rAF, so a permanent loop spins a core flat for as long as the
+ * page is open, and this pass holds a page open at three widths on two routes.
+ */
+const context = await browser.newContext({ reducedMotion: 'reduce' });
 const page = await context.newPage();
 let findings = 0;
 

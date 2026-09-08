@@ -454,6 +454,57 @@
    * A `<mark>` also arrives with a browser default background, which is why
    * the fill is set rather than assumed.
    */
+  /**
+   * The native cursor comes off ONLY while the lens is painting a replacement.
+   *
+   * `components/CustomCursor.tsx` sets `data-cursor="on"` when its own
+   * `matchMedia` gate passes and deletes it on teardown, so a coarse pointer, a
+   * viewport under 768px, `prefers-reduced-motion: reduce`, a browser that
+   * never ran the script and a reader who turns reduced motion on mid-session
+   * all keep the cursor their operating system gave them. The media query is
+   * repeated here rather than trusted to the attribute alone because the
+   * attribute is set by script and this rule is not: if the two ever disagree,
+   * the failure has to be "the native cursor stayed", never "there is no
+   * cursor at all".
+   *
+   * `text` is left alone on the two things a pointer shape actually tells you
+   * something about — an I-beam over selectable prose and over a field — since
+   * a 12px dot says nothing about where the caret will land.
+   */
+  @media (min-width: 768px) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+    :root[data-cursor='on'],
+    :root[data-cursor='on'] a,
+    :root[data-cursor='on'] button,
+    :root[data-cursor='on'] summary,
+    :root[data-cursor='on'] [role='button'] {
+      cursor: none;
+    }
+
+    :root[data-cursor='on'] input,
+    :root[data-cursor='on'] textarea,
+    :root[data-cursor='on'] select {
+      cursor: auto;
+    }
+
+    /**
+     * An open `<dialog>` gives the pointer back, and this is not a nicety.
+     *
+     * A modal dialog and its backdrop render in the **top layer**, which paints
+     * above every z-index on the page — so the replacement disc, portalled to
+     * `<body>` at 9998, is drawn *underneath* Trúc's panel while it is open.
+     * Without this the operator has no pointer at all inside the one thing on
+     * the screen they are being asked to interact with.
+     *
+     * `:has(dialog[open])` carries the specificity of its argument, so this
+     * pair at (0,3,1) beats the four rules above at (0,2,1) without any of them
+     * having to be rewritten.
+     */
+    :root[data-cursor='on']:has(dialog[open]),
+    :root[data-cursor='on']:has(dialog[open]) * {
+      cursor: auto;
+    }
+  }
+
   .marker {
     background: var(--lime-500);
     color: var(--stage);

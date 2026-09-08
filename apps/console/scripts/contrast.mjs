@@ -329,38 +329,84 @@ async function cursorFrames(page) {
 
   const R = 90;
   for (const t of [50, 100, 150, 250, 500]) {
-    await page.waitForTimeout(t === 50 ? 50 : 50);
-    const png = await grab(page, {
-      x: Math.max(0, cx - R),
-      y: Math.max(0, cy - R),
-      w: R * 2,
-      h: R * 2,
-    });
-    const isLime = (c) => Math.abs(c[0] - 0xb8) < 40 && Math.abs(c[1] - 0xf0) < 40 && Math.abs(c[2] - 0x4a) < 40;
+    await page.waitForTimeout(50);
+    /*
+     * The clip is clamped at the viewport edge, so the pointer is not at the
+     * centre of the image. Written without this the radii were nonsense and
+     * every finding was attributed to the wrong part of the disc.
+     */
+    const clipX = Math.max(0, cx - R);
+    const clipY = Math.max(0, cy - R);
+    const px = cx - clipX;
+    const py = cy - clipY;
+    const png = await grab(page, { x: clipX, y: clipY, w: R * 2, h: R * 2 });
+
+    /*
+     * Two classifications, and getting them wrong is how this probe lied twice.
+     *
+     * `core` is a pixel of the accent itself. `ground` is a pixel of the PAGE:
+     * bright and near-neutral. Distance from lime does not work as the second
+     * test — a glyph's antialiased rim is lime blended halfway into the ink and
+     * sits well outside any sensible lime band, so the first version reported
+     * 1.08:1 for a letter measured against its own edge. Lime is bright but far
+     * from neutral, and so is every blend of lime with `--stage`, which is what
+     * makes the channel spread the test that separates them.
+     *
+     * Two numbers come out. `worst` is over every accent pixel in the clip and
+     * will always find the mask's own two-pixel feather, where the reveal fades
+     * out by design. `inside` is restricted to the body of the reveal, and it
+     * is the one that answers the question: does accent type ever land on the
+     * page rather than on the ink?
+     */
+    const core = (c) =>
+      Math.max(Math.abs(c[0] - 0xb8), Math.abs(c[1] - 0xf0), Math.abs(c[2] - 0x4a)) < 40;
+    const ground = (c) => Math.max(...c) - Math.min(...c) < 30 && lum(c) > 0.35;
+
     let worst = Infinity;
-    let pair = null;
+    let worstPair = null;
+    let worstAt = 0;
+    let inside = Infinity;
+    let insidePair = null;
     let lit = 0;
-    for (let y = 3; y < png.height - 3; y += 1) {
-      for (let x = 3; x < png.width - 3; x += 1) {
+    let body = 0;
+    for (let y = 5; y < png.height - 5; y += 1) {
+      for (let x = 5; x < png.width - 5; x += 1) {
         const c = at(png, x, y);
-        if (!isLime(c)) continue;
+        if (!core(c)) continue;
         lit += 1;
-        for (const [dx, dy] of [[3, 0], [-3, 0], [0, 3], [0, -3]]) {
+        const rad = Math.hypot(x - px, y - py);
+        if (rad < 55) body += 1;
+        for (const [dx, dy] of [[5, 0], [-5, 0], [0, 5], [0, -5]]) {
           const n = at(png, x + dx, y + dy);
-          if (isLime(n)) continue;
+          if (!ground(n)) continue;
           const r = ratio(c, n);
           if (r < worst) {
             worst = r;
-            pair = [hex(c), hex(n)];
+            worstPair = [hex(c), hex(n)];
+            worstAt = Math.round(rad);
+          }
+          if (rad < 55 && r < inside) {
+            inside = r;
+            insidePair = [hex(c), hex(n)];
           }
         }
       }
     }
-    console.log(
-      lit === 0
-        ? `  LENS  t+${String(t).padStart(3)}ms            (no accent pixels yet)`
-        : `  LENS  t+${String(t).padStart(3)}ms            ${worst.toFixed(2)}:1   ${pair?.[0]} beside ${pair?.[1]}  (${lit}px lit)`,
-    );
+
+    const head = `  LENS  t+${String(t).padStart(3)}ms  `;
+    if (lit === 0) {
+      console.log(`${head}(no accent pixels yet)`);
+    } else {
+      const edge =
+        worstPair === null
+          ? 'never beside the page'
+          : `${worst.toFixed(2)}:1 ${worstPair[0]} on ${worstPair[1]} at r=${worstAt}`;
+      const core55 =
+        insidePair === null
+          ? 'never beside the page'
+          : `${inside.toFixed(2)}:1 ${insidePair[0]} on ${insidePair[1]}`;
+      console.log(`${head}edge ${edge}  |  body (r<55) ${core55}  (${lit}px lit, ${body} in body)`);
+    }
   }
   await page.mouse.move(4, 4);
 }
@@ -383,13 +429,42 @@ for (const theme of ['light', 'dark']) {
     [1280, 720],
     [390, 844],
   ]) {
-    const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
+    /*
+     * Motion is off everywhere except the one pass that measures it.
+     *
+     * `cursorFrames` below is the exception and it is deliberate: the lens is
+     * the page's signature and its intermediate frames are what have to be
+     * proved. Everywhere else the ink and the ground are static facts, reduced
+     * motion renders them at rest, and it stops the page's own rAF loops from
+     * spinning a core through two hundred screenshots.
+     */
+    const measuringMotion = theme === 'light' && w === 1440;
+    const ctx = await browser.newContext({
+      viewport: { width: w, height: h },
+      deviceScaleFactor: 1,
+      reducedMotion: measuringMotion ? 'no-preference' : 'reduce',
+    });
     const page = await ctx.newPage();
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
     await page.evaluate((t) => localStorage.setItem('playerone.theme', t), theme);
 
     for (const route of ['/login', '/discover']) {
       await page.goto(BASE + route, { waitUntil: 'networkidle' }).catch(() => {});
+      /*
+       * Wait for the choreography to exist BEFORE walking the page.
+       *
+       * `useChoreography` imports GSAP dynamically, so on a cold `networkidle`
+       * the reveal states have not been created yet — the walk below scrolled
+       * past every section while they were all still visible, GSAP then landed
+       * and set the below-fold ones to `opacity: 0`, and the probe measured a
+       * heading that was mid-fade: 0 pixels within tolerance of its declared
+       * ink, reported as "no glyphs". One second here, once per route, and
+       * every `once` trigger has fired for real by the time anything is
+       * measured. Only the motion context needs it; reduced motion has no
+       * hidden state to clear, and paying it there would cost twelve seconds
+       * across the run for nothing.
+       */
+      if (measuringMotion) await page.waitForTimeout(1000);
       await page.evaluate(async () => {
         const step = window.innerHeight * 0.8;
         for (let y = 0; y < document.body.scrollHeight; y += step) {

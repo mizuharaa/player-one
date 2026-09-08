@@ -147,6 +147,15 @@ async function shoot(name, { viewport, theme, locale, path, prepare, operator = 
     viewport,
     deviceScaleFactor: 2,
     locale: locale === 'zh' ? 'zh-CN' : 'en-US',
+    /*
+     * The resting state is the one worth looking at, and it is the one this
+     * console guarantees: every reveal here is created by GSAP at the moment it
+     * builds the tween that clears it, so reduced motion produces a complete
+     * page rather than a half-faded one — which is also why a shot taken
+     * mid-reveal was never a real screenshot of anything. It stops the page's
+     * rAF loops too; headless Chrome does not throttle them.
+     */
+    reducedMotion: 'reduce',
   });
   const page = await context.newPage();
 

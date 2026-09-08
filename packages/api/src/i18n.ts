@@ -1187,20 +1187,14 @@ const en = {
   'discover.headline.b': ', from your point of view.',
   'discover.lead':
     'A head-worn camera for recording everyday activities. Collectors earn for reviewed, approved effective minutes.',
-  'discover.signIn': 'Operator sign-in',
-  'discover.how': 'See how it works',
+  'discover.signIn': 'Sign in to the console',
+  /* The public product home introduces the whole thing, not one side of it:
+     what Ego is, what the platform does with a recording, and who the two
+     audiences are. The two calls to action below are peers because these two
+     audiences are peers. */
+  'discover.audiences':
+    'Two ways in. Collectors record with an Ego camera and are paid for the effective minutes a reviewer approves. Upload-centre operators and reviewers work in the console.',
 
-  /* The three facts directly under the hero action. Facts, not statistics. */
-  'discover.fact.paid.label': 'The unit',
-  'discover.fact.paid.body':
-    'Paid per reviewed effective minute, and only for the minutes a reviewer approves.',
-  'discover.fact.path.label': 'The path',
-  'discover.fact.path.body':
-    'A memory card, handed across the counter at a staffed upload centre.',
-  'discover.fact.judgement.label': 'The judgement',
-  'discover.fact.judgement.body':
-    'A person watches the footage. No automatic score decides a payment.',
-  'discover.hero.caption': 'The Ego camera, worn while cooking at home.',
 
   /* The demonstration: one player, one caption, nothing over it. */
   'discover.demo.title': 'What a recording looks like',
@@ -1258,6 +1252,35 @@ const en = {
   'discover.handoff.body':
     'Sign in to the console. This page is not a collector sign-up — collectors work in the PlayerOne app.',
   'discover.credits': 'Film and stills: credits and licences',
+  /* -----------------------------------------------------------------------
+     The two audiences, and the one that had nowhere to go.
+
+     Every section above this explains the product to a prospective collector,
+     and until 2026-09-08 the only action on the whole page was an *operator*
+     sign-in. A collector read seven sections and arrived at a back-office form
+     asking for machine credentials. So the page now carries a collector path
+     of its own, in the hero and again at the bottom where intent is highest.
+
+     `discover.take.pending` is load-bearing and is not a placeholder for a
+     placeholder: the destination — a store listing, an APK, a Zalo flow — has
+     not been decided, and inventing one on a payout-bearing page is worse than
+     saying it is not published. The control names the action and the sentence
+     under it names the state. When the real destination lands, the control
+     becomes a link and this key comes out.
+     -------------------------------------------------------------------- */
+  'discover.ways.title': 'Where to go from here',
+  'discover.take.cta': 'Download the APK',
+  'discover.take.title': 'Collectors',
+  'discover.take.body':
+    'Collecting starts with training and an exam. Each recording is claimed against a task before the camera is switched on, and the camera itself is supplied by the platform and stays with it. What is paid is the effective minutes a reviewer approves.',
+  'discover.take.pending':
+    'The APK is not published yet, so there is nothing to download from this page today. The build will be linked here when it is released.',
+
+  /* The full-bleed pair. Captions sit at the foot of each panel; the stills are
+     420x420 and are held at a size they are sharp at rather than stretched. */
+  'discover.panels.title': 'Two ordinary recordings',
+  'discover.panel.a.caption': 'Cooking at home. The camera’s own button starts the recording.',
+  'discover.panel.b.caption': 'Sorting a shelf. Ordinary indoor work, against a task claimed in advance.',
 
   'ui.a.home.gauge': 'Reviewed {{value}} of {{target}} episodes this shift',
   /* The caption under the band's figure, where the count is already drawn. */
@@ -2371,15 +2394,9 @@ const zh: Record<MessageKey, string> = {
   'discover.headline.b': '，从你的视角出发。',
   'discover.lead':
     '一台用于记录日常活动的头戴相机。采集者按经审核通过的有效分钟获得报酬。',
-  'discover.signIn': '运营人员登录',
-  'discover.how': '了解运作方式',
-  'discover.fact.paid.label': '计酬单位',
-  'discover.fact.paid.body': '按审核认定的有效分钟计酬，且只计审核员通过的分钟。',
-  'discover.fact.path.label': '数据路径',
-  'discover.fact.path.body': '一张存储卡，在有人值守的上传中心柜台交付。',
-  'discover.fact.judgement.label': '判定方式',
-  'discover.fact.judgement.body': '由人观看素材。没有任何自动评分能决定付款。',
-  'discover.hero.caption': 'Ego 相机，在家做饭时佩戴。',
+  'discover.signIn': '登录控制台',
+  'discover.audiences':
+    '两条入口。采集者用 Ego 相机录制，按审核员认定通过的有效分钟获得报酬；上传中心的运营人员和审核员在控制台工作。',
   'discover.demo.title': '一段录制是什么样子',
   'discover.video.caption':
     '取自演示影片的一段连续镜头：相机戴在额前，做的是再平常不过的事。',
@@ -2422,6 +2439,16 @@ const zh: Record<MessageKey, string> = {
   'discover.handoff.title': '你已经是运营人员或审核员？',
   'discover.handoff.body': '请登录控制台。本页不是采集者注册入口——采集者请使用 PlayerOne 应用。',
   'discover.credits': '影片与图片：来源与授权',
+  'discover.ways.title': '接下来去哪里',
+  'discover.take.cta': '下载 APK',
+  'discover.take.title': '采集者',
+  'discover.take.body':
+    '采集工作从培训和考核开始。每次录制前都要先领取一个任务；相机由平台提供，所有权仍属于平台。支付的是审核员认定通过的有效分钟。',
+  'discover.take.pending':
+    'APK 尚未发布，今天还无法从本页下载。发布后会在这里给出链接。',
+  'discover.panels.title': '两段普通的录制',
+  'discover.panel.a.caption': '在家做饭。录制由相机自己的按键开始。',
+  'discover.panel.b.caption': '整理书架。普通的室内工作，对应事先领取的任务。',
   'login.network': '服务没有应答。请确认本机在中心网络内，然后重试。',
 
   'login.legal': '登录即表示您接受 PlayerOne 处理您数据的方式。',
@@ -3606,18 +3633,9 @@ const vi: Record<MessageKey, string> = {
   'discover.headline.b': ', từ góc nhìn của bạn.',
   'discover.lead':
     'Một máy quay đội đầu để ghi lại các hoạt động thường ngày. Người thu thập được trả tiền cho những phút hữu hiệu đã qua duyệt.',
-  'discover.signIn': 'Đăng nhập vận hành',
-  'discover.how': 'Xem cách hoạt động',
-  'discover.fact.paid.label': 'Đơn vị tính',
-  'discover.fact.paid.body':
-    'Trả theo từng phút hữu hiệu đã duyệt, và chỉ cho những phút người duyệt chấp nhận.',
-  'discover.fact.path.label': 'Đường đi của dữ liệu',
-  'discover.fact.path.body':
-    'Một thẻ nhớ, giao tại quầy của trung tâm tải lên có nhân viên trực.',
-  'discover.fact.judgement.label': 'Việc thẩm định',
-  'discover.fact.judgement.body':
-    'Có người thật xem tư liệu. Không có điểm số tự động nào quyết định khoản chi trả.',
-  'discover.hero.caption': 'Máy quay Ego, đeo khi nấu ăn ở nhà.',
+  'discover.signIn': 'Đăng nhập bảng điều khiển',
+  'discover.audiences':
+    'Hai lối vào. Người thu thập ghi hình bằng máy quay Ego và được trả cho số phút hữu hiệu mà người duyệt chấp nhận. Nhân viên trung tâm tải lên và người duyệt làm việc trên bảng điều khiển.',
   'discover.demo.title': 'Một đoạn ghi hình trông như thế nào',
   'discover.video.caption':
     'Một đoạn quay liền mạch từ phim giới thiệu: máy quay đeo trên trán, còn công việc thì rất đỗi bình thường.',
@@ -3667,6 +3685,16 @@ const vi: Record<MessageKey, string> = {
   'discover.handoff.body':
     'Hãy đăng nhập vào bảng điều khiển. Trang này không phải nơi đăng ký làm người thu thập — người thu thập làm việc trên ứng dụng PlayerOne.',
   'discover.credits': 'Phim và ảnh: nguồn và giấy phép',
+  'discover.ways.title': 'Đi tiếp từ đây',
+  'discover.take.cta': 'Tải APK',
+  'discover.take.title': 'Người thu thập',
+  'discover.take.body':
+    'Công việc thu thập bắt đầu bằng huấn luyện và một bài kiểm tra. Mỗi lần ghi hình đều phải nhận một nhiệm vụ trước khi bật máy; máy quay do nền tảng cấp và vẫn thuộc về nền tảng. Tiền trả cho số phút hữu hiệu mà người duyệt chấp nhận.',
+  'discover.take.pending':
+    'APK chưa được phát hành, nên hôm nay chưa có gì để tải từ trang này. Bản cài sẽ được dẫn ở đây khi phát hành.',
+  'discover.panels.title': 'Hai bản ghi đời thường',
+  'discover.panel.a.caption': 'Nấu ăn ở nhà. Bản ghi do chính nút bấm trên máy quay bắt đầu.',
+  'discover.panel.b.caption': 'Sắp lại kệ sách. Công việc trong nhà bình thường, theo nhiệm vụ đã nhận trước.',
   'login.network':
     'Dịch vụ không trả lời. Hãy kiểm tra máy có nằm trong mạng của trung tâm rồi thử lại.',
 
