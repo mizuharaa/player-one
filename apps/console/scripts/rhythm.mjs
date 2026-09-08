@@ -98,7 +98,23 @@ const AUDIT = `(() => {
   for (const parent of all) {
     const kids = [...parent.children].filter(vis).filter((k) => {
       const r = k.getBoundingClientRect();
-      return r.height > 0 && r.width > 0;
+      if (r.height <= 0 || r.width <= 0) return false;
+      /*
+       * An out-of-flow child is not in a stack, so the distance to its
+       * neighbour is not a rhythm decision and there is nothing to round to
+       * the scale. Measuring them anyway produced a finding nobody could
+       * fix: a 22px gap on the collector's sign-in that turned out to be two
+       * absolutely positioned shapes *inside an 80dp drawing*, moving apart
+       * because the mascot's arm was mid-wave.
+       *
+       * Worse, that finding was intermittent and the audit hid it: sampled
+       * every 120ms it appeared in 24 of 60 frames with motion on and 0 of
+       * 60 under \`reduce\`, while this script's own fixed timing happened to
+       * land on a clean phase five runs out of five. A check that reports
+       * clean by luck is worse than one that reports nothing.
+       */
+      const pos = getComputedStyle(k).position;
+      return pos !== 'absolute' && pos !== 'fixed';
     });
     if (kids.length < 2) continue;
     for (let i = 1; i < kids.length; i += 1) {
