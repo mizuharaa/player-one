@@ -85,6 +85,14 @@ const AUDIT = `(() => {
   /* 2. Covering: a control whose own centre belongs to something else. */
   for (const el of document.querySelectorAll('button, a, input, select, textarea, [role="button"]')) {
     if (!vis(el)) continue;
+    /*
+     * The clipping check already mutes \`sr-only\`; this one did not, and the
+     * asymmetry produced a finding nobody could act on. A skip link is
+     * \`clip: rect(0,0,0,0)\` at rest and reveals on focus, so of course
+     * something else owns the pixel at its centre — that is the technique,
+     * not a control being covered.
+     */
+    if (el.classList.contains('sr-only')) continue;
     const r = el.getBoundingClientRect();
     if (r.width < 2 || r.height < 2) continue;
     if (r.bottom < 0 || r.top > innerHeight) continue;
