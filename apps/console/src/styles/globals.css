@@ -400,27 +400,64 @@
   }
 
   /* ---------------------------------------------------------------
-     The landing tile field, and the burst behind the type.
+     The landing: a light ground, a scatter with depth, one disc.
 
-     Every value here is a token or a geometry number. The colours, the
-     radius, the shadow and the two transition durations come from
-     `tokens.css`; the drift distances and the spoke angles are shape, and
-     shape is not a colour.
+     Rebuilt 2026-09-07 after the product owner reviewed the live page. It
+     used to be a near-black stage with a viewport-filling spoke field lit by
+     the pointer being anywhere on the section. Three of those four things are
+     gone, and each consequence was re-derived rather than patched — a light
+     ground is not a dark ground with the colours swapped.
 
-     **The drift is CSS, not GSAP.** Sign-in must survive the tween engine
-     being blocked, and a keyframe that browsers run on the compositor is
-     both cheaper and one less thing to fail. GSAP is left with the one job
-     only it can do here — scrubbing the field against the scroll position.
-
-     **The neutral pose is the base rule, and both keyframes return to it.**
-     Under `prefers-reduced-motion` the animation is removed outright rather
-     than shortened, so the field is the composition written in `.tile`
-     itself: same pixels on every paint, which is what makes two screenshots
-     two seconds apart identical.
+     Every colour, radius, shadow and duration is a token. The scatter
+     geometry, the wave indices and the spoke angles are shape, and shape is
+     not a colour.
      --------------------------------------------------------------- */
 
+  /**
+   * The ground.
+   *
+   * `--background` — the same lavender the rest of the console stands on. The
+   * landing was the one screen in the product that was not on the world's own
+   * page, and a sign-in that looks like a different product than the thing
+   * behind it is a sign-in that has to introduce itself twice.
+   *
+   * The colour is repeated on the panel and not only on the section, and that
+   * is load-bearing rather than tidy: the disc below blends with its backdrop,
+   * and a backdrop painted by an ancestor outside the panel's stacking context
+   * is not reliably part of what it blends with. Painting the ground inside
+   * the panel makes the composite the same in every engine.
+   */
+  .landing {
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  /**
+   * The grid, and it is the whole of the "texture" note.
+   *
+   * An 88px rule at a third of `--border`, which on the lavender page is about
+   * a fiftieth of a step of value. It is not a pattern anybody is meant to
+   * see; it is what stops a wide empty ground reading as a blank export. A
+   * scatter of photographs on nothing is a sticker sheet, and the depth below
+   * does the rest of the work.
+   */
+  .landing-panel {
+    background-color: var(--background);
+    background-image:
+      repeating-linear-gradient(
+        to right,
+        color-mix(in srgb, var(--border) 34%, transparent) 0 1px,
+        transparent 1px 88px
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--border) 34%, transparent) 0 1px,
+        transparent 1px 88px
+      );
+  }
+
   .tile-field {
-    /* Small enough that twelve of them ring the type on a 390px phone. */
+    /* Small enough that eleven of them ring the type on a 390px phone. */
     --tile: 66px;
     position: absolute;
     inset: 0;
@@ -432,138 +469,298 @@
     }
   }
 
+  /*
+   * Four steps and not three. 1024x640 is the shortest viewport at which the
+   * `lg` layout applies, and giving it the same 136px unit as a 1440x900
+   * screen left the lowest tile 4px from the panel's edge. It gets its own
+   * step; 136 starts where there is height for it.
+   */
   @media (min-width: 1024px) {
+    .tile-field {
+      --tile: 118px;
+    }
+  }
+
+  @media (min-width: 1280px) {
     .tile-field {
       --tile: 136px;
     }
   }
 
+  /**
+   * A tile, and why it is three elements rather than one.
+   *
+   * The div carries position, tilt, the frame and the wave entrance. The two
+   * images inside it carry the depth and the punch-in. They have to be
+   * separate because the entrance and the drift and the zoom all want to move
+   * the same element, and a filled animation wins against any declaration
+   * underneath it — including a `:hover` rule.
+   *
+   * What makes two of the three fit on one element is that `translate`,
+   * `rotate` and `scale` are their own properties now and compose *before*
+   * `transform`. So the tile's resting pose is `translate`/`rotate`, its
+   * entrance animates `scale`, and its drift animates `transform`, and none of
+   * the three overwrites another. Written as three `transform` keyframes it
+   * needs a nested div per tile and thirty-three more nodes on first paint.
+   *
+   * **The frame is drawn now.** On the near-black ground the shadow was the
+   * whole separation and it was free; on a light ground a photograph with a
+   * light edge dissolves into the page, so there is a hairline of `--border`
+   * under the same `--shadow-lg`.
+   */
   .tile {
     position: absolute;
     left: var(--x);
     top: var(--y);
-    width: calc(var(--tile) * var(--s));
-    height: calc(var(--tile) * var(--s));
-    object-fit: cover;
-    border-radius: var(--radius-base);
-    box-shadow: var(--shadow-lg);
     /*
-     * Held back off the near-black so the field is a ground the type sits in
-     * front of, not twelve competing pictures. Full strength was tried and
-     * the slogan read as the least important thing on the screen.
+     * Two multipliers, not one. A single `--s` makes every tile a square and
+     * a square scatter is the grid the product owner rejected; `--w` and `--h`
+     * are what let a 1.5-wide landscape and a 1.5-tall portrait stand in the
+     * same field.
      */
-    opacity: 0.8;
-    transform: translate(-50%, -50%) rotate(var(--tilt));
-    animation: tile-drift-a 17s var(--ease) infinite alternate;
+    width: calc(var(--tile) * var(--w));
+    height: calc(var(--tile) * var(--h));
+    translate: -50% -50%;
+    rotate: var(--tilt);
+    border-radius: var(--radius-base);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+    background: var(--card);
+    overflow: hidden;
+
+    --drift: tile-drift-a;
+    --drift-dur: 17s;
+    --phase: 0s;
+    /*
+     * Two animations, one element. The first is the entrance and runs once;
+     * the second is the idle drift and never stops. `both` on the entrance is
+     * what keeps a tile invisible until its wave arrives rather than showing
+     * for one frame and then starting.
+     */
+    animation:
+      tile-arrive var(--duration-slow) var(--ease) both,
+      var(--drift) var(--drift-dur) var(--ease) infinite alternate;
+    animation-delay: calc(var(--ring) * 130ms), var(--phase);
   }
 
+  /*
+   * Three drift shapes and two phase offsets, so eleven tiles do not travel as
+   * one sheet. The travel is small on purpose — 8px at 136px of tile — and
+   * every tile stays inside the panel at the far end of every loop, which is
+   * what keeps the field from pushing a scrollbar onto the document.
+   */
   .tile:nth-child(3n + 2) {
-    animation: tile-drift-b 21s var(--ease) infinite alternate;
+    --drift: tile-drift-b;
+    --drift-dur: 21s;
   }
 
   .tile:nth-child(3n) {
-    animation: tile-drift-c 25s var(--ease) infinite alternate;
+    --drift: tile-drift-c;
+    --drift-dur: 25s;
   }
 
-  /*
-   * Negative delays, so the twelve start mid-loop rather than all leaving the
-   * neutral pose together on the first frame — twelve tiles moving in unison
-   * reads as one sliding sheet.
-   */
   .tile:nth-child(4n) {
-    animation-delay: -6s;
+    --phase: -6s;
   }
 
   .tile:nth-child(4n + 3) {
-    animation-delay: -12s;
+    --phase: -12s;
   }
 
-  /*
-   * The travel is small on purpose: ±8px at 136px of tile. Every tile stays
-   * inside the panel at every viewport, which is what keeps the field from
-   * pushing a scrollbar onto the document at the far end of a loop.
+  /**
+   * The wave.
+   *
+   * `--ring` is how far a tile sits from the middle, and every tile in a ring
+   * arrives together while the rings arrive one after another — the breadth-
+   * first order the product owner asked for, and the reason it reads as one
+   * structure assembling rather than as eleven things fading in. It runs once,
+   * on the first paint of the screen, and never again.
    */
-  @keyframes tile-drift-a {
+  @keyframes tile-arrive {
     from {
-      transform: translate(-50%, -50%) rotate(var(--tilt)) translate3d(0, 0, 0);
+      opacity: 0;
+      scale: 0.84;
     }
     to {
-      transform: translate(-50%, -50%) rotate(calc(var(--tilt) + 2deg)) translate3d(0, -8px, 0);
+      opacity: 1;
+      scale: 1;
+    }
+  }
+
+  @keyframes tile-drift-a {
+    from {
+      transform: translate3d(0, 0, 0) rotate(0deg);
+    }
+    to {
+      transform: translate3d(0, -8px, 0) rotate(2deg);
     }
   }
 
   @keyframes tile-drift-b {
     from {
-      transform: translate(-50%, -50%) rotate(var(--tilt)) translate3d(0, 0, 0);
+      transform: translate3d(0, 0, 0) rotate(0deg);
     }
     to {
-      transform: translate(-50%, -50%) rotate(calc(var(--tilt) - 1.5deg)) translate3d(4px, 7px, 0);
+      transform: translate3d(4px, 7px, 0) rotate(-1.5deg);
     }
   }
 
   @keyframes tile-drift-c {
     from {
-      transform: translate(-50%, -50%) rotate(var(--tilt)) translate3d(0, 0, 0);
+      transform: translate3d(0, 0, 0) rotate(0deg);
     }
     to {
-      transform: translate(-50%, -50%) rotate(calc(var(--tilt) + 1.5deg)) translate3d(-5px, -6px, 0);
+      transform: translate3d(-5px, -6px, 0) rotate(1.5deg);
     }
   }
 
-  /* The pause control stops it where it stands. WCAG 2.2 SC 2.2.2. */
+  /**
+   * Depth, and the punch-in, both on the images.
+   *
+   * **Depth.** A scatter at one focal plane is a sticker sheet. The small
+   * tiles are the far ones, so blur and held-back opacity are both functions
+   * of `--s` and nothing has to carry a second number: at `s` 0.72 that is
+   * 0.7px of blur, at `s` 1 it is none.
+   *
+   * **The punch-in.** Hovering a tile zooms into its middle and cross-fades
+   * to a still of the same work seen from the camera's own position. The
+   * frame does not move — the tile's `overflow: hidden` is the window and the
+   * picture moves behind it — because a tile that grows on hover shoves the
+   * scatter around and the scatter is the composition.
+   */
+  .tile-face,
+  .tile-pov {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition:
+      scale var(--duration-slow) var(--ease),
+      opacity var(--duration-slow) var(--ease),
+      filter var(--duration-base) var(--ease);
+  }
+
+  .tile-face,
+  .tile-pov {
+    /*
+     * Crop tightness, per tile. Two tiles cut from the same still are not the
+     * same picture if one of them is 35% closer in, and `--pos` moves the cut
+     * off centre — a face is cropped high, a pair of hands low. This is the
+     * "varied crops" half of the direction; `--w`/`--h` are the other half.
+     */
+    object-position: var(--pos);
+  }
+
+  .tile-face {
+    /*
+     * Depth, from `--d` and from nothing else. It is a number of its own
+     * rather than something derived from the tile's size: a small tile is
+     * usually a far one but not always, and deriving one from the other is
+     * exactly what makes a scatter read as a grid that has been scaled.
+     */
+    /*
+     * 2px at the far end, not 3. At 3px the smallest tiles stopped being
+     * photographs of anything — and a scatter whose far members are unreadable
+     * smears is not depth, it is a defect. Depth here is carried mostly by the
+     * size and crop variance; the blur only confirms it.
+     */
+    filter: blur(calc((1 - var(--d)) * 2px));
+    opacity: calc(0.66 + var(--d) * 0.34);
+    scale: var(--zoom);
+  }
+
+  .tile-pov {
+    opacity: 0;
+    scale: calc(var(--zoom) * 1.32);
+  }
+
+  .tile:hover .tile-face {
+    scale: calc(var(--zoom) * 1.5);
+    opacity: 0;
+    filter: blur(0);
+  }
+
+  .tile:hover .tile-pov {
+    opacity: 1;
+    scale: var(--zoom);
+  }
+
+  /* The discreet control stops it where it stands. WCAG 2.2 SC 2.2.2. */
   .landing[data-motion='paused'] .tile {
     animation-play-state: paused;
   }
 
   /*
-   * Removed, not shortened. The base rule at the top of this file collapses
-   * every duration to 0.01ms under reduced motion, which does leave a still
-   * field — but "still because it finishes instantly" is a property of a
-   * global override, and this guarantee is this component's own. Named here,
-   * it survives that rule being changed.
+   * Removed, not shortened. The base rule collapses every duration to 0.01ms
+   * under reduced motion, which does leave a still field — but "still because
+   * it finishes instantly" is a property of a global override and this
+   * guarantee is this component's own. Named here, it survives that rule
+   * being changed. The punch-in goes too: a cross-fade under a pointer is
+   * motion, and the tile keeps the picture it started with.
    */
   @media (prefers-reduced-motion: reduce) {
     .tile {
       animation: none;
+      opacity: 1;
+      scale: 1;
+    }
+
+    .tile-face,
+    .tile-pov {
+      transition: none;
+    }
+
+    .tile:hover .tile-face {
+      scale: var(--zoom);
+      opacity: calc(0.66 + var(--d) * 0.34);
+    }
+
+    .tile:hover .tile-pov {
+      opacity: 0;
     }
   }
 
   /**
-   * The halo: the protected surface the slogan is measured on.
+   * The halo: the ground the slogan is guaranteed, and it is the page.
    *
-   * The field drifts and the burst ignites, so the ground under the type is
-   * not a fixed colour unless something makes it one. This is that something:
-   * an opaque core of `--stage` covering the whole type block with about a
-   * fifth to spare, fading out well outside it. Every pixel a glyph is drawn
-   * on is `--stage`, in both schemes, on every animation frame — which is why
-   * the ratio quoted in `Login.tsx` is a single number rather than a range.
+   * It was deleted in the first light-ground draft, on the reasoning that ink
+   * on a multiplied disc measures over 5:1 so the type needed no protection.
+   * That was right about the disc and wrong about the tiles. Measured on
+   * rendered pixels at 390×844, where the slogan block is 86vw and the scatter
+   * has nowhere to be but around it: the darkest pixel under a glyph was
+   * `rgb(21,7,3)` — a photograph, multiplied by a spoke. Ink on that is
+   * 1.08:1. The tiles were always behind the type at that width; the old
+   * near-black halo was hiding it and deleting the halo is what exposed it.
    *
-   * It is not a gradient on an ink. It is one colour losing its alpha, which
-   * is the same move the film scrim below it makes, and no ramp is
-   * interpolated to another colour anywhere in it.
+   * So it is back, and it is `--background`. On the page it is invisible,
+   * because it *is* the page — its whole job is that a tile can never be the
+   * ground under a letter. Two things about it are different from the version
+   * that was deleted:
+   *
+   * - **It is painted below the disc, not above it**, and by document order
+   *   rather than by a `z-index` — the disc is the next element after it. So
+   *   the order is tiles, halo, disc, type: the slogan's ground is the page,
+   *   or the page seen through the disc, and never a photograph, and the disc
+   *   still tints the middle exactly as it tints everything else. Above the
+   *   disc it would have punched a hole in it.
+   * - **It is not a dark ellipse over the scatter any more.** That was the
+   *   product owner's objection to it and it was a consequence of the stage,
+   *   not of the technique.
+   *
+   * The geometry is the measured one and is unchanged: the core has to reach
+   * the *corners* of the type block, and an ellipse similar to the block
+   * reaches a corner only at √2 of its half-dimensions — so a box twice the
+   * block, an opaque core at 75% of it, and the fade finished inside 2×.
    */
   .type-halo {
     position: absolute;
-    /*
-     * The core has to reach the *corners* of the type block, not its edges,
-     * and an ellipse similar to the block reaches a corner only at
-     * √2 of its half-dimensions. So: a box twice the block, an opaque core at
-     * 75% of it — 1.5 against the 1.414 the geometry asks for — and the fade
-     * finished inside 2×, which is short enough not to band on the near-black
-     * and near enough not to reach across and dim a tile.
-     *
-     * The block is held to 34rem for the same reason. At 46rem the last line
-     * ran nearly the full width of the void, the core that would cover its
-     * corners also reached the tiles on both sides, and the corner of the
-     * block measured 4.36:1 against a lit spoke. There is no width at which
-     * both are true, so the block is the thing that gave way.
-     */
     inset: -50%;
     pointer-events: none;
     background: radial-gradient(
       closest-side,
-      var(--stage) 0 75%,
-      color-mix(in srgb, var(--stage) 0%, transparent) 100%
+      var(--background) 0 75%,
+      color-mix(in srgb, var(--background) 0%, transparent) 100%
     );
   }
 
@@ -578,150 +775,191 @@
 
   @media (prefers-reduced-motion: no-preference) {
     /**
-     * The burst.
+     * The burst, rebuilt as a disc.
      *
-     * Sharp spokes, not a soft disc: a repeating conic gradient whose stops
-     * are hard, so every edge in it is an edge and nothing blends into
-     * anything. `screen` over the near-black ground is what makes it read as
-     * light rather than as paint.
+     * It was `min(118vh, 100vw)` of repeating spokes with a soft mask, which
+     * at any viewport ran off all four edges and read as a striped page
+     * rather than as a light. It is a hard-edged circle now, about 58vh,
+     * centred on the headline, and it composites **over** the tiles it
+     * overlaps: a tile inside the circle is tinted and a tile outside it is
+     * not touched, which is the whole of the effect.
      *
-     * The hues are the four this screen is allowed — white, lime, bamboo and
-     * lavender. Sun and tech are the partner mark and are not available for
-     * decoration, so this is the product's own light and not a stock rainbow.
+     * **`multiply`, not `screen`, and that is the light ground's doing.**
+     * `screen` is how light adds, and it is right over near-black and
+     * invisible over a page. On this ground the disc is a filter the scatter
+     * is seen through, so it multiplies — and what a viewer reads as coloured
+     * light falling on a photograph is the photograph's own value, darkened
+     * and tinted.
      *
-     * The mask keeps the middle clear, so the spokes emerge from behind the
-     * words instead of crossing them, and the halo above guarantees the rest.
-     * It exists only under `prefers-reduced-motion: no-preference` — a burst
-     * that appears and disappears under a pointer is motion, and somebody who
-     * has asked for none gets a still field.
+     * **Why the type needs no protection any more.** The old composition put
+     * an opaque core of `--stage` under the slogan, because the burst was
+     * bright and the type was white. Here the type is `--foreground` ink and
+     * the disc is a *darkening* filter with a floor: every hue in every
+     * variant is `--lime-500` moved in hue and dropped 0.20 in lightness, and
+     * multiplied over `--background` the darkest of them still leaves ink at
+     * over 5:1. The halo is deleted rather than recoloured. It was also the
+     * element overflowing its parent by 272px in the spacing audit and the
+     * thing drawing a dark ellipse across the tiles nearest the middle.
+     *
+     * **Painted below the type and the controls, so it tints neither.**
+     * `mix-blend-mode` blends an element with what is under it. The slogan
+     * and the button come after the disc in the document, so they are drawn
+     * on top of the composite at their own full value and the disc can never
+     * take a control's label with it.
      */
     .prism {
       display: block;
       position: absolute;
+      /*
+       * No `z-index`, deliberately, and there is a measurement behind that.
+       * See the note in `Login.tsx`: a `mix-blend-mode` element with a
+       * positive `z-index` was composited over the button and the slogan that
+       * are painted after it, and no `z-index` on those two was high enough to
+       * get back on top. Document order is what layers this now.
+       */
       left: 50%;
       top: 50%;
-      /*
-       * Sized so the mask's own outer fade lands inside the viewport. At
-       * min(150vh, 128vw) the ring was wider than the screen and every spoke
-       * ran off the edge at full strength, which reads as a striped page
-       * rather than as a burst.
-       */
-      width: min(118vh, 100vw);
+      width: min(58vh, 92vw);
       aspect-ratio: 1;
+      border-radius: 50%;
       pointer-events: none;
       opacity: 0;
-      transform: translate(-50%, -50%) scale(0.86) rotate(-6deg);
+      translate: -50% -50%;
+      scale: 0.9;
       transition:
         opacity var(--duration-slow) var(--ease),
-        transform var(--duration-slow) var(--ease);
-      mix-blend-mode: screen;
+        scale var(--duration-slow) var(--ease);
+      mix-blend-mode: multiply;
+
       /*
-       * The fallback, for a browser with no relative colour syntax. Four
-       * tokens, flat, the composition this element shipped with. A browser
-       * that cannot parse the spectrum below keeps this one rather than
-       * dropping the background entirely.
+       * The core, and it is the difference between a burst and a beach ball.
+       *
+       * In a real prism the rays converge, so the middle is where the light
+       * is undivided and the colour only separates further out. Drawn without
+       * it, a repeating conic gradient runs full-strength spokes straight
+       * through the headline: legible by measurement and noisy to read, which
+       * is not the same test. This is one layer of `--background` over the
+       * middle 22% falling away by 66%, so it multiplies to exactly the page
+       * it is standing on and the slogan gets its own ground back without an
+       * opaque halo, without a mask and without softening the disc's edge.
+       *
+       * It is composed into each variant rather than declared once, because a
+       * `background-image` list is replaced and not merged.
        */
-      background: repeating-conic-gradient(
-        from -8deg,
-        var(--stage-over) 0deg 1.1deg,
-        transparent 1.1deg 5.4deg,
-        var(--lime-500) 5.4deg 6.7deg,
-        transparent 6.7deg 11deg,
-        var(--lavender-300) 11deg 12.4deg,
-        transparent 12.4deg 16.4deg,
-        var(--bamboo-400) 16.4deg 17.4deg,
-        transparent 17.4deg 22deg
-      );
-      /*
-       * The spectrum, and the one place in this world that has one.
-       *
-       * Granted by the product owner on 2026-09-07 for this element only —
-       * `DESIGN.md`, "The prism's spectrum" — because light through a prism
-       * edge is chromatic and four tints of the house palette is not.
-       *
-       * **It adds no colour.** Every spoke is `--lime-500` with its hue
-       * turned and its lightness and chroma left exactly where the token put
-       * them: `oklch(from … l c calc(h + N))` takes both from the token and
-       * writes only an angle. So there is one colour here, dispersed, which
-       * is what a prism does to one beam — and no new value that the
-       * collector app cannot have. Sun and tech are untouched: the partner
-       * mark is still the partner mark, and the three verdict hues are still
-       * only ever verdicts.
-       *
-       * **The character is unchanged.** Same hard stops, same 1.2deg spokes,
-       * same white leading spoke, same `screen` over the near-black. It is a
-       * chromatic fan, not a soft rainbow disc and not a flag: nine spokes
-       * per 36deg, so the sweep repeats ten times around the ring rather than
-       * running the hue circle once.
-       */
-      background: repeating-conic-gradient(
-        from -8deg,
-        var(--stage-over) 0deg 1.2deg,
-        transparent 1.2deg 4deg,
-        oklch(from var(--lime-500) l c calc(h + 0)) 4deg 5.2deg,
-        transparent 5.2deg 8deg,
-        oklch(from var(--lime-500) l c calc(h + 45)) 8deg 9.2deg,
-        transparent 9.2deg 12deg,
-        oklch(from var(--lime-500) l c calc(h + 90)) 12deg 13.2deg,
-        transparent 13.2deg 16deg,
-        oklch(from var(--lime-500) l c calc(h + 135)) 16deg 17.2deg,
-        transparent 17.2deg 20deg,
-        oklch(from var(--lime-500) l c calc(h + 180)) 20deg 21.2deg,
-        transparent 21.2deg 24deg,
-        oklch(from var(--lime-500) l c calc(h + 225)) 24deg 25.2deg,
-        transparent 25.2deg 28deg,
-        oklch(from var(--lime-500) l c calc(h + 270)) 28deg 29.2deg,
-        transparent 29.2deg 32deg,
-        oklch(from var(--lime-500) l c calc(h + 315)) 32deg 33.2deg,
-        transparent 33.2deg 36deg
-      );
-      -webkit-mask-image: radial-gradient(
+      --prism-core: radial-gradient(
         closest-side,
-        transparent 0 38%,
-        #000 56%,
-        #000 78%,
-        transparent 100%
-      );
-      mask-image: radial-gradient(
-        closest-side,
-        transparent 0 38%,
-        #000 56%,
-        #000 78%,
-        transparent 100%
+        var(--background) 0 22%,
+        color-mix(in srgb, var(--background) 62%, transparent) 44%,
+        transparent 66%
       );
     }
 
-    /*
-     * What lights it, and why it is a tile and not the section.
+    /**
+     * Three variants, and every colour in all three is one token.
      *
-     * It used to be `.landing:hover, .landing:focus-within`. `.landing` is
-     * the whole scroll region — `h-dvh` and 180vh at `lg` — so "the pointer
-     * is somewhere in it" is true from the moment the pointer enters the
-     * page and stays true until it leaves the window. The burst was lit at
-     * rest, which is the opposite of the effect. `:focus-within` on a
-     * section is the same mistake with a keyboard: tabbing to the skip link
-     * lit it.
+     * `DESIGN.md` records the exception the product owner granted this
+     * element: it is allowed a spectrum, and it takes it by turning
+     * `--lime-500`'s hue rather than by adding a colour —
+     * `oklch(from var(--lime-500) calc(l - 0.2) c calc(h + N))`, where the
+     * only values written are an angle and one drop in lightness. The drop is
+     * the light ground's requirement, not a taste: a `multiply` filter has to
+     * carry value, and `--lime-500`'s own lightness of 0.887 multiplies over
+     * the page to very nearly nothing.
      *
-     * Of the two readings on the table — hovering a real tile, or pointer
-     * proximity to the cluster's centre — this is the first, because
-     * proximity needs a pointermove listener, a distance calculation per frame and a
-     * decay timer in JS, and the tiles are already the thing on the screen
-     * that looks touchable. Engaging with the field means engaging with a
-     * photograph in it. `:has()` does the whole of it in one selector, and
-     * leaving a tile decays back to dark over `--duration-slow` on the
-     * transition the element already declares.
-     *
-     * There is no keyboard equivalent and that is deliberate: the field is
-     * `aria-hidden`, every tile is `alt=""`, and nothing in it is focusable.
-     * A decoration nobody can reach with a keyboard should not be lit by a
-     * keyboard reaching somewhere else.
+     * Sun and tech are untouched — the partner mark is 30px away on this same
+     * screen — and the three verdict hues are still only ever verdicts.
      */
-    .landing:has(.tile:hover) .prism {
-      opacity: 1;
-      transform: translate(-50%, -50%) scale(1) rotate(0deg);
+    .landing[data-burst='kitchen'] .prism {
+      /* Vivid: magenta into orange, the pair the product owner picked out. */
+      background-image:
+        var(--prism-core),
+        linear-gradient(
+        152deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 225)) 0%,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 250)) 46%,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 272)) 78%,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 315)) 100%
+      );
     }
 
-    /* Paused means paused: the pointer stops igniting it too. */
+    .landing[data-burst='garden'] .prism {
+      /*
+       * Prismatic rays, the other one he picked out, and the one piece of the
+       * old composition that survives the rebuild. Hard stops, so every edge
+       * in it is an edge: nine spokes per 36deg, the sweep repeating ten
+       * times around the disc rather than running the hue circle once, which
+       * is a chromatic fan and not a flag. The gaps are `--background`, so
+       * multiplied they leave the page exactly as it was.
+       */
+      background-image:
+        var(--prism-core),
+        repeating-conic-gradient(
+        from -8deg,
+        var(--background) 0deg 1.2deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c h) 1.2deg 4deg,
+        var(--background) 4deg 5.2deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 45)) 5.2deg 8deg,
+        var(--background) 8deg 9.2deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 90)) 9.2deg 12deg,
+        var(--background) 12deg 13.2deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 135)) 13.2deg 16deg,
+        var(--background) 16deg 17.2deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 180)) 17.2deg 20deg,
+        var(--background) 20deg 21.2deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 225)) 21.2deg 24deg,
+        var(--background) 24deg 25.2deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 270)) 25.2deg 28deg,
+        var(--background) 28deg 29.2deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 315)) 29.2deg 32deg,
+        var(--background) 32deg 36deg
+      );
+    }
+
+    .landing[data-burst='cleaning'] .prism {
+      /*
+       * A pinwheel of hard wedges, cool end of the same circle. It is the
+       * third variant and it is deliberately the quiet one: two of the three
+       * were chosen by the product owner and a third as loud as those two
+       * would make the cycle read as noise rather than as three states.
+       */
+      background-image:
+        var(--prism-core),
+        conic-gradient(
+        from -40deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 45)) 0deg 52deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 90)) 52deg 118deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 135)) 118deg 176deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 180)) 176deg 238deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 135)) 238deg 300deg,
+        oklch(from var(--lime-500) calc(l - 0.2) c calc(h + 90)) 300deg 360deg
+      );
+    }
+
+    /**
+     * What lights it: the call to action, on hover and on keyboard focus.
+     *
+     * It was `.landing:hover, .landing:focus-within`, and `.landing` is the
+     * whole scroll region — `h-dvh`, 180vh at `lg` — so the disc was lit from
+     * the moment the pointer entered the page and never went off. The fix is
+     * not a narrower part of the page to hover. It is a button: the one
+     * control on the screen, which a person is going to put their pointer on
+     * anyway, and which announces the effect by being the thing that causes
+     * it.
+     *
+     * `:focus-visible` and not `:focus`, so the disc lights for a keyboard and
+     * not for a mouse-down that is on its way to a click. The decoration and
+     * the control now share a trigger, which is the reason a keyboard gets
+     * the effect at all — the earlier version dropped `:focus-within` because
+     * an `aria-hidden` field of photographs is not something a keyboard
+     * reaches, and a real button is a different question.
+     */
+    .landing:has(.landing-cta:hover) .prism,
+    .landing:has(.landing-cta:focus-visible) .prism {
+      opacity: 1;
+      scale: 1;
+    }
+
+    /* Paused means paused: the button stops igniting it too. */
     .landing[data-motion='paused'] .prism {
       opacity: 0;
     }
@@ -730,189 +968,228 @@
   /* ---------------------------------------------------------------
      The landing's type, and the one scale it is allowed.
 
-     The display face is Hanken Grotesk Variable (`--font-display`),
-     headlines only. Be Vietnam Pro stays the UI and body voice — every
-     label, field and sentence on the form below is still set in it — and
-     `--font-mono` stays restricted to `.num`. Vietnamese is why the face is
-     this one and not one of the other candidates: it is the only one on the
-     shortlist that ships a Vietnamese subset, and "Đeo camera." set with its
-     consonants in one face and its diacritic vowels in another is worse than
-     no display face at all.
+     The face is Hanken Grotesk Variable (`--font-display`), headlines only,
+     and it is kept: it is the only candidate in this genre that ships a
+     `vietnamese` subset, verified by unpacking the package rather than by
+     reading a description — `files/hanken-grotesk-vietnamese-wght-normal.woff2`
+     is in it. Be Vietnam Pro is still the UI and body voice and `--font-mono`
+     is still only `.num`.
 
-     **The scale, and it is a real one.** Two roles at a ratio of about 1.19,
-     three steps each, and nothing on this screen is allowed a fourth size:
+     **The complaint was pacing, and pacing was the bug.** The three lines
+     were a flex column with `gap: 8px` *on top of* a `line-height` of 1.05,
+     at three different sizes. So the space between line one and line two was
+     8px plus 5% of 52px, the space between line two and line three was 8px
+     plus 5% of 62px, and neither matched the space inside a wrapped line,
+     which was 5% and no gap at all. Four different rhythms in five lines of
+     type. The gap is gone; leading is one ratio across every line, so the
+     space between lines is a constant fraction of the type and a wrapped line
+     paces the same as an authored one.
+
+     **Tracking is negative, tightens with size, and never sits above the
+     -0.04em floor**, which is the other half: -0.04em at 2rem to -0.047em at
+     4.125rem. Display type set at the tracking that suits body copy reads
+     loose, and the larger it is the looser it reads. The largest step is
+     4.125rem, under the 6rem ceiling.
 
        role        390px       640px       1024px
-       slogan      1.9375rem   2.625rem    3.25rem
-       key line    2.3125rem   3.125rem    3.875rem
+       slogan      2rem        2.75rem     3.5rem
+       key line    2.375rem    3.25rem     4.125rem
 
-     **Optical weight per size, which is the whole point of a variable face.**
-     A weight that looks right at 31px is heavy at 52px, because the strokes
-     grow with the glyph while the counters do not. So the ladder runs the
-     other way to the size: 600 at the small step, 440 at the large one. The
-     old composition was 800 and 900 at every width, which is what made the
-     slogan read as a shout instead of a headline.
-
-     **Tracking tightens as the size grows** — -0.018em at 31px, -0.034em at
-     52px. Large type set at default tracking reads as loose, and that one
-     discipline is most of the difference between display type that looks
-     expensive and display type that looks like a browser default.
-
-     **`text-wrap: balance`** on both, so a two-line headline breaks into two
-     lines of similar length rather than one long line and one orphan. It
-     matters most in Chinese, where the key line is fifteen glyphs and always
-     wraps.
-
-     No gradient lettering. Emphasis on this page is size and weight, and the
-     key line — the one about money — gets one step of each and nothing else.
+     Two roles at a ratio of about 1.18, three steps each, an optical weight
+     at every step running the opposite way to the size, and nothing on the
+     screen takes a fourth size. No gradient lettering.
      --------------------------------------------------------------- */
+
+  /**
+   * `position: relative`, and no `z-index` — both halves matter.
+   *
+   * Without the position it is a static box, and a static box paints in the
+   * block phase, which is *below* every positioned sibling including the disc.
+   * That is how the slogan and the button disappeared under the disc in dark
+   * theme after the `z-index` values came out.
+   *
+   * With a `z-index` on the disc, Chromium composited the disc's pattern over
+   * this content however high this went — measured at 9. So: both are
+   * positioned, neither carries a `z-index`, and document order puts the halo,
+   * then the disc, then the type. See the note in `Login.tsx`.
+   */
+  .landing .type-stack {
+    position: relative;
+  }
 
   .landing .slogan,
   .landing .slogan-key {
     font-family: var(--font-display);
     font-optical-sizing: auto;
-    line-height: 1.05;
+    line-height: 0.98;
     text-wrap: balance;
+    margin: 0;
   }
 
   .landing .slogan {
-    font-size: 1.9375rem;
+    font-size: 2rem;
     font-weight: 600;
-    letter-spacing: -0.018em;
+    letter-spacing: -0.04em;
   }
 
   .landing .slogan-key {
-    font-size: 2.3125rem;
-    font-weight: 650;
-    letter-spacing: -0.02em;
+    font-size: 2.375rem;
+    font-weight: 640;
+    letter-spacing: -0.042em;
   }
 
   @media (min-width: 640px) {
     .landing .slogan {
-      font-size: 2.625rem;
+      font-size: 2.75rem;
       font-weight: 520;
-      letter-spacing: -0.028em;
+      letter-spacing: -0.044em;
     }
 
     .landing .slogan-key {
-      font-size: 3.125rem;
-      font-weight: 560;
-      letter-spacing: -0.03em;
+      font-size: 3.25rem;
+      font-weight: 540;
+      letter-spacing: -0.046em;
     }
   }
 
   @media (min-width: 1024px) {
     .landing .slogan {
-      font-size: 3.25rem;
-      font-weight: 440;
-      letter-spacing: -0.034em;
+      font-size: 3.5rem;
+      font-weight: 430;
+      letter-spacing: -0.045em;
     }
 
     .landing .slogan-key {
-      font-size: 3.875rem;
-      font-weight: 480;
-      letter-spacing: -0.036em;
-    }
-  }
-}
-
-/* ---------------------------------------------------------------
-   The dashboard's own two blocks: its display type, and the frame the
-   one photograph sits in.
-
-   Appended rather than folded into the rules above, so this file stays
-   two people's work without either of them restructuring the other's.
-   --------------------------------------------------------------- */
-@layer components {
-  /**
-   * Home's headlines, in the display face, with an optical weight per size.
-   *
-   * Same argument as the landing's slogan and the same direction: Hanken
-   * Grotesk is variable, so the weight comes *down* as the size goes up —
-   * a stroke that reads as bold at 17px reads as heavy at 42px. Two classes
-   * and not one, because Home has exactly two headline sizes and a third
-   * would be a scale nobody asked for.
-   *
-   * The display face is headlines only. Labels, body, controls and every
-   * `.num` measurement stay in the UI voice — a display face on a column
-   * heading is a costume, and on a figure it fights the tabular digits the
-   * whole `.num` rule exists for.
-   */
-  .headline,
-  .headline-sm {
-    font-family: var(--font-display);
-    font-optical-sizing: auto;
-    text-wrap: balance;
-  }
-
-  .headline {
-    font-size: 2.0625rem;
-    font-weight: 610;
-    letter-spacing: -0.024em;
-    line-height: 1.05;
-  }
-
-  @media (min-width: 640px) {
-    .headline {
-      font-size: 2.625rem;
-      font-weight: 520;
-      letter-spacing: -0.028em;
+      font-size: 4.125rem;
+      font-weight: 470;
+      letter-spacing: -0.047em;
     }
   }
 
-  .headline-sm {
-    font-size: 1.0625rem;
-    font-weight: 700;
-    letter-spacing: -0.012em;
-    line-height: 1.3;
-  }
+  /* ---------------------------------------------------------------
+     The band, and the spiral: the two kinetic pieces between the hero
+     and the form.
+
+     Both are structure taken from the product owner's references and neither
+     takes their styling. They are part of the same authored moment as the
+     hero — one scroll choreography running the length of the screen, not five
+     unrelated tricks — and both stop dead under `prefers-reduced-motion` and
+     under the motion control.
+     --------------------------------------------------------------- */
 
   /**
-   * The photograph's frame, and the reason the picture is no longer a
-   * backdrop.
+   * The band: one true sentence, repeated, running sideways.
    *
-   * It used to run full-bleed behind the type under a 60% ink scrim, which
-   * is the arrangement the product owner described as hiding the image: at
-   * that strength the frame is a texture and the band is a dark rectangle.
-   * The picture now has a box of its own beside the words, at full strength,
-   * and nothing is set on top of it — so there is no scrim to measure and no
-   * contrast that depends on which frame the parallax has scrolled to.
+   * The copy is `login.marquee` — "Paid per reviewed minute" — which is the
+   * platform's actual unit of payment and not filler. It is `aria-hidden` and
+   * the same sentence is in the document once, visually hidden, so a screen
+   * reader hears it once rather than eight times.
    *
-   * `--h` is the frame's height rather than an aspect ratio: the band's left
-   * column is type whose height depends on the translation, and a ratio-sized
-   * picture beside it leaves a different gap in every locale.
+   * The centre copy is at full strength and the copies either side fall away.
+   * That is a mask and not opacity on the children: opacity per copy would
+   * fade a whole word at a time as it crossed the boundary, and the point of
+   * the effect is that a letter dims as it travels. `--foreground` throughout,
+   * so what changes is presence and not colour.
    */
-  .photo-frame {
+  .band {
     position: relative;
     overflow: hidden;
-    /* No radius of its own: the panel clips, so the band has one edge and not
-       two that nearly agree. `--muted` shows only while the file is decoding. */
-    background: var(--muted);
-    height: var(--h);
+    background: var(--background);
+    color: var(--foreground);
+    border-block: 1px solid var(--border);
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 26%, #000 74%, transparent);
+    mask-image: linear-gradient(to right, transparent, #000 26%, #000 74%, transparent);
   }
 
-  /*
-   * The parallax pans the crop; it does not move the picture.
+  .band-track {
+    display: flex;
+    width: max-content;
+    align-items: center;
+    /*
+     * Two identical halves, so translating by exactly half the track lands on
+     * a copy of the first frame and the loop has no seam. `linear`, because a
+     * marquee on an ease reads as a thing being pushed rather than a thing
+     * travelling.
+     */
+    animation: band-run 26s linear infinite;
+  }
+
+  .band-word {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    font-size: 2.25rem;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    /* 24px, which is `space[6]`. The spacing scale is not emitted as CSS
+       variables, so it is written as the rem it is. */
+    padding-inline: 1.5rem;
+    white-space: nowrap;
+  }
+
+  @media (min-width: 1024px) {
+    .band-word {
+      font-size: 3.25rem;
+      letter-spacing: -0.046em;
+    }
+  }
+
+  /* The separator is a token-coloured dot of the accent this world spends
+     once, and it is the only lime on the screen. */
+  .band-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    flex: none;
+    border-radius: var(--radius-pill);
+    background: var(--lime-600);
+  }
+
+  @keyframes band-run {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate3d(-50%, 0, 0);
+    }
+  }
+
+  .landing[data-motion='paused'] ~ * .band-track,
+  [data-motion='paused'] .band-track {
+    animation-play-state: paused;
+  }
+
+  /**
+   * The spiral: circular type turning slowly on the dark half of the split.
    *
-   * Two earlier versions both failed the same check and it was right both
-   * times. A box 12% taller than the frame is `scrollHeight > clientHeight`,
-   * and a `scale` is worse rather than better — Chrome counts transformed
-   * overflow into the scrollable area, so 1.2 reported 49px of clipping on x.
-   * Either way `rhythm.mjs` sees content cut off by its own container, which is
-   * the fault it exists to find, and a check that has to be argued with on
-   * every run stops being run.
+   * The reference sets a hard light/dark split with a large rotating circular
+   * type element in the dark half, and the split already existed here — the
+   * film band is `.on-stage` in both themes. So the spiral costs one `<svg>`
+   * and a rotation, and it goes where the reference puts it.
    *
-   * `object-position` has no such cost: the element's box is exactly its
-   * frame, nothing overflows anything, and what moves is which part of the
-   * photograph the `cover` crop is showing. That is also the truer effect —
-   * the picture stays put and the framing drifts.
+   * `rotate`, not `transform`, so it composes with whatever the layout is
+   * doing and never fights it.
    */
-  .photo-frame > img {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: 50% 50%;
+  .spiral {
+    animation: spiral-turn 38s linear infinite;
+  }
+
+  @keyframes spiral-turn {
+    from {
+      rotate: 0deg;
+    }
+    to {
+      rotate: 360deg;
+    }
+  }
+
+  [data-motion='paused'] .spiral {
+    animation-play-state: paused;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .band-track,
+    .spiral {
+      animation: none;
+    }
   }
 }

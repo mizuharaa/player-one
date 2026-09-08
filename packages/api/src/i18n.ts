@@ -1141,6 +1141,19 @@ const en = {
   'login.slogan.1': 'Wear it.',
   'login.slogan.2': 'Live your day.',
   'login.slogan.3': 'Reviewed minutes, paid.',
+  /*
+   * The landing's burst carries three variants and the key line names the one
+   * on screen. They are the three kinds of work the pilot actually collects,
+   * not three moods: a kitchen, a garden and a clean. The sentence and its
+   * claim do not change — only which work is being paid for.
+   */
+  'login.slogan.3.kitchen': 'Kitchen minutes, paid.',
+  'login.slogan.3.garden': 'Garden minutes, paid.',
+  'login.slogan.3.cleaning': 'Cleaning minutes, paid.',
+  'login.cta': 'Get started',
+  'login.ctaSecondary': 'Sign in',
+  'login.marquee': 'Paid per reviewed minute',
+  'login.spiral': 'Wear it · Live your day · Reviewed minutes paid · ',
 
   /*
    * The landing's own three controls, and all three are real.
@@ -2281,6 +2294,13 @@ const zh: Record<MessageKey, string> = {
   'login.slogan.1': '戴上它。',
   'login.slogan.2': '照常生活。',
   'login.slogan.3': '审核通过的每一分钟，都有报酬。',
+  'login.slogan.3.kitchen': '厨房的每一分钟，都有报酬。',
+  'login.slogan.3.garden': '园艺的每一分钟，都有报酬。',
+  'login.slogan.3.cleaning': '打扫的每一分钟，都有报酬。',
+  'login.cta': '开始使用',
+  'login.ctaSecondary': '登录',
+  'login.marquee': '按审核通过的分钟计酬',
+  'login.spiral': '戴上它 · 照常生活 · 审核通过即付 · ',
   'login.skip': '跳过，直接登录',
   'login.pauseMotion': '暂停背景动画',
   'login.resumeMotion': '继续播放背景动画',
@@ -3467,6 +3487,13 @@ const vi: Record<MessageKey, string> = {
   'login.slogan.1': 'Đeo camera.',
   'login.slogan.2': 'Sống như mọi ngày.',
   'login.slogan.3': 'Phút được duyệt, được trả.',
+  'login.slogan.3.kitchen': 'Phút nấu ăn, được trả.',
+  'login.slogan.3.garden': 'Phút làm vườn, được trả.',
+  'login.slogan.3.cleaning': 'Phút dọn dẹp, được trả.',
+  'login.cta': 'Bắt đầu',
+  'login.ctaSecondary': 'Đăng nhập',
+  'login.marquee': 'Trả theo phút được duyệt',
+  'login.spiral': 'Đeo camera · Sống như mọi ngày · Phút được duyệt được trả · ',
   'login.skip': 'Bỏ qua, đến phần đăng nhập',
   'login.pauseMotion': 'Tạm dừng chuyển động nền',
   'login.resumeMotion': 'Tiếp tục chuyển động nền',

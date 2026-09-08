@@ -2,6 +2,28 @@
  * Sign in, and the one place in this console that has to persuade before it
  * can operate.
  *
+ * ## The direction, as a contract
+ *
+ * Chosen by the product owner against two alternates, 2026-09-07, and named
+ * **The Drift**. Every pass on this file audits the render against these five.
+ *
+ * **THESIS.** The scatter is the product: a thousand ordinary rooms,
+ * recorded.
+ *
+ * **OWN-WORLD.** Off-white ground, work stills at genuinely varied sizes and
+ * crops, one prismatic disc as the only saturated thing on the screen. Not a
+ * grid of same-size cards; not the reference's retro styling.
+ *
+ * **STORY.** The field drifts → the call to action fires the disc and renames
+ * the claim → the marquee states the unit of payment → the form asks who you
+ * are. One choreography, not four entrances.
+ *
+ * **FIRST VIEWPORT.** Slogan, scatter, two buttons. Nothing else, and no
+ * scroll needed to understand the offer.
+ *
+ * **FORM.** Two credentials, one segmented control, four fields, one submit —
+ * arriving as a stagger, usable before it does.
+ *
  * Two credentials, because every mutation in this service carries two: a
  * machine token proving *where* and an operator token proving *who* (PRD
  * §8.3.2 rule 1). The form says so rather than presenting four boxes and
@@ -122,6 +144,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Mark } from '../components/identity/Mark.tsx';
 import { TrucAsk } from '../components/identity/TrucAsk.tsx';
 import { Button } from '../components/ui/button.tsx';
+import { cva } from 'class-variance-authority';
 import { LocaleSwitch } from '../components/shell/LocaleSwitch.tsx';
 import { ThemeSwitch } from '../components/shell/ThemeSwitch.tsx';
 import { cn } from '../lib/cn.ts';
@@ -164,67 +187,92 @@ const POSTER_URL = '/landing-poster.jpg';
 const SCRIM = 'bg-[color-mix(in_srgb,var(--stage)_60%,transparent)]';
 
 /**
- * The twelve tiles, and where each one stands.
+ * The eleven tiles: what each one is, where it stands, and how big and how
+ * near it is.
  *
- * Fourteen files ship; twelve are used. `hf-garden2.jpg` is a variant of
- * `hf-garden.jpg` and `bookshelf.jpg` is the heaviest file in the set covering
- * the same subject as `film-books.jpg`, so those two are the ones left out —
- * 218 KiB requested against the 300 KiB gate, 285 KiB on disk for all fourteen
- * against the 600 KiB one.
+ * **The variance is the direction, not a garnish.** The version the product
+ * owner rejected was a ring of near-identical rounded squares at one size,
+ * and the named risk on the approved direction is that it flattens back into
+ * that. So no two tiles here share a shape: `w` and `h` are separate
+ * multipliers of the panel's one tile unit, and they run from a 0.58 square
+ * through 1.5-wide landscapes to 1.5-tall portraits — a factor of about seven
+ * in area between the smallest and the largest.
  *
- * `x` and `y` are the tile's own centre as a fraction of the panel, `tilt` is
- * its rotation and `s` scales the panel's one tile size. They are geometry and
- * they live here; the size, the radius, the shadow and the drift are in
- * `globals.css` where the tokens are.
+ * `d` is depth, 0 far and 1 near, and it is a number of its own rather than
+ * something derived from size. A small tile is usually a far one but not
+ * always, and tying the two together is what makes a scatter read as a scaled
+ * grid. `globals.css` turns `d` into blur and into held-back opacity.
  *
- * Two properties are load-bearing and both were arrived at by measuring rather
- * than by eye. **Nothing enters the middle** — no tile has `x` between 24 and
- * 76 while `y` is between 30 and 70 — which is the void the slogan stands in.
- * And **nothing leaves the panel** on any *frame* at any viewport in the set.
- * That second one used to be checked on one edge only. It said "the lowest
- * tile's bottom edge lands 22px short", which was true and was not the
- * question: the two highest tiles were leaving through the **top**, by 6.8px
- * at 1280×720 and 14.8px at 1024×640, because a tilt grows a tile's
- * axis-aligned box by a fifth and `tile-drift-a` then adds two more degrees
- * and lifts it 8px. `overflow: hidden` on the panel meant that never became a
- * scrollbar — it became a photograph with a straight line cut across it, which
- * is the "sometimes hide it" half of the spacing complaint and is worse.
+ * `zoom` is crop tightness: the image is scaled inside its frame, so two
+ * tiles of the same subject are not the same picture. `pos` moves the crop
+ * off centre — a face is cropped high, a pair of hands low.
  *
- * Measured now over thirty samples of the drift cycle at five viewports, on
- * all four edges. The worst clearance in the set is 4.4px, at 1024×640, which
- * is the shortest viewport at which `--tile` is already at its largest step.
+ * `tilt` runs -11deg to +10deg, wider than the ±8 it was, because a scatter
+ * whose rotations all sit in one narrow band reads as a sheet that has been
+ * nudged.
+ *
+ * **Three came out**, on the product owner's reading of the live page: the
+ * back cover of a book (`film-books.jpg`) and a dancer in a headset against a
+ * black studio (`ref-headset.jpg`). Neither is somebody doing housework in an
+ * Ego camera, and this landing is a claim about what the product collects.
+ * `hf-garden2.jpg`, held back as a duplicate, takes one of the places, and
+ * `bookshelf.jpg` stays out for the same reason `film-books.jpg` left. He also
+ * named a third — a browser screenshot reading "High memory usage: 1.6 GB".
+ * There is no such file: `public/tiles/` holds fourteen images and all
+ * fourteen are photographs, so that is the reader's own browser drawn over the
+ * page and not a tile. Said rather than silently ignored.
+ *
+ * `CREDITS.json` credits every file that ships, which is still all fourteen,
+ * so it stays correct without an edit.
+ *
+ * **`pov` is the punch-in.** Hovering a tile zooms into its middle and
+ * cross-fades to a still of the same kind of work from the camera's own
+ * position — hands and the work, not a person seen from across a room. Every
+ * one of them is already in the set and already requested by another tile, so
+ * the second image costs no bytes.
+ *
+ * **`ring` is the wave.** 0 is nearest the middle, 2 is furthest out. Tiles in
+ * a ring arrive together and the rings arrive one after another, which is the
+ * breadth-first entrance the product owner asked for.
+ *
+ * Two invariants, both measured rather than eyeballed, and both re-measured
+ * after every move: **nothing enters the void the slogan stands in**, and
+ * **nothing leaves the panel on any frame at any viewport** — checked over
+ * thirty samples of the drift cycle at five viewports on all four edges,
+ * because a tilt grows a tile's axis-aligned box by up to a fifth and the
+ * drift then adds two degrees and eight pixels on top of that.
  */
 const TILES = [
-  { src: '/tiles/film-face.jpg', x: '10%', y: '22%', tilt: '-7deg', s: 0.92 },
-  /* 11%, and `ref-kitchen` below is 14%: the two that were leaving through the top. */
-  { src: '/tiles/kitchen-chopping.jpg', x: '22%', y: '11%', tilt: '6deg', s: 0.84 },
-  { src: '/tiles/film-chop.jpg', x: '38%', y: '16%', tilt: '-4deg', s: 0.72 },
-  /* 14% and not 10%, and this is the "sometimes hide it" half of the spacing
-     complaint. The note above checks the *lowest* tile against the panel's
-     bottom edge; nothing checked the highest one against the top. This is the
-     highest, and three things stack on it: an 8deg tilt makes its
-     axis-aligned box 142px rather than 122px, `tile-drift-a` adds 2deg more,
-     and the same keyframe lifts it another 8px. Measured across the whole
-     drift cycle at 10% its top edge reached 6.8px above the panel at
-     1280×720 and 14.8px at 1024×640, where `overflow: hidden` cut a
-     straight line across a photograph. At 14% the worst frame in the set
-     leaves 10.6px of clearance. */
-  { src: '/tiles/ref-kitchen.jpg', x: '56%', y: '14%', tilt: '8deg', s: 0.9 },
-  { src: '/tiles/ref-headset.jpg', x: '74%', y: '20%', tilt: '-6deg', s: 1 },
-  { src: '/tiles/hf-garden.jpg', x: '89%', y: '38%', tilt: '5deg', s: 0.86 },
-  { src: '/tiles/ref-yoga.jpg', x: '84%', y: '68%', tilt: '-8deg', s: 0.96 },
-  /* 76% and 79%, up from 86% and 89%: these two were the ones under the
-     control row. The pause pill is opaque and sits at `bottom-6` in the
-     middle, so at 1440×900 it cut 3,625px² out of `ironing-hands` and at
-     1024×640 it took a further 2,344px² out of `film-kitchen` — a labelled
-     control drawn across the bottom third of a photograph, which is the other
-     half of the "sometimes hide it" complaint. Measured after: no tile
-     intersects the control row at any of the five viewports. */
-  { src: '/tiles/film-kitchen.jpg', x: '66%', y: '76%', tilt: '7deg', s: 0.82 },
-  { src: '/tiles/ironing-hands.jpg', x: '47%', y: '79%', tilt: '-3deg', s: 0.94 },
-  { src: '/tiles/ref-cleaning.jpg', x: '28%', y: '80%', tilt: '6deg', s: 0.78 },
-  { src: '/tiles/film-garden.jpg', x: '14%', y: '62%', tilt: '-5deg', s: 1 },
-  { src: '/tiles/film-books.jpg', x: '10%', y: '43%', tilt: '4deg', s: 0.8 },
+  { src: '/tiles/film-face.jpg', pov: '/tiles/film-chop.jpg', x: '10.5%', y: '24%', w: 0.95, h: 1.35, d: 0.9, tilt: '-7deg', zoom: 1.05, pos: '50% 34%', ring: 2 },
+  { src: '/tiles/kitchen-chopping.jpg', pov: '/tiles/film-chop.jpg', x: '23%', y: '12%', w: 1.5, h: 0.95, d: 0.55, tilt: '5deg', zoom: 1.2, pos: '50% 50%', ring: 2 },
+  { src: '/tiles/film-chop.jpg', pov: '/tiles/ironing-hands.jpg', x: '38%', y: '13%', w: 0.62, h: 0.62, d: 0.2, tilt: '-10deg', zoom: 1.35, pos: '46% 60%', ring: 1 },
+  { src: '/tiles/ref-kitchen.jpg', pov: '/tiles/film-chop.jpg', x: '53%', y: '12%', w: 1.35, h: 0.85, d: 0.75, tilt: '8deg', zoom: 1.0, pos: '50% 42%', ring: 1 },
+  { src: '/tiles/hf-garden2.jpg', pov: '/tiles/film-garden.jpg', x: '69.5%', y: '20%', w: 0.85, h: 1.25, d: 0.5, tilt: '-5deg', zoom: 1.15, pos: '52% 46%', ring: 2 },
+  { src: '/tiles/hf-garden.jpg', pov: '/tiles/film-garden.jpg', x: '87%', y: '36%', w: 1.2, h: 1.2, d: 1, tilt: '6deg', zoom: 1.0, pos: '50% 50%', ring: 2 },
+  { src: '/tiles/ref-yoga.jpg', pov: '/tiles/ironing-hands.jpg', x: '86%', y: '67%', w: 1.15, h: 0.7, d: 0.35, tilt: '-9deg', zoom: 1.25, pos: '50% 44%', ring: 2 },
+  { src: '/tiles/film-kitchen.jpg', pov: '/tiles/film-chop.jpg', x: '73.5%', y: '84%', w: 0.58, h: 0.58, d: 0.15, tilt: '10deg', zoom: 1.3, pos: '55% 50%', ring: 1 },
+  { src: '/tiles/ironing-hands.jpg', pov: '/tiles/ironing-hands.jpg', x: '48.5%', y: '82%', w: 0.9, h: 1.3, d: 0.95, tilt: '-4deg', zoom: 1.1, pos: '50% 62%', ring: 0 },
+  { src: '/tiles/ref-cleaning.jpg', pov: '/tiles/ironing-hands.jpg', x: '27%', y: '84%', w: 1.25, h: 0.8, d: 0.45, tilt: '7deg', zoom: 1.18, pos: '48% 55%', ring: 1 },
+  { src: '/tiles/film-garden.jpg', pov: '/tiles/film-garden.jpg', x: '11%', y: '66%', w: 1.05, h: 1.5, d: 0.85, tilt: '-11deg', zoom: 1.0, pos: '50% 55%', ring: 2 },
+] as const;
+
+/**
+ * The three burst variants, and each one is a kind of work this pilot pays
+ * for rather than a mood.
+ *
+ * The reference swaps the effect and one word of the headline together, and
+ * the product owner asked for the same thing "tailored ... to tasks we have".
+ * So the key line — the one about money — names the work, the disc behind it
+ * changes with it, and the two lines above, which are the product's own
+ * sentence, do not move.
+ *
+ * The order is his: the vivid magenta-into-orange and the prismatic rays are
+ * the two he picked out, so they are the two a person sees first.
+ */
+const BURSTS = [
+  { key: 'kitchen', slogan: 'login.slogan.3.kitchen' },
+  { key: 'garden', slogan: 'login.slogan.3.garden' },
+  { key: 'cleaning', slogan: 'login.slogan.3.cleaning' },
 ] as const;
 
 /** Whether the operator has asked the machine to stop moving things. */
@@ -253,6 +301,21 @@ export function LoginScreen() {
   const [paused, setPaused] = useState(false);
 
   /**
+   * Which burst is armed, and it advances on the *approach* rather than on the
+   * click.
+   *
+   * The button is the trigger for the effect and the way into the product, and
+   * those are two different moments: `pointerenter` and `focus` arm the next
+   * variant and light it, and the click that follows goes to the form. So a
+   * person who runs the pointer over the button three times sees three
+   * different things and reads three different sentences, and a person who
+   * just presses it never notices there were three.
+   */
+  const [burst, setBurst] = useState(0);
+  const variant = BURSTS[burst % BURSTS.length] ?? BURSTS[0];
+  const nextBurst = () => setBurst((n) => (n + 1) % BURSTS.length);
+
+  /**
    * Whether the split is close enough to be worth fetching its two heavy
    * assets — 1.39 MB of film and 1.29 MB of glTF, which together are more than
    * half of the whole page's budget and neither of which is on the first
@@ -265,6 +328,8 @@ export function LoginScreen() {
   const field = useRef<HTMLDivElement>(null);
   const type = useRef<HTMLDivElement>(null);
   const split = useRef<HTMLDivElement>(null);
+  const band = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const target = split.current;
@@ -324,16 +389,77 @@ export function LoginScreen() {
 
       const media = gsap.matchMedia();
 
+      /**
+       * One choreography, three beats, and that is deliberate.
+       *
+       * The brief for this screen asks for more life and the craft floor asks
+       * for *one authored moment rather than five unrelated tricks*, and those
+       * two only agree if the whole page is one movement. So this is a single
+       * `matchMedia` context holding one continuous idea — the field opens,
+       * the claim runs past, the form arrives — rather than three components
+       * each with an entrance of its own.
+       *
+       * **Everything starts from an already-visible default.** Nothing here
+       * declares an `opacity: 0` in CSS that a script has to clear; each tween
+       * animates *from* an offset state, so a blocked tween engine leaves a
+       * finished page rather than an invisible one. That is the difference
+       * between a progressive enhancement and a dependency, and it is the
+       * reason the whole import is inside a `catch`.
+       */
       media.add('(min-width: 1024px) and (prefers-reduced-motion: no-preference)', () => {
         const trigger = landing.current;
         if (trigger === null) return;
         const scrollTrigger = { trigger, start: 'top top', end: 'bottom bottom', scrub: 0.4 };
 
+        /* Beat one: the field opens out and the claim goes with it. */
         if (field.current) {
           gsap.to(field.current, { scale: 1.16, opacity: 0, ease: 'none', scrollTrigger });
         }
         if (type.current) {
           gsap.to(type.current, { yPercent: -14, opacity: 0, ease: 'none', scrollTrigger });
+        }
+
+        /*
+         * Beat two: the band. Its sideways run is CSS and never stops; what
+         * scroll decides is how the strip arrives — it rises and its letters
+         * come out of a blur, which is the one place blur is a material here
+         * rather than decoration. `once: true`, because a strip that
+         * re-assembles every time it is scrolled past is a strip that is never
+         * finished.
+         */
+        if (band.current) {
+          gsap.from(band.current, {
+            yPercent: 40,
+            opacity: 0,
+            filter: 'blur(14px)',
+            duration: 0.9,
+            ease: 'expo.out',
+            scrollTrigger: { trigger: band.current, start: 'top 92%', once: true },
+          });
+        }
+
+        /*
+         * Beat three: the form arrives, and this is the part the product
+         * owner named — the panel used to simply be there. It is a stagger
+         * across the panel's own parts in reading order, not one fade of the
+         * whole column: the heading, then the sentence, then each fieldset,
+         * then the submit. `expo.out` and 40ms apart, so it reads as one
+         * movement settling rather than as five things arriving.
+         *
+         * `[data-arrive]` and not a class: a class is a styling decision and
+         * moves, and this is the same reason `steps.ts` addresses the guided
+         * tour by data attribute.
+         */
+        const parts = panel.current?.querySelectorAll('[data-arrive]');
+        if (parts && parts.length > 0) {
+          gsap.from(parts, {
+            y: 26,
+            opacity: 0,
+            duration: 0.7,
+            ease: 'expo.out',
+            stagger: 0.04,
+            scrollTrigger: { trigger: panel.current, start: 'top 78%', once: true },
+          });
         }
       });
 
@@ -416,72 +542,198 @@ export function LoginScreen() {
       <section
         ref={landing}
         data-motion={paused ? 'paused' : undefined}
-        className={cn('landing on-stage relative', reduced ? 'h-dvh' : 'h-dvh lg:h-[180vh]')}
+        data-burst={variant.key}
+        className={cn('landing relative', reduced ? 'h-dvh' : 'h-dvh lg:h-[180vh]')}
       >
-        <div className="sticky top-0 flex h-dvh items-center justify-center overflow-hidden px-5 sm:px-8">
+        <div className="landing-panel sticky top-0 flex h-dvh flex-col items-center justify-center overflow-hidden px-5 sm:px-8">
           {/*
-            The field. `aria-hidden` and every tile `alt=""`: twelve
+            The field. `aria-hidden` and every image `alt=""`: eleven
             photographs of housework are the atmosphere this page is set in,
-            not twelve things to read out one after another before reaching
-            the sentence they are arranged around.
+            not twenty-two things to read out one after another before
+            reaching the sentence they are arranged around.
+
+            Two images per tile, and the second costs nothing: every `pov`
+            file is another tile's `src`, so the browser has already
+            downloaded all of them by the time a pointer reaches one.
           */}
           <div ref={field} aria-hidden="true" className="tile-field">
             {TILES.map((tile) => (
-              <img
+              <div
                 key={tile.src}
-                src={tile.src}
-                alt=""
-                width={420}
-                height={420}
-                decoding="async"
                 className="tile"
                 style={
                   {
                     '--x': tile.x,
                     '--y': tile.y,
                     '--tilt': tile.tilt,
-                    '--s': tile.s,
+                    '--w': tile.w,
+                    '--h': tile.h,
+                    '--d': tile.d,
+                    '--zoom': tile.zoom,
+                    '--pos': tile.pos,
+                    '--ring': tile.ring,
                   } as React.CSSProperties
                 }
-              />
+              >
+                <img
+                  src={tile.src}
+                  alt=""
+                  width={420}
+                  height={420}
+                  decoding="async"
+                  className="tile-face"
+                />
+                <img
+                  src={tile.pov}
+                  alt=""
+                  width={420}
+                  height={420}
+                  decoding="async"
+                  className="tile-pov"
+                />
+              </div>
             ))}
           </div>
 
-          {/*
-            The burst, behind everything the type stands on. It is a sibling of
-            the type block rather than a child of it, because it is a great
-            deal larger than the words and a child would be measured against
-            them.
-          */}
-          <div className="prism" aria-hidden="true" />
-
           <div ref={type} className="relative w-full max-w-[min(34rem,86vw)] text-center">
-            <div className="type-halo" aria-hidden="true" />
+            {/* ---------------------------------------------------------------
+                Three layers, in this order, and the order is the whole of the
+                layering. There is not a `z-index` on any of them.
 
+                1. `.type-halo` — the slogan's own ground. Invisible, because
+                   it is `--background`, the same colour as the page; its job
+                   is that a tile can never be the thing under a letter. The
+                   number that made it necessary is 1.08:1, measured at
+                   390×844 without it.
+                2. `.prism` — the disc, blended over the tiles and the halo.
+                3. the type and the button, painted last and so never blended.
+
+                **It was three `z-index` values and that was a bug**, found by
+                measuring rather than by reading: with `z-index: 1` on the disc
+                and `2` on the type, Chromium composited the disc's pattern
+                straight over the button, in dark theme, where the pill
+                measured `rgb(15,16,24)` against a `--action` of `#ECEDF5`.
+                Raising the type to `z-index: 9` changed nothing; setting the
+                disc back to `z-index: 0` fixed it instantly. A `mix-blend-mode`
+                element with a positive `z-index` does not stay under the
+                things painted after it. So the disc moved here, between the
+                halo and the text, and every `z-index` came out — document
+                order does the same job and cannot be defeated by a compositing
+                rule nobody remembers.
+
+                The disc is centred on this wrapper rather than on the panel,
+                which is what the reference asks for anyway: the burst is
+                behind the headline, not behind the screen.
+                --------------------------------------------------------------- */}
+            <div className="type-halo" aria-hidden="true" />
+            <div className="prism" aria-hidden="true" />
+
+            <div className="type-stack">
             {/*
-              Three beats, one line each, and the third carries the weight.
+              Three beats, and the third is the one about money.
 
               The comp set the last line in a gradient. `DESIGN.md` and the
               craft floor both refuse gradient lettering and they are right to:
-              emphasis on this page comes from size and weight, so the third
-              line is one step of each above the two before it, and that is
-              the whole of the emphasis. It is also the only one of the three
-              that is about money.
+              emphasis on this page is size and weight, so the key line is one
+              step of each above the two before it and that is the whole of
+              the emphasis.
 
-              The sizes, the weights and the tracking are not written here.
-              They are the landing's type scale in `globals.css` — three
-              steps per role with an optical weight at each, which is a scale
-              and not six arbitrary values, and a variable display face is
-              only worth having if something sets its axis per size.
+              It is also the line the burst variant renames. The two above it
+              are the product's own sentence and never change; what changes is
+              which work is being paid for, because that is the only part of
+              the claim that has three answers.
+
+              `aria-live` is deliberately absent. The word changes under a
+              pointer on a decorative control, and announcing a headline
+              rewriting itself every time somebody grazes a button is noise. A
+              screen reader gets whichever sentence is on the page when it
+              reaches it, and all three say the same thing.
+
+              No size, weight or tracking here: they are the landing's type
+              scale in `globals.css`, three steps per role with an optical
+              weight at each.
             */}
-            <ul className="relative m-0 flex list-none flex-col gap-2 p-0 text-[var(--stage-over)]">
+            <ul className="m-0 list-none p-0">
               {['login.slogan.1', 'login.slogan.2'].map((key) => (
                 <li key={key} className="slogan">
                   {t(key)}
                 </li>
               ))}
-              <li className="slogan-key">{t('login.slogan.3')}</li>
+              <li className="slogan-key">{t(variant.slogan)}</li>
             </ul>
+
+            {/* ---------------------------------------------------------------
+                One control, and it is both the way in and the thing that
+                lights the page.
+
+                It replaces two floating pills — a labelled "Pause the moving
+                background" and an outlined "Skip to sign in" — which was the
+                first thing the eye landed on and neither of which was the
+                action. This is the `Button` primitive at the size the sign-in
+                submit already uses, so the two ends of the screen are the
+                same control, and it is an `<a>` through `asChild`: it moves
+                the page to the form and needs no script to do it.
+
+                `onPointerEnter` and `onFocus` arm the next variant. The CSS
+                does the lighting from `:hover` and `:focus-visible` on this
+                same element, so a keyboard gets the effect and a pointer that
+                is merely passing through does not have to click to see it.
+                --------------------------------------------------------------- */}
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:mt-10">
+              <Button
+                variant="primary"
+                size="xl"
+                asChild
+                /*
+                 * `hover:opacity-100`, overriding the primary's own hover.
+                 *
+                 * `Button`'s primary answers hover by dropping to 90% opacity,
+                 * which is right everywhere else in the console — an ink pill
+                 * has no lighter step to move to. Here it is wrong twice over:
+                 * hovering this button is also what lights the disc, so at the
+                 * exact moment the pill goes translucent there is a saturated
+                 * gradient directly behind it. Measured at 1280×720 the fill
+                 * went from `rgb(20,21,26)` to `rgb(38,40,46)` and picked up
+                 * the disc's hue, which is a control whose colour is decided
+                 * by a decoration.
+                 *
+                 * The lift replaces it. `--shadow-lg` is a token, it reads at
+                 * a glance, and it is still there when the disc is not — under
+                 * reduced motion, or with the motion control pressed, where an
+                 * opacity change would have been the only feedback and the
+                 * disc cannot give any.
+                 */
+                className="landing-cta hover:opacity-100 hover:shadow-[var(--shadow-lg)]"
+                onPointerEnter={nextBurst}
+                onFocus={nextBurst}
+              >
+                <a href="#signin">{t('login.cta')}</a>
+              </Button>
+
+              {/*
+                One solid pill and one quiet second, which is the shape every
+                reference in the set uses. They are not two ways to the same
+                place dressed up as a choice: the primary is the marketing
+                verb and the secondary is what an operator who already has an
+                account is looking for, and an operator who reads "Get started"
+                and hesitates is exactly the person the second one is for. Both
+                land on the same form because there is only one, and that is
+                honest rather than redundant — the form asks who you are.
+              */}
+              {/*
+                `secondary` and not `ghost`. A ghost is a label and nothing
+                else, and this label stands on the disc: measured at 1280×720
+                with the rays lit, `--muted-foreground` on a spoke read under
+                the floor and the word simply went missing. The ink outline is
+                the console's own quiet-second treatment, it draws a boundary
+                the disc cannot erase, and it inverts to a filled ink block on
+                hover — which is the same punch the primary has, one step down.
+              */}
+              <Button variant="secondary" size="lg" asChild>
+                <a href="#signin">{t('login.ctaSecondary')}</a>
+              </Button>
+            </div>
+            </div>
           </div>
 
           {/*
@@ -494,71 +746,77 @@ export function LoginScreen() {
           </div>
 
           {/* ---------------------------------------------------------------
-              The landing's two controls, and both go somewhere real.
+              Pause, Stop, Hide — the mechanism, not the old pill.
 
-              The pause button stops the drift and the burst; the link is the
-              same skip link as the one at the top of the tab order, drawn for
-              a person holding a mouse. Under reduced motion the button is not
-              rendered, because nothing is moving for it to stop.
+              WCAG 2.2 SC 2.2.2 needs a way to stop motion that runs for more
+              than five seconds, and the drift runs forever. It used to be a
+              labelled pill in the middle of the hero, which is the loudest
+              possible answer to a requirement about not being distracting;
+              the product owner's word for it was unprintable and he was
+              right. It is a 36px glyph in the bottom corner now, with the
+              same accessible name it always had, the same `aria-pressed`, the
+              same place in the tab order and the same effect on both the
+              drift and the disc. Nothing about the mechanism moved except how
+              much of the screen it takes.
+
+              Not rendered under reduced motion, because nothing is moving for
+              it to stop.
               --------------------------------------------------------------- */}
-          <div className="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap sm:gap-4">
-            {reduced ? null : (
-              <button
-                type="button"
-                aria-pressed={paused}
-                onClick={() => setPaused((was) => !was)}
-                className={cn(
-                  /*
-                   * Two boundaries, because one is not enough on a field that
-                   * lights up. WCAG 1.4.11 wants 3:1 around a control, and
-                   * this one stands on two very different grounds:
-                   *
-                   * - **At rest** the ground is `--stage`, and the border
-                   *   carries it. `--stage-line`, the hairline this used to
-                   *   take, measures **1.37:1** on `--stage` — the control was
-                   *   barely drawn at all. `--stage-mid` measures **7.21:1**.
-                   * - **With the burst lit** a spoke passes behind the pill,
-                   *   and at 1280×720 the ground under it measured
-                   *   `rgb(173,174,175)`, against which that same light border
-                   *   is **1.11:1**. So the *fill* has to carry it there, and
-                   *   a fill of `--stage` at 72% over a lit spoke is not
-                   *   `--stage` any more. It is opaque now: `--stage` on that
-                   *   worst frame is **8.4:1**, and the `backdrop-blur` it no
-                   *   longer needs went with the translucency.
-                   *
-                   * Whichever ground it is on, one of the two clears 3:1.
-                   */
-                  'rounded-[var(--radius-pill)] border border-[var(--stage-mid)] px-3.5 py-2',
-                  'bg-[var(--stage)]',
-                  'text-[0.75rem] font-semibold text-[var(--stage-over)]',
-                  'transition-colors duration-150 ease-[var(--ease)]',
-                  'hover:bg-[var(--stage-panel)]',
-                )}
-              >
-                {t(paused ? 'login.resumeMotion' : 'login.pauseMotion')}
-              </button>
-            )}
-
-            <a
-              href="#signin"
-              className={cn(
-                /* The same two-ground problem as the button beside it, the
-                   other way up: white on `--stage` is 18.76:1 at rest, and
-                   nothing at all against a lit white spoke. The `--stage`
-                   border is what draws it there — 18.76:1 on white — so the
-                   fill carries the boundary on the dark field and the border
-                   carries it on the lit one. */
-                'rounded-[var(--radius-pill)] border border-[var(--stage)] bg-[var(--stage-over)] px-4 py-2',
-                'text-[0.75rem] font-semibold text-[var(--stage)] no-underline',
-                'transition-colors duration-150 ease-[var(--ease)]',
-                'hover:bg-[var(--lime-500)]',
-              )}
+          {reduced ? null : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-pressed={paused}
+              aria-label={t(paused ? 'login.resumeMotion' : 'login.pauseMotion')}
+              onClick={() => setPaused((was) => !was)}
+              className="absolute bottom-5 right-5 sm:bottom-6 sm:right-6"
             >
-              {t('login.skip')}
-            </a>
-          </div>
+              <MotionGlyph paused={paused} />
+            </Button>
+          )}
         </div>
       </section>
+
+      {/* ---------------------------------------------------------------
+          The band.
+
+          A horizontal marquee of one true sentence, taken as *structure* from
+          the product owner's reference and not as styling. "Paid per reviewed
+          minute" is the platform's actual unit of payment — the thing this
+          whole console exists to compute — so the one line that repeats across
+          the screen is a claim the product keeps rather than a decorative
+          word.
+
+          It is `aria-hidden`, and the same sentence sits once in the document
+          as visually-hidden text directly above it. A screen reader hears the
+          claim once; a marquee announced eight times is a marquee nobody
+          finishes.
+
+          Not rendered at all under reduced motion. The band IS the motion —
+          a still strip of the same four words repeated is a worse thing than
+          no strip, and the sentence is still in the document for a reader.
+          --------------------------------------------------------------- */}
+      <div ref={band} data-motion={paused ? 'paused' : undefined}>
+        <p className="sr-only">{t('login.marquee')}</p>
+        {reduced ? null : (
+          <div className="band py-7 lg:py-10" aria-hidden="true">
+            <div className="band-track">
+              {/*
+                Eight copies: two identical halves of four, because the loop
+                translates by exactly half the track and lands on a copy of its
+                own first frame. An odd count leaves a seam.
+              */}
+              {Array.from({ length: 8 }, (_, i) => (
+                <span key={i} className="flex items-center">
+                  <span className="band-word">{t('login.marquee')}</span>
+                  <span className="band-dot" />
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ---------------------------------------------------------------
           The split: the film on the left, the form on paper on the right.
@@ -628,6 +886,50 @@ export function LoginScreen() {
             all until the split is close, which is what keeps three.js and
             1.29 MB of glTF off the landing.
           */}
+          {/* ---------------------------------------------------------------
+              The spiral: circular type turning on the dark half.
+
+              The reference sets a hard light/dark split with a large rotating
+              circular type element in the dark half, and this screen already
+              had the split — the film band is `.on-stage`, near-black in both
+              themes, for the reason `DESIGN.md` gives about footage. So the
+              signature moment costs one `<svg>` and a rotation, and it goes
+              exactly where the reference puts it.
+
+              What is not taken from that reference: its tracked mono eyebrows.
+              `--font-mono` is reserved for `.num` measurements here and
+              monospace as a costume for "technical" is refused; this is the
+              display face, which is what the words are.
+
+              `--stage-mid` and not `--stage-over`: it is a mark on the film,
+              not a caption, and it must not compete with either Trúc below it
+              or the sign-in opposite. Hidden below `lg`, where the film band
+              is 30svh and there is no room for it.
+              --------------------------------------------------------------- */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute right-8 top-1/2 hidden -translate-y-1/2 lg:block xl:right-14"
+          >
+            <svg width={188} height={188} viewBox="0 0 200 200" className="spiral" fill="none">
+              <defs>
+                <path
+                  id="spiral-path"
+                  d="M100,100 m-74,0 a74,74 0 1,1 148,0 a74,74 0 1,1 -148,0"
+                />
+              </defs>
+              <text
+                fill="var(--stage-mid)"
+                fontSize="15.5"
+                fontWeight={500}
+                letterSpacing="0.02em"
+                style={{ fontFamily: 'var(--font-display)' }}
+              >
+                <textPath href="#spiral-path">{t('login.spiral')}</textPath>
+              </text>
+              <circle cx="100" cy="100" r="52" stroke="var(--stage-line)" strokeWidth="1" />
+            </svg>
+          </div>
+
           <div className="absolute bottom-8 right-4 z-10 hidden sm:block lg:bottom-10 lg:right-8">
             {near ? <TrucAsk /> : null}
           </div>
@@ -659,6 +961,7 @@ export function LoginScreen() {
             again from the top of the landing.
             --------------------------------------------------------------- */}
         <main
+          ref={panel}
           id="signin"
           tabIndex={-1}
           className="relative isolate flex h-[calc(100dvh-56.25vw)] min-h-[22rem] scroll-mt-0 flex-col px-5 pb-0 pt-2 focus:outline-none sm:px-10 md:h-[70svh] lg:h-dvh lg:min-h-0 lg:self-start lg:px-14 lg:py-6"
@@ -720,7 +1023,7 @@ export function LoginScreen() {
                 under it — stay Be Vietnam Pro, because they are the UI voice
                 and not a headline.
               */}
-              <h1 className="sr-only lg:not-sr-only lg:text-balance lg:font-display lg:text-[2.25rem] lg:font-medium lg:leading-[1.05] lg:tracking-[-0.03em]">
+              <h1 data-arrive className="sr-only lg:not-sr-only lg:text-balance lg:font-display lg:text-[2.25rem] lg:font-medium lg:leading-[1] lg:tracking-[-0.035em]">
                 PlayerOne
               </h1>
               {/*
@@ -729,10 +1032,28 @@ export function LoginScreen() {
                 operator in all three languages, and an operator imports TF
                 cards and reviews nothing.
               */}
-              <h2 className="text-[1.3125rem] font-bold tracking-[-0.02em] lg:mt-4">
+              {/*
+                The panel's pacing, and it was the second thing the product
+                owner called weird.
+
+                Three pieces of type, and between them they had five different
+                rhythms: the heading's leading was 1.05 while the title's was
+                the body default, the sentence under the title was
+                `leading-snug` below `lg` and `leading-relaxed` above it — the
+                same paragraph paced two different ways at two widths, for no
+                reason anybody could name — and the gaps were `mt-1` and
+                `mt-1.5`, which are 4px and 6px and read as neither.
+
+                One leading for the sentence at every width, tracking that
+                tightens with size the way the landing's does, and gaps from
+                the space scale: 8px from the heading to the title, 8px from
+                the title to its sentence. The heading is a size apart and does
+                not need a third number to say so.
+              */}
+              <h2 data-arrive className="text-[1.3125rem] font-semibold leading-[1.15] tracking-[-0.022em] lg:mt-2">
                 {t(reviewer ? 'login.title' : 'login.titleOperator')}
               </h2>
-              <p className="mt-1 max-w-[42ch] text-[0.875rem] leading-snug text-[var(--muted-foreground)] lg:mt-1.5 lg:leading-relaxed">
+              <p data-arrive className="mt-2 max-w-[42ch] text-[0.875rem] leading-[1.55] text-[var(--muted-foreground)]">
                 {t(reviewer ? 'login.reviewerIntro' : 'login.intro')}
               </p>
 
@@ -744,7 +1065,7 @@ export function LoginScreen() {
                 grouping legible without a rule or a box.
               */}
               <form onSubmit={submit} className="mt-4 flex flex-col gap-6 lg:mt-4 lg:gap-6">
-                <fieldset className="flex flex-col gap-2">
+                <fieldset data-arrive className="flex flex-col gap-2">
                   <legend className="mb-0.5 text-[0.6875rem] font-bold uppercase tracking-[0.09em] text-[var(--faint-foreground)]">
                     {t('login.role')}
                   </legend>
@@ -753,7 +1074,10 @@ export function LoginScreen() {
                     a gap between them. The track is what says "these two are
                     the same question"; a gap says "these are two decisions".
                   */}
-                  <div className="flex h-11 items-center rounded-[var(--radius-pill)] border border-[var(--border)] bg-[var(--muted)] p-1">
+                  <div
+                    role="presentation"
+                    className={segmentedTrack()}
+                  >
                     <Role
                       value="operator"
                       checked={!reviewer}
@@ -822,7 +1146,7 @@ export function LoginScreen() {
                   />
                 </Fieldset>
 
-                <div className="pt-1">
+                <div data-arrive className="pt-1">
                   {/*
                     The refusal sits with the button, above it, and not at the
                     end of the fields. It used to be the last thing in the form,
@@ -884,6 +1208,124 @@ export function LoginScreen() {
 }
 
 /**
+ * Pause and play, on the same 20x20 grid and the same 1.9 stroke as
+ * `components/icons.tsx`.
+ *
+ * ponytail: authored here rather than added to the shared icon file, because
+ * this is the only screen in the console with something to pause and the
+ * shared file is being edited by somebody else this session. Move it there
+ * the moment a second screen wants it.
+ */
+function MotionGlyph({ paused }: { paused: boolean }) {
+  return (
+    <svg width={18} height={18} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      {paused ? (
+        <path
+          d="M7 4.5 15.5 10 7 15.5Z"
+          stroke="currentColor"
+          strokeWidth={1.9}
+          strokeLinejoin="round"
+        />
+      ) : (
+        <g stroke="currentColor" strokeWidth={1.9} strokeLinecap="round">
+          <path d="M7.5 4.75v10.5" />
+          <path d="M12.5 4.75v10.5" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+/* -------------------------------------------------------------------------
+   Three more controls in the project's shadcn anatomy.
+
+   `cva` variants, token values, every state declared — the same shape as
+   `components/ui/button.tsx`, so a reader fluent in shadcn reads them without
+   a translation layer and so they lift into `components/ui/` as
+   `input.tsx` and `segmented.tsx` in one move.
+
+   **They are here and not there on purpose, and it is an ownership decision
+   rather than a design one.** `components/ui/` is shared and is being edited
+   by somebody else this session; these were hand-rolled inline on this screen
+   before, so moving them into a `cva` here is a strict improvement that
+   cannot collide. ponytail: promote them the moment a second screen wants
+   either one — the sign-in on the collector app is the obvious next caller.
+   ---------------------------------------------------------------------- */
+
+/**
+ * The field.
+ *
+ * 48px, one hairline, a 12px radius, and the sun focus ring the rest of the
+ * console uses. That outline is the global `:focus-visible` rule in
+ * `globals.css`, so this must NOT suppress it: the border and the ring are
+ * different jobs, the border saying "a field" and the ring saying "the
+ * keyboard is here".
+ *
+ * `scroll-mb-40` is what the browser's own scroll-into-view honours, and it
+ * works for both scrollers on this screen — the form column and the document.
+ * WCAG 2.2 SC 2.4.11.
+ *
+ * `invalid` is declared even though nothing sets it yet, because a control
+ * shipped with half its states is how a tool starts feeling unfinished, and
+ * because the server's refusal has to have somewhere to land when it names a
+ * field.
+ */
+const input = cva(
+  cn(
+    'num h-12 w-full scroll-mb-40 rounded-[var(--radius-base)] border bg-[var(--card)] px-4',
+    'text-[0.9375rem] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]',
+    'transition-colors duration-150 ease-[var(--ease)]',
+    'disabled:cursor-not-allowed disabled:opacity-45',
+  ),
+  {
+    variants: {
+      tone: {
+        default: cn(
+          'border-[var(--field-border)]',
+          'hover:border-[var(--foreground)]',
+          'focus:border-[var(--foreground)]',
+        ),
+        invalid: cn('border-[var(--reject)]', 'focus:border-[var(--reject)]'),
+      },
+    },
+    defaultVariants: { tone: 'default' },
+  },
+);
+
+/**
+ * The segmented control's track, and its two segments.
+ *
+ * One pill track with two equal halves, not two buttons with a gap between
+ * them: the track is what says "these two are the same question", and a gap
+ * says "these are two decisions". Underneath it is still a real `<fieldset>`
+ * of radios, so arrow keys move between them, the browser enforces that
+ * exactly one is chosen, and it works before any script has run.
+ */
+const segmentedTrack = cva(
+  cn(
+    'flex h-11 items-center rounded-[var(--radius-pill)] border border-[var(--border)]',
+    'bg-[var(--muted)] p-1',
+  ),
+);
+
+const segment = cva(
+  cn(
+    'flex h-9 flex-1 cursor-pointer items-center justify-center rounded-[var(--radius-pill)] px-3',
+    'text-[0.875rem] font-semibold transition-colors duration-150 ease-[var(--ease)]',
+    'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[var(--ring)]',
+  ),
+  {
+    variants: {
+      state: {
+        on: 'bg-[var(--foreground)] text-[var(--background)]',
+        off: 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]',
+      },
+    },
+    defaultVariants: { state: 'off' },
+  },
+);
+
+/**
  * One of the two policy links.
  *
  * A link, and therefore tech — `DESIGN.md` assigns that ramp to links and this
@@ -923,7 +1365,7 @@ function Legal({ href, children }: { href: string; children: React.ReactNode }) 
  */
 function Fieldset({ legend, children }: { legend: string; children: React.ReactNode }) {
   return (
-    <fieldset className="flex flex-col gap-5">
+    <fieldset data-arrive className="flex flex-col gap-5">
       <legend className="mb-0.5 text-[0.6875rem] font-bold uppercase tracking-[0.09em] text-[var(--faint-foreground)]">
         {legend}
       </legend>
@@ -948,16 +1390,7 @@ function Role({
   onPick: (role: 'operator' | 'reviewer') => void;
 }) {
   return (
-    <label
-      className={cn(
-        'flex h-9 flex-1 cursor-pointer items-center justify-center rounded-[var(--radius-pill)] px-3',
-        'text-[0.875rem] font-semibold transition-colors duration-150 ease-[var(--ease)]',
-        'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[var(--ring)]',
-        checked
-          ? 'bg-[var(--foreground)] text-[var(--background)]'
-          : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]',
-      )}
-    >
+    <label className={segment({ state: checked ? 'on' : 'off' })}>
       <input
         type="radio"
         name="role"
@@ -991,22 +1424,7 @@ function Input({
         autoComplete={autoComplete}
         required
         spellCheck={false}
-        className={cn(
-          /* 48px, one hairline, a 12px radius, and the sun focus ring the rest
-             of the console uses — that outline is the global `:focus-visible`
-             rule in globals.css, so this must NOT suppress it. The border and
-             the ring are different jobs: the border says "a field", the ring
-             says "the keyboard is here". */
-          /* `scroll-margin-bottom` is what the browser's own scroll-into-view
-             honours, and it works for both scrollers here: the form column and
-             the document. WCAG 2.2 SC 2.4.11. */
-          'scroll-mb-40',
-          'num h-12 rounded-[var(--radius-base)] border border-[var(--field-border)] bg-[var(--card)] px-4',
-          'text-[0.9375rem] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]',
-          'transition-colors duration-150 ease-[var(--ease)]',
-          'hover:border-[var(--foreground)]',
-          'focus:border-[var(--foreground)]',
-        )}
+        className={input()}
       />
     </label>
   );
