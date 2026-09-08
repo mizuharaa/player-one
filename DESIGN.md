@@ -82,7 +82,7 @@ Each was chosen against a measurement, not picked and then checked.
 | Step | Job | Measured |
 |---|---|---|
 | `lime-500` | a **fill**, under ink text. Never text itself. | ink on it 13.54:1; it on the page 1.16:1 |
-| `lime-600` | the **stroke** — a ring, a graphic edge. Also the focus ring. | 3.71:1 on the page, 3.44:1 on muted |
+| `lime-600` | the **stroke** — a ring, a graphic edge. Also the focus ring. | 3.71:1 on the page, 3.44:1 on muted, 3.41:1 on the dark muted |
 | `lime-700` | **ink** on the light page | 4.94 / 5.70 / 4.59 on page, card and muted |
 | `lime-200` | **ink** on the dark page | 16.12:1 on the dark page |
 
@@ -241,9 +241,24 @@ to a page saying what the surface is for and how the work is done today. Hiding
 them teaches a false map that moves later; an empty table looks like a bug on a
 screen where a bug means somebody is not being paid.
 
-**One hero per screen.** Home has the gauge and the primary action directly under
-it. Review has the theatre. Pipeline has the stage track. No page is a grid of
-same-size cards of icon-plus-heading-plus-text.
+**One hero per screen.** Review has the theatre. Pipeline has the stage track. No
+page is a grid of same-size cards of icon-plus-heading-plus-text.
+
+**Home is ordered before it is composed**, and the order is: attention needed →
+next action → shift results → recent work → optional insights. Imagery and
+motion serve that order and never reorder it. The one photograph on the screen
+is in the *next action* band, because that is the only place on Home where a
+picture is the subject rather than a decoration; the gauge belongs to *shift
+results*, because progress is a result and not an instruction; and Trúc is last,
+in *optional insights*, because he is an additional channel and never the only
+one. A reviewer who reads the first two hundred pixels has read the two things
+that can cost somebody money.
+
+**No still is ever drawn beside an episode.** A picture next to an episode id is
+a claim about what is in that recording, and this console has no per-episode
+frame to make it with. The tiles in `public/tiles/` carry a `CREDITS.json`, and
+four of them are marked `UNCLEARED` — a demo may show those, nothing a partner
+sees may.
 
 ## Motion
 
@@ -253,7 +268,18 @@ conveys state, never decoration, and there is no page-load sequence.
 
 Authored motion is a closed list, and `/review` is not on it:
 
-- **The gauge sweep** — 900ms, once, on Home. The one number worth watching move.
+- **The gauge sweep** — 900ms, once, on Home, and it starts when the ring
+  reaches the viewport rather than when the page loads. The arc carries its true
+  offset whether or not that ever happens, so a gauge nobody scrolls to reads
+  the right number instead of reading zero.
+- **`.reveal`** — Home's sections rise into place as the page is read, once
+  each, at `--duration-slow` on the one ease. The whole rule lives inside a
+  `prefers-reduced-motion: no-preference` block, which is the load-bearing part:
+  written the other way round, an operator who asked for no motion gets a screen
+  of invisible sections held down by an `opacity: 0` nothing ever clears. It is
+  applied below the fold only — the band at the top of Home is on the first
+  paint, and animating what is already there is a page-load sequence rather than
+  a scroll one.
 - **Trúc** — breathing, a blink every 3–6s, his head following the pointer, a
   jump with a squash on the landing when he is pressed, and, during the guided
   tour, a walk to the coach mark's target with a bob and a roll timed to the
@@ -266,9 +292,16 @@ Authored motion is a closed list, and `/review` is not on it:
 - **`.lease-expiring`** — a slow 1.6s pulse, so a lease running out reads as a
   warning rather than an alarm.
 
-**Nothing moves on `/review`**, and nowhere else has a page-load sequence:
-sections do not fade or rise in as a screen mounts. Motion here conveys state or
-it is not there.
+**Nothing moves on `/review`**, and nowhere has a page-load sequence: a section
+rises when it is scrolled to, never because a screen mounted. Motion here
+conveys state or it is not there.
+
+**Anything that idles carries a way to stop it.** `PandaStage` breathes and
+blinks for as long as the tab is visible, which is what WCAG 2.2's Pause, Stop,
+Hide is about — and `prefers-reduced-motion` does not answer it, because that is
+a different person making a different decision somewhere else. The stage takes a
+`paused` prop that runs through the same `still` path reduced motion already
+takes, and the caller draws the control: on Home it is a real button beside him.
 
 `prefers-reduced-motion` collapses all of it. The panda in particular is not
 slowed down under it — `PandaStage` switches its render loop to `demand` and the
@@ -395,8 +428,28 @@ rect as well, and stands beside it rather than on it. DPR is capped at 1.5, the
 loop stops when the tab is hidden, and the loader's allocations are disposed on
 unmount.
 
-He appears in the shift gauge, empty states, loading states, the sign-in panel,
-the not-built pages and the guided tour. **He never appears on the review
+**He is not in the shift gauge, and that is a decision taken by the product
+owner.** He stood in the middle of the ring at a size where a character with a
+fixed camera and a pointer-driven yaw reads as a figure trapped in a hoop; the
+word used was *uncanny*. The ring is a measurement and is now only that. He has
+his own panel at the foot of Home instead, where he is a character rather than a
+decoration inside an instrument — and where what he *says* is held to the rule
+below.
+
+**A greeting is authored. An operational statement is evidence.** Every sentence
+he says that asserts a fact comes from the same query, with the same scope, the
+same freshness stamp and the same error state as its ordinary counterpart
+elsewhere on the screen — and that counterpart is always there, because he is an
+additional channel and never the only one. `Shift` carries current figures and no
+historical series, so there is nothing behind a trend and he does not claim one.
+When a request failed he says **"Not connected"** and shows a dash; he never
+substitutes an example for a figure that did not load, and no money is ever
+animated through values nobody was paid. Numerical demonstrations live behind a
+preview the operator turns on by hand, every value carrying "Example — not live
+data" in all three locales.
+
+He appears in empty states, loading states, the sign-in panel, the not-built
+pages, Home's optional insights and the guided tour. **He never appears on the review
 screen** — `PandaStage` returns `null` when `location.pathname` starts with
 `/review`, so no caller can put him there by accident. The rule's reason is
 footage: nothing cartoon goes next to a recording somebody is paid or not paid

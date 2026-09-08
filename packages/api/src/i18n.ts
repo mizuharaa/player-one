@@ -1141,6 +1141,24 @@ const en = {
   'login.slogan.1': 'Wear it.',
   'login.slogan.2': 'Live your day.',
   'login.slogan.3': 'Reviewed minutes, paid.',
+
+  /*
+   * The landing's own three controls, and all three are real.
+   *
+   * `login.skip` is the promise this screen makes before any of the
+   * choreography runs: the form is one keypress away and never behind a
+   * scroll. It is the first thing in the tab order and it is also the visible
+   * cue at the foot of the tile field, because the person who does not use a
+   * keyboard needs the same way out.
+   *
+   * The two motion labels are WCAG 2.2 SC 2.2.2. The tiles drift for longer
+   * than five seconds, so there has to be a control that stops them, and
+   * honouring `prefers-reduced-motion` is not that control — it is a different
+   * guarantee for a different person.
+   */
+  'login.skip': 'Skip to sign in',
+  'login.pauseMotion': 'Pause the moving background',
+  'login.resumeMotion': 'Resume the moving background',
   'login.network':
     'The service did not answer. Check the machine is on the centre network and try again.',
 
@@ -1181,6 +1199,61 @@ const en = {
   'ui.a.home.recent.error': 'Your recent verdicts did not load.',
   /* Shown where a figure would be. Not a zero: nothing was measured. */
   'ui.a.home.unavailable': 'No figure',
+
+  /*
+   * Home, rebuilt around one order: attention needed, next action, shift
+   * results, recent work, optional insights.
+   *
+   * `asOf` is the freshness stamp every operational sentence on that screen
+   * carries — the mascot's included. A claim about the queue with no time on
+   * it is a claim about an unknown moment, and the moment is what makes it
+   * checkable.
+   */
+  'ui.a.home.asOf': 'As of {{time}}',
+  'ui.a.home.next.title': 'One recording at a time.',
+  'ui.a.home.next.body':
+    "A verdict here is the only place a collector's payment comes from. Take the next episode when you are ready.",
+  'ui.a.home.queueWaiting': 'waiting in your queue',
+  'ui.a.home.results': 'What this shift has done',
+  'ui.a.home.median': 'Median time to verdict',
+  'ui.a.home.median.note':
+    'The middle value across the reviews this shift timed. Instrumentation, never money.',
+  'ui.a.home.attention.none': 'Nothing is waiting for a human.',
+  'ui.a.home.attention.unknown':
+    'Not connected. This screen cannot say what needs attention.',
+
+  /*
+   * Trúc's own strings, and the rule they exist under: a greeting is authored,
+   * an operational statement is evidence. `truc.greet` is the authored half.
+   * `truc.offline` is what he says instead of a figure when the request
+   * failed, and `truc.source` is where the one figure he does report came
+   * from. He never gets a sentence that has no counterpart on the page.
+   */
+  'ui.a.home.insights': 'Optional insights',
+  'ui.a.home.truc.lede':
+    'Trúc is an extra channel. Everything he says is written on this page as well, so nothing depends on him.',
+  'ui.a.home.truc.greet': 'Hello. {{shift}}.',
+  'ui.a.home.truc.offline': 'Not connected. I have nothing measured to tell you.',
+  'ui.a.home.truc.source': 'Source: your shift figures.',
+  'ui.a.home.truc.pause': 'Pause Trúc',
+  'ui.a.home.truc.resume': 'Resume Trúc',
+
+  /*
+   * The preview: numerical demonstrations, entered by hand and labelled at
+   * every value rather than once at the top of the group. A heading two
+   * hundred pixels away is not what somebody photographs.
+   */
+  'ui.a.home.preview.show': 'Show example insights',
+  'ui.a.home.preview.hide': 'Hide example insights',
+  'ui.a.home.preview.why':
+    'Nothing here is measured. The examples show the shape of a panel that is not built yet.',
+  'ui.a.home.preview.note':
+    'The shift endpoint returns current figures and no history, so there is no trend behind any of these. They are drawn to agree a layout, and they are never shown in place of a figure that failed to load.',
+  'ui.a.home.preview.badge': 'Example — not live data',
+  'ui.a.home.preview.trend': 'Most recorded scenario',
+  'ui.a.home.preview.trendValue': 'Gardening',
+  'ui.a.home.preview.week': 'Footage you judged this week',
+  'ui.a.home.preview.streak': 'Shifts in a row',
 
   'ui.a.notBuilt.today': 'How this is done today',
 
@@ -2208,6 +2281,9 @@ const zh: Record<MessageKey, string> = {
   'login.slogan.1': '戴上它。',
   'login.slogan.2': '照常生活。',
   'login.slogan.3': '审核通过的每一分钟，都有报酬。',
+  'login.skip': '跳过，直接登录',
+  'login.pauseMotion': '暂停背景动画',
+  'login.resumeMotion': '继续播放背景动画',
   'login.network': '服务没有应答。请确认本机在中心网络内，然后重试。',
 
   'login.legal': '登录即表示您接受 PlayerOne 处理您数据的方式。',
@@ -2234,6 +2310,36 @@ const zh: Record<MessageKey, string> = {
     '本屏幕其余部分仍可使用。这些计数来自审核数据库；如果反复出现，说明接口无法连接 Postgres。',
   'ui.a.home.recent.error': '最近的审核记录未能载入。',
   'ui.a.home.unavailable': '暂无数据',
+
+  'ui.a.home.asOf': '截至 {{time}}',
+  'ui.a.home.next.title': '一次只看一段录制。',
+  'ui.a.home.next.body': '收集者的报酬只来自这里的结论。准备好了就领取下一集。',
+  'ui.a.home.queueWaiting': '在你的队列中等待',
+  'ui.a.home.results': '本班次已完成的工作',
+  'ui.a.home.median': '判定用时中位数',
+  'ui.a.home.median.note': '本班次已计时审核的中位值。仅作观测，与金额无关。',
+  'ui.a.home.attention.none': '目前没有需要人工处理的事项。',
+  'ui.a.home.attention.unknown': '未连接。本屏幕无法说明哪些事项需要处理。',
+
+  'ui.a.home.insights': '可选洞察',
+  'ui.a.home.truc.lede':
+    'Trúc 只是一个额外渠道。他说的每一句，本页面都另有写明，任何事都不依赖他。',
+  'ui.a.home.truc.greet': '你好。{{shift}}。',
+  'ui.a.home.truc.offline': '未连接。我没有可以告诉你的实测数据。',
+  'ui.a.home.truc.source': '来源：你的本班次数据。',
+  'ui.a.home.truc.pause': '暂停 Trúc',
+  'ui.a.home.truc.resume': '恢复 Trúc',
+
+  'ui.a.home.preview.show': '显示示例洞察',
+  'ui.a.home.preview.hide': '隐藏示例洞察',
+  'ui.a.home.preview.why': '这里没有任何实测数据。示例只展示尚未建成的面板的样子。',
+  'ui.a.home.preview.note':
+    '本班次接口只返回当前数值，不返回历史序列，因此这些数字背后没有任何趋势。它们只用于确定版式，绝不会用来顶替载入失败的数值。',
+  'ui.a.home.preview.badge': '示例 — 非实时数据',
+  'ui.a.home.preview.trend': '记录最多的场景',
+  'ui.a.home.preview.trendValue': '园艺',
+  'ui.a.home.preview.week': '本周你判定的时长',
+  'ui.a.home.preview.streak': '连续班次',
 
   'ui.a.notBuilt.today': '目前这项工作怎么做',
 
@@ -3361,6 +3467,9 @@ const vi: Record<MessageKey, string> = {
   'login.slogan.1': 'Đeo camera.',
   'login.slogan.2': 'Sống như mọi ngày.',
   'login.slogan.3': 'Phút được duyệt, được trả.',
+  'login.skip': 'Bỏ qua, đến phần đăng nhập',
+  'login.pauseMotion': 'Tạm dừng chuyển động nền',
+  'login.resumeMotion': 'Tiếp tục chuyển động nền',
   'login.network':
     'Dịch vụ không trả lời. Hãy kiểm tra máy có nằm trong mạng của trung tâm rồi thử lại.',
 
@@ -3388,6 +3497,40 @@ const vi: Record<MessageKey, string> = {
     'Mọi phần khác của màn hình này vẫn dùng được. Các con số lấy từ cơ sở dữ liệu duyệt; nếu lỗi lặp lại thì API không kết nối được Postgres.',
   'ui.a.home.recent.error': 'Không tải được các kết luận gần đây.',
   'ui.a.home.unavailable': 'Chưa có số liệu',
+
+  'ui.a.home.asOf': 'Tính đến {{time}}',
+  'ui.a.home.next.title': 'Mỗi lần một bản ghi.',
+  'ui.a.home.next.body':
+    'Tiền của người thu thập chỉ đến từ kết luận ở đây. Khi sẵn sàng, hãy nhận tập tiếp theo.',
+  'ui.a.home.queueWaiting': 'đang chờ trong hàng đợi của bạn',
+  'ui.a.home.results': 'Ca này đã làm được gì',
+  'ui.a.home.median': 'Trung vị thời gian ra kết luận',
+  'ui.a.home.median.note':
+    'Giá trị giữa của các lượt duyệt được bấm giờ trong ca này. Chỉ để theo dõi, không phải tiền.',
+  'ui.a.home.attention.none': 'Không có việc nào đang chờ người xử lý.',
+  'ui.a.home.attention.unknown':
+    'Chưa kết nối. Màn hình này không thể nói việc nào cần xử lý.',
+
+  'ui.a.home.insights': 'Thông tin thêm (tuỳ chọn)',
+  'ui.a.home.truc.lede':
+    'Trúc chỉ là một kênh phụ. Mọi điều Trúc nói đều đã được ghi trên trang này, nên không có gì phụ thuộc vào Trúc.',
+  'ui.a.home.truc.greet': 'Xin chào. {{shift}}.',
+  'ui.a.home.truc.offline': 'Chưa kết nối. Tôi không có số liệu đo được nào để báo.',
+  'ui.a.home.truc.source': 'Nguồn: số liệu ca làm việc của bạn.',
+  'ui.a.home.truc.pause': 'Tạm dừng Trúc',
+  'ui.a.home.truc.resume': 'Chạy lại Trúc',
+
+  'ui.a.home.preview.show': 'Hiện ví dụ minh hoạ',
+  'ui.a.home.preview.hide': 'Ẩn ví dụ minh hoạ',
+  'ui.a.home.preview.why':
+    'Không có gì ở đây được đo. Các ví dụ chỉ cho thấy hình dạng của một bảng chưa được xây.',
+  'ui.a.home.preview.note':
+    'Điểm cuối ca làm việc trả về số liệu hiện tại và không có chuỗi lịch sử, nên không có xu hướng nào đứng sau các con số này. Chúng chỉ dùng để chốt bố cục, và không bao giờ thay thế một số liệu tải lỗi.',
+  'ui.a.home.preview.badge': 'Ví dụ — không phải dữ liệu thật',
+  'ui.a.home.preview.trend': 'Bối cảnh được ghi nhiều nhất',
+  'ui.a.home.preview.trendValue': 'Làm vườn',
+  'ui.a.home.preview.week': 'Thời lượng bạn duyệt tuần này',
+  'ui.a.home.preview.streak': 'Số ca liên tiếp',
 
   'ui.a.notBuilt.today': 'Hiện nay việc này được làm thế nào',
 

@@ -22,8 +22,8 @@
  * shell.nav           the pill row in the top bar
  * shell.counters      queue depth and pace
  * shell.guide         the "Show me around" button itself
- * home.gauge          the shift gauge with the panda in it
- * home.start          the primary action under the gauge
+ * home.gauge          the shift gauge
+ * home.start          the primary action, in the band at the top of Home
  * home.settled        the ink block: settled value, its sentence, its arrow
  * review.player       the video and its playhead
  * review.marks        the in / out marks

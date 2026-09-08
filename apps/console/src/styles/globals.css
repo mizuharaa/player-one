@@ -313,6 +313,37 @@
     animation: sweep 900ms var(--ease) both;
   }
 
+  /**
+   * The reveal: a section arriving as the page is read.
+   *
+   * The whole rule lives inside `prefers-reduced-motion: no-preference`, which
+   * is the load-bearing part. Written the other way round — a hidden default
+   * plus a media query that switches the transition off — an operator who has
+   * asked for no motion gets a screen of invisible sections held down by an
+   * `opacity: 0` nothing ever clears. This way the reduced-motion render has no
+   * start state to recover from: every section is in place in the first frame,
+   * and two frames two seconds apart are identical.
+   *
+   * It is a rise from an already-visible layout position, on the one ease and
+   * at `--duration-slow`. Home applies it below the fold only: the band at the
+   * top of that screen is on the first paint, and animating what is already
+   * there is a page-load sequence rather than a scroll one.
+   */
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      opacity: 0;
+      transform: translateY(16px);
+      transition:
+        opacity var(--duration-slow) var(--ease),
+        transform var(--duration-slow) var(--ease);
+    }
+
+    .reveal-in {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
   /* A lease that is running out. Slow, so it reads as a warning, not an alarm. */
   @keyframes lease-pulse {
     0%,
@@ -379,5 +410,260 @@
     line-height: 1.05;
     letter-spacing: -0.03em;
     font-weight: 500;
+  }
+
+  /* ---------------------------------------------------------------
+     The landing tile field, and the burst behind the type.
+
+     Every value here is a token or a geometry number. The colours, the
+     radius, the shadow and the two transition durations come from
+     `tokens.css`; the drift distances and the spoke angles are shape, and
+     shape is not a colour.
+
+     **The drift is CSS, not GSAP.** Sign-in must survive the tween engine
+     being blocked, and a keyframe that browsers run on the compositor is
+     both cheaper and one less thing to fail. GSAP is left with the one job
+     only it can do here — scrubbing the field against the scroll position.
+
+     **The neutral pose is the base rule, and both keyframes return to it.**
+     Under `prefers-reduced-motion` the animation is removed outright rather
+     than shortened, so the field is the composition written in `.tile`
+     itself: same pixels on every paint, which is what makes two screenshots
+     two seconds apart identical.
+     --------------------------------------------------------------- */
+
+  .tile-field {
+    /* Small enough that twelve of them ring the type on a 390px phone. */
+    --tile: 66px;
+    position: absolute;
+    inset: 0;
+  }
+
+  @media (min-width: 640px) {
+    .tile-field {
+      --tile: 104px;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .tile-field {
+      --tile: 136px;
+    }
+  }
+
+  .tile {
+    position: absolute;
+    left: var(--x);
+    top: var(--y);
+    width: calc(var(--tile) * var(--s));
+    height: calc(var(--tile) * var(--s));
+    object-fit: cover;
+    border-radius: var(--radius-base);
+    box-shadow: var(--shadow-lg);
+    /*
+     * Held back off the near-black so the field is a ground the type sits in
+     * front of, not twelve competing pictures. Full strength was tried and
+     * the slogan read as the least important thing on the screen.
+     */
+    opacity: 0.8;
+    transform: translate(-50%, -50%) rotate(var(--tilt));
+    animation: tile-drift-a 17s var(--ease) infinite alternate;
+  }
+
+  .tile:nth-child(3n + 2) {
+    animation: tile-drift-b 21s var(--ease) infinite alternate;
+  }
+
+  .tile:nth-child(3n) {
+    animation: tile-drift-c 25s var(--ease) infinite alternate;
+  }
+
+  /*
+   * Negative delays, so the twelve start mid-loop rather than all leaving the
+   * neutral pose together on the first frame — twelve tiles moving in unison
+   * reads as one sliding sheet.
+   */
+  .tile:nth-child(4n) {
+    animation-delay: -6s;
+  }
+
+  .tile:nth-child(4n + 3) {
+    animation-delay: -12s;
+  }
+
+  /*
+   * The travel is small on purpose: ±8px at 136px of tile. Every tile stays
+   * inside the panel at every viewport, which is what keeps the field from
+   * pushing a scrollbar onto the document at the far end of a loop.
+   */
+  @keyframes tile-drift-a {
+    from {
+      transform: translate(-50%, -50%) rotate(var(--tilt)) translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate(-50%, -50%) rotate(calc(var(--tilt) + 2deg)) translate3d(0, -8px, 0);
+    }
+  }
+
+  @keyframes tile-drift-b {
+    from {
+      transform: translate(-50%, -50%) rotate(var(--tilt)) translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate(-50%, -50%) rotate(calc(var(--tilt) - 1.5deg)) translate3d(4px, 7px, 0);
+    }
+  }
+
+  @keyframes tile-drift-c {
+    from {
+      transform: translate(-50%, -50%) rotate(var(--tilt)) translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate(-50%, -50%) rotate(calc(var(--tilt) + 1.5deg)) translate3d(-5px, -6px, 0);
+    }
+  }
+
+  /* The pause control stops it where it stands. WCAG 2.2 SC 2.2.2. */
+  .landing[data-motion='paused'] .tile {
+    animation-play-state: paused;
+  }
+
+  /*
+   * Removed, not shortened. The base rule at the top of this file collapses
+   * every duration to 0.01ms under reduced motion, which does leave a still
+   * field — but "still because it finishes instantly" is a property of a
+   * global override, and this guarantee is this component's own. Named here,
+   * it survives that rule being changed.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    .tile {
+      animation: none;
+    }
+  }
+
+  /**
+   * The halo: the protected surface the slogan is measured on.
+   *
+   * The field drifts and the burst ignites, so the ground under the type is
+   * not a fixed colour unless something makes it one. This is that something:
+   * an opaque core of `--stage` covering the whole type block with about a
+   * fifth to spare, fading out well outside it. Every pixel a glyph is drawn
+   * on is `--stage`, in both schemes, on every animation frame — which is why
+   * the ratio quoted in `Login.tsx` is a single number rather than a range.
+   *
+   * It is not a gradient on an ink. It is one colour losing its alpha, which
+   * is the same move the film scrim below it makes, and no ramp is
+   * interpolated to another colour anywhere in it.
+   */
+  .type-halo {
+    position: absolute;
+    /*
+     * The core has to reach the *corners* of the type block, not its edges,
+     * and an ellipse similar to the block reaches a corner only at
+     * √2 of its half-dimensions. So: a box twice the block, an opaque core at
+     * 75% of it — 1.5 against the 1.414 the geometry asks for — and the fade
+     * finished inside 2×, which is short enough not to band on the near-black
+     * and near enough not to reach across and dim a tile.
+     *
+     * The block is held to 34rem for the same reason. At 46rem the last line
+     * ran nearly the full width of the void, the core that would cover its
+     * corners also reached the tiles on both sides, and the corner of the
+     * block measured 4.36:1 against a lit spoke. There is no width at which
+     * both are true, so the block is the thing that gave way.
+     */
+    inset: -50%;
+    pointer-events: none;
+    background: radial-gradient(
+      closest-side,
+      var(--stage) 0 75%,
+      color-mix(in srgb, var(--stage) 0%, transparent) 100%
+    );
+  }
+
+  /*
+   * Nothing at all under reduced motion. Left undeclared it was still a flex
+   * item in the middle of the landing — no paint, but a box in the layout of
+   * a row that is centring the type.
+   */
+  .prism {
+    display: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    /**
+     * The burst.
+     *
+     * Sharp spokes, not a soft disc: a repeating conic gradient whose stops
+     * are hard, so every edge in it is an edge and nothing blends into
+     * anything. `screen` over the near-black ground is what makes it read as
+     * light rather than as paint.
+     *
+     * The hues are the four this screen is allowed — white, lime, bamboo and
+     * lavender. Sun and tech are the partner mark and are not available for
+     * decoration, so this is the product's own light and not a stock rainbow.
+     *
+     * The mask keeps the middle clear, so the spokes emerge from behind the
+     * words instead of crossing them, and the halo above guarantees the rest.
+     * It exists only under `prefers-reduced-motion: no-preference` — a burst
+     * that appears and disappears under a pointer is motion, and somebody who
+     * has asked for none gets a still field.
+     */
+    .prism {
+      display: block;
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      /*
+       * Sized so the mask's own outer fade lands inside the viewport. At
+       * min(150vh, 128vw) the ring was wider than the screen and every spoke
+       * ran off the edge at full strength, which reads as a striped page
+       * rather than as a burst.
+       */
+      width: min(118vh, 100vw);
+      aspect-ratio: 1;
+      pointer-events: none;
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(0.86) rotate(-6deg);
+      transition:
+        opacity var(--duration-slow) var(--ease),
+        transform var(--duration-slow) var(--ease);
+      mix-blend-mode: screen;
+      background: repeating-conic-gradient(
+        from -8deg,
+        var(--stage-over) 0deg 1.1deg,
+        transparent 1.1deg 5.4deg,
+        var(--lime-500) 5.4deg 6.7deg,
+        transparent 6.7deg 11deg,
+        var(--lavender-300) 11deg 12.4deg,
+        transparent 12.4deg 16.4deg,
+        var(--bamboo-400) 16.4deg 17.4deg,
+        transparent 17.4deg 22deg
+      );
+      -webkit-mask-image: radial-gradient(
+        closest-side,
+        transparent 0 38%,
+        #000 56%,
+        #000 78%,
+        transparent 100%
+      );
+      mask-image: radial-gradient(
+        closest-side,
+        transparent 0 38%,
+        #000 56%,
+        #000 78%,
+        transparent 100%
+      );
+    }
+
+    .landing:hover .prism,
+    .landing:focus-within .prism {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1) rotate(0deg);
+    }
+
+    /* Paused means paused: the pointer stops igniting it too. */
+    .landing[data-motion='paused'] .prism {
+      opacity: 0;
+    }
   }
 }

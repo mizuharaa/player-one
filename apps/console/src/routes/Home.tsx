@@ -1,31 +1,73 @@
 /**
- * Home: what the shift has done, and the one action worth taking.
+ * Home: what needs attention, what to do next, and what the shift has done.
  *
- * The composition refuses the dashboard default — a row of four identical stat
- * cards above a table. There is exactly one hero here, the gauge, because
- * there is exactly one number a reviewer is judged on, and the primary action
- * sits directly under it so the distance between "how am I doing" and "carry
- * on" is one glance and one key.
+ * **The order is the argument.** Attention needed → next action → shift
+ * results → recent work → optional insights. Imagery and motion serve that
+ * order and never reorder it: the picture is where the next action is, because
+ * that is the only place on this screen a photograph is the subject rather than
+ * a decoration, and the reveal on scroll runs down the page in the order above.
+ * An operator who reads only the first two hundred pixels has read the two
+ * things that can cost somebody money.
  *
- * **The figures are a ledger, not four cards.** Three measured quantities in
- * one panel, each sitting with the sentence that says what it is and what it
- * is not. A figure whose note is somewhere else is a figure somebody will
+ * **The figures are a ledger, not four cards.** Measured quantities in one
+ * panel, each sitting with the sentence that says what it is and what it is
+ * not. A figure whose note is somewhere else is a figure somebody will
  * misread, and on this screen a misread figure is a person thinking they have
  * been paid.
  *
  * **One ink block, and it has to earn it.** `.feature-block` appears once per
  * screen and only where a figure carries its own sentence and its own action
  * — here the settled value, "Your decisions only. Not the programme's spend."
- * and the arrow to `/settle`. It is not the big-number-small-label template
- * with a dark background: take away either the sentence or the arrow and the
- * block should go back to being a row in the ledger above it.
+ * and the arrow to `/settle`. Take away either the sentence or the arrow and
+ * the block should go back to being a row in the ledger above it.
  *
- * **The strip at the bottom is not a metric.** An unresolved episode is
- * somebody's unpaid recording sitting still, so it gets a sentence and a way
- * in rather than a number in a grid.
+ * ## Every figure on this screen is measured or absent
+ *
+ * Every value used to fall back to a literal on error — `data?.decided ?? 0`
+ * under the gauge, `durationShort(data?.payable_seconds ?? '0')` in the ledger
+ * — so a 500 photographed as "0 episodes reviewed" and "0:00 payable". A
+ * reviewer cannot tell that apart from a shift where they have genuinely done
+ * nothing, and on this screen that difference is whether somebody has been
+ * paid. A 500 must not render as a zero and the gauge must not draw a
+ * fabricated target.
+ *
+ * ## Trúc, and the line he must not cross
+ *
+ * He is at the bottom, in *optional insights*, and that placement is the whole
+ * of his contract. A greeting is authored and a reaction to a press is
+ * personality; **an operational statement is evidence**. So every sentence he
+ * says that asserts a fact comes from the same query, with the same scope, the
+ * same freshness stamp and the same error state as its ordinary counterpart
+ * further up the page — and the counterpart is always there, because he is an
+ * additional channel and never the only one. `Shift` supplies current figures
+ * and **no historical series**, so there is nothing behind a trend and he does
+ * not claim one. When the request failed he says **"Not connected"** and shows
+ * a dash, and he never substitutes an example for a figure that did not load.
+ *
+ * Numerical demonstrations live behind a preview the operator turns on by
+ * hand, every value carrying "Example — not live data" in all three locales.
+ *
+ * He is the existing `PandaStage` — the glTF model, the cursor tracking, the
+ * walk, the jump, the breathing — mounted only once his section approaches the
+ * viewport, because `React.lazy` alone defers until mount and his section is
+ * the last thing on the page. He idles constantly, so he carries a Pause
+ * control (WCAG 2.2 Pause, Stop, Hide); reduced motion alone does not satisfy
+ * that.
+ *
+ * ## Motion, and what a still frame has to hold
+ *
+ * The reveal is one CSS utility living entirely inside a
+ * `prefers-reduced-motion: no-preference` block, so under reduced motion there
+ * is no hidden start state to recover from: the screen is complete and
+ * readable in one frame, and two frames two seconds apart are identical. The
+ * gauge sweep is the console's one authored performance and is triggered when
+ * the ring reaches the viewport rather than on load — and the arc carries its
+ * true offset whether or not the class is ever added, so a gauge that is never
+ * scrolled to still reads the right number instead of reading zero.
  */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '../components/shell/AppShell.tsx';
 import { Button, Key } from '../components/ui/button.tsx';
@@ -33,9 +75,22 @@ import { Panel, Problem, Skeleton, VerdictPill } from '../components/ui/primitiv
 import { Panda } from '../components/identity/Panda.tsx';
 import { mascotStateAt, type MascotState } from '@playerone/design/tokens';
 import { IconAlert, IconArrow } from '../components/icons.tsx';
+import { cn } from '../lib/cn.ts';
 import { durationShort, money, pace, stampLocal } from '../lib/format.ts';
 import { api, ApiError, type Shift } from '../lib/api.ts';
 import { defaultPeriod } from '../payout/period.ts';
+
+/**
+ * Three.js stays out of the chunk this route loads, and out of `/review`'s.
+ *
+ * The lazy import is only half of it: `React.lazy` defers the fetch until the
+ * component mounts, and a component that mounts with the page has deferred
+ * nothing. `TrucPanel` mounts this only once its section is within a viewport
+ * of the fold.
+ */
+const PandaStage = lazy(() =>
+  import('../components/identity/PandaStage.tsx').then((m) => ({ default: m.PandaStage })),
+);
 
 /**
  * The four shift names, from the catalogue rather than from `MASCOT_LABEL`.
@@ -51,13 +106,70 @@ const SHIFT_KEY: Record<MascotState, string> = {
   nightOwl: 'home.shiftNight',
 };
 
-/** `19:42` on the clock of the machine that decided which shift this is. */
-function localClock(): string {
-  return new Date().toLocaleTimeString(undefined, {
+/** `19:42` on the clock of the machine reading it. 24-hour, like every stamp here. */
+function clockAt(at: number): string {
+  return new Date(at).toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
   });
+}
+
+/**
+ * Has this element reached the viewport yet — and it only ever answers once.
+ *
+ * Two jobs, one observer. Sections use it at the fold to add `reveal-in`, and
+ * `TrucPanel` uses it a viewport early to decide when the three.js chunk and
+ * the glTF are worth fetching. It latches: a section that has been read does
+ * not fade out again when it leaves, and a model that has been loaded is not
+ * unloaded behind the operator's back.
+ *
+ * `seen` starts false and the hidden start state exists **only** inside a
+ * `prefers-reduced-motion: no-preference` block, so a browser with no
+ * `IntersectionObserver` — or an observer that never fires — costs a reveal
+ * and never costs the content.
+ */
+function useOnScreen<T extends HTMLElement>(
+  rootMargin = '0px',
+): [React.RefObject<T | null>, boolean] {
+  const ref = useRef<T>(null);
+  const [seen, setSeen] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el === null || seen) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setSeen(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setSeen(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [rootMargin, seen]);
+
+  return [ref, seen];
+}
+
+/** A section that rises into place once, on the way down the page. */
+function Reveal({
+  children,
+  className,
+  ...rest
+}: { children: ReactNode } & React.HTMLAttributes<HTMLElement>) {
+  const [ref, seen] = useOnScreen<HTMLElement>('0px 0px -8% 0px');
+  return (
+    <section ref={ref} className={cn('reveal', seen && 'reveal-in', className)} {...rest}>
+      {children}
+    </section>
+  );
 }
 
 export function HomeScreen() {
@@ -75,7 +187,7 @@ export function HomeScreen() {
    * that body since it was written; this route was the one request that went
    * around it.
    */
-  const { data, isPending, error } = useQuery<Shift | null>({
+  const { data, isPending, error, dataUpdatedAt } = useQuery<Shift | null>({
     queryKey: ['shift'],
     queryFn: () => api.shift(),
     /** The shift figures move as the reviewer works; a minute is close enough. */
@@ -83,17 +195,19 @@ export function HomeScreen() {
   });
 
   /**
-   * The query is done and there are no figures.
-   *
-   * Every value on this screen used to fall back to a literal on error —
-   * `data?.decided ?? 0` under the gauge, `durationShort(data?.payable_seconds
-   * ?? '0')` in the ledger — so a 500 photographed as "0 episodes reviewed"
-   * and "0:00 payable". A reviewer cannot tell that apart from a shift where
-   * they have genuinely done nothing, and on this screen that difference is
-   * whether somebody has been paid. There is no measurement here, so the
-   * screen says so.
+   * The query is done and there are no figures. Distinct from `isPending`,
+   * which is still loading: a skeleton that never resolves and a zero are the
+   * two ways this screen used to lie about a failed request.
    */
   const unavailable = !isPending && !data;
+
+  /**
+   * When these figures were last measured, on the clock of the machine reading
+   * them. Every operational sentence on this screen — Trúc's included — is
+   * stamped with it, because a claim about the queue with no time on it is a
+   * claim about an unknown moment.
+   */
+  const asOf = data && dataUpdatedAt > 0 ? clockAt(dataUpdatedAt) : null;
 
   const state = mascotStateAt();
   const approvalRate =
@@ -106,7 +220,7 @@ export function HomeScreen() {
       operator={data?.reviewer}
     >
       {error ? (
-        <div className="mb-6">
+        <div className="mb-5">
           <Problem
             reference={error instanceof ApiError ? error.ref : undefined}
             title={t('ui.a.home.error.title')}
@@ -115,36 +229,39 @@ export function HomeScreen() {
         </div>
       ) : null}
 
+      {/* --- 1. Attention needed. First, and reachable without the panda. --- */}
+      <Attention
+        needsHuman={data?.needs_human ?? null}
+        isPending={isPending}
+        unavailable={unavailable}
+        asOf={asOf}
+      />
+
       {/* ---------------------------------------------------------------
-          The band, and it is the recomposition this screen was missing.
+          2. The next action, and the one place a photograph is the subject.
 
-          The world changed on 2026-09-07 and for one round this page only
-          changed colour — same two panels, same gauge, same table, repainted
-          lavender. Daniel said it looked exactly like the previous version and
-          he was right: a palette is not a composition.
+          A frame of collected footage runs the full width under a measured ink
+          scrim, and what stands on it is only what an arriving reviewer has to
+          act on: which shift this is, how much work is waiting, and the way in.
+          Progress is not here — progress is a result, and results are the next
+          section down.
 
-          So the shift now opens on the work itself. A frame of collected
-          footage runs the full width under a measured ink scrim, and the three
-          things a reviewer needs on arrival sit on it: which shift this is and
-          what time that is on the machine deciding it, how far through the
-          target they are, and the way in. The gauge moved here from its own
-          panel — it is still the one hero and there is still exactly one, it
-          is simply no longer floating on paper next to the ledger.
-
-          The image is `landing-poster.jpg`, the same still the sign-in film
+          Nothing in this band moves. It is above the fold, so a reveal here
+          would be a page-load sequence rather than a scroll one; and animating
+          a surface that type sits on would invalidate the contrast measured on
+          it. The image is `landing-poster.jpg`, the same still the sign-in film
           opens on. ponytail: when an episode still is reachable per reviewer,
           this becomes the next episode in their own queue, which is a better
           picture than a stock frame because it is the one they are about to
           judge.
           --------------------------------------------------------------- */}
-      <section
-        data-guide="home.gauge"
-        className="relative isolate overflow-hidden rounded-[var(--radius-xl)] shadow-[var(--shadow-lg)]"
-      >
+      <section className="relative isolate mt-5 overflow-hidden rounded-[var(--radius-xl)] shadow-[var(--shadow-lg)]">
         <img
           src="/landing-poster.jpg"
           alt=""
           aria-hidden="true"
+          /* The largest thing on the screen and above the fold: never lazy. */
+          decoding="async"
           className="absolute inset-0 -z-10 h-full w-full object-cover"
         />
         {/*
@@ -158,59 +275,90 @@ export function HomeScreen() {
           className="absolute inset-0 -z-10 bg-[color-mix(in_srgb,var(--stage)_60%,transparent)]"
         />
 
-        <div className="flex flex-col gap-6 p-6 text-[var(--stage-over)] lg:flex-row lg:items-center lg:gap-10 lg:p-9">
+        <div className="flex flex-col gap-6 p-6 text-[var(--stage-over)] sm:p-8 lg:flex-row lg:items-end lg:gap-10 lg:p-12">
           <div className="min-w-0 flex-1">
-            <h1 className="text-[0.875rem] font-semibold" title={t('ui.a.home.clock')}>
-              {t('home.greeting')} · {t(SHIFT_KEY[state])} ·{' '}
-              <span className="num">{localClock()}</span>
-            </h1>
-            <p className="mt-3 text-[2.75rem] font-extrabold leading-[1.02] tracking-[-0.035em]">
-              {isPending ? '—' : (data?.decided ?? '—')}
-              <span className="text-[1.25rem] font-bold opacity-80">
-                {' '}
-                / {isPending ? '—' : (data?.target ?? '—')}
-              </span>
+            <p className="text-[0.8125rem] font-semibold">
+              {t('home.greeting')} · {t(SHIFT_KEY[state])}
+              {asOf === null ? null : (
+                <>
+                  {' · '}
+                  <span className="num">{t('ui.a.home.asOf', { time: asOf })}</span>
+                </>
+              )}
             </p>
-            <p className="mt-1 text-[0.9375rem] opacity-90">{t('ui.a.home.gaugeCaption')}</p>
+            <h1 className="mt-3 max-w-[18ch] text-[2.0625rem] font-extrabold leading-[1.05] tracking-[-0.03em] sm:text-[2.625rem]">
+              {t('ui.a.home.next.title')}
+            </h1>
+            <p className="mt-3 max-w-[46ch] text-[0.9375rem] leading-relaxed">
+              {t('ui.a.home.next.body')}
+            </p>
+          </div>
+
+          <div className="flex shrink-0 flex-col items-start gap-5 lg:items-end">
             {/*
-              The arc, drawn small and wordless beside the figure.
-
-              `Gauge` prints the count and a caption inside its own ring, which
-              is right when it is the page's hero on paper and wrong here: the
-              band already says "3 / 60" in 44px type, and the ring repeating it
-              was the same number twice, with its caption in a muted grey that
-              measures nothing readable on the ink scrim. `bare` keeps the arc
-              and Trúc and drops the type.
+              The queue, which is what makes the button a decision rather than a
+              habit — and it is the programme's own bottleneck. A dash when the
+              request failed: there is no measurement, so there is no number.
             */}
+            <div className="lg:text-right">
+              {isPending ? (
+                <Skeleton className="h-[2.625rem] w-24" />
+              ) : (
+                <p className="num text-[2.625rem] font-extrabold leading-none tracking-[-0.03em]">
+                  {unavailable ? '—' : data?.queue_depth}
+                </p>
+              )}
+              <p className="mt-1.5 text-[0.875rem]">
+                {unavailable ? t('ui.a.home.unavailable') : t('ui.a.home.queueWaiting')}
+              </p>
+            </div>
 
-            <Button asChild variant="primary" size="lg" data-guide="home.start" className="mt-6">
+            {/*
+              The ink pill needs an edge here, and only here.
+
+              `--action` is near-black on the light shell, and this band is a
+              near-black scrim in both schemes: measured on rendered pixels, the
+              pill read **1.02:1** against the band around it. Its label was
+              fine — light ink on near-black is 15.78:1 — but WCAG 1.4.11 asks
+              3:1 of the boundary that identifies a control, and what an
+              operator saw was a line of type apparently floating on the
+              photograph. The hairline is `--stage-over`, the one white in the
+              system and the same token the type on this band uses, which
+              measures 5.26:1 against the worst pixel the scrim can produce. In
+              the dark scheme the pill inverts to near-white and carries its own
+              edge at 15.52:1; the ring costs nothing there.
+            */}
+            <Button
+              asChild
+              variant="primary"
+              size="lg"
+              data-guide="home.start"
+              className="ring-1 ring-[var(--stage-over)]"
+            >
               <Link to="/review">
                 {t('home.start')}
                 <Key>R</Key>
               </Link>
             </Button>
           </div>
-
-          {isPending ? (
-            <Skeleton className="h-[212px] w-[212px] shrink-0 rounded-full" />
-          ) : (
-            <div className="shrink-0 self-center">
-              <Gauge value={data?.decided ?? null} target={data?.target ?? null} state={state} bare />
-            </div>
-          )}
         </div>
       </section>
 
-      {/* ---------------------------------------------------------------
-          The ledger and the ink block, side by side now that the gauge has
-          gone up into the band. Two columns of equal weight rather than a
-          narrow rail beside a wide one: neither of these is subordinate to the
-          other, and the old 400px rail existed to hold a gauge that is no
-          longer in it.
-          --------------------------------------------------------------- */}
-      <div className="mt-5 grid items-start gap-5 lg:grid-cols-2">
-        <div className="flex flex-col gap-4">
-          {/* column one: the ledger */}
+      {/* --- 3. What the shift has done. --- */}
+      <Reveal className="mt-8">
+        <h2 className="text-[1.0625rem] font-bold tracking-[-0.02em]">
+          {t('ui.a.home.results')}
+        </h2>
+
+        <div className="mt-3 grid items-start gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+          <Panel data-guide="home.gauge" className="flex justify-center px-5 py-6">
+            {isPending ? (
+              <Skeleton className="h-[248px] w-[248px] rounded-full" />
+            ) : (
+              <Gauge value={data?.decided ?? null} target={data?.target ?? null} />
+            )}
+          </Panel>
+
           <Panel data-guide="home.figures" className="px-5 py-1.5">
             <dl className="m-0">
               <Figure
@@ -253,6 +401,24 @@ export function HomeScreen() {
                   )
                 }
               />
+              {/*
+                The median, which the payload has carried since it was written
+                and this screen never showed.
+
+                A mean over a handful of verdicts is moved several seconds by
+                one episode somebody left open while they took a call; the
+                median is not, which is the whole reason the server computes it.
+                Both are here because they answer different questions and the
+                pair is what says whether a shift was steady. `null` when no
+                review on this shift was timed — the server leaves untimed rows
+                out of it rather than counting them as zero, and so does this.
+              */}
+              <Figure
+                label={t('ui.a.home.median')}
+                value={data ? pace(numberOrNull(data.median_seconds_to_verdict)) : null}
+                unavailable={unavailable}
+                note={t('ui.a.home.median.note')}
+              />
               <Figure
                 label={t('queue.average')}
                 value={data ? pace(data.session_average_seconds) : null}
@@ -263,39 +429,112 @@ export function HomeScreen() {
           </Panel>
         </div>
 
-        {/* column two: the one ink block, which has its own sentence and its
-            own way out and so earns the weight. */}
         <Settled
+          className="mt-5"
           amount={data ? money(data.settled_amount, data.currency) : null}
           unavailable={unavailable}
         />
-      </div>
+      </Reveal>
 
-      {/* --- The strip that is not a metric. --- */}
-      {data && data.needs_human > 0 ? (
-        <Link
-          to="/episodes"
-          data-guide="home.needsHuman"
-          className="group mt-6 flex items-center gap-3.5 rounded-[var(--radius-lg)] border border-[var(--lavender-300)] bg-[var(--lavender-200)] px-5 py-4 no-underline transition-colors duration-150 ease-[var(--ease)] hover:border-[var(--action)]"
-        >
-          <IconAlert size={20} className="shrink-0 text-[var(--warn)]" />
-          <div className="min-w-0 flex-1">
-            <p className="text-[0.9375rem] font-bold text-[var(--warn)]">
-              <span className="num">{data.needs_human}</span> {t('home.needsHuman')}
-            </p>
-            <p className="mt-0.5 text-[0.875rem] text-[var(--warn)]">
-              {t('home.needsHuman.body')}
-            </p>
-          </div>
-          <IconArrow
-            size={18}
-            className="shrink-0 text-[var(--warn)] transition-transform duration-150 ease-[var(--ease)] group-hover:translate-x-0.5"
-          />
-        </Link>
-      ) : null}
-
+      {/* --- 4. The work itself, row by row. --- */}
       <RecentVerdicts currency={data?.currency ?? 'VND'} />
+
+      {/* --- 5. Optional insights, and the only place a mascot speaks. --- */}
+      <TrucPanel
+        needsHuman={data?.needs_human ?? null}
+        unavailable={unavailable}
+        isPending={isPending}
+        asOf={asOf}
+        state={state}
+      />
     </AppShell>
+  );
+}
+
+/**
+ * `median_seconds_to_verdict` arrives as a decimal string, or as nothing.
+ *
+ * `pace` takes a number and prints a dash for anything that is not one, so the
+ * parse is the whole of the conversion — and a string the server could not
+ * measure comes back `null` rather than as `NaN` dressed up as `0.0s`.
+ */
+function numberOrNull(value: string | null): number | null {
+  if (value === null) return null;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * What needs a human, first on the page and reachable without the mascot.
+ *
+ * Three states and they are three different sentences. A count is a link into
+ * `/episodes`, drawn in the attention hue and carrying its glyph. Zero is a
+ * measurement too and says so quietly, with the time it was measured at. A
+ * failed request says neither — "nothing needs attention" is a claim, and
+ * a screen with no figures is not entitled to make it.
+ */
+function Attention({
+  needsHuman,
+  isPending,
+  unavailable,
+  asOf,
+}: {
+  needsHuman: number | null;
+  isPending: boolean;
+  unavailable: boolean;
+  asOf: string | null;
+}) {
+  const { t } = useTranslation();
+
+  if (isPending) return <Skeleton className="h-14 w-full rounded-[var(--radius-lg)]" />;
+
+  if (unavailable || needsHuman === null) {
+    return (
+      <Panel className="flex items-center gap-3 px-5 py-4">
+        <span className="num text-[1.0625rem] text-[var(--muted-foreground)]" aria-hidden="true">
+          —
+        </span>
+        <p className="text-[0.875rem] text-[var(--muted-foreground)]">
+          {t('ui.a.home.attention.unknown')}
+        </p>
+      </Panel>
+    );
+  }
+
+  if (needsHuman === 0) {
+    return (
+      <Panel className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-5 py-4">
+        <p className="text-[0.875rem] font-semibold">{t('ui.a.home.attention.none')}</p>
+        {asOf === null ? null : (
+          <p className="num text-[0.8125rem] text-[var(--muted-foreground)]">
+            {t('ui.a.home.asOf', { time: asOf })}
+          </p>
+        )}
+      </Panel>
+    );
+  }
+
+  return (
+    <Link
+      to="/episodes"
+      data-guide="home.needsHuman"
+      className="group flex items-center gap-3.5 rounded-[var(--radius-lg)] border border-[var(--warn)]/40 bg-[var(--warn-bg)] px-5 py-4 no-underline transition-colors duration-150 ease-[var(--ease)] hover:border-[var(--warn)]"
+    >
+      <IconAlert size={20} className="shrink-0 text-[var(--warn)]" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[0.9375rem] font-bold text-[var(--warn)]">
+          <span className="num">{needsHuman}</span> {t('home.needsHuman')}
+        </p>
+        <p className="mt-0.5 text-[0.875rem] text-[var(--warn)]">
+          {t('home.needsHuman.body')}
+          {asOf === null ? null : <span className="num"> {t('ui.a.home.asOf', { time: asOf })}</span>}
+        </p>
+      </div>
+      <IconArrow
+        size={18}
+        className="shrink-0 text-[var(--warn)] transition-transform duration-150 ease-[var(--ease)] group-hover:translate-x-0.5"
+      />
+    </Link>
   );
 }
 
@@ -309,21 +548,36 @@ export function HomeScreen() {
  * of magnitude. The arrow is a real link to the screen that owns the money, so
  * the block is a door and not a poster.
  */
-function Settled({ amount, unavailable }: { amount: string | null; unavailable: boolean }) {
+function Settled({
+  amount,
+  unavailable,
+  className,
+}: {
+  amount: string | null;
+  unavailable: boolean;
+  className?: string;
+}) {
   const { t } = useTranslation();
   return (
-    <div data-guide="home.settled" className="feature-block relative px-6 py-6">
+    <div data-guide="home.settled" className={cn('feature-block relative px-6 py-6', className)}>
       <p className="text-[0.875rem] font-semibold text-[var(--stage-mid)]">{t('home.settled')}</p>
       {unavailable ? (
         <p className="mt-2 pr-14 text-[1.0625rem] text-[var(--stage-mid)]">
           {t('ui.a.home.unavailable')}
         </p>
       ) : amount === null ? (
-        <div className="mt-2 h-[2.75rem] w-40 animate-pulse rounded-[var(--radius-sm)] bg-white/10" />
+        <div className="mt-2 h-[2.625rem] w-40 animate-pulse rounded-[var(--radius-sm)] bg-[var(--stage-panel)]" />
       ) : (
+        /*
+         * Printed, never counted up. Money is the one figure on this console
+         * that must never pass through a value it was not measured at: an
+         * animation from 0 to the total renders a sequence of amounts nobody
+         * was ever paid, and a screenshot taken mid-tween is a wrong number
+         * with a timestamp on it.
+         */
         <p className="figure mt-1.5 pr-14 text-[var(--stage-fg)]">{amount}</p>
       )}
-      <p className="mt-3 max-w-[38ch] text-[0.875rem] leading-relaxed text-[var(--stage-mid)]">
+      <p className="mt-3 max-w-[52ch] text-[0.875rem] leading-relaxed text-[var(--stage-mid)]">
         {t('ui.a.home.settled.note')}
       </p>
 
@@ -354,6 +608,11 @@ function Settled({ amount, unavailable }: { amount: string | null; unavailable: 
  * notice that the partial they marked at 11:04 paid less than they expected,
  * which is the first step of every payment dispute — so the row carries the
  * measured duration beside the effective one, and the amount beside both.
+ *
+ * **No still beside a row, and that is deliberate.** A picture next to an
+ * episode id is a claim about what is in that recording, and this console has
+ * no per-episode frame to make it with. A stock frame there would be the one
+ * kind of decoration this screen cannot afford.
  */
 function RecentVerdicts({ currency }: { currency: string }) {
   const { t } = useTranslation();
@@ -365,10 +624,10 @@ function RecentVerdicts({ currency }: { currency: string }) {
   const reviews = data?.reviews ?? [];
 
   return (
-    <section className="mt-6" data-guide="home.recent">
-      <h2 className="text-[0.9375rem] font-bold tracking-[-0.01em]">{t('recent.title')}</h2>
+    <Reveal className="mt-8" data-guide="home.recent">
+      <h2 className="text-[1.0625rem] font-bold tracking-[-0.02em]">{t('recent.title')}</h2>
 
-      <Panel className="mt-2 overflow-hidden">
+      <Panel className="mt-3 overflow-hidden">
         {isPending ? (
           <div className="flex flex-col gap-2 p-4">
             <Skeleton className="h-5 w-full" />
@@ -457,7 +716,7 @@ function RecentVerdicts({ currency }: { currency: string }) {
                       >
                         {r.episodeId.slice(0, 8)}
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="whitespace-nowrap px-3 py-2.5">
                         <VerdictPill verdict={verdict} size="sm">
                           {t(`verdict.${verdict}`)}
                         </VerdictPill>
@@ -483,7 +742,210 @@ function RecentVerdicts({ currency }: { currency: string }) {
           </div>
         )}
       </Panel>
+    </Reveal>
+  );
+}
+
+/**
+ * Trúc: an additional channel, last on the page, and held to the same standard
+ * as every figure above him.
+ *
+ * The greeting is authored and costs nothing. The one operational sentence he
+ * says is the attention count — the same field, the same query, the same
+ * freshness stamp and the same failure behaviour as the strip at the top of
+ * this screen, which is still there and is still the channel that matters. On
+ * a failed request he says "Not connected" and shows a dash; he never fills the
+ * hole with an example.
+ *
+ * **The preview is entered by hand and never by the screen.** `Shift` carries
+ * current figures and no history, so a trend has nothing behind it. The tiles
+ * below the toggle demonstrate the shape of a panel that does not exist yet,
+ * every one of them labelled "Example — not live data", and none of them ever
+ * stands where a live figure failed to load.
+ *
+ * **He idles, so he can be stopped.** Breathing and blinking run for as long as
+ * the tab is visible, which is exactly the moving content WCAG 2.2's Pause,
+ * Stop, Hide is about; reduced motion is a different user and a different
+ * setting. The button is real, it is beside him, and it is keyboard-reachable.
+ */
+function TrucPanel({
+  needsHuman,
+  unavailable,
+  isPending,
+  asOf,
+  state,
+}: {
+  needsHuman: number | null;
+  unavailable: boolean;
+  isPending: boolean;
+  asOf: string | null;
+  state: MascotState;
+}) {
+  const { t } = useTranslation();
+  /** A viewport of warning, so the chunk and the glTF land before he is read. */
+  const [ref, near] = useOnScreen<HTMLElement>('100% 0px');
+  const [paused, setPaused] = useState(false);
+  const [preview, setPreview] = useState(false);
+
+  /** The one thing he asserts, and the source it comes from. */
+  const status = isPending
+    ? null
+    : unavailable || needsHuman === null
+      ? { text: t('ui.a.home.truc.offline'), figure: '—', muted: true }
+      : needsHuman === 0
+        ? { text: t('ui.a.home.attention.none'), figure: null, muted: false }
+        : { text: t('home.needsHuman'), figure: String(needsHuman), muted: false };
+
+  return (
+    <section ref={ref} className={cn('reveal mt-8', near && 'reveal-in')}>
+      <h2 className="text-[1.0625rem] font-bold tracking-[-0.02em]">{t('ui.a.home.insights')}</h2>
+      <p className="mt-1 max-w-[68ch] text-[0.875rem] text-[var(--muted-foreground)]">
+        {t('ui.a.home.truc.lede')}
+      </p>
+
+      <Panel className="mt-3 p-5 sm:p-6">
+        <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center">
+          <div className="flex shrink-0 flex-col items-center gap-2">
+            {/*
+              The flat panda holds his place at the same size until the chunk
+              arrives, so nothing on the page moves when it does — and if there
+              is no WebGL, or the driver refuses the renderer, the stage falls
+              back to this same drawing on its own.
+            */}
+            {near ? (
+              <Suspense fallback={<Panda size={196} state={state} />}>
+                <PandaStage size={196} paused={paused} label={t('login.trucTitle')} />
+              </Suspense>
+            ) : (
+              <Panda size={196} state={state} />
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-pressed={paused}
+              onClick={() => setPaused((on) => !on)}
+            >
+              {paused ? t('ui.a.home.truc.resume') : t('ui.a.home.truc.pause')}
+            </Button>
+          </div>
+
+          <div className="min-w-0 flex-1">
+            {/*
+              One key, one sentence, punctuation and all.
+
+              It was assembled here — greeting, space, shift name, a full stop
+              written in the `.tsx` — and Chinese renders that as `你好。 白班.`:
+              a Latin period after a CJK clause that already ends in one, plus a
+              Latin word space CJK does not use. A sentence is not two strings
+              and a separator; the separator is part of the language.
+            */}
+            <p className="text-[1.0625rem] font-bold tracking-[-0.01em]">
+              {t('ui.a.home.truc.greet', { shift: t(SHIFT_KEY[state]) })}
+            </p>
+
+            {status === null ? (
+              <Skeleton className="mt-3 h-6 w-2/3" />
+            ) : (
+              <p
+                className={cn(
+                  'mt-3 text-[0.9375rem]',
+                  status.muted && 'text-[var(--muted-foreground)]',
+                )}
+              >
+                {status.figure === null ? null : (
+                  <span className="num font-semibold">{status.figure} </span>
+                )}
+                {status.text}
+              </p>
+            )}
+
+            {/*
+              Where he got it, and when. The same two facts every operational
+              sentence on this screen carries — without them a mascot saying
+              "nothing needs attention" is a mascot's opinion.
+            */}
+            <p className="mt-1.5 text-[0.8125rem] text-[var(--muted-foreground)]">
+              {t('ui.a.home.truc.source')}
+              {asOf === null ? null : <span className="num"> {t('ui.a.home.asOf', { time: asOf })}</span>}
+            </p>
+
+            <div className="mt-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                aria-expanded={preview}
+                onClick={() => setPreview((on) => !on)}
+              >
+                {preview ? t('ui.a.home.preview.hide') : t('ui.a.home.preview.show')}
+              </Button>
+              <p className="min-w-0 flex-1 text-[0.8125rem] text-[var(--muted-foreground)]">
+                {t('ui.a.home.preview.why')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {preview ? (
+          <div className="mt-6 border-t border-[var(--border)] pt-6">
+            <p className="max-w-[68ch] text-[0.875rem] text-[var(--muted-foreground)]">
+              {t('ui.a.home.preview.note')}
+            </p>
+            <ul className="mt-4 grid list-none grid-cols-1 gap-4 p-0 sm:grid-cols-3">
+              <ExampleTile
+                image="/tiles/hf-garden.jpg"
+                label={t('ui.a.home.preview.trend')}
+                value={t('ui.a.home.preview.trendValue')}
+              />
+              <ExampleTile
+                image="/tiles/film-kitchen.jpg"
+                label={t('ui.a.home.preview.week')}
+                value="4:12:30"
+              />
+              <ExampleTile
+                image="/tiles/film-books.jpg"
+                label={t('ui.a.home.preview.streak')}
+                value="12"
+              />
+            </ul>
+          </div>
+        ) : null}
+      </Panel>
     </section>
+  );
+}
+
+/**
+ * One demonstration, and it says so beside the value rather than once at the
+ * top of the group.
+ *
+ * The badge is next to every figure on purpose: a heading two hundred pixels
+ * away is not what somebody photographs, and a screenshot of a tile with no
+ * label on it is indistinguishable from a measurement. The picture sits above
+ * the type rather than behind it, so nothing here is text on a photograph and
+ * nothing here needs a scrim.
+ */
+function ExampleTile({ image, label, value }: { image: string; label: string; value: string }) {
+  const { t } = useTranslation();
+  return (
+    <li className="overflow-hidden rounded-[var(--radius-base)] border border-[var(--border)] bg-[var(--card)]">
+      <img
+        src={image}
+        alt=""
+        aria-hidden="true"
+        loading="lazy"
+        decoding="async"
+        className="block h-28 w-full object-cover"
+      />
+      <div className="p-4">
+        <p className="text-[0.8125rem] text-[var(--muted-foreground)]">{label}</p>
+        <p className="num mt-1 text-[1.3125rem] font-medium tracking-[-0.02em]">{value}</p>
+        <p className="mt-2 inline-block rounded-[var(--radius-sm)] bg-[var(--muted)] px-2 py-0.5 text-[0.75rem] font-semibold text-[var(--muted-foreground)]">
+          {t('ui.a.home.preview.badge')}
+        </p>
+      </div>
+    </li>
   );
 }
 
@@ -507,7 +969,14 @@ function Th({
     <th
       scope="col"
       className={
-        'px-3 py-2 text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--muted-foreground)] ' +
+        /*
+          `whitespace-nowrap`, because these headings are translated. "Pace"
+          is one short word in English and 用时 in Chinese, and the narrow
+          columns at 1280 broke both that heading and the verdict pill under
+          it into stacked characters — a column head reading vertically is a
+          column head somebody has to decode.
+        */
+        'whitespace-nowrap px-3 py-2 text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--muted-foreground)] ' +
         (align === 'right' ? 'text-right ' : 'text-left ') +
         (className ?? '')
       }
@@ -518,31 +987,40 @@ function Th({
 }
 
 /**
- * The gauge: a 240° arc with Trúc standing in the middle of it.
+ * The gauge: a 240° arc, and nothing standing inside it.
  *
  * An arc rather than a bar because it holds the target and the current value in
  * one shape at a size worth looking at, and because a bar that reaches its end
  * has nowhere left to go — a reviewer past target should see that, not see a
- * full bar. The sweep is one of the console's two authored motions: 900ms,
- * once, on load.
+ * full bar.
  *
- * **Bamboo, and never mistakable for a verdict.** The fill is `bamboo-600`,
- * which is the stroke step (3.01:1 on the muted track, the exact pair the
- * contrast test pins). Bamboo is barred from verdicts and from money, and this
- * ring carries three things that keep it on the right side of that line: a gap
- * at the bottom, the count printed as text, and a caption naming the unit. Past
- * target the stroke moves to `--pass`, which is the one moment the two
- * vocabularies meet on purpose — and the caption still says what it counts.
+ * **Trúc is not in it any more.** He stood in the middle of the ring, at a size
+ * where a character with a fixed camera and a pointer-driven yaw reads as a
+ * figure trapped in a hoop rather than as a mascot. The product owner called it
+ * uncanny and it was. The ring is a measurement and it is now only that; he has
+ * his own panel at the foot of the page, where he is a character rather than a
+ * decoration inside an instrument.
  *
- * The panda is positioned over the arc rather than inside a `foreignObject`:
- * `PandaStage` mounts a WebGL canvas, and a canvas inside an SVG is a rendering
- * path nothing else in this console depends on.
+ * **The stroke steps, corrected.** The arc drew in `lime-500`, which is the
+ * ramp's *fill* step and is asserted by `contrast.test.ts` to fall **under**
+ * 3:1 on every light ground — measured 1.08:1 against the `--muted` track it is
+ * drawn on, so the one graphic on this screen that carries a quantity was the
+ * one that could not be told from its own background. It is `lime-600` now,
+ * which is the ramp's stroke step: 3.44:1 on the light muted fill and 3.42:1 on
+ * the dark one. Past target it becomes `--lime-ink`, the per-scheme step, which
+ * measures 4.59:1 light and 12.53:1 dark — where the old `lime-700` read 2.57:1
+ * on the dark track. Lime is progress and emphasis in this world and is barred
+ * from verdicts and from money; a ring that carries a count of episodes is
+ * exactly what it is for.
+ *
+ * The sweep is the console's one authored performance: 900ms, once, when the
+ * ring reaches the viewport. The arc is drawn at its true offset whether or not
+ * that ever happens, so a gauge nobody scrolls to reads the right number rather
+ * than reading zero.
  */
 function Gauge({
   value,
   target,
-  state,
-  bare = false,
 }: {
   /**
    * `null` on both when the shift query failed. The ring then draws its track
@@ -551,30 +1029,20 @@ function Gauge({
    */
   value: number | null;
   target: number | null;
-  state: MascotState;
-  /**
-   * Draw the arc and Trúc, and none of the type.
-   *
-   * The ring prints its own count and caption, which is right where it is the
-   * hero on paper. In the band it is beside a 44px figure saying the same
-   * thing, and its caption is a muted grey with nothing readable to sit on
-   * over an ink scrim. This drops both; the band's own type says it once.
-   */
-  bare?: boolean;
 }) {
   const { t } = useTranslation();
+  const [ref, seen] = useOnScreen<HTMLElement>('0px');
   const R = 104;
   const CX = 150;
   const CY = 128;
   /**
    * The stroke, fattened from 15 to 22.
    *
-   * At 15 the ring read as a hairline diagram beside a 240px card of white,
-   * and the bamboo — the one colour on this screen that means "how far along"
-   * — was the thinnest mark on it. 22 is a fourteenth of the diameter, which
-   * is the weight the ring-card comp draws, and it is what lets the fill be
-   * seen from a metre away at a counter. `bamboo-600` on `--muted` is pinned
-   * at 3.01:1 by the contrast test and nothing here changes that pair.
+   * At 15 the ring read as a hairline diagram beside a 240px card of white, and
+   * the accent — the one colour on this screen that means "how far along" — was
+   * the thinnest mark on it. 22 is a fourteenth of the diameter, which is the
+   * weight the ring-card comp draws, and it is what lets the fill be seen from
+   * a metre away at a counter.
    */
   const STROKE = 22;
   const SWEEP = 240;
@@ -604,86 +1072,55 @@ function Gauge({
 
   return (
     <figure
-      className="relative m-0 mt-3 w-[300px] max-w-full"
+      ref={ref}
+      className="relative m-0 w-[300px] max-w-full"
       role="img"
       aria-label={known ? t('ui.a.home.gauge', { value, target }) : t('ui.a.home.unavailable')}
     >
-      <svg viewBox="0 0 300 196" width="300" className="block max-w-full">
-        <path
-          d={track}
-          fill="none"
-          stroke="var(--muted)"
-          strokeWidth={STROKE}
-          strokeLinecap="round"
-        />
-        <path
-          className="gauge-fill"
-          d={track}
-          fill="none"
-          /*
-           * Bamboo whether or not the target is behind you. Turning the ring
-           * pass-green at 60 episodes made a shift's progress wear the colour
-           * that means a collector was paid; the deeper step marks the
-           * milestone without borrowing that meaning.
-           */
-          stroke={over ? 'var(--lime-700)' : 'var(--lime-500)'}
-          strokeWidth={STROKE}
-          strokeLinecap="round"
-          strokeDasharray={arcLength}
-          style={
-            {
-              '--sweep-from': `${arcLength}`,
-              '--sweep-to': `${arcLength * (1 - ratio)}`,
-              strokeDashoffset: arcLength * (1 - ratio),
-            } as React.CSSProperties
-          }
-        />
-      </svg>
+      <div className="relative">
+        <svg viewBox="0 0 300 196" width="300" className="block max-w-full">
+          <path
+            d={track}
+            fill="none"
+            stroke="var(--muted)"
+            strokeWidth={STROKE}
+            strokeLinecap="round"
+          />
+          <path
+            className={seen ? 'gauge-fill' : undefined}
+            d={track}
+            fill="none"
+            stroke={over ? 'var(--lime-ink)' : 'var(--lime-600)'}
+            strokeWidth={STROKE}
+            strokeLinecap="round"
+            strokeDasharray={arcLength}
+            style={
+              {
+                '--sweep-from': `${arcLength}`,
+                '--sweep-to': `${arcLength * (1 - ratio)}`,
+                strokeDashoffset: arcLength * (1 - ratio),
+              } as React.CSSProperties
+            }
+          />
+        </svg>
 
-      {/*
-        Trúc, standing in the ring at the size the comp draws him — and drawn
-        flat, not in three.js.
+        {/*
+          The count, on the ring's own centre, and it is HTML rather than an
+          SVG `<text>`: plain text inherits the font stack and the locale's own
+          digits instead of being a drawing of a number.
 
-        `PandaStage` was here at `size={120}`, which is 61px of character in a
-        186px ring: a toy in a hoop. Enlarging it was easy; facing him forward
-        was not. The stage's camera is fixed at 34° on the z axis and the only
-        rotation in it is a yaw the model takes from the pointer, clamped and
-        zero at rest — so `truc.glb`, which is authored facing the camera's
-        right, renders in profile whatever size it is passed. Measured, not
-        assumed: with the pointer parked on the exact centre of the canvas and
-        the scene settled for two seconds, the render is still a side view
-        (`.impeccable/a/panda-centre.png`). Nothing in this route's scope can
-        turn him; the fix is one `rotation.y` on the loaded scene inside
-        `PandaStage`, which the identity track owns.
-
-        So the ring gets the flat `Panda`, which is drawn front-facing from the
-        same turnaround sheet, in the same six fills, and is what the ring-card
-        comp shows. At 182px he stands with his shadow on the arc's lower ends
-        and about 10px of air over his ears. He is also the same artwork the
-        collector app ships, so the mascot at the centre of both products'
-        first screen is now literally the same drawing.
-      */}
-      <div className="pointer-events-none absolute left-[150px] top-[100px] -translate-x-1/2 -translate-y-1/2">
-        <Panda size={168} state={state} />
+          The offset is a percentage of the drawn box and not a pixel figure —
+          the centre of the arc is y=128 of a 196-unit viewBox, which is 65.3%
+          — so the number stays on the centre when the svg is scaled down
+          inside a narrow panel instead of drifting off it.
+        */}
+        <p className="num absolute inset-x-0 top-[65.3%] m-0 -translate-y-1/2 text-center text-[2.625rem] font-extrabold leading-none tracking-[-0.03em]">
+          {value ?? '—'}
+        </p>
       </div>
 
-      {/*
-        The count, under the ring's opening rather than inside the arc.
-
-        It is HTML and not an SVG `<text>` now: the numeral was competing with
-        the character for the middle of the ring, and moving it below the gap is
-        what let Trúc have the ring. Plain text also means it inherits the
-        font stack and the locale's own digits instead of being a drawing of a
-        number.
-      */}
-{bare ? null : (
-        <>
-      <p className="num relative m-0 text-center text-[2.75rem] font-extrabold leading-none tracking-[-0.03em]">
-        {value ?? '—'}
-      </p>
-
       <figcaption className="mt-2 text-center text-[0.875rem] text-[var(--muted-foreground)]">
-        {t('home.reviewed')}
+        {t('ui.a.home.gaugeCaption')}
         {target === null ? null : (
           <>
             {' · '}
@@ -692,8 +1129,6 @@ function Gauge({
           </>
         )}
       </figcaption>
-        </>
-      )}
     </figure>
   );
 }
@@ -704,8 +1139,8 @@ function Gauge({
  * Deliberately not a card: the label reads at body size in sentence case, the
  * value is mono because it is measured, and the note is a full sentence
  * underneath. A big number with a small tracked label above it and an accent
- * under it is the template this refuses — it makes four unrelated figures look
- * like one comparable set, and two of these four are not money at all.
+ * under it is the template this refuses — it makes unrelated figures look like
+ * one comparable set, and two of these are not money at all.
  */
 function Figure({
   label,

@@ -779,6 +779,7 @@ export function PandaStage({
   className,
   label,
   onPress,
+  paused = false,
 }: {
   mood?: PandaMood;
   /** Ignored when `anchor` is set; the layer is the viewport then. */
@@ -815,6 +816,19 @@ export function PandaStage({
    * and the coach mark have nothing to open.
    */
   onPress?: () => void;
+  /**
+   * Stopped by the operator, and not the same thing as reduced motion.
+   *
+   * He breathes and blinks for as long as the tab is visible, which is moving
+   * content that starts on its own and never ends — WCAG 2.2's Pause, Stop,
+   * Hide asks for a way to stop exactly that, and a `prefers-reduced-motion`
+   * setting is a different person making a different decision in a different
+   * place. The control belongs to the caller, because the caller is what has
+   * room to draw a button; the stage only has to honour it, which it does
+   * through the same `still` path reduced motion already takes — one drawn
+   * frame in the static pose, and no rAF behind it.
+   */
+  paused?: boolean;
 }) {
   const [reduced, setReduced] = useState(false);
   const [running, setRunning] = useState(true);
@@ -898,7 +912,7 @@ export function PandaStage({
    * scheduled, and `Truc` reads the same flag so the one frame it does draw is
    * the static pose rather than a step of the animation.
    */
-  const still = reduced || !running;
+  const still = reduced || !running || paused;
 
   /* The same drawing the boundary and the no-WebGL branch both fall back to. */
   const flat = (

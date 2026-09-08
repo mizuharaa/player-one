@@ -118,10 +118,35 @@ const AUDIT = `(() => {
   return out;
 })()`;
 
+/*
+ * Read the whole page before measuring it.
+ *
+ * The audit only ever saw the first viewport, because that is all that had
+ * been painted — everything below the fold was measured in whatever state it
+ * happened to be in, and anything that reveals on scroll was invisible, which
+ * `vis()` drops. A dropped element is not a clean element: with a section
+ * skipped, the gap reported is the distance between its *neighbours*, and Home
+ * duly reported a 318px gap that no element on the page has. So scroll to the
+ * bottom and back, one viewport at a time, and let every observer fire before
+ * anything is measured.
+ */
+async function readWholePage(page) {
+  await page.evaluate(async () => {
+    const step = window.innerHeight * 0.8;
+    for (let y = 0; y < document.body.scrollHeight; y += step) {
+      window.scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    window.scrollTo(0, 0);
+    await new Promise((r) => setTimeout(r, 600));
+  });
+}
+
 async function audit(page, url, label, width, height) {
   await page.setViewportSize({ width, height });
   await page.goto(url, { waitUntil: 'networkidle' }).catch(() => {});
   await page.waitForTimeout(1600);
+  await readWholePage(page);
   const r = await page.evaluate(AUDIT);
   const total = r.clipped.length + r.covered.length + r.offGrid.length;
   console.log(`\n${label}  ${width}×${height}  —  ${total === 0 ? 'clean' : total + ' findings'}`);
