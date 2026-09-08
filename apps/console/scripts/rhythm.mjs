@@ -6,6 +6,9 @@
  * uncanny."* That is not a taste complaint. It is three measurable faults, and
  * a person notices all three before they can say why:
  *
+ * 0. **Sideways.** The document itself is wider than the viewport, so the page
+ *    pans under a thumb. Added 2026-09-08 after `/discover` shipped 80px of it
+ *    at 390px and every other check said clean.
  * 1. **Clipping.** An element whose own content overflows its box, so a word or
  *    a figure is cut. Never intentional on these screens.
  * 2. **Covering.** An element drawn over another so the one underneath cannot be
@@ -38,7 +41,7 @@ const COLLECTOR_URL = process.env.COLLECTOR_URL ?? '';
  * keep running, so this is the explicit set. `space` is the authority; if a
  * step is added there it belongs here too.
  */
-const SCALE = [2, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80];
+const SCALE = [2, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96, 128];
 /** Below this a gap is a hairline or a rounding artefact, not a rhythm choice. */
 const FLOOR = 6;
 /** One pixel of tolerance: sub-pixel layout rounds, and 19.6 is a 20. */
@@ -52,7 +55,7 @@ const TOLERANCE = 1;
 const AUDIT = `(() => {
   const SCALE = ${JSON.stringify(SCALE)}, FLOOR = ${FLOOR}, TOL = ${TOLERANCE};
   const onScale = (g) => SCALE.some((v) => Math.abs(g - v) <= TOL);
-  const out = { clipped: [], covered: [], offGrid: [] };
+  const out = { clipped: [], covered: [], offGrid: [], sideways: [] };
   const name = (el) => {
     const t = el.tagName.toLowerCase();
     const cls = (el.className && String(el.className).split(' ')[0]) || '';
@@ -65,6 +68,29 @@ const AUDIT = `(() => {
   };
 
   const all = [...document.querySelectorAll('body *')].filter(vis);
+
+  /*
+   * 0. The document scrolls sideways.
+   *
+   * This check did not exist, and its absence hid a real one: \`/discover\`'s
+   * pill nav needed 470px of row at a 390px viewport, so the whole page
+   * scrolled 80px horizontally. Nothing above catches that — the clipping
+   * check reads \`body *\`, which excludes \`html\` and \`body\`, and an element
+   * that merely makes its parent wider is not overflowing its own box. A page
+   * that pans sideways under a thumb is the loudest possible "this was not
+   * looked at on a phone", so it goes first.
+   */
+  const de = document.documentElement;
+  if (de.scrollWidth > de.clientWidth + 1) {
+    const wide = [...document.querySelectorAll('body *')]
+      .filter(vis)
+      .map((el) => ({ el, r: el.getBoundingClientRect() }))
+      .filter((x) => x.r.right > de.clientWidth + 1 || x.r.left < -1)
+      .sort((a, b) => b.r.right - a.r.right)
+      .slice(0, 3)
+      .map((x) => name(x.el));
+    out.sideways.push({ by: de.scrollWidth - de.clientWidth, widest: wide });
+  }
 
   /* 1. Clipping: content wider or taller than the box that holds it. */
   for (const el of all) {
@@ -172,8 +198,9 @@ async function audit(page, url, label, width, height) {
   await page.waitForTimeout(1600);
   await readWholePage(page);
   const r = await page.evaluate(AUDIT);
-  const total = r.clipped.length + r.covered.length + r.offGrid.length;
+  const total = r.sideways.length + r.clipped.length + r.covered.length + r.offGrid.length;
   console.log(`\n${label}  ${width}×${height}  —  ${total === 0 ? 'clean' : total + ' findings'}`);
+  for (const w of r.sideways) console.log(`   SIDEWAYS ${w.by}px of horizontal document scroll  ←  ${w.widest.join('  |  ')}`);
   for (const c of r.clipped.slice(0, 6)) console.log(`   CLIPPED  ${c.by}px on ${c.axis}  ${c.el}`);
   for (const c of r.covered.slice(0, 6)) console.log(`   COVERED  ${c.el}  ←  ${c.by}`);
   for (const g of r.offGrid.slice(0, 8)) console.log(`   GAP ${String(g.gap).padStart(3)}px  ${g.after}  →  ${g.before}`);
@@ -199,7 +226,7 @@ if (!COLLECTOR_URL) {
   await page.waitForTimeout(1500);
 
   for (const route of (process.env.ROUTES ?? '/,/review,/episodes,/backoffice,/counter,/pipeline').split(',')) {
-    for (const [w, h] of [[1440, 900], [1280, 720]]) {
+    for (const [w, h] of [[1440, 900], [1280, 720], [390, 844]]) {
       findings += await audit(page, CONSOLE_URL + route, `console ${route}`, w, h);
     }
   }

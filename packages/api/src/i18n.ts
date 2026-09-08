@@ -1127,7 +1127,8 @@ const en = {
     'No transfer leaves while a hold is open. Clearing one needs a verdict and a written reason; the engine appends a row and never edits one.',
 
   // ---------------------------------------------------------------------
-  // The sign-in hero, Home, the not-built page, Pipeline and /episodes.
+  // The sign-in screen, `/discover`, Home, the not-built page, Pipeline and
+  // /episodes.
   //
   // `ui.a.*` are strings that were English literals inside the `.tsx` files.
   // A literal in a component is a string a Chinese reviewer never sees in
@@ -1135,45 +1136,20 @@ const en = {
   // about, so it survives every review. Moving one here is not a rewrite of
   // the sentence: the English value below is the sentence that was on screen.
 
-  'login.hero':
-    'The back office for PlayerOne. Operators import cards, reviewers judge footage, and finance pays for the minutes that pass review.',
   'login.video.region': 'Demo video',
-  'login.slogan.1': 'Wear it.',
-  'login.slogan.2': 'Live your day.',
-  'login.slogan.3': 'Reviewed minutes, paid.',
-  /*
-   * The landing's burst carries three variants and the key line names the one
-   * on screen. They are the three kinds of work the pilot actually collects,
-   * not three moods: a kitchen, a garden and a clean. The sentence and its
-   * claim do not change — only which work is being paid for.
-   */
-  'login.slogan.3.kitchen': 'Kitchen minutes, paid.',
-  'login.slogan.3.garden': 'Garden minutes, paid.',
-  'login.slogan.3.cleaning': 'Cleaning minutes, paid.',
-  'login.cta': 'Get started',
-  'login.ctaSecondary': 'Sign in',
-  'login.marquee': 'Paid per reviewed minute',
-  'login.spiral': 'Wear it · Live your day · Reviewed minutes paid · ',
 
   /*
-   * The landing's own three controls, and all three are real.
+   * The landing's own strings, and there were fourteen more of them on
+   * 2026-09-07: three slogan lines, three burst variants that renamed the
+   * third line under a pointer, a marquee sentence, a circular-type sentence,
+   * two calls to action, a skip link and two labels for a control that paused
+   * a drifting field of photographs.
    *
-   * `login.skip` is the promise this screen makes before any of the
-   * choreography runs: the form is one keypress away and never behind a
-   * scroll. It is the first thing in the tab order and it is also the visible
-   * cue at the foot of the tile field, because the person who does not use a
-   * keyboard needs the same way out.
-   *
-   * The two motion labels are WCAG 2.2 SC 2.2.2. The tiles drift for longer
-   * than five seconds, so there has to be a control that stops them, and
-   * honouring `prefers-reduced-motion` is not that control — it is a different
-   * guarantee for a different person.
+   * Every one of those elements was deleted when the landing was rebuilt, so
+   * every one of those strings is gone with it rather than left as a catalogue
+   * row three locales have to keep carrying. `login.hero` went the same way
+   * and had already had no caller for some time.
    */
-  'login.skip': 'Skip to sign in',
-  'login.pauseMotion': 'Pause the moving background',
-  'login.resumeMotion': 'Resume the moving background',
-  'login.network':
-    'The service did not answer. Check the machine is on the centre network and try again.',
 
   /*
    * The legal line under the submit. A lead sentence and two named links,
@@ -1183,6 +1159,105 @@ const en = {
   'login.legal': 'By signing in you accept how PlayerOne handles your data.',
   'login.legalPrivacy': 'Privacy policy',
   'login.legalData': 'Data collection notice',
+  'login.network':
+    'The service did not answer. Check the machine is on the centre network and try again.',
+
+  /* ---------------------------------------------------------------------
+     `/discover` — the product story, on its own public route.
+
+     **Every value below is a process fact.** There is not a user count, a
+     payout total or a percentage anywhere in this block, and none may be
+     added. This is a payout-bearing product: a figure on its landing that
+     nobody can reproduce from the system is the single worst thing it could
+     publish, and an illustrative one has to say that it is illustrative.
+
+     The claims that ARE here are all reproducible from the code or the brief:
+     payment is per reviewed effective minute (§5.3.3, UPL-14); payable time
+     is the intersection of stream coverage and not the union; a recording is
+     started and stopped by the camera's own buttons and by nothing else; the
+     TF card is never cleared; a bill's total is rounded down to the whole dong
+     in `wholeVnd`; payout runs through ZaloPay.
+
+     The headline is in two halves because the second half carries the page's
+     one highlight marker, and the condition — that the minutes have to pass
+     review — belongs inside the headline rather than in a footnote under it.
+     --------------------------------------------------------------------- */
+  'discover.headline.a': 'Meet Ego.',
+  'discover.headline.mark': 'Everyday tasks',
+  'discover.headline.b': ', from your point of view.',
+  'discover.lead':
+    'A head-worn camera for recording everyday activities. Collectors earn for reviewed, approved effective minutes.',
+  'discover.signIn': 'Operator sign-in',
+  'discover.how': 'See how it works',
+
+  /* The three facts directly under the hero action. Facts, not statistics. */
+  'discover.fact.paid.label': 'The unit',
+  'discover.fact.paid.body':
+    'Paid per reviewed effective minute, and only for the minutes a reviewer approves.',
+  'discover.fact.path.label': 'The path',
+  'discover.fact.path.body':
+    'A memory card, handed across the counter at a staffed upload centre.',
+  'discover.fact.judgement.label': 'The judgement',
+  'discover.fact.judgement.body':
+    'A person watches the footage. No automatic score decides a payment.',
+  'discover.hero.caption': 'The Ego camera, worn while cooking at home.',
+
+  /* The demonstration: one player, one caption, nothing over it. */
+  'discover.demo.title': 'What a recording looks like',
+  'discover.video.caption':
+    'A continuous take from the demo film: the camera is worn on the forehead, and the work is ordinary.',
+
+  'discover.how.title': 'Four steps, in order',
+  'discover.step.record.title': 'Record',
+  'discover.step.record.body':
+    "You wear the camera and do ordinary work — cooking, gardening, cleaning, ironing. The camera's own buttons start and stop the recording.",
+  'discover.step.upload.title': 'Upload',
+  'discover.step.upload.body':
+    'The card goes across the counter at an upload centre. An operator records the handover and imports it on the centre machine.',
+  'discover.step.review.title': 'Human review',
+  'discover.step.review.body':
+    'A reviewer watches the episode and marks the part that is usable, with a reason code for the rest.',
+  'discover.step.payment.title': 'Payment',
+  'discover.step.payment.body':
+    'A bill is raised for the approved effective minutes at the rate the task carries, and paid through ZaloPay.',
+
+  /* The mosaic. Every cell adds detail the four steps do not carry. */
+  'discover.mosaic.title': 'The camera, the work, and the number',
+  'discover.cell.camera.title': 'The camera',
+  'discover.cell.camera.body':
+    'Ego is a head-worn camera supplied by the platform and bound to one person. Its own buttons start and stop a recording — no application on a phone can do it, and none is going to be given the ability.',
+  'discover.cell.pov.caption': 'What the camera sees: hands, soil, and the work in front of them.',
+  'discover.cell.activities.title': 'Which activities count',
+  'discover.cell.activities.body':
+    'Ordinary activity at home, in offices, in shops and in warehouses. Every recording is claimed against a declared task before it starts, so what is suitable is written down in advance rather than judged afterwards.',
+  'discover.cell.work.caption': 'Planting on a balcony, recorded from the wearer’s own eye line.',
+  'discover.cell.review.title': 'How review works',
+  'discover.cell.review.body':
+    'Every episode is watched by a person, who marks the usable part and records failure reason codes for the rest. That judgement is the only source of the number a collector is paid on; nothing on the platform computes it another way.',
+  'discover.cell.minutes.title': 'How payable minutes are determined',
+  'discover.cell.minutes.body':
+    'Payable time is the span that every recorded stream covers together, not the longest one. The device’s own duration figure is advisory and reads high, so the platform measures the media instead.',
+
+  /* Before you participate. Established facts only, and each one is checkable
+     against the code or the brief. */
+  'discover.before.title': 'Before you participate',
+  'discover.before.q.record': 'What am I expected to record?',
+  'discover.before.a.record':
+    'Ordinary activity, against a task claimed in advance. There is training and an exam before a first task.',
+  'discover.before.q.paid': 'Is every recorded minute paid?',
+  'discover.before.a.paid':
+    'No. Only the part of an episode a reviewer judges usable is payable, and a recording can be rejected in full.',
+  'discover.before.q.when': 'When is a payment decided?',
+  'discover.before.a.when':
+    'After the card is imported and the episode is reviewed. Bills are raised per settlement period, and a total is rounded down to the whole dong.',
+  'discover.before.q.data': 'What is collected about me?',
+  'discover.before.a.data':
+    'The consent declarations the recording agreement asks for, and nothing beyond them. Footage stays resident in Vietnam.',
+
+  'discover.handoff.title': 'Already an operator or a reviewer?',
+  'discover.handoff.body':
+    'Sign in to the console. This page is not a collector sign-up — collectors work in the PlayerOne app.',
+  'discover.credits': 'Film and stills: credits and licences',
 
   'ui.a.home.gauge': 'Reviewed {{value}} of {{target}} episodes this shift',
   /* The caption under the band's figure, where the count is already drawn. */
@@ -2289,21 +2364,64 @@ const zh: Record<MessageKey, string> = {
   'ui.b.risk.holds.sentence':
     '只要暂停仍未解除，就不会有任何转账发出。解除暂停需要一个结论和一段书面理由；风险引擎只追加记录，从不修改已有记录。',
 
-  'login.hero': 'PlayerOne 的后台。操作员导入存储卡，审核员判断素材，财务按审核通过的分钟数付款。',
   'login.video.region': '演示视频',
-  'login.slogan.1': '戴上它。',
-  'login.slogan.2': '照常生活。',
-  'login.slogan.3': '审核通过的每一分钟，都有报酬。',
-  'login.slogan.3.kitchen': '厨房的每一分钟，都有报酬。',
-  'login.slogan.3.garden': '园艺的每一分钟，都有报酬。',
-  'login.slogan.3.cleaning': '打扫的每一分钟，都有报酬。',
-  'login.cta': '开始使用',
-  'login.ctaSecondary': '登录',
-  'login.marquee': '按审核通过的分钟计酬',
-  'login.spiral': '戴上它 · 照常生活 · 审核通过即付 · ',
-  'login.skip': '跳过，直接登录',
-  'login.pauseMotion': '暂停背景动画',
-  'login.resumeMotion': '继续播放背景动画',
+
+  'discover.headline.a': '认识 Ego。',
+  'discover.headline.mark': '日常劳动',
+  'discover.headline.b': '，从你的视角出发。',
+  'discover.lead':
+    '一台用于记录日常活动的头戴相机。采集者按经审核通过的有效分钟获得报酬。',
+  'discover.signIn': '运营人员登录',
+  'discover.how': '了解运作方式',
+  'discover.fact.paid.label': '计酬单位',
+  'discover.fact.paid.body': '按审核认定的有效分钟计酬，且只计审核员通过的分钟。',
+  'discover.fact.path.label': '数据路径',
+  'discover.fact.path.body': '一张存储卡，在有人值守的上传中心柜台交付。',
+  'discover.fact.judgement.label': '判定方式',
+  'discover.fact.judgement.body': '由人观看素材。没有任何自动评分能决定付款。',
+  'discover.hero.caption': 'Ego 相机，在家做饭时佩戴。',
+  'discover.demo.title': '一段录制是什么样子',
+  'discover.video.caption':
+    '取自演示影片的一段连续镜头：相机戴在额前，做的是再平常不过的事。',
+  'discover.how.title': '四个步骤，依次进行',
+  'discover.step.record.title': '记录',
+  'discover.step.record.body':
+    '你戴上相机，做平常的事——做饭、园艺、打扫、熨衣。只有相机自身的按键能开始和停止录制。',
+  'discover.step.upload.title': '上传',
+  'discover.step.upload.body': '存储卡在上传中心柜台交付。工作人员登记交接，并在中心的机器上导入。',
+  'discover.step.review.title': '人工审核',
+  'discover.step.review.body': '审核员观看该段素材，标出可用的部分，并为其余部分记录原因代码。',
+  'discover.step.payment.title': '付款',
+  'discover.step.payment.body':
+    '按审核通过的有效分钟与该任务的单价开具账单，并通过 ZaloPay 支付。',
+  'discover.mosaic.title': '相机、劳动，以及那个数字',
+  'discover.cell.camera.title': '这台相机',
+  'discover.cell.camera.body':
+    'Ego 是由平台提供、与一个人绑定的头戴相机。开始和停止录制只能按相机自身的按键——手机上的任何应用都做不到，也不会被赋予这项权限。',
+  'discover.cell.pov.caption': '相机所见：双手、泥土，以及眼前的活计。',
+  'discover.cell.activities.title': '哪些活动算数',
+  'discover.cell.activities.body':
+    '家里、办公室、店铺和仓库中的日常活动。每次录制都要先认领一项已公布的任务，因此什么算合适是事先写明的，而不是事后判定的。',
+  'discover.cell.work.caption': '在阳台种植，从佩戴者本人的视线高度记录。',
+  'discover.cell.review.title': '审核是怎么进行的',
+  'discover.cell.review.body':
+    '每一段素材都由人观看，标出可用部分，并为其余部分记录失败原因代码。这一判定是采集者据以获得报酬的唯一来源；平台上没有第二种算法得出这个数字。',
+  'discover.cell.minutes.title': '可计酬的分钟如何确定',
+  'discover.cell.minutes.body':
+    '计费时长取各路数据共同覆盖的区间，而不是最长的那一路。设备自报的时长仅供参考且偏高，因此平台以素材文件本身为准进行测量。',
+  'discover.before.title': '参与之前',
+  'discover.before.q.record': '我需要记录什么？',
+  'discover.before.a.record': '日常活动，且对应一项事先认领的任务。首个任务之前有培训和一次考核。',
+  'discover.before.q.paid': '录到的每一分钟都有钱吗？',
+  'discover.before.a.paid': '不是。只有审核员认定可用的部分才计酬，一段录制也可能被整段拒绝。',
+  'discover.before.q.when': '付款何时确定？',
+  'discover.before.a.when':
+    '在存储卡导入并完成审核之后。账单按结算周期开具，总额向下取整到整数越南盾。',
+  'discover.before.q.data': '关于我会收集哪些信息？',
+  'discover.before.a.data': '录制协议所要求的同意声明，除此之外一概不收。素材始终存放在越南境内。',
+  'discover.handoff.title': '你已经是运营人员或审核员？',
+  'discover.handoff.body': '请登录控制台。本页不是采集者注册入口——采集者请使用 PlayerOne 应用。',
+  'discover.credits': '影片与图片：来源与授权',
   'login.network': '服务没有应答。请确认本机在中心网络内，然后重试。',
 
   'login.legal': '登录即表示您接受 PlayerOne 处理您数据的方式。',
@@ -3481,22 +3599,74 @@ const vi: Record<MessageKey, string> = {
   'ui.b.risk.holds.sentence':
     'Không khoản chuyển nào đi khi lệnh giữ còn mở. Gỡ một lệnh giữ cần một kết luận và một lý do viết ra; bộ máy chỉ thêm dòng mới, không bao giờ sửa dòng cũ.',
 
-  'login.hero':
-    'Hệ thống hậu cần của PlayerOne. Nhân viên nhập thẻ nhớ, người duyệt đánh giá video, và tài chính trả tiền theo số phút được duyệt.',
   'login.video.region': 'Video giới thiệu',
-  'login.slogan.1': 'Đeo camera.',
-  'login.slogan.2': 'Sống như mọi ngày.',
-  'login.slogan.3': 'Phút được duyệt, được trả.',
-  'login.slogan.3.kitchen': 'Phút nấu ăn, được trả.',
-  'login.slogan.3.garden': 'Phút làm vườn, được trả.',
-  'login.slogan.3.cleaning': 'Phút dọn dẹp, được trả.',
-  'login.cta': 'Bắt đầu',
-  'login.ctaSecondary': 'Đăng nhập',
-  'login.marquee': 'Trả theo phút được duyệt',
-  'login.spiral': 'Đeo camera · Sống như mọi ngày · Phút được duyệt được trả · ',
-  'login.skip': 'Bỏ qua, đến phần đăng nhập',
-  'login.pauseMotion': 'Tạm dừng chuyển động nền',
-  'login.resumeMotion': 'Tiếp tục chuyển động nền',
+
+  'discover.headline.a': 'Gặp Ego.',
+  'discover.headline.mark': 'Việc thường ngày',
+  'discover.headline.b': ', từ góc nhìn của bạn.',
+  'discover.lead':
+    'Một máy quay đội đầu để ghi lại các hoạt động thường ngày. Người thu thập được trả tiền cho những phút hữu hiệu đã qua duyệt.',
+  'discover.signIn': 'Đăng nhập vận hành',
+  'discover.how': 'Xem cách hoạt động',
+  'discover.fact.paid.label': 'Đơn vị tính',
+  'discover.fact.paid.body':
+    'Trả theo từng phút hữu hiệu đã duyệt, và chỉ cho những phút người duyệt chấp nhận.',
+  'discover.fact.path.label': 'Đường đi của dữ liệu',
+  'discover.fact.path.body':
+    'Một thẻ nhớ, giao tại quầy của trung tâm tải lên có nhân viên trực.',
+  'discover.fact.judgement.label': 'Việc thẩm định',
+  'discover.fact.judgement.body':
+    'Có người thật xem tư liệu. Không có điểm số tự động nào quyết định khoản chi trả.',
+  'discover.hero.caption': 'Máy quay Ego, đeo khi nấu ăn ở nhà.',
+  'discover.demo.title': 'Một đoạn ghi hình trông như thế nào',
+  'discover.video.caption':
+    'Một đoạn quay liền mạch từ phim giới thiệu: máy quay đeo trên trán, còn công việc thì rất đỗi bình thường.',
+  'discover.how.title': 'Bốn bước, theo thứ tự',
+  'discover.step.record.title': 'Ghi hình',
+  'discover.step.record.body':
+    'Bạn đeo máy quay và làm việc thường ngày — nấu ăn, làm vườn, dọn dẹp, ủi đồ. Nút bấm trên chính máy quay mới bắt đầu và dừng ghi hình.',
+  'discover.step.upload.title': 'Tải lên',
+  'discover.step.upload.body':
+    'Thẻ nhớ được giao tại quầy của trung tâm tải lên. Nhân viên ghi nhận việc bàn giao và nhập dữ liệu trên máy của trung tâm.',
+  'discover.step.review.title': 'Người duyệt',
+  'discover.step.review.body':
+    'Người duyệt xem tập tư liệu, đánh dấu phần dùng được và ghi mã lý do cho phần còn lại.',
+  'discover.step.payment.title': 'Thanh toán',
+  'discover.step.payment.body':
+    'Hóa đơn được lập cho số phút hữu hiệu đã duyệt theo đơn giá của nhiệm vụ, và được chi trả qua ZaloPay.',
+  'discover.mosaic.title': 'Máy quay, công việc, và con số',
+  'discover.cell.camera.title': 'Máy quay',
+  'discover.cell.camera.body':
+    'Ego là máy quay đội đầu do nền tảng cấp và gắn với một người. Chỉ nút bấm trên chính máy mới bắt đầu và dừng ghi hình — không ứng dụng điện thoại nào làm được, và cũng sẽ không được trao quyền đó.',
+  'discover.cell.pov.caption':
+    'Thứ máy quay nhìn thấy: bàn tay, đất, và công việc ngay trước mắt.',
+  'discover.cell.activities.title': 'Những hoạt động nào được tính',
+  'discover.cell.activities.body':
+    'Hoạt động thường ngày ở nhà, ở văn phòng, ở cửa hàng và trong kho. Mỗi lần ghi hình đều được nhận theo một nhiệm vụ đã công bố từ trước, nên điều gì là phù hợp đã được viết ra trước, chứ không phán xét về sau.',
+  'discover.cell.work.caption': 'Trồng cây trên ban công, ghi từ đúng tầm mắt của người đeo.',
+  'discover.cell.review.title': 'Việc duyệt diễn ra thế nào',
+  'discover.cell.review.body':
+    'Mỗi tập tư liệu đều do một người xem, đánh dấu phần dùng được và ghi mã lý do cho phần còn lại. Chính phán quyết đó là nguồn duy nhất của con số dùng để trả tiền; không có cơ chế nào khác trên nền tảng tính ra con số ấy.',
+  'discover.cell.minutes.title': 'Phút được trả tiền được xác định ra sao',
+  'discover.cell.minutes.body':
+    'Thời gian được trả là khoảng mà mọi luồng dữ liệu ghi được cùng bao phủ, không phải luồng dài nhất. Con số thời lượng do thiết bị tự khai chỉ mang tính tham khảo và thường cao hơn thực tế, nên nền tảng đo trên chính tệp tư liệu.',
+  'discover.before.title': 'Trước khi tham gia',
+  'discover.before.q.record': 'Tôi cần ghi hình những gì?',
+  'discover.before.a.record':
+    'Hoạt động thường ngày, theo một nhiệm vụ đã nhận trước. Có đào tạo và một bài kiểm tra trước nhiệm vụ đầu tiên.',
+  'discover.before.q.paid': 'Mọi phút ghi được đều có tiền chứ?',
+  'discover.before.a.paid':
+    'Không. Chỉ phần được người duyệt cho là dùng được mới được trả, và một đoạn ghi hình có thể bị từ chối toàn bộ.',
+  'discover.before.q.when': 'Khi nào khoản trả được quyết định?',
+  'discover.before.a.when':
+    'Sau khi thẻ nhớ được nhập và tập tư liệu được duyệt. Hóa đơn lập theo từng kỳ quyết toán, và tổng tiền được làm tròn xuống đến đồng.',
+  'discover.before.q.data': 'Những gì về tôi được thu thập?',
+  'discover.before.a.data':
+    'Các cam kết đồng ý mà thỏa thuận ghi hình yêu cầu, và không gì ngoài chúng. Tư liệu được lưu trữ trong lãnh thổ Việt Nam.',
+  'discover.handoff.title': 'Bạn đã là nhân viên vận hành hay người duyệt?',
+  'discover.handoff.body':
+    'Hãy đăng nhập vào bảng điều khiển. Trang này không phải nơi đăng ký làm người thu thập — người thu thập làm việc trên ứng dụng PlayerOne.',
+  'discover.credits': 'Phim và ảnh: nguồn và giấy phép',
   'login.network':
     'Dịch vụ không trả lời. Hãy kiểm tra máy có nằm trong mạng của trung tâm rồi thử lại.',
 

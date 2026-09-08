@@ -124,75 +124,55 @@ discipline is now the rule for every glass surface in the system:
 - **Still no gradient on an ink.** No ramp is ever interpolated to another
   colour. That half of the old rule did not move and never will.
 
-### The landing's disc, granted a spectrum
+### The landing's rainbow exception, withdrawn 2026-09-08
 
-**The product owner overruled this file for the landing's burst on 2026-09-07,
-and this is the record of it.** He asked for a rainbow and said in the same
-breath that the four-tint version — white, lime, bamboo and lavender, reasoned
-from the rule above — was not it. He then chose the whole direction, **The
-Drift**, against two alternates on 2026-09-08. The exception is granted to
-`.prism` in `apps/console/src/styles/globals.css` and to nothing else.
+**The exception granted to `.prism` on 2026-09-07 is gone, because the element
+is gone.** It was a hard-edged disc of dispersed `lime-500` behind the sign-in
+slogan, in three variants, ignited by the call to action. The product owner
+rejected the whole composition it belonged to — *"it looks horrendous"*, *"The
+current design is meh"* — and the direction that replaced it leads with three
+**roles** rather than three hues: `--surface` as the broad near-white ground,
+`--foreground` for decisive type, `--action` / `--action-ink` for the primary
+control. `lime-500` is spent on exactly one highlight marker, under ink text,
+in the `/discover` headline.
 
-What it does **not** grant, and these are the parts of the rule that did not
-move:
+So the general rule stands unqualified again: **no gradient on an ink, no
+gradient lettering, no decorative spectrum.** Sun and tech remain the partner
+mark and nothing else.
 
-- **Sun and tech are untouched.** The partner mark is still the only place
-  either appears, and the mark itself is on this very screen.
-- **The three verdicts are untouched.** Pass green, partial violet and reject
-  red still appear on verdicts and nowhere else.
-- **No new colour was added.** Every hue in all three variants is
-  `oklch(from var(--lime-500) calc(l - 0.2) c calc(h + N))` — the token's own
-  chroma, its lightness dropped once, and an angle. One colour dispersed,
-  which is what a prism does to one beam. The drop in lightness is the light
-  ground's requirement rather than a taste: a `multiply` filter has to carry
-  value, and `--lime-500`'s own 0.887 multiplies over the page to nothing.
-- **Still no gradient on an ink, and still no gradient lettering.**
+Three findings from that pass are kept, because each cost a day and none of
+them is about a rainbow.
 
-**It is a disc on a light page, not a spoke field on a stage.** The landing
-sits on `--background` like the rest of the console. The disc is a hard-edged
-circle of about 58vh centred on the headline, at `mix-blend-mode: multiply`, so
-it tints the tiles it overlaps and leaves the ones outside it alone. `screen`
-was right over near-black and is invisible over a page; the compositing was
-re-derived, not translated.
+**A control must carry its own ground.** `bg-transparent` on a button lets
+whatever is behind it decide its contrast. Measured on the old landing, the
+quiet second action read 1.11:1 against a lit spoke; the same bug returned once
+after being fixed. Every control on `/login` and `/discover` paints an opaque
+fill, and the secondary on `/discover` overrides the variant's transparency
+with `--card` for exactly this reason.
 
-**Three variants, and each names a kind of work.** The key line — the one about
-money — reads *Kitchen* / *Garden* / *Cleaning minutes, paid.*, and the disc
-changes with it. The call to action cycles them on hover and on focus.
+**Ink under glyphs is measured by differencing, not over a bounding box.**
+Render the element, render it again with its colour set to `transparent`, and
+the pixels that changed are the pixels the letters cover. A ratio taken over
+the bounding box averages in the ground between the letters and reports
+something nobody experiences. `apps/console/scripts/contrast.mjs` is that
+probe. Two corollaries it learned the hard way: only count a pixel the glyph
+*fully* owns, or antialiasing halves the measured ratio on small type; and set
+`transition: none` first, because `color` is in the button's transition list
+and the second render otherwise catches a fade in progress.
 
-**It ignites on the button, and nothing else.** `.landing:hover` was the whole
-180vh scroll region, so the burst was lit from the moment a pointer entered the
-page. Pause is a *condition* of igniting rather than a rule arguing with it
-afterwards, because `:has()` takes its argument's specificity and a plain
-`[data-motion='paused']` rule loses to it — measured at opacity 1 with the
-control pressed before it was written the other way.
+**A control's boundary takes the best contrast the control offers.** For every
+pixel of ground the control touches, find the highest ratio any part of the
+control reaches, and score the control by the worst of those. Measuring
+fill-versus-ground alone scored an outlined button at 1.00:1 — its fill *is*
+the ground, and the outline is what identifies it.
 
-**Two layering facts, both found by measuring and both cheap to lose.** The
-disc carries no `z-index`: with one, Chromium composited it over the button and
-the slogan painted *after* it, and no `z-index` on those was high enough to get
-back on top — 9 was tried. And the type block is `position: relative` with no
-`z-index`, because a static box paints below every positioned sibling. Document
-order does the layering: tiles, halo, disc, type.
-
-**Its measured limits**, from rendered pixels, disc lit, sampling only the
-pixels a glyph actually covers — the difference of a render with the glyphs and
-one without:
-
-| Measured, worst frame | Value |
-|---|---|
-| Ink on its ground under a glyph, worst of 54 runs (3 viewports × 3 languages × 2 schemes × 3 variants) | **5.12:1** |
-| Per variant | garden 5.22:1 · cleaning 5.44:1 · kitchen 5.12:1 |
-| Worst boundary any landing control has on any ground, lit or unlit, all variants | **3.97:1** |
-| Worst label on any landing control | **6.49:1** |
-| Burst opacity at rest / CTA hover / CTA keyboard focus / tile hover / paused | 0 / 1 / 1 / 0 / 0 |
-
-**The slogan's ground is a blurred rectangle of `--background`**, not the
-near-black halo the stage version used. It is invisible on the page and its
-only job is that a photograph can never be the thing under a letter — without
-it the darkest ground under a glyph measured 1.08:1 at 390×844. It is a
-rounded rectangle and not an ellipse because what it covers is a rectangle:
-an ellipse similar to the block reaches its corners only at √2 of its
-half-dimensions, which needs a box twice the block, and at 390px twice the
-block is larger than the phone and bleached four tiles to white smears.
+**And a halo is a rounded rectangle, not an ellipse.** What it covers is a
+rectangle: an ellipse similar to the block reaches its corners only at √2 of
+its half-dimensions, so it needs a box twice the block — and at 390px twice the
+block is larger than the phone and bleached four photographs to white smears.
+Nothing on the current screens needs a halo, because nothing sets type over a
+photograph any more; the geometry is recorded here so the next person who
+reaches for one does not re-derive it.
 
 ## The three verdicts own their hues
 
@@ -317,12 +297,18 @@ way to the size.
 | slogan | 1.9375rem / 600 / -0.018em | 2.625rem / 520 / -0.028em | 3.25rem / 440 / -0.034em |
 | key line | 2.3125rem / 650 / -0.02em | 3.125rem / 560 / -0.03em | 3.875rem / 480 / -0.036em |
 
-Two roles at a ratio of about 1.19, three steps each, and nothing on that
-screen takes a fourth size. Tracking tightens as the size grows, which is most
-of the difference between display type that looks expensive and display type
-that looks like a browser default. `text-wrap: balance` on both. The values
-live in one `.landing`-scoped block in `globals.css`, not spread through the
-component as arbitrary Tailwind sizes.
+Three steps and nothing on that screen takes a fourth size. Tracking tightens
+as the size grows and the **weight runs the opposite way** — 500 on the opening
+line, 600 on a cell heading — which is most of the difference between display
+type that looks expensive and display type that looks like a browser default.
+`text-wrap: balance` throughout.
+
+The values live in one block, which is the part of this rule that matters. On
+`/discover` that block is `H1` / `H2` / `H3` at the top of `Discover.tsx`
+rather than a `.landing` block in `globals.css`, because that CSS block and the
+screen it dressed were both deleted; three named constants keep the scale
+comparable in one place without standing up a second styling system beside
+Tailwind for one page.
 
 **The dashboard takes the same two rules and only two sizes.** `.headline` and
 `.headline-sm` in `globals.css` — Home's band title at 2.0625/610/-0.024em
@@ -331,8 +317,8 @@ rising to 2.625/520/-0.028em at 640px, and its four section headings at
 and the larger step lands on exactly the landing's own 2.625/520/-0.028em, so
 the two screens share a value rather than nearly agreeing.
 
-**Where it may go: headlines only.** The landing slogan, the sign-in `h1`, and
-Home's band title and section headings. Be Vietnam Pro keeps every label,
+**Where it may go: headlines only.** `/discover`'s opening line and section
+headings, the sign-in `h1`, and Home's band title and section headings. Be Vietnam Pro keeps every label,
 field, sentence, table and control, and `--font-mono` stays restricted to
 `.num`. A display face on a form label is how a tool starts looking like a
 brochure.
@@ -436,17 +422,17 @@ Authored motion is a closed list, and `/review` is not on it:
   nods run once per step and stop; a mascot that never stops moving beside a
   sentence is a reason not to read the sentence. Each behaviour is a named
   function of time in `PandaStage.tsx`, all of them inside the one `useFrame`.
-- **The landing** — one choreography in three beats, not three entrances.
-  Desktop only, scrubbed against scroll, and every tween starts from an
-  already-visible default so a blocked tween engine leaves a finished page
-  rather than an invisible one. The field opens out; the marquee band rises
-  and its letters come out of a blur, once; the sign-in panel's parts arrive
-  in reading order 40ms apart on an exponential ease-out. The tiles' own idle
-  drift and their wave entrance are CSS, so they survive GSAP being blocked.
-  The disc ignites on the call to action, on hover and on keyboard focus.
-  Nothing is built at all under `prefers-reduced-motion`: the band is not
-  rendered, the disc is `display: none`, the drift is removed rather than
-  shortened, and two screenshots 2.2s apart are byte-identical.
+- **`/discover`** — sections rise once as they reach the lower eighth of the
+  viewport, in document order, and that is the whole of it. It is Home's
+  `useChoreography`, shared from `lib/choreo.tsx` rather than copied, so the
+  public page and the dashboard cannot drift into two motion systems. A section
+  already on screen is never animated: animating what is already there is a
+  page-load sequence, and nothing here has one. The demo film carries native
+  `controls`, which is WCAG 2.2 SC 2.2.2 answered with the browser's own
+  mechanism instead of a bespoke glyph in three languages.
+- **`/login` does not move at all.** No GSAP import, no observer, no entrance.
+  It is a form, and a form that performs before it can be typed into is a form
+  that is slower than it looks.
 - **`.lease-expiring`** — a slow 1.6s pulse, so a lease running out reads as a
   warning rather than an alarm.
 

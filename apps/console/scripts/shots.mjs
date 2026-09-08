@@ -100,6 +100,38 @@ async function watchClaims(page) {
   };
 }
 
+/**
+ * The two routes that are not behind a session.
+ *
+ * `/discover` joined `/login` on 2026-09-08 when the product story was split
+ * off the sign-in screen. Signing in before shooting a public route is not
+ * merely wasteful: the seed has one claimable episode and every extra session
+ * is another chance to walk away holding its lease.
+ */
+const PUBLIC = new Set(['/login', '/discover']);
+
+/**
+ * Read the whole page before a full-page capture.
+ *
+ * Home and `/discover` both reveal sections on scroll, and a `fullPage`
+ * screenshot does not scroll — it stretches the viewport. So every section
+ * below the fold was photographed at the `opacity: 0` GSAP had set on it and
+ * never cleared, which is a picture of an empty page filed under the name of a
+ * screen. Walking the document one viewport at a time fires every trigger
+ * first. Same technique as `rhythm.mjs`, same reason.
+ */
+async function readWholePage(page) {
+  await page.evaluate(async () => {
+    const step = window.innerHeight * 0.8;
+    for (let y = 0; y < document.body.scrollHeight; y += step) {
+      window.scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 180));
+    }
+    window.scrollTo(0, 0);
+    await new Promise((r) => setTimeout(r, 500));
+  });
+}
+
 async function shoot(name, { viewport, theme, locale, path, prepare, operator = 'op-1', fullPage }) {
   const context = await browser.newContext({
     viewport,
@@ -131,21 +163,24 @@ async function shoot(name, { viewport, theme, locale, path, prepare, operator = 
      * broke was also the run that leaked a claim on an episode and left a
      * browser alive.
      */
-    if (path !== '/login') await signIn(page, operator);
+    if (!PUBLIC.has(path)) await signIn(page, operator);
 
     await page.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
     if (prepare) await prepare(page);
+    if (fullPage ?? viewport === DESKTOP) await readWholePage(page);
     await page.waitForTimeout(1200);
 
     const file = `${OUT}/${name}.png`;
   /*
    * Desktop shots are full-page by default, because a console screen is
    * usually taller than 900px and the part below the fold is the part nobody
-   * looks at. `/login` is the exception and has to opt out: its film half is
-   * two and a bit viewports tall with the panel pinned inside it, and a
-   * full-page capture of a `position: sticky` element renders it once at the
-   * bottom of a mostly empty page — a picture of the layout's implementation
-   * rather than of what anybody sees. Those shots are viewport captures.
+   * looks at. Mobile opts in per shot.
+   *
+   * `/login` used to be the one exception: its film half was two and a bit
+   * viewports tall with the form pinned inside it, and a full-page capture of
+   * a `position: sticky` element renders it once at the bottom of a mostly
+   * empty page. That layout is gone — the sign-in is one card on an ordinary
+   * page — so the exception went with it.
    */
     await page.screenshot({ path: file, fullPage: fullPage ?? viewport === DESKTOP });
     console.log(`${file}${errors.length ? `   ⚠ ${errors.length} console errors` : ''}`);
@@ -236,31 +271,26 @@ async function findAndBillThePeriod() {
 await findAndBillThePeriod();
 
 const shots = [
-  ['login-desktop', { viewport: DESKTOP, theme: 'light', locale: 'en', path: '/login', fullPage: false }],
-  // The parallax, proved rather than asserted. 400px down the film half, the
-  // three slogans have risen and staggered apart and the form column has not
-  // moved a pixel — which is the whole claim this screen makes about its one
-  // authored motion, and the only way to see it in a still.
-  [
-    'login-desktop-scrolled',
-    {
-      viewport: DESKTOP,
-      theme: 'light',
-      locale: 'en',
-      path: '/login',
-      fullPage: false,
-      prepare: async (p) => {
-        await p.evaluate(() => window.scrollTo({ top: 400, behavior: 'instant' }));
-        await p.waitForTimeout(900);
-      },
-    },
-  ],
+  // `/login` is an ordinary page now — one card, no pinned film half, no 180vh
+  // of landing — so it takes an ordinary full-page capture. The shot that used
+  // to sit next to this one, `login-desktop-scrolled`, photographed a parallax
+  // that no longer exists and is gone.
+  ['login-desktop', { viewport: DESKTOP, theme: 'light', locale: 'en', path: '/login' }],
+  ['login-desktop-dark', { viewport: DESKTOP, theme: 'dark', locale: 'en', path: '/login' }],
   // The sign-in rule this screen is held to: the form is usable at 390px with
-  // no scroll, no swipe and no animation first. A phone shot is the only way
-  // to see whether that is still true, and it is a viewport capture on
-  // purpose — a full-page one would show the submit button wherever it lands
-  // in the document instead of where the reader's thumb finds it.
-  ['login-mobile', { viewport: MOBILE, theme: 'light', locale: 'en', path: '/login' }],
+  // no scroll trap, no swipe and no animation first. A phone shot is the only
+  // way to see whether that is still true.
+  ['login-mobile', { viewport: MOBILE, theme: 'light', locale: 'en', path: '/login', fullPage: true }],
+  ['login-mobile-vi', { viewport: MOBILE, theme: 'light', locale: 'vi', path: '/login', fullPage: true }],
+  // `/discover`: the product story, on its own public route. Full page in all
+  // three languages, because the mosaic's cells and the four-step strip are
+  // where a long Vietnamese sentence or a short Chinese one changes the shape
+  // of a row.
+  ['discover-desktop', { viewport: DESKTOP, theme: 'light', locale: 'en', path: '/discover' }],
+  ['discover-desktop-dark', { viewport: DESKTOP, theme: 'dark', locale: 'en', path: '/discover' }],
+  ['discover-desktop-vi', { viewport: DESKTOP, theme: 'light', locale: 'vi', path: '/discover' }],
+  ['discover-desktop-zh', { viewport: DESKTOP, theme: 'dark', locale: 'zh', path: '/discover' }],
+  ['discover-mobile', { viewport: MOBILE, theme: 'light', locale: 'en', path: '/discover', fullPage: true }],
   ['home-desktop', { viewport: DESKTOP, theme: 'light', locale: 'en', path: '/' }],
   // The guided tour on its second step. The tour is the one thing on Home
   // that nothing else in this set shows, and step 2 is where the spotlight has

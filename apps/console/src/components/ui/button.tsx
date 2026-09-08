@@ -24,7 +24,12 @@ import { cn } from '../../lib/cn.ts';
 const button = cva(
   cn(
     'inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold',
-    'transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-[var(--ease)]',
+    /*
+     * `opacity` joined this list on 2026-09-08, so a disabled control fades
+     * rather than blinks. Nothing here animates opacity on *hover* any more —
+     * see the primary below.
+     */
+    'transition-[background-color,border-color,color,box-shadow,transform,opacity] duration-150 ease-[var(--ease)]',
     'disabled:pointer-events-none disabled:opacity-45',
     'active:translate-y-px',
     '[&_svg]:shrink-0',
@@ -50,7 +55,32 @@ const button = cva(
          */
         primary: cn(
           'bg-[var(--action)] text-[var(--action-ink)] shadow-[var(--shadow)]',
-          'hover:opacity-90 active:opacity-95',
+          /*
+           * Hover is **elevation, not translucency**, and that is a redesign
+           * rather than a retiming.
+           *
+           * It was `hover:opacity-90`, and the product owner's complaint was
+           * that it did not feel smooth: *"the hover stuff animation is not
+           * smooth with the get started button we need a redesign."* Two
+           * things were wrong with it and only one was the timing.
+           *
+           * `opacity` was not in the transition list, so the fade was a jump
+           * on the frame the pointer arrived. And a control that goes
+           * translucent on hover is a control whose contrast is decided by
+           * whatever is behind it — the exact bug that has already shipped on
+           * this route twice, once as a 1.11:1 pill over a lit gradient. At
+           * 90% over the old landing's burst the ink fill measured
+           * `rgb(38,40,46)` and had picked up the disc's hue.
+           *
+           * So the pill never changes its own colour at all. It lifts: one
+           * shadow token up on hover, one down on press, alongside the
+           * `active:translate-y-px` every variant already has. `box-shadow`
+           * and `transform` are both in the transition list, the shadow
+           * repaints an area the size of the button and nothing else, and the
+           * fill stays exactly `--action` in every state — so the measured
+           * contrast is one number rather than one per background.
+           */
+          'hover:shadow-[var(--shadow-lg)] active:shadow-[var(--shadow-sm)]',
           /*
            * A disabled primary must not read as a *locked* primary. At 45%
            * opacity the sun fill turns a washed apricot that looks like a

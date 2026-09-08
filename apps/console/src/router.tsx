@@ -16,6 +16,7 @@ import { HomeScreen } from './routes/Home.tsx';
 import { ReviewScreen } from './routes/Review.tsx';
 import { PipelineScreen } from './routes/Pipeline.tsx';
 import { LoginScreen } from './routes/Login.tsx';
+import { DiscoverScreen } from './routes/Discover.tsx';
 import { EpisodesScreen } from './routes/Episodes.tsx';
 import { CounterScreen } from './routes/Counter.tsx';
 import { BackOfficeScreen } from './routes/BackOffice.tsx';
@@ -41,11 +42,21 @@ const rootRoute = createRootRoute({ component: Outlet });
  * screen renders a page of refusals; they go to `/review` instead. The
  * redirect is a convenience on top of the server's rule and not the rule
  * itself — the API refuses those routes whatever this file does.
+ *
+ * **Where a refused visit lands depends on which door it knocked on.** A
+ * returning operator who typed `/settle` wants the form, so they get `/login`
+ * and nothing between them and it. Somebody who typed the bare origin has told
+ * us nothing about themselves and is more likely to be new, so `/` goes to
+ * `/discover` — the product story — with sign-in one click away in its bar.
+ *
+ * That split is the whole of the route change made on 2026-09-08. Before it,
+ * the story WAS the sign-in screen: 180vh of landing above the form, which an
+ * operator had to scroll or skip past on every visit to an internal console.
  */
 async function requireSession({ location }: { location: { pathname: string } }) {
   const res = await fetch('/whoami', { credentials: 'same-origin' });
   if (res.status === 401 || res.status === 403) {
-    throw redirect({ to: '/login' });
+    throw redirect({ to: location.pathname === '/' ? '/discover' : '/login' });
   }
   const who = (await res.json().catch(() => ({}))) as { role?: string };
   if (who.role === 'reviewer' && location.pathname !== '/review') {
@@ -57,6 +68,20 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
   component: LoginScreen,
+});
+
+/**
+ * The product story, on a public route of its own.
+ *
+ * It used to be the top four fifths of `/login`. Splitting it is the auditor's
+ * finding and the product owner's complaint agreeing: an internal console must
+ * not put a sales presentation between a returning operator and a password
+ * box, and a story worth telling should not have to live inside a form.
+ */
+const discoverRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/discover',
+  component: DiscoverScreen,
 });
 
 const homeRoute = createRoute({
@@ -175,6 +200,7 @@ const riskRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   homeRoute,
   loginRoute,
+  discoverRoute,
   reviewRoute,
   backOfficeRoute,
   pipelineRoute,

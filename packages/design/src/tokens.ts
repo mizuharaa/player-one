@@ -462,6 +462,22 @@ export const space = {
   12: '48px',
   16: '64px',
   20: '80px',
+  /**
+   * The two editorial steps, added 2026-09-08 for `/discover`.
+   *
+   * The scale stopped at 80px because nothing in the console had ever needed
+   * more: a tool's screens are dense on purpose. A public page is not, and the
+   * distance between one section of an argument and the next is the main thing
+   * that makes it read as an argument rather than as a list. 96 and 128 are
+   * the next two doublings the Tailwind scale already names (`mt-24`,
+   * `mt-32`), so nothing new had to be invented.
+   *
+   * `rhythm.mjs` reads this table, so a gap of 128px is on the grid rather
+   * than a finding — which is the point of the audit reading the tokens
+   * instead of assuming a maximum.
+   */
+  24: '96px',
+  32: '128px',
 } as const;
 
 /**
