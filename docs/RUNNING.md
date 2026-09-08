@@ -129,8 +129,45 @@ bad argument, `3` measured fine but the store could not be written.
 
 Two credentials are required on every mutation: a machine token and an operator
 token. Seed a centre, a machine and an operator with `credential_hash` set from
-`hashCredential()`, then `POST /auth/machine` and `POST /auth/operator`.
+`hashCredential()`.
 `packages/api/test/counter.test.ts` is the shortest worked example.
+
+Import a card with the counter command, which signs in those existing identities
+and creates none. Set `PLAYERONE_MACHINE_IDENTIFIER`, `PLAYERONE_MACHINE_SECRET`,
+`PLAYERONE_OPERATOR_REF` (the operator's `external_ref`) and
+`PLAYERONE_OPERATOR_SECRET` in the command's environment, then run:
+
+```bash
+node packages/api/bin/counter.ts import \
+  --session-dir <ego_*/ directory> \
+  --collector <uuid> --device <uuid> --card <tf card id> \
+  --task <uuid> --scenario <uuid> \
+  --others-in-frame yes|no --sensitive yes|no \
+  [--prepare-time <ISO>] \
+  [--api http://127.0.0.1:8080]
+```
+
+`--prepare-time` defaults to now; `--api` defaults to `http://127.0.0.1:8080`.
+The command signs in the machine and operator, creates a handover, batch and
+session, ingests the directory locally, submits the episode over HTTP, and
+uploads with synchronous cloud read-back. It does not need `DATABASE_URL`.
+
+The session directory must be directly inside the API's `PLAYERONE_MEDIA_ROOT`
+on the machine the API runs on. Submitting the ingest record does not move
+bytes: the API must independently have the same session bytes at
+`<its media root>/<session basename>`. The command compares the directory's
+parent with `PLAYERONE_MEDIA_ROOT` from its own environment and refuses a
+mismatch with exit 2. If unset, it skips that check and says so on stderr.
+This is a local sanity check only: server-side media availability is not
+verified by this command, including when `--api` names another host.
+
+Stdout always contains one JSON object: `handover_id`, `session_id`, `batch_id`,
+`episode_id`, `ingest_state` (the local ingest record's `state`),
+`cloud_verified`, `elapsed_s`, and `failed_step` (null on success). Fields not
+reached are null. The raw upload response and diagnostics go to stderr. Exit 0
+requires a 2xx upload response with `cloud_verified: true`; usage, missing
+credentials or a missing directory exit 2; other failures exit 1. There are no
+retries or rollback; a partial import remains visible in the pipeline screen.
 
 The one exception is `POST /upload-devices/:id/heartbeat`. The upload-centre
 process sends current disk and queue state when no clerk may be signed in, so
@@ -161,7 +198,9 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 | `PLAYERONE_TOKEN_SECRET` | required | Fails closed. A secret invented at boot would sign tokens that stop verifying on the next restart, which shows up as reviewers being randomly signed out. |
 | `PLAYERONE_MEDIA_ROOT` | | The directory holding the imported `ego_*` folders. Without it the console runs and the stream route answers 503 saying so. |
 | `PLAYERONE_MACHINE_IDENTIFIER` | | The fixed upload device this process runs on. When this, `PLAYERONE_MACHINE_SECRET` and `PLAYERONE_MEDIA_ROOT` are all set, the process sends its heartbeat once at boot and every minute. A back-office host leaves them unset and sends nothing. |
-| `PLAYERONE_MACHINE_SECRET` | | The credential for `PLAYERONE_MACHINE_IDENTIFIER`, used only to obtain the machine token for that heartbeat. Set both machine variables, or neither. |
+| `PLAYERONE_MACHINE_SECRET` | | The credential for `PLAYERONE_MACHINE_IDENTIFIER`, used to obtain the machine token for the heartbeat and the counter command. Set both machine variables, or neither; both are required by the counter command. |
+| `PLAYERONE_OPERATOR_REF` | counter command: required | The existing operator's `external_ref`, used to sign in at `/auth/operator`. |
+| `PLAYERONE_OPERATOR_SECRET` | counter command: required | The credential for `PLAYERONE_OPERATOR_REF`. |
 | `PLAYERONE_CURRENCY` | `VND` | What `tasks.unit_price` is denominated in. Configuration because there is no currency column — see the gaps in `docs/review.md`. |
 | `PLAYERONE_SETTLEMENT_CYCLE_DAYS` | `7` | SET-07's settlement cycle. Weekly is `[ASSUMED]` in the brief's §13.2 rather than decided, so it is a setting and not a constant. It only supplies the *end* of a period whose start the caller gave. |
 | `PLAYERONE_SECURE_COOKIES` | off | Turn on wherever there is TLS. Off by default because a `Secure` cookie is never sent over plain HTTP and the symptom is a sign-in that silently does nothing. It is also this repo's single "there is TLS in front of this process" signal: with it on, the API sends HSTS, and `PLAYERONE_REVIEWER_MEDIA=1` is allowed. |
