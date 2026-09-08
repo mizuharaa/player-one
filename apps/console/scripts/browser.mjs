@@ -31,8 +31,23 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const LOCK = join(tmpdir(), 'playerone-browser.lock');
-/** Long enough for a full `shots.mjs` walk, short enough to self-heal. */
-const STALE_MS = 10 * 60 * 1000;
+/**
+ * An age-based steal broke mutual exclusion, which is the whole job.
+ *
+ * The first version treated a lock as stale once it was older than ten
+ * minutes **even when its owner was still alive and working**. A full
+ * `shots.mjs` walk plus a contrast sweep runs well past that, so a waiter
+ * would delete a live holder's lock, take it, and launch a second browser
+ * beside the first. Observed: a holder 95 minutes into a legitimate run and
+ * five `chrome-headless-shell` processes at once — the exact contention the
+ * lock exists to prevent, caused by the lock.
+ *
+ * Liveness is the real signal: a holder whose process is gone can never
+ * release, and nothing else may take its place. The age check survives only
+ * as an emergency valve, set far beyond any real run, and it announces itself
+ * when it fires rather than stealing quietly.
+ */
+const STALE_MS = 45 * 60 * 1000;
 const POLL_MS = 1500;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -58,8 +73,21 @@ async function acquire() {
       let stale = true;
       try {
         const held = JSON.parse(readFileSync(LOCK, 'utf8'));
-        stale = Date.now() - held.at > STALE_MS || !holderAlive(held.pid);
-        if (!stale) process.stderr.write(`waiting for the browser lock (pid ${held.pid})…\n`);
+        const dead = !holderAlive(held.pid);
+        const ancient = Date.now() - held.at > STALE_MS;
+        stale = dead || ancient;
+        if (dead) {
+          process.stderr.write(`browser lock holder ${held.pid} is gone; taking it\n`);
+        } else if (ancient) {
+          /* Loud, because it means a real run is being overtaken. */
+          process.stderr.write(
+            `browser lock held by LIVE pid ${held.pid} for over ${STALE_MS / 60000} minutes; ` +
+              `overriding. If this is not a hung process, that run is now sharing the machine.\n`,
+          );
+        } else {
+          const mins = ((Date.now() - held.at) / 60000).toFixed(1);
+          process.stderr.write(`waiting for the browser lock (pid ${held.pid}, held ${mins}m)…\n`);
+        }
       } catch {
         /* Unreadable means half-written or truncated; treat as stale. */
       }
