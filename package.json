@@ -14,7 +14,8 @@
     "fixtures": "node packages/ingest/scripts/make-fixtures.ts",
     "bench": "node packages/ingest/scripts/bench.ts",
     "db:generate": "drizzle-kit generate --config packages/store/drizzle.config.ts",
-    "db:migrate": "drizzle-kit migrate --config packages/store/drizzle.config.ts"
+    "db:migrate": "drizzle-kit migrate --config packages/store/drizzle.config.ts",
+    "lanes": "node packages/api/scripts/lanes.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
