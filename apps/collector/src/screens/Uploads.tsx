@@ -30,18 +30,30 @@ const stateColors = (theme: NativeTheme, state: EpisodeState): { fg: string; bg:
       /*
        * Not `partial`. A partial pass is an outcome a collector is paid on,
        * and "somebody is looking at it" is not an outcome at all — wearing
-       * that violet said the episode had already been half judged. It is the
-       * machine reporting where the work is, which is what tech blue is for.
-       * The label is what separates it from the two upload states, the way it
-       * separates those two from each other.
+       * that violet said the episode had already been half judged.
+       *
+       * `warn`, which is the token for exactly this: a human has it and no
+       * outcome is recorded yet. It was `tech[50]`, and tech is PaXini's mark
+       * now rather than a system colour. The console reached the same place
+       * from the other side — its risk band `review` and its `pending_zlp`
+       * attempt are both `--warn-bg`/`--warn` — so an episode waiting on a
+       * reviewer and a payment waiting on a gateway read alike, which is what
+       * they are. It is not one of the three verdict hues and cannot be
+       * mistaken for one.
        */
-      return { fg: theme.color.techInk, bg: theme.color.tech[50] };
+      return { fg: theme.color.warn, bg: theme.color.warnBg };
     case 'uploading':
     case 'uploaded':
-      // `techInk`, for the same reason `Note` uses it: `tech[100]` inverts in
-      // dark mode and `tech[700]` does not, which measured 1.35:1.
-      return { fg: theme.color.techInk, bg: theme.color.tech[100] };
+      /*
+       * The ink pill: the episode has left the phone, or is leaving it. This
+       * is the console's `succeeded` and `hold` mark — `--foreground` on
+       * `--background` — and it is the one non-verdict tone in the system
+       * that reads as a settled machine state without borrowing a hue that
+       * means something about money. It was `tech[100]`.
+       */
+      return { fg: theme.color.actionInk, bg: theme.color.action };
     case 'pending_upload':
+      // Nothing has happened to it yet, so it wears the neutral.
       return { fg: theme.color.mutedForeground, bg: theme.color.muted };
   }
 };

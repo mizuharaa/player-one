@@ -51,7 +51,16 @@ export function Agreements() {
               value={checked[a.id] === true}
               onValueChange={(v) => setChecked((c) => ({ ...c, [a.id]: v }))}
               thumbColor={theme.color.background}
-              trackColor={{ false: theme.color.borderStrong, true: theme.color.sun[500] }}
+              /* On is the ink pill, the same mark `Chip` and `Button` carry:
+                 the control's selected state is where the collector's action
+                 is, and sun is the VNG mark now rather than an action colour.
+                 Off is `fieldBorder`, the one border token this system holds
+                 to a ratio. Measured off the rendered pixels, on the card this
+                 switch sits on: `borderStrong` read 1.64:1 in light and 1.67:1
+                 in dark, both under WCAG 1.4.11's 3:1 for the boundary that
+                 identifies a control; `fieldBorder` reads 3.83:1 and 3.94:1. A
+                 switch nobody can see off is a switch nobody knows is there. */
+              trackColor={{ false: theme.color.fieldBorder, true: theme.color.action }}
             />
           </View>
         </Card>

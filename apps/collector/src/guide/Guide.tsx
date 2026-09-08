@@ -234,7 +234,13 @@ function GuideOverlay({
               height: hole.h,
               borderRadius: theme.radius.base,
               borderWidth: 2,
-              borderColor: theme.color.sun[500],
+              /* The ring is lime, like every other ring in this world. It sits
+                 on the cut-out in the scrim rather than on the page, so it
+                 takes `lime[500]` — the step `tokens.ts` resolves `ring.dark`
+                 to — and not the light page's `lime[600]`, which is a dark
+                 green against a dimmed screen. It was `sun[500]`, the partner
+                 mark. */
+              borderColor: theme.color.lime[500],
             }}
           />
         </>

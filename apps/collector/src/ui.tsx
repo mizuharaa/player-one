@@ -1281,7 +1281,13 @@ export function LegalLine() {
     >
       <Text
         style={{
-          color: theme.color.techInk,
+          // Ink, not tech blue. Tech is PaXini's mark now and `DESIGN.md` says
+          // it is never a link; the underline and the `link` role are what
+          // make these two words a control, and they were already carrying it.
+          // `faintForeground` is the separator beside them, so ink is also
+          // what makes the link the more prominent of the two. Measured:
+          // 15.78:1 light, 16.12:1 dark, on the page it is drawn on.
+          color: theme.color.foreground,
           fontFamily: face(theme),
           fontSize: theme.fontSize.xs,
           textDecorationLine: 'underline',

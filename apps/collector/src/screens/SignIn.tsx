@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
 import { ApiError } from '../api/types.ts';
 import { useApi } from '../api/context.tsx';
@@ -39,11 +39,16 @@ import type { MessageKey } from '../i18n.ts';
  * It does not block the submit — the request still goes, and still gets the
  * same 204 as every other number.
  *
- * **Composition**: an ambient ground — the one granted in `DESIGN.md` under
- * "One exception, granted 2026-09-07" — one large heading, one
- * prominent field, the legal line, a full-width pill. It does not use `Screen`,
- * whose header bar is for a destination the collector navigated to; this is the
- * app's front door and the heading is the page.
+ * **Composition**: the lavender wash the whole product stands on, one large
+ * heading, one prominent field, the legal line, a full-width pill. It carried
+ * two blurred discs of sun and bamboo behind the form until 2026-09-07; that
+ * was an exception granted against a white world, `DESIGN.md` retires it
+ * because the world it was an exception to is gone, and the discs overhung the
+ * page by 64dp, which the spacing audit read — correctly — as a clip. The page
+ * is the ground now.
+ *
+ * It does not use `Screen`, whose header bar is for a destination the collector
+ * navigated to; this is the app's front door and the heading is the page.
  */
 
 /**
@@ -57,88 +62,20 @@ const VN = { code: '+84', label: 'signIn.country.vn' as MessageKey };
 const CN = { code: '+86', label: 'signIn.country.cn' as MessageKey };
 
 /**
- * The ambient ground: two washes of a brand tint, behind the form.
- *
- * React Native has no CSS `filter: blur`, so a blurred blob is drawn as
- * concentric discs of one tint whose alpha falls off outward — `theme.ambient`,
- * whose two numbers were chosen against the ink that sits over them. It is
- * decorative and nothing else: no pointer events, nothing for a screen reader,
- * and never a fill under a control.
- *
- * **The 100 step, and not the 200.** 200 is a fixed value on both ramps, so on
- * a dark page it painted a pale tan disc over near-black: measured at
- * `#83795a` under the worst overlap, where the body ink reads 3.73:1 and the
- * muted ink 1.68:1 — both under AA, on the screen a collector signs in from.
- * The 50 and 100 steps are the two that invert with the scheme
- * (`darkBrandTints`), so taking the tint from `theme.color` at 100 makes the
- * wash scheme-correct by construction rather than by a second branch here.
- * Measured after: body 16.72:1 and muted 4.93:1 in light, 14.18:1 and 6.40:1
- * in dark. `packages/design/test/contrast.test.ts` pins all four.
- */
-function Wash({ tint, size, style }: { tint: string; size: number; style: ViewStyle }) {
-  const theme = useTheme();
-  const { step, rings } = theme.ambient;
-  return (
-    <View
-      style={[
-        { position: 'absolute', width: size, height: size },
-        // Absolute children with no insets of their own are placed by the
-        // parent's alignment, which is how the discs stay concentric.
-        { alignItems: 'center', justifyContent: 'center' },
-        style,
-      ]}
-    >
-      {Array.from({ length: rings }, (_, i) => {
-        // Widest first, each one 70% of the way in by the innermost, all at
-        // the same alpha: the falloff comes from how many of them overlap.
-        const scale = 1 - (i * 0.7) / (rings - 1);
-        return (
-          <View
-            key={i}
-            style={{
-              position: 'absolute',
-              width: size * scale,
-              height: size * scale,
-              borderRadius: theme.radius.pill,
-              backgroundColor: tint,
-              opacity: step,
-            }}
-          />
-        );
-      })}
-    </View>
-  );
-}
-
-function AmbientGround() {
-  const theme = useTheme();
-  return (
-    <View
-      pointerEvents="none"
-      importantForAccessibility="no-hide-descendants"
-      style={{ ...StyleSheet.absoluteFillObject, overflow: 'hidden' }}
-    >
-      <Wash
-        tint={theme.color.sun[100]}
-        size={theme.space[20] * 4}
-        style={{ top: -theme.space[16], right: -theme.space[16] }}
-      />
-      <Wash
-        tint={theme.color.bamboo[100]}
-        size={theme.space[20] * 3}
-        style={{ top: theme.space[20] * 3, left: -theme.space[20] }}
-      />
-    </View>
-  );
-}
-
-/**
  * The Zalo mark, so a collector knows which app the code lands in.
  *
  * Drawn from Views: `react-native-svg` is not a dependency of this app and a
  * remote image would make the mark depend on the network the collector has not
- * signed in over yet. It is the recognisable part — the blue bubble with its
- * tail — reduced to what holds at 24dp, not a reproduction of the wordmark.
+ * signed in over yet. It is the recognisable part — the bubble with its tail —
+ * reduced to what holds at 24dp, not a reproduction of the wordmark.
+ *
+ * It is drawn in `action`/`actionInk`, the ink pair, and not in a blue. The
+ * blue it used was `tech[500]`, which is PaXini's mark: a Vietnamese messaging
+ * app's logo painted in the camera vendor's brand colour was already the wrong
+ * blue, and tech is the partner lockup and nothing else now. What carries the
+ * recognition at 24dp is the shape — a bubble with a tail and a Z — so the
+ * mark keeps that and takes the scheme's ink, which inverts with the page the
+ * way every other glyph in this app does.
  */
 function ZaloMark({ label }: { label: string }) {
   const theme = useTheme();
@@ -151,7 +88,7 @@ function ZaloMark({ label }: { label: string }) {
         width: size,
         height: size,
         borderRadius: theme.radius.sm,
-        backgroundColor: theme.color.tech[500],
+        backgroundColor: theme.color.action,
         alignItems: 'center',
         justifyContent: 'center',
       }}
@@ -163,13 +100,13 @@ function ZaloMark({ label }: { label: string }) {
           bottom: -theme.space[1],
           width: theme.space[2],
           height: theme.space[2],
-          backgroundColor: theme.color.tech[500],
+          backgroundColor: theme.color.action,
           transform: [{ rotate: '45deg' }],
         }}
       />
       <Text
         style={{
-          color: theme.color.stage.fg,
+          color: theme.color.actionInk,
           fontFamily: face(theme),
           fontSize: theme.fontSize.sm,
           fontWeight: theme.fontWeight.bold,
@@ -235,7 +172,6 @@ export function SignIn({
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.background }}>
-      <AmbientGround />
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
@@ -258,11 +194,16 @@ export function SignIn({
               justifyContent: 'center',
             }}
           >
+            {/* Ink, not tech blue, and the same weight `Header` gives its own
+                Back: tech is PaXini's mark now and is not a link colour
+                anywhere in this app. This screen hand-rolls the control because
+                sign-in is not a route and has no stack to pop. */}
             <Text
               style={{
-                color: theme.color.tech[500],
+                color: theme.color.foreground,
                 fontFamily: face(theme),
                 fontSize: theme.fontSize.sm,
+                fontWeight: theme.fontWeight.medium,
               }}
             >
               ← {tt('common.back')}
@@ -312,8 +253,11 @@ export function SignIn({
               justifyContent: 'center',
               // The focus ring is a colour change on a border that is already
               // there, as on `Field`, so gaining focus never moves the row.
+              // `lime[600]` is the ring this world committed and the step
+              // `tokens.ts` resolves `ring.light` to; it was `sun[600]`, the
+              // partner mark.
               borderWidth: pickerFocused ? 2 : 1,
-              borderColor: pickerFocused ? theme.color.sun[600] : theme.color.borderStrong,
+              borderColor: pickerFocused ? theme.color.lime[600] : theme.color.borderStrong,
               borderRadius: theme.radius.sm,
               paddingHorizontal: theme.space[3] - (pickerFocused ? 1 : 0),
               backgroundColor: pressed ? theme.color.muted : theme.color.background,

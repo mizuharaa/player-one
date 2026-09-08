@@ -42,9 +42,29 @@ export function Provisioning() {
           <Title>{d.deviceName}</Title>
           <Row label={tt('prov.rssi')} value={`${d.rssi} dBm`} />
           {connected === d.deviceAddress ? (
-            /* Tech, not the pass hue: a connected radio is the machine
-               reporting itself, and the verdict colours stay on review. */
-            <Tag label={tt('prov.connected')} fg={theme.color.techInk} bg={theme.color.tech[100]} />
+            /* Lime, not the pass hue: a connected radio is the machine
+               reporting itself and the verdict colours stay on review. Lime is
+               this world's one accent — emphasis — and a device that answered
+               is the one moment on this screen worth emphasising. Not the ink
+               pill, which both buttons below already are: a third ink pill
+               here would read as a third action.
+
+               The ink is `stage.ground` and not `limeInk`, which is what
+               `Choice` in `ui.tsx` already does for the same fill. `lime[500]`
+               is the one accent step that does NOT invert with the scheme, so
+               its label cannot either: measured on the rendered pixels,
+               `limeInk` reads 4.24:1 on it in light and 1.15:1 in dark —
+               `limeInk` is lime *type on the page*, not a label on a lime
+               fill, and the token's own comment quotes its ratios against the
+               page. The fixed near-black reads 13.94:1 in both schemes.
+
+               It was `tech[100]`, and tech is PaXini's mark now rather than a
+               system colour. */
+            <Tag
+              label={tt('prov.connected')}
+              fg={theme.color.stage.ground}
+              bg={theme.color.lime[500]}
+            />
           ) : (
             <Body muted>{tt('prov.connect')}</Body>
           )}

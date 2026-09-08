@@ -48,10 +48,15 @@ export function TaskHall() {
               label={tt('hall.progress')}
               value={`${task.claimedMinutes}/${task.targetMinutes} ${tt('detail.minutes')}`}
             />
-            {/* Progress is bamboo and never sun: "how far along this task is"
-                and "this button does something" stop sharing a colour. The two
-                figures above it are what it means; the bar alone would be a
-                decoration, and a bar alone is never how a state is read here. */}
+            {/* Progress is lime: "how far along this task is" and "this
+                button does something" do not share a colour, and since
+                2026-09-07 progress is lime rather than bamboo — bamboo is the
+                stalk Trúc carries and nothing else. `lime[600]` is the stroke
+                step, the same one `RingChip` fills its arc with; `lime[500]`
+                is a fill for ink to sit on and reads 1.16:1 against the page,
+                which is invisible in a 6dp bar. The two figures above it are
+                what it means; the bar alone would be a decoration, and a bar
+                alone is never how a state is read here. */}
             <View
               style={{
                 height: theme.space[1.5],
@@ -64,16 +69,18 @@ export function TaskHall() {
                 style={{
                   width: `${done * 100}%`,
                   height: '100%',
-                  backgroundColor: theme.color.bamboo[600],
+                  backgroundColor: theme.color.lime[600],
                 }}
               />
             </View>
             <Row label={tt('hall.slots')} value={`${task.claimants}/${task.maxClaimants}`} />
             {/* Capacity is not a verdict. These two used to borrow the reject
                 and pass hues, which put the colour that means "this episode was
-                not paid for" on a task that is simply full. Tech is what the
-                platform reports; a task nobody can join is muted, the same way
-                a disabled control is. */}
+                not paid for" on a task that is simply full. A task nobody can
+                join is muted, the same way a disabled control is; a task that
+                is open is the ink pill, which is where a collector's action is
+                everywhere else in this app (`Chip`, `Button`). It was
+                `tech[100]`, and tech is PaXini's mark now. */}
             {full ? (
               <Tag
                 label={tt('hall.full')}
@@ -81,7 +88,7 @@ export function TaskHall() {
                 bg={theme.color.muted}
               />
             ) : (
-              <Tag label={tt('hall.open')} fg={theme.color.techInk} bg={theme.color.tech[100]} />
+              <Tag label={tt('hall.open')} fg={theme.color.actionInk} bg={theme.color.action} />
             )}
           </CardLink>
         );
