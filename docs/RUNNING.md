@@ -128,8 +128,13 @@ bad argument, `3` measured fine but the store could not be written.
 `packages/api` is a Fastify app, built by `buildApi({ db, tokenSecret })`.
 
 Two credentials are required on every mutation: a machine token and an operator
-token. Seed a centre, a machine and an operator with `credential_hash` set from
-`hashCredential()`.
+token. Bootstrap the centre and credentials:
+
+```bash
+DATABASE_URL=... node packages/api/bin/bootstrap.ts   --centre-region HCM --centre-name "Upload centre HCM-01"   --machine counter-1 --machine-secret '<secret>'   --operator 'op-1:administrator:<secret>'   --operator 'fin-1:finance:<secret>'   --operator 'clerk-1:centre_operator:<secret>'
+```
+
+Then `POST /auth/machine` and `POST /auth/operator` with those secrets.
 `packages/api/test/counter.test.ts` is the shortest worked example.
 
 Import a card with the counter command, which signs in those existing identities
@@ -187,6 +192,10 @@ expiry:
   narrow by. Two centres cannot both call their clerk `counter-1`.
 
 ## Running it
+
+For a real LAN centre on Windows, follow the [centre deployment runbook](../deploy/centre/README.md):
+database bootstrap, built console behind Caddy, environment and Task Scheduler
+setup, then one-card verification on the centre PC.
 
 ```
 DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve

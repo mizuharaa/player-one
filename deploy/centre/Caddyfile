@@ -1,0 +1,28 @@
+# LAN only; for anything reachable outside the room, see docs/RUNNING.md, "The server speaks plain HTTP, and always will".
+# Counter /handovers, /upload-batches, /upload-devices and /episodes use 127.0.0.1:8080 directly;
+# heartbeat uses Fastify inject inside the API process. /episodes here belongs to the console SPA.
+:80 {
+	bind 192.168.1.10
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+	handle /auth/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+	handle /whoami {
+		reverse_proxy 127.0.0.1:8080
+	}
+	handle /reference/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+	handle /media/* {
+		reverse_proxy 127.0.0.1:8080 {
+			flush_interval -1
+		}
+	}
+	handle {
+		root * C:/PlayerOne/apps/console/dist
+		try_files {path} /index.html
+		file_server
+	}
+}
