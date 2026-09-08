@@ -156,7 +156,16 @@ export interface CollectorApi {
    * five hundred numbers belong to collectors — and this app must not undo
    * that by telling the collector which one they typed.
    */
-  requestSignInCode(phone: string): Promise<void>;
+  /**
+   * Ask for a sign-in code.
+   *
+   * Resolves with `{ demo_code }` only when the server is configured to echo
+   * that one number's code for a demonstration, and with nothing otherwise. The
+   * app reacts to what the server sent rather than to a build-time flag, so a
+   * normal server gives a normal app and there is nothing to leave switched on
+   * in a shipped APK.
+   */
+  requestSignInCode(phone: string): Promise<void | { demo_code: string }>;
   /**
    * APP-01. Exchange the code for a thirty-day token, and keep the token.
    *

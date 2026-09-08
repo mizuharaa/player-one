@@ -223,12 +223,65 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 | `STORAGE_BUCKET` / `STORAGE_KEY` / `STORAGE_SECRET` | | Required together with `STORAGE_ENDPOINT`; a partial set fails closed at boot naming what is missing. |
 | `PLAYERONE_ZNS_ACCESS_TOKEN` / `PLAYERONE_ZNS_TEMPLATE_ID` | | How a collector's sign-in code reaches their phone: Zalo Notification Service (`packages/api/src/zns.ts`). Set both, or neither. With neither, the server writes each code to its own log instead of sending it, so a pilot runs before VNG has issued a ZNS account — every such line says `NOT SENT`. With one of the two, boot fails naming the other. |
 | `PLAYERONE_ZNS_ENV` | `sandbox` | `production` refuses to boot with no ZNS credentials, because production with no ZNS account is not a development mode — it is a server that prints live sign-in codes into a production log. |
+| `PLAYERONE_DEMO_PHONE` | | **One** phone number whose sign-in code comes back in the `request-code` response, so a demonstration does not need somebody reading a server log aloud. Byte-for-byte comparison, no normalisation. Every other number behaves exactly as it does with this unset, which is the default everywhere. See "Demo sign-in" below. |
 | `PLAYERONE_ZNS_CODE_PARAM` | `otp` | The `template_data` key the six digits go in. Whatever the approved template names it. |
 | `PLAYERONE_ZNS_BASE_URL` | Zalo's | Override only to point at a proxy or a test double. |
 | `REVIEW_VERIFICATION_GATE` | `cloud` | Which integrity check QR-02's review gate reads. `cloud` (the default since 2026-09-06) requires a read-back-verified upload before an episode can be reviewed; ADR 0001's exit conditions are met and policy B is in code. Set `local` only on a machine with no bucket — including any dev box running `seed-console.mjs`, whose seeded footage has no cloud copy and would otherwise never reach the queue. |
 
 The API serves JSON and media only. The back office is the SPA; see
 [`The back-office console`](#the-back-office-console) below.
+
+
+### Demo sign-in
+
+For showing the app to people. It changes the behaviour of **one** phone number
+and nothing else.
+
+```bash
+export PLAYERONE_DEMO_PHONE=0900000001
+DATABASE_URL=... node packages/api/scripts/seed-demo.mjs   # the collector
+DATABASE_URL=... PLAYERONE_DEMO_PHONE=$PLAYERONE_DEMO_PHONE pnpm serve
+```
+
+`request-code` for that number answers `200` with `{"demo_code":"123456"}`
+instead of `204`, and the app fills the field in and says on screen that it did.
+The sign-in exchange itself is unchanged: the code is the one that was stored,
+the collector still taps to verify, and the token still comes from
+`/auth/collector/verify`. Nothing new mints a token.
+
+**Why one number rather than a mode.** There is no reliable way to detect
+production from inside this process — the pilot upload centre runs plain HTTP
+with `PLAYERONE_SECURE_COOKIES` off on purpose, and a TLS proxy in front of an
+unmarked server looks like a laptop. So this does not try. Left set where it
+should not be, what leaks is the one account that exists to be demonstrated.
+
+`seed-demo.mjs` creates a collector who is already past registration, the six
+agreements, training, the exam, a task claim and a bound device — which is what
+`startRoute` in `apps/collector/src/App.tsx` checks before opening on Home. It
+**never truncates**, runs in one transaction, and refuses rather than
+overwriting if another collector already holds its id, its `external_ref` or the
+demo phone. Rerunning it is the same demo, not a second one. A claim that has
+been released cannot be reopened, so after a demo has consumed it, seed a fresh
+database.
+
+### One sign-in code per number per minute
+
+Every code is a paid ZNS message. The sign-in limiter counts *failures* and
+gives a credential's budget back when a code turns out to be right, so
+request-then-verify in a loop used to reset the counter and send nine more. A
+separate counter now allows one send a minute per number and is never refunded,
+including for the demo number.
+
+It is claimed for every number that parses, before the lookup that decides
+whether anybody owns it, so an enrolled number and an unknown one are refused
+identically. A refusal does not extend the window. The refusal is the usual
+`429` with `retry-after`.
+
+One consequence worth knowing: one send a minute is tighter than ten per five
+minutes, so a number can no longer accumulate ten `request-code` calls inside
+one window and the per-number failure counter is unreachable from that route.
+Guessing is still counted and audited on `/auth/collector/verify`, which is
+where a credential is actually checked.
 
 ## The bucket needs one rule set on it, by hand
 

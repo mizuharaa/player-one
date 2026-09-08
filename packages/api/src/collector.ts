@@ -190,7 +190,31 @@ const CREDENTIALS = { error: 'credentials', reason: 'credentials' };
 export function registerCollectorAuth(
   app: FastifyInstance,
   db: Db,
-  options: { tokenSecret: string; limiter: SignInLimiter; sendSignInCode?: SendSignInCode },
+  options: {
+    tokenSecret: string;
+    limiter: SignInLimiter;
+    sendSignInCode?: SendSignInCode;
+    /**
+     * One phone number whose sign-in code comes back in the response, so a
+     * demonstration does not need somebody reading a server log aloud.
+     *
+     * Exactly one number, compared byte for byte against the string the request
+     * carried. No normalisation: `SignIn.tsx` already trims before both calls,
+     * the lookup below uses the received string unchanged, and `zns.ts`
+     * normalises for delivery only, which must not be borrowed for identity.
+     *
+     * There is deliberately no general demo flag and no attempt to detect
+     * production. There is no signal to detect: the pilot upload centre runs
+     * plain HTTP with secure cookies off on purpose (`docs/RUNNING.md`), and a
+     * TLS proxy in front of an unmarked process looks like a laptop. So the
+     * design does not try. Left set where it should not be, what leaks is the
+     * one account that exists to be demonstrated.
+     *
+     * Unset — the default everywhere, including every existing deployment —
+     * means nothing here behaves differently.
+     */
+    demoPhone?: string;
+  },
 ): void {
   /**
    * APP-01. Ask for a code.
@@ -211,6 +235,28 @@ export function registerCollectorAuth(
     const { phone } = (req.body ?? {}) as Record<string, string>;
     if (typeof phone !== 'string' || phone === '') {
       return reply.code(400).send({ error: 'missing phone' });
+    }
+
+    /**
+     * One code per number per minute, before anything else and before the
+     * limiter below.
+     *
+     * Ten per five minutes is not a cap on spending. `succeeded` clears a
+     * collector's counter when a code turns out to be right, so
+     * request-then-verify in a loop resets the budget and sends nine more, and
+     * every one of those is a paid ZNS message. This is the gate that does not
+     * refund.
+     *
+     * It is claimed for every number that parses, before the lookup below, so
+     * an enrolled number and an unknown one are refused identically — charging
+     * only real sends would answer 429 for one and 204 for the other, which
+     * `constantLatency` cannot hide because it equalises time and not answers.
+     * It comes before the limiter so being told to wait does not also spend
+     * security budget.
+     */
+    const cooldown = options.limiter.reserveSend(phone);
+    if (cooldown !== null) {
+      return reply.code(429).header('retry-after', String(cooldown)).send(rateLimited(cooldown));
     }
 
     /**
@@ -244,6 +290,13 @@ export function registerCollectorAuth(
     if (wait !== null) {
       return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
     }
+
+    /**
+     * Set only for the demo number, and only once a collector owns it, so an
+     * unenrolled demo number still answers 204 and the route does not become a
+     * way to ask whether any *other* number is enrolled.
+     */
+    let demoCode: string | null = null;
 
     await constantLatency(async () => {
       // Generated and hashed whether or not anybody owns this number, so the
@@ -280,8 +333,17 @@ export function registerCollectorAuth(
        * ever reaches this line.
        */
       deliverAndRecord(db, send, collector, phone, code);
+      if (options.demoPhone !== undefined && phone === options.demoPhone) demoCode = code;
     });
 
+    /**
+     * The one place this route can answer something other than 204, and only
+     * for the configured number. It is an enrolment oracle for that number and
+     * that is accepted rather than papered over: we seed it ourselves and its
+     * existence is not a secret. Every other number keeps the answers that say
+     * nothing.
+     */
+    if (demoCode !== null) return reply.code(200).send({ demo_code: demoCode });
     return reply.code(204).send();
   });
 

@@ -102,6 +102,37 @@ describe('the sign-in limiter', () => {
     expect(limiter.refusedFor('10.0.0.9', [op('op-fresh')])).toBeGreaterThan(0);
   });
 
+  /**
+   * The send cooldown. It guards money rather than guessing, which is why it
+   * is a separate counter that `succeeded` cannot reach: a delivered sign-in
+   * code is a paid ZNS message, and a correct sign-in must not refund one.
+   */
+  it('allows one send a minute per number and never refunds it', () => {
+    const c = clock();
+    const limiter = signInLimiter(c.now);
+    const tel = { id: '0900000001', kind: 'collector' } as const;
+
+    expect(limiter.reserveSend('0900000001')).toBeNull();
+    // Immediately after, the caller is told how long, not merely refused.
+    expect(limiter.reserveSend('0900000001')).toBe(60);
+    // A different number is untouched: one person's minute is not everyone's.
+    expect(limiter.reserveSend('0900000002')).toBeNull();
+
+    // The loop this exists to stop. A correct code clears the failure counter
+    // for that number, so without this the budget comes back and nine more
+    // paid messages go out.
+    limiter.succeeded('10.0.0.9', [tel]);
+    expect(limiter.refusedFor('10.0.0.9', [tel])).toBeNull();
+    expect(limiter.reserveSend('0900000001')).toBeGreaterThan(0);
+
+    // A refusal does not push the window out, or polling once a second would
+    // lock a number out for ever.
+    c.advance(30_000);
+    expect(limiter.reserveSend('0900000001')).toBe(30);
+    c.advance(30_000);
+    expect(limiter.reserveSend('0900000001')).toBeNull();
+  });
+
   it('does not count a blank field as a reference', () => {
     const limiter = signInLimiter();
     // Ten empty forms are ten failures from one address and no failures for any

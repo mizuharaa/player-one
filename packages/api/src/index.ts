@@ -268,6 +268,15 @@ export type ApiOptions = {
    * It is not awaited on the request's clock. See `SendSignInCode`.
    */
   sendSignInCode?: SendSignInCode;
+  /** One phone number whose sign-in code comes back in the response. See `collector.ts`. */
+  demoPhone?: string;
+  /**
+   * The clock the sign-in limiter counts on. Same seam, and same rule, as
+   * `signInLimiter(now)`: it exists so a five-minute window and a one-minute
+   * send cooldown can be tested without waiting for them. It is not
+   * configuration and nothing outside a test passes it.
+   */
+  now?: () => number;
   /**
    * The payout rail (payout brief, §2.4). Defaults to what the environment
    * says, which defaults to `manual` on `sandbox`: the pilot shape, where an
@@ -353,6 +362,8 @@ export function buildApi({
   uploadProgress,
   reviewerMediaEnabled = false,
   sendSignInCode,
+  demoPhone,
+  now,
   payout = payoutOptionsFromEnv(),
   risk = riskConfigFromEnv(),
 }: ApiOptions): FastifyInstance {
@@ -633,7 +644,7 @@ export function buildApi({
    * 400 stays ahead of it: it costs nothing to answer, so it is not an attempt
    * worth counting or recording.
    */
-  const limiter = signInLimiter();
+  const limiter = signInLimiter(now);
 
   app.post('/auth/machine', async (req, reply) => {
     const { machine_identifier, secret } = (req.body ?? {}) as Record<string, string>;
@@ -781,7 +792,7 @@ export function buildApi({
    */
   registerSessionRoutes(app, db, { tokenSecret, secureCookies, limiter });
   /** The collector's phone sign-in. Same limiter, same failed-sign-in rows. */
-  registerCollectorAuth(app, db, { tokenSecret, limiter, sendSignInCode });
+  registerCollectorAuth(app, db, { tokenSecret, limiter, sendSignInCode, demoPhone });
 
   /**
    * Who the caller is. Proves both-tokens and centre scope on its own, with no

@@ -161,7 +161,7 @@ export class HttpCollectorApi implements CollectorApi {
 
   // -- sign in (APP-01) ----------------------------------------------------
 
-  async requestSignInCode(phone: string): Promise<void> {
+  async requestSignInCode(phone: string): Promise<void | { demo_code: string }> {
     const res = await this.send('/auth/collector/request-code', 'POST', { phone });
     if (res.status === 429) throw new ApiError('rate_limited');
     // No gateway configured on this deployment. Nothing the collector can do,
@@ -169,6 +169,16 @@ export class HttpCollectorApi implements CollectorApi {
     if (res.status === 503) throw new ApiError('sign_in_unavailable');
     // A 400 is about the shape of the request, never about the number.
     if (res.status === 400) throw new ApiError('invalid_request');
+    /**
+     * A demonstration server echoes that one number's code so nobody has to
+     * read it out of a log. Anything that is not a 200 carrying exactly six
+     * digits is treated as the ordinary 204 — a malformed body is not an error
+     * worth showing a collector, it just means there is no code to fill in.
+     */
+    if (res.status === 200) {
+      const code = (await this.body(res) as { demo_code?: unknown } | undefined)?.demo_code;
+      if (typeof code === 'string' && /^\d{6}$/.test(code)) return { demo_code: code };
+    }
     // 204, and every other answer, is the same answer. Say nothing more.
   }
 

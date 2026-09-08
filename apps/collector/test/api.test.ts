@@ -390,6 +390,31 @@ describe('signing in (APP-01)', () => {
     await expect(api.requestSignInCode('0000000000')).resolves.toBeUndefined();
   });
 
+  /**
+   * A demonstration server echoes one configured number's code so nobody has to
+   * read it out of a log while people watch. The client reacts to what the
+   * server sent and carries no flag of its own, so a normal server gives a
+   * normal app and there is nothing to leave switched on in a shipped build.
+   */
+  it('takes a demo code only from a 200 carrying exactly six digits', async () => {
+    const ok = fakeFetch({
+      'POST /auth/collector/request-code': { status: 200, body: { demo_code: '123456' } },
+    });
+    await expect(
+      new HttpCollectorApi(BASE, fakeStore(), () => {}, ok.fn).requestSignInCode('0900000001'),
+    ).resolves.toEqual({ demo_code: '123456' });
+
+    // Anything else on a 200 is the ordinary "nothing to say" answer, not an
+    // error: a malformed body means there is no code to fill in, and showing a
+    // collector a failure for it would be a lie about their sign-in.
+    for (const body of [{ demo_code: '12345' }, { demo_code: 'abcdef' }, { demo_code: 7 }, {}, undefined]) {
+      const odd = fakeFetch({ 'POST /auth/collector/request-code': { status: 200, body } });
+      await expect(
+        new HttpCollectorApi(BASE, fakeStore(), () => {}, odd.fn).requestSignInCode('0900000001'),
+      ).resolves.toBeUndefined();
+    }
+  });
+
   it('names the two refusals that are about this service and not about a number', async () => {
     const limited = fakeFetch({ 'POST /auth/collector/request-code': { status: 429 } });
     await expect(

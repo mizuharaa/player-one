@@ -129,6 +129,9 @@ const app = buildApi({
    * PLAYERONE_ZNS_ENV=production with none of it, throws by name.
    */
   sendSignInCode: signInCodeSenderFromEnv(env),
+  // One number, or nothing. `serve.ts` is the only file under src/ or bin/ that
+  // reads it; `scripts/seed-demo.mjs` reads it too, which is the point of it.
+  demoPhone: env['PLAYERONE_DEMO_PHONE'],
   /**
    * The payout rail's client, from PLAYERONE_ZALOPAY_*. Null in sandbox with
    * no credentials — verification then stores `unverified` and pay refuses

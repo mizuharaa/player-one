@@ -165,6 +165,23 @@ const PER_SHARED = 30;
  * row. Every real one is far shorter; the value is whatever the caller posted.
  */
 const REF_MAX = 200;
+
+/**
+ * The shortest gap between two sign-in codes sent to one number.
+ *
+ * Separate from everything above because it guards a different resource. The
+ * counters in this file bound *guessing*: they count attempts and `succeeded`
+ * gives the credential's budget back, because a correct password proves the
+ * person is who they said. A delivered code is not a guess, it is 300 VND of
+ * somebody else's money — ZNS charges per authentication message — so a
+ * correct sign-in must not refund it. Without this, request-then-verify in a
+ * loop resets `tel:` and sends nine more.
+ *
+ * A minute costs a loop about sixty messages an hour instead of thousands, and
+ * is short enough that somebody who mistyped their number and corrected it is
+ * not locked out of their evening.
+ */
+const SEND_COOLDOWN_MS = 60_000;
 /**
  * When the map is bigger than this, expired entries are swept on the next
  * failure.
@@ -258,6 +275,23 @@ export type SignInLimiter = {
    * was under a limit, from here, then — and cannot be used to fill a disk.
    */
   noteRefusal(source: string, refs: readonly SignInRef[]): boolean;
+  /**
+   * Claim the right to send one sign-in code to `phone`, atomically.
+   *
+   * Returns the seconds to wait when one went out too recently, or `null`
+   * having reserved the next minute. Check and reservation are one step so two
+   * concurrent requests cannot both pass.
+   *
+   * The caller must reserve for **every syntactically valid number**, before
+   * looking up whether anybody owns it. Charging only real sends would answer
+   * 429 for an enrolled number and 204 for an unknown one, which is an
+   * enrolment oracle in the status code — and `constantLatency` equalises time,
+   * not answers.
+   *
+   * A refusal does not push the window out, or polling once a second would lock
+   * a number out for ever.
+   */
+  reserveSend(phone: string): number | null;
 };
 
 /**
@@ -275,6 +309,12 @@ export type SignInLimiter = {
  */
 export function signInLimiter(now: () => number = Date.now): SignInLimiter {
   const counters = new Map<string, Counter>();
+  /**
+   * When each number may next be sent a code. Its own map, not a `Counter`:
+   * nothing in `succeeded` may reach it, and giving it the same shape would
+   * invite exactly that.
+   */
+  const sends = new Map<string, number>();
 
   /**
    * The keys one attempt touches: its address, and each distinct non-empty
@@ -332,6 +372,17 @@ export function signInLimiter(now: () => number = Date.now): SignInLimiter {
           counters.set(key, { failures: 1, expiresAt: now() + WINDOW_MS, refused: false });
         else counter.failures += 1;
       }
+    },
+
+    reserveSend(phone) {
+      const t = now();
+      if (sends.size > MAX_KEYS) {
+        for (const [key, until] of sends) if (until <= t) sends.delete(key);
+      }
+      const until = sends.get(phone.slice(0, REF_MAX));
+      if (until !== undefined && until > t) return Math.ceil((until - t) / 1000);
+      sends.set(phone.slice(0, REF_MAX), t + SEND_COOLDOWN_MS);
+      return null;
     },
 
     noteRefusal(source, refs) {

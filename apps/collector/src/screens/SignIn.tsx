@@ -34,6 +34,8 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
   const [problem, setProblem] = useState<MessageKey | null>(null);
+  /** True when the server filled the code in, so the screen can say why. */
+  const [filled, setFilled] = useState(false);
 
   /** One message per named refusal, and one fallback that admits nothing. */
   const failed = (err: unknown): void => {
@@ -46,9 +48,16 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
 
   const request = useMutation({
     mutationFn: () => api.requestSignInCode(phone.trim()),
-    onSuccess: () => {
+    onSuccess: (result) => {
       setProblem(null);
       setSent(true);
+      // A demonstration server echoes this one number's code. Ordinary servers
+      // send nothing back and this is never reached.
+      const demo = result?.demo_code;
+      if (demo !== undefined) {
+        setCode(demo);
+        setFilled(true);
+      }
     },
     onError: failed,
   });
@@ -63,11 +72,31 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
     <Screen title={tt('signIn.title')}>
       <Body muted>{tt('signIn.intro')}</Body>
       <Card>
-        <Field label={tt('signIn.phone')} value={phone} onChangeText={setPhone} />
+        <Field
+          label={tt('signIn.phone')}
+          value={phone}
+          onChangeText={(next) => {
+            setPhone(next);
+            // A code belongs to the number it was sent for. Editing the number
+            // must not leave the previous one sitting in the field.
+            if (filled) {
+              setCode('');
+              setFilled(false);
+            }
+          }}
+        />
         {sent ? (
           <>
             <Note text={tt('signIn.codeSent')} />
-            <Field label={tt('signIn.code')} value={code} onChangeText={setCode} />
+            <Field
+              label={tt('signIn.code')}
+              value={code}
+              onChangeText={(next) => {
+                setCode(next);
+                setFilled(false);
+              }}
+            />
+            {filled ? <Note text={tt('signIn.demoFilled')} /> : null}
           </>
         ) : null}
         {problem !== null ? <Note text={tt(problem)} /> : null}
