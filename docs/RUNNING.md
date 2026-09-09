@@ -277,11 +277,13 @@ whether anybody owns it, so an enrolled number and an unknown one are refused
 identically. A refusal does not extend the window. The refusal is the usual
 `429` with `retry-after`.
 
-One consequence worth knowing: one send a minute is tighter than ten per five
-minutes, so a number can no longer accumulate ten `request-code` calls inside
-one window and the per-number failure counter is unreachable from that route.
-Guessing is still counted and audited on `/auth/collector/verify`, which is
-where a credential is actually checked.
+One consequence worth knowing. One send a minute is tighter than ten per five
+minutes, so `request-code` calls **alone** can no longer fill a number's failure
+counter, and a burst made only of code requests is no longer detected there.
+Mixed traffic still is: one request plus nine failed guesses fills the same
+counter, and the next request-code a minute later is refused by the limiter and
+audited as before. Guessing is counted and audited on `/auth/collector/verify`
+either way, which is where a credential is actually checked.
 
 ## The bucket needs one rule set on it, by hand
 

@@ -133,6 +133,23 @@ describe('the sign-in limiter', () => {
     expect(limiter.reserveSend('0900000001')).toBeNull();
   });
 
+  it('bounds the send map instead of growing under a flood of new numbers', () => {
+    const c = clock();
+    const limiter = signInLimiter(c.now);
+    // Ten thousand distinct numbers inside one cooldown window is far past what
+    // the address budget lets one source do, but the map must not grow without
+    // a ceiling on the way there.
+    for (let i = 0; i < 10_000; i += 1) expect(limiter.reserveSend(`n${i}`)).toBeNull();
+    // Full of live reservations: a further new number is refused rather than
+    // admitted, because what is being rationed is somebody's money.
+    expect(limiter.reserveSend('n-one-too-many')).toBeGreaterThan(0);
+    // A number already holding a reservation still gets its own answer.
+    expect(limiter.reserveSend('n0')).toBeGreaterThan(0);
+    // And the whole map drains itself, so the refusal is not permanent.
+    c.advance(61_000);
+    expect(limiter.reserveSend('n-one-too-many')).toBeNull();
+  });
+
   it('does not count a blank field as a reference', () => {
     const limiter = signInLimiter();
     // Ten empty forms are ten failures from one address and no failures for any

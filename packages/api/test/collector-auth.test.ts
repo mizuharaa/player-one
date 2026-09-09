@@ -191,6 +191,49 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
     outbox.length = 0;
   });
 
+  it('refuses a second request identically whether the number is enrolled or not', async () => {
+    await seed();
+    outbox.length = 0;
+    const app = await api();
+
+    // PHONE_A is a collector, PHONE_B is not seeded. The cooldown is claimed
+    // before the lookup, so the second request must not tell them apart.
+    const enrolledFirst = await request(app, PHONE_A);
+    const unknownFirst = await request(app, '+84900000777');
+    expect(enrolledFirst.statusCode).toBe(204);
+    expect(unknownFirst.statusCode).toBe(204);
+
+    const enrolledAgain = await request(app, PHONE_A);
+    const unknownAgain = await request(app, '+84900000777');
+    expect(enrolledAgain.statusCode).toBe(429);
+    expect(unknownAgain.statusCode).toBe(429);
+    // Same body, not merely the same status: a difference in `retry_after` or
+    // the refusal name would be the oracle wearing a different hat.
+    expect(unknownAgain.json()).toEqual(enrolledAgain.json());
+    outbox.length = 0;
+  });
+
+  it('compares the demo number byte for byte, with no normalisation', async () => {
+    await seed();
+    outbox.length = 0;
+    const app = buildApi({
+      db: await appDb(),
+      tokenSecret: SECRET,
+      sendSignInCode: send,
+      demoPhone: PHONE_A,
+      now: () => clockMs,
+    });
+
+    // PHONE_A is '+84900000001'. The same number written the way a Vietnamese
+    // collector types it is a different string, and must not echo: `zns.ts`
+    // converts between these forms for delivery, and borrowing that here would
+    // make the configured value ambiguous.
+    const national = await request(app, '0900000001');
+    expect(national.statusCode).toBe(204);
+    expect(national.body).toBe('');
+    outbox.length = 0;
+  });
+
   it('answers 503 for every number when it was handed no way to send a code', async () => {
     await seed();
     const app = await api(undefined);

@@ -1,25 +1,13 @@
 /**
- * One collector who is already past onboarding, so a demonstration opens on the
- * screen worth showing instead of nine screens of tapping.
+ * One collector already past onboarding, so a demonstration opens on the screen
+ * worth showing instead of nine screens of tapping.
  *
  *   PLAYERONE_DEMO_PHONE=0900000001 DATABASE_URL=... node packages/api/scripts/seed-demo.mjs
  *
- * Two rules separate this from `seed-console.mjs`, and both exist because this
- * one is pointed at a database somebody might care about.
- *
- * **It never truncates.** `seed-console.mjs` empties every table, which is
- * right for a scratch database and wrong here.
- *
- * **It owns exactly one identity and refuses to touch anything else.** That
- * identity is the fixed ids below, the external reference, and the phone number
- * in `PLAYERONE_DEMO_PHONE`. If any of those is already held by a row that is
- * not this demo collector, the whole transaction rolls back and says which. It
- * never overwrites somebody else's row to make room for itself.
- *
- * What "past onboarding" means is decided by `startRoute` in
- * `apps/collector/src/App.tsx`, not by guesswork: a non-empty name, six
- * accepted agreements, training complete, and a passed exam. Miss any one and
- * the app opens on that step instead of Home.
+ * Unlike `seed-console.mjs` this never truncates, because it may be pointed at a
+ * database somebody cares about. It owns the fixed ids below and refuses rather
+ * than overwriting anything it does not own. What "past onboarding" means is
+ * read off `startRoute` in `apps/collector/src/App.tsx`.
  */
 import { sql } from 'drizzle-orm';
 import { open } from '../../store/src/index.ts';
@@ -35,6 +23,10 @@ const ID = {
 };
 const REF = 'demo-collector';
 const SERIAL = 'EGO-DEMO-0001';
+/** What marks each fixed row as this script's rather than somebody's real data. */
+const TASK_NAME = 'Demo housework';
+const SCENARIO_CODE = 'demo-home';
+const DEVICE_TYPE_CODE = 'ego_headset';
 /** The app's current agreement version. `liveClaim` writes `v1`; the app sends this. */
 const AGREEMENT_VERSION = '1.0';
 const AGREEMENTS = [
@@ -62,11 +54,41 @@ const fail = (message) => {
 
 try {
   await db.transaction(async (tx) => {
-    // Nothing is written until every collision is ruled out, so a refusal
-    // leaves the database exactly as it was.
+    /**
+     * Nothing is written until every fixed id is proven to be ours or free, so
+     * a refusal leaves the database exactly as it was.
+     *
+     * Both halves matter. Somebody else holding our reference or our phone is
+     * the obvious collision. The one that is easy to miss is somebody else
+     * sitting on one of our fixed **ids**: an upsert keyed on that id would
+     * rewrite their row, and for the collector it would move the demo phone
+     * onto a real person — who could then be signed into by anyone who knows
+     * the demo number. Ownership is a property of the row, not of the
+     * transaction.
+     */
+    const owned = async (table, id, column, expected) => {
+      const [row] = await tx.execute(
+        sql`select ${sql.raw(column)} as marker from ${sql.raw(table)} where id = ${id}`,
+      );
+      if (row !== undefined && row.marker !== expected) {
+        fail(
+          `${table} ${id} already exists and is not the demo fixture ` +
+            `(${column} is ${JSON.stringify(row.marker)}, expected ${JSON.stringify(expected)}). ` +
+            'Refusing rather than overwriting it. Use a demo database, or change the ids in this script.',
+        );
+      }
+    };
+
+    await owned('collectors', ID.collector, 'external_ref', REF);
+    await owned('tasks', ID.task, 'name', TASK_NAME);
+    await owned('scenarios', ID.scenario, 'code', SCENARIO_CODE);
+    await owned('device_types', ID.deviceType, 'code', DEVICE_TYPE_CODE);
+    await owned('devices', ID.device, 'hardware_serial', SERIAL);
+    await owned('task_claims', ID.claim, 'collector_id', ID.collector);
+
     const clash = await tx.execute(sql`
       select id, external_ref, phone from collectors
-       where (id = ${ID.collector} or external_ref = ${REF} or phone = ${phone})
+       where (external_ref = ${REF} or phone = ${phone})
          and id <> ${ID.collector}`);
     if (clash.length > 0) {
       const row = clash[0];
@@ -108,18 +130,18 @@ try {
       on conflict do nothing`);
 
     await tx.execute(sql`
-      insert into scenarios (id, code, privacy_risk_level) values (${ID.scenario}, 'home', 'low')
+      insert into scenarios (id, code, privacy_risk_level) values (${ID.scenario}, ${SCENARIO_CODE}, 'low')
       on conflict (id) do nothing`);
 
     await tx.execute(sql`
       insert into tasks (id, name, unit_price, max_concurrent_claimants, status)
-      values (${ID.task}, 'Demo housework', 1200.0000, 5, 'published')
+      values (${ID.task}, ${TASK_NAME}, 1200.0000, 5, 'published')
       on conflict (id) do update set status = 'published'`);
 
     // A bound device: `SessionCreate` will not let a session be created without
     // one, so without this the demo stops one screen early.
     await tx.execute(sql`
-      insert into device_types (id, code, generation) values (${ID.deviceType}, 'ego_headset', 'gen1')
+      insert into device_types (id, code, generation) values (${ID.deviceType}, ${DEVICE_TYPE_CODE}, 'gen1')
       on conflict (id) do nothing`);
     await tx.execute(sql`
       insert into devices (id, device_type_id, hardware_serial, status, bound_collector_id, bound_at)
@@ -134,7 +156,7 @@ try {
 
   console.log(`Demo collector ready. Sign in on the phone with: ${phone}`);
   console.log('The API returns that number’s code in the response, so the app fills it in.');
-  console.log(`Task "Demo housework", device ${SERIAL}, claim active.`);
+  console.log(`Task "${TASK_NAME}", device ${SERIAL}, claim active.`);
 } catch (error) {
   console.error(`seed-demo refused: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;

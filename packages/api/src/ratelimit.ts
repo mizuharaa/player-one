@@ -315,6 +315,8 @@ export function signInLimiter(now: () => number = Date.now): SignInLimiter {
    * invite exactly that.
    */
   const sends = new Map<string, number>();
+  /** When the send map was last swept, so a flood cannot make it scan per request. */
+  let sweptAt = 0;
 
   /**
    * The keys one attempt touches: its address, and each distinct non-empty
@@ -376,12 +378,30 @@ export function signInLimiter(now: () => number = Date.now): SignInLimiter {
 
     reserveSend(phone) {
       const t = now();
-      if (sends.size > MAX_KEYS) {
-        for (const [key, until] of sends) if (until <= t) sends.delete(key);
-      }
-      const until = sends.get(phone.slice(0, REF_MAX));
+      const key = phone.slice(0, REF_MAX);
+      const until = sends.get(key);
       if (until !== undefined && until > t) return Math.ceil((until - t) / 1000);
-      sends.set(phone.slice(0, REF_MAX), t + SEND_COOLDOWN_MS);
+
+      /**
+       * Held reservations are the only thing in here, and each drains itself
+       * after a minute. The sweep is still capped to once a second: a flood
+       * that keeps the map at its ceiling would otherwise walk every entry on
+       * every request, which is the attack rather than the defence.
+       */
+      if (sends.size >= MAX_KEYS && t - sweptAt >= 1000) {
+        sweptAt = t;
+        for (const [k, expires] of sends) if (expires <= t) sends.delete(k);
+      }
+      /**
+       * Full of live reservations, and this number is not one of them. Refuse
+       * rather than grow: the thing being rationed is somebody's money, so the
+       * safe direction is to send nothing. Reaching here needs ten thousand
+       * distinct numbers inside one minute, which is far past what the address
+       * budget above lets a single source do.
+       */
+      if (sends.size >= MAX_KEYS) return Math.ceil(SEND_COOLDOWN_MS / 1000);
+
+      sends.set(key, t + SEND_COOLDOWN_MS);
       return null;
     },
 

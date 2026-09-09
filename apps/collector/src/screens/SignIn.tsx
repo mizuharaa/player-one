@@ -47,14 +47,21 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   };
 
   const request = useMutation({
-    mutationFn: () => api.requestSignInCode(phone.trim()),
-    onSuccess: (result) => {
+    mutationFn: async () => {
+      // The number this answer belongs to, captured before the request goes.
+      const asked = phone.trim();
+      return { asked, result: await api.requestSignInCode(asked) };
+    },
+    onSuccess: ({ asked, result }) => {
       setProblem(null);
       setSent(true);
       // A demonstration server echoes this one number's code. Ordinary servers
       // send nothing back and this is never reached.
       const demo = result?.demo_code;
-      if (demo !== undefined) {
+      // Not if the collector has edited the number since: that code belongs to
+      // the number it was asked for, and filling it in under a different one
+      // would be a code for somebody else.
+      if (demo !== undefined && asked === phone.trim()) {
         setCode(demo);
         setFilled(true);
       }
@@ -77,12 +84,12 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
           value={phone}
           onChangeText={(next) => {
             setPhone(next);
-            // A code belongs to the number it was sent for. Editing the number
-            // must not leave the previous one sitting in the field.
-            if (filled) {
-              setCode('');
-              setFilled(false);
-            }
+            // A code belongs to the number it was sent for, so editing the
+            // number clears it. Unconditional: `filled` is turned off as soon
+            // as the collector types in the code box, and a stale code must
+            // still be cleared after that.
+            setCode('');
+            setFilled(false);
           }}
         />
         {sent ? (
