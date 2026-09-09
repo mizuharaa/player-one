@@ -190,15 +190,38 @@ function Lens() {
        * a movement is the true position rather than whatever the lerp had
        * reached when it fell under the threshold.
        */
-      const done =
+      const settled =
         Math.abs(want - size) < SETTLE &&
         Math.abs(mouseX - size / 2 - x) < SETTLE &&
         Math.abs(mouseY - size / 2 - y) < SETTLE;
-      if (done) {
+      if (settled) {
         size = want;
         x = mouseX - size / 2;
         y = mouseY - size / 2;
       }
+      /*
+       * `!over` is the second half of the pixel-exactness fix, and it is the
+       * one place this component pays for a frame it did not used to.
+       *
+       * The clone is positioned from a live `getBoundingClientRect()`, so it
+       * is only correct on frames that actually run. Stopping while the lens is
+       * open freezes it at whatever the rect said on the last frame, and the
+       * page moves under a stationary pointer for reasons that are not
+       * `scroll`, `resize` or `mousemove`: a `ScrollTrigger` reveal finishing
+       * its 16px rise, the opening sequence, a `<details>` opening. Measured on
+       * `/discover`: a `<summary>` revealed under a still pointer held the
+       * clone **4.38px** above the original, and held it there until the reader
+       * moved the mouse.
+       *
+       * The cost is bounded to the time the pointer is actually over a
+       * highlight target, which is already the only time the rim's conic
+       * gradient is animating — so this adds a callback to a frame the page was
+       * drawing anyway, and adds nothing at all to the idle case that the
+       * `wake` note above exists to protect. The disc still snaps to its exact
+       * target on the settling frame; what `over` changes is only whether the
+       * loop keeps asking for more.
+       */
+      const done = settled && !over;
 
       discEl.style.width = `${size}px`;
       discEl.style.height = `${size}px`;
@@ -305,7 +328,11 @@ function Lens() {
           opacity: 0,
         }}
       >
-        <div ref={clone} className="absolute overflow-hidden whitespace-nowrap" />
+        {/* `overflow-hidden` and nothing else about layout: `build` sets the
+            display, the alignment, the white space and the font from the
+            target, and a class here would silently outrank none of them but
+            would misdescribe the element. */}
+        <div ref={clone} className="absolute overflow-hidden" />
       </div>
       <div
         ref={disc}
@@ -345,11 +372,53 @@ function Lens() {
 /**
  * Draw the hovered element again, in the accent, inside the lens.
  *
- * The computed padding, font, gap and alignment are copied so the clone lands
- * on the same baseline as the original underneath it — the effect is that one
- * label is lit, not that a second label appeared beside it. Every descendant is
- * forced to the accent, including SVG `currentColor` strokes, which is why an
- * icon inside a button comes through lit rather than as a hole.
+ * The clone has to land **exactly** on the original, because both are on
+ * screen at once: the lens lights the label rather than replacing it, so a
+ * clone one pixel out is a doubled label and a clone a hundred pixels out is
+ * the fault the owner reported as *"the text offset is visible on screen and
+ * its bad"*.
+ *
+ * ## The offset, measured, and where it came from
+ *
+ * The clone box was always right — its `left`/`top`/`width`/`height` come
+ * straight off `getBoundingClientRect()` and were measured at 0.00px on every
+ * target. What was wrong was the **layout inside that box**: the clone was
+ * unconditionally `display: flex` with `align-items: center`, and
+ * `justify-content` fell back to `center` whenever the target's own computed
+ * value was `normal` — which is what every non-flex element computes to. So a
+ * block of text whose ink is narrower than its box was centred in the clone
+ * and left-aligned in the original, and the ink separated by exactly half the
+ * slack. Measured on `/discover` at 1440x900, before this change:
+ *
+ * | Target | ink dx | ink dy |
+ * |---|---|---|
+ * | headline line, `<span class="display-line">` 1200px box, 667.7px of ink | **+266.16px** | 0.00px |
+ * | hero eyebrow, `<p class=MICRO>` 1200px box, 196.9px of ink | **+501.53px** | 0.00px |
+ * | `<summary>`, already `display:flex` | 0.00px | +4.38px |
+ * | nav `<a>`, inline | 0.00px | -0.20px |
+ *
+ * Both large numbers are `(box − ink) / 2` to the hundredth, which is the
+ * proof that centring was the whole of it and not a rounding artefact.
+ *
+ * ## The rule now
+ *
+ * Mirror the target's own layout instead of imposing one, in three cases:
+ *
+ * - **inline** — the rect a browser reports for an inline box *is* its ink
+ *   box, so centring inside it is exact and is kept. (It stops being exact if
+ *   an inline target wraps onto two lines; nothing on this route does at the
+ *   768px floor where the lens exists at all.)
+ * - **flex** — copy the target's own `align-items`, `justify-content`,
+ *   `flex-direction` and `gap` rather than assuming centre.
+ * - **anything else** — `display: block`, and the text is placed by
+ *   `text-align`, `white-space`, the font and the line height, all copied. A
+ *   block laid out with the same properties in a box of the same size puts
+ *   its glyphs in the same place.
+ *
+ * `padding` was already copied; the **border** now is too, at zero alpha, so a
+ * bordered control's content box is the same width in both. Every descendant
+ * is forced to the accent, including SVG `currentColor` strokes, which is why
+ * an icon inside a button comes through lit rather than as a hole.
  */
 function build(clone: HTMLDivElement, target: HTMLElement, circle: boolean, accent: string) {
   if (circle) {
@@ -362,24 +431,39 @@ function build(clone: HTMLDivElement, target: HTMLElement, circle: boolean, acce
       color: 'transparent',
       padding: '0',
       gap: '0',
+      border: '0',
       borderRadius: getComputedStyle(target).borderRadius,
     });
     return;
   }
 
   const cs = getComputedStyle(target);
+  const inline = cs.display === 'inline';
+  const flex = cs.display.endsWith('flex');
   Object.assign(clone.style, {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: cs.justifyContent === 'normal' ? 'center' : cs.justifyContent,
-    gap: cs.gap === 'normal' ? '8px' : cs.gap,
+    display: inline || flex ? (inline ? 'flex' : cs.display) : 'block',
+    alignItems: inline ? 'center' : flex ? cs.alignItems : '',
+    justifyContent: inline ? 'center' : flex ? cs.justifyContent : '',
+    flexDirection: flex ? cs.flexDirection : '',
+    flexWrap: flex ? cs.flexWrap : '',
+    gap: cs.gap === 'normal' ? '' : cs.gap,
     padding: cs.padding,
+    /* Transparent, not absent: a 1px border the clone does not draw is a 1px
+       narrower content box and a 1px shift of everything inside it. */
+    borderWidth: cs.borderWidth,
+    borderStyle: cs.borderStyle,
+    borderColor: 'transparent',
+    boxSizing: 'border-box',
     fontSize: cs.fontSize,
     fontWeight: cs.fontWeight,
     fontFamily: cs.fontFamily,
+    fontStyle: cs.fontStyle,
     letterSpacing: cs.letterSpacing,
+    wordSpacing: cs.wordSpacing,
     lineHeight: cs.lineHeight,
     textAlign: cs.textAlign,
+    textTransform: cs.textTransform,
+    whiteSpace: cs.whiteSpace,
     background: 'transparent',
     borderRadius: cs.borderRadius,
     color: accent,

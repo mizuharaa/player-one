@@ -1,5 +1,29 @@
 /**
- * `/discover` — the public product home. Build seven, 2026-09-08.
+ * `/discover` — the public product home. Build eight, 2026-09-09.
+ *
+ * ## What build eight adds, and it is three things
+ *
+ * Build seven's composition is kept whole: the stacked display type over a
+ * contact sheet, the console fragments floating on it, the verdict glyphs as
+ * the accent shapes, the edge-to-edge work grid, the not-found route. Three
+ * things the owner asked for after that build launched are new.
+ *
+ * 1. **An opening sequence.** A near-white screen carrying only the slogan;
+ *    the type pans up and settles; the film's frame opens beneath it. Asked
+ *    for three times and never built until now. It lives in
+ *    `lib/choreo.tsx`, which documents the four failure paths it must survive
+ *    — a blocked GSAP chunk, `prefers-reduced-motion`, a video that never
+ *    arrives, and a reader who scrolls straight through it. **Nothing on this
+ *    page is hidden by the stylesheet**; every start state is a `gsap.from`
+ *    inside `matchMedia`, so all four leave the page complete.
+ *
+ * 2. **The film moved to second place**, directly under the hero, because a
+ *    band five sections down cannot be revealed beneath anything. It is still
+ *    spent once and still labelled as a placeholder.
+ *
+ * 3. **A Klarna-style ending**: link columns, the wordmark at page width, a
+ *    thin legal line, all on the same ink the closing band uses. See `Footer`
+ *    for why the wordmark says *PlayerOne* and not a partner's name.
  *
  * ## What was rejected, in the product owner's words
  *
@@ -182,8 +206,16 @@ const APK_URL: string =
 /** The four questions, as disclosure rows. The first is open. */
 const QUESTIONS = ['record', 'paid', 'when', 'data'] as const;
 
-/** The five places this page goes. Anchors, because they all exist. */
-const DESTINATIONS = ['camera', 'work', 'review', 'payment', 'questions'] as const;
+/**
+ * The five places this page goes. Anchors, because they all exist.
+ *
+ * In **page order**, which they were not before: the work grid has come before
+ * the camera band since build seven while this list said camera first, and
+ * build eight puts the same list in the footer as well. A map of a page that
+ * names its sections in an order the page does not have is two copies of the
+ * same small lie.
+ */
+const DESTINATIONS = ['work', 'camera', 'review', 'payment', 'questions'] as const;
 
 /** Whether the reader has asked the machine to stop moving things. */
 function useReducedMotion(): boolean {
@@ -296,16 +328,32 @@ export function DiscoverScreen() {
 
       <main>
         <Hero />
+        {/*
+          The film moved here from fifth place, and the move is what makes the
+          opening sequence's third beat exist at all.
+
+          The owner asked, three times, for a page that opens on the slogan
+          alone, pans the type up, and *then* reveals the film's frame beneath
+          it. A band five sections down cannot be revealed beneath anything —
+          the reader would have to scroll past three sections to find the beat
+          they were promised. Directly under the hero it is on the fold at
+          1440x900 and its top edge opens where the reader is already looking.
+
+          It is still spent **once**, still labelled *placeholder film*, and
+          still carries the slate saying it is a third-person view of the
+          device rather than footage the device took. `CameraBand`'s caption
+          calls it "the placeholder film above" and that is still true.
+        */}
+        <FilmBand reduced={reduced} />
         <WorkBand />
         <CameraBand />
-        <FilmBand reduced={reduced} />
         <ReviewBand />
         <PaymentBand />
         <QuestionsBand />
         <ClosingBand closing={closing} nearTruc={nearTruc} />
       </main>
 
-      <Footer>{t('discover.credits')}</Footer>
+      <Footer />
     </div>
   );
 }
@@ -333,7 +381,7 @@ export function DiscoverScreen() {
 function Bar() {
   const { t } = useTranslation();
   return (
-    <header className="sticky top-0 z-30 px-4 pt-4 sm:px-6">
+    <header data-choreo-hero="chrome" className="sticky top-0 z-30 px-4 pt-4 sm:px-6">
       <div
         className={cn(
           'mx-auto flex max-w-[84rem] items-center justify-between gap-3',
@@ -414,10 +462,30 @@ function Hero() {
   return (
     <section
       data-band="hero"
-      className="relative isolate flex min-h-[88svh] flex-col justify-center"
+      /*
+        `78svh`, down from 88, and the hero's own padding came down with it —
+        both so that the opening sequence's third beat is on screen.
+
+        Measured at 1440x900 before the change: the hero was 846px tall inside
+        a 900px window whose first 66px are the bar's row, so the film band's
+        top edge sat at 912 — twelve pixels below the fold, and the beat the
+        owner asked for played entirely off screen. At 78svh with `pt-20` and
+        `pb-14` the hero is 774px and the film opens at 840, which puts 60px of
+        its frame in the first viewport at 900 and 172px at 1080. The floor is
+        still there for a short window; it is no longer sized to fill one.
+      */
+      className="relative isolate flex min-h-[78svh] flex-col justify-center"
     >
-      {/* The contact sheet. Masked, so it is a texture and not a wireframe. */}
-      <div aria-hidden="true" className="frame-grid absolute inset-0 z-0" />
+      {/*
+        The contact sheet. Masked, so it is a texture and not a wireframe.
+
+        `data-choreo-hero="chrome"` here and on the four elements below is the
+        opening sequence's first beat stated as markup: *a near-white screen
+        carrying only the slogan.* Everything wearing that attribute is a thing
+        the sequence holds back until the type has settled. None of it is
+        hidden by the stylesheet — see `choreo.tsx`.
+      */}
+      <div aria-hidden="true" data-choreo-hero="chrome" className="frame-grid absolute inset-0 z-0" />
 
       {/*
         The flat shapes: a square on the turn, a disc, a quarter-circle.
@@ -430,15 +498,15 @@ function Hero() {
         type at `z-0` and are `aria-hidden`, because a shape that carries no
         information should not be announced as though it did.
       */}
-      <div aria-hidden="true" className="absolute inset-0 z-0 overflow-clip">
+      <div aria-hidden="true" data-choreo-hero="chrome" className="absolute inset-0 z-0 overflow-clip">
         <span className="absolute left-[1%] top-[66%] hidden size-32 rounded-tr-full bg-[var(--lavender-200)] lg:block" />
         <span className="absolute right-[8%] top-[12%] hidden size-16 rounded-full bg-[var(--foreground)] lg:block" />
         <span className="absolute right-[2%] top-[70%] hidden size-44 rotate-[14deg] bg-[var(--lavender-200)] lg:block" />
         <span className="absolute right-[24%] top-[4%] hidden size-20 rounded-full border-2 border-[var(--border-strong)] lg:block" />
       </div>
 
-      <div className={cn(BAND, SHELL, 'relative z-10 pb-20 pt-20 sm:pt-24 lg:pb-24 lg:pt-28')}>
-        <p className={MICRO} data-cursor-highlight>
+      <div className={cn(BAND, SHELL, 'relative z-10 pb-16 pt-16 sm:pt-20 lg:pb-14 lg:pt-20')}>
+        <p className={MICRO} data-choreo-hero="chrome" data-cursor-highlight>
           {t('discover.eyebrow')}
         </p>
 
@@ -476,7 +544,11 @@ function Hero() {
 
             None of them is interactive, so none can be reported as covered.
           */}
-          <div aria-hidden="true" className="pointer-events-none absolute inset-0 hidden lg:block">
+          <div
+            aria-hidden="true"
+            data-choreo-hero="chrome"
+            className="pointer-events-none absolute inset-0 hidden lg:block"
+          >
             <Chip className="left-[36%] top-[-4%]">
               <span className={MICRO}>{t('discover.chip.task')}</span>
             </Chip>
@@ -535,7 +607,11 @@ function Hero() {
             <Link to="/login">{t('discover.signIn')}</Link>
           </Button>
         </div>
-        <ApkNote />
+        {/* Tagged, so beat one is honestly bare: the note explains a control
+            that is not on screen yet, and a lone sentence on a blank page
+            explaining nothing is worse than no sentence. Only the hero's copy
+            takes the attribute — the closing band's is a plain sibling. */}
+        <ApkNote beat="actions" />
       </div>
     </section>
   );
@@ -716,7 +792,7 @@ function FilmBand({ reduced }: { reduced: boolean }) {
   const [playing, setPlaying] = useState(false);
 
   return (
-    <Reveal data-band="film">
+    <Reveal data-band="film" data-choreo-hero="film">
       <div
         className={cn(
           BAND,
@@ -1096,11 +1172,14 @@ function ApkAction() {
  * cell: inside the row a 48ch paragraph sets the width of its flex item and
  * pushes the console sign-in 200px to the right of the download.
  */
-function ApkNote() {
+function ApkNote({ beat }: { beat?: string }) {
   const { t } = useTranslation();
   if (APK_URL !== '') return null;
   return (
-    <p className="mt-4 max-w-[52ch] text-[0.8125rem] leading-[1.55] text-[var(--muted-foreground)]">
+    <p
+      data-choreo-hero={beat}
+      className="mt-4 max-w-[52ch] text-[0.8125rem] leading-[1.55] text-[var(--muted-foreground)]"
+    >
       {t('discover.take.pending')}
     </p>
   );
@@ -1164,28 +1243,188 @@ function Row({ question, answer, open }: { question: string; answer: string; ope
 }
 
 /**
- * The credits line, and it is a link to the file rather than a claim.
+ * The ending: link columns, the wordmark at page width, a thin legal line.
  *
- * The film is a placeholder, the one plate on the page is a crop of it, and
- * ten of the stills in the work grid are third-party or generated;
- * `CREDITS.json` records every one, including which two are synthetic. A
- * landing that shows them with no route to that fact is a landing implying
- * the pictures are documentary.
+ * The reference is Klarna's footer — four columns of destinations over an
+ * enormous wordmark set edge to edge, with the small print on a hairline
+ * underneath it. What it replaces was one centred 12px credits link on a pale
+ * strip, under a closing band that left a field of empty ink on its right and
+ * the panda standing in it.
+ *
+ * ## The wordmark says PlayerOne, and that is a judgement call
+ *
+ * **PlayerOne, not VNG and not PaXini.** PlayerOne is the product a reader is
+ * being asked to join; VNG PT Lab and PaXini are the joint venture behind it,
+ * they are already named in the bar, in the closing paragraph and in the legal
+ * line below, and setting a partner's name at three hundred pixels across a
+ * page they did not write would overclaim on their behalf. A wordmark at this
+ * size is the page signing itself, and this page is the product's.
+ *
+ * It is `aria-hidden`: the name is already announced by the bar, and a screen
+ * reader does not need it a second time at the bottom for emphasis a screen
+ * reader cannot see. The container clips rather than scrolls — the size is in
+ * `vw` and measured to fit, but a clip is what guarantees that a font that
+ * fails to load and falls back to a wider face cannot put horizontal scroll on
+ * the document.
+ *
+ * ## Every destination is real
+ *
+ * Five anchors that exist on this page, the sign-in route, and the credits
+ * file. That is the whole of what a signed-out reader may reach, so that is
+ * the whole of what is listed — a footer of plausible-looking dead links is
+ * worse than a short footer. The language switch is the third column because a
+ * reader who has come this far down a page in the wrong language should not
+ * have to go back up for the control.
+ *
+ * ## Ink, continuing the closing band
+ *
+ * `--stage` and `.on-film`, the same ground the closing band above it uses, so
+ * the two read as one ending rather than as a dark band and then a pale strip.
+ * The hairline between them is `--stage-line`.
  */
-function Footer({ children }: { children: ReactNode }) {
+function Footer() {
+  const { t } = useTranslation();
   return (
-    <footer className="border-t border-[var(--border)] bg-[var(--surface)] px-4 py-8 text-center sm:px-6">
-      <a
-        href="/tiles/CREDITS.json"
-        data-cursor-highlight
+    <footer className="on-film border-t border-[var(--stage-line)] bg-[var(--stage)]">
+      <div className={cn(BAND, SHELL, 'pb-14 pt-16 sm:pt-20')}>
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-3 lg:gap-8">
+          <FootColumn title={t('discover.nav.label')}>
+            {DESTINATIONS.map((key) => (
+              <FootLink key={key} href={`#${key}`}>
+                {t(`discover.nav.${key}`)}
+              </FootLink>
+            ))}
+          </FootColumn>
+
+          {/* Not translated, and deliberately: it is the product's name. */}
+          <FootColumn title="PlayerOne">
+            <FootLink to="/login">{t('discover.signIn')}</FootLink>
+            <FootLink href="/tiles/CREDITS.json">{t('discover.credits')}</FootLink>
+          </FootColumn>
+
+          {/*
+            The language switch and **not** the theme switch, and the reason is
+            a defect rather than a preference. `LocaleSwitch` is stateless — it
+            reads `i18n.language` off the shared i18next instance, so a second
+            copy of it on the same page stays in step with the one in the bar.
+            `ThemeSwitch` holds its choice in `useState`, so two copies desync
+            the moment either is clicked: the DOM would follow the one that was
+            pressed while the other kept drawing the old icon and cycling from
+            a stale value. Fixing that means changing a component three other
+            screens mount, which is not this build's job.
+          */}
+          <FootColumn title={t('app.language')}>
+            <LocaleSwitch />
+          </FootColumn>
+        </div>
+      </div>
+
+      {/*
+        The wordmark, and its size is solved rather than eyeballed.
+
+        The nine glyphs of *PlayerOne* in Hanken Grotesk at 700 and -0.055em
+        measure 4.212 em wide, so the ink is `4.212 x size` at every width. The
+        column they sit in is the shell, whose gutter is a fixed 16/24/40px and
+        therefore a *larger fraction* of a narrow viewport than of a wide one —
+        10% of the page at 320 against 5.6% at 1440. The binding case is
+        therefore 320, where the column is 288px, and `21.3vw` is the size that
+        fills it exactly. It is then 95-99% of the column everywhere wider,
+        which is the price of never clipping a letter at the narrowest width
+        this console supports.
+
+        The `min()` exists because the band stops growing at 1920px and a bare
+        `vw` would then walk out of the column; 25.5rem is 21.3% of that cap.
+        The wrapper clips on x as well, so a fallback face with wider metrics
+        costs a cropped letter and never a scrollbar. `overflow-x: clip` and
+        not `overflow: hidden` — `hidden` on one axis forces the other to
+        `auto`, and this word has to be free to paint above and below its own
+        line box.
+      */}
+      <div aria-hidden="true" className={cn(BAND, 'overflow-x-clip px-4 sm:px-6 lg:px-10')}>
+        <span
+          className={cn(
+            'block select-none font-display font-bold text-[var(--stage-fg)]',
+            /* 0.76, which is the tight setting the reference has and is well
+               under the face's own 1.304 ascent-plus-descent. The glyphs
+               therefore paint outside their line box — that is the point, it
+               is what makes a wordmark a wordmark rather than a heading — and
+               the wrapper is `overflow-x-clip` rather than `overflow-hidden`
+               so the escape is allowed vertically and refused horizontally.
+               With `overflow-hidden` `rhythm.mjs` measured 83px of vertical
+               clipping at 1440: the `y` of *Player* losing its tail. */
+            'text-[min(21.3vw,25.5rem)] leading-[0.76] tracking-[-0.055em]',
+          )}
+        >
+          PlayerOne
+        </span>
+      </div>
+
+      <div
         className={cn(
-          'text-[0.75rem] underline decoration-current/40 underline-offset-2',
-          'transition-colors duration-[var(--duration-fast)] ease-[var(--ease)] hover:decoration-current',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
+          BAND,
+          SHELL,
+          /* `mt-16` and not the `mt-6` this started at. The wordmark's line
+             box is tighter than its glyphs, so the descender of `y` paints
+             about 41px below that box at 1440 and about 50px at the 1920 cap
+             — measured, and at 24px it crossed the hairline and put a stem
+             through the word *recording* in the legal line. 64px clears the
+             tail at every width. */
+          'mt-16 flex flex-wrap items-baseline justify-between gap-x-10 gap-y-3',
+          'border-t border-[var(--stage-line)] pb-10 pt-5',
         )}
       >
-        {children}
-      </a>
+        <p className="m-0 max-w-[76ch] text-[0.75rem] leading-[1.55] text-[var(--stage-mid)]">
+          {t('discover.foot.legal')}
+        </p>
+        <p className="m-0 text-[0.75rem] leading-[1.55] text-[var(--stage-mid)]">
+          VNG PT Lab &times; PaXini
+        </p>
+      </div>
     </footer>
+  );
+}
+
+/** One footer column: a mono label over a stack of destinations. */
+function FootColumn({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <nav aria-label={title} className="flex flex-col items-start gap-4">
+      <p className={cn(MICRO, 'm-0 text-[var(--stage-mid)]')}>{title}</p>
+      {children}
+    </nav>
+  );
+}
+
+/**
+ * One footer destination. `to` routes, `href` is an anchor or a real file.
+ *
+ * Two elements rather than one because `<Link>` type-checks its `to` against
+ * the route tree, which is the property that makes a dead internal link a
+ * build error rather than a 404 somebody finds later.
+ */
+function FootLink({
+  children,
+  href,
+  to,
+}: {
+  children: ReactNode;
+  href?: string;
+  to?: '/login';
+}) {
+  const className = cn(
+    'text-[0.9375rem] leading-[1.4] text-[var(--stage-fg)] no-underline',
+    'transition-opacity duration-[var(--duration-fast)] ease-[var(--ease)] hover:opacity-70',
+    'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--ring)]',
+  );
+  if (to !== undefined) {
+    return (
+      <Link to={to} data-cursor-highlight className={className}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <a href={href} data-cursor-highlight className={className}>
+      {children}
+    </a>
   );
 }

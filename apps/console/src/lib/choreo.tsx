@@ -78,8 +78,11 @@ export function Reveal({ children, ...rest }: { children: ReactNode } & HTMLAttr
  * `import 'gsap'` puts the tween engine in the shared chunk, and `/review` is
  * the one screen in this console where nothing moves at all.
  *
- * Two behaviours and no more:
+ * Three behaviours and no more:
  *
+ * - **the opening sequence** on a screen that declares `[data-choreo-hero]`
+ *   beats — slogan, pan, film. `/discover` is the only one. It is documented
+ *   where it is built, including the four ways it is allowed to fail.
  * - **the sections rise**, once each, when they reach the lower eighth of the
  *   viewport. **Only the ones that start below it are ever hidden** — a section
  *   already on screen is left alone rather than faded in, because animating
@@ -173,7 +176,14 @@ export function useChoreography(root: RefObject<HTMLElement | null>) {
          * ever going to fire.
          */
         const below = [...el.querySelectorAll<HTMLElement>('[data-choreo]')].filter(
-          (section) => section.getBoundingClientRect().top > window.innerHeight * 0.88,
+          (section) =>
+            /* A section the opening sequence owns is not also a scroll reveal.
+               The film band is both a `Reveal` and the sequence's third beat,
+               and two systems tweening one element's opacity — one of them
+               with `overwrite: true` — is how the third beat gets killed
+               mid-clip by a trigger firing underneath it. */
+            !section.hasAttribute('data-choreo-hero') &&
+            section.getBoundingClientRect().top > window.innerHeight * 0.88,
         );
         gsap.set(below, { opacity: 0, y: 16 });
         ScrollTrigger.batch(below, {
@@ -184,44 +194,128 @@ export function useChoreography(root: RefObject<HTMLElement | null>) {
         });
 
         /*
-         * The hero's one authored sequence, and it is one timeline.
+         * The opening sequence, and it is one timeline with three named beats.
          *
-         * `/discover` opens with a slogan that resolves out of a blur, a
-         * column that lifts, and the film frame below it that opens — in that
-         * order, as a single tween chain, because the fault the previous four
-         * landings shared was three unrelated effects firing at the same
-         * moment and reading as noise. A screen with no `[data-choreo-hero]`
-         * gets nothing; this is not a second motion system, it is the same one
-         * with a first beat.
+         * The owner has asked for this composition three times and it has
+         * never been built. In his words: a near-white screen carrying **only
+         * the slogan**; the type then **slides and pans upward smoothly**,
+         * settling near the top; and the demo film's frame is then
+         * **gradually revealed beneath it**. So:
          *
-         * `clipPath` and `filter` are here rather than a second opacity fade
-         * because a page whose only vocabulary is transform-and-opacity is
-         * what a generated page looks like. Both are composited.
+         * | Beat | What moves | Which elements |
+         * |---|---|---|
+         * | 1 | the slogan resolves out of a blur, in place, low on a bare page | `[data-choreo-hero="line"]` |
+         * | 2 | it pans up to its resting position | the same element, `y` only |
+         * | 3 | the page's furniture arrives and the film frame opens downward | `chrome`, `lead`, `actions`, `film` |
          *
-         * Everything it touches is visible at rest and is hidden only by the
-         * `from` that is about to clear it, inside the same `matchMedia` that
-         * reverts it — so reduced motion, a blocked chunk and a script that
-         * threw all leave a complete hero.
+         * ## Four failure paths, and none of them is allowed to cost the page
+         *
+         * **Nothing is hidden by the stylesheet.** Every start state below is a
+         * `gsap.from`, created inside this `matchMedia` block, whose
+         * `immediateRender` writes the hidden state at build time and whose
+         * `revert()` takes it off again. So a blocked or failed GSAP chunk
+         * never runs any of it and the page lands complete — slogan, both
+         * calls to action and the film frame all at rest — and
+         * `prefers-reduced-motion: reduce` returns before the import even
+         * starts. A `.hidden { opacity: 0 }` in CSS has neither escape and this
+         * route has shipped one.
+         *
+         * **The film is on a clock, not on the video.** Beat 3 tweens the
+         * band's own `clipPath` and opacity and never waits for `loadeddata`,
+         * `canplay` or a `play()` promise. The `<video>` carries a `poster`, so
+         * the frame is composed before a byte of video arrives; a slow
+         * connection changes what is inside the frame and never whether the
+         * sequence finishes.
+         *
+         * **A reader who scrolls is never fought.** Nothing here touches
+         * `scroll-behavior`, `overflow`, or the scroll position, and every
+         * property tweened is composited — opacity, transform, clip and blur.
+         * Scrolling through the sequence carries the reader past it; it does
+         * not stall, snap back, or re-run.
+         *
+         * `clipPath` and `filter` rather than a third opacity fade, because a
+         * page whose only vocabulary is transform-and-opacity is what a
+         * generated page looks like. A screen with no `[data-choreo-hero]` —
+         * `Home.tsx` — gets none of this.
          */
-        const beat = (name: string) => el.querySelector<HTMLElement>(`[data-choreo-hero="${name}"]`);
-        const line = beat('line');
-        if (line !== null) {
-          const timeline = gsap.timeline({ defaults: { ease, duration: duration * 2.4 } });
-          timeline.from(line, { opacity: 0, y: 20, filter: 'blur(10px)' });
-          const rest = [beat('lead'), beat('audiences'), beat('actions')].filter(
-            (n): n is HTMLElement => n !== null,
-          );
-          if (rest.length > 0) {
-            timeline.from(rest, { opacity: 0, y: 14, stagger: duration / 2 }, `-=${duration}`);
-          }
-          const film = beat('film');
-          if (film !== null) {
-            timeline.from(
-              film,
-              { opacity: 0, y: 40, clipPath: 'inset(0% 0% 100% 0%)', duration: duration * 3 },
-              `-=${duration}`,
+        const beat = (name: string) => [
+          ...el.querySelectorAll<HTMLElement>(`[data-choreo-hero="${name}"]`),
+        ];
+        /*
+         * The sequence is a *page-load* sequence, so it runs only on a page
+         * that has just loaded. This is a fifth failure path, and it is the
+         * one a blocked chunk does not cover.
+         *
+         * GSAP is imported dynamically. If the chunk is merely **slow** rather
+         * than blocked, the page paints complete and the timeline then hides
+         * eight elements of a composition the reader is already reading, to
+         * play an opening they have already watched not happen. That is the
+         * blank-screen-waiting-for-a-chunk fault arriving late instead of
+         * early, and it is worse, because it takes away something that was
+         * there. Verified: with the chunk delayed 2.5s, twelve samples over
+         * five seconds all read a minimum opacity of 1.00 across every
+         * `[data-choreo-hero]` element.
+         *
+         * Measured on this dev server over three loads: first contentful paint
+         * at 376-392ms and the sequence hiding the bar at 414-439ms — a gap of
+         * **38 to 47 milliseconds**, two or three frames, which is why the
+         * sequence is worth having at all. 600ms is more than twelve times
+         * that headroom and still refuses the case this guard is for. A
+         * browser that reports no paint entry falls through to running it,
+         * which is the same answer a fast load gets.
+         */
+        const painted = performance.getEntriesByName('first-contentful-paint')[0]?.startTime ?? 0;
+        const line = performance.now() - painted < 600 ? beat('line') : [];
+        if (line.length > 0) {
+          /*
+           * How far below its resting place the slogan starts, and every term
+           * in it is measured off the live layout rather than chosen.
+           *
+           * The natural figure is where the block would sit if it were centred
+           * in this viewport, which is what "pans upward and settles near the
+           * top" describes. On `/discover` at 1440x900 that is **47px** — the
+           * hero column is tall enough that its resting place is already near
+           * the middle — and a 47px pan on a 345px block is not a pan, it is a
+           * nudge. So the floor is 160px, screenshotted at three points and
+           * chosen as the smallest travel that reads as movement.
+           *
+           * `room` is what stops that floor doing damage. Beat one exists to
+           * show the slogan **whole** on an otherwise empty screen, so the
+           * start position may never be lower than the space actually below
+           * the block: on a 600px-tall window the block already reaches the
+           * fold, `room` is about zero, and the sequence correctly degrades to
+           * a fade with no pan rather than opening on a clipped slogan.
+           */
+          const box = (line[0] as HTMLElement).getBoundingClientRect();
+          const room = window.innerHeight - box.bottom - 24;
+          const centred = (window.innerHeight - box.height) / 2 - box.top;
+          const lift = Math.max(0, Math.min(Math.max(centred, 160), room, 240));
+
+          const timeline = gsap.timeline({ defaults: { ease } });
+          timeline
+            /* Beat 1: the slogan, and nothing else on the page. */
+            .from(line, { opacity: 0, filter: 'blur(12px)', duration: duration * 1.4 })
+            /* Beat 2: the pan. Overlaps the tail of the blur so it reads as one
+               movement rather than as a fade followed by a slide. */
+            .from(line, { y: lift, duration: duration * 3 }, `-=${duration * 0.5}`)
+            .addLabel('settled')
+            /* Beat 3. The bar, the eyebrow, the contact sheet, the flat shapes
+               and the floating fragments come back together — they are the
+               page's furniture and arriving in pieces would read as noise. */
+            .from(beat('chrome'), { opacity: 0, duration: duration * 2 }, `settled-=${duration * 1.5}`)
+            .from(
+              [...beat('lead'), ...beat('actions')],
+              { opacity: 0, y: 14, duration: duration * 2, stagger: duration / 2 },
+              `settled-=${duration * 1.2}`,
+            )
+            /* The film frame opens downward, from the settle, so it is the last
+               thing that happens and it happens under a slogan that has
+               already stopped. */
+            .from(
+              beat('film'),
+              { opacity: 0, clipPath: 'inset(0% 0% 100% 0%)', duration: duration * 4 },
+              'settled',
             );
-          }
         }
 
         /* The page is still growing when the triggers are built. See above. */

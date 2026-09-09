@@ -1252,6 +1252,13 @@ const en = {
   'discover.credits': 'Film and stills: credits and licences',
   'discover.partners':
     'PlayerOne is a joint venture of VNG PT Lab and PaXini. VNG runs the platform and the upload centres; PaXini makes the Ego camera and, in this phase, reviews the footage.',
+  /* The thin line under the footer's wordmark. It restates two facts the page
+     has already made — a person decides every payment, and footage stays in
+     Vietnam — because the bottom of a page is where somebody who skipped the
+     middle of it arrives. No figure, and no claim that is not on the page
+     above it. */
+  'discover.foot.legal':
+    'PlayerOne is a joint venture of VNG PT Lab and PaXini. Every recording is judged by a person before any minute of it is payable, and footage stays resident in Vietnam.',
   /* -----------------------------------------------------------------------
      The two audiences, and the one that had nowhere to go.
 
@@ -2500,6 +2507,8 @@ const zh: Record<MessageKey, string> = {
   'discover.credits': '影片与图片：来源与授权',
   'discover.partners':
     'PlayerOne 是 VNG PT Lab 与 PaXini 的合资项目。VNG 负责平台与各上传中心；PaXini 制造 Ego 相机，并在本阶段负责素材审核。',
+  'discover.foot.legal':
+    'PlayerOne 是 VNG PT Lab 与 PaXini 的合资项目。每一段录制都要先由人工判定，才会产生可结算的分钟数；素材始终存放在越南境内。',
   'discover.ways.title': '接下来去哪里',
   'discover.take.cta': '下载 APK',
   'discover.take.title': '采集者',
@@ -3785,6 +3794,8 @@ const vi: Record<MessageKey, string> = {
   'discover.credits': 'Phim và ảnh: nguồn và giấy phép',
   'discover.partners':
     'PlayerOne là liên doanh giữa VNG PT Lab và PaXini. VNG vận hành nền tảng và các trung tâm tải lên; PaXini sản xuất camera Ego và, trong giai đoạn này, kiểm duyệt tư liệu.',
+  'discover.foot.legal':
+    'PlayerOne là liên doanh giữa VNG PT Lab và PaXini. Mọi bản ghi đều do một người duyệt trước khi có phút nào được thanh toán, và tư liệu được lưu trữ trong lãnh thổ Việt Nam.',
   'discover.ways.title': 'Đi tiếp từ đây',
   'discover.take.cta': 'Tải APK',
   'discover.take.title': 'Người thu thập',

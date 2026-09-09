@@ -63,6 +63,15 @@ const SIZES = (process.env.SIZES ?? '1440x900,1280x720,390x844')
   .split(',')
   .map((s) => s.split('x').map(Number));
 const ROUTES = (process.env.ROUTES ?? '/login,/discover').split(',');
+/**
+ * The locale to render, because contrast is a property of rendered glyphs and
+ * three locales render three different sets of them. `rhythm.mjs` already
+ * takes this and for the same reason; a Vietnamese diacritic and a CJK glyph
+ * both put ink where the Latin sample had none.
+ *
+ *   LOCALE=vi node scripts/contrast.mjs
+ */
+const LOCALE = process.env.LOCALE ?? 'en';
 
 const lin = (v) => {
   const c = v / 255;
@@ -338,7 +347,13 @@ const TEXT = {
     ['nav destination (mono)', 'header nav a', 0],
     ['nav sign-in label', 'header a[href="/login"]'],
     ['nav partner line', 'header span span', 1],
-    ['credits link', 'footer a'],
+    /* The ending, rebuilt on `--stage` for build eight: a mono column label,
+       a destination, and the thin legal line under the wordmark. The wordmark
+       itself is not probed — it is `aria-hidden` decoration at 300px and the
+       AA floor is about text a reader has to read. */
+    ['footer column label', 'footer nav p'],
+    ['footer destination', 'footer nav a'],
+    ['footer legal line', 'footer > div:last-of-type p'],
   ],
   /* The not-found route. Three rows, because it has three pieces of text and
      the falling field is `aria-hidden` decoration with no type in it. */
@@ -617,6 +632,7 @@ for (const theme of THEMES) {
     const page = await ctx.newPage();
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
     await page.evaluate((t) => localStorage.setItem('playerone.theme', t), theme);
+    await page.evaluate((l) => localStorage.setItem('playerone.locale', l), LOCALE);
 
     for (const route of ROUTES) {
       await page.goto(BASE + route, { waitUntil: 'networkidle' }).catch(() => {});
