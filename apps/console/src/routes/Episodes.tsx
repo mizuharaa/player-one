@@ -140,7 +140,7 @@ export function EpisodesScreen() {
     <AppShell>
       <header className="flex flex-wrap items-start gap-x-8 gap-y-4">
         <div className="min-w-0 flex-1">
-          <h1 className="text-[2.625rem] font-extrabold leading-[1.05] tracking-[-0.035em]">
+          <h1 className="headline">
             {t('episodes.title')}
           </h1>
           {/*

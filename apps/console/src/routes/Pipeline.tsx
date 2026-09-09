@@ -141,7 +141,7 @@ export function PipelineScreen() {
   return (
     <AppShell>
       <header className="max-w-[62ch]">
-        <h1 className="text-[2.625rem] font-extrabold leading-[1.05] tracking-[-0.035em]">
+        <h1 className="headline">
           {t('pipeline.title')}
         </h1>
         <p className="mt-4 text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">

@@ -69,7 +69,33 @@ export function AppShell({
   return (
     <div className="flex min-h-dvh flex-col bg-[var(--surface)]">
       <header className="on-stage sticky top-0 z-30 border-b border-[var(--stage-line)]">
-        <div className="flex h-14 items-center gap-4 px-4 sm:px-6">
+        {/*
+          The bar wraps rather than hiding destinations.
+
+          The pill row is a scroll container, and a scroll container whose
+          content does not fit puts its overflowing children *outside* its own
+          box — under whatever is drawn to its right. Measured on the
+          authenticated shell: at 390px five of the seven destinations sat
+          under the language select and the theme button, and at 1024 and 768
+          two did. `rhythm.mjs` calls that COVERED and it is right: a link an
+          operator cannot hit at its own centre is not navigation, and the
+          row's scrollbar is hidden so nothing says to swipe.
+
+          So the row is `flex-wrap` and the nav takes a full line of its own
+          until the bar is wide enough to hold everything at once. That width is
+          measured rather than picked: Vietnamese is the longest of the three
+          locales and its seven labelled pills need 772px, against 486px for the
+          mark and the controls, so a single row needs 1306px of viewport. `xl`
+          (1280) is 26px short of it and photographs as "Tiến ⌐" — the last
+          destination's label cut mid-word — which is why the threshold is
+          `min-[1360px]` and not a round Tailwind step. Above it the bar is the
+          one 56px row it has always been.
+
+          The nav keeps `min-w-0` and its own scroll for below ~350px, where
+          seven pills genuinely do not fit a phone; there it scrolls inside its
+          own full-width line instead of pushing the document sideways.
+        */}
+        <div className="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-2 sm:px-6 min-[1360px]:flex-nowrap">
           <Link
             to="/"
             className="flex shrink-0 items-center gap-2 text-white no-underline hover:text-white"
@@ -81,7 +107,7 @@ export function AppShell({
             </span>
           </Link>
 
-          <PillNav current={path} />
+          <PillNav current={path} className="order-last w-full min-[1360px]:order-none min-[1360px]:w-auto" />
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <span data-guide="shell.counters" className="flex items-center gap-1.5">

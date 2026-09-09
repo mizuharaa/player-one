@@ -59,7 +59,7 @@ const DESTINATIONS: Destination[] = [
   { to: '/pipeline', key: 'nav.pipeline', Icon: IconPipeline, built: true },
 ];
 
-export function PillNav({ current }: { current: string }) {
+export function PillNav({ current, className }: { current: string; className?: string }) {
   const { t } = useTranslation();
   const active = useRef<HTMLAnchorElement>(null);
 
@@ -75,7 +75,10 @@ export function PillNav({ current }: { current: string }) {
   return (
     <nav
       data-guide="shell.nav"
-      className="flex min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className={cn(
+        'flex min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+        className,
+      )}
       aria-label="Sections"
     >
       {DESTINATIONS.map(({ to, key, Icon, built }) => {

@@ -232,8 +232,8 @@ export function HomeScreen() {
             better picture and a true one.
             --------------------------------------------------------------- */}
         <Panel className="mt-5 overflow-hidden p-0 shadow-[var(--shadow)]">
-          <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,40%)]">
-            <div className="order-2 flex min-w-0 flex-col justify-center p-6 sm:p-8 lg:order-1 lg:p-10">
+          <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,30%)]">
+            <div className="flex min-w-0 flex-col justify-center p-6 sm:p-8 lg:p-10">
               <p className="text-[0.8125rem] font-semibold text-[var(--muted-foreground)]">
                 {t('home.greeting')} · {t(SHIFT_KEY[state])}
                 {asOf === null ? null : (
@@ -291,13 +291,24 @@ export function HomeScreen() {
               console names exactly that. The panel already clips, so the corner
               radius is the panel's and there is one edge instead of two.
 
-              Above the fold and the largest thing on the screen, so it is never
-              lazy. The parallax that moves it is GSAP's and is scrubbed against
-              the scroll; what moves is the `cover` crop rather than the
-              element, so the box fits its frame exactly and nothing here is
-              content cut off by its own container.
+              The parallax that moves it is GSAP's and is scrubbed against the
+              scroll; what moves is the `cover` crop rather than the element, so
+              the box fits its frame exactly and nothing here is content cut off
+              by its own container.
+
+              **It is secondary, and the layout has to say so.** This frame is a
+              demo still, not this reviewer's queue, and the rule for this
+              screen is that a picture earns its space when it identifies
+              relevant work and otherwise stays secondary. Two things follow.
+              The column is 30% of the band rather than 40%, so the sentence and
+              the pill are plainly the subject. And it carries no `order` — it
+              had `order-1`, which put 200px of a stranger in a Métro above the
+              only instruction on a 390px screen, and "the next action stays
+              first" is not a rule that has a phone exception. Below `lg` the
+              picture now follows the action; at `lg` the grid puts it on the
+              right, which is where the DOM already had it.
             */}
-            <div className="photo-frame order-1 [--h:200px] sm:[--h:240px] lg:order-2 lg:[--h:auto]">
+            <div className="photo-frame [--h:200px] sm:[--h:240px] lg:[--h:auto]">
               <img
                 src="/landing-poster.jpg"
                 alt=""

@@ -60,7 +60,7 @@ export function SettleShell({
   return (
     <AppShell>
       <header className="border-b border-[var(--foreground)] pb-5">
-        <h1 className="text-[2.0625rem] font-extrabold leading-[1.12] tracking-[-0.03em]">
+        <h1 className="headline">
           {t('settle.title')}
         </h1>
         <p className="mt-3 max-w-[62ch] text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
