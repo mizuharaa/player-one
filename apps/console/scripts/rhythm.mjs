@@ -31,6 +31,15 @@ import { acquireLock, guard } from './browser.mjs';
 
 const CONSOLE_URL = process.env.CONSOLE_URL ?? 'http://localhost:5190';
 const COLLECTOR_URL = process.env.COLLECTOR_URL ?? '';
+/*
+ * The language the page is measured in.
+ *
+ * Vietnamese runs about 20% longer than English and Chinese about 40% shorter,
+ * so a row that fits at one width in one language is a different row in
+ * another — and every finding this script has ever raised was raised against
+ * English only. `LOCALE=vi node scripts/rhythm.mjs` is the second pass.
+ */
+const LOCALE = process.env.LOCALE ?? 'en';
 
 /**
  * The spacing scale, read off `packages/design/src/tokens.ts` rather than
@@ -56,7 +65,7 @@ const TOLERANCE = 1;
 const AUDIT = `(() => {
   const SCALE = ${JSON.stringify(SCALE)}, FLOOR = ${FLOOR}, TOL = ${TOLERANCE};
   const onScale = (g) => SCALE.some((v) => Math.abs(g - v) <= TOL);
-  const out = { clipped: [], covered: [], offGrid: [], sideways: [] };
+  const out = { clipped: [], covered: [], offGrid: [], sideways: [], edges: [] };
   const name = (el) => {
     const t = el.tagName.toLowerCase();
     const cls = (el.className && String(el.className).split(' ')[0]) || '';
@@ -166,6 +175,36 @@ const AUDIT = `(() => {
       out.offGrid.push({ gap, after: name(kids[i - 1]), before: name(kids[i]) });
     }
   }
+
+  /*
+   * 4. A caption that does not line up with the thing it captions.
+   *
+   * Added 2026-09-08. The design review measured **71.75px** between each
+   * full-bleed caption's left edge and its own image's left edge — the picture
+   * was centred in its panel and the caption was flush left inside the same
+   * padding — and this audit reported the screen clean, because nothing here
+   * looked *across* a figure. Every other check compares a box with its parent
+   * or with its previous sibling; a caption and a picture are neither.
+   *
+   * It is the owner's *"the spacing for all the images and texts are terrible,
+   * very inconsistent"* in its most literal form, so it gets a check of its
+   * own rather than a note. The rule is not "zero": a caption inset inside a
+   * picture is a real composition, and 24px of it is a design. The rule is
+   * that the offset is a step on the scale — the same reason an off-grid gap
+   * is a finding — and that both edges of the pair agree.
+   */
+  for (const fig of document.querySelectorAll('figure')) {
+    if (!vis(fig)) continue;
+    const media = fig.querySelector('img, video, picture, canvas');
+    const cap = fig.querySelector('figcaption');
+    if (media === null || cap === null || !vis(media) || !vis(cap)) continue;
+    const m = media.getBoundingClientRect();
+    const c = cap.getBoundingClientRect();
+    if (m.width < 2 || c.width < 2) continue;
+    const left = Math.round((c.left - m.left) * 100) / 100;
+    if (Math.abs(left) <= TOL || onScale(Math.abs(left))) continue;
+    out.edges.push({ el: name(fig), left, media: Math.round(m.left), cap: Math.round(c.left) });
+  }
   return out;
 })()`;
 
@@ -195,15 +234,21 @@ async function readWholePage(page) {
 
 async function audit(page, url, label, width, height) {
   await page.setViewportSize({ width, height });
+  await page.addInitScript((l) => localStorage.setItem('playerone.locale', l), LOCALE);
   await page.goto(url, { waitUntil: 'networkidle' }).catch(() => {});
   await page.waitForTimeout(1600);
   await readWholePage(page);
   const r = await page.evaluate(AUDIT);
-  const total = r.sideways.length + r.clipped.length + r.covered.length + r.offGrid.length;
+  const total =
+    r.sideways.length + r.clipped.length + r.covered.length + r.offGrid.length + r.edges.length;
   console.log(`\n${label}  ${width}×${height}  —  ${total === 0 ? 'clean' : total + ' findings'}`);
   for (const w of r.sideways) console.log(`   SIDEWAYS ${w.by}px of horizontal document scroll  ←  ${w.widest.join('  |  ')}`);
   for (const c of r.clipped.slice(0, 6)) console.log(`   CLIPPED  ${c.by}px on ${c.axis}  ${c.el}`);
   for (const c of r.covered.slice(0, 6)) console.log(`   COVERED  ${c.el}  ←  ${c.by}`);
+  for (const e of r.edges.slice(0, 6))
+    console.log(
+      `   EDGE     caption is ${e.left}px off its own media (media x=${e.media}, caption x=${e.cap})  ${e.el}`,
+    );
   for (const g of r.offGrid.slice(0, 8)) console.log(`   GAP ${String(g.gap).padStart(3)}px  ${g.after}  →  ${g.before}`);
   return total;
 }

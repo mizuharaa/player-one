@@ -29,6 +29,41 @@ import { acquireLock, guard } from './browser.mjs';
 
 const BASE = process.env.CONSOLE_URL ?? 'http://127.0.0.1:5190';
 
+/**
+ * Whether the one motion-enabled pass runs. `CONTRAST_MOTION=0` turns it off.
+ *
+ * Exactly one of the twelve passes below renders with motion — light at 1440,
+ * because the cursor's intermediate frames are a composite that only exists
+ * while the lens is growing. That pass is also the only expensive one: the
+ * page runs a permanent GSAP ticker, headless Chrome does not vsync-throttle
+ * `requestAnimationFrame`, and a page left open with motion on pins a core for
+ * as long as it lives. On a shared machine with other agents working, that
+ * page gets killed — twice in a row here, at the same point in the run, taking
+ * every static measurement after it with it.
+ *
+ * So it is a switch rather than an argument about whether the measurement is
+ * worth having. It is: leave it on by default. Turn it off when the machine is
+ * busy, and say in the report that the lens was not re-measured.
+ */
+const MOTION = process.env.CONTRAST_MOTION !== '0';
+
+/**
+ * The slice to measure, so a re-run after one fix is seconds rather than eight
+ * minutes.
+ *
+ * Twelve passes over two routes is the right default and a poor debugging
+ * loop: on a shared machine this run was killed twice mid-walk and lost every
+ * measurement after the kill, and re-running the whole thing to recover four
+ * numbers is how a probe stops being run at all.
+ *
+ *   THEMES=light SIZES=1440x900 ROUTES=/discover node scripts/contrast.mjs
+ */
+const THEMES = (process.env.THEMES ?? 'light,dark').split(',');
+const SIZES = (process.env.SIZES ?? '1440x900,1280x720,390x844')
+  .split(',')
+  .map((s) => s.split('x').map(Number));
+const ROUTES = (process.env.ROUTES ?? '/login,/discover').split(',');
+
 const lin = (v) => {
   const c = v / 255;
   return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
@@ -255,24 +290,28 @@ const TEXT = {
     ['legal link', 'a[href="#privacy"]'],
   ],
   '/discover': [
-    ['h1', 'h1'],
+    /* Film First, 2026-09-08. Everything down to the FAQ sits on footage or on
+       ink; the bands are named with `data-band` so a selector here survives a
+       change of composition. */
+    ['h1 over film', '[data-band=hero] h1'],
     ['marker on lime', 'mark.marker'],
-    ['lead', 'section p', 0],
-    ['audiences line', 'section p', 1],
-    ['apk note', 'section p', 2],
-    ['section h2', 'h2:not(.sr-only)', 0],
-    ['video caption', 'figure figcaption', 0],
-    ['step number', 'ol li span', 0],
-    ['step body', 'ol li p', 0],
-    /* The panel pair: `--stage-fg` on `--stage`, the console's near-black,
-       which is a ground this route did not carry before 2026-09-08. */
-    ['panel caption', 'figure.on-stage figcaption', 0],
-    ['bento cell body', '[class*="col-span-7"] > p', 0],
-    ['ink cell body', '.feature-block p'],
-    /* The FAQ is `<details>` on `--muted` now, not a `<dl>` on the page. */
+    ['lead over film', '[data-band=hero] p', 0],
+    ['apk note over film', '[data-band=hero] p', 1],
+    ['film slate', '[data-band=hero] p', 2],
+    ['steps h2 on ink', '[data-band=steps] h2'],
+    ['step number on ink', '[data-band=steps] ol li span', 0],
+    ['step body on ink', '[data-band=steps] ol li p', 0],
+    ['still caption on film', '[data-band=camera] figcaption'],
+    ['camera body on ink', '[data-band=camera] .on-stage p'],
+    ['h2 on lavender', '[data-band=activities] h2'],
+    ['body on lavender', '[data-band=activities] p'],
+    ['number body on ink', '[data-band=number] p', 0],
     ['faq question', 'details summary', 0],
     ['faq answer', 'details p', 0],
+    ['ways lead', '[data-band=ways] > div > p', 0],
+    ['partner line', '[data-band=ways] p span'],
     ['nav sign-in label', 'header a'],
+    ['nav partner line', 'header span span', 1],
   ],
 };
 
@@ -285,17 +324,113 @@ const CONTROLS = {
   '/discover': [
     ['nav sign-in pill', 'header a'],
     /*
-     * The hero's two peers. The APK control is `disabled` while the build is
-     * unpublished, so what is measured is the faded state a visitor actually
-     * sees — a disabled control still has to be identifiable against its
-     * ground under WCAG 1.4.11, and a primary that is invisible when it is
-     * unavailable is worse than one that is merely quiet.
+     * The hero's two peers, both over footage and both resolved through
+     * `.on-film` — which repoints `--action`, `--card` and `--border` at the
+     * stage ramp, so these two numbers are the same in the dark scheme as in
+     * the light one. The APK control is `outline` and `disabled` while the
+     * build is unpublished, at full opacity: a disabled control still has to
+     * be identifiable against its ground under WCAG 1.4.11, and the previous
+     * build's faded `primary` read as *more* available than the live sign-in
+     * in dark mode.
      */
-    ['apk CTA (disabled)', 'section button[disabled]', 0],
-    ['console CTA', 'section a[href="/login"]', 0],
-    ['faq row', 'details', 0],
+    ['apk CTA (disabled)', '[data-band=hero] button[disabled]'],
+    ['console CTA on film', '[data-band=hero] a[href="/login"]'],
+    ['film pause control', '[data-band=hero] button:not([disabled])'],
+    ['faq row (glass)', 'details', 0],
+    ['closing sign-in', '[data-band=ways] a[href="/login"]'],
+    ['closing apk (disabled)', '[data-band=ways] button[disabled]'],
   ],
 };
+
+/**
+ * The film's worst frame, which is the only honest way to measure this page.
+ *
+ * Film First puts the slogan, the lead sentence, both calls to action and the
+ * note under them **on moving footage**. Every earlier build's contrast work
+ * assumed a static ground, and the poster is not the answer either: it is one
+ * frame out of 169, and it is the darkest kind — the whole point is what
+ * happens when a bright one arrives under the type.
+ *
+ * So the video is paused, seeked across its own duration, and the type is
+ * measured at each stop with the same glyph-differencing technique everything
+ * else here uses. The last row removes the element entirely and measures the
+ * grade over bare `--stage`, which is what a reader with a blocked, failed or
+ * still-loading video sees; that row and the frame rows have to clear the same
+ * bar, because a page whose type is only legible once the video arrives is a
+ * page that is illegible for its first second.
+ *
+ * `seeked` rather than a timeout: a `currentTime` assignment is asynchronous
+ * and a screenshot taken before the decoder catches up measures the frame
+ * before it.
+ */
+async function filmFrames(page) {
+  const has = await page.locator('[data-band=hero] video').count();
+  if (has === 0) {
+    console.log('  FILM  (no hero video on this route)');
+    return;
+  }
+
+  const seek = (t) =>
+    page.evaluate(async (time) => {
+      const v = document.querySelector('[data-band=hero] video');
+      if (v === null) return null;
+      v.pause();
+      if (!Number.isFinite(v.duration)) {
+        await new Promise((r) => {
+          v.addEventListener('loadedmetadata', r, { once: true });
+          setTimeout(r, 3000);
+        });
+      }
+      const target = Math.min(time, Math.max(0, (v.duration || 7) - 0.05));
+      if (Math.abs(v.currentTime - target) < 0.01) return v.currentTime;
+      await new Promise((r) => {
+        v.addEventListener('seeked', r, { once: true });
+        v.currentTime = target;
+        setTimeout(r, 3000);
+      });
+      return v.currentTime;
+    }, t);
+
+  const ON_FILM = [
+    ['h1', '[data-band=hero] h1'],
+    ['lead', '[data-band=hero] p', 0],
+    ['apk note', '[data-band=hero] p', 1],
+    ['slate', '[data-band=hero] p', 2],
+  ];
+
+  await page.evaluate(() => window.scrollTo(0, 0));
+  /* Six stops across 7.04 s, plus the poster, plus no video at all. */
+  for (const t of [0, 1.2, 2.4, 3.6, 4.8, 6.9]) {
+    const at = await seek(t);
+    if (at === null) return;
+    const parts = [];
+    for (const [label, sel, i = 0] of ON_FILM) {
+      const r = await inkRatio(page, sel, i);
+      parts.push(`${label} ${r === null ? '   n/a' : `${r.ratio.toFixed(2)}:1 on ${r.ground}`}`);
+      await page.evaluate(() => window.scrollTo(0, 0));
+    }
+    console.log(`  FILM  t=${at.toFixed(2)}s  ${parts.join('  |  ')}`);
+  }
+
+  /* The video gone: the grade over `--stage`, which is the loading and the
+     blocked case, and the floor every frame above has to beat. */
+  await page.evaluate(() => {
+    const v = document.querySelector('[data-band=hero] video');
+    if (v !== null) v.hidden = true;
+  });
+  await page.waitForTimeout(200);
+  const parts = [];
+  for (const [label, sel, i = 0] of ON_FILM) {
+    const r = await inkRatio(page, sel, i);
+    parts.push(`${label} ${r === null ? '   n/a' : `${r.ratio.toFixed(2)}:1 on ${r.ground}`}`);
+    await page.evaluate(() => window.scrollTo(0, 0));
+  }
+  console.log(`  FILM  no video   ${parts.join('  |  ')}`);
+  await page.evaluate(() => {
+    const v = document.querySelector('[data-band=hero] video');
+    if (v !== null) v.hidden = false;
+  });
+}
 
 /**
  * The cursor's worst frame, and why the endpoints are not enough.
@@ -422,13 +557,8 @@ const releaseLock = await acquireLock();
 const browser = await chromium.launch();
 guard(browser, releaseLock);
 
-for (const theme of ['light', 'dark']) {
-  for (const [w, h] of [
-    [1440, 900],
-    /* 1280 is the upload-centre machine and it was not being measured. */
-    [1280, 720],
-    [390, 844],
-  ]) {
+for (const theme of THEMES) {
+  for (const [w, h] of SIZES) {
     /*
      * Motion is off everywhere except the one pass that measures it.
      *
@@ -438,7 +568,7 @@ for (const theme of ['light', 'dark']) {
      * motion renders them at rest, and it stops the page's own rAF loops from
      * spinning a core through two hundred screenshots.
      */
-    const measuringMotion = theme === 'light' && w === 1440;
+    const measuringMotion = MOTION && theme === 'light' && w === 1440;
     const ctx = await browser.newContext({
       viewport: { width: w, height: h },
       deviceScaleFactor: 1,
@@ -448,7 +578,7 @@ for (const theme of ['light', 'dark']) {
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
     await page.evaluate((t) => localStorage.setItem('playerone.theme', t), theme);
 
-    for (const route of ['/login', '/discover']) {
+    for (const route of ROUTES) {
       await page.goto(BASE + route, { waitUntil: 'networkidle' }).catch(() => {});
       /*
        * Wait for the choreography to exist BEFORE walking the page.
@@ -475,6 +605,26 @@ for (const theme of ['light', 'dark']) {
         await new Promise((r) => setTimeout(r, 400));
       });
       await page.waitForTimeout(700);
+      /*
+       * **Pause the film before measuring anything, and this is the probe's
+       * own correctness rather than politeness.**
+       *
+       * `inkRatio` finds the pixels a glyph owns by differencing two
+       * screenshots. Over a *playing* video every pixel differs between the
+       * two grabs, so the whole bounding box passes the delta test and the
+       * "ground under the glyphs" becomes the mean of the moving film.
+       * Measured on the Film First hero: the lime marker reported 3.22:1
+       * against a ground of #5E6A3E — half lime, half footage — for a pair
+       * that is 13.54:1, and it counted 22,038 covered pixels for a two-word
+       * mark. One frame held still, and the number is about the type again.
+       * `filmFrames` then walks the film deliberately.
+       */
+      await page
+        .evaluate(() => {
+          for (const v of document.querySelectorAll('video')) v.pause();
+        })
+        .catch(() => {});
+      await page.waitForTimeout(150);
       console.log(`\n=== ${route}  ${theme}  ${w}x${h} ===`);
       for (const [label, sel, i = 0] of TEXT[route]) {
         try {
@@ -488,7 +638,17 @@ for (const theme of ['light', 'dark']) {
           console.log(`  TEXT  ${label.padEnd(22)}  ERR ${String(e).slice(0, 70)}`);
         }
       }
-      if (route === '/discover' && theme === 'light' && w === 1440) {
+      /* The film walk is theme-independent — `.on-film` pins the roles at the
+         stage ramp — so it runs at the two widths that matter rather than in
+         all six passes, where it would cost six minutes for one answer. */
+      if (route === '/discover' && theme === 'light' && (w === 1440 || w === 390)) {
+        try {
+          await filmFrames(page);
+        } catch (e) {
+          console.log(`  FILM  ERR ${String(e).slice(0, 90)}`);
+        }
+      }
+      if (route === '/discover' && measuringMotion) {
         try {
           await page.evaluate(() => window.scrollTo(0, 0));
           await page.waitForTimeout(300);

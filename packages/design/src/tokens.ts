@@ -584,9 +584,22 @@ export const font = {
    * Be Vietnam Pro keeps everything else. It is the UI voice and it is better
    * at small sizes than this is; the pairing is a display face over a text
    * face, not a replacement.
+   *
+   * **The CJK faces are named, and leaving them out was a rendered defect.**
+   * Neither Hanken Grotesk nor Be Vietnam Pro carries a Han subset, so in the
+   * stack as it first shipped `认识 Ego。` fell past both to `-apple-system` and
+   * `Segoe UI` — which have no Han either — and landed on whatever the browser
+   * picked last. On Windows that is Microsoft YaHei UI at a visibly different
+   * optical weight, so the first line of the product's front page set in two
+   * unrelated faces mid-word. The pair `sans` already names is inserted ahead
+   * of the system fallbacks, which makes the mixed line deterministic and puts
+   * the Han in the *same* face the body sets in. It does not make a Chinese
+   * headline set in Hanken Grotesk — no shortlisted display face has a Han
+   * subset and one weighs megabytes — but a chosen pairing is a design and an
+   * arbitrary fallback is not.
    */
   display:
-    '"Hanken Grotesk Variable", "Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    '"Hanken Grotesk Variable", "Be Vietnam Pro", "Noto Sans SC", "Microsoft YaHei", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
 } as const;
 
 /**

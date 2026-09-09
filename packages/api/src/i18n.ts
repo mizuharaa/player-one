@@ -1197,9 +1197,8 @@ const en = {
 
 
   /* The demonstration: one player, one caption, nothing over it. */
-  'discover.demo.title': 'What a recording looks like',
   'discover.video.caption':
-    'A continuous take from the demo film: the camera is worn on the forehead, and the work is ordinary.',
+    'A placeholder film, and it is not a recording the camera made: someone wearing Ego is filmed at arm’s length in Paris. Ego records from the wearer’s forehead and cannot see the wearer. A real shoot replaces this.',
 
   'discover.how.title': 'Four steps, in order',
   'discover.step.record.title': 'Record',
@@ -1216,15 +1215,14 @@ const en = {
     'A bill is raised for the approved effective minutes at the rate the task carries, and paid through ZaloPay.',
 
   /* The mosaic. Every cell adds detail the four steps do not carry. */
-  'discover.mosaic.title': 'The camera, the work, and the number',
   'discover.cell.camera.title': 'The camera',
   'discover.cell.camera.body':
     'Ego is a head-worn camera supplied by the platform and bound to one person. Its own buttons start and stop a recording — no application on a phone can do it, and none is going to be given the ability.',
-  'discover.cell.pov.caption': 'What the camera sees: hands, soil, and the work in front of them.',
+  'discover.cell.pov.caption':
+    'The camera worn on the forehead. A frame taken from the placeholder film above, cropped — a third-person view of the device, not a view through it.',
   'discover.cell.activities.title': 'Which activities count',
   'discover.cell.activities.body':
     'Ordinary activity at home, in offices, in shops and in warehouses. Every recording is claimed against a declared task before it starts, so what is suitable is written down in advance rather than judged afterwards.',
-  'discover.cell.work.caption': 'Planting on a balcony, recorded from the wearer’s own eye line.',
   'discover.cell.review.title': 'How review works',
   'discover.cell.review.body':
     'Every episode is watched by a person, who marks the usable part and records failure reason codes for the rest. That judgement is the only source of the number a collector is paid on; nothing on the platform computes it another way.',
@@ -1250,8 +1248,10 @@ const en = {
 
   'discover.handoff.title': 'Already an operator or a reviewer?',
   'discover.handoff.body':
-    'Sign in to the console. This page is not a collector sign-up — collectors work in the PlayerOne app.',
+    'Sign in to the console. Upload-centre operators register a handover and import a card; reviewers watch episodes and decide what is payable.',
   'discover.credits': 'Film and stills: credits and licences',
+  'discover.partners':
+    'PlayerOne is a joint venture of VNG PT Lab and PaXini. VNG runs the platform and the upload centres; PaXini makes the Ego camera and, in this phase, reviews the footage.',
   /* -----------------------------------------------------------------------
      The two audiences, and the one that had nowhere to go.
 
@@ -1278,9 +1278,6 @@ const en = {
 
   /* The full-bleed pair. Captions sit at the foot of each panel; the stills are
      420x420 and are held at a size they are sharp at rather than stretched. */
-  'discover.panels.title': 'Two ordinary recordings',
-  'discover.panel.a.caption': 'Cooking at home. The camera’s own button starts the recording.',
-  'discover.panel.b.caption': 'Sorting a shelf. Ordinary indoor work, against a task claimed in advance.',
 
   'ui.a.home.gauge': 'Reviewed {{value}} of {{target}} episodes this shift',
   /* The caption under the band's figure, where the count is already drawn. */
@@ -2397,9 +2394,8 @@ const zh: Record<MessageKey, string> = {
   'discover.signIn': '登录控制台',
   'discover.audiences':
     '两条入口。采集者用 Ego 相机录制，按审核员认定通过的有效分钟获得报酬；上传中心的运营人员和审核员在控制台工作。',
-  'discover.demo.title': '一段录制是什么样子',
   'discover.video.caption':
-    '取自演示影片的一段连续镜头：相机戴在额前，做的是再平常不过的事。',
+    '这是一段占位影片，并非相机拍下的素材：画面是别人举着手臂拍摄的佩戴 Ego 的人，地点在巴黎。Ego 从佩戴者额头向外记录，拍不到佩戴者本人。日后会用实拍素材替换。',
   'discover.how.title': '四个步骤，依次进行',
   'discover.step.record.title': '记录',
   'discover.step.record.body':
@@ -2411,15 +2407,14 @@ const zh: Record<MessageKey, string> = {
   'discover.step.payment.title': '付款',
   'discover.step.payment.body':
     '按审核通过的有效分钟与该任务的单价开具账单，并通过 ZaloPay 支付。',
-  'discover.mosaic.title': '相机、劳动，以及那个数字',
   'discover.cell.camera.title': '这台相机',
   'discover.cell.camera.body':
     'Ego 是由平台提供、与一个人绑定的头戴相机。开始和停止录制只能按相机自身的按键——手机上的任何应用都做不到，也不会被赋予这项权限。',
-  'discover.cell.pov.caption': '相机所见：双手、泥土，以及眼前的活计。',
+  'discover.cell.pov.caption':
+    '戴在额头上的相机。取自上方占位影片的一帧，经过裁切——这是从旁观视角看这台设备，而不是透过它看到的画面。',
   'discover.cell.activities.title': '哪些活动算数',
   'discover.cell.activities.body':
     '家里、办公室、店铺和仓库中的日常活动。每次录制都要先认领一项已公布的任务，因此什么算合适是事先写明的，而不是事后判定的。',
-  'discover.cell.work.caption': '在阳台种植，从佩戴者本人的视线高度记录。',
   'discover.cell.review.title': '审核是怎么进行的',
   'discover.cell.review.body':
     '每一段素材都由人观看，标出可用部分，并为其余部分记录失败原因代码。这一判定是采集者据以获得报酬的唯一来源；平台上没有第二种算法得出这个数字。',
@@ -2437,8 +2432,11 @@ const zh: Record<MessageKey, string> = {
   'discover.before.q.data': '关于我会收集哪些信息？',
   'discover.before.a.data': '录制协议所要求的同意声明，除此之外一概不收。素材始终存放在越南境内。',
   'discover.handoff.title': '你已经是运营人员或审核员？',
-  'discover.handoff.body': '请登录控制台。本页不是采集者注册入口——采集者请使用 PlayerOne 应用。',
+  'discover.handoff.body':
+    '请登录控制台。上传中心的工作人员在此登记交接并导入存储卡；审核员在此观看素材并判定哪些可以计酬。',
   'discover.credits': '影片与图片：来源与授权',
+  'discover.partners':
+    'PlayerOne 是 VNG PT Lab 与 PaXini 的合资项目。VNG 负责平台与各上传中心；PaXini 制造 Ego 相机，并在本阶段负责素材审核。',
   'discover.ways.title': '接下来去哪里',
   'discover.take.cta': '下载 APK',
   'discover.take.title': '采集者',
@@ -2446,9 +2444,6 @@ const zh: Record<MessageKey, string> = {
     '采集工作从培训和考核开始。每次录制前都要先领取一个任务；相机由平台提供，所有权仍属于平台。支付的是审核员认定通过的有效分钟。',
   'discover.take.pending':
     'APK 尚未发布，今天还无法从本页下载。发布后会在这里给出链接。',
-  'discover.panels.title': '两段普通的录制',
-  'discover.panel.a.caption': '在家做饭。录制由相机自己的按键开始。',
-  'discover.panel.b.caption': '整理书架。普通的室内工作，对应事先领取的任务。',
   'login.network': '服务没有应答。请确认本机在中心网络内，然后重试。',
 
   'login.legal': '登录即表示您接受 PlayerOne 处理您数据的方式。',
@@ -3636,9 +3631,8 @@ const vi: Record<MessageKey, string> = {
   'discover.signIn': 'Đăng nhập bảng điều khiển',
   'discover.audiences':
     'Hai lối vào. Người thu thập ghi hình bằng máy quay Ego và được trả cho số phút hữu hiệu mà người duyệt chấp nhận. Nhân viên trung tâm tải lên và người duyệt làm việc trên bảng điều khiển.',
-  'discover.demo.title': 'Một đoạn ghi hình trông như thế nào',
   'discover.video.caption':
-    'Một đoạn quay liền mạch từ phim giới thiệu: máy quay đeo trên trán, còn công việc thì rất đỗi bình thường.',
+    'Đây là phim tạm, không phải bản ghi do camera tạo ra: một người đeo Ego được quay từ khoảng cách một cánh tay tại Paris. Ego ghi hình từ trán người đeo nên không thể quay chính người đeo. Một buổi quay thật sẽ thay thế nó.',
   'discover.how.title': 'Bốn bước, theo thứ tự',
   'discover.step.record.title': 'Ghi hình',
   'discover.step.record.body':
@@ -3652,16 +3646,14 @@ const vi: Record<MessageKey, string> = {
   'discover.step.payment.title': 'Thanh toán',
   'discover.step.payment.body':
     'Hóa đơn được lập cho số phút hữu hiệu đã duyệt theo đơn giá của nhiệm vụ, và được chi trả qua ZaloPay.',
-  'discover.mosaic.title': 'Máy quay, công việc, và con số',
   'discover.cell.camera.title': 'Máy quay',
   'discover.cell.camera.body':
     'Ego là máy quay đội đầu do nền tảng cấp và gắn với một người. Chỉ nút bấm trên chính máy mới bắt đầu và dừng ghi hình — không ứng dụng điện thoại nào làm được, và cũng sẽ không được trao quyền đó.',
   'discover.cell.pov.caption':
-    'Thứ máy quay nhìn thấy: bàn tay, đất, và công việc ngay trước mắt.',
+    'Camera đeo trên trán. Một khung hình cắt ra từ phim tạm ở trên — góc nhìn từ người thứ ba về thiết bị, không phải hình ảnh nhìn qua nó.',
   'discover.cell.activities.title': 'Những hoạt động nào được tính',
   'discover.cell.activities.body':
     'Hoạt động thường ngày ở nhà, ở văn phòng, ở cửa hàng và trong kho. Mỗi lần ghi hình đều được nhận theo một nhiệm vụ đã công bố từ trước, nên điều gì là phù hợp đã được viết ra trước, chứ không phán xét về sau.',
-  'discover.cell.work.caption': 'Trồng cây trên ban công, ghi từ đúng tầm mắt của người đeo.',
   'discover.cell.review.title': 'Việc duyệt diễn ra thế nào',
   'discover.cell.review.body':
     'Mỗi tập tư liệu đều do một người xem, đánh dấu phần dùng được và ghi mã lý do cho phần còn lại. Chính phán quyết đó là nguồn duy nhất của con số dùng để trả tiền; không có cơ chế nào khác trên nền tảng tính ra con số ấy.',
@@ -3683,8 +3675,10 @@ const vi: Record<MessageKey, string> = {
     'Các cam kết đồng ý mà thỏa thuận ghi hình yêu cầu, và không gì ngoài chúng. Tư liệu được lưu trữ trong lãnh thổ Việt Nam.',
   'discover.handoff.title': 'Bạn đã là nhân viên vận hành hay người duyệt?',
   'discover.handoff.body':
-    'Hãy đăng nhập vào bảng điều khiển. Trang này không phải nơi đăng ký làm người thu thập — người thu thập làm việc trên ứng dụng PlayerOne.',
+    'Hãy đăng nhập vào console. Nhân viên trung tâm tải lên ghi nhận việc bàn giao và nhập thẻ nhớ; người kiểm duyệt xem tư liệu và quyết định phần nào được trả.',
   'discover.credits': 'Phim và ảnh: nguồn và giấy phép',
+  'discover.partners':
+    'PlayerOne là liên doanh giữa VNG PT Lab và PaXini. VNG vận hành nền tảng và các trung tâm tải lên; PaXini sản xuất camera Ego và, trong giai đoạn này, kiểm duyệt tư liệu.',
   'discover.ways.title': 'Đi tiếp từ đây',
   'discover.take.cta': 'Tải APK',
   'discover.take.title': 'Người thu thập',
@@ -3692,9 +3686,6 @@ const vi: Record<MessageKey, string> = {
     'Công việc thu thập bắt đầu bằng huấn luyện và một bài kiểm tra. Mỗi lần ghi hình đều phải nhận một nhiệm vụ trước khi bật máy; máy quay do nền tảng cấp và vẫn thuộc về nền tảng. Tiền trả cho số phút hữu hiệu mà người duyệt chấp nhận.',
   'discover.take.pending':
     'APK chưa được phát hành, nên hôm nay chưa có gì để tải từ trang này. Bản cài sẽ được dẫn ở đây khi phát hành.',
-  'discover.panels.title': 'Hai bản ghi đời thường',
-  'discover.panel.a.caption': 'Nấu ăn ở nhà. Bản ghi do chính nút bấm trên máy quay bắt đầu.',
-  'discover.panel.b.caption': 'Sắp lại kệ sách. Công việc trong nhà bình thường, theo nhiệm vụ đã nhận trước.',
   'login.network':
     'Dịch vụ không trả lời. Hãy kiểm tra máy có nằm trong mạng của trung tâm rồi thử lại.',
 

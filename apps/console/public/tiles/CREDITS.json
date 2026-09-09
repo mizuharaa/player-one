@@ -36,38 +36,38 @@
   },
   {
     "file": "film-face.jpg",
-    "title": "Frame from landing.mp4 — portrait",
+    "title": "Frame from the PREVIOUS landing.mp4 — portrait",
     "creator": "PlayerOne demo film",
     "license": "ours",
-    "source": "apps/console/public/landing.mp4"
+    "source": "apps/console/public/landing.mp4 as it stood before commit 96ec77a; the film was replaced on 2026-09-08 and this still no longer appears in it"
   },
   {
     "file": "film-kitchen.jpg",
-    "title": "Frame from landing.mp4 — kitchen, wide",
+    "title": "Frame from the PREVIOUS landing.mp4 — kitchen, wide",
     "creator": "PlayerOne demo film",
     "license": "ours",
-    "source": "apps/console/public/landing.mp4"
+    "source": "apps/console/public/landing.mp4 as it stood before commit 96ec77a; the film was replaced on 2026-09-08 and this still no longer appears in it"
   },
   {
     "file": "film-chop.jpg",
-    "title": "Frame from landing.mp4 — kitchen, chopping",
+    "title": "Frame from the PREVIOUS landing.mp4 — kitchen, chopping",
     "creator": "PlayerOne demo film",
     "license": "ours",
-    "source": "apps/console/public/landing.mp4"
+    "source": "apps/console/public/landing.mp4 as it stood before commit 96ec77a; the film was replaced on 2026-09-08 and this still no longer appears in it"
   },
   {
     "file": "film-books.jpg",
-    "title": "Frame from landing.mp4 — bookshelf",
+    "title": "Frame from the PREVIOUS landing.mp4 — bookshelf",
     "creator": "PlayerOne demo film",
     "license": "ours",
-    "source": "apps/console/public/landing.mp4"
+    "source": "apps/console/public/landing.mp4 as it stood before commit 96ec77a; the film was replaced on 2026-09-08 and this still no longer appears in it"
   },
   {
     "file": "film-garden.jpg",
-    "title": "Frame from landing.mp4 — planting",
+    "title": "Frame from the PREVIOUS landing.mp4 — planting",
     "creator": "PlayerOne demo film",
     "license": "ours",
-    "source": "apps/console/public/landing.mp4"
+    "source": "apps/console/public/landing.mp4 as it stood before commit 96ec77a; the film was replaced on 2026-09-08 and this still no longer appears in it"
   },
   {
     "file": "ref-kitchen.jpg",
@@ -96,5 +96,12 @@
     "creator": "supplied by the product owner as a reference",
     "license": "UNCLEARED — placeholder only",
     "source": "pasted into the design conversation 2026-09-07"
+  },
+  {
+    "file": "ego-worn-rotunda.jpg",
+    "title": "Ego worn in a museum rotunda — 940x720, cropped from the placeholder film at t=4.10s",
+    "creator": "PlayerOne placeholder film (Higgsfield Genjutsu object replacement over third-party footage)",
+    "license": "placeholder — not cleared for publication",
+    "source": "ffmpeg -ss 4.10 -i apps/console/public/landing.mp4 -frames:v 1 -vf crop=940:720:340:0. The crop removes the camera operator arm at the left of the frame. Third person: the wearer is filmed by someone else, NOT by the Ego camera."
   }
 ]

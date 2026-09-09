@@ -119,7 +119,7 @@
 
   --font-sans: "Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
-  --font-display: "Hanken Grotesk Variable", "Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Hanken Grotesk Variable", "Be Vietnam Pro", "Noto Sans SC", "Microsoft YaHei", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --ease: cubic-bezier(.22,.61,.36,1);
   --duration-instant: 90ms;
   --duration-fast: 150ms;

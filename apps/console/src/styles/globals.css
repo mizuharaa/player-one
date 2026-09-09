@@ -410,33 +410,212 @@
      deleted. The composition it supported was rejected outright and none of
      the pieces has a second caller.
 
-     Two rules are left, and both are structure rather than effect.
+     Four rules are left, and all four are structure rather than effect.
      --------------------------------------------------------------- */
 
   /**
-   * The faint grid, taken from the reference set as texture and nothing more.
+   * A region drawn **over footage**, and it is a token remap rather than a look.
    *
-   * An 88px rule at a third of `--border`, which on the near-white page is
-   * about a fiftieth of a step of value. It is not a pattern anybody is meant
-   * to see; it is what stops a wide quiet ground reading as a blank export.
+   * `/discover` is Film First from 2026-09-08: the film fills the first
+   * viewport edge to edge and the type, the buttons and the hairlines sit on
+   * top of it. Every one of those is a shadcn primitive built out of
+   * `--action`, `--foreground`, `--border`, `--card` — roles that invert with
+   * the *scheme*. Footage is not a scheme. In the light theme `--action` is
+   * near-black, so the page's primary call to action rendered as a black pill
+   * on a dark graded film and disappeared; in the dark theme the same control
+   * came out near-white and the disabled one read as *more* available than the
+   * live one, which is the fault the design review named.
    *
-   * `background-attachment: fixed` is deliberately NOT set: a fixed attachment
-   * on a tall scrolling page repaints the whole ground on every frame, and
-   * this page has a video on it.
+   * So instead of a second set of variants in `button.tsx` — one more axis for
+   * every control in the console to carry forever — the roles themselves are
+   * repointed at the stage ramp inside this class. `Button`, `details`, the
+   * focus ring and anything else that lands here is then correct by
+   * construction and identical in both themes, because `stage.*` exists in
+   * both. `.on-stage` above is the *surround* around footage; this is the
+   * surface **on** it.
+   *
+   * `--foreground` becomes `stage.over` — pure white — and not `stage.fg`.
+   * `tokens.ts` reserves that value for exactly this case and states the
+   * measurement: against a pure-white pixel of film under a 62% grade, `fg`
+   * gives 4.52:1 and `over` gives 5.26:1. The grade below is heavier than 62%
+   * everywhere type is set, so both clear; the token that was written for type
+   * over footage is the one used for type over footage.
    */
-  .grid-ground {
-    background-image:
-      repeating-linear-gradient(
-        to right,
-        color-mix(in srgb, var(--border) 34%, transparent) 0 1px,
-        transparent 1px 88px
+  .on-film {
+    --foreground: var(--stage-over);
+    /*
+     * **There is no muted grey over footage, and pretending otherwise was a
+     * measured failure.** `stage.mid` is #9AA1AC and it is right on `stage
+     * .ground`, a surface whose value is known. Over the grade, against the
+     * worst pixel a film can hold, it measures 3.46:1 — under AA for the very
+     * sentence that says the download is not published yet. So the two quiet
+     * roles resolve to `stage.fg` here: over film, "quieter" is expressed in
+     * size and in position, never in value.
+     */
+    --muted-foreground: var(--stage-fg);
+    --faint-foreground: var(--stage-fg);
+    --background: var(--stage);
+    --surface: var(--stage);
+    --card: var(--stage-panel);
+    --muted: var(--stage-panel);
+    --border: var(--stage-line);
+    --border-strong: var(--stage-mid);
+    --action: var(--stage-over);
+    --action-ink: var(--stage);
+    color: var(--stage-over);
+    color-scheme: dark;
+  }
+
+  /**
+   * Glass, at the two weights `tokens.ts` defines, as classes rather than as a
+   * string of Tailwind arbitrary values in a `.tsx`.
+   *
+   * `DESIGN.md`: the page is tinted so a translucent surface has something to
+   * be translucent over, and the blur is what bends it. `fill` is how much
+   * `--card` sits over the ground, `blur` how far the ground smears behind it.
+   * The bar weight is denser because it passes over scrolling content — on
+   * `/discover` it passes over *moving film*, which is the one place in the
+   * product where the material has something genuinely alive to bend.
+   *
+   * The edge is `--stage-over` at 70%, not `--border`: what catches the light
+   * on a piece of glass is its edge, and a grey hairline on a translucent
+   * surface reads as a drawn box instead. `Panel` in `primitives.tsx` writes
+   * the same edge as `border-white/70`; that is the console's only literal
+   * white and this is the token form of it. **The values live here so that no
+   * colour on the landing exists in a `.tsx` file.**
+   */
+  .glass-bar,
+  .glass-card {
+    border: 1px solid color-mix(in srgb, var(--stage-over) 70%, transparent);
+  }
+
+  .glass-bar {
+    background: color-mix(in srgb, var(--card) calc(var(--glass-bar) * 100%), transparent);
+    backdrop-filter: blur(var(--glass-bar-blur));
+  }
+
+  .glass-card {
+    background: color-mix(in srgb, var(--card) calc(var(--glass-card) * 100%), transparent);
+    backdrop-filter: blur(var(--glass-card-blur));
+  }
+
+  /**
+   * The grade: a corner, not a wash.
+   *
+   * A flat 60% black over the whole frame was on this route once and was
+   * removed for flattening the image, and it deserved to be — an even veil
+   * takes the light out of a photograph and announces that the type could not
+   * hold on its own. This is two gradients that meet in the bottom-left corner
+   * and leave the top-right **completely untouched**: the sky, the ceiling and
+   * the far end of a room stay at full contrast, and the ink gathers only
+   * where the words are. It is the grade a film title card has, and it is part
+   * of the composition rather than an apology for it.
+   *
+   * The stops are chosen against the type, not by eye. The tallest block of
+   * words on the page — the slogan, its lead sentence, both calls to action
+   * and the note under them — reaches about half the height of the first
+   * viewport, so the vertical ramp is still at 55 per cent of `--stage` at
+   * 48% and does not reach zero until 74%. Composited with the horizontal ramp
+   * at the left gutter that is 0.68–0.80 of `--stage` across the whole block.
+   * Against the worst pixel a film can hold — pure white — that leaves a
+   * ground of about #495B4D…#5D5F61 under the glyphs and white type on it
+   * measures between 6.5:1 and 9:1. `scripts/contrast.mjs` samples the live
+   * composite at six points across the film's own duration rather than
+   * trusting this arithmetic or the poster.
+   *
+   * It sits in its own element rather than on the video, because a filter or
+   * a gradient on the `<video>` itself is repainted with every decoded frame.
+   */
+  .film-grade {
+    background:
+      linear-gradient(
+        to top,
+        var(--stage) 0%,
+        color-mix(in srgb, var(--stage) 88%, transparent) 24%,
+        color-mix(in srgb, var(--stage) 55%, transparent) 48%,
+        transparent 74%
       ),
-      repeating-linear-gradient(
-        to bottom,
-        color-mix(in srgb, var(--border) 34%, transparent) 0 1px,
-        transparent 1px 88px
+      linear-gradient(
+        to right,
+        color-mix(in srgb, var(--stage) 60%, transparent) 0%,
+        color-mix(in srgb, var(--stage) 22%, transparent) 34%,
+        transparent 62%
       );
   }
+
+  /**
+   * The phone, where the same grade **measured a failure** and the stops had
+   * to be answered rather than reused.
+   *
+   * A hero is 1440x900 on a desk and 390x844 on a phone, and the type does not
+   * shrink with the frame: at 390 the slogan wraps to five lines, the two calls
+   * to action stack full width, and the column reaches about 85% of the band
+   * instead of about 50%. The desktop ramp has cleared to nothing by 74%, so
+   * the top of the headline sat on raw film — and at t=4.80s of this cut that
+   * is an open sky. Measured, white on #6592B1: **3.33:1 at 390 against
+   * 13.95:1 at 1440**, on the same element with the same class. Large text
+   * clears 3:1 on that number, and 3.33 is not a margin.
+   *
+   * So the ramp reaches higher and holds longer here, and the headline is a
+   * step smaller (2.125rem, in `Discover.tsx`) so the column stops climbing.
+   * The top of the frame is still clean film — it is a steeper lower-third,
+   * not the even veil this route carried once.
+   *
+   * **The stops were tuned against the measurement, not by eye, and the first
+   * two attempts are why they are these.** A ramp clearing at 84% put the
+   * worst frame back at 4.79:1 — over AA, and with no room for Vietnamese,
+   * which wraps the same headline one line further up. A ramp clearing at 96%
+   * held 14.41:1 and read as a black panel with a strip of film above it,
+   * which is not Film First on the device most collectors arrive on. These
+   * stops measure **10.03:1 on the worst frame at 390** across six samples of
+   * the film's own duration, and leave the top third of the frame alone. If
+   * the film is replaced, re-run `scripts/contrast.mjs` at 390 before
+   * assuming the numbers survived: they are a property of the footage.
+   */
+  @media (max-width: 639px) {
+    .film-grade {
+      background:
+        linear-gradient(
+          to top,
+          var(--stage) 0%,
+          color-mix(in srgb, var(--stage) 92%, transparent) 36%,
+          color-mix(in srgb, var(--stage) 78%, transparent) 68%,
+          transparent 92%
+        ),
+        linear-gradient(
+          to right,
+          color-mix(in srgb, var(--stage) 38%, transparent) 0%,
+          transparent 64%
+        );
+    }
+  }
+
+  /**
+   * The same idea at a plate's scale, and it is a **separate class because the
+   * hero's grade measurably ruined the photograph.**
+   *
+   * The one still on the page is there to show the device on somebody's head,
+   * and the head is at the left of the frame — exactly where `.film-grade`'s
+   * horizontal ramp is heaviest. Rendered into a 544px panel with a
+   * three-line caption, the hero's stops put 0.6 of `--stage` over the
+   * subject and took the frame to near-black across its whole left half: the
+   * page's only evidence, graded out for the sake of type that occupies the
+   * bottom fifth.
+   *
+   * So the plate has no side ramp at all and its vertical one clears by 44%.
+   * The caption sits inside the bottom 20%, where this is still 0.86–1.0 of
+   * `--stage`, and everything above the halfway line of the picture is the
+   * photograph at full strength.
+   */
+  .plate-grade {
+    background: linear-gradient(
+      to top,
+      var(--stage) 0%,
+      color-mix(in srgb, var(--stage) 86%, transparent) 22%,
+      transparent 44%
+    );
+  }
+
 
   /**
    * The highlight marker: the one lime moment a screen is allowed, spent on
@@ -514,4 +693,106 @@
     box-decoration-break: clone;
   }
 
+}
+
+
+/* ---------------------------------------------------------------
+   The dashboard's own two blocks: its display type, and the frame the
+   one photograph sits in.
+
+   Appended rather than folded into the rules above, so this file stays
+   two people's work without either of them restructuring the other's.
+   --------------------------------------------------------------- */
+@layer components {
+  /**
+   * Home's headlines, in the display face, with an optical weight per size.
+   *
+   * Same argument as the landing's slogan and the same direction: Hanken
+   * Grotesk is variable, so the weight comes *down* as the size goes up —
+   * a stroke that reads as bold at 17px reads as heavy at 42px. Two classes
+   * and not one, because Home has exactly two headline sizes and a third
+   * would be a scale nobody asked for.
+   *
+   * The display face is headlines only. Labels, body, controls and every
+   * `.num` measurement stay in the UI voice — a display face on a column
+   * heading is a costume, and on a figure it fights the tabular digits the
+   * whole `.num` rule exists for.
+   */
+  .headline,
+  .headline-sm {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    text-wrap: balance;
+  }
+
+  .headline {
+    font-size: 2.0625rem;
+    font-weight: 610;
+    letter-spacing: -0.024em;
+    line-height: 1.05;
+  }
+
+  @media (min-width: 640px) {
+    .headline {
+      font-size: 2.625rem;
+      font-weight: 520;
+      letter-spacing: -0.028em;
+    }
+  }
+
+  .headline-sm {
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: -0.012em;
+    line-height: 1.3;
+  }
+
+  /**
+   * The photograph's frame, and the reason the picture is no longer a
+   * backdrop.
+   *
+   * It used to run full-bleed behind the type under a 60% ink scrim, which
+   * is the arrangement the product owner described as hiding the image: at
+   * that strength the frame is a texture and the band is a dark rectangle.
+   * The picture now has a box of its own beside the words, at full strength,
+   * and nothing is set on top of it — so there is no scrim to measure and no
+   * contrast that depends on which frame the parallax has scrolled to.
+   *
+   * `--h` is the frame's height rather than an aspect ratio: the band's left
+   * column is type whose height depends on the translation, and a ratio-sized
+   * picture beside it leaves a different gap in every locale.
+   */
+  .photo-frame {
+    position: relative;
+    overflow: hidden;
+    /* No radius of its own: the panel clips, so the band has one edge and not
+       two that nearly agree. `--muted` shows only while the file is decoding. */
+    background: var(--muted);
+    height: var(--h);
+  }
+
+  /*
+   * The parallax pans the crop; it does not move the picture.
+   *
+   * Two earlier versions both failed the same check and it was right both
+   * times. A box 12% taller than the frame is `scrollHeight > clientHeight`,
+   * and a `scale` is worse rather than better — Chrome counts transformed
+   * overflow into the scrollable area, so 1.2 reported 49px of clipping on x.
+   * Either way `rhythm.mjs` sees content cut off by its own container, which is
+   * the fault it exists to find, and a check that has to be argued with on
+   * every run stops being run.
+   *
+   * `object-position` has no such cost: the element's box is exactly its
+   * frame, nothing overflows anything, and what moves is which part of the
+   * photograph the `cover` crop is showing. That is also the truer effect —
+   * the picture stays put and the framing drifts.
+   */
+  .photo-frame > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 50%;
+  }
 }

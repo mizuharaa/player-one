@@ -1,104 +1,122 @@
 /**
- * `/discover` — what the product is, on a public route of its own.
+ * `/discover` — the public product home, rebuilt Film First on 2026-09-08.
  *
- * ## Why this is the fifth version
+ * ## The direction, and what it replaced
  *
- * Four were rejected, and the cause was process rather than taste: an agent
- * picked a direction off a pile of references and the design review ran
- * afterwards as a checklist, which produces a page that measures green on
- * contrast, rhythm and tokens and reads as nothing. The owner's words on the
- * fourth: *"its so weird and uncanny, everything doesnt make sense and doesnt
- * align well"*.
+ * The product owner chose **Film First** off a decision page against two
+ * alternates, with no steering notes:
  *
- * So this build is held to one decision made **before** any of it was written:
+ * > The Ego footage fills the screen edge to edge from frame one. The slogan
+ * > sits over it in large white type, bottom-left, with the two CTAs beneath.
+ * > No card, no frame, no letterbox. Then every section is another full-bleed
+ * > band, text punched out over footage throughout. White ground appears only
+ * > for the FAQ and the sign-in. **The footage leads instead of being
+ * > contained.**
  *
- * > **One signature interaction — the custom cursor — and everything else
- * > quiet.**
+ * That replaces the *composition* of build five (`f0f5599`), which held the
+ * film inside a 1152px reading column, and it keeps that build's engineering:
+ * the cursor, the two peer calls to action, the honest APK constant, the
+ * shadcn primitives, the copy in three languages and the token discipline.
  *
- * He listed six things he liked (the cursor, ray-lit 3D, a scroll morph, an
- * idle animation, panel transitions, the panda) and then chose one. Every
- * reference he admires earns its premium feel the same way: Figure AI is
- * nearly static, Fixa is one pan. So there is no ray-light, no scroll morph,
- * no idle drift and no panel-transition spectacle here. What moves is the
- * cursor (`components/CustomCursor.tsx`), one authored hero sequence, and
- * quiet section fades from an already-visible resting state.
+ * ## The risk he accepted, and how it is answered
  *
- * ## The seven sections, and the order is the argument
+ * > "It lives or dies on footage quality. You have ~7 seconds of good material;
+ * > this structure wants a minute. Until a real shoot happens it will loop, and
+ * > looping reads as thin."
  *
- * 1. **Hero.** The slogan resolves, the column lifts, and the film frame opens
- *    — **one** timeline in `useChoreography`, not three effects that happen to
- *    fire together.
- * 2. **Demonstration.** The film, wide, with nothing drawn over it. No scrim,
- *    no type, no mascot. That rule was won the hard way: *"theres random
- *    circular text blocking the demo"*.
- * 3. **The four-step strip.** Record, upload, human review, payment for
- *    approved effective minutes. A ruled strip and not four cards, because the
- *    four are one sequence rather than four things to choose between.
- * 4. **The panel pair.** Two half-width panels on the console's near-black,
- *    caption at the foot of each. **The stills are held at the size they are
- *    sharp at** — every file in `public/tiles/` is 420x420, and a 420px source
- *    blown across half a 1440px viewport is a 1.7x upscale that reads as blurry
- *    stock. These photographs are the page's only evidence; softening them
- *    weakens the one proof it has. So each panel holds a 420px plate on ink
- *    rather than a stretched fill, and the panel is what is full-bleed.
- * 5. **Product detail.** A bento on one gutter with deliberately unequal spans,
- *    text-led, with two sharp stills as evidence and one ink cell on the number
- *    the whole product turns on.
- * 6. **FAQ.** Rounded grey rows, one open by default. Native `<details>`, so it
- *    opens with no script, is announced as a disclosure, and is found by the
- *    browser's own in-page search.
- * 7. **Take part, and sign in.** The 50/50 split, carrying the film, with
- *    *both* audiences given somewhere to go.
+ * `landing.mp4` is 7.04s at 1280x720. The stills in `public/tiles/` are all
+ * **420x420** — verified with `ffprobe`, every file — and a 420px source
+ * stretched across a full-bleed band is the blurry-stock fault an earlier
+ * review named, so none of them is on this page any more.
  *
- * ## Two audiences, two peer actions
+ * The answer is not to loop one clip six times. It is three moves:
  *
- * The owner's ruling, 2026-09-08: *"discover is like a product home page
- * everyone can see, theres login for consoles operators and download APK buton
- * for collectors, treat it as product grand scheme intro page."* So this is the
- * product's public front page and not a funnel for either side of it, and it
- * carries **two calls to action of equal rank**:
+ * 1. **The film is spent once, on the hero, at full strength.** One `<video>`
+ *    on the route. The closing panel that used to carry a second copy of it is
+ *    now type on the light ground, which is also what the direction asks for.
+ * 2. **One frame is harvested from it**, and exactly one — `ego-worn-rotunda.jpg`,
+ *    940x720, cropped from t=4.10s. See below for why it is one and not seven.
+ * 3. **Full-bleed means edge-to-edge composition, not edge-to-edge
+ *    photography.** The steps band, the activities band and the number band
+ *    are full-bleed fields of ink and lavender carrying punched-out type. A
+ *    confident type band beats a blurry photo band, and it beats a dishonest
+ *    one by more.
  *
- * - **Download the APK** — the collector's path, a direct Android build. Not a
- *   Play Store listing and not a Zalo flow; that question is closed.
- * - **Sign in to the console** — the operator's and the reviewer's path.
+ * ## Why one harvested frame and not seven
  *
- * Both are in the hero and both return at the foot, because a reader has to
- * have somewhere to go at first contact and again at highest intent. Until this
- * build the only action anywhere on the page was the *operator* sign-in,
- * captioned "this page is not a collector sign-up" — so a collector read the
- * whole thing and arrived at a back-office form asking for machine credentials.
+ * The first plan here was seven frames — the film holds five genuinely
+ * different locations in seven seconds, so a strip of four steps and three
+ * split pairs could each have had their own — and it was abandoned on a
+ * product-truth finding rather than on a resolution one.
  *
- * **The APK does not exist yet**, and the honest form of that is `APK_URL`
- * below: one empty constant, one component that renders a download link when it
- * is set and a disabled control with a sentence saying the build is not
- * released when it is not. On a payout-bearing product's front page, a button
- * that looks available and then 404s is worse than a button that says so.
+ * **The film is not ego footage.** It is a woman in the Paris Métro filmed at
+ * arm's length, her own forearm in shot, walking on through a plaza and a
+ * museum. A forehead-mounted camera cannot see its wearer, so the footage
+ * demonstrates the opposite of the product; the location is not Vietnam and a
+ * European museum is not housework. Two captions asserted otherwise and both
+ * are rewritten in all three languages (`discover.video.caption` claimed a
+ * continuous take from the wearer's own eye line; `discover.cell.pov.caption`
+ * claimed a POV recording). Repeating stills from that film across six bands
+ * would repeat the contradiction six times.
+ *
+ * So the harvest is one frame, chosen because it is the only kind that
+ * survives an honest caption: the crop removes the operator's arm, there is no
+ * face, and what is left is a **third-person view of the device being worn**.
+ * That is exactly the right picture for the band about the camera, and its
+ * caption says third person in so many words. Nothing else on this page claims
+ * to be a recording the camera made.
+ *
+ * The film's own provenance is stated on the page rather than in this comment:
+ * a slate line in the corner of the first viewport, in the reader's language.
+ *
+ * ## Text over moving video
+ *
+ * Every earlier build measured contrast against static grounds. Here the
+ * ground changes every frame, so:
+ *
+ * - The grade is `.film-grade` in `globals.css`: two gradients meeting in the
+ *   bottom-left corner, leaving the top-right of the frame untouched. Not the
+ *   flat 60% wash that was removed from this route for flattening the image.
+ * - The type is `--stage-over`, the token `tokens.ts` reserves for type over
+ *   footage, reached through `.on-film` — which repoints `--action`,
+ *   `--foreground`, `--card` and `--border` at the stage ramp so every shadcn
+ *   primitive over the film is correct in **both** themes without a new
+ *   variant. That also fixes the review's finding that a disabled control read
+ *   as more available than a live one in dark mode.
+ * - The hero's ground is `--stage` behind the video, and the poster is graded
+ *   by the same element, so the type holds with the video failed, blocked or
+ *   still loading.
+ * - `scripts/contrast.mjs` samples the live composite at six points across the
+ *   film's own duration, not on the poster.
+ *
+ * ## The world, which was missing
+ *
+ * The design review's verdict on build five was that "an unrelated product
+ * could use this unchanged", and the specific cause was that the system's
+ * load-bearing decision never appeared: `DESIGN.md` argues the tinted lavender
+ * ground exists so that **glass has something to be glass over**, and there
+ * was no glass on the route at all. So the bar over the film is the bar
+ * weight of glass, the FAQ rows and the closing panel are the card weight, and
+ * the light ground is `--background` (lavender-100) rather than the paler
+ * `--surface`. The partners are named in words and in the mark, because for a
+ * joint venture asking the Vietnamese public to wear a camera at home, *this
+ * is VNG* is the most persuasive fact available and it existed only as an
+ * unlabelled 24px dot.
+ *
+ * None of that depends on the cursor. The cursor is gated to a fine pointer
+ * over 768px, which is not where a collector arrives.
  *
  * ## What this page must never imply
  *
  * Device ownership, unrestricted recording, automatic acceptance, payment for
- * every recorded minute, guaranteed earnings, instant payout. Sections 3, 5, 6
- * and 7 each say the opposite of one of those in plain words, in all three
- * languages. **Every figure here is a process fact** — how the platform works —
- * and there is not one statistic on the page, invented or otherwise.
- *
- * ## What was deleted and has no second caller
- *
- * The scatter of eleven tilted photographs; the rainbow prism disc and its
- * three-variant hover burst; the marquee; the rotating circular type; the flat
- * scrim over the film; the hover effect that swapped each photograph for a
- * different photograph. Also gone in this pass: the three "fact" cards under
- * the hero, which repeated the four-step strip in shorter words and pushed the
- * film below the fold, so the one authored moment happened where nobody was
- * looking.
+ * every recorded minute, guaranteed earnings, instant payout. There is not one
+ * statistic on the page, invented or otherwise, and no URL that does not exist.
  *
  * ## Colour
  *
- * `--surface` is the ground, `--foreground` the ink, `--action` the primary
- * control, and lime is spent twice and only twice: the marker in the headline
- * and the accent inside the cursor's lens. No yellow, no orange. Every value
- * comes from `packages/design/src/tokens.ts` through a custom property; there
- * is no colour literal in this file.
+ * Every value comes from `packages/design/src/tokens.ts` through a custom
+ * property. There is no colour, radius, shadow or duration literal in this
+ * file.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -107,16 +125,19 @@ import { Mark } from '../components/identity/Mark.tsx';
 import { TrucAsk } from '../components/identity/TrucAsk.tsx';
 import { CustomCursor } from '../components/CustomCursor.tsx';
 import { Button } from '../components/ui/button.tsx';
+import { Panel } from '../components/ui/primitives.tsx';
 import { LocaleSwitch } from '../components/shell/LocaleSwitch.tsx';
 import { ThemeSwitch } from '../components/shell/ThemeSwitch.tsx';
 import { Reveal, useChoreography, useOnScreen } from '../lib/choreo.tsx';
 import { cn } from '../lib/cn.ts';
 
 /**
- * The film. `apps/console/public/landing.mp4` (12.96s, 1280x720, 1.39 MB)
- * ships with the console, so the page is complete with no environment set.
- * `VITE_LANDING_VIDEO_URL` stays as the seam a deployment uses to point at a
- * longer cut or a CDN copy without a rebuild of this file.
+ * The film, and it is a **slot rather than a foundation**.
+ *
+ * A real shoot with a crew is coming and this cut is a placeholder, so nothing
+ * in the composition below depends on where this particular footage puts its
+ * subject: the grade is a corner, the type is bottom-left, and the frame is
+ * `object-cover`. Swapping this constant is the whole of the replacement.
  */
 const VIDEO_URL: string =
   typeof import.meta.env.VITE_LANDING_VIDEO_URL === 'string' &&
@@ -124,21 +145,29 @@ const VIDEO_URL: string =
     ? import.meta.env.VITE_LANDING_VIDEO_URL
     : '/landing.mp4';
 
+/** The first frame, so the hero is composed before a byte of video arrives. */
+const POSTER_URL = '/landing-poster.jpg';
+
+/**
+ * The one still, harvested from the film and cropped.
+ *
+ * 940x720. It is never rendered wider than the half-band it lives in, which is
+ * capped at 960px by the band's own `max-w`, so the scale stays at or under
+ * 1.02x and the picture is never blown up the way a 420px tile would be.
+ * `CREDITS.json` carries the `ffmpeg` line that produced it, what the crop
+ * removes, and the fact that it is third person.
+ */
+const STILL_URL = '/tiles/ego-worn-rotunda.jpg';
+
 /**
  * The collector build, and it is a **placeholder in exactly one place.**
  *
- * The owner's decision, 2026-09-08: `/discover` is the public product home,
- * the collector path is a **direct APK download** — not a Play Store listing
- * and not a Zalo flow — and it is a peer of the console sign-in rather than
- * something under it. The file itself does not exist yet: `public/` holds the
- * film, its poster, the mark, the tiles and the panda, and nothing else.
- *
- * So this is empty, and `ApkAction` below renders honestly on both sides of
- * it. Publishing the build is a one-line change here — set the path, or point
- * `VITE_COLLECTOR_APK_URL` at a release — and the sentence saying there is
- * nothing to download disappears on its own. **Do not fill it with a guess.** A
- * button that 404s on a payout-bearing product's front page is worse than a
- * button that says the build is not out.
+ * The file does not exist yet. `ApkAction` renders honestly on both sides of
+ * this: a real download link when it is set, a visibly unavailable control and
+ * one sentence saying the build is not released when it is not. Publishing is
+ * a one-line change here, or `VITE_COLLECTOR_APK_URL` at a release. **Do not
+ * fill it with a guess** — a button that 404s on a payout-bearing product's
+ * front page is worse than a button that says the build is not out.
  */
 const APK_URL: string =
   typeof import.meta.env.VITE_COLLECTOR_APK_URL === 'string'
@@ -174,7 +203,8 @@ function useReducedMotion(): boolean {
 
    `--font-display` is Hanken Grotesk Variable: the only shortlisted face that
    ships a Vietnamese subset, which on a page whose primary language is
-   Vietnamese is not a preference.
+   Vietnamese is not a preference. Its stack now names the Han faces too, so a
+   `zh` headline no longer falls to whatever the browser picked last.
    ---------------------------------------------------------------------- */
 
 /**
@@ -183,13 +213,26 @@ function useReducedMotion(): boolean {
  * `leading-[1.1]` and not the `1` display type usually wants, because this
  * headline carries a filled `<mark>` and ships in Chinese. A CJK glyph inks its
  * whole em box, so at a line height of 1 the lime block on line two touched the
- * line above it and the line below touched the block — read in the `zh`
- * screenshot, where 认识 Ego。 and 日常劳动 collide. The extra tenth costs a few
- * pixels of hero height and gives the marker room to read as a highlighter in
- * all three languages rather than as a bar wedged between two rows.
+ * line above it. The extra tenth costs a few pixels of hero height and gives
+ * the marker room to read as a highlighter in all three languages.
  */
-const H1 =
-  'font-display text-[2.5rem] font-medium leading-[1.1] tracking-[-0.04em] sm:text-[3.5rem] lg:text-[4.25rem]';
+const H1 = cn(
+  'font-display font-medium leading-[1.1] tracking-[-0.04em]',
+  /*
+   * **34px on a phone, and the step down is a measured decision.**
+   *
+   * It was 40px at every width under `sm`. At 390 that wraps the slogan to
+   * five lines and the column climbs to about 85% of the first viewport,
+   * where the grade has cleared and the film is whatever the collector
+   * filmed — measured on the worst frame of this cut, an open sky, white
+   * type on #6592B1 at **3.33:1**. Large text clears 3:1 on that; nothing
+   * else on this page is within eight points of it. A step down costs one
+   * line of wrap and takes the top of the headline back down into the grade.
+   * 56 and 68 are untouched: the review found Vietnamese stacked diacritics
+   * set cleanly at 68px and that is the size it meant.
+   */
+  'text-[2.125rem] sm:text-[3.5rem] lg:text-[4.25rem]',
+);
 
 /** A section heading. 28 / 36px. */
 const H2 =
@@ -198,11 +241,41 @@ const H2 =
 /** A cell or step heading. 19px, one weight heavier than the two above it. */
 const H3 = 'font-display text-[1.1875rem] font-semibold leading-[1.2] tracking-[-0.02em]';
 
-/** One card. One radius, one hairline, one fill — used by every cell here. */
-const CARD = 'rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)]';
-
-/** The reading column. One width, one gutter, every section. */
+/** The reading column, used inside a band. One width, one gutter, everywhere. */
 const SHELL = 'mx-auto w-full max-w-[72rem] px-4 sm:px-6';
+
+/**
+ * The bleed cap, and it is a resolution decision rather than a taste one.
+ *
+ * A band is edge to edge up to 1920px and centred beyond it. The only
+ * photograph on the page is 940px wide and lives in half of one of these
+ * bands, so the cap is what keeps it at or under a 1.02x scale on a 27-inch
+ * display instead of a 1.36x one. Bands with no photograph in them carry the
+ * same cap so the page has one left edge rather than two.
+ */
+const BAND = 'mx-auto w-full max-w-[120rem]';
+
+/**
+ * The two page-level calls to action, at a size that survives 320px.
+ *
+ * `size="xl"` is a 56px pill with 32px of horizontal padding and the button
+ * base sets `whitespace-nowrap`, so a control's *minimum* width is its label
+ * plus 64px and it cannot go below that. Measured: at a 320px viewport the two
+ * closing cards were 312px wide in English and **362px in Vietnamese**, inside
+ * a 288px column — 8px and 58px of horizontal document scroll, because *Đăng
+ * nhập vào console* at 17px simply does not fit a phone next to 32px of pad
+ * and 32px of card. The page reported clean at 390 and above, which is why it
+ * shipped.
+ *
+ * So below `sm` the label is allowed to wrap and the pill grows to fit it,
+ * full width in its column; from `sm` up it is the 56px pill it was. The
+ * height floor keeps the 44px touch target, and a wrapped label is centred
+ * rather than ragged.
+ */
+const CTA = cn(
+  'h-auto min-h-14 w-full justify-center whitespace-normal px-6 py-4 text-center',
+  'sm:h-14 sm:w-auto sm:whitespace-nowrap sm:px-8',
+);
 
 export function DiscoverScreen() {
   const { t } = useTranslation();
@@ -219,33 +292,59 @@ export function DiscoverScreen() {
   const [closing, nearTruc] = useOnScreen<HTMLDivElement>('100% 0px');
 
   return (
-    <div ref={root} className="grid-ground min-h-dvh bg-[var(--surface)] text-[var(--foreground)]">
+    <div ref={root} className="min-h-dvh bg-[var(--background)] text-[var(--foreground)]">
       {/*
         The signature. It mounts nothing on a coarse pointer, under 768px, or
         under `prefers-reduced-motion`, and it hides the native cursor only
-        while it is painting a replacement. See `CustomCursor.tsx`.
+        while it is painting a replacement. See `CustomCursor.tsx`. Nothing on
+        this page depends on it: a collector arrives on a phone, where it never
+        exists, and the page has to read as PlayerOne there.
       */}
       <CustomCursor />
 
       {/* ---------------------------------------------------------------
-          The bar. The sign-in link says what kind of sign-in it is, so a
-          collector who has arrived here is not invited into an operator form.
+          The bar, and it is the system's own material.
+
+          Glass at the bar weight, floating over the film. This is the one
+          place in the product where the material has something genuinely
+          moving to bend, which is the argument for a tinted ground made
+          visible rather than described.
           --------------------------------------------------------------- */}
       <header className="sticky top-0 z-20 px-4 pt-4 sm:px-6">
         <div
           className={cn(
             'mx-auto flex max-w-[72rem] items-center justify-between gap-3',
-            'rounded-[var(--radius-pill)] border border-[var(--border)] bg-[var(--card)]',
+            'rounded-[var(--radius-pill)] shadow-[var(--shadow-sm)]',
+            'glass-bar',
             /* `pl-3` below `sm`: at 320px the row was one pixel wider than the
                viewport, and one pixel of horizontal document scroll is still
                horizontal document scroll. */
-            'py-2 pl-3 pr-2 shadow-[var(--shadow-sm)] sm:pl-4',
+            'py-2 pl-3 pr-2 sm:pl-4',
           )}
         >
           <span className="inline-flex items-center gap-2.5">
             <Mark size={24} />
             <span className="font-display text-[1.0625rem] font-semibold tracking-[-0.02em]">
               PlayerOne
+            </span>
+            {/*
+              The partners, named in the bar and not only in a footnote.
+
+              The review's finding was that VNG and PaXini appear nowhere in
+              the rendered page while the mark's two circles — sun and tech —
+              stand for exactly them. For a joint venture asking members of the
+              public to wear a camera inside their home, this is the most
+              persuasive fact on the page. It is stated as a fact and nothing
+              is claimed beyond `PRODUCT.md`. Hidden below `sm`, where the row
+              has 390px and already carries four things.
+            */}
+            <span
+              className={cn(
+                'ml-1 hidden border-l border-[var(--border)] pl-3 text-[0.8125rem] md:inline',
+                'text-[var(--muted-foreground)]',
+              )}
+            >
+              VNG PT Lab &times; PaXini
             </span>
           </span>
           <div className="flex items-center gap-1">
@@ -256,10 +355,8 @@ export function DiscoverScreen() {
               guessed. The wordmark, the locale select — whose width is set by
               its longest option, *Tiếng Việt* — the theme toggle and this
               button need 470px of row; at 390 the document's `scrollWidth` was
-              470 against a `clientWidth` of 390, so the whole page scrolled
-              sideways by 80px. Nothing is lost: the closing split carries the
-              same sign-in, and a sticky shortcut to a control that is already
-              reachable is not a shortcut.
+              470 against a `clientWidth` of 390. Nothing is lost: the closing
+              section carries the same sign-in.
             */}
             <Button
               variant="primary"
@@ -276,305 +373,259 @@ export function DiscoverScreen() {
 
       <main>
         {/* ===============================================================
-            1. Hero. One authored sequence: the slogan resolves out of a
-            blur, the column lifts, and the film frame below opens. The
-            timeline lives in `useChoreography` so there is one motion
-            system on this page rather than two.
+            1. The first viewport. The film, edge to edge, from frame one.
+
+            No card, no frame, no letterbox: the video is `object-cover` on the
+            whole band and the type sits on it. The band is `--stage` so that a
+            failed, blocked or still-loading video leaves white type on
+            near-black rather than white type on nothing.
             =============================================================== */}
-        <section className={cn(SHELL, 'pt-16 sm:pt-24 lg:pt-28')}>
-          <h1 data-choreo-hero="line" className={cn(H1, 'max-w-[16ch] text-balance')}>
-            {t('discover.headline.a')}{' '}
-            <mark className="marker whitespace-nowrap">{t('discover.headline.mark')}</mark>
-            {t('discover.headline.b')}
-          </h1>
-          {/*
-            Ink, not muted grey. This sentence carries the two conditions the
-            product runs on — a human reviews the footage, and only approved
-            effective minutes are paid — and a condition set one step down from
-            the headline in a lighter grey is a condition somebody skips.
-          */}
-          <p
-            data-choreo-hero="lead"
-            className="mt-8 max-w-[52ch] text-[1.0625rem] leading-[1.6] sm:text-[1.1875rem]"
-          >
-            {t('discover.lead')}
-          </p>
-          {/*
-            The product as a whole, not one side of it. This is the public home
-            page: somebody arriving here may be a prospective collector, a
-            counter operator, a reviewer in Shenzhen or none of the three, and
-            the sentence that tells them which of those the page is talking to
-            has to come before the two buttons that ask them to choose.
-          */}
-          <p
-            data-choreo-hero="audiences"
-            className="mt-4 max-w-[56ch] text-[0.9375rem] leading-[1.65] text-[var(--muted-foreground)] sm:text-[1rem]"
-          >
-            {t('discover.audiences')}
-          </p>
-          {/*
-            Two calls to action, and they are peers because the audiences are.
-            The APK is the collector's whole path onto the platform and the
-            console is the operator's and the reviewer's; neither is a footnote
-            to the other, so they take the same size and sit on the same line.
-          */}
-          <div data-choreo-hero="actions" className="mt-10 flex flex-wrap items-start gap-3">
-            <ApkAction />
-            {/*
-              `bg-[var(--card)]` and not the variant's `bg-transparent`. A
-              control has to carry its own ground; here it sits over the faint
-              grid, so an opaque fill is what makes its measured contrast one
-              number rather than two. That bug has shipped on this route once.
-            */}
-            <Button
-              variant="secondary"
-              size="xl"
-              asChild
-              data-cursor-highlight
-              className="bg-[var(--card)]"
-            >
-              <Link to="/login">{t('discover.signIn')}</Link>
-            </Button>
-          </div>
-          <ApkNote />
-        </section>
+        <FilmHero reduced={reduced} />
 
         {/* ===============================================================
-            2. Demonstration. One player. Nothing over it.
+            2. The four steps, as a full-bleed band of ink.
 
-            It sits in the page's one reading column and not in a wider one of
-            its own. A frame 96px to the left of the headline above it is the
-            fault the owner named on the last build — *"doesnt align well"* —
-            and there is no gain to weigh against it: 1152px of a 1280px source
-            is a 0.9x scale, so the film is sharper here than it would be blown
-            wider.
+            **Deliberately typographic, and this is the one place on the page
+            where the direction was answered with type rather than footage.**
+            Only one of these four steps has ever been photographed. A frame of
+            a Paris museum under "the card goes across the counter at an upload
+            centre" is not a full-bleed photograph of an upload centre; it is a
+            picture of something else with a caption that contradicts it. Four
+            numbered rules on ink is the confident version of not having the
+            shoot yet, and it survives the shoot arriving.
             =============================================================== */}
-        <section className={cn(SHELL, 'mt-12 sm:mt-16')}>
-          {/*
-            `sr-only`, for the same reason the panel pair's heading is: the hero
-            runs straight into this frame as one authored sequence and a heading
-            set between them would cut it in half, but a section with no heading
-            is a hole in the document outline and a screen reader arrives at a
-            video with no idea what it is of.
-          */}
-          <h2 className="sr-only">{t('discover.demo.title')}</h2>
-          <figure data-choreo-hero="film" className="m-0">
-            <div className="overflow-hidden rounded-[var(--radius-lg)] bg-[var(--stage)]">
-              <video
-                src={VIDEO_URL}
-                poster="/landing-poster.jpg"
-                muted
-                loop
-                playsInline
-                /* Reduced motion: it becomes a video the reader starts, which
-                   is the same content without the movement. */
-                autoPlay={!reduced}
-                controls
-                preload="metadata"
-                aria-label={t('login.video.region')}
-                className="aspect-video w-full object-cover"
+        <Reveal data-band="steps" className="on-stage">
+          <div className={cn(BAND, SHELL, 'py-20 sm:py-24 lg:py-32')}>
+            <h2 className={cn(H2, 'text-[var(--stage-fg)]')}>{t('discover.how.title')}</h2>
+            <ol className="mt-10 grid list-none gap-x-6 gap-y-10 p-0 sm:grid-cols-2 lg:grid-cols-4">
+              {STEPS.map((key, index) => (
+                <li key={key} className="border-t-2 border-[var(--stage-fg)] pt-4">
+                  <span className="num text-[0.8125rem] font-medium tabular-nums text-[var(--stage-mid)]">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <h3 className={cn(H3, 'mt-2 text-[var(--stage-fg)]')}>
+                    {t(`discover.step.${key}.title`)}
+                  </h3>
+                  <p className="mt-2 text-[0.9375rem] leading-[1.6] text-[var(--stage-mid)]">
+                    {t(`discover.step.${key}.body`)}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </Reveal>
+
+        {/* ===============================================================
+            3. The camera. A split pair, and the only photograph on the page.
+
+            Left half is the harvested frame with its caption punched out over
+            it; right half is ink carrying the heading and the paragraph. The
+            caption's left edge and the photograph's left edge are set by the
+            same padding on the same box, so the offset between them is exactly
+            the pad at every breakpoint and in every language — which is the
+            class of fault the review measured at 71.75px on the last build,
+            where the picture was centred and its caption was flush left.
+            =============================================================== */}
+        <Reveal data-band="camera">
+          <div className={cn(BAND, 'grid lg:grid-cols-2')}>
+            <figure className="on-film relative m-0 min-h-[20rem] sm:min-h-[26rem] lg:min-h-[34rem]">
+              <img
+                src={STILL_URL}
+                alt=""
+                width={940}
+                height={720}
+                loading="lazy"
+                decoding="async"
+                className="absolute inset-0 h-full w-full object-cover"
               />
+              {/* `.plate-grade`, not the hero's: no side ramp and a shorter
+                  vertical one, because the device this picture exists to show
+                  is at the left of the frame and the hero's grade put 0.6 of
+                  `--stage` over it. The caption sits in the bottom fifth. */}
+              <div aria-hidden="true" className="plate-grade absolute inset-0" />
+              <figcaption
+                className={cn(
+                  'absolute inset-x-0 bottom-0 p-6 sm:p-10',
+                  'max-w-[46ch] text-[0.9375rem] leading-[1.55] text-[var(--stage-over)]',
+                )}
+              >
+                {t('discover.cell.pov.caption')}
+              </figcaption>
+            </figure>
+            <div className="on-stage flex flex-col justify-center px-6 py-14 sm:px-10 sm:py-16 lg:px-14">
+              <h2 className={cn(H2, 'text-[var(--stage-fg)]')}>
+                {t('discover.cell.camera.title')}
+              </h2>
+              <p className="mt-6 max-w-[52ch] text-[1rem] leading-[1.65] text-[var(--stage-mid)]">
+                {t('discover.cell.camera.body')}
+              </p>
             </div>
-            <figcaption className="mt-3 max-w-[70ch] text-[0.875rem] leading-[1.55] text-[var(--muted-foreground)]">
-              {t('discover.video.caption')}
-            </figcaption>
-          </figure>
-        </section>
+          </div>
+        </Reveal>
 
         {/* ===============================================================
-            3. The four-step strip.
+            4. Which activities count. A full-bleed field of lavender.
 
-            Each step is a rule, a number and two lines of type, so the four
-            read as one sequence. The rule is `--foreground` at 2px, the only
-            ink hairline on this page, and it is what makes it a strip.
+            The one colour band, and it is the ground the whole design system
+            is built on rather than a decorative panel. It breaks the run of
+            ink at exactly the point the argument moves from the device to the
+            work, and `--lavender-200` is theme-aware — it resolves to the dark
+            scheme's muted surface — so the ink on it is `--foreground` in both.
             =============================================================== */}
-        <Reveal className={cn(SHELL, 'mt-24 sm:mt-32')}>
-          <h2 className={H2}>{t('discover.how.title')}</h2>
-          <ol className="mt-8 grid list-none gap-x-3 gap-y-8 p-0 sm:grid-cols-2 lg:grid-cols-4">
-            {STEPS.map((key, index) => (
-              <li key={key} className="border-t-2 border-[var(--foreground)] pt-4">
-                <span className="num text-[0.8125rem] font-medium tabular-nums text-[var(--faint-foreground)]">
-                  {String(index + 1).padStart(2, '0')}
-                </span>
-                <h3 className={cn(H3, 'mt-2')}>{t(`discover.step.${key}.title`)}</h3>
-                <p className="mt-2 text-[0.9375rem] leading-[1.6] text-[var(--muted-foreground)]">
-                  {t(`discover.step.${key}.body`)}
+        <Reveal data-band="activities" className="bg-[var(--lavender-200)]">
+          <div className={cn(BAND, SHELL, 'py-24 sm:py-28 lg:py-36')}>
+            <div className="grid gap-8 lg:grid-cols-12 lg:gap-12">
+              <h2 className={cn(H2, 'lg:col-span-5')}>{t('discover.cell.activities.title')}</h2>
+              <p className="max-w-[60ch] text-[1.0625rem] leading-[1.65] lg:col-span-7">
+                {t('discover.cell.activities.body')}
+              </p>
+            </div>
+          </div>
+        </Reveal>
+
+        {/* ===============================================================
+            5. The number, on ink, as a split pair of type.
+
+            How review works and how payable minutes are determined are one
+            argument in two halves — a person decides, and the platform
+            measures the media rather than believing the device — so they are a
+            pair rather than two cells in a grid of five.
+            =============================================================== */}
+        <Reveal data-band="number" className="on-stage">
+          <div className={cn(BAND, SHELL, 'py-20 sm:py-24 lg:py-32')}>
+            <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
+              <div>
+                <h2 className={cn(H2, 'text-[var(--stage-fg)]')}>
+                  {t('discover.cell.review.title')}
+                </h2>
+                <p className="mt-5 max-w-[52ch] text-[1rem] leading-[1.65] text-[var(--stage-mid)]">
+                  {t('discover.cell.review.body')}
                 </p>
-              </li>
-            ))}
-          </ol>
-        </Reveal>
-
-        {/* ===============================================================
-            4. The panel pair, full-bleed.
-
-            Figure AI's move: two half-width panels filling the viewport, a
-            caption at the foot of each. What is NOT copied is their full-bleed
-            imagery — theirs is video shot for the purpose, ours is a 420x420
-            still, and stretching it across 720px is the single fastest way to
-            make a premium page look like stock. So the ink panel is what fills
-            the width and the photograph is a plate held at its own size.
-
-            The heading is `sr-only`: the panels are one composition and a
-            heading above them would break the bleed, but a section with no
-            heading is a hole in the document outline.
-            =============================================================== */}
-        <Reveal className="mt-24 sm:mt-32">
-          <h2 className="sr-only">{t('discover.panels.title')}</h2>
-          <div className="grid gap-px bg-[var(--stage-line)] sm:grid-cols-2">
-            <PanelPlate src="/tiles/film-chop.jpg" caption={t('discover.panel.a.caption')} />
-            <PanelPlate src="/tiles/film-books.jpg" caption={t('discover.panel.b.caption')} />
+              </div>
+              <div className="border-t border-[var(--stage-line)] pt-12 lg:border-l lg:border-t-0 lg:pl-16 lg:pt-0">
+                <h2 className={cn(H2, 'text-[var(--stage-fg)]')}>
+                  {t('discover.cell.minutes.title')}
+                </h2>
+                <p className="mt-5 max-w-[52ch] text-[1rem] leading-[1.65] text-[var(--stage-mid)]">
+                  {t('discover.cell.minutes.body')}
+                </p>
+              </div>
+            </div>
           </div>
         </Reveal>
 
         {/* ===============================================================
-            5. The bento: 7 + 5, text-led, two stills across two rows each.
+            6. FAQ. White ground, per the direction — and it is the lavender
+            white this system means, with the rows as glass on it.
 
-            One twelve-column grid, one gutter (12px, `space[3]`), one radius.
-            The spans are unequal on purpose — genuine randomness reads as a
-            mistake, which is exactly what the deleted scatter read as — and
-            below `lg` every span collapses to full width **in the same order**,
-            because the order is the argument.
-
-            **Each still spans two rows, and that is the whole geometry.** Laid
-            out one cell per row with `items-start`, a three-sentence text cell
-            beside a 341px photograph left about 200px of nothing under the type
-            before the next row began — measured, and it is exactly the "uneven
-            and inconsistent spacing between text and images" the owner named.
-            A photograph that is twice the height of a text cell belongs across
-            two of them; then there is no hole, the still gets a taller box than
-            it would otherwise have, and the unequal spans are doing work rather
-            than being decoration.
+            Kept exactly as it was otherwise: native `<details>`, four real
+            questions answered without spin, the first open. It is the section
+            the design review said to keep.
             =============================================================== */}
-        <Reveal className={cn(SHELL, 'mt-24 sm:mt-32')}>
-          <h2 className={H2}>{t('discover.mosaic.title')}</h2>
-          <div className="mt-8 grid gap-3 lg:grid-cols-12">
-            <Cell className="lg:col-span-7" title={t('discover.cell.camera.title')}>
-              {t('discover.cell.camera.body')}
-            </Cell>
-            <Still
-              className="lg:col-span-5 lg:row-span-2"
-              src="/tiles/film-garden.jpg"
-              caption={t('discover.cell.pov.caption')}
-            />
-            <Cell className="lg:col-span-7" title={t('discover.cell.activities.title')}>
-              {t('discover.cell.activities.body')}
-            </Cell>
-            <Cell className="lg:col-span-7" title={t('discover.cell.review.title')}>
-              {t('discover.cell.review.body')}
-            </Cell>
-            <Still
-              className="lg:col-span-5 lg:row-span-2"
-              src="/tiles/hf-garden.jpg"
-              caption={t('discover.cell.work.caption')}
-            />
-            {/* The screen's one ink block, on the number the whole product
-                turns on. `.feature-block` is the console's single near-black
-                surface; see `DESIGN.md`. */}
-            <Cell ink className="lg:col-span-7" title={t('discover.cell.minutes.title')}>
-              {t('discover.cell.minutes.body')}
-            </Cell>
+        <Reveal data-band="faq" className="bg-[var(--background)]">
+          <div className={cn(BAND, SHELL, 'py-20 sm:py-24 lg:py-32')}>
+            <h2 className={H2}>{t('discover.before.title')}</h2>
+            <div className="mt-10 flex flex-col gap-2">
+              {QUESTIONS.map((key, index) => (
+                <Row
+                  key={key}
+                  open={index === 0}
+                  question={t(`discover.before.q.${key}`)}
+                  answer={t(`discover.before.a.${key}`)}
+                />
+              ))}
+            </div>
           </div>
         </Reveal>
 
         {/* ===============================================================
-            6. FAQ. Rounded grey rows, the first open.
-            =============================================================== */}
-        <Reveal className={cn(SHELL, 'mt-24 sm:mt-32')}>
-          <h2 className={H2}>{t('discover.before.title')}</h2>
-          <div className="mt-8 flex flex-col gap-2">
-            {QUESTIONS.map((key, index) => (
-              <Row
-                key={key}
-                open={index === 0}
-                question={t(`discover.before.q.${key}`)}
-                answer={t(`discover.before.a.${key}`)}
-              />
-            ))}
-          </div>
-        </Reveal>
-
-        {/* ===============================================================
-            7. Where to go from here. The 50/50 split, carrying the film.
+            7. Where to go from here. The other white ground.
 
             Both audiences, as peers, at the moment of highest intent. The
-            split is the arrangement the owner asked to have back, and the film
-            half is the same footage the page opened with rather than a second
-            film that does not exist — muted, not autoplaying, `preload="none"`,
-            so the closing panel costs nothing until somebody presses it.
+            second copy of the film that used to sit in this panel is gone: the
+            direction spends the film once, and a `preload="none"` player with
+            250px of dead black above and below it was the review's own
+            example of the spacing complaint.
             =============================================================== */}
-        <Reveal className={cn(SHELL, 'mt-24 sm:mt-32')}>
-          <div
-            ref={closing}
-            className={cn(
-              'grid overflow-hidden rounded-[var(--radius-lg)]',
-              'border border-[var(--border)] lg:grid-cols-2',
-            )}
-          >
-            <div className="on-stage flex items-center justify-center p-4 sm:p-6">
-              <video
-                src={VIDEO_URL}
-                poster="/landing-poster.jpg"
-                muted
-                loop
-                playsInline
-                controls
-                preload="none"
-                aria-label={t('login.video.region')}
-                className="aspect-video w-full rounded-[var(--radius-base)] object-cover"
-              />
-            </div>
+        <Reveal data-band="ways" className="bg-[var(--surface)]">
+          <div className={cn(BAND, SHELL, 'py-20 sm:py-24 lg:py-32')}>
+            <h2 className={H2}>{t('discover.ways.title')}</h2>
+            {/*
+              The sentence that says which of the two audiences the reader is,
+              and it comes before the two controls that ask them to choose.
+            */}
+            <p className="mt-6 max-w-[64ch] text-[1.0625rem] leading-[1.65]">
+              {t('discover.audiences')}
+            </p>
 
-            <div className="flex flex-col bg-[var(--card)] px-6 py-8 sm:px-9 sm:py-10">
-              <h2 className={H2}>{t('discover.ways.title')}</h2>
+            {/*
+              `items-start`, so each card is the height of its own contents.
 
+              Equal-height cards look tidier and measure worse: the shorter
+              card's action was pushed to the foot by `mt-auto` and the slack
+              landed as a **46px gap in English, 90px in Chinese** between the
+              paragraph and the button — off the 4px scale at 1440 and 1280,
+              found by `rhythm.mjs`, and exactly the owner's *"uneven and
+              inconsistent spacing"* in its measurable form. A gap that is
+              whatever is left over is not a spacing decision. Two cards of
+              honest, different heights with 32px under each paragraph is.
+            */}
+            <div ref={closing} className="mt-12 grid items-start gap-4 lg:grid-cols-2">
               {/*
-                The same two peers as the hero, at the moment of highest intent,
-                and **both** of them: a reader who has just been shown seven
-                sections about collecting must not arrive at an operator form on
-                its own. Same heading level, same body treatment, same button
-                size — a hairline between them and nothing else, because a card
-                around one of the two would rank them.
+                Same heading level, same body treatment, same button size. A
+                card around one of the two would rank them, so they get the
+                same card.
               */}
-              <div className="mt-8">
+              <Panel className="flex flex-col p-8">
                 <h3 className={H3}>{t('discover.take.title')}</h3>
-                <p className="mt-2 max-w-[52ch] text-[0.9375rem] leading-[1.6] text-[var(--muted-foreground)]">
+                <p className="mt-3 max-w-[52ch] text-[0.9375rem] leading-[1.6] text-[var(--muted-foreground)]">
                   {t('discover.take.body')}
                 </p>
-                <div className="mt-5">
+                <div className="mt-8">
                   <ApkAction />
                   <ApkNote />
                 </div>
-              </div>
+              </Panel>
 
-              <div className="mt-8 border-t border-[var(--border)] pt-8">
+              <Panel className="flex flex-col p-8">
                 <h3 className={H3}>{t('discover.handoff.title')}</h3>
-                <p className="mt-2 max-w-[52ch] text-[0.9375rem] leading-[1.6] text-[var(--muted-foreground)]">
+                <p className="mt-3 max-w-[52ch] text-[0.9375rem] leading-[1.6] text-[var(--muted-foreground)]">
                   {t('discover.handoff.body')}
                 </p>
-                <div className="mt-5">
-                  <Button variant="secondary" size="xl" asChild data-cursor-highlight>
+                <div className="mt-8">
+                  <Button variant="secondary" size="xl" asChild data-cursor-highlight className={CTA}>
                     <Link to="/login">{t('discover.signIn')}</Link>
                   </Button>
                 </div>
-              </div>
+                {/*
+                  Trúc, in the corner, occluding nothing — and on a row of his
+                  own rather than beside the button.
 
-              {/*
-                Trúc, in the corner, occluding nothing.
-
-                He was stripped from this page and that was wrong; he was also
-                once 520px across the middle of the film, which drew a cartoon
-                panda over the face of the collector the film is about. The
-                ruling is about occlusion rather than about corners — *"Only
-                the panda is allowed to sit on the corner bc its not blocking
-                anything"* — so he gets a row of his own at the foot of this
-                card, over empty card and nothing else. `hidden` below `sm`,
-                where a 176px canvas would reach the type.
-              */}
-              <div className="mt-auto hidden justify-end pt-8 sm:flex">
-                {nearTruc ? <TrucAsk /> : null}
-              </div>
+                  The ruling is about occlusion rather than about corners:
+                  *"Only the panda is allowed to sit on the corner bc its not
+                  blocking anything"*. Sharing a row with the sign-in put him
+                  next to a control whose label is *Đăng nhập bảng điều khiển*
+                  in Vietnamese, and `rhythm.mjs` measured the pair clipping
+                  its own box by **10px** at 1440 and 1280 — a button that
+                  cannot shrink beside a 96px canvas in a column that can.
+                  `hidden` below `sm`, where the canvas would reach the type.
+                */}
+                <div className="mt-8 hidden justify-end sm:flex">
+                  {nearTruc ? <TrucAsk /> : null}
+                </div>
+              </Panel>
             </div>
+
+            {/*
+              The partnership, in full, once. `PRODUCT.md` states it: a joint
+              venture between VNG PT Lab and PaXini, VNG running the platform
+              and the centres, PaXini making the camera and reviewing in this
+              phase. Nothing beyond that is claimed.
+            */}
+            <p className="mt-12 flex max-w-[72ch] items-start gap-3 text-[0.9375rem] leading-[1.6] text-[var(--muted-foreground)]">
+              <Mark size={22} className="mt-0.5 shrink-0" />
+              <span>{t('discover.partners')}</span>
+            </p>
           </div>
         </Reveal>
       </main>
@@ -585,48 +636,185 @@ export function DiscoverScreen() {
 }
 
 /**
+ * The first viewport: the film, edge to edge, with the words on it.
+ *
+ * Three things are stacked in one band and the order matters. The `<video>`
+ * covers the band. `.film-grade` covers the video. The column of type sits on
+ * both, bottom-left, inside the page's own reading gutter — so the slogan's
+ * left edge is on the same vertical as every heading below it, and the film's
+ * left edge is the viewport. That offset is a designed gutter and it is the
+ * same number in all three languages.
+ *
+ * `100svh` and not `100dvh`: on a phone the dynamic viewport unit changes as
+ * the address bar collapses, which re-lays-out the hero mid-scroll and moves
+ * the type under the reader's thumb. The small unit is stable.
+ */
+function FilmHero({ reduced }: { reduced: boolean }) {
+  const { t } = useTranslation();
+  const video = useRef<HTMLVideoElement>(null);
+  /*
+   * WCAG 2.2.2: anything that plays automatically for more than five seconds
+   * needs a way to stop it, and this film loops. The control is part of the
+   * composition rather than a browser control bar drawn across the frame —
+   * `controls` on a full-bleed hero paints a black gradient and a timeline
+   * over the bottom of the image, which is where the slogan is.
+   *
+   * The label is driven by the element's **own** `play` and `pause` events
+   * rather than by what this component last asked for. Autoplay is refused by
+   * more browsers than it is honoured by, `reduced` arrives one render after
+   * mount, and a `play()` promise can reject — so a boolean this component
+   * sets when it thinks it started the film is a label that lies. The media
+   * element is the state.
+   */
+  const [playing, setPlaying] = useState(false);
+
+  return (
+    <section
+      data-band="hero"
+      className="on-film relative isolate flex min-h-[100svh] flex-col justify-end bg-[var(--stage)]"
+    >
+      <video
+        ref={video}
+        src={VIDEO_URL}
+        poster={POSTER_URL}
+        muted
+        loop
+        playsInline
+        autoPlay={!reduced}
+        preload="metadata"
+        aria-label={t('login.video.region')}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        className="absolute inset-0 -z-10 h-full w-full object-cover"
+      />
+      {/* Over the video, under the type. On its own element, because a
+          gradient on the `<video>` is repainted with every decoded frame. */}
+      <div aria-hidden="true" className="film-grade absolute inset-0 -z-10" />
+
+      <div className={cn(SHELL, 'pb-10 pt-20 sm:pb-12 sm:pt-32')}>
+        <h1 data-choreo-hero="line" className={cn(H1, 'max-w-[16ch] text-balance')}>
+          {t('discover.headline.a')}{' '}
+          {/*
+            One line, and the size step under `sm` is what makes that safe.
+
+            The marker is held together because a two-word phrase broken across
+            two lime blocks reads as a mistake at 68px, where there is room for
+            it. It is only safe because the headline is 2.125rem below `sm`:
+            *Việc thường ngày* is about 330px at 40px and a 320px viewport has
+            288px of column, so at the old size this was 58px of horizontal
+            document scroll in `vi`. Measured at the current size, 320/360/390
+            are 0px sideways in all three languages. `box-decoration-break:
+            clone` in `globals.css` still covers the case where it does wrap.
+          */}
+          <mark className="marker whitespace-nowrap">{t('discover.headline.mark')}</mark>
+          {t('discover.headline.b')}
+        </h1>
+        {/*
+          The two conditions the product runs on — a human reviews the footage,
+          and only approved effective minutes are paid — set at full strength
+          rather than one step down in grey. A condition in a lighter grey is a
+          condition somebody skips, and over film there is no lighter grey that
+          is also legible.
+        */}
+        <p
+          data-choreo-hero="lead"
+          className="mt-6 max-w-[48ch] text-[1.0625rem] leading-[1.6] sm:text-[1.1875rem]"
+        >
+          {t('discover.lead')}
+        </p>
+        {/*
+          Two calls to action, and they are peers because the audiences are.
+          Under `.on-film` the primary is a white pill with ink on it and the
+          secondary is a white outline, in **both** themes — the roles are
+          repointed at the stage ramp by the class, so neither control's
+          contrast depends on the scheme or on the frame behind it.
+        */}
+        <div data-choreo-hero="actions" className="mt-8 flex flex-wrap items-start gap-3">
+          <ApkAction />
+          <Button variant="secondary" size="xl" asChild data-cursor-highlight className={CTA}>
+            <Link to="/login">{t('discover.signIn')}</Link>
+          </Button>
+        </div>
+        <ApkNote />
+      </div>
+
+      {/*
+        The slate: what this film actually is, in the reader's language, and
+        the control that stops it.
+
+        It is here rather than in a footnote because the film is a placeholder
+        that shows someone *being filmed while wearing* Ego rather than a
+        recording Ego made, and a page that opens with it and does not say so
+        is a page implying otherwise. It sits opposite the type block, in the
+        corner the grade leaves lightest, at the size a slate is.
+      */}
+      <div className={cn(SHELL, 'pb-6 sm:pb-8')}>
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <p /* `--muted-foreground`, which `.on-film` repoints at `--stage-fg`, and
+                 **not** pure white at `opacity-80`. An opacity is not a colour:
+                 it makes the rendered ink differ from the declared one, so the
+                 contrast probe found no glyphs to measure at all and reported
+                 the slate as absent. Over film "quieter" is a token one step
+                 down, never a transparency. */
+            className="max-w-[72ch] text-[0.75rem] leading-[1.5] text-[var(--muted-foreground)]">
+            {t('discover.video.caption')}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-cursor-highlight
+            className="shrink-0"
+            onClick={() => {
+              const el = video.current;
+              if (el === null) return;
+              /* The element's own events set the label; a rejected `play()`
+                 promise then leaves the control saying *play*, which is true. */
+              if (el.paused) void el.play().catch(() => {});
+              else el.pause();
+            }}
+          >
+            {playing ? t('player.pause') : t('player.play')}
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
  * The collector's call to action, and it tells the truth in both states.
  *
  * With `APK_URL` set it is a download link — `download` so the browser saves
  * the file rather than trying to render it, `rel="noopener"` because a release
  * asset is very likely on another origin.
  *
- * With `APK_URL` empty, which is today, it is the same control at the same size,
- * `disabled`, with one sentence under it saying the build is not released and
- * there is nothing to download from this page. That is deliberately not a
- * hidden button: this is the product's public home page and "there will be an
- * Android build" is part of what it has to say. What it must never do is look
- * available and then 404, which is what a guessed store URL or a guessed
- * `/playerone.apk` would do.
+ * With `APK_URL` empty, which is today, it is the same control at the same
+ * size, `disabled`, with one sentence under it saying the build is not
+ * released. **It is `outline` and not a faded `primary`, and that is the fix
+ * for a measured defect**: the primary variant deliberately keeps a disabled
+ * control at full ink (right for a console submit that is mid-flight), and
+ * `--action` inverts with the scheme — so in dark mode the dead download
+ * button rendered as a light filled pill beside an outlined sign-in and read
+ * as *more* available than the working control. An outlined control on the
+ * card fill is quieter than a filled pill in both themes, at full contrast,
+ * with no opacity trick that would put its legibility at the mercy of whatever
+ * is behind it. Under `.on-film` the same variant resolves against the stage
+ * ramp and is quieter than the white pill beside it, again in both themes.
  *
- * No version number, no file size, no store link, and no `data-` attribute
- * standing in for a decision. There is one constant and it is at the top of
- * this file.
+ * No version number, no file size, no store link.
  */
 function ApkAction() {
   const { t } = useTranslation();
 
   if (APK_URL === '') {
     return (
-      /*
-       * `disabled:opacity-60` overrides the primary variant's own
-       * `disabled:opacity-100`, and the override is the point.
-       *
-       * That variant deliberately keeps a disabled primary at full ink minus
-       * three per cent of brightness, which is right for the console's submit
-       * buttons: a form that is mid-flight has not become unavailable and a
-       * button that fades every time somebody presses it reads as flicker.
-       * Measured here, though, it renders at `opacity: 1` and is
-       * indistinguishable from the live control beside it — a black pill on a
-       * public product page that looks like a download and does nothing. So
-       * this instance fades, and the sentence underneath says why.
-       */
       <Button
         type="button"
-        variant="primary"
+        variant="outline"
         size="xl"
         disabled
-        className="disabled:opacity-60"
+        className={cn(CTA, 'disabled:opacity-100')}
       >
         {t('discover.take.cta')}
       </Button>
@@ -634,7 +822,7 @@ function ApkAction() {
   }
 
   return (
-    <Button variant="primary" size="xl" asChild data-cursor-highlight>
+    <Button variant="primary" size="xl" asChild data-cursor-highlight className={CTA}>
       <a href={APK_URL} download rel="noopener">
         {t('discover.take.cta')}
       </a>
@@ -646,11 +834,10 @@ function ApkAction() {
  * The sentence that says why the control above it does nothing.
  *
  * It is a sibling of the action row rather than a child of the button's own
- * cell, and that is a layout fact rather than a style: inside the row, a 48ch
- * paragraph sets the width of its flex item and pushes the console sign-in
- * 200px to the right of the download — which is a hole between two controls
- * that are supposed to read as peers. Under the row it explains one of them and
- * moves neither.
+ * cell: inside the row a 48ch paragraph sets the width of its flex item and
+ * pushes the console sign-in 200px to the right of the download, which is a
+ * hole between two controls that are supposed to read as peers. Under the row
+ * it explains one of them and moves neither.
  */
 function ApkNote() {
   const { t } = useTranslation();
@@ -663,39 +850,12 @@ function ApkNote() {
 }
 
 /**
- * One full-bleed panel: a near-black ground, a plate at the size the file is
- * sharp at, and the caption at the foot.
- *
- * The plate is 420x420 rendered into at most 416px, which is a 0.99x scale —
- * the photograph is never enlarged. `object-cover` on a square box crops
- * nothing, so what the frame holds is what the frame held.
- */
-function PanelPlate({ src, caption }: { src: string; caption: string }) {
-  return (
-    <figure className="on-stage m-0 flex flex-col justify-center gap-8 p-6 sm:gap-10 sm:p-12">
-      <img
-        src={src}
-        alt=""
-        width={420}
-        height={420}
-        loading="lazy"
-        decoding="async"
-        className="mx-auto w-full max-w-[30rem] rounded-[var(--radius-base)] object-cover"
-      />
-      <figcaption className="max-w-[34ch] text-[0.9375rem] leading-[1.55] text-[var(--stage-fg)]">
-        {caption}
-      </figcaption>
-    </figure>
-  );
-}
-
-/**
- * One FAQ row, and it is a native `<details>`.
+ * One FAQ row, and it is a native `<details>` on glass.
  *
  * Nothing here is a state machine: the browser owns the open state, the
  * disclosure role and the keyboard, and a reader with no JavaScript still gets
  * every answer. The first row is `open` so the pattern is legible on arrival
- * rather than four grey bars somebody has to guess at.
+ * rather than four bars somebody has to guess at.
  *
  * The marker is removed on both engines and replaced with a glyph that turns:
  * Chrome and Safari draw `::-webkit-details-marker`, Firefox draws the
@@ -705,7 +865,7 @@ function Row({ question, answer, open }: { question: string; answer: string; ope
   return (
     <details
       open={open}
-      className="group rounded-[var(--radius-lg)] bg-[var(--muted)] px-5 py-4 sm:px-6 sm:py-5"
+      className="glass-card group rounded-[var(--radius-lg)] px-5 py-4 sm:px-6 sm:py-5"
     >
       <summary
         data-cursor-highlight
@@ -752,90 +912,17 @@ function Row({ question, answer, open }: { question: string; answer: string; ope
   );
 }
 
-/** One text-led bento cell: a specific heading and two useful sentences. */
-function Cell({
-  title,
-  children,
-  className,
-  ink = false,
-}: {
-  title: string;
-  children: ReactNode;
-  className?: string;
-  ink?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        'flex flex-col rounded-[var(--radius-lg)] px-6 py-6',
-        ink ? 'feature-block' : CARD,
-        className,
-      )}
-    >
-      <h3 className={H3}>{title}</h3>
-      <p
-        className={cn(
-          'mt-3 max-w-[56ch] text-[0.9375rem] leading-[1.6]',
-          ink ? 'text-[var(--stage-mid)]' : 'text-[var(--muted-foreground)]',
-        )}
-      >
-        {children}
-      </p>
-    </div>
-  );
-}
-
-/**
- * One still, sharp.
- *
- * `alt=""` with a real caption: the caption is the description, and a screen
- * reader that reads both hears the same sentence twice. The picture is never
- * swapped, cross-faded or punched into — it keeps its own identity for the
- * whole visit, which is the thing the deleted hover effect took away.
- */
-function Still({ src, caption, className }: { src: string; caption: string; className?: string }) {
-  return (
-    <figure className={cn('m-0 flex flex-col', className)}>
-      {/*
-        The picture is absolutely positioned inside its frame, and that is the
-        whole trick of this bento.
-
-        In flow, a 420x420 file in a 455px cell contributes 455px of intrinsic
-        height; spanning two text rows of about 145px each, it forced the pair
-        to 490 and left 200px of nothing under every paragraph beside it — the
-        same "uneven spacing between text and images" fault, moved rather than
-        fixed. Out of flow it contributes none, so the rows are sized by the
-        type and the photograph fills exactly what the type came to. The floor
-        is for the stacked layout below `lg`, where there is no row to fill.
-      */}
-      <div className={cn('relative min-h-[13rem] flex-1 overflow-hidden bg-[var(--muted)]', CARD)}>
-        <img
-          src={src}
-          alt=""
-          width={420}
-          height={420}
-          loading="lazy"
-          decoding="async"
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-      </div>
-      <figcaption className="mt-3 text-[0.8125rem] leading-[1.5] text-[var(--muted-foreground)]">
-        {caption}
-      </figcaption>
-    </figure>
-  );
-}
-
 /**
  * The credits line, and it is a link to the file rather than a claim.
  *
- * Two of the photographs on this page are generated placeholders and
- * `CREDITS.json` records that. A landing that shows them with no route to that
- * fact is a landing implying the pictures are documentary, which they are not.
+ * The film is a placeholder and the one still on the page is a crop of it;
+ * `CREDITS.json` records both, including the `ffmpeg` line that produced the
+ * crop and the fact that it is third person. A landing that shows them with no
+ * route to that fact is a landing implying the pictures are documentary.
  */
 function Footer({ children }: { children: ReactNode }) {
   return (
-    <footer className="mt-24 border-t border-[var(--border)] px-4 py-8 text-center sm:px-6">
+    <footer className="border-t border-[var(--border)] bg-[var(--surface)] px-4 py-8 text-center sm:px-6">
       <a
         href="/tiles/CREDITS.json"
         data-cursor-highlight
