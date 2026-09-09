@@ -124,15 +124,31 @@ const barHeight = (theme: NativeTheme): number =>
   theme.space[12] + theme.space[3] + theme.space[2];
 
 /**
+ * How far the raised session button reaches above the bar's own top edge.
+ *
+ * `shell/TabBar.tsx` draws it `space[12] + space[2]` across and pulls it
+ * `space[5]` down into the pill with a negative margin, so what hangs above is
+ * the difference — 36dp.
+ */
+const sessionOverhang = (theme: NativeTheme): number =>
+  theme.space[12] + theme.space[2] - theme.space[5];
+
+/**
  * How much room scrolling content must leave under the tab bar.
  *
- * The bar floats now, so this is three things and not one: the gesture-bar
- * inset it is lifted by, the pill itself, and `space[5]` — the amount the
- * raised session button hangs above the pill, which is also the gap the last
- * row of content needs so it does not sit under the glass.
+ * Four things: the gesture-bar inset the bar is lifted by, the pill itself,
+ * the raised session button that hangs above the pill, and a gap so the last
+ * row does not touch it.
+ *
+ * The overhang term used to be `space[5]` — the *negative margin*, not the
+ * part of the button that is actually above the bar. Measured at 390×640, the
+ * old reserve of 112dp ended content at y=528 while the session button starts
+ * at y=503, so the last 25dp of every scrolling screen could be drawn under a
+ * 56dp ink circle. Uploads was caught doing exactly that at 320dp, with an
+ * episode's own upload control underneath it.
  */
 export const tabBarHeight = (theme: NativeTheme): number =>
-  bottomInset(theme.space[6]) + barHeight(theme) + theme.space[5];
+  bottomInset(theme.space[6]) + barHeight(theme) + sessionOverhang(theme) + theme.space[5];
 
 function Header({
   title,
@@ -1050,12 +1066,25 @@ export function Choice({
 
 export function Field({
   label,
+  labelHidden = false,
   value,
   onChangeText,
   secure = false,
   keyboardType,
 }: {
   label: string;
+  /**
+   * The input is one control inside a labelled group, and the group's label is
+   * drawn by the caller.
+   *
+   * The name still reaches TalkBack — this hides the printed word, never the
+   * accessible one. It exists because sign-in's number sits in a row after the
+   * country picker: with the label inside the field, it printed 80.17dp right
+   * of the margin every other element on that screen is flush with, with
+   * nothing at all above the `+84` box. A label belongs over the whole control
+   * it names, and the control there is the pair.
+   */
+  labelHidden?: boolean;
   value: string;
   onChangeText: (v: string) => void;
   secure?: boolean;
@@ -1065,15 +1094,17 @@ export function Field({
   const [focused, setFocused] = useState(false);
   return (
     <View style={{ gap: theme.space[1] }}>
-      <Text
-        style={{
-          color: theme.color.mutedForeground,
-          fontFamily: face(theme),
-          fontSize: theme.fontSize.sm,
-        }}
-      >
-        {label}
-      </Text>
+      {labelHidden ? null : (
+        <Text
+          style={{
+            color: theme.color.mutedForeground,
+            fontFamily: face(theme),
+            fontSize: theme.fontSize.sm,
+          }}
+        >
+          {label}
+        </Text>
+      )}
       <TextInput
         value={value}
         onChangeText={onChangeText}

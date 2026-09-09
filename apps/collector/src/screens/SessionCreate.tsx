@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
+import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { Body, Button, Card, Choice, Note, Row, Screen, Title } from '../ui.tsx';
@@ -48,6 +49,7 @@ function YesNo({
 
 export function SessionCreate() {
   const api = useApi();
+  const nav = useNav();
   const tt = useT();
   const theme = useTheme();
 
@@ -110,7 +112,24 @@ export function SessionCreate() {
 
       <Card>
         <Title>{tt('session.task')}</Title>
-        {claimedTasks.length === 0 ? <Note text={tt('session.needClaim')} /> : null}
+        {/*
+          A gate that names what is missing and offers no way to it is a dead
+          end: this screen is reached from the raised button in the bar, and a
+          collector who has bound nothing arrived here to be told twice that
+          they cannot continue, with the only exit being Back. The refusal
+          keeps its wording — it is the same sentence the server enforces — and
+          the control under it goes where the sentence points.
+        */}
+        {claimedTasks.length === 0 ? (
+          <>
+            <Note text={tt('session.needClaim')} />
+            <Button
+              label={tt('hall.title')}
+              variant="secondary"
+              onPress={() => nav.push({ name: 'taskHall' })}
+            />
+          </>
+        ) : null}
         {pick(claimedTasks, (t) => t.id, (t) => t.title, tt('session.task'), taskId, setTaskId)}
         {task !== undefined ? (
           <Row label={tt('session.scenario')} value={tt(`scenario.${task.scenario}`)} />
@@ -119,7 +138,16 @@ export function SessionCreate() {
 
       <Card>
         <Title>{tt('session.device')}</Title>
-        {(devices.data ?? []).length === 0 ? <Note text={tt('session.needDevice')} /> : null}
+        {(devices.data ?? []).length === 0 ? (
+          <>
+            <Note text={tt('session.needDevice')} />
+            <Button
+              label={tt('home.devices')}
+              variant="secondary"
+              onPress={() => nav.push({ name: 'devices' })}
+            />
+          </>
+        ) : null}
         {pick(
           devices.data ?? [],
           (d) => d.serial,

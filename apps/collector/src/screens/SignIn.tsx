@@ -237,50 +237,70 @@ export function SignIn({
           </Text>
         </View>
 
-        {/* The code and the number share one row, the way a phone number is
-            actually written. `alignItems: flex-end` is what keeps the picker
-            level with the input rather than with the field's label. */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space[2] }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${tt('signIn.countryCode')}: ${tt(country.label)}`}
-            accessibilityState={{ expanded: picking }}
-            onPress={() => setPicking(!picking)}
-            onFocus={() => setPickerFocused(true)}
-            onBlur={() => setPickerFocused(false)}
-            style={({ pressed }) => ({
-              minHeight: theme.space[12],
-              justifyContent: 'center',
-              // The focus ring is a colour change on a border that is already
-              // there, as on `Field`, so gaining focus never moves the row.
-              // `lime[600]` is the ring this world committed and the step
-              // `tokens.ts` resolves `ring.light` to; it was `sun[600]`, the
-              // partner mark.
-              borderWidth: pickerFocused ? 2 : 1,
-              borderColor: pickerFocused ? theme.color.lime[600] : theme.color.borderStrong,
-              borderRadius: theme.radius.sm,
-              paddingHorizontal: theme.space[3] - (pickerFocused ? 1 : 0),
-              backgroundColor: pressed ? theme.color.muted : theme.color.background,
-            })}
+        {/*
+          The code and the number share one row, the way a phone number is
+          actually written — so the label belongs over the *pair*, at the same
+          left edge as the heading, the sentence and the button.
+
+          It used to be the field's own label and printed at x=100.17 against a
+          20dp margin: 80.17dp adrift of every other element on the screen,
+          with nothing above the `+84` box at all. That is this app's version
+          of the caption-to-image offset the landing shipped, and the fix is
+          the same one — the label goes over the whole thing it names.
+        */}
+        <View style={{ gap: theme.space[1] }}>
+          <Text
+            style={{
+              color: theme.color.mutedForeground,
+              fontFamily: face(theme),
+              fontSize: theme.fontSize.sm,
+            }}
           >
-            <Text
-              style={{
-                color: theme.color.foreground,
-                fontFamily: face(theme),
-                fontSize: theme.fontSize.base,
-                fontWeight: theme.fontWeight.medium,
-              }}
+            {tt('signIn.phone')}
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space[2] }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${tt('signIn.countryCode')}: ${tt(country.label)}`}
+              accessibilityState={{ expanded: picking }}
+              onPress={() => setPicking(!picking)}
+              onFocus={() => setPickerFocused(true)}
+              onBlur={() => setPickerFocused(false)}
+              style={({ pressed }) => ({
+                minHeight: theme.space[12],
+                justifyContent: 'center',
+                // The focus ring is a colour change on a border that is already
+                // there, as on `Field`, so gaining focus never moves the row.
+                // `lime[600]` is the ring this world committed and the step
+                // `tokens.ts` resolves `ring.light` to; it was `sun[600]`, the
+                // partner mark.
+                borderWidth: pickerFocused ? 2 : 1,
+                borderColor: pickerFocused ? theme.color.lime[600] : theme.color.borderStrong,
+                borderRadius: theme.radius.sm,
+                paddingHorizontal: theme.space[3] - (pickerFocused ? 1 : 0),
+                backgroundColor: pressed ? theme.color.muted : theme.color.background,
+              })}
             >
-              {country.code} ▾
-            </Text>
-          </Pressable>
-          <View style={{ flexGrow: 1, flexShrink: 1 }}>
-            <Field
-              label={tt('signIn.phone')}
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-            />
+              <Text
+                style={{
+                  color: theme.color.foreground,
+                  fontFamily: face(theme),
+                  fontSize: theme.fontSize.base,
+                  fontWeight: theme.fontWeight.medium,
+                }}
+              >
+                {country.code} ▾
+              </Text>
+            </Pressable>
+            <View style={{ flexGrow: 1, flexShrink: 1 }}>
+              <Field
+                label={tt('signIn.phone')}
+                labelHidden
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+              />
+            </View>
           </View>
         </View>
 

@@ -1,4 +1,4 @@
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { mascotStateAt } from '@playerone/design/tokens';
 import poster from '../../assets/landing-poster.jpg';
@@ -82,6 +82,28 @@ export function Home() {
   const { locale, setLocale } = useLocale();
   const guide = useGuide();
   const shift = mascotStateAt();
+  const { height: windowHeight } = useWindowDimensions();
+
+  /**
+   * How much picture the hero gets, and why it is a floor rather than a height.
+   *
+   * 192dp on a tall phone, which is what it has always been. On a short one it
+   * is whatever the caption needs and no more.
+   *
+   * The measurement that forced this: at 360×640 and 320×640 the claim pill
+   * sat at y=481–537 and the raised session button at y=503–559, so
+   * `document.elementFromPoint` at the pill's own centre returned the button —
+   * a tap in the middle of "take this job" opened session creation instead.
+   * The note that used to sit on the fixed height said 192 "clears by 26dp at
+   * 390×640"; it clears the *bar*, which is another 34dp down, and misses the
+   * circle that hangs above it.
+   *
+   * A smaller fixed height is not the answer either: the caption needs 170dp
+   * and the card clips, so 128 cost the task its own title. A floor keeps the
+   * photograph leading the screen where there is room and never crops the
+   * words over it where there is not.
+   */
+  const heroPicture = windowHeight >= 700 ? theme.space[16] * 3 : 0;
 
   const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
   const devices = useQuery({ queryKey: ['devices'], queryFn: () => api.boundDevices() });
@@ -234,15 +256,9 @@ export function Home() {
                     overflow: 'hidden',
                   }}
                 >
-                  {/*
-                    192dp of picture. Measured on the short end of the Android
-                    range this pilot ships to: at 390×640 a 240dp image pushed
-                    the claim button under the floating bar at rest, so the one
-                    action the screen exists for needed a scroll to reach on the
-                    device class least able to afford one. At 192 it clears by
-                    26dp there and the photograph still leads the screen at 844.
-                  */}
-                  <View style={{ height: theme.space[16] * 3, justifyContent: 'flex-end' }}>
+                  {/* `heroPicture`, above, carries the measurement and the
+                      reason it is not a constant. */}
+                  <View style={{ minHeight: heroPicture, justifyContent: 'flex-end' }}>
                     {/* The picture. `cover` and not `contain`: this is the
                         card's ground, and a letterboxed still with bars down
                         the sides is a screenshot of a photograph rather than a
@@ -270,7 +286,13 @@ export function Home() {
                         { backgroundColor: theme.color.stage.ground, opacity: 0.62 },
                       ]}
                     />
-                    <View style={{ padding: theme.space[5], gap: theme.space[3] }}>
+                    {/* `space[4]`, the inset every other card in this column
+                        uses. At `space[5]` the hero's own caption printed at
+                        x=37 while its claim button, directly beneath it inside
+                        the same card, printed at x=33 - and so did every card
+                        title below. Four pixels, one column, four ragged left
+                        edges. */}
+                    <View style={{ padding: theme.space[4], gap: theme.space[3] }}>
                       <View style={{ gap: theme.space[1] }}>
                         <Text
                           style={{
@@ -462,7 +484,11 @@ export function Home() {
           <Card>
             <Title>{tt('guide.offerTitle')}</Title>
             <Body muted>{tt('guide.offerBody')}</Body>
-            <View style={{ flexDirection: 'row', gap: theme.space[2] }}>
+            {/* Wraps, because at 320dp it does not fit: measured, the two
+                pills need 30px more row than the card has, and a button that
+                overflows its card is the one control on this screen a
+                collector cannot finish reading. Side by side at 390. */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2] }}>
               <Button label={tt('guide.offerYes')} onPress={guide.accept} />
               <Button label={tt('guide.offerNo')} variant="ghost" onPress={guide.decline} />
             </View>
