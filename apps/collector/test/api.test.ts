@@ -656,16 +656,10 @@ describe('what the client sends, and what it refuses to', () => {
   });
 
   /**
-   * PRV-02. The reminder is shown before every session, and "every" is what
-   * this is about rather than the screen itself.
-   *
-   * The id above is cached per declaration for the life of the client, which is
-   * what makes a retry a replay. But the client outlives the screen: a
-   * collector who records, comes back through Home and the reminder, and gives
-   * the same answers would replay the FIRST session instead of starting a
-   * second one, and the reminder would have been shown for a recording that
-   * never existed. `SessionCreate` calls this on mount, so an attempt is the
-   * unit the cache is scoped to.
+   * PRV-02, at the seam. The client outlives the screen, so without an attempt
+   * boundary a second visit answering identically would replay the first
+   * session and the reminder would have been shown for a recording that never
+   * happened. `SessionCreate` calls this on mount.
    */
   it('starts a new session id per attempt and keeps the claim id across them', async () => {
     const { fn, calls } = fakeFetch({

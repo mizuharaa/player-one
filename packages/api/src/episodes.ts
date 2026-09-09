@@ -62,6 +62,15 @@ const ParkBody = z.object({
 });
 
 const BrowseTime = z.string().datetime({ offset: true }).refine((v) => Number.isFinite(Date.parse(v)));
+/**
+ * The instant in microseconds. `Date.parse` stops at milliseconds, and the
+ * column is `timestamptz`, so comparing parsed dates called two timestamps one
+ * microsecond apart an empty range and answered 400.
+ */
+const micros = (iso: string): number => {
+  const digits = /\.(\d+)/.exec(iso)?.[1] ?? '';
+  return Date.parse(iso) * 1000 + Number(digits.padEnd(6, '0').slice(3));
+};
 const BrowseQuery = z.object({
   task_id: z.string().uuid().optional(),
   collector_id: z.string().uuid().optional(),
@@ -70,7 +79,7 @@ const BrowseQuery = z.object({
   from: BrowseTime.optional(),
   to: BrowseTime.optional(),
 }).strict().refine(
-  (q) => q.from === undefined || q.to === undefined || Date.parse(q.from) < Date.parse(q.to),
+  (q) => q.from === undefined || q.to === undefined || micros(q.from) < micros(q.to),
   { message: 'from must be before to' },
 );
 

@@ -55,7 +55,23 @@ export function SessionCreate() {
   const api = useApi();
   const nav = useNav();
   const submitting = useRef(false);
-  useEffect(() => api.beginSessionAttempt(), [api]);
+  /**
+   * Whether this screen is still the one on the stack.
+   *
+   * A mutation's callbacks outlive the component that started them. Submit,
+   * press Back to Home while the request is in flight, and the success that
+   * arrives afterwards used to call `nav.reset` — which pulled the collector
+   * out of Home and into a fresh, editable session form without the reminder
+   * in front of it. That is the exact bypass PRV-02 exists to close, reached
+   * from the other direction.
+   */
+  const mounted = useRef(true);
+  useEffect(() => {
+    api.beginSessionAttempt();
+    return () => {
+      mounted.current = false;
+    };
+  }, [api]);
   const tt = useT();
   const theme = useTheme();
 
@@ -89,10 +105,16 @@ export function SessionCreate() {
       });
     },
     onSuccess: (session) => {
+      // The session was created and the server is the record; it shows up under
+      // Uploads. Somebody who left mid-request stays where they went.
+      if (!mounted.current) return;
       setCreatedId(session.id);
       nav.reset({ name: 'sessionCreate' });
     },
-    onError: () => { submitting.current = false; },
+    onError: () => {
+      if (!mounted.current) return;
+      submitting.current = false;
+    },
   });
 
   const pick = <T,>(
