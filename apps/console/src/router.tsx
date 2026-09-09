@@ -17,6 +17,7 @@ import { ReviewScreen } from './routes/Review.tsx';
 import { PipelineScreen } from './routes/Pipeline.tsx';
 import { LoginScreen } from './routes/Login.tsx';
 import { DiscoverScreen } from './routes/Discover.tsx';
+import { NotFoundScreen } from './routes/NotFound.tsx';
 import { EpisodesScreen } from './routes/Episodes.tsx';
 import { CounterScreen } from './routes/Counter.tsx';
 import { BackOfficeScreen } from './routes/BackOffice.tsx';
@@ -27,7 +28,22 @@ import { ExceptionsScreen } from './payout/ExceptionsScreen.tsx';
 import { RiskScreen } from './risk/RiskScreen.tsx';
 import { periodSearch, riskSearch } from './payout/period.ts';
 
-const rootRoute = createRootRoute({ component: Outlet });
+/**
+ * The root, and it now owns the not-found page.
+ *
+ * `notFoundComponent` here rather than `defaultNotFoundComponent` on the
+ * router: declared on the root route it covers a URL that matches nothing at
+ * all *and* a `notFound()` thrown from any child, and it renders inside the
+ * root's own `Outlet` so a future root layout would wrap it the way it wraps
+ * every other screen. The router-level option is a fallback for routes that
+ * do not declare one, which — with one root — is the same set by a longer
+ * road.
+ *
+ * It is a **page and not a redirect** on purpose. An operator who typed
+ * `/setle` and was bounced silently to the product story would conclude the
+ * console had lost their screen; the address has to be named as wrong.
+ */
+const rootRoute = createRootRoute({ component: Outlet, notFoundComponent: NotFoundScreen });
 
 /**
  * The session check.

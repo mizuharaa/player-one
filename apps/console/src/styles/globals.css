@@ -796,3 +796,271 @@
     object-position: 50% 50%;
   }
 }
+
+/* ---------------------------------------------------------------
+   `/discover` and the not-found route, rebuilt 2026-09-08 (build seven).
+
+   Three materials, and each is this product's own rather than a borrowed
+   one. The argument for each is in the header of `routes/Discover.tsx`;
+   what is here is only the drawing.
+
+   Appended as its own layer block for the same reason the block above it
+   is: this file is several people's work and none of them restructures
+   another's.
+   --------------------------------------------------------------- */
+@layer components {
+  /**
+   * The frame grid: the page's texture, and it is a **contact sheet**.
+   *
+   * The reference this build was set against draws graph paper behind its
+   * headline, because the product being sold there is a design tool and a
+   * designer's canvas is graph paper. Copying that literally is how a page
+   * ends up describing somebody else's product. What this platform measures
+   * is *recorded minutes*, and a recorded minute is counted on a ruled sheet
+   * — a contact sheet, a timeline ruler, a strip of frames. So the squares
+   * are frames, and the fragments of the console that float on the page sit
+   * inside them.
+   *
+   * `--border` and nothing else, so it is theme-aware by construction and
+   * `.on-stage` / `.on-film` repoint it at `--stage-line` without this rule
+   * knowing they exist. `--frame` is a length rather than a colour, which is
+   * why it may live here: the token rule binds colour, radius, shadow and
+   * duration.
+   *
+   * The mask is what stops it reading as a wireframe. A grid that runs to
+   * every edge of a band is a table; a grid that fades out before it gets
+   * there is a texture, which is the job.
+   */
+  .frame-grid {
+    --frame: 72px;
+    background-image:
+      linear-gradient(to right, var(--border) 0 1px, transparent 1px 100%),
+      linear-gradient(to bottom, var(--border) 0 1px, transparent 1px 100%);
+    background-size: var(--frame) var(--frame);
+    background-position: center top;
+    -webkit-mask-image: radial-gradient(140% 110% at 38% 46%, #000 38%, transparent 92%);
+    mask-image: radial-gradient(140% 110% at 38% 46%, #000 38%, transparent 92%);
+  }
+
+  @media (min-width: 1024px) {
+    .frame-grid {
+      --frame: 88px;
+    }
+  }
+
+  /**
+   * One frame of that sheet, drawn solid, holding a fragment of the console.
+   *
+   * The fragments are real: a claimed task, a handover that has arrived, a
+   * verdict pill straight out of `primitives.tsx`, the rule a collector is
+   * paid under. They are the equivalent of the reference's floating
+   * `SAVE TO BOARD` chip, and the substitution is the whole point — that
+   * page's chips say what *it* does, so ours have to say what *this* does.
+   */
+  /**
+   * The display line, and its leading is **per language** because the metrics
+   * are.
+   *
+   * 0.9 is the reference's leading and it is right for Latin: the four
+   * phrases stack as one block and the descenders of one line clear the caps
+   * of the next. It is wrong twice over for the other two locales this
+   * console ships, and both were measured on screen rather than reasoned
+   * about.
+   *
+   * **Chinese overlapped outright.** A CJK glyph inks its whole em box, so at
+   * 0.9 the 96px headline drew 记录。 straight through 交回存储卡。 — not tight,
+   * illegible. 1.05 is the first value where the four lines are separate and
+   * still read as one block.
+   *
+   * **Vietnamese is the harder case and the cheaper fix.** Its diacritics
+   * stack above the cap height and below the baseline in the same word —
+   * *Một người duyệt.* over *Trả theo phút.* puts a dot-below over a
+   * hook-above — so it gets a twentieth back rather than a tenth.
+   *
+   * `:lang()` and not a prop: `applyHtmlLang` in `lib/i18n.ts` already stamps
+   * the root element, the selector matches `zh-Hans` from `zh`, and a
+   * typographic property that depends on the script belongs in the
+   * stylesheet rather than in four components' class strings.
+   */
+  .display-line {
+    line-height: 0.9;
+  }
+
+  :root:lang(vi) .display-line {
+    line-height: 0.95;
+  }
+
+  :root:lang(zh) .display-line {
+    line-height: 1.05;
+  }
+
+  .frame-cell {
+    border: 1px solid var(--border);
+    /*
+     * Nearly opaque, and that is what makes the overlap legible rather than
+     * clever. The reference floats its chips over the headline inside a solid
+     * patch of the canvas, so the letters stop where the patch starts; a
+     * translucent chip over 96px type puts two stems through every word on it.
+     * `glass-card`'s own 62% is right for a panel with a page behind it and
+     * wrong for a pill with a headline behind it.
+     */
+    background: color-mix(in srgb, var(--card) 92%, transparent);
+    backdrop-filter: blur(var(--glass-card-blur));
+  }
+
+  /**
+   * The three streams and their intersection, drawn rather than claimed.
+   *
+   * `CLAUDE.md`: *payable time is the intersection of stream coverage, not
+   * the union* — the device's own duration figure is the widest stream and
+   * reads about 3% high, 18% on one real sample. It is the least intuitive
+   * rule on the platform and every previous build stated it in a sentence.
+   * Three bars and one band say it without a number, which also keeps a
+   * payout-bearing page free of a figure nobody has cleared for publication.
+   *
+   * The band is `lime-500`, and it is this screen's **one** lime moment —
+   * `DESIGN.md`'s rule that a screen gets one and if a second appears one of
+   * them is wrong. The highlighter that used to hold it is gone, because the
+   * product owner said so in as many words.
+   */
+  /*
+   * No height of its own: the bar is `inset-y-0` inside its track, so the
+   * track's height is the bar's. That is what makes the three rows exactly
+   * as tall as the grid's row gap, which is what `rhythm.mjs` needs — a
+   * 12px bar centred in a 15.4px row put an 18px gap between two siblings
+   * where the system says 16, and an off-scale gap is the fault that audit
+   * exists to find.
+   */
+  .stream-bar {
+    border-radius: var(--radius-sm);
+    background: var(--border-strong);
+  }
+
+  .stream-band {
+    background: var(--lime-500);
+  }
+
+  /**
+   * The not-found page's falling objects.
+   *
+   * `overflow: clip` on the field rather than `overflow: hidden`: a clipped
+   * box is not a scroll container, so an object hanging past the bottom edge
+   * — which is the whole look — cannot become scrollable overflow, and
+   * `scripts/rhythm.mjs` cannot read it as an element clipping its own
+   * content. Every object is `position: absolute`, which is also what keeps
+   * them out of that script's sibling-gap check: a thing that has fallen out
+   * of flow is not in a rhythm.
+   *
+   * The fall is a **settle**, not a loop. It runs once, `both`, so the page
+   * comes to rest in a composed arrangement and nothing on it is still
+   * moving a second after it loads. A permanently tumbling field is a
+   * repaint bill for as long as the tab is open, and this console has
+   * already paid that bill once.
+   */
+  @keyframes drop-in {
+    from {
+      transform: translate3d(0, -70vh, 0) rotate(var(--spin-from, -24deg));
+      opacity: 0;
+    }
+    to {
+      transform: translate3d(0, 0, 0) rotate(var(--spin-to, 0deg));
+      opacity: 1;
+    }
+  }
+
+  .drop {
+    transform: rotate(var(--spin-to, 0deg));
+    animation: drop-in 900ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+    animation-delay: var(--drop-delay, 0ms);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .drop {
+      animation: none;
+      opacity: 1;
+    }
+  }
+
+  /**
+   * The lens's dispersion, and it is the one place a spectrum is allowed.
+   *
+   * `DESIGN.md` withdrew the landing's rainbow exception on 2026-09-08, and
+   * the rule it restored — *no gradient on an ink, no gradient lettering, no
+   * decorative spectrum* — still stands for every surface, every control and
+   * every letterform on the page. This is none of those. The pointer here is
+   * a **lens**; that is what `CustomCursor.tsx` has called it since it was
+   * ported, and a lens disperses. The spectrum is on the rim of the glass,
+   * where dispersion happens, and it never touches type: the disc under it
+   * stays `--stage`, which is the ground the lime clone inside it is
+   * measured against.
+   *
+   * **No new hex enters the system.** Every stop is `--lime-500` with its
+   * hue rotated by CSS relative colour syntax, so the ring is one token seen
+   * through an angle. If this becomes permanent it wants a real ramp in
+   * `tokens.ts`; that request is in the build report and is not made here.
+   *
+   * The white hairline stays and is drawn *inside* the spectrum, because the
+   * hairline is what keeps a near-black disc findable on the ink bands and a
+   * saturated ring at lime's own lightness cannot do that job on lavender.
+   *
+   * **It only spins while the lens is open.** A conic gradient driven by an
+   * animated custom property repaints every frame for as long as it runs,
+   * which is precisely the cost the rAF loop in that file was rewritten to
+   * stop paying. At rest the ring is a static spectrum and costs nothing;
+   * `data-grow` is set by the same loop that sizes the disc, so the spin
+   * exists only while a reader is holding the lens over something.
+   */
+  @property --lens-spin {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 0deg;
+  }
+
+  .cursor-lens {
+    background: var(--stage);
+    box-shadow:
+      0 0 0 2px var(--stage-over),
+      var(--shadow-sm);
+  }
+
+  .cursor-lens::before {
+    content: '';
+    position: absolute;
+    inset: -7px;
+    border-radius: var(--radius-pill);
+    padding: 3px;
+    background: conic-gradient(
+      from var(--lens-spin),
+      oklch(from var(--lime-500) l c h),
+      oklch(from var(--lime-500) l c calc(h + 60)),
+      oklch(from var(--lime-500) l c calc(h + 120)),
+      oklch(from var(--lime-500) l c calc(h + 180)),
+      oklch(from var(--lime-500) l c calc(h + 240)),
+      oklch(from var(--lime-500) l c calc(h + 300)),
+      oklch(from var(--lime-500) l c h)
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    transition:
+      inset var(--duration-base) var(--ease),
+      padding var(--duration-base) var(--ease);
+  }
+
+  .cursor-lens[data-grow='on']::before {
+    inset: -12px;
+    padding: 5px;
+    animation: lens-turn 3.2s linear infinite;
+  }
+
+  @keyframes lens-turn {
+    to {
+      --lens-spin: 360deg;
+    }
+  }
+}

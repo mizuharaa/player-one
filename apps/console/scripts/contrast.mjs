@@ -289,29 +289,63 @@ const TEXT = {
     ['legal line', 'main > div > div > span', 0],
     ['legal link', 'a[href="#privacy"]'],
   ],
+  /* -----------------------------------------------------------------------
+     Build seven, 2026-09-08. The bands are named with `data-band`, so a
+     selector here survives a change of composition — which is the whole
+     reason those attributes exist, and the previous list still proved it was
+     needed: six of its rows timed out against a page that no longer has a
+     four-step strip, a `[data-band=number]` or a `mark.marker`.
+
+     **Nothing here is inside a `lg:` breakpoint.** The floating chips over
+     the headline are `hidden` below 1024px, and a display:none element has no
+     box to clip, so measuring one would ERR at 390 on every run. Their two
+     pairs — `--warn` on `--warn-bg`, and each verdict ink on its own fill —
+     are held by `packages/design/test/contrast.test.ts`, which needs no
+     browser and covers both schemes.
+     -------------------------------------------------------------------- */
   '/discover': [
-    /* Film First, 2026-09-08. Everything down to the FAQ sits on footage or on
-       ink; the bands are named with `data-band` so a selector here survives a
-       change of composition. */
-    ['h1 over film', '[data-band=hero] h1'],
-    ['marker on lime', 'mark.marker'],
-    ['lead over film', '[data-band=hero] p', 0],
-    ['apk note over film', '[data-band=hero] p', 1],
-    ['film slate', '[data-band=hero] p', 2],
-    ['steps h2 on ink', '[data-band=steps] h2'],
-    ['step number on ink', '[data-band=steps] ol li span', 0],
-    ['step body on ink', '[data-band=steps] ol li p', 0],
+    ['hero eyebrow (mono)', '[data-band=hero] p', 0],
+    ['h1 line', '[data-band=hero] h1 span', 2],
+    ['hero lead', '[data-band=hero] p', 1],
+    ['apk note', '[data-band=hero] p', 2],
+    ['work micro', '[data-band=work] p', 0],
+    ['work h2', '[data-band=work] h2'],
+    ['work body', '[data-band=work] p', 1],
+    ['work note (13px)', '[data-band=work] p', 2],
     ['still caption on film', '[data-band=camera] figcaption'],
-    ['camera body on ink', '[data-band=camera] .on-stage p'],
-    ['h2 on lavender', '[data-band=activities] h2'],
-    ['body on lavender', '[data-band=activities] p'],
-    ['number body on ink', '[data-band=number] p', 0],
+    ['camera h2 on lavender', '[data-band=camera] h2'],
+    ['camera body on lavender', '[data-band=camera] .frame-grid p', 1],
+    ['film micro on film', '[data-band=film] p', 0],
+    ['film slate on film', '[data-band=film] p', 1],
+    ['review micro on ink', '[data-band=review] p', 0],
+    ['review h2 on ink', '[data-band=review] h2'],
+    ['review body on ink', '[data-band=review] p', 1],
+    ['verdict label on ink', '[data-band=review] span span', 1],
+    ['verdict note on ink', '[data-band=review] p', 2],
+    ['payment micro', '[data-band=payment] p', 0],
+    ['payment h2', '[data-band=payment] h2'],
+    ['payment body', '[data-band=payment] p', 1],
+    ['stream label (mono)', '[data-band=payment] figure span', 0],
+    ['payable caption', '[data-band=payment] figcaption'],
+    ['faq micro', '[data-band=questions] p', 0],
     ['faq question', 'details summary', 0],
     ['faq answer', 'details p', 0],
-    ['ways lead', '[data-band=ways] > div > p', 0],
-    ['partner line', '[data-band=ways] p span'],
-    ['nav sign-in label', 'header a'],
+    ['closing micro on ink', '[data-band=ways] p', 0],
+    ['closing h2 on ink', '[data-band=ways] h2'],
+    ['audiences on ink', '[data-band=ways] p', 1],
+    ['take body on ink', '[data-band=ways] p', 2],
+    ['partner line on ink', '[data-band=ways] p span'],
+    ['nav destination (mono)', 'header nav a', 0],
+    ['nav sign-in label', 'header a[href="/login"]'],
     ['nav partner line', 'header span span', 1],
+    ['credits link', 'footer a'],
+  ],
+  /* The not-found route. Three rows, because it has three pieces of text and
+     the falling field is `aria-hidden` decoration with no type in it. */
+  '/nope': [
+    ['nf eyebrow (mono)', 'main p', 0],
+    ['nf h1 line', 'main h1 span', 1],
+    ['nf body', 'main p', 1],
   ],
 };
 
@@ -322,24 +356,25 @@ const CONTROLS = {
     ['submit', 'button[type=submit]'],
   ],
   '/discover': [
-    ['nav sign-in pill', 'header a'],
+    ['nav destination link', 'header nav a', 0],
+    ['nav sign-in pill', 'header a[href="/login"]'],
     /*
-     * The hero's two peers, both over footage and both resolved through
-     * `.on-film` — which repoints `--action`, `--card` and `--border` at the
-     * stage ramp, so these two numbers are the same in the dark scheme as in
-     * the light one. The APK control is `outline` and `disabled` while the
-     * build is unpublished, at full opacity: a disabled control still has to
-     * be identifiable against its ground under WCAG 1.4.11, and the previous
+     * The hero's two peers, on the lavender ground rather than on footage
+     * from this build on: the film is spent once, further down, and the hero
+     * is type. The APK control is `outline` and `disabled` while the build is
+     * unpublished, at full opacity — a disabled control still has to be
+     * identifiable against its ground under WCAG 1.4.11, and an earlier
      * build's faded `primary` read as *more* available than the live sign-in
      * in dark mode.
      */
-    ['apk CTA (disabled)', '[data-band=hero] button[disabled]'],
-    ['console CTA on film', '[data-band=hero] a[href="/login"]'],
-    ['film pause control', '[data-band=hero] button:not([disabled])'],
+    ['hero apk CTA (disabled)', '[data-band=hero] button[disabled]'],
+    ['hero console CTA', '[data-band=hero] a[href="/login"]'],
+    ['film pause control', '[data-band=film] button'],
     ['faq row (glass)', 'details', 0],
-    ['closing sign-in', '[data-band=ways] a[href="/login"]'],
+    ['closing sign-in on ink', '[data-band=ways] a[href="/login"]'],
     ['closing apk (disabled)', '[data-band=ways] button[disabled]'],
   ],
+  '/nope': [['back to product page', 'main a[href="/discover"]']],
 };
 
 /**
@@ -364,15 +399,15 @@ const CONTROLS = {
  * before it.
  */
 async function filmFrames(page) {
-  const has = await page.locator('[data-band=hero] video').count();
+  const has = await page.locator('[data-band=film] video').count();
   if (has === 0) {
-    console.log('  FILM  (no hero video on this route)');
+    console.log('  FILM  (no film band on this route)');
     return;
   }
 
   const seek = (t) =>
     page.evaluate(async (time) => {
-      const v = document.querySelector('[data-band=hero] video');
+      const v = document.querySelector('[data-band=film] video');
       if (v === null) return null;
       v.pause();
       if (!Number.isFinite(v.duration)) {
@@ -391,11 +426,16 @@ async function filmFrames(page) {
       return v.currentTime;
     }, t);
 
+  /*
+   * Two rows now and not four, because the film no longer carries the
+   * headline. Build seven spends it once, in a band of its own, and the only
+   * type on it is the mono label that says *placeholder film* and the slate
+   * that says what the film is. Both sit inside `.film-grade`'s heaviest
+   * region, which is where the ramp reaches 0.88–1.0 of `--stage`.
+   */
   const ON_FILM = [
-    ['h1', '[data-band=hero] h1'],
-    ['lead', '[data-band=hero] p', 0],
-    ['apk note', '[data-band=hero] p', 1],
-    ['slate', '[data-band=hero] p', 2],
+    ['film micro', '[data-band=film] p', 0],
+    ['film slate', '[data-band=film] p', 1],
   ];
 
   await page.evaluate(() => window.scrollTo(0, 0));

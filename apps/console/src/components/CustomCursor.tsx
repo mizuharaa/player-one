@@ -12,7 +12,14 @@
  *
  * ## What it does
  *
- * A 12px dot follows the pointer. Over anything carrying
+ * A 12px dot follows the pointer, and its rim is a spectrum: the pointer is a
+ * lens, and a lens disperses. That ring is `.cursor-lens::before` in
+ * `globals.css`, built by rotating `--lime-500`'s hue with CSS relative colour
+ * syntax, so no new colour enters the system — it is one token seen through an
+ * angle. It thickens and turns only while the lens is open, and the disc under
+ * it stays `--stage`, which is the ground the lime clone is measured against.
+ *
+ * Over anything carrying
  * `[data-cursor-highlight]` it grows to 140px, and inside that disc a **clone
  * of the hovered element is drawn in the accent** through a `radial-gradient`
  * mask pinned to the disc — so the label under the lens reads in lime on ink
@@ -197,6 +204,22 @@ function Lens() {
       discEl.style.height = `${size}px`;
       discEl.style.transform = `translate(${x}px, ${y}px)`;
 
+      /*
+       * The spectrum's spin is gated on this attribute and on nothing else.
+       *
+       * A conic gradient driven by an animated `@property` angle repaints
+       * every frame for as long as the animation runs, which is exactly the
+       * cost the loop below was rewritten to stop paying — a permanent rAF
+       * ticker on this page once held 85.7% of twelve cores and OOM-killed
+       * both dev servers. At rest the ring is a static spectrum and the
+       * compositor has nothing to do; it only turns while the lens is open
+       * over something, which is a fraction of a second at a time.
+       *
+       * Set from `over` rather than from `size`, so it starts turning as the
+       * disc begins to grow rather than when it arrives.
+       */
+      discEl.dataset.grow = over ? 'on' : 'off';
+
       /* The mask is the disc. See note 2 at the top of this file. */
       overlayEl.style.setProperty('--cursor-x', `${x + size / 2}px`);
       overlayEl.style.setProperty('--cursor-y', `${y + size / 2}px`);
@@ -288,20 +311,30 @@ function Lens() {
         ref={disc}
         aria-hidden="true"
         inert
-        className="pointer-events-none fixed left-0 top-0 z-[9998] rounded-full"
+        /*
+         * `cursor-lens` is in `globals.css` and it carries three things this
+         * file used to declare inline: the ink fill, the white rim, and — new
+         * on 2026-09-08 — the **spectrum on the rim of the glass**.
+         *
+         * The rim is what keeps the replacement visible on the ink bands. A
+         * near-black disc on `--stage`, or on the dark scheme's own near-black
+         * page, is a pointer the reader has lost, and hiding the native cursor
+         * without a visible replacement is the one thing this effect is not
+         * allowed to do. So the white hairline is still drawn, *inside* the
+         * spectrum ring, and nothing about the disc's own legibility depends
+         * on a saturated colour.
+         *
+         * Two reasons the drawing moved to CSS rather than growing here. The
+         * old `boxShadow` above held `rgba(0,0,0,.35)`, which was the one
+         * colour literal left in this file. And a conic gradient wants a
+         * pseudo-element and a mask, neither of which a style object can
+         * express.
+         */
+        className="cursor-lens pointer-events-none fixed left-0 top-0 z-[9998] rounded-full"
         style={{
           width: SIZE,
           height: SIZE,
           transform: 'translate(-200px, -200px)',
-          background: 'var(--stage)',
-          /*
-           * The rim is what keeps the replacement visible on the ink panels.
-           * A near-black disc on `--stage` in section four, or on the dark
-           * scheme's own near-black page, is a pointer the reader has lost —
-           * and hiding the native cursor without a visible replacement is the
-           * one thing this effect is not allowed to do.
-           */
-          boxShadow: '0 0 0 2px var(--stage-over), 0 2px 8px rgba(0,0,0,.35)',
         }}
       />
     </>,

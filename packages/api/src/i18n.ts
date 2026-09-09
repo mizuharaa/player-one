@@ -1276,6 +1276,69 @@ const en = {
   'discover.take.pending':
     'The APK is not published yet, so there is nothing to download from this page today. The build will be linked here when it is released.',
 
+  /* -----------------------------------------------------------------------
+     Build seven, 2026-09-08. The four-step strip is deleted and its content
+     is now the headline: four phrases, one per line, in the order the work
+     happens. A step of a process is a sentence, not a card, and four cards
+     in a row was the arrangement the product owner rejected by name.
+
+     The chips are fragments of the real console — a claimed task, a card
+     received at a counter, a verdict pill out of `primitives.tsx`, the rule
+     a collector is paid under. Nothing here is a figure: this page is
+     payout-bearing and every number on it would be one nobody has cleared.
+     -------------------------------------------------------------------- */
+  'discover.nav.label': 'On this page',
+  'discover.nav.camera': 'The camera',
+  'discover.nav.work': 'The work',
+  'discover.nav.review': 'Review',
+  'discover.nav.payment': 'Payment',
+  'discover.nav.questions': 'Questions',
+
+  'discover.eyebrow': 'Ego — a head-worn camera',
+  'discover.line.1': 'Record.',
+  'discover.line.2': 'Hand in the card.',
+  'discover.line.3': 'A person reviews it.',
+  'discover.line.4': 'The minutes are paid.',
+
+  'discover.chip.task': 'Task claimed',
+  'discover.chip.handover': 'Card in at the counter',
+  'discover.chip.rate': 'Paid per reviewed minute',
+
+  'discover.label.camera': 'The device',
+  'discover.label.work': 'The work',
+  'discover.label.film': 'Placeholder film',
+  'discover.label.review': 'Review',
+  'discover.label.payment': 'Payment',
+  'discover.label.questions': 'Questions',
+  'discover.label.next': 'Next',
+
+  'discover.work.note':
+    'Placeholder stills of ordinary work. None of them is a recording the Ego camera made, and none is captioned as one. A real shoot replaces them.',
+
+  'discover.verdict.note':
+    'A reviewer records one of three outcomes and names a reason code for anything not usable.',
+
+  'discover.streams.video': 'Video',
+  'discover.streams.audio': 'Audio',
+  'discover.streams.imu': 'Motion',
+  'discover.streams.payable': 'Payable: the span every stream covers together',
+  'discover.streams.device':
+    'The device reports its longest stream. That figure is advisory and it reads high.',
+
+  /* -----------------------------------------------------------------------
+     The not-found route. It is a real route rather than a redirect, because
+     a person who mistyped a console URL needs to be told the address is
+     wrong — a silent bounce to the product page reads as the console having
+     lost their screen.
+     -------------------------------------------------------------------- */
+  'nf.eyebrow': 'No such page',
+  'nf.title.a': 'Nothing was',
+  'nf.title.b': 'recorded at',
+  'nf.title.c': 'this address.',
+  'nf.body':
+    'The link is wrong, or the page has moved. Everything the platform explains about itself is on the product page.',
+  'nf.back': 'Back to the product page',
+
   /* The full-bleed pair. Captions sit at the foot of each panel; the stills are
      420x420 and are held at a size they are sharp at rather than stretched. */
 
@@ -2444,6 +2507,49 @@ const zh: Record<MessageKey, string> = {
     '采集工作从培训和考核开始。每次录制前都要先领取一个任务；相机由平台提供，所有权仍属于平台。支付的是审核员认定通过的有效分钟。',
   'discover.take.pending':
     'APK 尚未发布，今天还无法从本页下载。发布后会在这里给出链接。',
+
+  'discover.nav.label': '本页内容',
+  'discover.nav.camera': '相机',
+  'discover.nav.work': '工作',
+  'discover.nav.review': '审核',
+  'discover.nav.payment': '付款',
+  'discover.nav.questions': '问题',
+
+  'discover.eyebrow': 'Ego — 头戴式相机',
+  'discover.line.1': '记录。',
+  'discover.line.2': '交回存储卡。',
+  'discover.line.3': '由人来审核。',
+  'discover.line.4': '按分钟计酬。',
+
+  'discover.chip.task': '已领取任务',
+  'discover.chip.handover': '柜台已收到存储卡',
+  'discover.chip.rate': '按通过审核的分钟计酬',
+
+  'discover.label.camera': '设备',
+  'discover.label.work': '工作',
+  'discover.label.film': '占位影片',
+  'discover.label.review': '审核',
+  'discover.label.payment': '付款',
+  'discover.label.questions': '问题',
+  'discover.label.next': '下一步',
+
+  'discover.work.note':
+    '这些是日常劳动的占位图片。没有一张是 Ego 相机拍下的素材，也没有一张被这样标注。正式拍摄之后会替换。',
+
+  'discover.verdict.note': '审核员记录三种结果之一，并为不可用的部分给出原因代码。',
+
+  'discover.streams.video': '画面',
+  'discover.streams.audio': '声音',
+  'discover.streams.imu': '运动',
+  'discover.streams.payable': '可计酬：所有数据流共同覆盖的时段',
+  'discover.streams.device': '设备报告的是最长的一路数据流。该数字仅供参考，而且偏高。',
+
+  'nf.eyebrow': '没有这个页面',
+  'nf.title.a': '这个地址上',
+  'nf.title.b': '没有记录',
+  'nf.title.c': '任何东西。',
+  'nf.body': '链接不对，或者页面已经移动。平台关于自身的全部说明都在产品介绍页。',
+  'nf.back': '回到产品介绍页',
   'login.network': '服务没有应答。请确认本机在中心网络内，然后重试。',
 
   'login.legal': '登录即表示您接受 PlayerOne 处理您数据的方式。',
@@ -3686,6 +3792,52 @@ const vi: Record<MessageKey, string> = {
     'Công việc thu thập bắt đầu bằng huấn luyện và một bài kiểm tra. Mỗi lần ghi hình đều phải nhận một nhiệm vụ trước khi bật máy; máy quay do nền tảng cấp và vẫn thuộc về nền tảng. Tiền trả cho số phút hữu hiệu mà người duyệt chấp nhận.',
   'discover.take.pending':
     'APK chưa được phát hành, nên hôm nay chưa có gì để tải từ trang này. Bản cài sẽ được dẫn ở đây khi phát hành.',
+
+  'discover.nav.label': 'Trong trang này',
+  'discover.nav.camera': 'Máy quay',
+  'discover.nav.work': 'Công việc',
+  'discover.nav.review': 'Kiểm duyệt',
+  'discover.nav.payment': 'Thanh toán',
+  'discover.nav.questions': 'Câu hỏi',
+
+  'discover.eyebrow': 'Ego — máy quay đeo trên đầu',
+  'discover.line.1': 'Ghi hình.',
+  'discover.line.2': 'Nộp thẻ nhớ.',
+  'discover.line.3': 'Một người duyệt.',
+  'discover.line.4': 'Trả theo phút.',
+
+  'discover.chip.task': 'Đã nhận nhiệm vụ',
+  'discover.chip.handover': 'Đã nhận thẻ tại quầy',
+  'discover.chip.rate': 'Trả cho mỗi phút được duyệt',
+
+  'discover.label.camera': 'Thiết bị',
+  'discover.label.work': 'Công việc',
+  'discover.label.film': 'Phim minh hoạ',
+  'discover.label.review': 'Kiểm duyệt',
+  'discover.label.payment': 'Thanh toán',
+  'discover.label.questions': 'Câu hỏi',
+  'discover.label.next': 'Tiếp theo',
+
+  'discover.work.note':
+    'Ảnh minh hoạ về công việc thường ngày. Không tấm nào là tư liệu do máy quay Ego ghi, và không tấm nào được chú thích như vậy. Một buổi quay thật sẽ thay thế chúng.',
+
+  'discover.verdict.note':
+    'Người duyệt ghi một trong ba kết quả và nêu mã lý do cho phần không dùng được.',
+
+  'discover.streams.video': 'Hình',
+  'discover.streams.audio': 'Tiếng',
+  'discover.streams.imu': 'Chuyển động',
+  'discover.streams.payable': 'Được tính: khoảng thời gian mà mọi luồng đều có',
+  'discover.streams.device':
+    'Máy báo theo luồng dài nhất. Con số đó chỉ để tham khảo và cao hơn thực tế.',
+
+  'nf.eyebrow': 'Không có trang này',
+  'nf.title.a': 'Không có gì',
+  'nf.title.b': 'được ghi ở',
+  'nf.title.c': 'địa chỉ này.',
+  'nf.body':
+    'Liên kết sai, hoặc trang đã chuyển. Mọi điều nền tảng nói về chính nó đều nằm ở trang giới thiệu.',
+  'nf.back': 'Về trang giới thiệu',
   'login.network':
     'Dịch vụ không trả lời. Hãy kiểm tra máy có nằm trong mạng của trung tâm rồi thử lại.',
 

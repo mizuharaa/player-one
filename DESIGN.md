@@ -140,6 +140,46 @@ So the general rule stands unqualified again: **no gradient on an ink, no
 gradient lettering, no decorative spectrum.** Sun and tech remain the partner
 mark and nothing else.
 
+### One qualification, added 2026-09-08: the lens disperses
+
+The product owner asked for the cursor's idle and expand states to carry a
+rainbow gradient rather than a flat disc, and that is the **only** spectrum in
+the system. It is granted on a narrow argument rather than on taste, and the
+argument is what limits it:
+
+- **It is on a lens, and a lens disperses.** `CustomCursor.tsx` has called the
+  pointer a lens since it was ported. The spectrum is a ring on the *rim* of
+  the glass, which is where dispersion happens on a real one.
+- **It never touches type, a control, or a surface.** The disc under the ring
+  stays `--stage`, because that is the ground the lime clone inside it is
+  measured against. Nothing on any page is set on the spectrum.
+- **No new hex enters the system.** Every stop is `--lime-500` with its hue
+  rotated by CSS relative colour syntax — `oklch(from var(--lime-500) l c
+  calc(h + n))` — so the ring is one token seen through an angle rather than
+  six values nobody measured. `.cursor-lens::before` in `globals.css`.
+- **It costs nothing at rest.** A conic gradient driven by an animated
+  `@property` angle repaints every frame; this one only turns while the lens
+  is open over a `[data-cursor-highlight]` target, gated on a `data-grow`
+  attribute the existing rAF loop already sets.
+
+If the spectrum is ever wanted anywhere else, it needs a real ramp in
+`tokens.ts` and its own measurements. It does not have either today, and the
+hue-rotation above is deliberately not a substitute for them.
+
+### The flat shapes on `/discover`, and the gap they exposed
+
+Build seven's hero carries flat geometric shapes, the way the reference it was
+set against does. The reference's are a green hexagon, an orange square and a
+yellow quarter-circle — three saturated hues used decoratively. **This system
+has no colour that may do that**, and the shapes on the page are therefore
+`--foreground`, `--lavender-200` and a `--border-strong` outline, which is
+quiet where the reference is loud.
+
+That is a real gap, not an oversight: lime is spent once per screen, sun and
+tech are the partner mark, bamboo is Trúc's, and the three verdicts decide
+money. The request for a decorative flat-accent set is in the build report and
+was deliberately **not** invented here.
+
 Three findings from that pass are kept, because each cost a day and none of
 them is about a rainbow.
 
