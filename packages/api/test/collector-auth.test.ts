@@ -11,6 +11,7 @@ import {
   type SendSignInCode,
 } from '../src/index.ts';
 import { appDb, closeDb, db, hasDb, truncate, violates, useDatabase } from '../../store/test/db.ts';
+import * as credentials from '../src/credentials.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('collector_auth');
@@ -196,7 +197,7 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
     outbox.length = 0;
     const app = await api();
 
-    // PHONE_A is a collector, PHONE_B is not seeded. The cooldown is claimed
+    // PHONE_A is a collector, +84900000777 is not seeded. The cooldown is claimed
     // before the lookup, so the second request must not tell them apart.
     const enrolledFirst = await request(app, PHONE_A);
     const unknownFirst = await request(app, '+84900000777');
@@ -349,39 +350,39 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
       return { ms: Date.now() - started, statusCode: res.statusCode, body: res.body };
     };
 
-    const refused = await at(noZalo, PHONE_A);
-    const hung = await at(hangs, PHONE_A);
-    const sent = await at(works, PHONE_A);
-    const unknown = await at(works, '+84900000999');
+    try {
+      const refused = await at(noZalo, PHONE_A);
+      const hung = await at(hangs, PHONE_A);
+      const sent = await at(works, PHONE_A);
+      const unknown = await at(works, '+84900000999');
 
-    // Same status, same body — including against a number nobody owns.
-    for (const r of [refused, hung, sent, unknown]) {
-      expect(r.statusCode).toBe(204);
-      expect(r.body).toBe('');
+      // Same status, same body — including against a number nobody owns.
+      for (const r of [refused, hung, sent, unknown]) {
+        expect(r.statusCode).toBe(204);
+        expect(r.body).toBe('');
+      }
+      /**
+       * And the same time — as bounds, never as a spread. A spread is the
+       * difference of two samples, so under a full parallel suite it measures
+       * whichever request met a scheduler stall rather than measuring the route:
+       * this line asserted a 150 ms spread and was red at 199–1038 ms across five
+       * runs, green in isolation every time. Do not put a window back.
+       *
+       * What removes the systematic difference is the floor, and the floor has to
+       * cover every path — the number nobody owns, which does strictly less work,
+       * and the number whose delivery has not answered at all. A lower bound is
+       * the half of that a loaded machine cannot break: load only ever makes a
+       * request slower. That the delivery is off the reply's clock is no longer
+       * timed at all — `hangs` above cannot have resolved yet, so `hung` having
+       * come back with the rest of them is the whole proof.
+       */
+      const times = [refused.ms, hung.ms, sent.ms, unknown.ms];
+      expect(Math.min(...times), JSON.stringify(times)).toBeGreaterThanOrEqual(380);
+      // The unresolved provider proves that delivery cannot delay the response.
+      // A wall-clock ceiling here would instead measure scheduler/database load.
+    } finally {
+      release();
     }
-    /**
-     * And the same time — as bounds, never as a spread. A spread is the
-     * difference of two samples, so under a full parallel suite it measures
-     * whichever request met a scheduler stall rather than measuring the route:
-     * this line asserted a 150 ms spread and was red at 199–1038 ms across five
-     * runs, green in isolation every time. Do not put a window back.
-     *
-     * What removes the systematic difference is the floor, and the floor has to
-     * cover every path — the number nobody owns, which does strictly less work,
-     * and the number whose delivery has not answered at all. A lower bound is
-     * the half of that a loaded machine cannot break: load only ever makes a
-     * request slower. That the delivery is off the reply's clock is no longer
-     * timed at all — `hangs` above cannot have resolved yet, so `hung` having
-     * come back with the rest of them is the whole proof.
-     */
-    const times = [refused.ms, hung.ms, sent.ms, unknown.ms];
-    expect(Math.min(...times), JSON.stringify(times)).toBeGreaterThanOrEqual(380);
-    // One generous ceiling, five times the 400 ms floor, as a smoke bound only.
-    expect(Math.max(...times), JSON.stringify(times)).toBeLessThan(2_000);
-
-    // The gated delivery has served its purpose; let it finish so its row lands
-    // with the other two rather than after the next test has truncated.
-    release();
 
     /**
      * Three requests for this collector, so three rows. The refusal is recorded
@@ -521,6 +522,120 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
     expect((await verify(app, PHONE_A, code)).statusCode).toBe(200);
     const replay = await verify(app, PHONE_A, code);
     expect(replay.statusCode).toBe(401);
+  });
+
+  /** Pause after the real scrypt check, before the route consumes its snapshot. */
+  const holdVerification = () => {
+    const original = credentials.verifyCredential;
+    let release!: () => void;
+    let checked = 0;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const spy = vi.spyOn(credentials, 'verifyCredential').mockImplementation(async (...args) => {
+      const valid = await original(...args);
+      checked++;
+      await gate;
+      return valid;
+    });
+    return {
+      release,
+      ready: (count = 1) => vi.waitFor(() => expect(checked).toBe(count), { timeout: 10_000 }),
+      restore: () => spy.mockRestore(),
+    };
+  };
+
+  it('allows only one concurrent caller to consume the same correct code', async () => {
+    const d = await db();
+    const ids = await seed();
+    const app = await api();
+    await request(app, PHONE_A);
+    await recorded(ids.collectorA);
+    const code = outbox.at(-1)!.code;
+    const held = holdVerification();
+    const responses = Promise.all([verify(app, PHONE_A, code), verify(app, PHONE_A, code)]);
+    try {
+      await held.ready(2);
+      held.release();
+      const results = await responses;
+      expect(results.map((r) => r.statusCode).sort()).toEqual([200, 401]);
+      const logins = await d.execute(sql`select id from audit_events where action = 'collector.login'`);
+      expect(logins).toHaveLength(1);
+    } finally {
+      held.release();
+      await responses;
+      held.restore();
+      await app.close();
+    }
+  });
+
+  it.each(['phone changed', 'cancelled', 'expired', 'epoch revoked', 'replaced'] as const)(
+    'refuses a code %s while verification is in flight', async (change) => {
+      const d = await db();
+      const ids = await seed();
+      const app = await api();
+      await request(app, PHONE_A);
+      await recorded(ids.collectorA);
+      const code = outbox.at(-1)!.code;
+      const held = holdVerification();
+      // Start the injection now; LightMyRequest's thenable is otherwise lazy.
+      const response = Promise.resolve(verify(app, PHONE_A, code));
+      try {
+        await held.ready();
+        if (change === 'phone changed') {
+          await d.execute(sql`update collectors set phone = '+84900000333' where id = ${ids.collectorA}`);
+        } else if (change === 'cancelled') {
+          await d.execute(sql`update collectors set sign_in_code_hash = null,
+            sign_in_code_expires_at = null where id = ${ids.collectorA}`);
+        } else if (change === 'expired') {
+          await d.execute(sql`update collectors set sign_in_code_expires_at = now() - interval '1 second'
+            where id = ${ids.collectorA}`);
+        } else if (change === 'epoch revoked') {
+          await d.execute(sql`update collectors set token_epoch = token_epoch + 1 where id = ${ids.collectorA}`);
+        } else {
+          nextCode();
+          expect((await request(app, PHONE_A)).statusCode).toBe(204);
+          await recorded(ids.collectorA, 2);
+        }
+        held.release();
+        const result = await response;
+        expect(result.statusCode).toBe(401);
+        expect(result.json()).toEqual({ error: 'credentials', reason: 'credentials' });
+        expect(await d.execute(sql`select id from audit_events where action = 'collector.login'`)).toHaveLength(0);
+        held.restore();
+        if (change === 'replaced') {
+          // A stale verification must not erase the fresh code needed to retry.
+          expect((await verify(app, PHONE_A, outbox.at(-1)!.code)).statusCode).toBe(200);
+        }
+      } finally {
+        held.release();
+        await response;
+        held.restore();
+        await app.close();
+      }
+    },
+  );
+
+  it('keeps concurrent resend cooldowns scoped to each number across caller addresses', async () => {
+    const ids = await seed();
+    const app = await api();
+    outbox.length = 0;
+    try {
+      for (const phone of [PHONE_A, PHONE_B, '+84900000777']) {
+        const responses = await Promise.all(Array.from({ length: 3 }, (_, i) => app.inject({
+          method: 'POST', url: '/auth/collector/request-code', remoteAddress: `192.0.2.${i}`,
+          payload: { phone },
+        })));
+        expect(responses.map((r) => r.statusCode).sort()).toEqual([204, 429, 429]);
+        for (const res of responses.filter((r) => r.statusCode === 429)) {
+          expect(res.headers['retry-after']).toBe('60');
+          expect(res.json().retry_after).toBe(60);
+        }
+      }
+      await recorded(ids.collectorA);
+      await recorded(ids.collectorB);
+      expect(outbox.map((m) => m.phone).sort()).toEqual([PHONE_A, PHONE_B]);
+    } finally {
+      await app.close();
+    }
   });
 
   it('kills a code after too many guesses, and a new code brings it back', async () => {

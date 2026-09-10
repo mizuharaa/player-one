@@ -685,8 +685,7 @@ export function registerCollectorApp(
         },
       ),
     );
-    if (!attempt.ok) return refused(reply, attempt.constraint);
-    if (attempt.value !== undefined) {
+    if (attempt.ok && attempt.value !== undefined) {
       return reply.code(201).send({
         id: b.id,
         task_id: taskId.data,
@@ -700,8 +699,11 @@ export function registerCollectorApp(
     }
 
     /**
-     * Nothing was written because that id is already here, and there are two
-     * ways for that to happen. The same claim arriving twice is a replay and
+     * No new claim landed. BEFORE INSERT gates run before ON CONFLICT, so a
+     * task withdrawn after a successful claim can refuse its network retry.
+     * Read the durable result before translating a refusal: this acknowledges
+     * work already accepted and does not grant a new claim past any gate.
+     * The same claim arriving twice is a replay and
      * costs nothing. A different pairing under an id already in use is not:
      * answering 200 there says this collector holds this task when somebody
      * else does, on the one path that decides who may record and be paid.
@@ -710,7 +712,8 @@ export function registerCollectorApp(
       .select()
       .from(schema.taskClaims)
       .where(eq(schema.taskClaims.id, b.id));
-    if (held === undefined || held.taskId !== taskId.data || held.collectorId !== me) {
+    if (held === undefined) return refused(reply, attempt.ok ? 'claim_id_reused' : attempt.constraint);
+    if (held.taskId !== taskId.data || held.collectorId !== me) {
       return refused(reply, 'claim_id_reused');
     }
     // The same pairing, released since. The slot went back to the task and

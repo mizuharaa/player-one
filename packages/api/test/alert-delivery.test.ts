@@ -17,6 +17,10 @@ afterEach(() => {
 });
 
 describe('alert delivery', () => {
+  it('names archive failures as historical operations rather than an object backlog', () => {
+    const [notice] = noticesFor(new Map(), [{ id: 'archive_tag_failures', state: 'firing', observed: 2, threshold: 1 }]);
+    expect(notice?.text).toBe('archive_tag_failures firing: 2 recorded archive tagging operations failed in the last 24 hours (not unresolved objects) (threshold 1).');
+  });
   it('includes the observed and threshold GB when storage becomes near quota', () => {
     const notices = noticesFor(new Map([['storage_near_quota', 'ok']]), [{
       id: 'storage_near_quota', state: 'firing', observed: 170, threshold: 160,

@@ -16,6 +16,7 @@ const descriptions: Record<string, string> = {
   upload_devices_low_disk: 'upload devices have less than 50 GB free',
   card_import_failures: 'card imports failed in the last 24 hours',
   cloud_write_failures: 'cloud transports failed in the last 24 hours',
+  archive_tag_failures: 'recorded archive tagging operations failed in the last 24 hours (not unresolved objects)',
   checksum_failures: 'episodes failed read-back',
   storage_near_quota: 'GB of verified source bytes in the cloud (threshold is 80% of the allocation)',
 };

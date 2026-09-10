@@ -34,7 +34,7 @@ import type { Db } from '@playerone/store';
  *   - **9, cross-border link timeouts.** Nothing in this repository times the
  *     link to Shenzhen or to the bucket. It needs a latency record per request.
  *
- * `observed` is a count of offending things right now, `threshold` is the count
+ * `observed` is a count with the unit/window named by each condition, `threshold` is the count
  * at which the condition fires. The PRD gives no numbers, so the ones below are
  * chosen for a twenty-device pilot and are deliberately literals in the query
  * rather than settings: nobody has operated this yet, and a setting invented
@@ -69,7 +69,7 @@ export function storageQuotaFromEnv(env: Record<string, string | undefined>): nu
 }
 
 /**
- * The nine PRD conditions and the capacity alert, evaluated in one statement.
+ * The nine PRD conditions, capacity and archive failures, in one statement.
  *
  * Each condition is a scalar subquery, so adding one is a `union all` branch
  * and nothing else. `ord` is the PRD's own numbering and is what the rows are
@@ -169,6 +169,14 @@ const alerts = (quota: number | null) => sql`
                and cv.object_key = 'episodes/' || cv.episode_id::text || '/'
                                               || cv.ingest_id::text || '/' || ef.relative_path
         ) end
+      union all
+      -- 11. Historical failed operations, not an unresolved object backlog.
+      -- Successful retries do not erase failures; zero cannot prove archiving.
+      select 11, 'archive_tag_failures', 1, (
+        select count(*)::int from audit_events
+         where action = 'bill.archive_tag_failed'
+           and occurred_at > now() - interval '24 hours'
+           and occurred_at <= now())
     ) a
    order by a.ord`;
 

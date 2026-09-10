@@ -998,11 +998,14 @@ describe.skipIf(!hasDb())('the identity spine', () => {
       expect(cols.map((c) => c.column_name)).not.toContain('device_id');
 
       // Phase 1 allows exactly one; the constraint is one droppable index.
-      await expect(
+      // A bare await expect(query) never executes Drizzle's lazy query.
+      await violates(
+        'collection_session_devices_phase1_one_per_session',
         d.execute(sql`
           insert into collection_session_devices (collection_session_id, device_id, role)
             values (${ids.session}, ${ids.device}, 'glove_left');
-        `));
+        `),
+      );
     });
   });
 

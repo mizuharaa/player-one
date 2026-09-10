@@ -27,7 +27,7 @@ describe('archive tagging without a database (PLAN 3a)', () => {
   it('tags every receipt key with tier=archive', async () => {
     const store = fakeStore();
     const log = { warn: vi.fn() };
-    await tagArchivedObjects(store, receipts, log);
+    expect(await tagArchivedObjects(store, receipts, log)).toEqual({ attempted: 3, confirmed: 3, failed_object_keys: [] });
     expect(vi.mocked(store.tag).mock.calls).toEqual(
       receipts.map((r) => [r.object_key, { tier: 'archive' }]),
     );
@@ -39,7 +39,9 @@ describe('archive tagging without a database (PLAN 3a)', () => {
     const err = new Error('tag rejected');
     vi.mocked(store.tag).mockResolvedValueOnce().mockRejectedValueOnce(err);
     const log = { warn: vi.fn() };
-    await expect(tagArchivedObjects(store, receipts, log)).resolves.toBeUndefined();
+    await expect(tagArchivedObjects(store, receipts, log)).resolves.toEqual({
+      attempted: 3, confirmed: 2, failed_object_keys: [receipts[1]!.object_key],
+    });
     expect(vi.mocked(store.tag).mock.calls).toEqual(
       receipts.map((r) => [r.object_key, { tier: 'archive' }]),
     );
@@ -59,7 +61,7 @@ describe('archive tagging without a database (PLAN 3a)', () => {
     expect(store.tag).toHaveBeenCalledTimes(1);
     expect(log.warn).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    await expect(pass).resolves.toBeUndefined();
+    await expect(pass).resolves.toEqual({ attempted: 3, confirmed: 2, failed_object_keys: [receipts[0]!.object_key] });
     expect(store.tag).toHaveBeenCalledTimes(3);
     expect(log.warn).toHaveBeenCalledTimes(1);
     expect(log.warn).toHaveBeenCalledWith(
@@ -131,7 +133,7 @@ describe('archive tagging without a database (PLAN 3a)', () => {
     expect(log.warn).not.toHaveBeenCalled();
     controller.abort();
     await vi.advanceTimersByTimeAsync(1);
-    await expect(pass).resolves.toBeUndefined();
+    await expect(pass).resolves.toEqual({ attempted: 3, confirmed: 2, failed_object_keys: [receipts[0]!.object_key] });
     expect(sendRejected).toBe(false);
     expect(send).toHaveBeenCalledTimes(3);
     expect(log.warn).toHaveBeenCalledTimes(1);

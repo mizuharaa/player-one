@@ -929,6 +929,154 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
     for (const key of e.keys) if (key !== bad) expect(h.store.writes.get(key)).toBe(1);
   });
 
+  it('does not lose a proven mismatch when a later read-back loses its connection', async () => {
+    const h = await harness({ verificationGate: 'cloud' });
+    const e = await h.submitEpisode('A', {
+      'left_part0001.mp4': randomBytes(512),
+      'left_part0002.mp4': randomBytes(512),
+    });
+    await h.upload(h.A.batch);
+    expect(await h.verificationOf(e.episodeId)).toBe('verified');
+    await writeFile(join(h.cloudRoot, e.keys[0]!.replaceAll('/', '__')), Buffer.alloc(512));
+    const read = h.store.read.bind(h.store);
+    h.store.read = async (key, from) => {
+      if (key === e.keys[1]) {
+        throw Object.assign(new Error('read access interrupted'), { $metadata: { httpStatusCode: 403 } });
+      }
+      return read(key, from);
+    };
+
+    const res = await h.send('POST', `/upload-batches/${h.A.batch}/upload?reverify=1`);
+    expect(res.json().cloud_verified).toBe(false);
+    expect(res.json().episodes[0]).toMatchObject({
+      error: 'read access interrupted', verification_state: 'failed',
+      mismatches: [expect.objectContaining({ relative_path: 'left_part0001.mp4' })],
+    });
+    expect(res.json().episodes[0].mismatches).toHaveLength(1);
+    // Query the stored gate, not only the response: this recording was already
+    // verified before the operator discovered its first file was damaged.
+    expect.soft(await h.verificationOf(e.episodeId)).toBe('failed');
+    expect.soft((await h.cacheClean(h.A.batch)).statusCode).toBe(409);
+    expect.soft((await h.claim()).statusCode).toBe(204);
+    const failures = await h.d.execute(sql`select after from audit_events
+      where action = 'episode.cloud_transport_failed' and target_id = ${e.episodeId}`);
+    expect([...failures]).toEqual([{ after: { ingest_id: e.ingestId, error: 'read access interrupted' } }]);
+    const verdicts = await h.d.execute(sql`select after from audit_events
+      where action = 'episode.cloud_verify' and target_id = ${e.episodeId}
+        and after->>'verification_state' = 'failed'`);
+    expect([...verdicts]).toEqual([{ after: expect.objectContaining({
+      verification_state: 'failed', mismatches: res.json().episodes[0].mismatches,
+    }) }]);
+
+    h.store.read = read;
+    expect((await h.upload(h.A.batch)).json().cloud_verified).toBe(true);
+    expect(await h.verificationOf(e.episodeId)).toBe('verified');
+  });
+
+  it.each(['record', 'forget'] as const)('keeps a proven mismatch when later verification receipt %s fails', async (operation) => {
+    const h = await harness({ verificationGate: 'cloud' });
+    const e = await h.submitEpisode('A', {
+      'left_part0001.mp4': randomBytes(512),
+      'left_part0002.mp4': randomBytes(512),
+    });
+    await h.upload(h.A.batch);
+    expect(await h.verificationOf(e.episodeId)).toBe('verified');
+    await writeFile(join(h.cloudRoot, e.keys[0]!.replaceAll('/', '__')), Buffer.alloc(512));
+    // Fail the real receipt INSERT or cleanup DELETE only. The database remains available for
+    // the failed-copy verdict/audit, so this is not a whole-database outage.
+    await h.d.execute(sql`create function qa_fail_receipt_write() returns trigger language plpgsql as $$
+      begin raise exception 'receipt write unavailable'; end $$`);
+    if (operation === 'record') {
+      await h.d.execute(sql`create trigger qa_fail_receipt_write before insert on cloud_verifications
+        for each row when (new.object_key like '%left_part0002.mp4') execute function qa_fail_receipt_write()`);
+    } else {
+      const read = h.store.read.bind(h.store);
+      let armed = false;
+      h.store.read = async (key, from) => {
+        if (!armed) {
+          // Reverify's initial reset has finished. Reject only the later
+          // cleanup, including DELETEs that happen to match no receipt rows.
+          await h.d.execute(sql`create trigger qa_fail_receipt_write before delete on cloud_verifications
+            for each statement execute function qa_fail_receipt_write()`);
+          armed = true;
+        }
+        return read(key, from);
+      };
+    }
+    try {
+      const res = await h.send('POST', `/upload-batches/${h.A.batch}/upload?reverify=1`);
+      expect.soft(await h.verificationOf(e.episodeId)).toBe('failed');
+      expect.soft((await h.cacheClean(h.A.batch)).statusCode).toBe(409);
+      expect.soft((await h.claim()).statusCode).toBe(204);
+      expect.soft(res.json().episodes[0]).toMatchObject({
+        verification_state: 'failed',
+        mismatches: [expect.objectContaining({ relative_path: 'left_part0001.mp4' })],
+      });
+    } finally {
+      await h.d.execute(sql`drop trigger if exists qa_fail_receipt_write on cloud_verifications`);
+      await h.d.execute(sql`drop function qa_fail_receipt_write()`);
+    }
+  });
+
+  it('keeps durable receipts after read-back interruption and resumes with a fresh API instance', async () => {
+    const h = await harness({ verificationGate: 'cloud' });
+    const source = { 'left_part0001.mp4': randomBytes(512), 'left_part0002.mp4': randomBytes(512) };
+    const e = await h.submitEpisode('A', source);
+    const read = h.store.read.bind(h.store);
+    h.store.read = async (key, from) => {
+      if (key === e.keys[1]) {
+        throw Object.assign(new Error('credentials expired'), { $metadata: { httpStatusCode: 403 } });
+      }
+      return read(key, from);
+    };
+    const first = await h.upload(h.A.batch);
+    expect(first.json().episodes[0].error).toBe('credentials expired');
+    expect(first.json().cloud_verified).toBe(false);
+    expect(await h.verificationOf(e.episodeId)).toBe('pending');
+    const receipts = await h.d.execute(sql`select object_key from cloud_verifications order by object_key`);
+    expect([...receipts]).toEqual([{ object_key: e.keys[0] }]);
+    expect((await h.cacheClean(h.A.batch)).statusCode).toBe(409);
+
+    h.store.read = read;
+    h.store.reads.length = 0;
+    await h.app.close();
+    const restarted = buildApi({ db: await appDb(), tokenSecret: SECRET, mediaRoot: h.mediaRoot,
+      objectStore: h.store, verificationGate: 'cloud' });
+    await restarted.ready();
+    try {
+      const resumed = await restarted.inject({ method: 'POST',
+        url: `/upload-batches/${h.A.batch}/upload`, headers: h.headersA });
+      expect(resumed.statusCode, resumed.body).toBe(200);
+      expect(resumed.json().cloud_verified).toBe(true);
+      expect(await h.verificationOf(e.episodeId)).toBe('verified');
+      expect(h.store.reads).toEqual([e.keys[1]]);
+      expect([...h.store.writes.values()]).toEqual([1, 1]);
+      for (const [path, bytes] of Object.entries(source)) {
+        expect(await readFile(join(h.mediaRoot, e.basename, path))).toEqual(bytes);
+      }
+    } finally {
+      await restarted.close();
+    }
+  });
+
+  it('reports an unavailable source without verifying, cleaning, or losing other source files', async () => {
+    const h = await harness({ verificationGate: 'cloud' });
+    const retained = randomBytes(512);
+    const e = await h.submitEpisode('A', {
+      'left_part0001.mp4': randomBytes(512), 'left_part0002.mp4': retained,
+    });
+    // Remove only a synthetic fixture file to simulate a disconnected card or
+    // missing cache file. Production upload code must never remove anything.
+    await rm(join(h.mediaRoot, e.basename, 'left_part0001.mp4'));
+    const res = await h.upload(h.A.batch);
+    expect(res.json().episodes[0].error).toContain('ENOENT');
+    expect(res.json().cloud_verified).toBe(false);
+    expect(await h.verificationOf(e.episodeId)).toBe('pending');
+    expect((await h.cacheClean(h.A.batch)).statusCode).toBe(409);
+    expect(h.store.reads).toEqual([]);
+    expect(await readFile(join(h.mediaRoot, e.basename, 'left_part0002.mp4'))).toEqual(retained);
+  });
+
   it('UPL-16: an interrupted upload resumes where it stopped, duplicating nothing', async () => {
     const h = await harness();
     const e = await h.submitEpisode('A', {

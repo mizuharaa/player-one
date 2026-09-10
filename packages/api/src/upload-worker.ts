@@ -721,10 +721,12 @@ async function sha256OfObject(store: Pick<ObjectStore, 'read'>, key: string): Pr
   const h = createHash('sha256');
   let at = 0;
   for (let stalls = 0; ; ) {
-    const body = await store.read(key, at);
-    if (body === null) return null;
     const before = at;
     try {
+      // Opening the next ranged GET can fail before a body arrives too. Keep
+      // the same hash and offset, with the same bounded no-progress budget.
+      const body = await store.read(key, at);
+      if (body === null) return null;
       for await (const chunk of body) {
         h.update(chunk);
         at += chunk.length;
@@ -782,12 +784,25 @@ export type Mismatch = {
   cloud_sha256: string | null;
 };
 
+/** A later read or receipt failure cannot erase corruption already proven by bytes. */
+export class ReadBackInterrupted extends Error {
+  readonly mismatches: Mismatch[];
+
+  constructor(mismatches: Mismatch[], cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.mismatches = mismatches;
+    this.name = 'ReadBackInterrupted';
+  }
+}
+
 export type EpisodeUploadResult = {
   uploaded: number;
   kept: number;
   /** How many objects the verdict below covers — source files plus the delivery's remainder. */
   transported: number;
   mismatches: Mismatch[];
+  /** The copy is already known bad, and a later file could not be examined. */
+  transportError?: string;
 };
 
 /**
@@ -807,8 +822,9 @@ export type EpisodeUploadResult = {
  * Everything the skip rests on is a read-back that happened: nothing here
  * trusts an ETag or a metadata field, and `force` still overwrites the objects
  * that are being re-sent, because after a failed read-back their metadata is
- * exactly what cannot be trusted. Throws when transport fails, which leaves the
- * episode unverified and nothing downstream able to act on a partial upload.
+ * exactly what cannot be trusted. Transport failures throw unless a prior
+ * read already proved corruption; then both the mismatches and transport error
+ * are returned so a previously verified episode cannot retain its old verdict.
  */
 export async function uploadEpisode(
   store: ObjectStore,
@@ -863,18 +879,35 @@ export async function uploadEpisode(
    */
   const keyFor = (p: string): string => objectKey(args.episodeId, args.ingestId, p);
   const unproven = files.filter((f) => !proven(keyFor(f.relative_path), f.sha256));
-  const mismatches = await verifyReadBack(store, unproven, keyFor, (key, f) =>
-    progress.record(args.episodeId, key, f.sha256),
-  );
+  let mismatches: Mismatch[];
+  let transportError: string | undefined;
+  try {
+    mismatches = await verifyReadBack(store, unproven, keyFor, (key, f) =>
+      progress.record(args.episodeId, key, f.sha256),
+    );
+  } catch (err) {
+    if (!(err instanceof ReadBackInterrupted)) throw err;
+    mismatches = err.mismatches;
+    transportError = err.message;
+  }
   /**
    * Forget the receipts for the files that failed, and only those. Forgetting
    * the whole episode would re-send every object on the retry, which is what
    * this branch measured at 16.00 MB up and 16.00 MB down for 512 damaged
    * bytes.
    */
-  for (const m of mismatches) await progress.forget(args.episodeId, keyFor(m.relative_path));
+  for (const m of mismatches) {
+    try {
+      await progress.forget(args.episodeId, keyFor(m.relative_path));
+    } catch (err) {
+      // Receipt housekeeping cannot prevent the caller persisting the failed
+      // copy verdict. These files were unproven when this run began.
+      transportError ??= err instanceof Error ? err.message : String(err);
+    }
+  }
 
-  return { uploaded, kept, transported: files.length, mismatches };
+  return { uploaded, kept, transported: files.length, mismatches,
+    ...(transportError !== undefined ? { transportError } : {}) };
 }
 
 /**
@@ -912,15 +945,20 @@ export async function verifyReadBack(
      * is `fix/download-resume`'s change and it belongs on both paths — Path A's
      * phone is on a worse connection than Path C's centre, not a better one.
      */
-    const cloud = await sha256OfObject(store, key);
-    if (cloud !== f.sha256) {
-      mismatches.push({
-        relative_path: f.relative_path,
-        expected_sha256: f.sha256,
-        cloud_sha256: cloud,
-      });
-    } else {
-      await onMatch(key, f);
+    try {
+      const cloud = await sha256OfObject(store, key);
+      if (cloud !== f.sha256) {
+        mismatches.push({
+          relative_path: f.relative_path,
+          expected_sha256: f.sha256,
+          cloud_sha256: cloud,
+        });
+      } else {
+        await onMatch(key, f);
+      }
+    } catch (err) {
+      if (mismatches.length > 0) throw new ReadBackInterrupted(mismatches, err);
+      throw err;
     }
   }
   return mismatches;

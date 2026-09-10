@@ -3,7 +3,7 @@ import { and, asc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger, FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { schema, type Db } from '@playerone/store';
-import { financeGuard, roleOf } from './actor.ts';
+import { adminGuard, financeGuard, roleOf } from './actor.ts';
 import { mutate } from './audit.ts';
 import { MONEY_SCALE, ZERO, add, fromDecimal, quantise } from './money.ts';
 import { withTagDeadline, type ObjectStore } from './upload-worker.ts';
@@ -58,18 +58,24 @@ export type SettleOptions = {
   cycleDays?: number;
 };
 
+type ArchiveTagResult = { attempted: number; confirmed: number; failed_object_keys: string[] };
+
 export async function tagArchivedObjects(
   store: ObjectStore,
   receipts: { object_key: string; episode_id: string }[],
   log: Pick<FastifyBaseLogger, 'warn'>,
-): Promise<void> {
+): Promise<ArchiveTagResult> {
+  const result: ArchiveTagResult = { attempted: receipts.length, confirmed: 0, failed_object_keys: [] };
   for (const receipt of receipts) {
     try {
       await withTagDeadline(store.tag(receipt.object_key, { tier: 'archive' }));
+      result.confirmed += 1;
     } catch (err) {
+      result.failed_object_keys.push(receipt.object_key);
       log.warn({ err, ...receipt }, 'Archive tag unconfirmed');
     }
   }
+  return result;
 }
 
 const PeriodQuery = z.object({
@@ -115,6 +121,10 @@ export const SETTLE_API_REFUSALS = new Set([
 ]);
 
 const uuid = z.string().uuid();
+const ArchiveRetryQuery = z.object({
+  after: z.string().min(1).max(1024).refine((value) =>
+    Buffer.byteLength(value, 'utf8') <= 1024 && !/[\u0000-\u001f]/.test(value)).optional(),
+}).strict();
 
 /**
  * The one race the generator expects, and the only throw it steps over.
@@ -183,6 +193,75 @@ export function registerSettle(
   const readOpts = { preHandler: [requireActor, financeGuard(db)] };
   const currency = options.currency ?? 'VND';
   const cycleDays = options.cycleDays ?? 7;
+
+  // Selection-time eligibility only: the database cannot make external tagging
+  // atomic with a later dispute or verification failure. Match the billed ingest.
+  const archiveReceipts = (billId: string, after?: string, limit?: number) =>
+    db.execute<{ object_key: string; episode_id: string }>(sql`
+      select distinct cv.object_key, cv.episode_id
+        from bill_lines bl
+        join settlements s on s.id = bl.settlement_id
+        join episode_reviews r on r.id = s.episode_review_id
+        join cloud_verifications cv on cv.episode_id = r.episode_id and cv.ingest_id = r.ingest_id
+       where bl.bill_id = ${billId}
+         and s.settlement_state <> 'exception' and s.superseded_by is null
+         and not exists (select 1 from review_disputes d
+                          where d.review_id = r.id and d.resolved_at is null)
+         ${after === undefined ? sql`` : sql`and cv.object_key > ${after}`}
+       order by cv.object_key
+       ${limit === undefined ? sql`` : sql`limit ${limit}`}
+    `);
+
+  const archiveBill = async (billId: string, req: FastifyRequest, operation: 'billing' | 'retry', after?: string) => {
+    let result: ArchiveTagResult = { attempted: 0, confirmed: 0, failed_object_keys: [] };
+    let queryFailed = false;
+    let nextAfter: string | null = null;
+    let receipts: { object_key: string; episode_id: string }[] = [];
+    try {
+      receipts = await archiveReceipts(billId, after, operation === 'retry' ? 6 : undefined);
+    } catch (err) {
+      queryFailed = true;
+      req.log.warn({ err, bill_id: billId }, 'Archive receipt query failed; tagging unconfirmed');
+    }
+    if (!queryFailed) {
+      if (operation === 'retry' && receipts.length > 5) {
+        receipts = receipts.slice(0, 5);
+        nextAfter = receipts[4]!.object_key;
+      }
+      result = await tagArchivedObjects(options.objectStore!, receipts, req.log);
+    }
+    const failed = queryFailed || result.failed_object_keys.length > 0;
+    let auditRecorded = true;
+    if (failed || operation === 'retry') {
+      try {
+        await mutate(db, req.actor!, {
+          action: failed ? 'bill.archive_tag_failed' : 'bill.archive_tag_retry',
+          targetTable: 'bills', targetId: billId,
+          after: { operation, ...result, query_failed: queryFailed },
+        }, async () => true);
+      } catch (err) {
+        auditRecorded = false;
+        req.log.warn({ err, bill_id: billId, operation, ...result, query_failed: queryFailed },
+          'Archive audit persistence failed; bill and external tag results are unchanged');
+      }
+    }
+    return { ...result, query_failed: queryFailed, next_after: nextAfter, audit_recorded: auditRecorded };
+  };
+
+  app.post('/api/settle/bills/:id/archive/retry', { preHandler: [requireActor, adminGuard(db)] }, async (req, reply) => {
+    const id = uuid.safeParse((req.params as { id: string }).id);
+    const query = ArchiveRetryQuery.safeParse(req.query ?? {});
+    if (!id.success || !query.success) return reply.code(400).send({ error: 'invalid bill id or archive cursor' });
+    const [bill] = await db.select({ id: schema.bills.id }).from(schema.bills).where(eq(schema.bills.id, id.data));
+    if (bill === undefined) return reply.code(404).send({ error: 'no such bill' });
+    if (options.objectStore === undefined) return reply.code(503).send({ error: 'Archive storage is unavailable. Configure storage before retrying.' });
+    const result = await archiveBill(bill.id, req, 'retry', query.data.after);
+    if (!result.audit_recorded) return reply.code(503).send({
+      error: 'Archive audit could not be saved. Tag calls may already have completed; inspect the results before retrying.', ...result,
+    });
+    if (result.query_failed) return reply.code(503).send({ error: 'Archive receipts could not be read. Retry this page later.', ...result });
+    return reply.send(result);
+  });
 
   /**
    * How wide a read may be. `GET /api/settle/bills` and
@@ -571,24 +650,10 @@ export function registerSettle(
       }
       if (written !== undefined) {
         created += 1;
-        // ponytail: failed tags and post-bill repairs may remain Gold for the pilot.
-        // Retag from billed review/ingest pairs, never from untagged objects:
-        // those include first reviews, disputes and newer deliveries held in Gold.
+        // Bills have committed. Failed tag operations are audited separately;
+        // neither a tag failure nor a failed audit can roll the bill back.
         if (options.objectStore !== undefined) {
-          try {
-            const receipts = await db.execute<{ object_key: string; episode_id: string }>(sql`
-              select cv.object_key, cv.episode_id
-                from bill_lines bl
-                join settlements s on s.id = bl.settlement_id
-                join episode_reviews r on r.id = s.episode_review_id
-                join cloud_verifications cv on cv.episode_id = r.episode_id
-                                           and cv.ingest_id = r.ingest_id
-               where bl.bill_id = ${written.id}
-            `);
-            await tagArchivedObjects(options.objectStore, receipts, req.log);
-          } catch (err) {
-            req.log.warn({ err, bill_id: written.id }, 'Archive receipt query failed; tagging unconfirmed');
-          }
+          await archiveBill(written.id, req, 'billing');
         }
       } else deferred.set(lines[0]!.collectorRef, lines.length);
     }

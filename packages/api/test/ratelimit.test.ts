@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import type { LightMyRequestResponse } from 'fastify';
+import Fastify, { type LightMyRequestResponse } from 'fastify';
+import type { Db } from '@playerone/store';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApi, hashCredential, SIGN_IN_RATE_LIMITED, signInLimiter } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
+import { registerCollectorAuth } from '../src/collector.ts';
+import { signInAttempt } from '../src/ratelimit.ts';
 import { appDb, closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -148,6 +151,79 @@ describe('the sign-in limiter', () => {
     // And the whole map drains itself, so the refusal is not permanent.
     c.advance(61_000);
     expect(limiter.reserveSend('n-one-too-many')).toBeNull();
+  });
+
+  it('a blocked source cannot reserve another collector’s send slot', async () => {
+    const limiter = signInLimiter(() => 1_000_000);
+    const source = '192.0.2.1';
+    for (let i = 0; i < 30; i++) limiter.attempted(source, []);
+    // The first refusal was already audited; repetitions must touch no database.
+    limiter.noteRefusal(source, []);
+    const noDb = new Proxy({} as Db, { get() { throw new Error('database must not be touched'); } });
+    const app = Fastify();
+    registerCollectorAuth(app, noDb, {
+      tokenSecret: SECRET, limiter, sendSignInCode: async () => {},
+    });
+    try {
+      const phone = '0988888888';
+      const response = await app.inject({
+        method: 'POST', url: '/auth/collector/request-code', remoteAddress: source, payload: { phone },
+      });
+      expect(response.statusCode).toBe(429);
+      expect(limiter.reserveSend(phone)).toBeNull();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('cooldown refusals do not spend the credential failure budget', async () => {
+    const limiter = signInLimiter(() => 1_000_000);
+    const phone = '0988888888';
+    const source = '192.0.2.2';
+    limiter.reserveSend(phone);
+    const noDb = new Proxy({} as Db, { get() { throw new Error('database must not be touched'); } });
+    const app = Fastify();
+    registerCollectorAuth(app, noDb, {
+      tokenSecret: SECRET, limiter, sendSignInCode: async () => {},
+    });
+    try {
+      for (let i = 0; i < 12; i++) {
+        const response = await app.inject({
+          method: 'POST', url: '/auth/collector/request-code', remoteAddress: source, payload: { phone },
+        });
+        expect(response.statusCode).toBe(429);
+      }
+      expect(limiter.refusedFor(source, [{ id: phone, kind: 'collector' }])).toBeNull();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('reserves one send across concurrent callers and keeps distinct numbers independent', async () => {
+    const c = clock();
+    const limiter = signInLimiter(c.now);
+    const results = await Promise.all(Array.from({ length: 20 }, async () =>
+      limiter.reserveSend('0900000001')));
+    expect(results.filter((r) => r === null)).toHaveLength(1);
+    expect(results.filter((r) => r === 60)).toHaveLength(19);
+    expect(limiter.reserveSend('0900000002')).toBeNull();
+    c.advance(59_001);
+    expect(limiter.reserveSend('0900000001')).toBe(1);
+    c.advance(999);
+    expect(limiter.reserveSend('0900000001')).toBeNull();
+  });
+
+  it('counts concurrent admissions before awaiting and isolates credential kinds', async () => {
+    const limiter = signInLimiter(() => 1_000_000);
+    const refs = [{ id: '0900000001', kind: 'collector' }] as const;
+    const noDb = new Proxy({} as Db, { get() { throw new Error('database must not be touched'); } });
+    const admitted = await Promise.all(Array.from({ length: 10 }, (_, i) =>
+      signInAttempt(noDb, limiter, `192.0.2.${i}`, 'collector.login_failed', refs).blocked()));
+    expect(admitted).toEqual(Array(10).fill(null));
+    expect(limiter.refusedFor('192.0.2.99', refs)).toBe(300);
+    expect(limiter.refusedFor('192.0.2.99', [op(refs[0].id)])).toBeNull();
+    expect(limiter.refusedFor('192.0.2.99', [mach(refs[0].id)])).toBeNull();
+    expect(limiter.refusedFor('192.0.2.0', [{ id: '0900000002', kind: 'collector' }])).toBeNull();
   });
 
   it('does not count a blank field as a reference', () => {

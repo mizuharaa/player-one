@@ -8,7 +8,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { EpisodeRecord } from '@playerone/contracts';
 import { open, type Db } from '@playerone/store';
 import { buildApi, hashCredential } from '../src/index.ts';
-import { appDb, DB_URL, closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
+import { appDb, DB_URL, closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 import { episodeRecord } from './fixtures.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -1309,20 +1309,78 @@ describe.skipIf(!hasDb())('the review lane', () => {
       expect(counts[0]).toEqual({ reviews: 1, settlements: 1 });
     });
 
-    it('records one row when the same verdict arrives twice at once', async () => {
+    it.each([true, false])('serialises verdicts on separate API connections (same request id: %s)', async (sameId) => {
       const h = await harness({ episodes: [record({ measured: 60 })] });
       const episodeId = (await claim(h)).json().episode_id;
       const body = { verdict_id: uid(), episode_id: episodeId, decision: 'good' };
+      const url = new URL(dbUrl());
+      if (process.env['PLAYERONE_DB_ROLE']) url.searchParams.set('role', process.env['PLAYERONE_DB_ROLE']);
+      const connection = await open(url.toString());
+      const blocker = await open(dbUrl());
+      const other = buildApi({ db: connection, tokenSecret: SECRET });
+      const pending: Promise<LightMyRequestResponse>[] = [];
+      try {
+        await other.ready();
+        // Hold the episode until BOTH requests reach the transaction. Promise.all
+        // alone on db()'s single connection never exercised the losing UPDATE.
+        await blocker.transaction(async (tx) => {
+          await tx.execute(sql`select 1 from episodes where episode_id = ${episodeId} for update`);
+          pending.push(verdict(h, body));
+          pending.push(Promise.resolve(other.inject({
+            method: 'POST', url: '/api/review/verdict', headers: h.headers,
+            payload: sameId ? body : { ...body, verdict_id: uid(), decision: 'bad', reject_reasons: ['VQ-DARK'] },
+          })));
+          await expect.poll(async () => {
+            // PostgreSQL caches activity snapshots within a transaction.
+            await tx.execute(sql`select pg_stat_clear_snapshot()`);
+            const [row] = await tx.execute<{ n: number }>(sql`
+              select count(*)::int as n from pg_stat_activity
+               where datname = current_database() and wait_event_type = 'Lock'
+                 and query like '%for update%'
+            `);
+            return row!.n;
+          }, { timeout: 15_000 }).toBe(2);
+        });
+        const pair = await Promise.all(pending);
+        expect(pair.map((r) => r.statusCode).sort()).toEqual(sameId ? [200, 200] : [200, 409]);
+        if (sameId) {
+          expect(pair.map((r) => r.json().replayed).sort()).toEqual([false, true]);
+          expect(pair[0]!.json().amount).toBe(pair[1]!.json().amount);
+        } else expect(pair.find((r) => r.statusCode === 409)!.json().error).toBe('reassigned');
+        const [counts] = await h.d.execute<{ reviews: number; settlements: number; audits: number }>(sql`
+          select (select count(*) from episode_reviews where review_state <> 'pending')::int as reviews,
+                 (select count(*) from settlements)::int as settlements,
+                 (select count(*) from audit_events where action = 'episode.review')::int as audits
+        `);
+        expect(counts).toEqual({ reviews: 1, settlements: 1, audits: 1 });
+      } finally {
+        await Promise.allSettled(pending);
+        await other.close();
+        await connection.close();
+        await blocker.close();
+      }
+    });
 
-      const [a, b] = await Promise.all([verdict(h, body), verdict(h, body)]);
-      expect([a!.statusCode, b!.statusCode]).toEqual([200, 200]);
-      expect(a!.json().amount).toBe(b!.json().amount);
-
-      const counts = (await h.d.execute(sql`
-        select (select count(*) from episode_reviews where review_state <> 'pending')::int as reviews,
-               (select count(*) from settlements)::int as settlements
-      `)) as unknown as { reviews: number; settlements: number }[];
-      expect(counts[0]).toEqual({ reviews: 1, settlements: 1 });
+    it('recovers a committed verdict after losing its response and restarting the API', async () => {
+      const h = await harness({ episodes: [record({ measured: 60 })] });
+      const episodeId = (await claim(h)).json().episode_id;
+      const body = { verdict_id: uid(), episode_id: episodeId, decision: 'good' };
+      // Discard the body: the client cannot tell whether its first write landed.
+      expect((await verdict(h, body)).statusCode).toBe(200);
+      await h.app.close();
+      await h.d.execute(sql`update episode_reviews set lease_expires_at = now() - interval '1 minute'
+        where episode_id = ${episodeId}`);
+      const restarted = buildApi({ db: await appDb(), tokenSecret: SECRET });
+      try {
+        const replay = await restarted.inject({ method: 'POST', url: '/api/review/verdict', headers: h.headers, payload: body });
+        expect(replay.statusCode, replay.body).toBe(200);
+        expect(replay.json()).toMatchObject({ replayed: true, verdict_id: body.verdict_id, amount: '1200.0000' });
+        const [counts] = await h.d.execute<{ settlements: number; audits: number }>(sql`
+          select (select count(*) from settlements)::int as settlements,
+                 (select count(*) from audit_events where action = 'episode.review')::int as audits
+        `);
+        expect(counts).toEqual({ settlements: 1, audits: 1 });
+      } finally { await restarted.close(); }
     });
 
     it('refuses a verdict from a reviewer who does not hold the lease', async () => {
@@ -1335,6 +1393,11 @@ describe.skipIf(!hasDb())('the review lane', () => {
       );
       expect(res.statusCode).toBe(409);
       expect(res.json().error).toBe('reassigned');
+      const [counts] = await h.d.execute<{ settlements: number; audits: number }>(sql`
+        select (select count(*) from settlements)::int as settlements,
+               (select count(*) from audit_events where action = 'episode.review')::int as audits
+      `);
+      expect(counts).toEqual({ settlements: 0, audits: 0 });
     });
 
     it('refuses a verdict once the lease has expired', async () => {
@@ -1344,6 +1407,11 @@ describe.skipIf(!hasDb())('the review lane', () => {
       const res = await verdict(h, { verdict_id: uid(), episode_id: episodeId, decision: 'good' });
       expect(res.statusCode).toBe(409);
       expect(res.json().error).toBe('reassigned');
+      const [counts] = await h.d.execute<{ settlements: number; audits: number }>(sql`
+        select (select count(*) from settlements)::int as settlements,
+               (select count(*) from audit_events where action = 'episode.review')::int as audits
+      `);
+      expect(counts).toEqual({ settlements: 0, audits: 0 });
     });
 
     it('writes the audit row in the same transaction as the verdict', async () => {

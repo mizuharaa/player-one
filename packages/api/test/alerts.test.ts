@@ -26,6 +26,7 @@ const ORDER = [
   'review_cannot_read_cloud',
   'cross_border_timeouts',
   'storage_near_quota',
+  'archive_tag_failures',
 ];
 
 describe.skipIf(!hasDb())('operational alerts', () => {
@@ -34,6 +35,25 @@ describe.skipIf(!hasDb())('operational alerts', () => {
 
   const byId = async (storageQuotaBytes?: number): Promise<Record<string, Alert>> =>
     Object.fromEntries((await readAlerts(await db(), { storageQuotaBytes })).map((a) => [a.id, a]));
+
+  it('11: counts failed archive operations in the previous 24 hours even after a successful retry', async () => {
+    const d = await db();
+    const centre = uid(), machine = uid(), operator = uid();
+    await d.execute(sql`insert into upload_centres (id, region, name, status) values (${centre}, 'HCM', 'A', 'active')`);
+    await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status) values (${machine}, ${centre}, 'M1', 'active')`);
+    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role) values (${operator}, ${centre}, 'op1', 'centre_operator')`);
+    const event = (action: string, hoursAgo: number, after: unknown) => d.execute(sql`
+      insert into audit_events (occurred_at, action, target_table, target_id, actor_role, operator_id, upload_device_id, upload_centre_id, after)
+      values (now() - ${hoursAgo} * interval '1 hour', ${action}, 'bills', ${uid()}, 'operator', ${operator}, ${machine}, ${centre}, ${JSON.stringify(after)}::jsonb)`);
+    expect((await byId())['archive_tag_failures']).toMatchObject({ state: 'ok', observed: 0, threshold: 1 });
+    await event('bill.archive_tag_failed', 2, { operation: 'billing', attempted: 100, confirmed: 0, failed_object_keys: Array.from({ length: 100 }, (_, i) => `key-${i}`), query_failed: false });
+    await event('bill.archive_tag_failed', 1, { operation: 'retry', attempted: 0, confirmed: 0, failed_object_keys: [], query_failed: true });
+    await event('bill.archive_tag_failed', 25, {});
+    await event('bill.archive_tag_failed', -1, {});
+    expect((await byId())['archive_tag_failures']).toMatchObject({ state: 'firing', observed: 2, threshold: 1 });
+    await event('bill.archive_tag_retry', 0, { operation: 'retry', attempted: 5, confirmed: 5, failed_object_keys: [], query_failed: false });
+    expect((await byId())['archive_tag_failures']).toMatchObject({ state: 'firing', observed: 2, threshold: 1 });
+  });
 
   it('answers all ten in order, and names the three blind conditions without a quota', async () => {
     const rows = await readAlerts(await db());
@@ -89,7 +109,7 @@ describe.skipIf(!hasDb())('operational alerts', () => {
       headers: { 'x-machine-token': `Bearer ${m}`, authorization: `Bearer ${o}` },
     });
     expect(asOperator.statusCode, asOperator.body).toBe(200);
-    expect(asOperator.json().alerts).toHaveLength(10);
+    expect(asOperator.json().alerts).toHaveLength(11);
     expect(asOperator.json().alerts).toContainEqual({
       id: 'storage_near_quota', state: 'ok', observed: 0, threshold: 160,
     });
