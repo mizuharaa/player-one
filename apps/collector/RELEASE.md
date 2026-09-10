@@ -4,13 +4,26 @@ Build from the reviewed release candidate, with a frozen lockfile and the Androi
 toolchain installed. Do not install dependencies through another worktree's junction.
 The native `android` directory is generated; never place the upload keystore there.
 
-On Windows, build in a short physical checkout or source snapshot, for example
+On Windows, build in a short physical Git checkout, for example
 `C:/build/playerone`, with its own frozen-lockfile install and the repository's
 hoisted node linker. The deeply nested demo worktree reproduced Ninja's
 `manifest 'build.ninja' still dirty after 100 tries` even with flat dependencies:
 Ninja reported an existing ReactAndroid CMake file as missing. The identical
 source in a short directory passed that failed native compilation step. Do not
 patch generated CMake files or borrow another worktree's dependencies.
+
+The wrapper requires a clean, committed checkout before it starts. Plain source
+snapshots are rejected: a supplied revision string cannot prove what was copied.
+Review and commit the intended inputs first. If Expo changes tracked files while
+generating Android, the wrapper refuses to record a successful release; inspect
+those changes and rebuild from a clean commit. It never stages them for you.
+
+Run both test gates from the repository root: `pnpm exec vitest run` (unset
+`DATABASE_URL` for the database-free run) and
+`pnpm --filter @playerone/collector test:release`. The latter runs the Node release
+configuration/provenance tests, which Vitest does not collect. Its direct
+equivalent is `node --test apps/collector/scripts/*.test.mjs`. Neither gate is a
+native build or handset test.
 
 ## Demo
 
@@ -69,6 +82,34 @@ SDK, permissions, package/version and native library page-size compatibility.
 Run Play internal testing and its device reports. Record Git SHA, lockfile hash,
 artifact SHA-256, build profile, API origin, signing certificate fingerprint and
 device checks together. Do not record passwords or private key material.
+
+## Build provenance and matching services
+
+After both native commands succeed, the wrapper requires a non-empty output and
+writes `<artifact>.manifest.json` next to the APK or AAB. This records its actual
+byte count and SHA-256, build time, selected profile, validated API origin,
+application id/version, Git revision, clean-source status and lockfile SHA-256.
+It refuses changed source or an existing sidecar. Native regeneration clears the
+generated output directory; retain delivered artifacts and their sidecars outside
+that directory. A failed command creates no new sidecar and is not a new release.
+
+Build the server and console from the same recorded Git revision and lockfile:
+install frozen dependencies in each clean checkout, run the repository typecheck,
+then build the console with `pnpm --filter @playerone/console build`. The API runs
+from the checked-out TypeScript through the centre kit; its deployment unit is
+that revision plus the frozen dependencies, not the console bundle. Keep the
+revision and lockfile hash with the deployed server and console build. Do not mix
+an older generated console directory with a newer server checkout.
+
+The Android sidecar records selected inputs, **not** which API the installed app
+actually reaches. For the chosen host, install the resulting artifact on a
+handset, stop Metro, and make a sign-in request. Correlate its time and route with
+the selected server's request log and record that result separately. Check fresh
+sign-in and restored-session behavior. The old emulator origin `10.0.2.2` is not
+a reachable API address for an ordinary phone.
+
+Demo and Play use different application ids: the Play installation does not
+upgrade the demo package or inherit its saved session. Test its fresh sign-in.
 
 Publication also needs the organization account, approved privacy/consent text,
 accurate Data safety declarations, a usable account-deletion request path in-app

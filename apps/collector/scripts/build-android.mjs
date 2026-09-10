@@ -1,6 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { join, resolve } from 'node:path';
+import { releaseSource, writeReleaseManifest } from './build-provenance.mjs';
 
 const require = createRequire(import.meta.url);
 const profile = process.argv[2];
@@ -8,7 +10,9 @@ if (!['demo', 'play'].includes(profile)) throw new Error('Choose demo (APK) or p
 const root = fileURLToPath(new URL('../', import.meta.url));
 process.env.PLAYERONE_BUILD_PROFILE = profile;
 const configure = require('../app.config.cjs');
-configure({ config: require('../app.json').expo }); // Fail before cleaning or building native files.
+const config = configure({ config: require('../app.json').expo }); // Fail before cleaning or building native files.
+const repoRoot = resolve(root, '../..');
+const source = releaseSource(repoRoot); // Require reviewed, committed inputs before native generation.
 if (profile === 'play') {
   const cert = spawnSync('keytool', ['-J-Duser.language=en', '-list', '-v', '-keystore', process.env.PLAYERONE_UPLOAD_KEYSTORE,
     '-alias', process.env.PLAYERONE_UPLOAD_KEY_ALIAS, '-storepass:env', 'PLAYERONE_UPLOAD_STORE_PASSWORD'],
@@ -26,4 +30,7 @@ const task = profile === 'play' ? 'bundleRelease' : 'assembleRelease';
 const android = fileURLToPath(new URL('../android/', import.meta.url));
 if (process.platform === 'win32') run('cmd.exe', ['/d', '/c', 'gradlew.bat', task], android);
 else run('./gradlew', [task], android);
-console.log(`${profile} build complete. Verify the artifact signature and test it on a handset before distribution.`);
+const artifactPath = join(android, 'app/build/outputs', profile === 'play' ? 'bundle/release/app-release.aab' : 'apk/release/app-release.apk');
+const manifestPath = writeReleaseManifest({ repoRoot, source, artifactPath, profile, apiOrigin: process.env.EXPO_PUBLIC_API_URL, config });
+console.log(`${profile} build complete. Input provenance: ${manifestPath}`);
+console.log('Verify the artifact signature and the actual API reached on a handset before distribution. The manifest does not prove runtime configuration.');
