@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Switch, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
 import { EXAM_QUESTION_COUNT } from '../api/mock.ts';
@@ -6,7 +6,7 @@ import { useApi } from '../api/context.tsx';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Card, Screen, Tag } from '../ui.tsx';
+import { Body, Button, Card, Note, Screen, Tag } from '../ui.tsx';
 
 /**
  * APP-04: pass/fail recorded; APP-05's gate follows from the result. The
@@ -19,13 +19,33 @@ export function Exam() {
   const theme = useTheme();
   const [answers, setAnswers] = useState<boolean[]>(Array(EXAM_QUESTION_COUNT).fill(false));
   const [result, setResult] = useState<'passed' | 'failed' | null>(null);
+  const submitting = useRef(false);
+  const completed = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const questions = [tt('exam.q1'), tt('exam.q2'), tt('exam.q3')];
 
   const submit = useMutation({
-    mutationFn: () => api.submitExam(answers),
-    onSuccess: ({ passed }) => setResult(passed ? 'passed' : 'failed'),
+    mutationFn: (snapshot: boolean[]) => api.submitExam(snapshot),
+    onSuccess: ({ passed }) => {
+      if (!mounted.current) return;
+      // The server preserves a pass; this screen must preserve its handoff too.
+      completed.current = passed;
+      setResult(passed ? 'passed' : 'failed');
+    },
+    onSettled: () => { submitting.current = false; },
   });
+
+  const sendAnswers = () => {
+    if (!mounted.current || submitting.current || completed.current) return;
+    submitting.current = true;
+    setResult(null);
+    submit.mutate([...answers]);
+  };
 
   return (
     <Screen title={tt('exam.title')}>
@@ -46,7 +66,12 @@ export function Exam() {
             <Switch
               accessibilityLabel={q}
               value={answers[i] === true}
-              onValueChange={(v) => setAnswers((a) => a.map((x, j) => (j === i ? v : x)))}
+              disabled={submit.isPending || result === 'passed'}
+              onValueChange={(v) => {
+                if (submitting.current || completed.current) return;
+                setResult(null);
+                setAnswers((a) => a.map((x, j) => (j === i ? v : x)));
+              }}
               thumbColor={theme.color.background}
               trackColor={{ false: theme.color.borderStrong, true: theme.color.sun[500] }}
             />
@@ -59,10 +84,15 @@ export function Exam() {
       {result === 'failed' ? (
         <Tag label={tt('exam.failed')} fg={theme.color.verdict.reject.fg} bg={theme.color.verdict.reject.bg} />
       ) : null}
+      {submit.isError ? <Note text={tt('common.actionFailed')} /> : null}
       {result === 'passed' ? (
         <Button label={tt('home.tasks')} onPress={() => nav.reset({ name: 'home' })} />
       ) : (
-        <Button label={tt('exam.submit')} onPress={() => submit.mutate()} />
+        <Button
+          label={tt(submit.isPending ? 'common.loading' : submit.isError ? 'common.retry' : 'exam.submit')}
+          disabled={submit.isPending}
+          onPress={sendAnswers}
+        />
       )}
     </Screen>
   );
