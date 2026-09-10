@@ -1,4 +1,21 @@
-# One LAN centre on Windows
+# One centre on Windows: LAN demo or HTTPS production
+
+Choose `centre.env.example` for an in-room HTTP demo, or
+`centre.https.env.example` for a real HTTPS hostname. Copy only the chosen
+template to `centre.env`; both use the same Caddyfile. A template is not a
+deployment: the host/interface, account, cloud configuration, sign-in delivery
+and encrypted backup destination must be supplied by the deployment owner.
+Neither mode enables remote reviewer footage or the real payout gateway.
+
+Run `node deploy/centre/check.mjs preflight deploy/centre/centre.env` before
+starting anything. It reports missing settings and tools without printing
+credentials. Exit 0 means these local checks passed, 1 means a check failed,
+and 2 means invalid arguments or an unreadable/malformed environment file.
+It never connects to a database or writes to object storage.
+
+Use [REHEARSAL.md](REHEARSAL.md) for health checks, backup/restore proof,
+reboot checks, rollback and the final demo gate. Do not call the deployment
+ready until that rehearsal has been performed on its actual host and handset.
 
 Use a dedicated Windows account, shown here as `CENTRE-PC\centre`, and a fixed
 LAN address, shown as `192.168.1.10`. The checkout is `C:\PlayerOne`. Replace
@@ -20,9 +37,9 @@ Commands below use PowerShell, except the explicitly labelled cmd block.
    `node -v`, `pnpm -v`, `ffprobe -version` and `caddy version`. Add
    `C:\Program Files\PostgreSQL\18\bin` to PATH for `psql` and `createdb`.
    The Postgres installer starts its Windows service; keep it automatic and
-   listening on loopback. Copy the installed Caddy executable to
-   `C:\Tools\Caddy\caddy.exe`, or change `run-caddy.cmd` to its installed
-   absolute path (find it with `Get-Command caddy`).
+   listening on loopback. Set `PLAYERONE_CADDY_EXE` and `PLAYERONE_NODE_EXE`
+   in `centre.env` to their installed absolute paths. The wrappers use those
+   same paths; find them with `Get-Command caddy` and `Get-Command node`.
 
 2. Clone and install:
 
@@ -94,11 +111,11 @@ Commands below use PowerShell, except the explicitly labelled cmd block.
    pnpm -F @playerone/console build
    ```
 
-6. Copy `deploy\centre\centre.env.example` to `deploy\centre\centre.env` and
+6. Copy the chosen LAN or HTTPS template to `deploy\centre\centre.env` and
    replace every `REPLACE_...` value. Set the media root to the directory that
    will hold imported `ego_*` folders, and create it. Supply the actual storage
-   endpoint, bucket, keys and allocation; `200000000000` is the current POC
-   quota from [RUNNING.md](../../docs/RUNNING.md#running-it). Apply and read back
+   endpoint, bucket, keys and allocation rather than carrying a previous POC
+   quota into this installation. Apply and read back
    the [bucket lifecycle rule](../../docs/RUNNING.md#the-bucket-needs-one-rule-set-on-it-by-hand)
    before the first real upload.
 
@@ -106,20 +123,34 @@ Commands below use PowerShell, except the explicitly labelled cmd block.
    no `export`/`set` prefix, no inline comments; `#` starts a comment. Use hex
    for generated local secrets so cmd quoting is unambiguous. Keep the file
    readable only by the centre account and administrators; it and `logs/` are
-   ignored by git. Leave `PLAYERONE_SECURE_COOKIES` and
-   `PLAYERONE_REVIEWER_MEDIA` unset in the account's inherited environment too.
+   ignored by git. Keep `PLAYERONE_REVIEWER_MEDIA=0`. Set
+   `PLAYERONE_SECURE_COOKIES=0` for the HTTP LAN and `1` for HTTPS.
    The API stays at `127.0.0.1:8080`, with `REVIEW_VERIFICATION_GATE=cloud`.
 
-   In `Caddyfile`, replace `192.168.1.10` with the PC's fixed LAN address and
-   `C:/PlayerOne/apps/console/dist` with the built console's absolute path
-   (quote it if it contains spaces). Validate it:
+   Set `PLAYERONE_PUBLIC_URL` to the actual origin, `PLAYERONE_BIND` to its
+   interface IP and `PLAYERONE_CONSOLE_ROOT` to the build directory. Use
+   forward slashes in the console path because Caddy quotes it. For LAN,
+   the origin host and bind IP must match. For HTTPS, arrange the actual
+   hostname, DNS, certificate issuance and inbound proxy ports with the host
+   owner first. Never publish the LAN configuration on a public interface.
+
+   Preflight, load the validated file into this PowerShell process without
+   evaluating its contents, then validate Caddy (validation does not start it):
 
    ```powershell
-   C:\Tools\Caddy\caddy.exe validate --config deploy\centre\Caddyfile --adapter caddyfile
+   node deploy/centre/check.mjs preflight deploy/centre/centre.env
+   if ($LASTEXITCODE -ne 0) { throw 'Fix preflight failures before starting the centre' }
+   Get-Content deploy\centre\centre.env | Where-Object { $_ -and -not $_.TrimStart().StartsWith('#') } | ForEach-Object {
+     $key, $value = $_ -split '=', 2
+     [Environment]::SetEnvironmentVariable($key, $value, 'Process')
+   }
+   & $env:PLAYERONE_CADDY_EXE validate --config deploy\centre\Caddyfile --adapter caddyfile
+   if ($LASTEXITCODE -ne 0) { throw 'Fix the Caddy configuration before starting it' }
    ```
 
-   Allow inbound TCP 80 on the Windows private/LAN firewall profile, scoped
-   to the local subnet. Keep port 8080 on loopback. Caddy carries the five
+   For LAN, allow inbound TCP 80 on the Windows private firewall profile,
+   scoped to the local subnet. For HTTPS, expose only the proxy ports required
+   by the chosen certificate/hosting arrangement. Keep the API on loopback. Caddy carries the five
    console API paths and cookies unchanged; unmatched routes use the SPA.
    `/episodes` is a console route. Counter traffic uses the API directly;
    the heartbeat uses Fastify inject inside the API process.
@@ -158,13 +189,13 @@ Commands below use PowerShell, except the explicitly labelled cmd block.
    `schtasks /end /tn PlayerOne-api`, then `/run`; substitute the other names
    as needed. After a reboot, confirm all three start under the centre account.
 
-9. Open `http://<LAN address>/` from an operator PC. Sign in with machine
+9. Open `PLAYERONE_PUBLIC_URL` from an operator PC. Sign in with machine
    `counter-1` and its secret, then administrator `op-1` and its secret.
    Reload a nested console route such as `/episodes` to check the SPA fallback.
 
-10. Verify one real card on the centre PC with the sibling-lane command
-    `packages/api/bin/counter.ts`. That command is delivered by the counter
-    track; use its documented card/handover arguments once it is present.
+10. Verify one real card on the centre PC with
+    `packages/api/bin/counter.ts import`, using the
+    [documented card/handover arguments](../../docs/RUNNING.md#the-operator-api).
     Load the same environment in **cmd.exe**, from the checkout root:
 
     ```bat
@@ -177,8 +208,9 @@ Commands below use PowerShell, except the explicitly labelled cmd block.
     Follow its import/upload/read-back verification through to a verified
     delivery and check the episode in the console. Never clear the source card.
 
-TLS is deliberately outside this LAN kit; follow
+The HTTPS template provides the proxy configuration, not a hostname or
+certificate promise; follow
 [RUNNING.md](../../docs/RUNNING.md#the-server-speaks-plain-http-and-always-will)
-for anything reachable outside the room. Disk encryption is operations work
+for that deployment boundary. Disk encryption is operations work
 owned by Alois under [ADR 0004](../../docs/adr/0004-sec06-is-disk-encryption-at-the-upload-centre.md).
 Remote reviewers remain blocked on D11; this kit does not enable their raw-media access.
