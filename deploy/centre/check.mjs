@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Deployment checks only: no SQL, storage writes, sign-ins or task registration.
 import { access, readFile, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
@@ -46,8 +45,10 @@ export function configurationChecks(env) {
       ['APP_ID', 'PAYMENT_ID', 'KEY1', 'PUBLIC_KEY'].some((key) => env[`PLAYERONE_ZALOPAY_${key}`])) {
     fail('gateway-scope', 'Remove gateway credentials and keep its environment sandbox for this pre-gateway deployment; billing still works.');
   }
-  if (!/^\d+$/.test(env.PLAYERONE_STORAGE_QUOTA_BYTES ?? '') || BigInt(env.PLAYERONE_STORAGE_QUOTA_BYTES ?? '0') <= 0n) {
-    fail('quota', 'Set PLAYERONE_STORAGE_QUOTA_BYTES to the actual positive allocation in bytes.');
+  // Match storageQuotaFromEnv in packages/api/src/alerts.ts; pinned by the parity test.
+  const quota = Number(env.PLAYERONE_STORAGE_QUOTA_BYTES);
+  if (!/^[0-9]+$/.test(env.PLAYERONE_STORAGE_QUOTA_BYTES ?? '') || !Number.isSafeInteger(quota) || quota < 1_250_000_000) {
+    fail('quota', 'Set PLAYERONE_STORAGE_QUOTA_BYTES to the actual allocation: digits only, from 1,250,000,000 to 9,007,199,254,740,991 bytes.');
   }
   if ((env.PLAYERONE_TOKEN_SECRET ?? '').length < 32) fail('token-secret', 'Generate a persistent token secret of at least 32 characters.');
   try {

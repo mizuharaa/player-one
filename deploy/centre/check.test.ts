@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { configurationChecks, healthChecks, readEnvironment } from './check.mjs';
+import { storageQuotaFromEnv } from '../../packages/api/src/alerts.ts';
 
 const base = {
   PLAYERONE_DEPLOY_MODE: 'lan-demo', PLAYERONE_PUBLIC_URL: 'http://127.0.0.1', PLAYERONE_BIND: '127.0.0.1',
@@ -14,7 +15,7 @@ const base = {
   PLAYERONE_MACHINE_IDENTIFIER: 'test-machine', PLAYERONE_MACHINE_SECRET: 'm'.repeat(64),
   PLAYERONE_OPERATOR_REF: 'test-operator', PLAYERONE_OPERATOR_SECRET: 'o'.repeat(64),
   STORAGE_ENDPOINT: 'https://storage.invalid', STORAGE_BUCKET: 'test', STORAGE_KEY: 'test', STORAGE_SECRET: 'test',
-  PLAYERONE_STORAGE_QUOTA_BYTES: '200', PLAYERONE_CONSOLE_ROOT: 'C:/fixtures/console',
+  PLAYERONE_STORAGE_QUOTA_BYTES: '200000000000', PLAYERONE_CONSOLE_ROOT: 'C:/fixtures/console',
   PLAYERONE_BACKUP_DIR: 'C:/fixtures/backups', HOST: '127.0.0.1', PORT: '8080',
   REVIEW_VERIFICATION_GATE: 'cloud', PLAYERONE_REVIEWER_MEDIA: '0', PLAYERONE_SECURE_COOKIES: '0',
   PLAYERONE_PAYOUT_MODE: 'manual', PLAYERONE_DEMO_PHONE: '+84900000001',
@@ -24,6 +25,26 @@ const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 
 describe('deployment configuration boundaries', () => {
+  it.each([
+    ['200', false], ['1249999999', false], ['1250000000', true],
+    ['200000000000', true], ['2000000000000', true],
+    ['9007199254740991', true], ['9007199254740992', false],
+    ['1e12', false], ['-1', false], ['12a', false], ['1250000000.0', false],
+    [' 1250000000', false], ['1250000000\n', false],
+  ] as const)('quota %s agrees with API startup (accepted: %s)', (value, accepted) => {
+    const env = { ...base, PLAYERONE_STORAGE_QUOTA_BYTES: value };
+    const quotaFailures = failures(env).filter((r: { check: string }) => r.check === 'quota');
+    expect(quotaFailures.length === 0).toBe(accepted);
+    if (accepted) expect(storageQuotaFromEnv(env)).toBe(Number(value));
+    else expect(() => storageQuotaFromEnv(env)).toThrow(/safe integer/);
+  });
+
+  it.each([undefined, ''])('preflight requires an explicit quota even when runtime tolerates %s', (value) => {
+    const env = { ...base, PLAYERONE_STORAGE_QUOTA_BYTES: value };
+    expect(storageQuotaFromEnv(env)).toBeUndefined();
+    expect(failures(env)).toContainEqual(expect.objectContaining({ check: 'quota' }));
+  });
+
   it('accepts an explicit LAN demo without weakening the cloud review gate', () => {
     expect(failures(base)).toEqual([]);
     expect(failures({ ...base, REVIEW_VERIFICATION_GATE: 'local' })).toEqual([
