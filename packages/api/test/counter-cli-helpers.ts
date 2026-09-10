@@ -22,7 +22,7 @@ export const flags = {
 export const argsFor = (values: Record<string, string> = flags) =>
   ['import', ...Object.entries(values).flatMap(([key, value]) => [`--${key}`, value])];
 
-export function runCounter(args = argsFor(), overrides: NodeJS.ProcessEnv = {}) {
+export function runCounter(args = argsFor(), overrides: NodeJS.ProcessEnv = {}, onStderr?: (text: string) => void) {
   const env: NodeJS.ProcessEnv = { ...process.env, ...credentials, PLAYERONE_MEDIA_ROOT: '', ...overrides };
   delete env.DATABASE_URL;
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
@@ -32,7 +32,7 @@ export function runCounter(args = argsFor(), overrides: NodeJS.ProcessEnv = {}) 
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
-    child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; onStderr?.(stderr); });
     child.on('error', reject);
     child.on('close', (code) => resolve({ code, stdout, stderr }));
   });
