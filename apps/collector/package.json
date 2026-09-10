@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "expo start",
     "android": "expo run:android",
+    "test:release": "node --test scripts/*.test.mjs",
     "apk": "node scripts/build-android.mjs demo",
     "aab": "node scripts/build-android.mjs play"
   },

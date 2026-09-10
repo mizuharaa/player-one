@@ -32,12 +32,25 @@ variable from the file AND account environment, configure production ZNS, and
 prove delivery to a real handset. Never use seed-console on retained data; it
 truncates tables.
 
+In sandbox mode without ZNS configured, sign-in codes, including the demo
+phone's code, are **logged, not delivered**.
+The Windows wrapper writes them to `deploy/centre/logs/api-YYYY-MM-DD.log`,
+even when a separate demo phone is configured. Keep this mode confined to a
+controlled staff rehearsal, restrict access to those logs, and never include
+them in release bundles. A real collector pilot requires demonstrated ZNS
+delivery; a green configuration check is not that demonstration.
+
 ## Startup and health
 
 Start the existing API, alerts and Caddy wrappers or registered tasks using the
 README. The tasks trigger on logon, not merely power-on. They do not prove
 reboot survival until a real reboot/sign-in has been rehearsed. Inspect the
 three task results and their dated logs if any process stops.
+
+An unattended reboot leaves these interactive tasks stopped until the selected
+Windows user signs in. This kit does not enable auto-logon. Do not describe it
+as unattended restart recovery; choose and test the actual hosting setup before
+depending on it for an unattended pilot.
 
 ```powershell
 node deploy/centre/check.mjs health deploy/centre/centre.env

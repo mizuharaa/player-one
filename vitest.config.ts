@@ -7,7 +7,8 @@ import { configDefaults, defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   test: {
-    exclude: [...configDefaults.exclude, '.claude/**'],
+    // Native release checks use node:test; run them with collector test:release.
+    exclude: [...configDefaults.exclude, '.claude/**', 'apps/collector/scripts/**/*.test.mjs'],
     /**
      * Every database test file creates and migrates its own throwaway database
      * in a `beforeAll`, and vitest runs those files in parallel. On a slow CI

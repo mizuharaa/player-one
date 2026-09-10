@@ -40,6 +40,20 @@ describe('deployment configuration boundaries', () => {
       .toContainEqual(expect.objectContaining({ check: 'lan-origin' }));
   });
 
+  it('discloses undelivered codes with or without a demo phone, without leaking its number', () => {
+    for (const phone of [undefined, '+84912345678']) {
+      const findings = configurationChecks({ ...base, PLAYERONE_DEMO_PHONE: phone });
+      expect(findings).toContainEqual(expect.objectContaining({
+        level: 'NOTE', check: 'sign-in-code-log',
+        message: expect.stringContaining('deploy/centre/logs/api-YYYY-MM-DD.log'),
+      }));
+      expect(JSON.stringify(findings)).not.toContain('+84912345678');
+    }
+    expect(configurationChecks({ ...base,
+      PLAYERONE_ZNS_ACCESS_TOKEN: 'test-only-token', PLAYERONE_ZNS_TEMPLATE_ID: 'test-only-template',
+    })).not.toContainEqual(expect.objectContaining({ check: 'sign-in-code-log' }));
+  });
+
   it('accepts HTTPS only with secure cookies, real ZNS configuration and no demo autofill', () => {
     const production = { ...base, PLAYERONE_DEPLOY_MODE: 'https-production',
       PLAYERONE_PUBLIC_URL: 'https://deployment.invalid', PLAYERONE_SECURE_COOKIES: '1',
@@ -50,6 +64,12 @@ describe('deployment configuration boundaries', () => {
       .toContainEqual(expect.objectContaining({ check: 'demo-phone' }));
     expect(failures({ ...production, PLAYERONE_ZNS_ACCESS_TOKEN: undefined }))
       .toContainEqual(expect.objectContaining({ check: 'zns' }));
+  });
+
+  it('refuses production ZNS without credentials even on a LAN demo', () => {
+    const findings = configurationChecks({ ...base, PLAYERONE_ZNS_ENV: 'production' });
+    expect(findings).toContainEqual(expect.objectContaining({ level: 'FAIL', check: 'zns' }));
+    expect(findings).not.toContainEqual(expect.objectContaining({ check: 'sign-in-code-log' }));
   });
 
   it('refuses an owner database connection, inherited reviewer access and a live payout rail', () => {

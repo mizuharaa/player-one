@@ -84,9 +84,12 @@ export function configurationChecks(env) {
   const zns = [env.PLAYERONE_ZNS_ACCESS_TOKEN, env.PLAYERONE_ZNS_TEMPLATE_ID];
   if (!['sandbox', 'production'].includes(env.PLAYERONE_ZNS_ENV ?? 'sandbox')) fail('zns-mode', 'PLAYERONE_ZNS_ENV must be sandbox or production.');
   if (zns.some(Boolean) && zns.some(placeholder)) fail('zns', 'Both ZNS access token and template ID must be configured together.');
-  if (mode === 'https-production' && zns.some(placeholder)) fail('zns', 'Production needs real ZNS credentials; their delivery still needs handset proof.');
+  if ((mode === 'https-production' || env.PLAYERONE_ZNS_ENV === 'production') && zns.some(placeholder)) fail('zns', 'Production ZNS needs real credentials; their delivery still needs handset proof.');
   if (mode === 'lan-demo' && !zns.some(Boolean) && !env.PLAYERONE_DEMO_PHONE) {
     fail('collector-sign-in', 'Configure the explicitly chosen demo phone or real ZNS delivery; log-only codes are not a rehearsed collector sign-in.');
+  }
+  if (mode === 'lan-demo' && !zns.some(Boolean) && (env.PLAYERONE_ZNS_ENV ?? 'sandbox') === 'sandbox') {
+    out.push(result('NOTE', 'sign-in-code-log', 'Without ZNS, sign-in codes including demo-phone codes are logged, not delivered: deploy/centre/logs/api-YYYY-MM-DD.log. Use only for controlled staff rehearsal; real collectors require proven ZNS delivery.'));
   }
   out.push(result('NOTE', 'scope', 'Configuration checks do not prove database grants, cloud bytes, handset connectivity or backup recovery.'));
   return out;
