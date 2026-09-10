@@ -182,6 +182,10 @@ export interface CollectorApi {
    * no signal is not a signed-out session, and must not clear the token.
    */
   restoreSession(): Promise<boolean>;
+  /** Local-device sign-out, not server token revocation. Retire this client. */
+  signOut(): Promise<void>;
+  /** Stop accepting results from this client without deleting its stored token. */
+  dispose(): void;
   profile(): Promise<CollectorProfile | null>;
   register(name: string, phone: string): Promise<CollectorProfile>;
   /** APP-02: all six at once, each acceptance naming the version shown. */

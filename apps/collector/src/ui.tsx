@@ -338,11 +338,13 @@ export function Field({
   value,
   onChangeText,
   secure = false,
+  editable = true,
 }: {
   label: string;
   value: string;
   onChangeText: (v: string) => void;
   secure?: boolean;
+  editable?: boolean;
 }) {
   const theme = useTheme();
   return (
@@ -352,6 +354,7 @@ export function Field({
         value={value}
         onChangeText={onChangeText}
         secureTextEntry={secure}
+        editable={editable}
         accessibilityLabel={label}
         style={{
           backgroundColor: theme.color.background,

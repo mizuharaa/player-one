@@ -18,6 +18,8 @@ export type Locale = (typeof LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = 'vi';
 
 const vi = {
+  'signIn.signOut': 'Đăng xuất / đổi tài khoản',
+  'signIn.clearFailed': 'Không xóa được thông tin đăng nhập đã lưu. Hãy thử lại trước khi giao điện thoại cho người khác.',
   'app.name': 'Player One',
 
   'common.back': 'Quay lại',
@@ -33,6 +35,7 @@ const vi = {
     'Nhập số điện thoại của bạn. Chúng tôi gửi mã dùng một lần qua Zalo. Không cần mật khẩu.',
   'signIn.phone': 'Số điện thoại',
   'signIn.sendCode': 'Gửi mã',
+  'signIn.resendCode': 'Gửi lại mã',
   'signIn.codeSent': 'Nếu số này đã được đăng ký, mã sẽ đến qua Zalo trong ít phút. Hãy mở Zalo để xem.',
   'signIn.demoFilled': 'Máy chủ đang ở chế độ trình diễn nên đã điền sẵn mã.',
   'signIn.code': 'Mã dùng một lần',
@@ -217,6 +220,8 @@ const vi = {
 export type MessageKey = keyof typeof vi;
 
 const en: Record<MessageKey, string> = {
+  'signIn.signOut': 'Sign out / switch account',
+  'signIn.clearFailed': 'Could not remove the saved sign-in. Retry before handing this phone to someone else.',
   'app.name': 'Player One',
 
   'common.back': 'Back',
@@ -232,6 +237,7 @@ const en: Record<MessageKey, string> = {
     'Enter your phone number. We send a one-time code over Zalo. There is no password.',
   'signIn.phone': 'Phone number',
   'signIn.sendCode': 'Send code',
+  'signIn.resendCode': 'Resend code',
   'signIn.codeSent': 'If this number is registered, a code will arrive over Zalo shortly. Open Zalo to read it.',
   'signIn.demoFilled': 'The server is in demonstration mode and filled the code in.',
   'signIn.code': 'One-time code',

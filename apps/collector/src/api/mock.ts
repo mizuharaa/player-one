@@ -129,6 +129,15 @@ export class MockCollectorApi implements CollectorApi {
 
   async signIn(): Promise<void> {}
 
+  async signOut(): Promise<void> {
+    this.me = null;
+    this.claims = [];
+    this.devices = [];
+    this.sessionRows = [];
+  }
+
+  dispose(): void {}
+
   async restoreSession(): Promise<boolean> {
     return true;
   }

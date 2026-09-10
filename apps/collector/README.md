@@ -152,10 +152,16 @@ Every one of these is marked `ponytail:` at the place it bites:
   (`src/ui.tsx`). Edge-to-edge on a current Android target is unverified.
 - QR device binding is a fixed serial; VisionCamera needs a native build
   (`src/screens/Devices.tsx`).
-- Training and exam content is a shell. PaXini owes it.
-- No logout and no account switching. A session ends when the token expires,
-  when an operator bumps `collectors.token_epoch`, or when the server answers
-  401. Nobody has asked for a sign-out button and there is no screen for one.
+- Training and the pre-session reminder use the supplied **PXCap Ego Usage
+  Guidelines**, with per-section source references in `src/headset-guidance.ts`.
+  The app displays Vietnamese/English; Chinese guide text is retained for later
+  localization, without claiming Chinese support across the app. Checks are
+  performed on the device or external host software, never verified by this app.
+  Exam questions/answers still require approved PaXini material.
+- **Sign out / switch account** clears the local token, disposes the old HTTP
+  client, cancels private queries and starts a fresh navigation stack/cache.
+  Failed token removal blocks switching and offers retry. This is local sign-out,
+  not server revocation; operators can still revoke tokens via `token_epoch`.
 - Agreements show a title and a version, not a document. There is no body,
   effective date, or server-supplied current version, so the revision path
   cannot be exercised — consent here is a mechanism, not yet informed consent

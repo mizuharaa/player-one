@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "expo start",
     "android": "expo run:android",
-    "apk": "expo prebuild --platform android --clean && cd android && .\\gradlew assembleRelease"
+    "apk": "node scripts/build-android.mjs demo",
+    "aab": "node scripts/build-android.mjs play"
   },
   "dependencies": {
     "@playerone/design": "workspace:*",

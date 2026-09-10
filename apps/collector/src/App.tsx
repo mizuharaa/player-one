@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType } from 'react';
+import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MockCollectorApi } from './api/mock.ts';
@@ -25,7 +25,7 @@ import { TaskHall } from './screens/TaskHall.tsx';
 import { SignIn } from './screens/SignIn.tsx';
 import { Training } from './screens/Training.tsx';
 import { Uploads } from './screens/Uploads.tsx';
-import { Body } from './ui.tsx';
+import { Body, Button } from './ui.tsx';
 import { useT } from './locale.tsx';
 import { useTheme } from './theme.tsx';
 
@@ -57,7 +57,6 @@ function Current() {
   return <Screen />;
 }
 
-const queryClient = new QueryClient();
 
 /**
  * While the keystore is being read and the token checked.
@@ -117,81 +116,94 @@ async function startRoute(api: CollectorApi): Promise<Route> {
  * the Kotlin foreground-service TurboModule for the transfer itself; the
  * `CollectorApi` seam is what it lands behind and the screens do not change.
  *
- * A 401 anywhere clears the token and drops straight back to sign-in. A network
- * failure does NOT: the token is kept and the app opens signed-in, because a
- * collector who walked into a basement has not been signed out, and each screen
- * shows its own `common.loadFailed`.
+ * A 401 clears the token and retires the client/cache. Network failures keep
+ * the token and offer retry; an unreadable profile never means registration
+ * is incomplete. Local sign-out also clears private queries before switching.
  */
-function Session() {
-  /** `null` while restoring, `'out'` at the sign-in screen, else where to open. */
-  const [state, setState] = useState<Route | 'out' | null>(null);
-  // Created once, so `onUnauthorized` can close over `setState`.
-  const [api] = useState<CollectorApi>(() =>
-    USE_MOCK_API
-      ? new MockCollectorApi()
-      : new HttpCollectorApi(API_BASE_URL, secureTokenStore, () => setState('out')),
-  );
+type ApiFactory = (onUnauthorized: () => void) => CollectorApi;
+const createApi: ApiFactory = (onUnauthorized) => USE_MOCK_API
+  ? new MockCollectorApi()
+  : new HttpCollectorApi(API_BASE_URL, secureTokenStore, onUnauthorized);
 
-  /**
-   * Cold start, and again after a sign-in: the token, then where it lands.
-   *
-   * A throw here is the server being unreachable, which is the same case the
-   * cold-start `catch` handles: open the app rather than demand a new sign-in.
-   */
-  const enter = (): Promise<void> =>
-    startRoute(api)
-      .then((route) => {
-        setState(route);
-      })
-      .catch(() => {
-        setState({ name: 'register' });
-      });
+/** A new client, cache and navigation stack for every signed-in identity. */
+export function CollectorSession({ factory = createApi }: { factory?: ApiFactory }) {
+  const [epoch, setEpoch] = useState(0);
+  return <Session key={epoch} factory={factory} restore={epoch === 0} onExited={() => setEpoch((n) => n + 1)} />;
+}
+
+function Session({ factory, restore, onExited }: { factory: ApiFactory; restore: boolean; onExited: () => void }) {
+  const [state, setState] = useState<Route | 'out' | 'unavailable' | 'leaving' | 'clearFailed' | null>(restore ? null : 'out');
+  const alive = useRef(true);
+  const signingOut = useRef(false);
+  const run = useRef(0);
+  const [queryClient] = useState(() => new QueryClient());
+  const [api] = useState(() => factory(() => { if (alive.current) void leave(); }));
+  const tt = useT();
+  const theme = useTheme();
+
+  async function leave() {
+    if (signingOut.current) return;
+    signingOut.current = true;
+    run.current += 1;
+    setState('leaving');
+    api.dispose();
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    try {
+      await api.signOut();
+      if (alive.current) onExited();
+    } catch {
+      if (alive.current) setState('clearFailed');
+    } finally { signingOut.current = false; }
+  }
+
+  async function enter(checkToken = false) {
+    const current = ++run.current;
+    setState(null);
+    try {
+      const next = checkToken && !await api.restoreSession() ? 'out' : await startRoute(api);
+      if (alive.current && current === run.current) setState(next);
+    } catch {
+      // A failed profile query is unknown state, not incomplete registration.
+      if (alive.current && current === run.current) setState('unavailable');
+    }
+  }
 
   useEffect(() => {
-    let live = true;
-    void api
-      .restoreSession()
-      .then(async (ok) => {
-        if (!live) return;
-        if (!ok) {
-          setState('out');
-          return;
-        }
-        await enter();
-      })
-      .catch(() => {
-        // `restoreSession` only throws when the server could not be reached at
-        // all. The token is still there and is still probably good, so open the
-        // app rather than demand a new sign-in; each screen reports its own
-        // `common.loadFailed`.
-        if (live) setState({ name: 'register' });
-      });
+    alive.current = true;
+    if (restore) void enter(true);
     return () => {
-      live = false;
+      alive.current = false;
+      run.current += 1;
+      void queryClient.cancelQueries();
+      queryClient.clear();
+      // StrictMode runs setup again synchronously; only a real unmount retires it.
+      queueMicrotask(() => { if (!alive.current) api.dispose(); });
     };
-  }, [api]);
+  }, [api, queryClient, restore]);
 
-  if (state === null) return <Restoring />;
+  if (state === null || state === 'leaving') return <Restoring />;
+  if (state === 'unavailable' || state === 'clearFailed') return (
+    <View style={{ flex: 1, backgroundColor: theme.color.surface, padding: theme.space[4], gap: theme.space[3] }}>
+      <Body>{tt(state === 'clearFailed' ? 'signIn.clearFailed' : 'common.loadFailed')}</Body>
+      <Button label={tt('common.retry')} onPress={() => void (state === 'clearFailed' ? leave() : enter(true))} />
+      {state === 'unavailable' ? <Button kind='ghost' label={tt('signIn.signOut')} onPress={() => void leave()} /> : null}
+    </View>
+  );
 
   return (
     <ApiProvider value={api}>
       <QueryClientProvider client={queryClient}>
-        {state === 'out' ? (
-          /**
-           * Sign-in is not a `Route` and has no entry in `SCREENS`: it is not
-           * somewhere a collector navigates to, it is what the app is when
-           * there is no session. So the route registry's completeness check is
-           * untouched. It still needs a `NavProvider` above it because
-           * `ui.tsx`'s header reads nav.
-           */
-          <NavProvider initial={{ name: 'register' }}>
-            <SignIn onSignedIn={() => void enter()} />
-          </NavProvider>
-        ) : (
-          <NavProvider initial={state}>
-            <Current />
-          </NavProvider>
-        )}
+        <View style={{ flex: 1 }}>
+          {state === 'out' ? (
+            <NavProvider key='out' initial={{ name: 'register' }}>
+              <SignIn onSignedIn={() => { if (alive.current && !signingOut.current) void enter(); }} />
+            </NavProvider>
+          ) : (
+            <NavProvider key='in' initial={state}><Current /></NavProvider>
+          )}
+          {state !== 'out' ? <Button kind='ghost' label={tt('signIn.signOut')} onPress={() => void leave()} /> : null}
+        </View>
       </QueryClientProvider>
     </ApiProvider>
   );
@@ -201,7 +213,7 @@ export function App() {
   return (
     <ThemeProvider>
       <LocaleProvider>
-        <Session />
+        <CollectorSession />
       </LocaleProvider>
     </ThemeProvider>
   );

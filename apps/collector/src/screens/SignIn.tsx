@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { ApiError } from '../api/types.ts';
 import { useApi } from '../api/context.tsx';
@@ -36,6 +36,13 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [problem, setProblem] = useState<MessageKey | null>(null);
   /** True when the server filled the code in, so the screen can say why. */
   const [filled, setFilled] = useState(false);
+  const mounted = useRef(true);
+  const revision = useRef(0);
+  const submitting = useRef<'request' | 'verify' | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; revision.current += 1; };
+  }, []);
 
   /** One message per named refusal, and one fallback that admits nothing. */
   const failed = (err: unknown): void => {
@@ -47,33 +54,44 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   };
 
   const request = useMutation({
-    mutationFn: async () => {
-      // The number this answer belongs to, captured before the request goes.
-      const asked = phone.trim();
-      return { asked, result: await api.requestSignInCode(asked) };
-    },
-    onSuccess: ({ asked, result }) => {
+    mutationFn: ({ phone: asked }: { phone: string; revision: number }) => api.requestSignInCode(asked),
+    onSuccess: (result, attempt) => {
+      if (!mounted.current || attempt.revision !== revision.current) return;
       setProblem(null);
       setSent(true);
       // A demonstration server echoes this one number's code. Ordinary servers
       // send nothing back and this is never reached.
       const demo = result?.demo_code;
-      // Not if the collector has edited the number since: that code belongs to
-      // the number it was asked for, and filling it in under a different one
-      // would be a code for somebody else.
-      if (demo !== undefined && asked === phone.trim()) {
-        setCode(demo);
-        setFilled(true);
-      }
+      setCode(demo ?? '');
+      setFilled(demo !== undefined);
     },
-    onError: failed,
+    onError: (error, attempt) => {
+      if (mounted.current && attempt.revision === revision.current) failed(error);
+    },
+    onSettled: () => { submitting.current = null; },
   });
 
   const verify = useMutation({
-    mutationFn: () => api.signIn(phone.trim(), code.trim()),
-    onSuccess: onSignedIn,
-    onError: failed,
+    mutationFn: (attempt: { phone: string; code: string; revision: number }) => api.signIn(attempt.phone, attempt.code),
+    onSuccess: (_result, attempt) => {
+      if (mounted.current && attempt.revision === revision.current) onSignedIn();
+    },
+    onError: (error, attempt) => {
+      if (mounted.current && attempt.revision === revision.current) failed(error);
+    },
+    onSettled: () => { submitting.current = null; },
   });
+  const pending = request.isPending || verify.isPending;
+
+  const sendCode = () => {
+    // A synchronous guard also covers two taps before React rerenders disabled.
+    if (submitting.current) return;
+    submitting.current = 'request';
+    setProblem(null);
+    setCode('');
+    setFilled(false);
+    request.mutate({ phone: phone.trim(), revision: revision.current });
+  };
 
   return (
     <Screen title={tt('signIn.title')}>
@@ -82,8 +100,16 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
         <Field
           label={tt('signIn.phone')}
           value={phone}
+          editable={!verify.isPending}
           onChangeText={(next) => {
+            // Verification persists this phone's token. Lock its identity even
+            // for an edit arriving before the disabled field rerenders.
+            if (submitting.current === 'verify') return;
+            // A revision also rejects an old response after editing A → B → A.
+            revision.current += 1;
             setPhone(next);
+            setSent(false);
+            setProblem(null);
             // A code belongs to the number it was sent for, so editing the
             // number clears it. Unconditional: `filled` is turned off as soon
             // as the collector types in the code box, and a stale code must
@@ -108,9 +134,17 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
         ) : null}
         {problem !== null ? <Note text={tt(problem)} /> : null}
         {sent ? (
-          <Button label={tt('signIn.submit')} onPress={() => verify.mutate()} />
+          <>
+            <Button label={tt('signIn.submit')} disabled={pending} onPress={() => {
+              if (submitting.current) return;
+              submitting.current = 'verify';
+              setProblem(null);
+              verify.mutate({ phone: phone.trim(), code: code.trim(), revision: revision.current });
+            }} />
+            <Button label={tt('signIn.resendCode')} kind="ghost" disabled={pending} onPress={sendCode} />
+          </>
         ) : (
-          <Button label={tt('signIn.sendCode')} onPress={() => request.mutate()} />
+          <Button label={tt('signIn.sendCode')} disabled={pending} onPress={sendCode} />
         )}
       </Card>
     </Screen>

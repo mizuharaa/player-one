@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EXAM_QUESTION_COUNT, MockCollectorApi } from '../src/api/mock.ts';
 import { HttpCollectorApi } from '../src/api/http.ts';
 import type { TokenStore } from '../src/api/token-store.ts';
@@ -335,6 +335,75 @@ const PROFILE = {
   exam_passed: true,
 };
 
+describe('local account isolation', () => {
+  it.each([200, 401])('ignores an old response (%s) after sign-out and another account signs in', async (status) => {
+    const store = fakeStore('old-token');
+    let respond!: (res: Response) => void;
+    let signal: AbortSignal | null | undefined;
+    const unauthorized = vi.fn();
+    const fn = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith('/profile')) return { status: 200, text: async () => JSON.stringify(PROFILE) } as Response;
+      signal = init?.signal;
+      return new Promise<Response>((resolve) => { respond = resolve; });
+    }) as typeof fetch;
+    const old = new HttpCollectorApi(BASE, store, unauthorized, fn);
+    await old.restoreSession();
+    const pending = old.income();
+    const rejected = expect(pending).rejects.toThrow('unauthorized');
+    await old.signOut();
+    expect(signal?.aborted).toBe(true);
+    const next = new HttpCollectorApi(BASE, store, () => {}, fakeFetch({
+      'POST /auth/collector/verify': { status: 200, body: { token: 'new-token' } },
+    }).fn);
+    await next.signIn('0903000002', '123456');
+    respond({ status, text: async () => JSON.stringify({ entries: [] }) } as Response);
+    await rejected;
+    expect(store.value).toBe('new-token');
+    expect(unauthorized).not.toHaveBeenCalled();
+  });
+
+  it('clears a sign-in write already in flight before allowing account switching', async () => {
+    const store = fakeStore();
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      store.set = async (token) => {
+        resolve();
+        await new Promise<void>((done) => { release = done; });
+        store.value = token;
+      };
+    });
+    const api = new HttpCollectorApi(BASE, store, () => {}, fakeFetch({
+      'POST /auth/collector/verify': { status: 200, body: { token: 'old-token' } },
+    }).fn);
+    const signingIn = api.signIn('0903000001', '123456');
+    const rejected = expect(signingIn).rejects.toThrow('unauthorized');
+    await started;
+    const leaving = api.signOut();
+    release();
+    await leaving;
+    await rejected;
+    expect(store.value).toBeNull();
+  });
+
+  it('rejects late keystore restoration and permits retry when clearing fails', async () => {
+    const store = fakeStore('old-token');
+    let release!: (token: string) => void;
+    store.get = () => new Promise((resolve) => { release = resolve; });
+    const api = new HttpCollectorApi(BASE, store, () => {}, fakeFetch({}).fn);
+    const restoring = api.restoreSession();
+    const rejected = expect(restoring).rejects.toThrow('unauthorized');
+    const clear = store.clear.bind(store);
+    store.clear = async () => { throw new Error('keystore unavailable'); };
+    await expect(api.signOut()).rejects.toThrow('keystore unavailable');
+    release('old-token');
+    await rejected;
+    expect(store.value).toBe('old-token');
+    store.clear = clear;
+    await api.signOut();
+    expect(store.value).toBeNull();
+  });
+});
+
 describe('signing in (APP-01)', () => {
   it('asks for a code, exchanges it for a token, and keeps the token', async () => {
     const store = fakeStore();
@@ -388,6 +457,18 @@ describe('signing in (APP-01)', () => {
     const api = new HttpCollectorApi(BASE, fakeStore(), () => {}, fn);
     await expect(api.requestSignInCode('0903000001')).resolves.toBeUndefined();
     await expect(api.requestSignInCode('0000000000')).resolves.toBeUndefined();
+  });
+
+  it.each([302, 401, 403, 404, 500, 502])('does not report a sent code after HTTP %s', async (status) => {
+    const { fn } = fakeFetch({ 'POST /auth/collector/request-code': { status } });
+    const api = new HttpCollectorApi(BASE, fakeStore(), () => {}, fn);
+    await expect(api.requestSignInCode('0903000001')).rejects.toThrow(new ApiError('server_error'));
+  });
+
+  it('keeps request-shape errors separate from number eligibility', async () => {
+    const { fn } = fakeFetch({ 'POST /auth/collector/request-code': { status: 400 } });
+    await expect(new HttpCollectorApi(BASE, fakeStore(), () => {}, fn).requestSignInCode(''))
+      .rejects.toThrow(new ApiError('invalid_request'));
   });
 
   /**
@@ -579,7 +660,7 @@ describe('a token that has stopped working', () => {
     expect(signedOut).toBe(1);
 
     // Nothing is sent under a token that has been thrown away.
-    await api.profile();
+    await expect(api.profile()).rejects.toThrow('unauthorized');
     expect(calls).toHaveLength(1);
   });
 
