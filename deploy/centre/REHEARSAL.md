@@ -78,6 +78,47 @@ and retry that same batch. Cloud verification must complete before review;
 a failure must remain visible. Confirm no second delivery/payment is created.
 Do not pretend camera-to-phone offload exists.
 
+### Retry an imported batch without importing the card again
+
+The import command prints `batch_id: ... (created; ...)` to stderr as soon as
+the batch exists, before ingest/upload, and keeps its final JSON on stdout.
+Retain both streams. Once episode submission succeeded, resume the same batch:
+
+```powershell
+node packages/api/bin/counter.ts upload --batch '<batch UUID>' --api http://127.0.0.1:8080
+if ($LASTEXITCODE -ne 0) { throw 'Upload unverified; inspect the retained response before retrying' }
+```
+
+Run this on the centre host with its existing `PLAYERONE_MACHINE_IDENTIFIER`,
+`PLAYERONE_MACHINE_SECRET`, `PLAYERONE_OPERATOR_REF` and
+`PLAYERONE_OPERATOR_SECRET` environment values. The API still needs the local
+media copy. Use the direct loopback API address for counter routes; Caddy does
+not expose `/upload-batches`. No credentials go into command arguments.
+
+This command only uploads an existing batch; it does not recreate handovers,
+sessions or ingest records. After authentication it makes one upload request and exits successfully only
+for `cloud_verified: true`. Keep the raw response on stderr, including episode
+errors or an API problem reference. HTTP 200 alone is not successful verification.
+The worker resumes missing multipart parts and preserves verified receipts;
+there is no automatic `reverify` or local cleanup. Never clear the source card.
+
+If the process was killed before the receipt was captured, the existing
+machine-authenticated `GET /upload-batches?since=<ISO timestamp>&limit=100`
+lists recent batches. For example, with the short-lived tokens already obtained
+for the authenticated health check (do not put them in command arguments):
+
+```powershell
+$headers = @{ Authorization = "Bearer $env:PLAYERONE_HEALTH_OPERATOR_TOKEN"; 'x-machine-token' = "Bearer $env:PLAYERONE_HEALTH_MACHINE_TOKEN" }
+$since = [uri]::EscapeDataString((Get-Date).AddDays(-1).ToUniversalTime().ToString('o'))
+Invoke-RestMethod -Headers $headers -Uri "http://127.0.0.1:8080/upload-batches?since=$since&limit=100"
+```
+
+Check the batch's handover and import time before choosing it. The list's
+resolved/quarantined counts describe attribution, not successful cloud upload.
+An interrupted handover/session/episode-submission stage needs inspection of
+those saved IDs; `upload` does not complete an unfinished import. Rerunning
+`import` creates new handover/session/batch IDs and is not the resume command.
+
 ## Archive tagging failures and bounded retry
 
 `archive_tag_failures` counts **recorded failed tagging operations during the
@@ -88,11 +129,42 @@ object is archived. Inspect `bill.archive_tag_failed` audit events for the
 bill ID, actor, operation (`billing` or `retry`), attempted and confirmed tag
 calls, failed object keys and `query_failed`.
 
+An authorized support engineer can inspect these historical events with the
+following bounded read-only query using the deployment's protected database
+connection. This is not a request to give counter operators database access.
+Include successful retries when reading the history; do not treat the last
+failure as an unresolved-object register.
+
+```sql
+SELECT id, occurred_at, target_id AS bill_id, operator_id, action, "after"
+FROM audit_events
+WHERE target_table = 'bills'
+  AND action IN ('bill.archive_tag_failed', 'bill.archive_tag_retry')
+  AND occurred_at >= now() - interval '24 hours'
+ORDER BY occurred_at DESC, id DESC
+LIMIT 100;
+```
+
 An administrator with the existing machine and operator credentials may call
 `POST /api/settle/bills/<bill UUID>/archive/retry`. This is an explicit storage
 write; run it only on the intended deployment after checking its bill ID.
 Do not generate the billing cycle again to retry tags: bill replay does not
 retag existing bills.
+
+Using the existing administrator and machine credentials in the environment:
+
+```powershell
+node packages/api/bin/counter.ts archive-retry --bill '<bill UUID>' --api http://127.0.0.1:8080
+if ($LASTEXITCODE -ne 0) { throw 'Archive page has unconfirmed results; inspect the retained response' }
+```
+
+The command performs one page only. Its JSON says `page_status: more_pages`
+when another explicit call is needed. Pass the returned `next_after` unchanged
+as `--after '<next_after>'`; the command URL-encodes it once. `page_complete`
+means the requested page completed, not that earlier failed pages were fixed
+or that the provider has actually changed the storage tier. Failed keys,
+query/audit failures, malformed replies and HTTP errors return a nonzero exit.
+The raw response remains on stderr, including partial results from a 503.
 
 Each call processes at most five distinct keys in order. If `next_after` is
 non-null, URL-encode that value and pass it as the `after` query parameter on

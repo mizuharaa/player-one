@@ -186,7 +186,7 @@ describe('counter import output over HTTP (no database)', () => {
         if (mode === 'session-error' || mode === 'ingest-error') {
           const step = mode === 'session-error' ? 'session' : 'ingest';
           expect(output).toMatchObject({ failed_step: step, episode_id: null, ingest_state: null, cloud_verified: null });
-          expect(result.stderr).toContain(mode === 'session-error' ? `${refusal}failed_step: session` : 'Error');
+          expect(result.stderr).toContain(mode === 'session-error' ? `${refusal}HTTP 409\nfailed_step: session` : 'Error');
           expect(result.stderr).toContain(`failed_step: ${step}`);
         } else {
           expect(Object.keys(requests[5]!.body)).toEqual(['episodes']);
@@ -197,7 +197,7 @@ describe('counter import output over HTTP (no database)', () => {
           expect(result.stderr).toContain(submission);
           expect(result.stderr).toContain(uploadBody);
           expect(requests[6]!.body).toBeNull();
-          if (mode === 'unverified') expect(result.stderr).toContain(`${uploadBody}\nfailed_step: upload`);
+          if (mode === 'unverified') expect(result.stderr).toContain(`${uploadBody}\nUpload was not cloud verified\nfailed_step: upload`);
         }
         expect(result.stderr).toContain(mode === 'verified' ? 'local sanity check only' : 'local sanity check skipped');
         expect(result.stderr).toContain('server-side media availability is not verified by this command');
