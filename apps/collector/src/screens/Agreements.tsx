@@ -48,6 +48,7 @@ export function Agreements() {
             </View>
             <Switch
               accessibilityLabel={tt(`agreement.${a.id}`)}
+              disabled={accept.isPending}
               value={checked[a.id] === true}
               onValueChange={(v) => setChecked((c) => ({ ...c, [a.id]: v }))}
               thumbColor={theme.color.background}
@@ -66,7 +67,8 @@ export function Agreements() {
         </Card>
       ))}
       {!allChecked ? <Note text={tt('agreements.incomplete')} /> : null}
-      <Button label={tt('agreements.submit')} disabled={!allChecked} onPress={() => accept.mutate()} />
+      {accept.isError ? <Note text={tt('common.actionFailed')} /> : null}
+      <Button label={tt(accept.isPending ? 'common.saving' : 'agreements.submit')} disabled={!allChecked || accept.isPending} onPress={() => accept.mutate()} />
     </Screen>
   );
 }

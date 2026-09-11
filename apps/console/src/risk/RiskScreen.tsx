@@ -50,7 +50,8 @@ export function RiskScreen() {
   const period = search.period;
   const [open, setOpen] = useState<string | null>(search.bill ?? null);
   const [refused, setRefused] = useState<unknown>(null);
-  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period) });
+  const { role } = useFinanceRole();
+  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: role === 'finance' });
 
   const ranked = [...(batch.data?.bills ?? [])].sort((a, b) => b.risk.score - a.risk.score);
   const flagged = ranked.filter((b) => b.risk.flags.length > 0 || b.risk.band !== 'clear' || b.id === open);

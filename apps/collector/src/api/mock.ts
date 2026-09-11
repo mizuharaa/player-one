@@ -43,7 +43,7 @@ export class MockCollectorApi implements CollectorApi {
       {
         id: 'task-cook',
         title: 'Nấu ăn tại nhà',
-        scenario: 'home',
+        scenario: 'home', published: true, claimable: true, claimedByMe: false, remainingSlots: 3, currency: 'VND',
         unitPriceVndPerMinute: '1200',
         targetMinutes: 3000,
         claimedMinutes: 420,
@@ -57,7 +57,7 @@ export class MockCollectorApi implements CollectorApi {
       {
         id: 'task-office',
         title: 'Làm việc văn phòng',
-        scenario: 'office',
+        scenario: 'office', published: true, claimable: false, claimedByMe: false, remainingSlots: 0, currency: 'VND',
         unitPriceVndPerMinute: '1000',
         targetMinutes: 6000,
         claimedMinutes: 5800,
@@ -71,7 +71,7 @@ export class MockCollectorApi implements CollectorApi {
       {
         id: 'task-warehouse',
         title: 'Sắp xếp kho hàng',
-        scenario: 'warehouse',
+        scenario: 'warehouse', published: true, claimable: true, claimedByMe: false, remainingSlots: 8, currency: 'VND',
         unitPriceVndPerMinute: '1500',
         targetMinutes: 9000,
         claimedMinutes: 0,
@@ -230,7 +230,10 @@ export class MockCollectorApi implements CollectorApi {
     if (task.claimants >= task.maxClaimants) throw new ApiError('task_at_capacity');
     if (this.claims.some((c) => c.taskId === taskId)) throw new ApiError('already_claimed');
     task.claimants += 1;
-    const claim: Claim = { id: id('claim'), taskId, claimedAt: new Date().toISOString() };
+    task.claimable = false;
+    task.claimedByMe = true;
+    task.remainingSlots -= 1;
+    const claim: Claim = { id: id('claim'), taskId, taskName: task.title, claimedAt: new Date().toISOString() };
     this.claims.push(claim);
     return { ...claim };
   }
@@ -248,7 +251,7 @@ export class MockCollectorApi implements CollectorApi {
     const trimmed = serial.trim();
     if (trimmed === '') throw new ApiError('serial_empty');
     if (this.devices.some((d) => d.serial === trimmed)) throw new ApiError('already_bound');
-    const device: BoundDevice = { serial: trimmed, boundAt: new Date().toISOString() };
+    const device: BoundDevice = { serial: trimmed, boundAt: new Date().toISOString(), status: 'active' };
     this.devices.push(device);
     return { ...device };
   }

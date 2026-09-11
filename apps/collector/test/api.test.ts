@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EXAM_QUESTION_COUNT, MockCollectorApi } from '../src/api/mock.ts';
 import { HttpCollectorApi } from '../src/api/http.ts';
+import { sessionEntry } from '../src/api/session-entry.ts';
 import type { TokenStore } from '../src/api/token-store.ts';
 import { AGREEMENTS, ApiError } from '../src/api/types.ts';
 import { LOCALES, MESSAGES } from '../src/i18n.ts';
@@ -335,6 +336,65 @@ const PROFILE = {
   exam_passed: true,
 };
 
+describe('collector wire truth and cold-start recovery', () => {
+  it('preserves publication, availability and currency instead of inferring availability from spare capacity', async () => {
+    const wire = {
+      id: 'held-task', name: 'Held task', type: 'home_cooking', unit_price: '123.4500',
+      target_effective_duration_s: '3600', collected_effective_s: '120',
+      max_concurrent_claimants: 10, claimants: 1, remaining_slots: 9,
+      published: false, claimed_by_me: true, claimable: false, currency: 'USD',
+    };
+    const { fn } = fakeFetch({
+      'GET /api/me/tasks': { status: 200, body: { tasks: [wire] } },
+      'GET /api/me/tasks/held-task': { status: 200, body: wire },
+      'GET /api/me/claims': { status: 200, body: { claims: [{ id: 'c', task_id: 'held-task', task_name: 'Held task', claimed_at: '2026-09-09T00:00:00Z' }] } },
+      'GET /api/me/devices': { status: 200, body: { devices: [{ hardware_serial: 'DEVICE', status: 'faulty', bound_at: '2026-09-09T00:00:00Z' }] } },
+    });
+    const api = new HttpCollectorApi(BASE, fakeStore(), () => {}, fn);
+    const [task] = await api.tasks();
+    expect(task).toMatchObject({ published: false, claimable: false, claimedByMe: true, remainingSlots: 9, currency: 'USD', unitPriceVndPerMinute: '123.4500', scenario: null, type: 'home_cooking' });
+    expect(await api.task('held-task')).toEqual(task);
+    expect((await api.myClaims())[0]?.taskName).toBe('Held task');
+    expect((await api.boundDevices())[0]?.status).toBe('faulty');
+  });
+
+  it('rejects an unsupported saved scenario rather than changing it to home', async () => {
+    const { fn } = fakeFetch({ 'GET /api/me/sessions': { status: 200, body: { sessions: [{ id: 's', scenario: 'unmapped_scenario' }] } } });
+    const api = new HttpCollectorApi(BASE, fakeStore(), () => {}, fn);
+    await expect(api.sessions()).rejects.toThrow('unsupported_scenario');
+  });
+
+  it('keeps the cold-start token on network failure and resumes after a retry', async () => {
+    const store = fakeStore('stored-token');
+    const ok = fakeFetch({ 'GET /api/me/profile': { status: 200, body: { ...PROFILE, agreements: AGREEMENTS.map((a) => ({ agreement: a.id, version: a.version, accepted_at: '2026-09-09T00:00:00Z' })) } } });
+    let offline = true;
+    const fn: typeof fetch = (...args) => offline ? Promise.reject(new TypeError('offline')) : ok.fn(...args);
+    const api = new HttpCollectorApi(BASE, store, () => {}, fn);
+    expect(await sessionEntry(api)).toBe('unavailable');
+    expect(store.value).toBe('stored-token');
+    offline = false;
+    expect(await sessionEntry(api)).toEqual({ name: 'home' });
+    expect(store.value).toBe('stored-token');
+  });
+
+  it('does not treat a failed profile read after successful token restore as a new registration', async () => {
+    const store = fakeStore('stored-token');
+    const ok = fakeFetch({ 'GET /api/me/profile': { status: 200, body: PROFILE } });
+    let calls = 0;
+    const fn: typeof fetch = (...args) => ++calls === 1 ? ok.fn(...args) : Promise.reject(new TypeError('offline'));
+    const api = new HttpCollectorApi(BASE, store, () => {}, fn);
+    expect(await sessionEntry(api)).toBe('unavailable');
+    expect(store.value).toBe('stored-token');
+  });
+
+  it('still signs out on a revoked token', async () => {
+    const store = fakeStore('revoked');
+    const { fn } = fakeFetch({ 'GET /api/me/profile': { status: 401 } });
+    expect(await sessionEntry(new HttpCollectorApi(BASE, store, () => {}, fn))).toBe('out');
+    expect(store.value).toBeNull();
+  });
+});
+
 describe('signing in (APP-01)', () => {
   it('asks for a code, exchanges it for a token, and keeps the token', async () => {
     const store = fakeStore();
@@ -477,7 +537,7 @@ describe('a cold start after the app was killed (NFR-03, NFR-04)', () => {
       { id: 'cl-1', taskId: 't-1', claimedAt: '2026-08-30T02:00:00.000Z' },
     ]);
     expect(await api.boundDevices()).toEqual([
-      { serial: 'EGO-0007', boundAt: '2026-08-29T02:00:00.000Z' },
+      { serial: 'EGO-0007', boundAt: '2026-08-29T02:00:00.000Z', status: 'active' },
     ]);
     expect((await api.sessions())[0]?.deviceSerial).toBe('EGO-0007');
 

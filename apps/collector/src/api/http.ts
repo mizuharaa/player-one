@@ -1,6 +1,7 @@
 import type { TokenStore } from './token-store.ts';
 import {
   ApiError,
+  SCENARIOS,
   type AgreementId,
   type BoundDevice,
   type Claim,
@@ -262,11 +263,12 @@ export class HttpCollectorApi implements CollectorApi {
 
   async myClaims(): Promise<Claim[]> {
     const res = (await this.req('GET', '/api/me/claims')) as {
-      claims?: { id: string; task_id: string; claimed_at: string }[];
+      claims?: { id: string; task_id: string; task_name: string; claimed_at: string }[];
     };
     return (res.claims ?? []).map((c) => ({
       id: c.id,
       taskId: c.task_id,
+      taskName: c.task_name,
       claimedAt: String(c.claimed_at),
     }));
   }
@@ -275,11 +277,12 @@ export class HttpCollectorApi implements CollectorApi {
 
   async boundDevices(): Promise<BoundDevice[]> {
     const res = (await this.req('GET', '/api/me/devices')) as {
-      devices?: { hardware_serial: string; bound_at: string }[];
+      devices?: { hardware_serial: string; bound_at: string; status: string }[];
     };
     return (res.devices ?? []).map((d) => ({
       serial: d.hardware_serial,
       boundAt: String(d.bound_at),
+      status: d.status ?? null,
     }));
   }
 
@@ -288,7 +291,7 @@ export class HttpCollectorApi implements CollectorApi {
       hardware_serial: string;
       bound_at: string;
     };
-    return { serial: res.hardware_serial, boundAt: String(res.bound_at) };
+    return { serial: res.hardware_serial, boundAt: String(res.bound_at), status: null };
   }
 
   // -- sessions (APP-16, APP-17b) ------------------------------------------
@@ -356,7 +359,7 @@ export class HttpCollectorApi implements CollectorApi {
        * collector's own view of it never needed one. No screen reads it.
        */
       sessionId: '',
-      sizeBytes: Number(e.size_bytes ?? 0),
+      sizeBytes: toSizeBytes(e.size_bytes),
       state: toEpisodeState(e.state),
       /**
        * APP-27. Already Vietnamese: the server reads
@@ -415,6 +418,11 @@ interface RawTask {
   collected_effective_s: string;
   max_concurrent_claimants: number;
   claimants: number;
+  currency: string;
+  published: boolean;
+  claimed_by_me: boolean;
+  claimable: boolean;
+  remaining_slots: number;
 }
 
 interface RawSession {
@@ -430,7 +438,7 @@ interface RawSession {
 interface RawEpisode {
   episode_id: string;
   state: string;
-  size_bytes: number | string | null;
+  size_bytes?: number | string | null;
   reasons?: { code: string; label: string }[];
 }
 
@@ -441,6 +449,14 @@ interface RawIncome {
   confirmed: boolean;
   state: string;
 }
+
+/** Preserve an actual zero without treating missing or malformed metadata as zero. */
+const toSizeBytes = (value: unknown): number | null => {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const bytes = Number(value);
+  return Number.isFinite(bytes) && bytes >= 0 ? bytes : null;
+};
 
 const toProfile = (raw: unknown): CollectorProfile => {
   const p = raw as {
@@ -467,28 +483,11 @@ const toProfile = (raw: unknown): CollectorProfile => {
   };
 };
 
-const SCENARIOS: readonly Scenario[] = ['home', 'office', 'shop', 'warehouse'];
-
-const asScenario = (code: string): Scenario =>
-  SCENARIOS.find((s) => s === code) ?? 'home';
-
-/**
- * ponytail: A TASK HAS NO SCENARIO COLUMN, so this is a guess with a fallback.
- *
- * `tasks.type` is `'home_cooking'` where the app's `Scenario` union is
- * `home | office | shop | warehouse`, and `collector-app.ts` says outright that
- * scenarios are keyed to a SESSION rather than to a task. Matching the four
- * codes as a substring gets `home_cooking` right and anything unforeseen wrong,
- * in the safe direction of the most common pilot scenario.
- *
- * This matters beyond display: `SessionCreate.tsx` declares the session's
- * scenario from the task's. What a task's scenario IS — a column, a per-session
- * choice the collector makes, or neither — is a product decision nobody has
- * made, and guessing it in code is not this client's to do. Left as the
- * narrowest guess with the loudest comment.
- */
-const scenarioOfType = (type: string | null): Scenario =>
-  SCENARIOS.find((s) => type !== null && type.includes(s)) ?? 'home';
+const asScenario = (code: string): Scenario => {
+  const found = SCENARIOS.find((s) => s === code);
+  if (found === undefined) throw new ApiError('unsupported_scenario');
+  return found;
+};
 
 /**
  * Seconds to minutes, for a progress bar and a target.
@@ -503,7 +502,13 @@ const minutes = (seconds: string | null): number => Math.round(Number(seconds ??
 const toTask = (raw: RawTask): Task => ({
   id: raw.id,
   title: raw.name,
-  scenario: scenarioOfType(raw.type),
+  scenario: null,
+  type: raw.type,
+  currency: raw.currency,
+  published: raw.published === true,
+  claimable: raw.claimable === true,
+  claimedByMe: raw.claimed_by_me === true,
+  remainingSlots: raw.remaining_slots,
   unitPriceVndPerMinute: raw.unit_price,
   targetMinutes: minutes(raw.target_effective_duration_s),
   claimedMinutes: minutes(raw.collected_effective_s),

@@ -13,11 +13,12 @@
  * The API flow, behind `PLAYERONE_PAYOUT_MODE=api`, sends one transfer for
  * this bill through the same gate and the same retype.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button.tsx';
+import {ResponsiveSheet,useCompactSheet} from '../components/ui/ResponsiveSheet.tsx';
 import { EmptyState, Problem } from '../components/ui/primitives.tsx';
 import { IconArrow } from '../components/icons.tsx';
 import { payout, settle, type PayoutBill, type PayResult } from '../lib/api.ts';
@@ -51,12 +52,13 @@ export function BillScreen() {
   const locale = i18n.language;
   const { period } = useSearch({ strict: false }) as { period: string };
   const { billId } = useParams({ strict: false }) as { billId?: string };
-  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period) });
+  const { role } = useFinanceRole();
+  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: role === 'finance' });
   // ponytail: Bill detail stays a second round trip instead of making the period batch carry every line of every bill.
   const detail = useQuery({
     queryKey: keys.bill(billId ?? ''),
     queryFn: () => (billId === undefined ? Promise.resolve(null) : settle.bill(billId)),
-    enabled: billId !== undefined,
+    enabled: billId !== undefined && role === 'finance',
   });
   /**
    * The gate reads the cached snapshot only — rendering this screen must not
@@ -280,6 +282,8 @@ function PaymentPanel({
   const [reference, setReference] = useState('');
   const [typed, setTyped] = useState('');
   const [result, setResult] = useState<PayResult | null>(null);
+  const compact=useCompactSheet();const [paymentOpen,setPaymentOpen]=useState(false);
+  useEffect(()=>{if(!compact)setPaymentOpen(false);},[compact]);
 
   const done = (r: PayResult | null) => {
     setResult(r);
@@ -324,7 +328,7 @@ function PaymentPanel({
     marked out, and it sticks so the amount stays beside the controls that
     move it.
   */
-  return (
+  const content = (
     <div className="lg:sticky lg:top-20">
       <Section title={t('settle.pay.title')}>
         {result ? (
@@ -376,7 +380,7 @@ function PaymentPanel({
             autoComplete="off"
             value={reference}
             onChange={(e) => setReference(e.target.value)}
-            disabled={inert !== null}
+            disabled={inert !== null || busy}
             hint={t('settle.pay.reference.hint')}
             required={mode === 'manual'}
           />
@@ -388,13 +392,13 @@ function PaymentPanel({
             autoComplete="off"
             value={typed}
             onChange={(e) => setTyped(e.target.value.replace(/\D/g, ''))}
-            disabled={inert !== null}
+            disabled={inert !== null || busy}
             hint={typed !== '' && !matches ? t('settle.pay.mismatch') : t('settle.pay.retype.hint')}
             aria-invalid={typed !== '' && !matches}
             required
           />
 
-          <div className="grid gap-2">
+          <div className="grid gap-2 workspace-payment-actions">
             <Button
               type="submit"
               variant="primary"
@@ -422,4 +426,16 @@ function PaymentPanel({
       </Section>
     </div>
   );
+  if(!compact)return content;
+  const dirty=reference!==''||typed!=='';
+  return <div><Button variant="primary" onClick={()=>setPaymentOpen(true)}>{t('workspace.reviewPayment')}</Button>
+    {paymentOpen?<ResponsiveSheet title={t('settle.pay.title')} onClose={()=>setPaymentOpen(false)} dismissible={!busy&&!dirty} draggable={false}
+      footer={<Button variant="outline" disabled={busy} onClick={()=>{setReference('');setTyped('');setPaymentOpen(false);}}>{t('workspace.cancelPayment')}</Button>}>
+      <div className="workspace-sheet-payment-summary"><span>{bill.collector_ref}</span><strong className="num">{asStored(bill.total)} {bill.currency}</strong><span className="num">{vnd(bill.amount_vnd,locale)}</span></div>
+      {dirty&&!busy?<p className="workspace-sheet-note">{t('workspace.dirtyPayment')}</p>:null}
+      <RefusedBanner error={markPaid.error??pay.error} onDismiss={()=>{markPaid.reset();pay.reset();}}/>
+      {content}
+    </ResponsiveSheet>:null}
+  </div>;
+
 }

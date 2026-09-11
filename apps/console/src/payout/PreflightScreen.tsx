@@ -47,6 +47,7 @@ const BANDS: RiskBand[] = ['clear', 'notice', 'review', 'hold'];
  * gate can tell a batch that changed underneath it.
  */
 export function usePreflight(period: string, enabled = true) {
+  const { role } = useFinanceRole();
   return useQuery({
     queryKey: keys.preflight(period),
     queryFn: async (): Promise<PreflightSnapshot | null> => {
@@ -54,7 +55,7 @@ export function usePreflight(period: string, enabled = true) {
       if (pre === null) return null;
       return { ...pre, fingerprint: batchFingerprint(batch?.bills ?? []) };
     },
-    enabled,
+    enabled: enabled && role === 'finance',
     /**
      * Valid for the window, and gone from the cache at the window: a snapshot
      * older than five minutes is not authorisation material and is not kept
@@ -93,7 +94,8 @@ export function PreflightScreen() {
   const locale = i18n.language;
   const { period } = useSearch({ strict: false }) as { period: string };
   const pre = usePreflight(period);
-  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period) });
+  const { role } = useFinanceRole();
+  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: role === 'finance' });
   const mode = batch.data?.mode ?? pre.data?.mode;
 
   if (pre.error || batch.error) {

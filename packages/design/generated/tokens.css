@@ -35,6 +35,31 @@
   --lime-500: #B8F04A;
   --lime-600: #63851C;
   --lime-700: #566F17;
+  --discover-warm-paper: #F4EFE6;
+  --discover-warm-surface: #FFFCF6;
+  --discover-warm-ink: #35271F;
+  --discover-warm-muted: #705D4D;
+  --discover-warm-line: #D3C5B3;
+  --discover-warm-soft: #E8DFD1;
+  --discover-warm-glass: rgba(53,39,31,.76);
+  --discover-warm-highlight: rgba(255,252,246,.24);
+  --discover-paper: #F7F7F4;
+  --discover-surface: #FFFFFF;
+  --discover-ink: #17191B;
+  --discover-muted: #575C5D;
+  --discover-line: #D6D8D4;
+  --discover-soft: #EDEEEA;
+  --discover-light: #DED8F3;
+  --discover-light-ink: #4E4368;
+  --discover-scrim: linear-gradient(180deg, rgba(12,16,18,0.12) 0%, rgba(12,16,18,0.04) 30%, rgba(12,16,18,0.76) 100%);
+  --discover-wash: linear-gradient(130deg, rgba(222,216,243,0) 10%, rgba(222,216,243,0.72) 60%, rgba(247,247,244,0) 95%);
+  --discover-shadow: 0 28px 80px rgba(20,24,30,0.16);
+  --discover-panel-radius: 28px;
+  --discover-frame-radius: 18px;
+  --discover-font: "Archivo Variable", "Be Vietnam Pro", "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
+  --discover-reveal: 720ms;
+  --discover-opening: 1100ms;
+  --discover-ambient: 14000ms;
 
   /*
    * The action, as a role rather than a colour. It is the ink pill this world

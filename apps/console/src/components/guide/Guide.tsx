@@ -28,34 +28,26 @@
  * itself there, and the panda does not come — `PandaStage` renders nothing on
  * that route, and the tour is simply a card and a spotlight.
  */
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button.tsx';
 import { restoreFocus, useGuide } from './useGuide.ts';
 import type { GuidePlacement } from './steps.ts';
-
-/**
- * Its own chunk, and it must stay that way: this import is the only route from
- * the shell into three.js, and `/review` never renders the component behind it.
- */
-const PandaStage = lazy(() =>
-  import('../identity/PandaStage.tsx').then((m) => ({ default: m.PandaStage })),
-);
 
 /** The gap between the spotlight and the card, and the spotlight's own padding. */
 const PAD = 8;
 const GAP = 14;
 const CARD = { width: 340, height: 190 };
 
-function place(rect: DOMRect, placement: GuidePlacement) {
+function place(rect: DOMRect, placement: GuidePlacement, size: typeof CARD) {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const clampX = (x: number) => Math.min(Math.max(x, 12), Math.max(12, vw - CARD.width - 12));
-  const clampY = (y: number) => Math.min(Math.max(y, 12), Math.max(12, vh - CARD.height - 12));
+  const clampX = (x: number) => Math.min(Math.max(x, 12), Math.max(12, vw - size.width - 12));
+  const clampY = (y: number) => Math.min(Math.max(y, 12), Math.max(12, vh - size.height - 12));
 
   /* The requested side, unless it would put the card off screen. */
-  const below = rect.bottom + GAP + CARD.height < vh;
-  const above = rect.top - GAP - CARD.height > 0;
+  const below = rect.bottom + GAP + size.height < vh;
+  const above = rect.top - GAP - size.height > 0;
   const side =
     placement === 'top' && !above
       ? 'bottom'
@@ -65,9 +57,9 @@ function place(rect: DOMRect, placement: GuidePlacement) {
 
   switch (side) {
     case 'top':
-      return { left: clampX(rect.left), top: clampY(rect.top - GAP - CARD.height) };
+      return { left: clampX(rect.left), top: clampY(rect.top - GAP - size.height) };
     case 'left':
-      return { left: clampX(rect.left - GAP - CARD.width), top: clampY(rect.top) };
+      return { left: clampX(rect.left - GAP - size.width), top: clampY(rect.top) };
     case 'right':
       return { left: clampX(rect.right + GAP), top: clampY(rect.top) };
     default:
@@ -75,22 +67,39 @@ function place(rect: DOMRect, placement: GuidePlacement) {
   }
 }
 
-export function Guide({ pathname }: { pathname: string }) {
+export function Guide({ pathname, pageName }: { pathname: string; pageName?: string }) {
   const { t } = useTranslation();
   const { open, index, steps, step, next, back, stop } = useGuide();
   const dialog = useRef<HTMLDialogElement>(null);
+  const cardElement = useRef<HTMLElement>(null);
+  const [cardSize,setCardSize] = useState(CARD);
   const [rect, setRect] = useState<DOMRect | null>(null);
-  /* DESIGN.md, "Identity": nothing cartoon anywhere near the footage. Branching
-     here and not inside `PandaStage` is what keeps three.js out of the review
-     route's network as well as out of its screen. */
-  const mascot = !pathname.startsWith('/review');
-
   /* Where the current step's element is, now. */
   const measure = useCallback(() => {
     if (!step) return setRect(null);
     const element = document.querySelector<HTMLElement>(`[data-guide="${step.target}"]`);
     setRect(element ? element.getBoundingClientRect() : null);
   }, [step]);
+
+  useLayoutEffect(() => {
+    if (!open || !step) return;
+    const target = document.querySelector<HTMLElement>(`[data-guide="${step.target}"]`);
+    const bounds = target?.getBoundingClientRect();
+    if (target && bounds && (bounds.top < 0 || bounds.bottom > window.innerHeight)) {
+      target.scrollIntoView({block:bounds.height > window.innerHeight ? 'start' : 'center',behavior:'instant'});
+    }
+    measure();
+  }, [open,step,measure]);
+
+  useLayoutEffect(() => {
+    const node=cardElement.current;
+    if (!open || !node) return;
+    const update=()=>{const bounds=node.getBoundingClientRect();setCardSize(previous=>previous.width===bounds.width&&previous.height===bounds.height?previous:{width:bounds.width,height:bounds.height});};
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer=new ResizeObserver(update);observer.observe(node);
+    return ()=>observer.disconnect();
+  },[open]);
 
   useEffect(() => {
     if (!open) return;
@@ -164,12 +173,12 @@ export function Guide({ pathname }: { pathname: string }) {
   }, [open, next, back, stop]);
 
   const last = index + 1 >= steps.length;
-  const card = rect ? place(rect, step?.placement ?? 'bottom') : null;
+  const card = rect ? place(rect, step?.placement ?? 'bottom', cardSize) : null;
 
   return (
     <dialog
       ref={dialog}
-      aria-label={t('guide.title')}
+      aria-label={pageName ? t('workspace.pageTourLabel',{page:pageName}) : t('guide.title')}
       onCancel={(event) => {
         event.preventDefault();
         stop();
@@ -212,39 +221,23 @@ export function Guide({ pathname }: { pathname: string }) {
             }
           />
 
-          {/* Trúc walks to the element, looks at it, and says the step. Never
-              on /review. `index` is what tells him the sentence changed; the
-              rect cannot, because it is re-measured on every scroll. He is
-              drawn above this card, so he is also told where it is and stands
-              beside it rather than on the sentence. */}
-          {rect && mascot ? (
-            <Suspense fallback={null}>
-              <PandaStage
-                mood="pointing"
-                anchor={rect}
-                /* Where the card will be, from the same numbers that place it. */
-                avoid={card ? new DOMRect(card.left, card.top, CARD.width, CARD.height) : undefined}
-                step={index}
-                label={t('guide.panda')}
-              />
-            </Suspense>
-          ) : null}
-
           <section
+            ref={cardElement}
             /* Below the panda's fixed layer, which is z-60, and that is the
                point: he walked to the element and the card was drawn over him.
                The card keeps its buttons anyway, because his layer takes no
                pointer event at any depth — see `ANCHOR_Z` in `PandaStage`. */
-            className="fixed z-50 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow-lg)]"
+            className="workspace-tour-card fixed z-50 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow-lg)]"
             style={
               card
-                ? { ...card, width: CARD.width }
+                ? { ...card, width: 'min(340px, calc(100vw - 24px))' }
                 : /* Nothing to stand beside: centre it, like any other dialog. */
-                  { left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: CARD.width }
+                  { left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: 'min(340px, calc(100vw - 24px))' }
             }
           >
             {/* Prose with numerals in it, so it is not `.num`: mono is for a
                 column of figures somebody scans, not for a sentence. */}
+            {pageName ? <h2 className="mb-2 text-base font-semibold">{pageName}</h2> : null}
             <p className="text-[0.75rem] font-medium text-[var(--muted-foreground)]">
               {t('guide.step', { current: index + 1, total: steps.length })}
             </p>
@@ -256,11 +249,11 @@ export function Guide({ pathname }: { pathname: string }) {
                 {t('guide.offscreen')}
               </p>
             ) : null}
-            <div className="mt-5 flex items-center justify-between gap-2">
+            <div className="workspace-tour-actions mt-5 flex flex-wrap items-center justify-between gap-2">
               <Button variant="ghost" size="sm" onClick={stop}>
                 {t('guide.close')}
               </Button>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button variant="outline" size="sm" onClick={back} disabled={index === 0}>
                   {t('guide.back')}
                 </Button>

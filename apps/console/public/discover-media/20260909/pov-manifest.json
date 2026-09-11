@@ -1,0 +1,68 @@
+{
+  "status": "candidate-awaiting-independent-review",
+  "generated": true,
+  "label": "Generated illustration: arranging clothes",
+  "original_direction": "Fold a cotton shirt once, correct an imperfect fold, place folded rectangle on shelf.",
+  "observed_limitation": "Fold instruction failed; demonstrates lifting/smoothing/draping shirt, not complete fold.",
+  "review": {
+    "sampled_frames": [
+      0,
+      2,
+      4,
+      6,
+      8,
+      10,
+      11.8
+    ],
+    "full_playback": "not inspected",
+    "independent_acceptance": "pending Claude"
+  },
+  "variants": {
+    "landscape": {
+      "poster": "/discover-media/20260909/pov-landscape.webp",
+      "posterWidth": 2688,
+      "posterHeight": 1520,
+      "posterBytes": 433356,
+      "video": "/discover-media/20260909/pov-landscape.mp4",
+      "width": 1280,
+      "height": 720,
+      "bytes": 2626361,
+      "duration": 12.042,
+      "fps": 24,
+      "frames": 289,
+      "audio": false
+    },
+    "portrait": {
+      "poster": "/discover-media/20260909/pov-portrait.webp",
+      "posterWidth": 1520,
+      "posterHeight": 2688,
+      "posterBytes": 460210,
+      "video": "/discover-media/20260909/pov-portrait.mp4",
+      "width": 720,
+      "height": 1280,
+      "bytes": 2415622,
+      "duration": 12.042,
+      "fps": 24,
+      "frames": 289,
+      "audio": false
+    }
+  },
+  "source": {
+    "imageModel": "gpt_image_2",
+    "imageQuality": "high",
+    "imageResolution": "2k",
+    "videoModel": "seedance1_5",
+    "videoResolution": "1080p",
+    "nativeFps": 24,
+    "videoJobs": {
+      "landscape": "c8795382-7cb1-4d5e-bab5-93b61ed0b297",
+      "portrait": "5c9ae6b3-ac16-44ab-93db-a006f305365f"
+    }
+  },
+  "delivery": {
+    "codec": "h264",
+    "pixelFormat": "yuv420p",
+    "faststart": true,
+    "encode": "libx264 medium CRF24; resized only, no temporal edit"
+  }
+}

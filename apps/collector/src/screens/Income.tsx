@@ -5,7 +5,7 @@ import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { useGuideTarget } from '../guide/Guide.tsx';
-import { Body, Hatch, ListScreen, Note, Row, Tag, Timeline, Title } from '../ui.tsx';
+import { Amount, Body, Button, Hatch, ListScreen, Note, Row, Tag, Timeline, Title } from '../ui.tsx';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -59,6 +59,10 @@ const PAID = new Set(['manually_paid', 'paid']);
  * the settlement state says so. Nothing here infers a step from a figure being
  * present: an estimate has an amount too, and drawing that as reviewed would be
  * the app telling a collector they had been paid.
+ *
+ * There is no separate "under review" checkpoint: `/api/me/income` reports
+ * `uploaded` both before a reviewer claims the episode and while that review
+ * is pending. The client cannot tell when review started from this response.
  */
 const lifecycle = (
   tt: (key: MessageKey) => string,
@@ -68,7 +72,6 @@ const lifecycle = (
   const paid = entry.settlementState !== null && PAID.has(entry.settlementState);
   return [
     { key: 'uploaded', label: tt('income.step.uploaded'), done: true },
-    { key: 'review', label: tt('income.step.underReview'), done: true },
     {
       key: 'reviewed',
       label: tt('income.step.reviewed'),
@@ -111,16 +114,14 @@ export function Income() {
       data={income.data ?? []}
       keyOf={(entry) => entry.episodeId}
       header={
-        <View ref={listTarget} collapsable={false}>
+        <View ref={listTarget} collapsable={false} style={{ gap: theme.space[3] }}>
           <Body muted>{tt('income.intro')}</Body>
+          {income.isError ? <><Note text={tt(income.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} /><Button label={tt('common.retry')} variant="secondary" disabled={income.isFetching} onPress={() => void income.refetch()} /></> : null}
+          {income.isPending || income.isFetching ? <Body muted>{tt('common.loading')}</Body> : null}
         </View>
       }
       empty={
-        income.isError ? (
-          <Note text={tt('common.loadFailed')} />
-        ) : income.data === undefined ? (
-          <Body muted>{tt('common.loading')}</Body>
-        ) : (
+        income.isError || income.isPending ? null : (
           <Hatch text={tt('income.empty')} />
         )
       }
@@ -142,6 +143,7 @@ export function Income() {
           >
             <View style={{ gap: theme.space[2] }}>
               <Title>{entry.episodeId}</Title>
+              {income.isError ? <Note text={tt('income.stale')} /> : null}
               {confirmed ? (
                 /*
                  * Ink, not the pass green.
@@ -167,11 +169,11 @@ export function Income() {
                   bg={theme.color.muted}
                 />
               )}
-              <Row label={tt('income.minutes')} value={entry.effectiveMinutes ?? '—'} />
-              <Row
+              <Amount
                 label={tt('income.amount')}
                 value={entry.amountVnd !== null ? `${entry.amountVnd} ₫` : '—'}
               />
+              <Row label={tt('income.minutes')} value={entry.effectiveMinutes ?? '—'} />
               {entry.settlementState !== null ? (
                 <Row
                   label={tt('income.settlement')}

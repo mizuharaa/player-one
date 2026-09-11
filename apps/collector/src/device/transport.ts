@@ -37,9 +37,18 @@ export interface DeviceTransport {
 }
 
 export class TransportError extends Error {
-  constructor(readonly code: 'not_connected' | 'device_not_found') {
+  constructor(readonly code: 'not_connected' | 'device_not_found' | 'transport_unavailable') {
     super(code);
   }
+}
+
+/** Production fails closed until an actual native transport is supplied. */
+export class UnavailableDeviceTransport implements DeviceTransport {
+  async scan(_timeoutMs: number): Promise<BleDevice[]> { throw new TransportError('transport_unavailable'); }
+  async connect(_address: string): Promise<void> { throw new TransportError('transport_unavailable'); }
+  async configureWifi(_ssid: string, _password: string): Promise<{ ok: boolean }> { throw new TransportError('transport_unavailable'); }
+  async requestIp(): Promise<IpResult> { throw new TransportError('transport_unavailable'); }
+  async disconnect(): Promise<void> {}
 }
 
 /** One fake Ego on the bench. Enforces the same call order the real BLE stack does. */

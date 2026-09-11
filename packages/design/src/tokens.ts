@@ -620,6 +620,35 @@ export const duration = {
   slow: '320ms',
 } as const;
 
+/** Public story only. Stable daylight material, independent of operator theme. */
+export const discover = {
+  warmPaper: '#F4EFE6',
+  warmSurface: '#FFFCF6',
+  warmInk: '#35271F',
+  warmMuted: '#705D4D',
+  warmLine: '#D3C5B3',
+  warmSoft: '#E8DFD1',
+  warmGlass: 'rgba(53,39,31,.76)',
+  warmHighlight: 'rgba(255,252,246,.24)',
+  paper: '#F7F7F4',
+  surface: '#FFFFFF',
+  ink: '#17191B',
+  muted: '#575C5D',
+  line: '#D6D8D4',
+  soft: '#EDEEEA',
+  light: '#DED8F3',
+  lightInk: '#4E4368',
+  scrim: 'linear-gradient(180deg, rgba(12,16,18,0.12) 0%, rgba(12,16,18,0.04) 30%, rgba(12,16,18,0.76) 100%)',
+  wash: 'linear-gradient(130deg, rgba(222,216,243,0) 10%, rgba(222,216,243,0.72) 60%, rgba(247,247,244,0) 95%)',
+  shadow: '0 28px 80px rgba(20,24,30,0.16)',
+  panelRadius: '28px',
+  frameRadius: '18px',
+  font: '"Archivo Variable", "Be Vietnam Pro", "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif',
+  reveal: '720ms',
+  opening: '1100ms',
+  ambient: '14000ms',
+} as const;
+
 /**
  * The mascot's four states, and the hours that own them.
  *
@@ -719,6 +748,7 @@ ${ramp('tech', tech)}
 ${ramp('bamboo', bamboo)}
 ${ramp('lavender', lavender)}
 ${ramp('lime', lime)}
+${Object.entries(discover).map(([key, value]) => `  --discover-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}: ${value};`).join('\n')}
 
   /*
    * The action, as a role rather than a colour. It is the ink pill this world

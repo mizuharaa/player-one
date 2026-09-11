@@ -2,10 +2,19 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
+import { SCENARIOS, type Scenario } from '../api/types.ts';
+import type { MessageKey } from '../i18n.ts';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { Body, Button, Card, Choice, Note, Row, Screen, Title } from '../ui.tsx';
+
+const SESSION_ERRORS: Record<string, MessageKey> = {
+  scenario_not_found: 'session.scenarioUnavailable',
+  task_not_claimable: 'session.taskUnavailable',
+  task_not_claimed: 'session.needClaim',
+  device_not_bound: 'session.deviceUnavailable',
+};
 
 /**
  * APP-16/17: one session binds task + collector + device + scenario, before
@@ -19,25 +28,29 @@ function YesNo({
   question,
   value,
   onChange,
+  disabled,
 }: {
   question: string;
   value: boolean | null;
   onChange: (v: boolean) => void;
+  disabled: boolean;
 }) {
   const tt = useT();
   const theme = useTheme();
   return (
     <View style={{ gap: theme.space[2] }}>
       <Body>{question}</Body>
-      <View style={{ flexDirection: 'row', gap: theme.space[3] }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[3] }}>
         <Choice
           label={tt('session.yes')}
+          disabled={disabled}
           describedBy={question}
           selected={value === true}
           onPress={() => onChange(true)}
         />
         <Choice
           label={tt('session.no')}
+          disabled={disabled}
           describedBy={question}
           selected={value === false}
           onPress={() => onChange(false)}
@@ -62,6 +75,7 @@ export function SessionCreate() {
   const [others, setOthers] = useState<boolean | null>(null);
   const [sensitive, setSensitive] = useState<boolean | null>(null);
   const [createdId, setCreatedId] = useState<string | null>(null);
+  const [scenario, setScenario] = useState<Scenario | null>(null);
 
   const claimedTasks = (tasks.data ?? []).filter((t) =>
     (claims.data ?? []).some((c) => c.taskId === t.id),
@@ -71,19 +85,27 @@ export function SessionCreate() {
 
   const create = useMutation({
     mutationFn: () => {
-      if (task === undefined || device === undefined || others === null || sensitive === null) {
+      if (task === undefined || device === undefined || scenario === null || others === null || sensitive === null) {
         throw new Error('incomplete');
       }
       return api.createSession({
         taskId: task.id,
         deviceSerial: device.serial,
-        scenario: task.scenario,
+        scenario,
         othersInFrame: others,
         sensitiveInfo: sensitive,
       });
     },
     onSuccess: (session) => setCreatedId(session.id),
   });
+
+  const queries = [claims, tasks, devices];
+  if (queries.some((q) => q.isError)) {
+    return <Screen title={tt('session.title')}><Note text={tt('common.loadFailed')} /><Button label={tt('common.retry')} disabled={queries.some((q) => q.isFetching)} onPress={() => { for (const q of queries) void q.refetch(); }} /></Screen>;
+  }
+  if (queries.some((q) => q.isPending)) {
+    return <Screen title={tt('session.title')}><Body muted>{tt('common.loading')}</Body></Screen>;
+  }
 
   const pick = <T,>(
     items: T[],
@@ -93,10 +115,11 @@ export function SessionCreate() {
     selected: string | null,
     onPick: (k: string) => void,
   ) => (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2] }}>
+    <View style={{ gap: theme.space[2] }}>
       {items.map((item) => (
         <Choice
           key={key(item)}
+          disabled={create.isPending || createdId !== null}
           label={label(item)}
           describedBy={describedBy}
           selected={selected === key(item)}
@@ -131,9 +154,12 @@ export function SessionCreate() {
           </>
         ) : null}
         {pick(claimedTasks, (t) => t.id, (t) => t.title, tt('session.task'), taskId, setTaskId)}
-        {task !== undefined ? (
-          <Row label={tt('session.scenario')} value={tt(`scenario.${task.scenario}`)} />
-        ) : null}
+      </Card>
+
+      <Card>
+        <Title>{tt('session.scenario')}</Title>
+        <Body>{tt('session.chooseScenario')}</Body>
+        {pick([...SCENARIOS], (s) => s, (s) => tt(`scenario.${s}`), tt('session.scenario'), scenario, (s) => setScenario(s as Scenario))}
       </Card>
 
       <Card>
@@ -160,8 +186,10 @@ export function SessionCreate() {
 
       <Card>
         <Title>{tt('session.declare')}</Title>
-        <YesNo question={tt('session.othersTitle')} value={others} onChange={setOthers} />
-        <YesNo question={tt('session.sensitiveTitle')} value={sensitive} onChange={setSensitive} />
+        <View style={{ gap: theme.space[5] }}>
+        <YesNo question={tt('session.othersTitle')} value={others} onChange={setOthers} disabled={create.isPending || createdId !== null} />
+        <YesNo question={tt('session.sensitiveTitle')} value={sensitive} onChange={setSensitive} disabled={create.isPending || createdId !== null} />
+        </View>
         {others === null || sensitive === null ? <Note text={tt('session.needDeclarations')} /> : null}
       </Card>
 
@@ -172,10 +200,11 @@ export function SessionCreate() {
         </Card>
       ) : null}
 
+      {create.isError ? <Note text={tt(SESSION_ERRORS[create.error.message] ?? 'common.actionFailed')} /> : null}
       <Button
-        label={tt('session.create')}
+        label={tt(create.isPending ? 'common.saving' : 'session.create')}
         disabled={
-          task === undefined || device === undefined || others === null || sensitive === null
+          task === undefined || device === undefined || scenario === null || others === null || sensitive === null || create.isPending || createdId !== null
         }
         onPress={() => create.mutate()}
       />

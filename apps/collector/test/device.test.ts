@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MockDeviceTransport } from '../src/device/transport.ts';
+import { MockDeviceTransport, UnavailableDeviceTransport } from '../src/device/transport.ts';
 import { MockDeviceTransfer } from '../src/device/transfer.ts';
 
 /**
@@ -7,6 +7,13 @@ import { MockDeviceTransfer } from '../src/device/transfer.ts';
  * so a screen that works against them is not lying about the happy path.
  */
 describe('BLE provisioning transport (mocked EgoLowBle)', () => {
+  it('never produces simulated scan, connection or IP success without a real transport', async () => {
+    const transport = new UnavailableDeviceTransport();
+    await expect(transport.scan(5000)).rejects.toThrow('transport_unavailable');
+    await expect(transport.connect('DC:0D:30:A1:B2:C3')).rejects.toThrow('transport_unavailable');
+    await expect(transport.configureWifi('Wi-Fi', 'secret')).rejects.toThrow('transport_unavailable');
+    await expect(transport.requestIp()).rejects.toThrow('transport_unavailable');
+  });
   it('walks scan → connect → configureWifi → requestIp and yields an IP', async () => {
     const transport = new MockDeviceTransport();
     const found = await transport.scan(5000);

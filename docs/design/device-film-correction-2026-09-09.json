@@ -1,0 +1,37 @@
+{
+  "source": "559e64c5-136d-46d3-a4ef-61991f646fa1",
+  "observedIssue": "Upper film contact-sheet shows visor across eyes during donning and later frontal/profile shots.",
+  "status": "rejected-no-job-credit-balance",
+  "params": {
+    "model": "hf_mult_replace_object",
+    "resolution": "720p",
+    "use_unlim": false,
+    "medias": [
+      {
+        "role": "video",
+        "value": "559e64c5-136d-46d3-a4ef-61991f646fa1"
+      },
+      {
+        "role": "image",
+        "value": "99a7fb7c-9c12-46c3-9f68-9fe116eaa8ed"
+      }
+    ],
+    "prompt": "TARGETED HARDWARE CORRECTION of the entire supplied video. Preserve the existing turquoise-haired adult woman, face identity, wardrobe, rooms, kitchen/books/garden actions, every cut, source duration, camera movement and shot timing. Correct ONLY the placement and geometry of her head-worn Ego camera in EVERY shot, including putting it on, front view, profile and working shots. The supplied image is the hardware shape reference only: matte black horizontal camera bar, two circular outer lenses, top controls, black fabric side strap and top strap. Mount the entire bar on her UPPER FOREHEAD at the hairline. Lowest edge must stay ABOVE BOTH EYEBROWS with visible bare forehead gap; BOTH EYES AND BOTH EYEBROWS fully visible in every frame. When her hands put it on, they stop at the upper forehead rather than pulling it down over the eyes. Restore unobstructed natural eyes consistent with her face wherever the old visor covered them. Side strap goes above ears and top strap over crown; device remains firmly attached to forehead as head rotates. Keep compact real housing dimensions and perspective. No goggles, no visor, no display, no lenses over eyes, no enlarged helmet. Do not add text, overlays, phone UI, camera effects, voice, new shots, changes to her ethnicity or colour grade. Keep everything outside the corrected hardware/occluded eye region as close to the source as possible. This is one full-source correction, not a new montage."
+  },
+  "result": {
+    "error": "Out of credits on starter (monthly) plan in Private workspace.",
+    "adjustments": {
+      "medias[0].role": {
+        "requested": "video",
+        "used": "video_references",
+        "reason": "Genjutsu backend expects schema-key media roles"
+      },
+      "medias[1].role": {
+        "requested": "image",
+        "used": "image_references",
+        "reason": "Genjutsu backend expects schema-key media roles"
+      }
+    },
+    "error_code": "INVALID_ARGUMENT"
+  }
+}

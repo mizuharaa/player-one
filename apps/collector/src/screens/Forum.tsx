@@ -15,7 +15,7 @@ import {
   Tag,
   Title,
   face,
-  tabBarHeight,
+  useTabBarReserve,
 } from '../ui.tsx';
 
 /**
@@ -148,6 +148,7 @@ const keep = (post: Post, filter: Filter): boolean =>
   filter === 'all' ? true : filter === 'mine' ? post.author === ME : post.answered;
 
 export function Forum() {
+  const tabReserve = useTabBarReserve();
   const nav = useNav();
   const tt = useT();
   const theme = useTheme();
@@ -255,7 +256,7 @@ export function Forum() {
         style={({ pressed }) => ({
           position: 'absolute',
           right: theme.space[4],
-          bottom: tabBarHeight(theme) + theme.space[2],
+          bottom: tabReserve + theme.space[2],
           width: theme.space[12] + theme.space[2],
           height: theme.space[12] + theme.space[2],
           borderRadius: (theme.space[12] + theme.space[2]) / 2,

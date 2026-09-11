@@ -1,1172 +1,134 @@
-/**
- * Home: what needs attention, what to do next, and what the shift has done.
- *
- * **The order is the argument.** Attention needed → next action → shift
- * results → recent work → optional insights. Imagery and motion serve that
- * order and never reorder it: the picture is where the next action is, because
- * that is the only place on this screen a photograph is the subject rather than
- * a decoration, and the choreography runs down the page in the order above.
- * An operator who reads only the first two hundred pixels has read the two
- * things that can cost somebody money.
- *
- * **The figures are a ledger, not four cards.** Measured quantities in one
- * panel, each sitting with the sentence that says what it is and what it is
- * not. A figure whose note is somewhere else is a figure somebody will
- * misread, and on this screen a misread figure is a person thinking they have
- * been paid.
- *
- * **One ink block, and it has to earn it.** `.feature-block` appears once per
- * screen and only where a figure carries its own sentence and its own action
- * — here the settled value, "Your decisions only. Not the programme's spend."
- * and the arrow to `/settle`. Take away either the sentence or the arrow and
- * the block should go back to being a row in the ledger above it.
- *
- * ## Every figure on this screen is measured or absent
- *
- * Every value used to fall back to a literal on error — `data?.decided ?? 0`
- * under the gauge, `durationShort(data?.payable_seconds ?? '0')` in the ledger
- * — so a 500 photographed as "0 episodes reviewed" and "0:00 payable". A
- * reviewer cannot tell that apart from a shift where they have genuinely done
- * nothing, and on this screen that difference is whether somebody has been
- * paid. A 500 must not render as a zero and the gauge must not draw a
- * fabricated target.
- *
- * ## Trúc, and the line he must not cross
- *
- * He is at the bottom, in *optional insights*, and that placement is the whole
- * of his contract. A greeting is authored and a reaction to a press is
- * personality; **an operational statement is evidence**. So every sentence he
- * says that asserts a fact comes from the same query, with the same scope, the
- * same freshness stamp and the same error state as its ordinary counterpart
- * further up the page — and the counterpart is always there, because he is an
- * additional channel and never the only one. `Shift` supplies current figures
- * and **no historical series**, so there is nothing behind a trend and he does
- * not claim one. When the request failed he says **"Not connected"** and shows
- * a dash, and he never substitutes an example for a figure that did not load.
- *
- * Numerical demonstrations live behind a preview the operator turns on by
- * hand, every value carrying "Example — not live data" in all three locales.
- *
- * He is the existing `PandaStage` — the glTF model, the cursor tracking, the
- * walk, the jump, the breathing — mounted only once his section approaches the
- * viewport, because `React.lazy` alone defers until mount and his section is
- * the last thing on the page. He idles constantly, so he carries a Pause
- * control (WCAG 2.2 Pause, Stop, Hide); reduced motion alone does not satisfy
- * that.
- *
- * ## Motion, and what a still frame has to hold
- *
- * The choreography is GSAP, imported at run time so the tween engine stays out
- * of `/review`'s chunk, and the whole of it is inside one
- * `gsap.matchMedia('(prefers-reduced-motion: no-preference)')`. That is the
- * load-bearing part and it is why this is not a CSS class with an
- * `opacity: 0` default: **the hidden start state is created only by the engine
- * that is going to clear it.** Reduced motion, a blocked import, a script that
- * threw — every one of those leaves the screen complete in its first frame
- * rather than leaving a section held down by an `opacity: 0` nothing clears.
- * `matchMedia.revert()` on unmount puts every inline style back.
- *
- * The gauge sweep stays CSS and stays the console's one authored performance:
- * it is triggered when the ring reaches the viewport rather than on load, and
- * the arc carries its true offset whether or not the class is ever added, so a
- * gauge that is never scrolled to reads the right number instead of zero.
- */
+/** THESIS: a working ledger with one stable reading edge.
+ * OWN-WORLD: Archivo, lavender navigation, paper surfaces, ink actions.
+ * STORY: see measured work, open the right queue, inspect recent decisions.
+ * FIRST VIEWPORT: a lavender hero band with the heading and Truc, four toned
+ * evidence tiles, two operational rows with icon tiles.
+ * FORM: the owner's 2026-09-10 request — light visual effects, contrast, punched
+ * type, illustration — on top of the pinned workspace direction.
+ * Every number remains API evidence; no sample metrics or stock media. The only
+ * illustration is the existing Truc mark. */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '../components/shell/AppShell.tsx';
-import { Button, Key } from '../components/ui/button.tsx';
-import { Panel, Problem, Skeleton, VerdictPill } from '../components/ui/primitives.tsx';
+import { Problem, Skeleton, VerdictPill } from '../components/ui/primitives.tsx';
+import { IconArrow, IconBackOffice, IconReview, IconAlert } from '../components/icons.tsx';
 import { Panda } from '../components/identity/Panda.tsx';
-import { mascotStateAt, type MascotState } from '@playerone/design/tokens';
-import { IconAlert, IconArrow } from '../components/icons.tsx';
-import { Reveal, useChoreography, useOnScreen } from '../lib/choreo.tsx';
-import { cn } from '../lib/cn.ts';
+import { api, backOffice, ApiError } from '../lib/api.ts';
 import { durationShort, money, pace, stampLocal } from '../lib/format.ts';
-import { api, ApiError, type Shift } from '../lib/api.ts';
 import { defaultPeriod } from '../payout/period.ts';
 
-/**
- * Three.js stays out of the chunk this route loads, and out of `/review`'s.
- *
- * The lazy import is only half of it: `React.lazy` defers the fetch until the
- * component mounts, and a component that mounts with the page has deferred
- * nothing. `TrucPanel` mounts this only once its section is within a viewport
- * of the fold.
- */
-const PandaStage = lazy(() =>
-  import('../components/identity/PandaStage.tsx').then((m) => ({ default: m.PandaStage })),
-);
-
-/**
- * The four shift names, from the catalogue rather than from `MASCOT_LABEL`.
- *
- * The label map in `Panda.tsx` carries English and Chinese only, because it is
- * artwork metadata that also ships to React Native. This console is read in
- * Vietnamese too, and these four strings already exist in all three locales.
- */
-const SHIFT_KEY: Record<MascotState, string> = {
-  earlyBird: 'home.shiftEarly',
-  dayShift: 'home.shiftDay',
-  goldenHour: 'home.shiftGolden',
-  nightOwl: 'home.shiftNight',
-};
-
-/** `19:42` on the clock of the machine reading it. 24-hour, like every stamp here. */
-function clockAt(at: number): string {
-  return new Date(at).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-}
-
 export function HomeScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const shift = useQuery({ queryKey: ['shift'], queryFn: () => api.shift(), refetchInterval: 60_000 });
+  const recent = useQuery({ queryKey: ['recent'], queryFn: () => api.recent() });
+  const tasks = useQuery({ queryKey: ['bo', 'tasks'], queryFn: () => backOffice.tasks() });
+  const data = shift.data;
+  const approval = data && data.decided > 0 ? `${Math.round(data.approved / data.decided * 100)}%` : '—';
+  const refreshed = shift.dataUpdatedAt ? new Intl.DateTimeFormat(i18n.language, { hour: '2-digit', minute: '2-digit' }).format(shift.dataUpdatedAt) : null;
+  const refreshing = shift.isFetching || recent.isFetching || tasks.isFetching;
+  const refresh = () => { void shift.refetch(); void recent.refetch(); void tasks.refetch(); };
+  const reviews = recent.data?.reviews;
+  const taskRows = tasks.data?.tasks.slice(0, 6);
 
-  /**
-   * `api.shift()` and not a `fetch` written out here.
-   *
-   * The hand-rolled version built its `ApiError` from `res.statusText` alone
-   * and never read the body, so the `ref` the server puts in a 500 —
-   * `{"error":"internal","ref":"req-…"}` — was thrown away before anything
-   * could show it. Measured: a mocked 500 rendered the red panel with no
-   * reference line under it, which left an operator with nothing to quote and
-   * the log line with nothing to be joined to. `call` in `api.ts` has parsed
-   * that body since it was written; this route was the one request that went
-   * around it.
-   */
-  const { data, isPending, error, dataUpdatedAt } = useQuery<Shift | null>({
-    queryKey: ['shift'],
-    queryFn: () => api.shift(),
-    /** The shift figures move as the reviewer works; a minute is close enough. */
-    refetchInterval: 60_000,
-  });
+  return <AppShell operator={data?.reviewer}>
+    <div className="workspace-page workspace-home">
+      <header className="workspace-page-header">
+        <div className="workspace-home-hero-copy"><h1>{t('workspace.overview')}</h1><p>{t('workspace.overviewNote')}</p></div>
+        <span className="workspace-home-mascot" aria-hidden="true"><Panda size={92} state="dayShift" /></span>
+        <div className="workspace-actions">
+          <button type="button" className="workspace-button" disabled={refreshing} onClick={refresh}>{t(refreshing ? 'workspace.refreshing' : 'workspace.refresh')}</button>
+          <Link to="/counter" className="workspace-button workspace-button-primary">{t('workspace.handover')}<IconArrow size={15} /></Link>
+        </div>
+      </header>
 
-  /**
-   * The query is done and there are no figures. Distinct from `isPending`,
-   * which is still loading: a skeleton that never resolves and a zero are the
-   * two ways this screen used to lie about a failed request.
-   */
-  const unavailable = !isPending && !data;
+      <section className="workspace-section" aria-labelledby="shift-title" data-guide="home.figures">
+        <div className="workspace-section-heading"><div><h2 id="shift-title">{t('workspace.shift')}</h2><p>{t('workspace.shiftScope')}</p></div>
+          {refreshed ? <span className="workspace-freshness">{t('workspace.updated', { time: refreshed })}</span> : null}
+        </div>
+        {shift.isError ? <QueryFailure error={shift.error} cached={!!data} retry={() => void shift.refetch()} busy={shift.isFetching} /> : null}
+        <dl className="workspace-metrics">
+          <Metric tone="ink" label={t('workspace.reviewed')} value={data ? String(data.decided) : null} loading={shift.isPending}
+            note={data ? t('workspace.target', { count: data.target }) : undefined} />
+          <Metric tone="lime" label={t('home.payable')} value={data ? durationShort(data.payable_seconds) : null} loading={shift.isPending} note={t('ui.a.home.payable.note')} />
+          <Metric tone="lavender" label={t('workspace.approval')} value={data ? approval : null} loading={shift.isPending}
+            note={data ? t('workspace.approvalNote', { approved: data.approved, decided: data.decided }) : undefined} />
+          <Metric tone="paper" label={t('home.settled')} value={data ? money(data.settled_amount, data.currency) : null} loading={shift.isPending} note={t('ui.a.home.settled.note')} />
+        </dl>
+        <div className="workspace-summary-footer">
+          <p>{t('ui.a.home.median')}: <strong className="num">{data?.median_seconds_to_verdict == null ? '—' : pace(Number(data.median_seconds_to_verdict))}</strong>
+            <span className="workspace-inline-separator" aria-hidden="true">·</span>{t('queue.average')}: <strong className="num">{pace(data?.session_average_seconds ?? null)}</strong></p>
+          <Link to="/settle" search={{ period: defaultPeriod() }} className="workspace-text-link">{t('workspace.settlement')}<IconArrow size={14} /></Link>
+        </div>
+      </section>
 
-  /**
-   * When these figures were last measured, on the clock of the machine reading
-   * them. Every operational sentence on this screen — Trúc's included — is
-   * stamped with it, because a claim about the queue with no time on it is a
-   * claim about an unknown moment.
-   */
-  const asOf = data && dataUpdatedAt > 0 ? clockAt(dataUpdatedAt) : null;
-
-  const state = mascotStateAt();
-  const approvalRate =
-    data && data.decided > 0 ? Math.round((data.approved / data.decided) * 100) : null;
-
-  /** Everything the choreography touches is inside this element and nowhere else. */
-  const page = useRef<HTMLDivElement>(null);
-  useChoreography(page);
-
-  return (
-    <AppShell
-      queueDepth={data?.queue_depth}
-      averageSeconds={data?.session_average_seconds}
-      operator={data?.reviewer}
-    >
-      {/* The choreography's root. Everything it can touch is inside it. */}
-      <div ref={page}>
-        {error ? (
-          <div className="mb-5">
-            <Problem
-              reference={error instanceof ApiError ? error.ref : undefined}
-              title={t('ui.a.home.error.title')}
-              body={t('ui.a.home.error.body')}
-            />
+      <section className="workspace-section" aria-labelledby="attention-title" data-guide="home.attention">
+        <div className="workspace-section-heading"><div><h2 id="attention-title">{t('workspace.attention')}</h2><p>{t('workspace.attentionNote')}</p></div></div>
+        <div className="workspace-work-rows">
+          <div className="workspace-work-row" data-guide="home.next"><span className="workspace-home-icon" aria-hidden="true"><IconReview size={22} /></span>
+            <div><h3>{t('workspace.reviewQueue')}</h3><p>{t('workspace.reviewNote')}</p></div>
+            <strong className="workspace-row-count num">{data?.queue_depth ?? '—'}</strong>
+            <Link to="/review" className="workspace-button">{t('workspace.reviewAction')}<IconArrow size={14} /></Link>
           </div>
-        ) : null}
-
-        {/* --- 1. Attention needed. First, and reachable without the panda. --- */}
-        <Attention
-          needsHuman={data?.needs_human ?? null}
-          isPending={isPending}
-          unavailable={unavailable}
-          asOf={asOf}
-        />
-
-        {/* ---------------------------------------------------------------
-            2. The next action, and the one place a photograph is the subject.
-
-            **The picture is beside the words, not behind them.** It ran
-            full-bleed under a 60% ink scrim, and at that strength the frame is a
-            texture: the band read as a dark rectangle and the photograph — the
-            only picture on the screen — was the thing you could not see. The
-            product owner named it, and named the cost precisely: the image was
-            hidden. So the band is glass, like every other surface in this world,
-            and the frame has a box of its own at full strength beside the type,
-            about two fifths of the width and the full height of the panel.
-
-            Three things fall out of that and all three are improvements:
-
-            - **No scrim, so no contrast that depends on a frame.** The type is
-              `--foreground` on `--card`, the same pair as every other panel here,
-              instead of `--stage-over` on a composite of ink and whatever pixel
-              the photograph happens to hold.
-            - **The pill loses its hairline.** `ring-1 ring-[var(--stage-over)]`
-              existed only because a near-black `--action` pill on a near-black
-              scrim measured 1.02:1 against its own band. On glass the pill is the
-              highest-contrast object on the screen and needs nothing added.
-            - **`.feature-block` is the one ink block again.** The scrimmed band
-              was a second near-black two hundred pixels above the settled value,
-              which is the arrangement DESIGN.md forbids.
-
-            What stands here is still only what an arriving reviewer has to act
-            on: which shift this is, how much work is waiting, and the way in.
-            Progress is not here — progress is a result, and results are the next
-            section down.
-
-            The image is `landing-poster.jpg`, the same still the sign-in film
-            opens on. It carries `alt=""` because it is a demo frame and not this
-            reviewer's queue: a caption on it would be a claim about footage
-            nobody has. ponytail: when an episode still is reachable per reviewer
-            this becomes the next episode in their own queue, which is both a
-            better picture and a true one.
-            --------------------------------------------------------------- */}
-        <Panel className="mt-5 overflow-hidden p-0 shadow-[var(--shadow)]">
-          <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,30%)]">
-            <div className="flex min-w-0 flex-col justify-center p-6 sm:p-8 lg:p-10">
-              <p className="text-[0.8125rem] font-semibold text-[var(--muted-foreground)]">
-                {t('home.greeting')} · {t(SHIFT_KEY[state])}
-                {asOf === null ? null : (
-                  <>
-                    {' · '}
-                    <span className="num">{t('ui.a.home.asOf', { time: asOf })}</span>
-                  </>
-                )}
-              </p>
-              <h1 className="headline mt-3 max-w-[18ch]">{t('ui.a.home.next.title')}</h1>
-              <p className="mt-3 max-w-[46ch] text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">
-                {t('ui.a.home.next.body')}
-              </p>
-
-              <div className="mt-6 flex flex-wrap items-center gap-x-8 gap-y-4">
-                <Button asChild variant="primary" size="lg" data-guide="home.start">
-                  <Link to="/review">
-                    {t('home.start')}
-                    <Key>R</Key>
-                  </Link>
-                </Button>
-
-                {/*
-                  The queue, which is what makes the button a decision rather than
-                  a habit — and it is the programme's own bottleneck. Beside the
-                  pill rather than above it, because the two are one reading: this
-                  many are waiting, and here is the way in. A dash when the
-                  request failed: there is no measurement, so there is no number.
-                */}
-                <div>
-                  {isPending ? (
-                    <Skeleton className="h-[2.0625rem] w-20" />
-                  ) : (
-                    <p className="num text-[2.0625rem] font-extrabold leading-none tracking-[-0.03em]">
-                      {unavailable ? '—' : data?.queue_depth}
-                    </p>
-                  )}
-                  <p className="mt-1.5 text-[0.8125rem] text-[var(--muted-foreground)]">
-                    {unavailable ? t('ui.a.home.unavailable') : t('ui.a.home.queueWaiting')}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/*
-              The picture. `--h` rather than an aspect ratio because the column
-              beside it is translated type whose height is not the same in three
-              languages, and a ratio-sized frame leaves a different gap in each.
-
-              Flush to the panel's edge rather than inset in a margin. Two
-              reasons, and the second is the one that was measured: a picture with
-              its own margin has to match the type column's padding at three
-              breakpoints and in three languages or the band reads as two boxes
-              that nearly line up — and the product owner's complaint about this
-              console names exactly that. The panel already clips, so the corner
-              radius is the panel's and there is one edge instead of two.
-
-              The parallax that moves it is GSAP's and is scrubbed against the
-              scroll; what moves is the `cover` crop rather than the element, so
-              the box fits its frame exactly and nothing here is content cut off
-              by its own container.
-
-              **It is secondary, and the layout has to say so.** This frame is a
-              demo still, not this reviewer's queue, and the rule for this
-              screen is that a picture earns its space when it identifies
-              relevant work and otherwise stays secondary. Two things follow.
-              The column is 30% of the band rather than 40%, so the sentence and
-              the pill are plainly the subject. And it carries no `order` — it
-              had `order-1`, which put 200px of a stranger in a Métro above the
-              only instruction on a 390px screen, and "the next action stays
-              first" is not a rule that has a phone exception. Below `lg` the
-              picture now follows the action; at `lg` the grid puts it on the
-              right, which is where the DOM already had it.
-            */}
-            <div className="photo-frame [--h:200px] sm:[--h:240px] lg:[--h:auto]">
-              <img
-                src="/landing-poster.jpg"
-                alt=""
-                aria-hidden="true"
-                decoding="async"
-                data-choreo-photo=""
-              />
-            </div>
-          </div>
-        </Panel>
-
-        {/* --- 3. What the shift has done. --- */}
-        <Reveal className="mt-8">
-          <h2 className="headline-sm">
-            {t('ui.a.home.results')}
-          </h2>
-
-          <div className="mt-3 grid items-start gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
-            <Panel data-guide="home.gauge" className="flex justify-center px-5 py-6">
-              {isPending ? (
-                <Skeleton className="h-[248px] w-[248px] rounded-full" />
-              ) : (
-                <Gauge value={data?.decided ?? null} target={data?.target ?? null} />
-              )}
-            </Panel>
-
-            <Panel data-guide="home.figures" className="px-5 py-1.5">
-              <dl className="m-0">
-                <Figure
-                  label={t('home.payable')}
-                  value={data ? durationShort(data.payable_seconds) : null}
-                  unavailable={unavailable}
-                  note={t('ui.a.home.payable.note')}
-                />
-                <Figure
-                  label={t('home.approval')}
-                  value={!data ? null : approvalRate === null ? '—' : `${approvalRate}%`}
-                  unavailable={unavailable}
-                  /*
-                   * The note carries the programme's own number, because this is
-                   * the only figure on the screen a reviewer can read as a grade
-                   * and there is nothing on it to grade against. ≥85–90%
-                   * qualification is the phase-1 target in PRODUCT.md; without
-                   * it, 67% is either a disaster or a Tuesday and the screen does
-                   * not say which. It is the *programme's* rate over 40,000
-                   * hours, not a quota for one shift, and the sentence says so
-                   * rather than turning a target into a score.
-                   */
-                  note={`${t('ui.a.home.approval.note')} ${t('ui.a.home.approval.target')}`}
-                  /*
-                   * The count, and not a verdict pill.
-                   *
-                   * It read as `good` above 85% and `partial` below it, which
-                   * spent two of the three colours that decide whether one person
-                   * is paid on an aggregate of everyone. A rate is not a verdict:
-                   * there is no episode behind this pill to pass or fail, and a
-                   * reviewer who learns that green-here means good has learned
-                   * the wrong thing about green-there. The sentence under the
-                   * figure carries the judgement instead.
-                   */
-                  trailing={
-                    approvalRate === null ? null : (
-                      <span className="num rounded-full bg-[var(--muted)] px-2 py-0.5 text-[0.75rem] font-semibold text-[var(--muted-foreground)]">
-                        {data?.approved ?? 0}/{data?.decided ?? 0}
-                      </span>
-                    )
-                  }
-                />
-                {/*
-                  The median, which the payload has carried since it was written
-                  and this screen never showed.
-
-                  A mean over a handful of verdicts is moved several seconds by
-                  one episode somebody left open while they took a call; the
-                  median is not, which is the whole reason the server computes it.
-                  Both are here because they answer different questions and the
-                  pair is what says whether a shift was steady. `null` when no
-                  review on this shift was timed — the server leaves untimed rows
-                  out of it rather than counting them as zero, and so does this.
-                */}
-                <Figure
-                  label={t('ui.a.home.median')}
-                  value={data ? pace(numberOrNull(data.median_seconds_to_verdict)) : null}
-                  unavailable={unavailable}
-                  note={t('ui.a.home.median.note')}
-                />
-                <Figure
-                  label={t('queue.average')}
-                  value={data ? pace(data.session_average_seconds) : null}
-                  unavailable={unavailable}
-                  note={t('ui.a.home.pace.note')}
-                />
-              </dl>
-            </Panel>
-          </div>
-
-          <Settled
-            className="mt-5"
-            amount={data ? money(data.settled_amount, data.currency) : null}
-            unavailable={unavailable}
-          />
-        </Reveal>
-
-        {/* --- 4. The work itself, row by row. --- */}
-        <RecentVerdicts currency={data?.currency ?? 'VND'} />
-
-        {/* --- 5. Optional insights, and the only place a mascot speaks. --- */}
-        <TrucPanel
-          needsHuman={data?.needs_human ?? null}
-          unavailable={unavailable}
-          isPending={isPending}
-          asOf={asOf}
-          state={state}
-        />
-      </div>
-    </AppShell>
-  );
-}
-
-/**
- * `median_seconds_to_verdict` arrives as a decimal string, or as nothing.
- *
- * `pace` takes a number and prints a dash for anything that is not one, so the
- * parse is the whole of the conversion — and a string the server could not
- * measure comes back `null` rather than as `NaN` dressed up as `0.0s`.
- */
-function numberOrNull(value: string | null): number | null {
-  if (value === null) return null;
-  const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-/**
- * What needs a human, first on the page and reachable without the mascot.
- *
- * Three states and they are three different sentences. A count is a link into
- * `/episodes`, drawn in the attention hue and carrying its glyph. Zero is a
- * measurement too and says so quietly, with the time it was measured at. A
- * failed request says neither — "nothing needs attention" is a claim, and
- * a screen with no figures is not entitled to make it.
- */
-function Attention({
-  needsHuman,
-  isPending,
-  unavailable,
-  asOf,
-}: {
-  needsHuman: number | null;
-  isPending: boolean;
-  unavailable: boolean;
-  asOf: string | null;
-}) {
-  const { t } = useTranslation();
-
-  if (isPending) return <Skeleton className="h-14 w-full rounded-[var(--radius-lg)]" />;
-
-  if (unavailable || needsHuman === null) {
-    return (
-      <Panel className="flex items-center gap-3 px-5 py-4">
-        <span className="num text-[1.0625rem] text-[var(--muted-foreground)]" aria-hidden="true">
-          —
-        </span>
-        <p className="text-[0.875rem] text-[var(--muted-foreground)]">
-          {t('ui.a.home.attention.unknown')}
-        </p>
-      </Panel>
-    );
-  }
-
-  if (needsHuman === 0) {
-    return (
-      <Panel className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-5 py-4">
-        <p className="text-[0.875rem] font-semibold">{t('ui.a.home.attention.none')}</p>
-        {asOf === null ? null : (
-          <p className="num text-[0.8125rem] text-[var(--muted-foreground)]">
-            {t('ui.a.home.asOf', { time: asOf })}
-          </p>
-        )}
-      </Panel>
-    );
-  }
-
-  return (
-    <Link
-      to="/episodes"
-      data-guide="home.needsHuman"
-      className="group flex items-center gap-3.5 rounded-[var(--radius-lg)] border border-[var(--warn)]/40 bg-[var(--warn-bg)] px-5 py-4 no-underline transition-colors duration-150 ease-[var(--ease)] hover:border-[var(--warn)]"
-    >
-      <IconAlert size={20} className="shrink-0 text-[var(--warn)]" />
-      <div className="min-w-0 flex-1">
-        <p className="text-[0.9375rem] font-bold text-[var(--warn)]">
-          <span className="num">{needsHuman}</span> {t('home.needsHuman')}
-        </p>
-        <p className="mt-0.5 text-[0.875rem] text-[var(--warn)]">
-          {t('home.needsHuman.body')}
-          {asOf === null ? null : <span className="num"> {t('ui.a.home.asOf', { time: asOf })}</span>}
-        </p>
-      </div>
-      <IconArrow
-        size={18}
-        className="shrink-0 text-[var(--warn)] transition-transform duration-150 ease-[var(--ease)] group-hover:translate-x-0.5"
-      />
-    </Link>
-  );
-}
-
-/**
- * The settled value: the one ink block this screen is allowed.
- *
- * `.feature-block` is `--stage` — the console's single near-black, the same one
- * the top bar and the review theatre use — and the figure inside it is mono at
- * the display step. The sentence under it is not decoration: DESIGN.md pins it
- * because a personal figure read as the programme's budget is wrong by orders
- * of magnitude. The arrow is a real link to the screen that owns the money, so
- * the block is a door and not a poster.
- */
-function Settled({
-  amount,
-  unavailable,
-  className,
-}: {
-  amount: string | null;
-  unavailable: boolean;
-  className?: string;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div data-guide="home.settled" className={cn('feature-block relative px-6 py-6', className)}>
-      <p className="text-[0.875rem] font-semibold text-[var(--stage-mid)]">{t('home.settled')}</p>
-      {unavailable ? (
-        <p className="mt-2 pr-14 text-[1.0625rem] text-[var(--stage-mid)]">
-          {t('ui.a.home.unavailable')}
-        </p>
-      ) : amount === null ? (
-        <div className="mt-2 h-[2.625rem] w-40 animate-pulse rounded-[var(--radius-sm)] bg-[var(--stage-panel)]" />
-      ) : (
-        /*
-         * Printed, never counted up. Money is the one figure on this console
-         * that must never pass through a value it was not measured at: an
-         * animation from 0 to the total renders a sequence of amounts nobody
-         * was ever paid, and a screenshot taken mid-tween is a wrong number
-         * with a timestamp on it.
-         */
-        <p className="figure mt-1.5 pr-14 text-[var(--stage-fg)]">{amount}</p>
-      )}
-      <p className="mt-3 max-w-[52ch] text-[0.875rem] leading-relaxed text-[var(--stage-mid)]">
-        {t('ui.a.home.settled.note')}
-      </p>
-
-      <Link
-        to="/settle"
-        search={{ period: defaultPeriod() }}
-        aria-label={t('ui.a.home.settled.open')}
-        title={t('ui.a.home.settled.open')}
-        className={
-          'absolute right-5 top-5 grid h-11 w-11 place-items-center rounded-full border ' +
-          'border-[var(--stage-line)] bg-[var(--stage-panel)] text-[var(--stage-fg)] no-underline ' +
-          'transition-[background-color,border-color,transform] duration-150 ease-[var(--ease)] ' +
-          'hover:border-[var(--action)] hover:bg-[var(--action)] hover:text-[var(--action-ink)] ' +
-          'active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]'
-        }
-      >
-        <IconArrow size={19} />
-      </Link>
-    </div>
-  );
-}
-
-/**
- * The last twenty verdicts this reviewer committed.
- *
- * Home without this is a page of aggregates, and an aggregate is exactly the
- * thing a reviewer cannot check. The individual rows are what let somebody
- * notice that the partial they marked at 11:04 paid less than they expected,
- * which is the first step of every payment dispute — so the row carries the
- * measured duration beside the effective one, and the amount beside both.
- *
- * **No still beside a row, and that is deliberate.** A picture next to an
- * episode id is a claim about what is in that recording, and this console has
- * no per-episode frame to make it with. A stock frame there would be the one
- * kind of decoration this screen cannot afford.
- */
-function RecentVerdicts({ currency }: { currency: string }) {
-  const { t } = useTranslation();
-  const { data, isPending, error } = useQuery({
-    queryKey: ['recent'],
-    queryFn: () => api.recent(),
-  });
-
-  const reviews = data?.reviews ?? [];
-
-  return (
-    <Reveal className="mt-8" data-guide="home.recent">
-      <h2 className="headline-sm">{t('recent.title')}</h2>
-
-      <Panel className="mt-3 overflow-hidden">
-        {isPending ? (
-          <div className="flex flex-col gap-2 p-4">
-            <Skeleton className="h-5 w-full" />
-            <Skeleton className="h-5 w-5/6" />
-            <Skeleton className="h-5 w-2/3" />
-          </div>
-        ) : error ? (
-          /*
-           * A failed query is not an empty table.
-           *
-           * This branch did not exist: `data` was undefined on a 500, `reviews`
-           * fell back to `[]`, and the screen printed "No verdicts yet this
-           * session" — which is a claim about the reviewer's work, made out of
-           * a database error. Same panel, same reference line as the figures
-           * above, so the operator has one id to read out for both.
-           */
-          <div className="p-4">
-            <Problem
-              reference={error instanceof ApiError ? error.ref : undefined}
-              title={t('ui.a.home.recent.error')}
-              body={t('ui.a.home.error.body')}
-            />
-          </div>
-        ) : reviews.length === 0 ? (
-          <div className="hatch flex items-center justify-center px-5 py-10">
-            <p className="text-[0.9375rem] text-[var(--muted-foreground)]">{t('recent.empty')}</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px] border-collapse text-left">
-              {/*
-                The header row this table went without.
-
-                Four unlabelled columns of numbers is a table a reviewer has to
-                decode from the values — and two of these columns are durations
-                in the same format, so "which one is the measured one" was
-                genuinely unanswerable from the screen. `2:12 → 2:12` is only
-                obvious on a full pass. The arrow is inside the heading for the
-                same reason it is inside the cell: the pair is one reading, not
-                two columns that happen to be adjacent.
-              */}
-              <thead>
-                <tr className="border-b border-[var(--border-strong)]">
-                  <Th className="pl-5">{t('ui.a.home.recent.time')}</Th>
-                  <Th>{t('ui.a.home.recent.episode')}</Th>
-                  <Th>{t('ui.a.home.recent.verdict')}</Th>
-                  <Th className="w-full">{t('ui.a.home.recent.duration')}</Th>
-                  <Th align="right">{t('ui.a.home.recent.amount')}</Th>
-                  <Th align="right" className="pr-5">
-                    {t('ui.a.home.recent.pace')}
-                  </Th>
-                </tr>
-              </thead>
-              <tbody>
-                {reviews.map((r) => {
-                  const verdict =
-                    r.reviewState === 'pass'
-                      ? 'good'
-                      : r.reviewState === 'partial_pass'
-                        ? 'partial'
-                        : 'bad';
-                  return (
-                    <tr
-                      key={r.reviewId}
-                      className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]"
-                    >
-                      <td className="num py-2.5 pl-5 pr-3 text-[0.8125rem] whitespace-nowrap text-[var(--muted-foreground)]">
-                        {stampLocal(r.reviewedAt)}
-                      </td>
-                      {/*
-                        The episode this verdict was about.
-
-                        A dispute starts with somebody naming one episode, and
-                        until this column existed the screen could show that a
-                        partial paid ₫1,582 without saying *which* recording
-                        that was. The id is a uuid, so the cell prints the head
-                        of it — enough to match against a row on `/episodes` or
-                        a line on a bill — and carries the whole thing in
-                        `title` for copying. It is text and not a link: this
-                        console has no route for one episode, and a link that
-                        goes to a list is a link that lied.
-                      */}
-                      <td
-                        className="num px-3 py-2.5 text-[0.8125rem] text-[var(--muted-foreground)]"
-                        title={r.episodeId}
-                      >
-                        {r.episodeId.slice(0, 8)}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5">
-                        <VerdictPill verdict={verdict} size="sm">
-                          {t(`verdict.${verdict}`)}
-                        </VerdictPill>
-                      </td>
-                      <td className="num px-3 py-2.5 text-[0.8125rem] whitespace-nowrap text-[var(--muted-foreground)]">
-                        {durationShort(r.measured)}
-                        {' → '}
-                        <span className="font-semibold text-[var(--foreground)]">
-                          {durationShort(r.effective)}
-                        </span>
-                      </td>
-                      <td className="num px-3 py-2.5 text-right text-[0.8125rem] font-semibold">
-                        {money(r.amount, currency)}
-                      </td>
-                      <td className="num py-2.5 pl-3 pr-5 text-right text-[0.8125rem] text-[var(--muted-foreground)]">
-                        {r.seconds === null ? '—' : pace(Number(r.seconds))}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
-    </Reveal>
-  );
-}
-
-/**
- * Trúc: an additional channel, last on the page, and held to the same standard
- * as every figure above him.
- *
- * The greeting is authored and costs nothing. The one operational sentence he
- * says is the attention count — the same field, the same query, the same
- * freshness stamp and the same failure behaviour as the strip at the top of
- * this screen, which is still there and is still the channel that matters. On
- * a failed request he says "Not connected" and shows a dash; he never fills the
- * hole with an example.
- *
- * **The preview is entered by hand and never by the screen.** `Shift` carries
- * current figures and no history, so a trend has nothing behind it. The tiles
- * below the toggle demonstrate the shape of a panel that does not exist yet,
- * every one of them labelled "Example — not live data", and none of them ever
- * stands where a live figure failed to load.
- *
- * **He idles, so he can be stopped.** Breathing and blinking run for as long as
- * the tab is visible, which is exactly the moving content WCAG 2.2's Pause,
- * Stop, Hide is about; reduced motion is a different user and a different
- * setting. The button is real, it is beside him, and it is keyboard-reachable.
- */
-function TrucPanel({
-  needsHuman,
-  unavailable,
-  isPending,
-  asOf,
-  state,
-}: {
-  needsHuman: number | null;
-  unavailable: boolean;
-  isPending: boolean;
-  asOf: string | null;
-  state: MascotState;
-}) {
-  const { t } = useTranslation();
-  /** A viewport of warning, so the chunk and the glTF land before he is read. */
-  const [ref, near] = useOnScreen<HTMLElement>('100% 0px');
-  const [paused, setPaused] = useState(false);
-  const [preview, setPreview] = useState(false);
-
-  /** The one thing he asserts, and the source it comes from. */
-  const status = isPending
-    ? null
-    : unavailable || needsHuman === null
-      ? { text: t('ui.a.home.truc.offline'), figure: '—', muted: true }
-      : needsHuman === 0
-        ? { text: t('ui.a.home.attention.none'), figure: null, muted: false }
-        : { text: t('home.needsHuman'), figure: String(needsHuman), muted: false };
-
-  return (
-    <section ref={ref} data-choreo="" className="mt-8">
-      <h2 className="headline-sm">{t('ui.a.home.insights')}</h2>
-      <p className="mt-1 max-w-[68ch] text-[0.875rem] text-[var(--muted-foreground)]">
-        {t('ui.a.home.truc.lede')}
-      </p>
-
-      <Panel className="mt-3 p-5 sm:p-6">
-        <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center">
-          <div className="flex shrink-0 flex-col items-center gap-2">
-            {/*
-              The flat panda holds his place at the same size until the chunk
-              arrives, so nothing on the page moves when it does — and if there
-              is no WebGL, or the driver refuses the renderer, the stage falls
-              back to this same drawing on its own.
-            */}
-            {near ? (
-              <Suspense fallback={<Panda size={196} state={state} />}>
-                <PandaStage size={196} paused={paused} label={t('login.trucTitle')} />
-              </Suspense>
-            ) : (
-              <Panda size={196} state={state} />
-            )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-pressed={paused}
-              onClick={() => setPaused((on) => !on)}
-            >
-              {paused ? t('ui.a.home.truc.resume') : t('ui.a.home.truc.pause')}
-            </Button>
-          </div>
-
-          <div className="min-w-0 flex-1">
-            {/*
-              One key, one sentence, punctuation and all.
-
-              It was assembled here — greeting, space, shift name, a full stop
-              written in the `.tsx` — and Chinese renders that as `你好。 白班.`:
-              a Latin period after a CJK clause that already ends in one, plus a
-              Latin word space CJK does not use. A sentence is not two strings
-              and a separator; the separator is part of the language.
-            */}
-            <p className="text-[1.0625rem] font-bold tracking-[-0.01em]">
-              {t('ui.a.home.truc.greet', { shift: t(SHIFT_KEY[state]) })}
-            </p>
-
-            {status === null ? (
-              <Skeleton className="mt-3 h-6 w-2/3" />
-            ) : (
-              <p
-                className={cn(
-                  'mt-3 text-[0.9375rem]',
-                  status.muted && 'text-[var(--muted-foreground)]',
-                )}
-              >
-                {status.figure === null ? null : (
-                  <span className="num font-semibold">{status.figure} </span>
-                )}
-                {status.text}
-              </p>
-            )}
-
-            {/*
-              Where he got it, and when. The same two facts every operational
-              sentence on this screen carries — without them a mascot saying
-              "nothing needs attention" is a mascot's opinion.
-            */}
-            <p className="mt-1.5 text-[0.8125rem] text-[var(--muted-foreground)]">
-              {t('ui.a.home.truc.source')}
-              {asOf === null ? null : <span className="num"> {t('ui.a.home.asOf', { time: asOf })}</span>}
-            </p>
-
-            <div className="mt-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                aria-expanded={preview}
-                onClick={() => setPreview((on) => !on)}
-              >
-                {preview ? t('ui.a.home.preview.hide') : t('ui.a.home.preview.show')}
-              </Button>
-              <p className="min-w-0 flex-1 text-[0.8125rem] text-[var(--muted-foreground)]">
-                {t('ui.a.home.preview.why')}
-              </p>
-            </div>
+          <div className="workspace-work-row"><span className="workspace-home-icon" data-tone="warn" aria-hidden="true"><IconAlert size={22} /></span>
+            <div><h3>{t('workspace.unresolved')}</h3><p>{t('workspace.unresolvedNote')}</p></div>
+            <strong className="workspace-row-count num">{data?.needs_human ?? '—'}</strong>
+            <Link to="/episodes" className="workspace-button">{t('workspace.resolveAction')}<IconArrow size={14} /></Link>
           </div>
         </div>
+        {shift.isError && data ? <p className="workspace-inline-notice">{t('workspace.refreshFailed')}</p> : null}
+      </section>
 
-        {preview ? (
-          <div className="mt-6 border-t border-[var(--border)] pt-6">
-            <p className="max-w-[68ch] text-[0.875rem] text-[var(--muted-foreground)]">
-              {t('ui.a.home.preview.note')}
-            </p>
-            <ul className="mt-4 grid list-none grid-cols-1 gap-4 p-0 sm:grid-cols-3">
-              <ExampleTile
-                image="/tiles/hf-garden.jpg"
-                label={t('ui.a.home.preview.trend')}
-                value={t('ui.a.home.preview.trendValue')}
-              />
-              <ExampleTile
-                image="/tiles/film-kitchen.jpg"
-                label={t('ui.a.home.preview.week')}
-                value="4:12:30"
-              />
-              <ExampleTile
-                image="/tiles/film-books.jpg"
-                label={t('ui.a.home.preview.streak')}
-                value="12"
-              />
-            </ul>
-          </div>
-        ) : null}
-      </Panel>
-    </section>
-  );
-}
+      <section className="workspace-section" aria-labelledby="recent-title" data-guide="home.recent">
+        <div className="workspace-section-heading"><div><h2 id="recent-title">{t('recent.title')}</h2><p>{t('workspace.recentNote')}</p></div></div>
+        {recent.isError ? <QueryFailure error={recent.error} cached={!!recent.data} retry={() => void recent.refetch()} busy={recent.isFetching} /> : null}
+        {recent.isPending ? <RowsLoading /> : reviews?.length ? <div className="workspace-table-scroll" role="region" aria-labelledby="recent-title" tabIndex={0}>
+          <table className="workspace-table"><thead><tr>
+            {['time', 'episode', 'verdict', 'duration', 'amount', 'pace'].map((key) => <th key={key} scope="col">{t(`ui.a.home.recent.${key}`)}</th>)}
+          </tr></thead><tbody>{reviews.map((review) => {
+            const verdict = review.reviewState === 'pass' ? 'good' : review.reviewState === 'partial_pass' ? 'partial' : 'bad';
+            return <tr key={review.reviewId}>
+              <td className="num">{review.reviewedAt ? stampLocal(review.reviewedAt) : '—'}</td>
+              <td className="num" title={review.episodeId}>{review.episodeId.slice(0, 8)}</td>
+              <td><VerdictPill verdict={verdict} size="sm">{t(`verdict.${verdict}`)}</VerdictPill></td>
+              <td className="num">{durationShort(review.measured)} <span aria-hidden="true">→</span> <strong>{durationShort(review.effective)}</strong></td>
+              <td className="num">{money(review.amount, recent.data!.currency)}</td>
+              <td className="num">{review.seconds === null ? '—' : pace(review.seconds)}</td>
+            </tr>;
+          })}</tbody></table>
+        </div> : !recent.isError ? <div className="workspace-empty workspace-home-empty"><span aria-hidden="true"><Panda size={64} state="goldenHour" /></span><p>{t('recent.empty')}</p></div> : null}
+      </section>
 
-/**
- * One demonstration, and it says so beside the value rather than once at the
- * top of the group.
- *
- * The badge is next to every figure on purpose: a heading two hundred pixels
- * away is not what somebody photographs, and a screenshot of a tile with no
- * label on it is indistinguishable from a measurement. The picture sits above
- * the type rather than behind it, so nothing here is text on a photograph and
- * nothing here needs a scrim.
- */
-function ExampleTile({ image, label, value }: { image: string; label: string; value: string }) {
-  const { t } = useTranslation();
-  return (
-    <li className="overflow-hidden rounded-[var(--radius-base)] border border-[var(--border)] bg-[var(--card)]">
-      <img
-        src={image}
-        alt=""
-        aria-hidden="true"
-        loading="lazy"
-        decoding="async"
-        className="block h-28 w-full object-cover"
-      />
-      <div className="p-4">
-        <p className="text-[0.8125rem] text-[var(--muted-foreground)]">{label}</p>
-        <p className="num mt-1 text-[1.3125rem] font-medium tracking-[-0.02em]">{value}</p>
-        <p className="mt-2 inline-block rounded-[var(--radius-sm)] bg-[var(--muted)] px-2 py-0.5 text-[0.75rem] font-semibold text-[var(--muted-foreground)]">
-          {t('ui.a.home.preview.badge')}
-        </p>
-      </div>
-    </li>
-  );
-}
-
-/**
- * A column heading, in the register `/episodes` already uses for its tables —
- * 12px, semibold, tracked and upper case. Uppercase is not this world's habit
- * anywhere else; it is here because a header row has to read as a different
- * kind of thing from the twenty rows of data under it without a second rule or
- * a fill, and because the console's other table already made that choice.
- */
-function Th({
-  children,
-  align = 'left',
-  className,
-}: {
-  children: React.ReactNode;
-  align?: 'left' | 'right';
-  className?: string;
-}) {
-  return (
-    <th
-      scope="col"
-      className={
-        /*
-          `whitespace-nowrap`, because these headings are translated. "Pace"
-          is one short word in English and 用时 in Chinese, and the narrow
-          columns at 1280 broke both that heading and the verdict pill under
-          it into stacked characters — a column head reading vertically is a
-          column head somebody has to decode.
-        */
-        'whitespace-nowrap px-3 py-2 text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--muted-foreground)] ' +
-        (align === 'right' ? 'text-right ' : 'text-left ') +
-        (className ?? '')
-      }
-    >
-      {children}
-    </th>
-  );
-}
-
-/**
- * The gauge: a 240° arc, and nothing standing inside it.
- *
- * An arc rather than a bar because it holds the target and the current value in
- * one shape at a size worth looking at, and because a bar that reaches its end
- * has nowhere left to go — a reviewer past target should see that, not see a
- * full bar.
- *
- * **Trúc is not in it any more.** He stood in the middle of the ring, at a size
- * where a character with a fixed camera and a pointer-driven yaw reads as a
- * figure trapped in a hoop rather than as a mascot. The product owner called it
- * uncanny and it was. The ring is a measurement and it is now only that; he has
- * his own panel at the foot of the page, where he is a character rather than a
- * decoration inside an instrument.
- *
- * **The stroke steps, corrected.** The arc drew in `lime-500`, which is the
- * ramp's *fill* step and is asserted by `contrast.test.ts` to fall **under**
- * 3:1 on every light ground — measured 1.08:1 against the `--muted` track it is
- * drawn on, so the one graphic on this screen that carries a quantity was the
- * one that could not be told from its own background. It is `lime-600` now,
- * which is the ramp's stroke step: 3.44:1 on the light muted fill and 3.42:1 on
- * the dark one. Past target it becomes `--lime-ink`, the per-scheme step, which
- * measures 4.59:1 light and 12.53:1 dark — where the old `lime-700` read 2.57:1
- * on the dark track. Lime is progress and emphasis in this world and is barred
- * from verdicts and from money; a ring that carries a count of episodes is
- * exactly what it is for.
- *
- * The sweep is the console's one authored performance: 900ms, once, when the
- * ring reaches the viewport. The arc is drawn at its true offset whether or not
- * that ever happens, so a gauge nobody scrolls to reads the right number rather
- * than reading zero.
- */
-function Gauge({
-  value,
-  target,
-}: {
-  /**
-   * `null` on both when the shift query failed. The ring then draws its track
-   * and nothing else, the count is a dash and the caption drops the target —
-   * rather than an empty arc reading "0 of 60", which is a measurement.
-   */
-  value: number | null;
-  target: number | null;
-}) {
-  const { t } = useTranslation();
-  const [ref, seen] = useOnScreen<HTMLElement>('0px');
-  const R = 104;
-  const CX = 150;
-  const CY = 128;
-  /**
-   * The stroke, fattened from 15 to 22.
-   *
-   * At 15 the ring read as a hairline diagram beside a 240px card of white, and
-   * the accent — the one colour on this screen that means "how far along" — was
-   * the thinnest mark on it. 22 is a fourteenth of the diameter, which is the
-   * weight the ring-card comp draws, and it is what lets the fill be seen from
-   * a metre away at a counter.
-   */
-  const STROKE = 22;
-  const SWEEP = 240;
-  /**
-   * Degrees clockwise from twelve o'clock: 240° is the lower left, and sweeping
-   * 240° clockwise from there ends at the lower right. That leaves the opening
-   * at the bottom, under the value — which is the only arrangement where the
-   * number reads as the thing the arc is measuring rather than as a caption
-   * that happens to sit nearby.
-   */
-  const START = 240;
-
-  const polar = (deg: number) => {
-    const rad = ((deg - 90) * Math.PI) / 180;
-    return { x: CX + R * Math.cos(rad), y: CY + R * Math.sin(rad) };
-  };
-
-  const a = polar(START);
-  const b = polar(START + SWEEP);
-  /** large-arc-flag 1 because the sweep exceeds 180°; sweep-flag 1 for clockwise. */
-  const track = `M ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${R} ${R} 0 1 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)}`;
-
-  const arcLength = (SWEEP / 360) * 2 * Math.PI * R;
-  const known = value !== null && target !== null;
-  const ratio = known && target > 0 ? Math.min(value / target, 1) : 0;
-  const over = known && target > 0 && value > target;
-
-  return (
-    <figure
-      ref={ref}
-      className="relative m-0 w-[300px] max-w-full"
-      role="img"
-      aria-label={known ? t('ui.a.home.gauge', { value, target }) : t('ui.a.home.unavailable')}
-    >
-      <div className="relative">
-        <svg viewBox="0 0 300 196" width="300" className="block max-w-full">
-          <path
-            d={track}
-            fill="none"
-            stroke="var(--muted)"
-            strokeWidth={STROKE}
-            strokeLinecap="round"
-          />
-          <path
-            className={seen ? 'gauge-fill' : undefined}
-            d={track}
-            fill="none"
-            stroke={over ? 'var(--lime-ink)' : 'var(--lime-600)'}
-            strokeWidth={STROKE}
-            strokeLinecap="round"
-            strokeDasharray={arcLength}
-            style={
-              {
-                '--sweep-from': `${arcLength}`,
-                '--sweep-to': `${arcLength * (1 - ratio)}`,
-                strokeDashoffset: arcLength * (1 - ratio),
-              } as React.CSSProperties
-            }
-          />
-        </svg>
-
-        {/*
-          The count, on the ring's own centre, and it is HTML rather than an
-          SVG `<text>`: plain text inherits the font stack and the locale's own
-          digits instead of being a drawing of a number.
-
-          The offset is a percentage of the drawn box and not a pixel figure —
-          the centre of the arc is y=128 of a 196-unit viewBox, which is 65.3%
-          — so the number stays on the centre when the svg is scaled down
-          inside a narrow panel instead of drifting off it.
-        */}
-        <p className="num absolute inset-x-0 top-[65.3%] m-0 -translate-y-1/2 text-center text-[2.625rem] font-extrabold leading-none tracking-[-0.03em]">
-          {value ?? '—'}
-        </p>
-      </div>
-
-      <figcaption className="mt-2 text-center text-[0.875rem] text-[var(--muted-foreground)]">
-        {t('ui.a.home.gaugeCaption')}
-        {target === null ? null : (
-          <>
-            {' · '}
-            {t('home.target')}{' '}
-            <span className="num font-semibold text-[var(--foreground)]">{target}</span>
-          </>
-        )}
-      </figcaption>
-    </figure>
-  );
-}
-
-/**
- * One measured quantity, sitting with the sentence that says what it is not.
- *
- * Deliberately not a card: the label reads at body size in sentence case, the
- * value is mono because it is measured, and the note is a full sentence
- * underneath. A big number with a small tracked label above it and an accent
- * under it is the template this refuses — it makes unrelated figures look like
- * one comparable set, and two of these are not money at all.
- */
-function Figure({
-  label,
-  value,
-  note,
-  trailing,
-  unavailable = false,
-}: {
-  label: string;
-  value: string | null;
-  note: string;
-  trailing?: React.ReactNode;
-  /**
-   * The query finished and produced nothing. Distinct from `value === null`,
-   * which is still loading: a skeleton that never resolves and a zero are the
-   * two ways this screen used to lie about a failed request.
-   */
-  unavailable?: boolean;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 border-b border-[var(--border)] py-4 last:border-0">
-      {/*
-        The note lives inside the `<dt>` rather than in a sibling paragraph:
-        a `<dl>` group may hold only terms and descriptions, and the sentence
-        belongs to the term — it says what this figure is, not what its value
-        is. Flow content inside a `<dt>` is allowed and this keeps the markup
-        a real description list instead of three divs pretending to be one.
-      */}
-      <dt className="text-[0.9375rem] font-semibold">
-        {label}
-        <span className="mt-1 block max-w-[52ch] text-[0.8125rem] font-normal leading-snug text-[var(--muted-foreground)]">
-          {note}
-        </span>
-      </dt>
-      {unavailable ? (
-        <dd className="m-0 text-[0.9375rem] text-[var(--muted-foreground)]">
-          {t('ui.a.home.unavailable')}
-        </dd>
-      ) : value === null ? (
-        <dd className="m-0">
-          <Skeleton className="h-7 w-24" />
-        </dd>
-      ) : (
-        <dd className="m-0 flex items-center gap-2">
-          {trailing}
-          <span className="num text-[1.625rem] font-medium tracking-[-0.02em]">{value}</span>
-        </dd>
-      )}
+      <section className="workspace-section" aria-labelledby="tasks-title">
+        <div className="workspace-section-heading"><div><h2 id="tasks-title">{t('workspace.tasks')}</h2><p>{t('workspace.tasksNote')}</p></div>
+          <Link to="/backoffice" className="workspace-text-link">{t('workspace.manageTasks')}<IconArrow size={14} /></Link></div>
+        {tasks.isError ? <QueryFailure error={tasks.error} cached={!!tasks.data} retry={() => void tasks.refetch()} busy={tasks.isFetching} /> : null}
+        {tasks.isPending ? <RowsLoading /> : taskRows?.length ? <>
+          <div className="workspace-table-scroll" role="region" aria-labelledby="tasks-title" tabIndex={0}><table className="workspace-table workspace-task-table">
+            <thead><tr><th scope="col">{t('workspace.task')}</th><th scope="col">{t('workspace.state')}</th><th scope="col">{t('workspace.claimants')}</th></tr></thead>
+            <tbody>{taskRows.map((task) => <tr key={task.id}><td><div className="workspace-task-name"><IconBackOffice size={20} /><div><strong>{task.name}</strong>{task.type ? <span>{task.type}</span> : null}</div></div></td>
+              <td><span className="workspace-state">{t(`bo.task.state.${task.status}`)}</span></td><td className="num">{task.claimants} / {task.max_concurrent_claimants}</td></tr>)}</tbody>
+          </table></div><p className="workspace-table-note">{t('workspace.taskSubset', { shown: taskRows.length, total: tasks.data!.tasks.length })}</p>
+        </> : !tasks.isError ? <div className="workspace-empty workspace-home-empty"><span aria-hidden="true"><Panda size={64} state="earlyBird" /></span><div><h3>{t('workspace.taskEmpty')}</h3><p>{t('workspace.taskEmptyNote')}</p></div></div> : null}
+      </section>
     </div>
-  );
+  </AppShell>;
+}
+
+function Metric({ label, value, note, loading, tone }: { label: string; value: string | null; note?: string; loading: boolean; tone?: 'ink' | 'lime' | 'lavender' | 'paper' }) {
+  const { t } = useTranslation();
+  return <div className="workspace-metric" data-tone={tone}><dt>{label}</dt><dd>{loading ? <Skeleton className="h-8 w-20" /> : <span className="num">{value ?? '—'}</span>}
+    <span className="workspace-metric-note">{!loading && value === null ? t('workspace.unavailable') : note}</span></dd></div>;
+}
+
+export function QueryFailure({ error, cached, retry, busy }: { error: unknown; cached: boolean; retry: () => void; busy: boolean }) {
+  const { t } = useTranslation();
+  return <div className="workspace-query-error" role="status"><Problem title={t('workspace.loadFailed')}
+    body={t(cached ? 'workspace.refreshFailed' : 'workspace.loadFailedNote')} reference={error instanceof ApiError ? error.ref : undefined} />
+    <button className="workspace-button" type="button" disabled={busy} onClick={retry}>{t(busy ? 'workspace.refreshing' : 'workspace.retry')}</button></div>;
+}
+
+function RowsLoading() {
+  const { t } = useTranslation();
+  return <div className="workspace-rows-loading" aria-label={t('workspace.loading')} aria-busy="true">{[0, 1, 2].map((row) => <Skeleton key={row} className="h-10 w-full" />)}</div>;
 }

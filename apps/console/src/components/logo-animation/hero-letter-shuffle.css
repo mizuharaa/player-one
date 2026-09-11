@@ -1,0 +1,15 @@
+.hero-shuffle { display:flex;flex-wrap:wrap;justify-content:center;column-gap:.28em;row-gap:0; }
+.hero-shuffle__word { display:inline-block;position:relative;white-space:nowrap; }
+.hero-shuffle__baseline { display:block; }
+.hero-shuffle__slot { display:none;position:absolute;top:0;height:1.15em;overflow:hidden; }
+.hero-shuffle__glyph { display:block;width:100%;text-align:center; }
+.hero-shuffle__final { display:none;position:absolute;top:0;white-space:nowrap;text-align:left; }
+.hero-shuffle:is([data-shuffle-state='playing'],[data-shuffle-state='hold']) .hero-shuffle__baseline { visibility:hidden; }
+.hero-shuffle:is([data-shuffle-state='playing'],[data-shuffle-state='hold']) .hero-shuffle__slot { display:block; }
+.hero-shuffle__slot[data-locked='true'] .hero-shuffle__glyph { visibility:hidden; }
+.hero-shuffle__slot[data-locked='true'] .hero-shuffle__final { display:block; }
+@media(prefers-reduced-motion:reduce){
+ .hero-shuffle { opacity:1!important;transform:none!important; }
+ .hero-shuffle .hero-shuffle__baseline { visibility:visible!important; }
+ .hero-shuffle .hero-shuffle__slot { display:none!important; }
+}

@@ -1,3 +1,6 @@
+import { sessionEntry, type SessionEntry } from './api/session-entry.ts';
+import { TransportProvider } from './device/transport-context.tsx';
+import { MockDeviceTransport, UnavailableDeviceTransport } from './device/transport.ts';
 import { useEffect, useState, type ComponentType } from 'react';
 import { View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -5,10 +8,10 @@ import { MockCollectorApi } from './api/mock.ts';
 import { HttpCollectorApi } from './api/http.ts';
 import { API_BASE_URL, USE_MOCK_API } from './api/config.ts';
 import { secureTokenStore } from './api/token-store.ts';
-import { AGREEMENTS, type CollectorApi } from './api/types.ts';
+import { type CollectorApi } from './api/types.ts';
 import { ApiProvider } from './api/context.tsx';
 import { LocaleProvider } from './locale.tsx';
-import { NavProvider, useNav, type Route, type RouteName } from './nav.tsx';
+import { NavProvider, useNav, type RouteName } from './nav.tsx';
 import { GuideProvider, useGuideTarget } from './guide/Guide.tsx';
 import { TabBar } from './shell/TabBar.tsx';
 import { ThemeProvider } from './theme.tsx';
@@ -29,7 +32,7 @@ import { Landing } from './screens/Landing.tsx';
 import { SignIn } from './screens/SignIn.tsx';
 import { Training } from './screens/Training.tsx';
 import { Uploads } from './screens/Uploads.tsx';
-import { Body } from './ui.tsx';
+import { Body, Button, Note } from './ui.tsx';
 import { useT } from './locale.tsx';
 import { useTheme } from './theme.tsx';
 
@@ -117,16 +120,6 @@ function Restoring() {
  * come in: `task_claims_guard` wants consent and an exam pass before a claim.
  * A collector with all four behind them opens on the home screen.
  */
-async function startRoute(api: CollectorApi): Promise<Route> {
-  const me = await api.profile();
-  // No profile at all: a token exists but the row does not name a person yet.
-  // That is the ordinary case for somebody a counter operator enrolled.
-  if (me === null || me.name === '') return { name: 'register' };
-  if (me.agreements.length < AGREEMENTS.length) return { name: 'agreements' };
-  if (!me.trainingDone) return { name: 'training' };
-  if (!me.examPassed) return { name: 'exam' };
-  return { name: 'home' };
-}
 
 /**
  * What survives the app being killed, and what deliberately does not.
@@ -147,13 +140,12 @@ async function startRoute(api: CollectorApi): Promise<Route> {
  * `CollectorApi` seam is what it lands behind and the screens do not change.
  *
  * A 401 anywhere clears the token and drops straight back to sign-in. A network
- * failure does NOT: the token is kept and the app opens signed-in, because a
- * collector who walked into a basement has not been signed out, and each screen
- * shows its own `common.loadFailed`.
+ * failure does NOT: the token is kept and a recoverable error is shown until
+ * the profile can be read. Unknown onboarding state never means registration.
  */
 function Session() {
   /** `null` while restoring, `'out'` at the landing, else where to open. */
-  const [state, setState] = useState<Route | 'out' | null>(null);
+  const [state, setState] = useState<SessionEntry | null>(null);
   /** Whether the landing has handed over to the sign-in form. */
   const [signingIn, setSigningIn] = useState(false);
   // Created once, so `onUnauthorized` can close over `setState`.
@@ -166,43 +158,19 @@ function Session() {
   /**
    * Cold start, and again after a sign-in: the token, then where it lands.
    *
-   * A throw here is the server being unreachable, which is the same case the
-   * cold-start `catch` handles: open the app rather than demand a new sign-in.
+   * Retry keeps the same API client and token. Only an actual profile chooses
+   * an onboarding screen; a failed read remains a recoverable unknown state.
    */
-  const enter = (): Promise<void> =>
-    startRoute(api)
-      .then((route) => {
-        setState(route);
-      })
-      .catch(() => {
-        setState({ name: 'register' });
-      });
-
+  const [attempt, setAttempt] = useState(0);
+  const enter = () => { setState(null); setAttempt((n) => n + 1); };
   useEffect(() => {
     let live = true;
-    void api
-      .restoreSession()
-      .then(async (ok) => {
-        if (!live) return;
-        if (!ok) {
-          setState('out');
-          return;
-        }
-        await enter();
-      })
-      .catch(() => {
-        // `restoreSession` only throws when the server could not be reached at
-        // all. The token is still there and is still probably good, so open the
-        // app rather than demand a new sign-in; each screen reports its own
-        // `common.loadFailed`.
-        if (live) setState({ name: 'register' });
-      });
-    return () => {
-      live = false;
-    };
-  }, [api]);
+    void sessionEntry(api).then((next) => { if (live) setState(next); });
+    return () => { live = false; };
+  }, [api, attempt]);
 
   if (state === null) return <Restoring />;
+  if (state === 'unavailable') return <RestoreFailure retry={enter} />;
 
   return (
     <ApiProvider value={api}>
@@ -238,11 +206,19 @@ function Session() {
   );
 }
 
+function RestoreFailure({ retry }: { retry: () => void }) {
+  const tt = useT();
+  const theme = useTheme();
+  return <View style={{ flex: 1, backgroundColor: theme.color.surface, padding: theme.space[4], gap: theme.space[3] }}><Note text={tt('common.loadFailed')} /><Button label={tt('common.retry')} onPress={retry} /></View>;
+}
+
+const transport = USE_MOCK_API ? new MockDeviceTransport() : new UnavailableDeviceTransport();
+
 export function App() {
   return (
     <ThemeProvider>
       <LocaleProvider>
-        <Session />
+        <TransportProvider value={transport}><Session /></TransportProvider>
       </LocaleProvider>
     </ThemeProvider>
   );

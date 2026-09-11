@@ -125,6 +125,27 @@ const at = (png, x, y) => {
  */
 async function inkRatio(page, selector, index = 0) {
   const handle = page.locator(selector).nth(index);
+  /*
+   * Fail fast on a selector that matches nothing, and say so by name.
+   *
+   * Playwright locators auto-wait: `handle.evaluate()` on zero matches blocks
+   * until the action timeout rather than throwing. This probe's table went
+   * stale when `/discover` was rebuilt — it still asked for `[data-band=hero] p`
+   * after every `data-band` attribute had been removed — and the run hung for
+   * nine minutes holding the shared browser lock before it was killed.
+   *
+   * A missing selector is a REAL failure of this probe and is reported as one.
+   * It is never silently skipped: a contrast sweep that quietly measures fewer
+   * elements than its table names is the "green run that was actually a skip"
+   * this repo has been bitten by twice.
+   */
+  const count = await handle.count();
+  if (count === 0) {
+    throw new Error(
+      `contrast probe: selector matched nothing — ${selector} (index ${index}). ` +
+        `The table is stale against the current DOM; fix the selector, do not remove the row.`,
+    );
+  }
   /* Centre it, rather than merely bring it into view: `scrollIntoViewIfNeeded`
      is happy to leave an element tucked under the sticky bar, and a clip that
      includes the bar measures the bar. */
@@ -313,45 +334,42 @@ const TEXT = {
      browser and covers both schemes.
      -------------------------------------------------------------------- */
   '/discover': [
-    ['hero eyebrow (mono)', '[data-band=hero] p', 0],
-    ['h1 line', '[data-band=hero] h1 span', 2],
-    ['hero lead', '[data-band=hero] p', 1],
-    ['apk note', '[data-band=hero] p', 2],
-    ['work micro', '[data-band=work] p', 0],
-    ['work h2', '[data-band=work] h2'],
-    ['work body', '[data-band=work] p', 1],
-    ['work note (13px)', '[data-band=work] p', 2],
-    ['still caption on film', '[data-band=camera] figcaption'],
-    ['camera h2 on lavender', '[data-band=camera] h2'],
-    ['camera body on lavender', '[data-band=camera] .frame-grid p', 1],
-    ['film micro on film', '[data-band=film] p', 0],
-    ['film slate on film', '[data-band=film] p', 1],
-    ['review micro on ink', '[data-band=review] p', 0],
-    ['review h2 on ink', '[data-band=review] h2'],
-    ['review body on ink', '[data-band=review] p', 1],
-    ['verdict label on ink', '[data-band=review] span span', 1],
-    ['verdict note on ink', '[data-band=review] p', 2],
-    ['payment micro', '[data-band=payment] p', 0],
-    ['payment h2', '[data-band=payment] h2'],
-    ['payment body', '[data-band=payment] p', 1],
-    ['stream label (mono)', '[data-band=payment] figure span', 0],
-    ['payable caption', '[data-band=payment] figcaption'],
-    ['faq micro', '[data-band=questions] p', 0],
+    /* -------------------------------------------------------------------
+       Rebuilt 2026-09-09 against the CURRENT DOM.
+
+       The previous table addressed `[data-band=*]`, and every one of those
+       attributes was removed when /discover was rebuilt. Playwright locators
+       auto-wait, so the probe did not fail - it BLOCKED, and one run held the
+       shared browser lock for nine minutes before it was killed. `inkRatio`
+       now counts matches first and throws by name.
+
+       Selectors below are the classes the page actually ships. Where a row
+       stops matching, fix the selector - do not delete the row. A sweep that
+       silently measures fewer elements than its table names is the "green run
+       that was actually a skip" this repo has been bitten by twice.
+       ---------------------------------------------------------------- */
+    ['nav destination (mono)', '.discover-nav a', 0],
+    ['nav sign-in label', '.discover-nav-login'],
+    ['brand wordmark', '.discover-brand', 0],
+    ['opening display', '.discover-display', 0],
+    ['section heading', '.discover-heading', 0],
+    ['section heading (later)', '.discover-heading', 3],
+    ['lead paragraph', '.discover-lead', 0],
+    ['lead paragraph (later)', '.discover-lead', 2],
+    ['primary button label', '.discover-button', 0],
+    ['light button label', '.discover-button-light', 0],
+    ['demo task name', '.discover-demo-task-name', 0],
+    ['demo field label', '.discover-demo-field', 0],
+    ['demo badge', '.discover-demo-badge'],
+    ['demo footnote', '.discover-demo-footnote'],
+    ['image label', '.discover-image-label'],
+    ['work word', '.discover-work-word'],
+    ['verdict options', '.discover-verdict-options'],
+    ['review explanation', '.discover-review-explanation'],
+    ['stream label (mono)', '.discover-stream', 0],
+    ['text link', '.discover-text-link', 0],
     ['faq question', 'details summary', 0],
     ['faq answer', 'details p', 0],
-    ['closing micro on ink', '[data-band=ways] p', 0],
-    ['closing h2 on ink', '[data-band=ways] h2'],
-    ['audiences on ink', '[data-band=ways] p', 1],
-    ['take body on ink', '[data-band=ways] p', 2],
-    ['partner line on ink', '[data-band=ways] p span'],
-    ['nav destination (mono)', 'header nav a', 0],
-    ['nav sign-in label', 'header a[href="/login"]'],
-    ['nav partner line', 'header span span', 1],
-    /* The ending, rebuilt on `--stage` for build eight: a mono column label,
-       a destination, and the thin legal line under the wordmark. The wordmark
-       itself is not probed — it is `aria-hidden` decoration at 300px and the
-       AA floor is about text a reader has to read. */
-    ['footer column label', 'footer nav p'],
     ['footer destination', 'footer nav a'],
     ['footer legal line', 'footer > div:last-of-type p'],
   ],
@@ -382,12 +400,12 @@ const CONTROLS = {
      * build's faded `primary` read as *more* available than the live sign-in
      * in dark mode.
      */
-    ['hero apk CTA (disabled)', '[data-band=hero] button[disabled]'],
-    ['hero console CTA', '[data-band=hero] a[href="/login"]'],
-    ['film pause control', '[data-band=film] button'],
+    ['apk CTA (disabled)', 'button[disabled]', 0],
+    ['console CTA', 'a[href="/login"]', 0],
+    ['film pause control', '.discover-video-control'],
     ['faq row (glass)', 'details', 0],
-    ['closing sign-in on ink', '[data-band=ways] a[href="/login"]'],
-    ['closing apk (disabled)', '[data-band=ways] button[disabled]'],
+    ['closing sign-in', 'a[href="/login"]', 1],
+    ['closing apk (disabled)', 'button[disabled]', 1],
   ],
   '/nope': [['back to product page', 'main a[href="/discover"]']],
 };
@@ -414,7 +432,7 @@ const CONTROLS = {
  * before it.
  */
 async function filmFrames(page) {
-  const has = await page.locator('[data-band=film] video').count();
+  const has = await page.locator('video').count();
   if (has === 0) {
     console.log('  FILM  (no film band on this route)');
     return;

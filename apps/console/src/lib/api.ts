@@ -959,15 +959,9 @@ export const payout = {
   exportUrl: (periodStart: string) => `/api/payout/export/${encodeURIComponent(periodStart)}`,
 
   financeRole: async (): Promise<FinanceRole> => {
-    const res = await fetch('/api/payout/attempts/probe/resolve', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
-    });
-    if (res.status === 400) return 'finance';
-    if (res.status === 403) return 'operator';
-    if (res.status === 401) throw new ApiError(401, res.statusText);
-    return 'unknown';
+    const profile = await call<{ operator?: { role?: string; status?: string } }>('/api/operator/profile');
+    if (!profile?.operator?.role || profile.operator.status !== 'active') return 'unknown';
+    return profile.operator.role === 'finance' ? 'finance' : 'operator';
   },
 };
 

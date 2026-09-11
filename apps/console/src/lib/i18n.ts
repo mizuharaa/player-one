@@ -20,12 +20,18 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { DEFAULT_LOCALE, HTML_LANG, LOCALES, MESSAGES, type Locale } from '@playerone/api/i18n';
+import { DISCOVER_COPY } from './discover-copy.ts';
+import { OPS_COPY } from './ops-copy.ts';
+import { WORKSPACE_COPY } from './workspace-copy.ts';
 
 const STORAGE_KEY = 'playerone.locale';
 
 function initialLocale(): Locale {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored && (LOCALES as readonly string[]).includes(stored)) return stored as Locale;
+  // The public collector home is Vietnamese from its first render. Console
+  // routes retain browser-language selection; an explicit saved choice wins.
+  if (['/discover', '/privacy'].includes(window.location.pathname.replace(/\/$/, ''))) return 'vi';
 
   /**
    * A reviewer in Shenzhen should not have to find the switch on their first
@@ -44,7 +50,7 @@ void i18n.use(initReactI18next).init({
   fallbackLng: DEFAULT_LOCALE,
   supportedLngs: [...LOCALES],
   resources: Object.fromEntries(
-    LOCALES.map((locale) => [locale, { translation: MESSAGES[locale] }]),
+    LOCALES.map((locale) => [locale, { translation: { ...MESSAGES[locale], ...Object.fromEntries(Object.entries(DISCOVER_COPY[locale]).map(([key, value]) => [`discoverV2.${key}`, value])), ...Object.fromEntries(Object.entries(OPS_COPY[locale]).map(([key, value]) => [`ops.${key}`, value])), ...Object.fromEntries(Object.entries(WORKSPACE_COPY[locale]).map(([key, value]) => [`workspace.${key}`, value])) } }]),
   ),
   keySeparator: false,
   nsSeparator: false,

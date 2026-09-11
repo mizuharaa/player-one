@@ -11,14 +11,15 @@
  * — and each carries its word and a filled-dot glyph, so the axis reads
  * without colour at all. Nobody is paid or not paid on a colour here.
  *
- * Every action is rendered for everybody. A session without the finance role
- * sees the button disabled and the reason beside it, never a blank space.
+ * Financial content belongs to finance sessions. Other sessions receive an
+ * explicit access explanation rather than a failed request or an empty batch.
  */
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '../components/shell/AppShell.tsx';
+import {ResponsiveSheet,useCompactSheet} from '../components/ui/ResponsiveSheet.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Problem, Skeleton } from '../components/ui/primitives.tsx';
 import { IconAlert } from '../components/icons.tsx';
@@ -54,26 +55,19 @@ export function SettleShell({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [draft, setDraft] = useState(period);
+  const compact=useCompactSheet();const [periodOpen,setPeriodOpen]=useState(false);
+  useEffect(()=>{if(!compact)setPeriodOpen(false);},[compact]);
   const { role, isPending } = useFinanceRole();
   const reason = readOnlyReason(role);
 
-  return (
-    <AppShell>
-      <header className="border-b border-[var(--foreground)] pb-5">
-        <h1 className="headline">
-          {t('settle.title')}
-        </h1>
-        <p className="mt-3 max-w-[62ch] text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
-          {t('settle.intro')}
-        </p>
-      </header>
-
+  const periodForm=(
       <form
-        data-guide="settle.period"
-        className="mt-6 flex flex-wrap items-end gap-3"
+        id="settlement-period-form" data-guide="settle.period"
+        className="workspace-period-bar"
         onSubmit={(e) => {
           e.preventDefault();
           if (!isPeriod(draft)) return;
+          setPeriodOpen(false);
           void navigate({ to: TAB_TO[tab], search: { period: draft } });
         }}
       >
@@ -92,15 +86,31 @@ export function SettleShell({
             required
           />
         </label>
-        <Button type="submit" variant="outline" disabled={!isPeriod(draft) || draft === period}>
+        {!compact ? <Button type="submit" variant="outline" disabled={!isPeriod(draft) || draft === period}>
           {t('settle.period.apply')}
-        </Button>
+        </Button> : null}
         <p className="basis-full text-[0.8125rem] leading-snug text-[var(--muted-foreground)] sm:basis-auto sm:self-center">
           {t('settle.period.hint')}
         </p>
       </form>
+  );
 
-      <nav className="mt-5 flex flex-wrap items-center gap-1" aria-label={t('settle.title')}>
+
+  return (
+    <AppShell>
+      <div className="workspace-settlement">
+      <header className="workspace-page-header">
+        <div><h1>
+          {t('settle.title')}
+        </h1>
+        <p>
+          {t('settle.intro')}
+        </p></div>
+      </header>
+
+      {compact?<div className="workspace-period-bar"><span className="num">{period}</span><Button variant="outline" onClick={()=>{setDraft(period);setPeriodOpen(true);}}>{t('workspace.choosePeriod')}</Button>{periodOpen?<ResponsiveSheet title={t('workspace.choosePeriod')} onClose={()=>setPeriodOpen(false)} footer={<><Button variant="outline" onClick={()=>setPeriodOpen(false)}>{t('bo.cancel')}</Button><Button type="submit" form="settlement-period-form" variant="primary" disabled={!isPeriod(draft)||draft===period}>{t('settle.period.apply')}</Button></>}>{periodForm}</ResponsiveSheet>:null}</div>:periodForm}
+
+      <nav className="workspace-settlement-tabs" aria-label={t('settle.title')}>
         {TABS.map((name) => (
           <Link
             key={name}
@@ -121,7 +131,7 @@ export function SettleShell({
       </nav>
 
       <div className="mt-4 space-y-2">
-        {mode ? (
+        {mode && role === 'finance' ? (
           <p className="text-[0.8125rem] leading-snug text-[var(--muted-foreground)]">
             {t(`settle.mode.${mode}`)}
           </p>
@@ -133,13 +143,14 @@ export function SettleShell({
           >
             <IconAlert size={16} className="mt-0.5 shrink-0 text-[var(--foreground)]" />
             <span>
-              <strong className="font-semibold">{t('settle.readonly')}.</strong> {t(reason)}
+              <strong className="font-semibold">{t(role === 'operator' ? 'settle.readonly' : 'workspace.unavailable')}.</strong> {t(reason)}
             </span>
           </p>
         ) : null}
       </div>
 
-      <div className="mt-6">{children}</div>
+      <div className="workspace-settlement-content">{isPending ? <TableSkeleton /> : role === 'finance' ? children : null}</div>
+      </div>
     </AppShell>
   );
 }
@@ -436,6 +447,9 @@ export function TableSkeleton() {
 
 export function LoadFailed({ error }: { error: unknown }) {
   const { t } = useTranslation();
+  if (error instanceof ApiError && error.status === 403) {
+    return <Problem title={t('settle.readonly')} body={t('settle.readonly.operator')} reference={error.ref} />;
+  }
   return <Problem title={t('settle.loadFailed')} body={t('settle.loadFailed.body')} reference={error instanceof ApiError ? error.ref : undefined} />;
 }
 

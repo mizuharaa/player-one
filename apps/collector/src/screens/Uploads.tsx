@@ -85,16 +85,26 @@ export function Uploads() {
       data={episodes.data ?? []}
       keyOf={(episode) => episode.episodeId}
       header={
-        <View ref={listTarget} collapsable={false}>
+        <View ref={listTarget} collapsable={false} style={{ gap: theme.space[3] }}>
           <Note text={tt('uploads.confirmBody')} />
+          {episodes.isError ? (
+            <>
+              <Note text={tt(episodes.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} />
+              <Button
+                variant="secondary"
+                label={tt('common.retry')}
+                disabled={episodes.isFetching}
+                onPress={() => void episodes.refetch()}
+              />
+            </>
+          ) : null}
+          {episodes.isPending || episodes.isFetching ? (
+            <Body muted>{tt('common.loading')}</Body>
+          ) : null}
         </View>
       }
       empty={
-        episodes.isError ? (
-          <Note text={tt('common.loadFailed')} />
-        ) : episodes.data === undefined ? (
-          <Body muted>{tt('common.loading')}</Body>
-        ) : (
+        episodes.isError || episodes.isPending ? null : (
           <Hatch text={tt('uploads.empty')} />
         )
       }
@@ -105,7 +115,7 @@ export function Uploads() {
           <Card>
             <Title>{episode.episodeId}</Title>
             <Tag label={tt(`state.${episode.state}`)} fg={colors.fg} bg={colors.bg} />
-            <Row label={tt('uploads.size')} value={gb(episode.sizeBytes)} />
+            <Row label={tt('uploads.size')} value={episode.sizeBytes === null ? tt('uploads.sizeUnknown') : gb(episode.sizeBytes)} />
             {episode.sessionId === '' ? null : (
               <Row label={tt('uploads.session')} value={episode.sessionId} />
             )}

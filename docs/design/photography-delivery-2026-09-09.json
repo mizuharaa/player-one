@@ -1,0 +1,31 @@
+{
+  "assets": [
+    {
+      "name": "work-wide",
+      "index": 1,
+      "job_id": "de2d181e-ff05-4457-a953-f6383370d96c",
+      "source": "https://d8j0ntlcm91z4.cloudfront.net/user_3IxeKJSx3yYae08TId7ea0dmDui/hf_20260909_153325_de2d181e-ff05-4457-a953-f6383370d96c.png",
+      "local": "apps/console/public/discover-media/20260909/work-wide.webp",
+      "status": "completed; director inspected static content; independent QA pending"
+    },
+    {
+      "name": "work-portrait",
+      "index": 2,
+      "job_id": "1e77dd95-501d-4480-b1b3-40f2e9b50bde",
+      "source": "https://d8j0ntlcm91z4.cloudfront.net/user_3IxeKJSx3yYae08TId7ea0dmDui/hf_20260909_153325_1e77dd95-501d-4480-b1b3-40f2e9b50bde.png",
+      "local": "apps/console/public/discover-media/20260909/work-portrait.webp",
+      "status": "completed; director inspected static content; independent QA pending"
+    },
+    {
+      "name": "work-detail",
+      "index": 3,
+      "job_id": "4463c561-c670-4910-bb69-06b832205dbf",
+      "source": "https://d8j0ntlcm91z4.cloudfront.net/user_3IxeKJSx3yYae08TId7ea0dmDui/hf_20260909_153325_4463c561-c670-4910-bb69-06b832205dbf.png",
+      "local": "apps/console/public/discover-media/20260909/work-detail.webp",
+      "status": "completed; director inspected static content; independent QA pending"
+    }
+  ],
+  "inspection": "All three separate generations show practical activity with unobstructed eyes below forehead hardware. None is a real enrolled collector or real collected dataset. Independent Claude acceptance pending.",
+  "sourceReference": "Owner's existing hardware upload 2e842d2d-e3b1-4233-b358-4ebc298f964f; not the repository's misnamed VR ref-headset.jpg",
+  "processing": "Higgsfield cloud sandbox Pillow resize/WebP quality86; no crop, full originals retained in Higgsfield generation results."
+}

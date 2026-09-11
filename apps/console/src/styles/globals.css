@@ -197,31 +197,17 @@
    * the pinned column scrolls: two gutters side by side, about 25px of
    * scrollbar on a four-field form.
    */
+  /* 2026-09-10, owner: hide the bars everywhere. Scrolling itself — wheel,
+     touch, keyboard, drag-select — is untouched; only the gutter is gone. */
   * {
-    scrollbar-color: var(--border-strong) transparent;
-    scrollbar-width: thin;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
 
   *::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-
-  *::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  *::-webkit-scrollbar-thumb {
-    background: var(--border-strong);
-    border: 3px solid transparent;
-    border-radius: 999px;
-    background-clip: padding-box;
-  }
-
-  *::-webkit-scrollbar-thumb:hover {
-    background: var(--faint-foreground);
-    border: 3px solid transparent;
-    background-clip: padding-box;
+    width: 0;
+    height: 0;
+    display: none;
   }
 
   /**

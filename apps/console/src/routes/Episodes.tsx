@@ -36,7 +36,7 @@
  * dialog, where the server itself requires the session to belong to the
  * delivery — and never as an attribute of an episode.
  */
-import { lazy, Suspense, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -50,6 +50,7 @@ import {
 } from '@tanstack/react-table';
 import { AppShell } from '../components/shell/AppShell.tsx';
 import { Button } from '../components/ui/button.tsx';
+import {ResponsiveSheet,useCompactSheet} from '../components/ui/ResponsiveSheet.tsx';
 import { Panel, Problem, Skeleton } from '../components/ui/primitives.tsx';
 import { Panda } from '../components/identity/Panda.tsx';
 import { IconAlert, IconArrow, IconRefresh } from '../components/icons.tsx';
@@ -451,20 +452,16 @@ function BlockingTable({
 
   return (
     <>
-      <Filters>
-        <TextFilter
-          value={(table.getColumn('episode_id')?.getFilterValue() as string) ?? ''}
-          onChange={(v) => table.getColumn('episode_id')?.setFilterValue(v)}
-        />
-        <Chips
-          value={(table.getColumn('needs')?.getFilterValue() as string) ?? ''}
-          onChange={(v) => table.getColumn('needs')?.setFilterValue(v === '' ? undefined : v)}
+      <EpisodeFilters
+          text={(table.getColumn('episode_id')?.getFilterValue() as string) ?? ''}
+          onText={(v) => table.getColumn('episode_id')?.setFilterValue(v)}
+          status={(table.getColumn('needs')?.getFilterValue() as string) ?? ''}
+          onStatus={(v) => table.getColumn('needs')?.setFilterValue(v === '' ? undefined : v)}
           options={[
             { value: 'assignment', label: t('episodes.needs.assignment') },
             { value: 'confirmation', label: t('episodes.needs.confirmation') },
           ]}
         />
-      </Filters>
 
       <DataTable
         table={table}
@@ -553,20 +550,16 @@ function StuckTable({
 
   return (
     <>
-      <Filters>
-        <TextFilter
-          value={(table.getColumn('episode_id')?.getFilterValue() as string) ?? ''}
-          onChange={(v) => table.getColumn('episode_id')?.setFilterValue(v)}
-        />
-        <Chips
-          value={(table.getColumn('hold')?.getFilterValue() as string) ?? ''}
-          onChange={(v) => table.getColumn('hold')?.setFilterValue(v === '' ? undefined : v)}
+      <EpisodeFilters
+          text={(table.getColumn('episode_id')?.getFilterValue() as string) ?? ''}
+          onText={(v) => table.getColumn('episode_id')?.setFilterValue(v)}
+          status={(table.getColumn('hold')?.getFilterValue() as string) ?? ''}
+          onStatus={(v) => table.getColumn('hold')?.setFilterValue(v === '' ? undefined : v)}
           options={[
             { value: 'parked', label: t('episodes.hold.parked') },
             { value: 'held', label: t('episodes.hold.held') },
           ]}
         />
-      </Filters>
 
       <DataTable
         table={table}
@@ -586,6 +579,19 @@ function StuckTable({
 
 function Filters({ children }: { children: React.ReactNode }) {
   return <div className="mb-3 flex flex-wrap items-center gap-3">{children}</div>;
+}
+
+function EpisodeFilters({text,status,onText,onStatus,options}:{text:string;status:string;onText:(value:string)=>void;onStatus:(value:string)=>void;options:{value:string;label:string}[]}){
+  const {t}=useTranslation();const compact=useCompactSheet();const [open,setOpen]=useState(false);
+  const [draftText,setDraftText]=useState(text);const [draftStatus,setDraftStatus]=useState(status);
+  useEffect(()=>{if(!compact)setOpen(false);},[compact]);
+  if(!compact)return <Filters><TextFilter value={text} onChange={onText}/><Chips value={status} onChange={onStatus} options={options}/></Filters>;
+  const active=Number(text!=='')+Number(status!=='');
+  return <div className="workspace-mobile-filter-bar"><Button variant="outline" onClick={()=>{setDraftText(text);setDraftStatus(status);setOpen(true);}}>{t(active?'workspace.filtersActive':'workspace.filters',{count:active})}</Button>
+    {open?<ResponsiveSheet title={t('workspace.filters')} onClose={()=>setOpen(false)} footer={<><Button variant="ghost" onClick={()=>{setDraftText('');setDraftStatus('');}}>{t('workspace.resetFilters')}</Button><Button variant="outline" onClick={()=>setOpen(false)}>{t('bo.cancel')}</Button><Button variant="primary" onClick={()=>{onText(draftText);onStatus(draftStatus);setOpen(false);}}>{t('workspace.applyFilters')}</Button></>}>
+      <div className="workspace-sheet-filter-fields"><label>{t('episodes.filter')}<input value={draftText} onChange={event=>setDraftText(event.target.value)}/></label><fieldset><legend>{t('workspace.filterStatus')}</legend><Chips value={draftStatus} onChange={setDraftStatus} options={options}/></fieldset></div>
+    </ResponsiveSheet>:null}
+  </div>;
 }
 
 function TextFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -631,7 +637,7 @@ function Chips({
             aria-pressed={on}
             onClick={() => onChange(on ? '' : o.value)}
             className={cn(
-              'rounded-full px-3 py-1.5 text-[0.8125rem] font-semibold',
+              'workspace-filter-chip rounded-full px-3 py-1.5 text-[0.8125rem] font-semibold',
               'transition-colors duration-150 ease-[var(--ease)]',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
               on
@@ -735,40 +741,14 @@ function Modal({
   title,
   onClose,
   children,
+  busy = false,
 }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  busy?: boolean;
 }) {
-  const { t } = useTranslation();
-  const ref = useRef<HTMLDialogElement | null>(null);
-
-  return (
-    <dialog
-      ref={(node) => {
-        ref.current = node;
-        if (node && !node.open) node.showModal();
-      }}
-      onClose={onClose}
-      onCancel={onClose}
-      className={cn(
-        /* `m-auto` centres it. Tailwind's preflight zeroes every margin, which
-           takes `dialog:modal`'s own `margin:auto` with it and pins the box to
-           the top-left corner — the same line Review's shortcut sheet carries. */
-        'm-auto w-[min(34rem,calc(100vw-2rem))] rounded-[var(--radius-lg)] border border-[var(--border)]',
-        'bg-[var(--card)] p-0 text-[var(--foreground)] shadow-[var(--shadow-lg)]',
-        'backdrop:bg-[var(--scrim)]',
-      )}
-    >
-      <div className="flex items-start gap-4 border-b border-[var(--border)] px-5 py-4">
-        <h2 className="min-w-0 flex-1 text-[1.0625rem] font-bold tracking-[-0.01em]">{title}</h2>
-        <Button size="sm" variant="ghost" onClick={() => ref.current?.close()}>
-          {t('episodes.close')}
-        </Button>
-      </div>
-      <div className="px-5 py-5">{children}</div>
-    </dialog>
-  );
+  return <ResponsiveSheet title={title} onClose={onClose} dismissible={!busy}>{children}</ResponsiveSheet>;
 }
 
 /**
@@ -889,7 +869,7 @@ function ResolveDialog({
   });
 
   return (
-    <Modal title={t('episodes.resolve.title')} onClose={onClose}>
+    <Modal title={t('episodes.resolve.title')} onClose={onClose} busy={resolve.isPending}>
       <p className="num text-[0.8125rem] text-[var(--muted-foreground)]">{episodeId}</p>
 
       <form
@@ -942,7 +922,7 @@ function ResolveDialog({
         ) : null}
 
         <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onClose}>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={resolve.isPending}>
             {t('bo.cancel')}
           </Button>
           <Button type="submit" variant="primary" disabled={resolve.isPending}>

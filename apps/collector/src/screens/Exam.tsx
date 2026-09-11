@@ -6,7 +6,7 @@ import { useApi } from '../api/context.tsx';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Card, Screen, Tag } from '../ui.tsx';
+import { Body, Button, Card, Note, Screen, Tag } from '../ui.tsx';
 
 /**
  * APP-04: pass/fail recorded; APP-05's gate follows from the result. The
@@ -45,6 +45,7 @@ export function Exam() {
             </View>
             <Switch
               accessibilityLabel={q}
+              disabled={submit.isPending || result === 'passed'}
               value={answers[i] === true}
               onValueChange={(v) => setAnswers((a) => a.map((x, j) => (j === i ? v : x)))}
               thumbColor={theme.color.background}
@@ -68,10 +69,11 @@ export function Exam() {
       {result === 'failed' ? (
         <Tag label={tt('exam.failed')} fg={theme.color.verdict.reject.fg} bg={theme.color.verdict.reject.bg} />
       ) : null}
+      {submit.isError ? <Note text={tt('common.actionFailed')} /> : null}
       {result === 'passed' ? (
         <Button label={tt('home.tasks')} onPress={() => nav.reset({ name: 'home' })} />
       ) : (
-        <Button label={tt('exam.submit')} onPress={() => submit.mutate()} />
+        <Button disabled={submit.isPending} label={tt(submit.isPending ? 'common.saving' : 'exam.submit')} onPress={() => submit.mutate()} />
       )}
     </Screen>
   );

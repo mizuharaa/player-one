@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   AccessibilityInfo,
   Dimensions,
   FlatList,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -11,6 +12,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import type { NativeTheme } from '@playerone/design/native';
 import { useNav } from './nav.tsx';
@@ -81,19 +83,12 @@ export function bottomInset(floor: number): number {
 /**
  * The type face.
  *
- * `theme.font.sans` resolves to `'System'` because no font asset is linked
- * into a native build here (packages/design says so, and says which files to
- * link). Naming Be Vietnam Pro first and the theme's own face second is a
- * family list: React Native on Android cannot find the first name and falls
- * back to the second silently, which is the behaviour we want until the asset
- * is linked; the browser harness, where the woff2 IS loaded, renders the real
- * face and so the screenshots show the typography the design asks for.
- *
- * ponytail: one string, one place. When `react-native.config.js` links
- * `be-vietnam-pro-*.ttf`, `theme.font.sans` becomes `'Be Vietnam Pro'` in
- * packages/design and this helper collapses to it.
+ * Native uses the theme's linked face (currently System); a CSS family list
+ * is only valid in the browser harness, where Be Vietnam Pro is loaded.
+ * Browser typography is therefore not proof of the Android font appearance.
  */
-export const face = (theme: NativeTheme): string => `Be Vietnam Pro, ${theme.font.sans}`;
+export const face = (theme: NativeTheme): string =>
+  Platform.OS === 'web' ? `Be Vietnam Pro, ${theme.font.sans}` : theme.font.sans;
 
 /**
  * Does the collector have "remove animations" on? Every authored motion in
@@ -119,7 +114,7 @@ export function useReducedMotion(): boolean {
   return reduced;
 }
 
-/** The floating bar's own height: one 48dp row plus the pill's padding. */
+/** Minimum bar height before native layout reports its wrapped labels. */
 const barHeight = (theme: NativeTheme): number =>
   theme.space[12] + theme.space[3] + theme.space[2];
 
@@ -136,9 +131,8 @@ const sessionOverhang = (theme: NativeTheme): number =>
 /**
  * How much room scrolling content must leave under the tab bar.
  *
- * Four things: the gesture-bar inset the bar is lifted by, the pill itself,
- * the raised session button that hangs above the pill, and a gap so the last
- * row does not touch it.
+ * The measured bar includes its raised action at normal text size, or its
+ * separate action row at enlarged text. Add the system inset and content gap.
  *
  * The overhang term used to be `space[5]` — the *negative margin*, not the
  * part of the button that is actually above the bar. Measured at 390×640, the
@@ -147,8 +141,24 @@ const sessionOverhang = (theme: NativeTheme): number =>
  * 56dp ink circle. Uploads was caught doing exactly that at 320dp, with an
  * episode's own upload control underneath it.
  */
+let measuredTabHeight = 0;
+const tabListeners = new Set<() => void>();
+export function measureTabBar(height: number) {
+  if (height === measuredTabHeight) return;
+  measuredTabHeight = height;
+  tabListeners.forEach((notify) => notify());
+}
 export const tabBarHeight = (theme: NativeTheme): number =>
-  bottomInset(theme.space[6]) + barHeight(theme) + sessionOverhang(theme) + theme.space[5];
+  bottomInset(theme.space[6]) + (measuredTabHeight || barHeight(theme) + sessionOverhang(theme)) + theme.space[5];
+export function useTabBarReserve() {
+  const theme = useTheme();
+  useWindowDimensions();
+  useSyncExternalStore(
+    (notify) => { tabListeners.add(notify); return () => { tabListeners.delete(notify); }; },
+    () => measuredTabHeight,
+  );
+  return tabBarHeight(theme);
+}
 
 function Header({
   title,
@@ -167,7 +177,7 @@ function Header({
   return (
     <View
       style={{
-        paddingHorizontal: theme.space[4],
+        paddingHorizontal: 0,
         paddingTop: topInset(theme.space[6]) + theme.space[2],
         paddingBottom: theme.space[3],
         // No rule under it. The page and its header are one lavender ground
@@ -183,7 +193,7 @@ function Header({
           accessibilityLabel={tt('common.back')}
           onPress={back}
           hitSlop={theme.space[3]}
-          style={{ alignSelf: 'flex-start', minHeight: theme.space[6], justifyContent: 'center' }}
+          style={{ alignSelf: 'flex-start', minWidth: theme.space[12], minHeight: theme.space[12], justifyContent: 'center' }}
         >
           {/* Ink, not tech blue: tech is PaXini's mark now and is not a link
               colour anywhere in this app. */}
@@ -199,7 +209,7 @@ function Header({
           </Text>
         </Pressable>
       ) : null}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[3] }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: theme.space[3] }}>
         <Text
           accessibilityRole="header"
           style={{
@@ -234,20 +244,23 @@ export function Screen({
 }) {
   const theme = useTheme();
   const nav = useNav();
+  const reserve = useTabBarReserve();
   return (
     // `background` is the page — the lavender wash the glass above it needs.
-    <View style={{ flex: 1, backgroundColor: theme.color.background }}>
-      <Header title={title} right={right} onBack={onBack} />
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background }}>
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           padding: theme.space[4],
-          paddingBottom: theme.space[4] + (nav.isTabRoot ? tabBarHeight(theme) : 0),
+          paddingTop: 0,
+          paddingBottom: theme.space[4] + (nav.isTabRoot ? reserve : bottomInset(theme.space[6])),
           gap: theme.space[3],
         }}
       >
+        <Header title={title} right={right} onBack={onBack} />
         {children}
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -280,22 +293,24 @@ export function ListScreen<T>({
 }) {
   const theme = useTheme();
   const nav = useNav();
+  const reserve = useTabBarReserve();
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.background }}>
-      <Header title={title} right={right} />
       <FlatList
+        keyboardShouldPersistTaps="handled"
         data={data as T[]}
         keyExtractor={keyOf}
         // Views and not fragments: `VirtualizedList` clones each of these with
         // an `onLayout`, and a fragment cannot take one — which React reports
         // as an invalid-prop error on every render.
         renderItem={({ item }) => <View>{renderItem(item)}</View>}
-        ListHeaderComponent={header === undefined ? null : <View>{header}</View>}
+        ListHeaderComponent={<View style={{ gap: theme.space[3] }}><Header title={title} right={right} />{header}</View>}
         ListFooterComponent={footer === undefined ? null : <View>{footer}</View>}
         ListEmptyComponent={empty === undefined ? null : <View>{empty}</View>}
         contentContainerStyle={{
           padding: theme.space[4],
-          paddingBottom: theme.space[4] + (nav.isTabRoot ? tabBarHeight(theme) : 0),
+          paddingTop: 0,
+          paddingBottom: theme.space[4] + (nav.isTabRoot ? reserve : bottomInset(theme.space[6])),
           gap: theme.space[3],
         }}
       />
@@ -487,15 +502,35 @@ export function Body({ children, muted = false }: { children: ReactNode; muted?:
  * A label/value line. `value` sits in tabular figures so a column of them —
  * sizes on Uploads, minutes and amounts on Income — lines up digit for digit.
  */
+export function Amount({ value, label }: { value: string; label: string }) {
+  const theme = useTheme();
+  return <View style={{ gap: theme.space[1] }}>
+    <Text style={{ color: theme.color.foreground, fontFamily: face(theme), fontSize: theme.fontSize['2xl'], fontWeight: theme.fontWeight.bold, fontVariant: ['tabular-nums'] }}>{value}</Text>
+    <Body muted>{label}</Body>
+  </View>;
+}
+
+/** Secondary destinations have a full-width touch region. */
+export function NavRow({ label, onPress }: { label: string; onPress: () => void }) {
+  const theme = useTheme();
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress}
+    style={({ pressed }) => ({ minHeight: theme.space[12], paddingVertical: theme.space[3], flexDirection: 'row', alignItems: 'center', gap: theme.space[3], borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: pressed ? theme.color.muted : undefined })}>
+    <Text style={{ flex: 1, color: theme.color.foreground, fontFamily: face(theme), fontSize: theme.fontSize.base }}>{label}</Text>
+    <Text importantForAccessibility="no" style={{ color: theme.color.mutedForeground, fontSize: theme.fontSize.lg }}>›</Text>
+  </Pressable>;
+}
+
 export function Row({ label, value }: { label: string; value: string }) {
   const theme = useTheme();
+  const { width, fontScale } = useWindowDimensions();
+  const stacked = width < 360 || fontScale > 1.2;
   return (
     <View
       style={{
-        flexDirection: 'row',
+        flexDirection: stacked ? 'column' : 'row',
         justifyContent: 'space-between',
-        alignItems: 'baseline',
-        gap: theme.space[3],
+        alignItems: stacked ? 'stretch' : 'baseline',
+        gap: stacked ? theme.space[1] : theme.space[3],
       }}
     >
       <Text
@@ -503,6 +538,8 @@ export function Row({ label, value }: { label: string; value: string }) {
           color: theme.color.mutedForeground,
           fontFamily: face(theme),
           fontSize: theme.fontSize.sm,
+          flexShrink: 1,
+          flexBasis: stacked ? undefined : '45%',
         }}
       >
         {label}
@@ -515,9 +552,9 @@ export function Row({ label, value }: { label: string; value: string }) {
           fontWeight: theme.fontWeight.medium,
           fontVariant: ['tabular-nums'],
           flexShrink: 1,
-          textAlign: 'right',
+          textAlign: stacked ? 'left' : 'right',
+          flexBasis: stacked ? undefined : '55%',
         }}
-        numberOfLines={2}
       >
         {value}
       </Text>
@@ -654,6 +691,9 @@ export function Button({
             : 'transparent',
         borderRadius: theme.radius.pill,
         paddingHorizontal: theme.space[5],
+        paddingVertical: theme.space[3],
+        maxWidth: '100%',
+        minWidth: theme.space[12],
         minHeight: variant === 'ghost' ? theme.space[12] : theme.space[12] + theme.space[2],
         alignItems: 'center',
         justifyContent: 'center',
@@ -665,12 +705,13 @@ export function Button({
         <>
           {frost === null || pressed ? null : <Frost fill={frost} />}
           <Text
-            numberOfLines={1}
             style={{
               color: labelColor,
               fontFamily: face(theme),
               fontSize: theme.fontSize.md,
               fontWeight: theme.fontWeight.semibold,
+              textAlign: 'center',
+              flexShrink: 1,
             }}
           >
             {label}
@@ -721,6 +762,8 @@ export function Chip({
     borderColor: theme.color.borderStrong,
     borderRadius: theme.radius.pill,
     paddingHorizontal: theme.space[3],
+    paddingVertical: theme.space[2],
+    maxWidth: '100%' as const,
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
   };
@@ -736,7 +779,8 @@ export function Chip({
       hitSlop={theme.space[2]}
       style={({ pressed }) => ({
         ...box,
-        minHeight: theme.space[10],
+        minHeight: theme.space[12],
+        minWidth: theme.space[12],
         opacity: pressed ? 0.85 : 1,
       })}
     >
@@ -786,7 +830,7 @@ export function FeatureBlock({
       >
         {label}
       </Text>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.space[2] }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', gap: theme.space[2] }}>
         <Text
           style={{
             color: theme.color.stage.fg,
@@ -795,6 +839,7 @@ export function FeatureBlock({
             fontWeight: theme.fontWeight.display,
             fontVariant: ['tabular-nums'],
             letterSpacing: -1,
+            flexShrink: 1,
           }}
         >
           {value}
@@ -1017,21 +1062,26 @@ export function Choice({
   selected,
   onPress,
   describedBy,
+  disabled = false,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
   /** Prefixed to the spoken name when the visible label is not self-describing. */
   describedBy?: string;
+  disabled?: boolean;
 }) {
   const theme = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
       accessibilityLabel={describedBy === undefined ? label : `${describedBy}: ${label}`}
       onPress={onPress}
+      disabled={disabled}
       style={{
+        maxWidth: '100%',
+        flexShrink: 1,
         flexDirection: 'row',
         alignItems: 'center',
         gap: theme.space[2],
@@ -1055,6 +1105,7 @@ export function Choice({
           fontFamily: face(theme),
           fontSize: theme.fontSize.sm,
           fontWeight: selected ? theme.fontWeight.semibold : theme.fontWeight.regular,
+          flexShrink: 1,
         }}
       >
         {selected ? '✓ ' : ''}
@@ -1146,6 +1197,7 @@ export function Tag({ label, fg, bg }: { label: string; fg: string; bg: string }
         paddingVertical: theme.space[1],
         paddingHorizontal: theme.space[3],
         alignSelf: 'flex-start',
+        maxWidth: '100%',
       }}
     >
       <Text

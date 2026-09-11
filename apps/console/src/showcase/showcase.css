@@ -1,0 +1,17 @@
+.showcase-studio { max-width: 1200px; }
+.showcase-boundary { padding-block: 1rem; border-block: 1px solid var(--border); line-height: 1.6; }
+.showcase-upload { display: grid; gap: 1rem; padding-block: 2rem; }
+.showcase-upload > label, .showcase-review label { font-weight: 600; }
+.showcase-upload > p, .showcase-review > p { font-size: .875rem; line-height: 1.6; color: var(--muted-foreground); }
+.showcase-actions { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+.showcase-library { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr); gap: 2rem; border-top: 1px solid var(--border); padding-top: 1.5rem; }
+.showcase-library h2 { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; }
+.showcase-library ul { list-style: none; padding: 0; }
+.showcase-clip { display: grid; gap: .5rem; text-align: left; width: 100%; padding: 1rem; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.showcase-clip[aria-pressed=true] { background: var(--muted); }
+.showcase-clip span { font-size: .8125rem; color: var(--muted-foreground); }
+.showcase-review video { width: 100%; max-height: 420px; background: var(--foreground); }
+.showcase-review form, .showcase-review label { display: grid; gap: .75rem; }
+.showcase-review form { margin-top: 1.5rem; gap: 1.25rem; }
+.showcase-review select, .showcase-review textarea { min-height: 44px; padding: .75rem; border: 1px solid var(--border); background: var(--background); color: var(--foreground); font: inherit; border-radius: var(--radius-base); }
+@media(max-width:767px) { .showcase-library { grid-template-columns: 1fr; } .showcase-review video { max-height: 50svh; } }

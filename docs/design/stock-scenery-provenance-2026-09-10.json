@@ -1,0 +1,42 @@
+[
+  {
+    "file": "setting-terraces.webp",
+    "author": "Kevin Charit",
+    "source": "https://unsplash.com/photos/Vrc5-ejPprM",
+    "url": "https://images.unsplash.com/photo-1743485754198-1c80fccaa473?auto=format&fit=crop&fm=webp&q=82&w=1100",
+    "type": "image/webp",
+    "bytes": 673220,
+    "license": "Unsplash License",
+    "use": "Stock scenery; not collectors or captured data"
+  },
+  {
+    "file": "setting-workspace.webp",
+    "author": "Norbert Levajsics",
+    "source": "https://unsplash.com/photos/BMYQaySauY0",
+    "url": "https://images.unsplash.com/photo-1483470134942-13bbf4677d84?auto=format&fit=crop&fm=webp&q=82&w=1100",
+    "type": "image/webp",
+    "bytes": 50246,
+    "license": "Unsplash License",
+    "use": "Stock scenery; not collectors or captured data"
+  },
+  {
+    "file": "setting-warehouse.webp",
+    "author": "Brian Wangenheim",
+    "source": "https://unsplash.com/photos/1Elnip2SeM8",
+    "url": "https://images.unsplash.com/photo-1694885156873-6a0823e14848?auto=format&fit=crop&fm=webp&q=82&w=1100",
+    "type": "image/webp",
+    "bytes": 179124,
+    "license": "Unsplash License",
+    "use": "Stock scenery; not collectors or captured data"
+  },
+  {
+    "file": "setting-kitchen.jpg",
+    "author": "Pew Nguyen",
+    "source": "https://www.pexels.com/photo/bright-and-modern-kitchen-interior-with-sunlight-36671731/",
+    "url": "https://images.pexels.com/photos/36671731/pexels-photo-36671731.jpeg?auto=compress&cs=tinysrgb&w=1100",
+    "type": "image/jpeg",
+    "bytes": 121586,
+    "license": "Pexels License",
+    "use": "Stock scenery; not collectors or captured data"
+  }
+]

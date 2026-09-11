@@ -1,0 +1,86 @@
+{
+  "status": "submitted-not-reviewed",
+  "reference": {
+    "role": "hardware identity only",
+    "media_id": "2e842d2d-e3b1-4233-b358-4ebc298f964f",
+    "origin": "Owner's September 8 Higgsfield source job",
+    "public_asset": false
+  },
+  "requests": [
+    {
+      "index": 1,
+      "params": {
+        "model": "gpt_image_2",
+        "prompt": "Create a single editorial documentary photograph for PlayerOne's illustrative everyday-work section. The person is absorbed in an ordinary practical action, not posing for an advertisement. The supplied reference image is ONLY the physical Ego camera shape: a compact matte-black horizontal housing with two circular outer lenses, fabric side strap and top strap. Preserve that geometry, never copy the laptop or hands in the reference. Fit the device across the UPPER FOREHEAD near the hairline: its lowest edge is above the eyebrows, both eyebrows and both eyes are completely unobstructed. It is a camera band, not a display, not goggles, not glasses. No branding, text or fabricated HUD, no generated logos or app interfaces. Camera relationship: a familiar colleague quietly photographs the person without directing them. Restrained concentration, no fixed smile, ordinary skin texture, gently uneven cotton fabric, believable hand contact and weight. Shot on Fujifilm GFX 100 II, GF 45mm f/2.8, f/5.6, daylight white balance with slightly warmer reflected interior light, subtle shadow noise and soft highlight rolloff. Clear layered environment, no artificial portrait-mode halos, no extravagant shallow focus. Shared palette: natural daylight, warm wood, off-white plaster, muted blue/lavender fabric and living green. Natural colour, not black-and-white, no teal-orange grading. This is a candid single frame, not a collage. Keep the complete practical action and forehead device visible.\nWide environmental photograph in a lived-in Vietnamese apartment kitchen. An adult Vietnamese man, around 40, in a faded blue cotton shirt stands at a stainless counter, gathering washed leafy vegetables into a ceramic colander, one leaf caught on the rim. Both hands have distinct natural anatomy. A partly folded kitchen cloth and damp water marks are incidental, not styled props. Pale wall on left third gives breathing room; person and sink occupy middle/right. Head viewed at three-quarter angle with both eyes visible and gaze on vegetables. Window side-light catches the camera housing subtly. No knife, stove flame, phone or scripted grin. One individual and one action only.",
+        "aspect_ratio": "16:9",
+        "resolution": "2k",
+        "quality": "high",
+        "count": 1,
+        "use_unlim": false,
+        "medias": [
+          {
+            "role": "image",
+            "value": "2e842d2d-e3b1-4233-b358-4ebc298f964f"
+          }
+        ]
+      }
+    },
+    {
+      "index": 2,
+      "params": {
+        "model": "gpt_image_2",
+        "prompt": "Create a single editorial documentary photograph for PlayerOne's illustrative everyday-work section. The person is absorbed in an ordinary practical action, not posing for an advertisement. The supplied reference image is ONLY the physical Ego camera shape: a compact matte-black horizontal housing with two circular outer lenses, fabric side strap and top strap. Preserve that geometry, never copy the laptop or hands in the reference. Fit the device across the UPPER FOREHEAD near the hairline: its lowest edge is above the eyebrows, both eyebrows and both eyes are completely unobstructed. It is a camera band, not a display, not goggles, not glasses. No branding, text or fabricated HUD, no generated logos or app interfaces. Camera relationship: a familiar colleague quietly photographs the person without directing them. Restrained concentration, no fixed smile, ordinary skin texture, gently uneven cotton fabric, believable hand contact and weight. Shot on Fujifilm GFX 100 II, GF 45mm f/2.8, f/5.6, daylight white balance with slightly warmer reflected interior light, subtle shadow noise and soft highlight rolloff. Clear layered environment, no artificial portrait-mode halos, no extravagant shallow focus. Shared palette: natural daylight, warm wood, off-white plaster, muted blue/lavender fabric and living green. Natural colour, not black-and-white, no teal-orange grading. This is a candid single frame, not a collage. Keep the complete practical action and forehead device visible.\nPortrait environmental photograph of an adult Black woman around 35 in a plain ivory T-shirt and faded violet overshirt, quietly sorting folded fabric in a small sunlit home textile studio. She folds one rust-coloured cotton piece on a waist-high wooden table; an imperfect corner remains before her next adjustment. Three-quarter head view, eyes clearly visible beneath the FOREHEAD mounted camera. Show from above hairline to hips and the entire pair of hands/work surface in frame. Her hair is tied back naturally. Background has a fabric rail and pale wall, subtly worn surfaces, no labels, no industrial machinery. Calm daylight, no beauty retouching or glamour pose.",
+        "aspect_ratio": "3:4",
+        "resolution": "2k",
+        "quality": "high",
+        "count": 1,
+        "use_unlim": false,
+        "medias": [
+          {
+            "role": "image",
+            "value": "2e842d2d-e3b1-4233-b358-4ebc298f964f"
+          }
+        ]
+      }
+    },
+    {
+      "index": 3,
+      "params": {
+        "model": "gpt_image_2",
+        "prompt": "Create a single editorial documentary photograph for PlayerOne's illustrative everyday-work section. The person is absorbed in an ordinary practical action, not posing for an advertisement. The supplied reference image is ONLY the physical Ego camera shape: a compact matte-black horizontal housing with two circular outer lenses, fabric side strap and top strap. Preserve that geometry, never copy the laptop or hands in the reference. Fit the device across the UPPER FOREHEAD near the hairline: its lowest edge is above the eyebrows, both eyebrows and both eyes are completely unobstructed. It is a camera band, not a display, not goggles, not glasses. No branding, text or fabricated HUD, no generated logos or app interfaces. Camera relationship: a familiar colleague quietly photographs the person without directing them. Restrained concentration, no fixed smile, ordinary skin texture, gently uneven cotton fabric, believable hand contact and weight. Shot on Fujifilm GFX 100 II, GF 45mm f/2.8, f/5.6, daylight white balance with slightly warmer reflected interior light, subtle shadow noise and soft highlight rolloff. Clear layered environment, no artificial portrait-mode halos, no extravagant shallow focus. Shared palette: natural daylight, warm wood, off-white plaster, muted blue/lavender fabric and living green. Natural colour, not black-and-white, no teal-orange grading. This is a candid single frame, not a collage. Keep the complete practical action and forehead device visible.\nMedium-wide photograph of an adult South Asian man around 50, salt-and-pepper short hair, olive cotton shirt, at a neighbourhood shop packing a plain cardboard parcel on a wooden counter. His left hand steadies the open carton and his right hand folds one flap; a small paper packing strip sits partly crooked. Include his complete head and forehead camera, torso, both forearms and carton, seen from a colleague's slightly lower three-quarter position. Matte lavender-grey shelving and naturally coloured unbranded objects soften in background. No readable labels, barcodes, money, medical equipment, logos or oversized warehouse. Real paper fibres, hand contact, unobstructed eyes. One person and one action. Do not add extra faces or hands.",
+        "aspect_ratio": "4:3",
+        "resolution": "2k",
+        "quality": "high",
+        "count": 1,
+        "use_unlim": false,
+        "medias": [
+          {
+            "role": "image",
+            "value": "2e842d2d-e3b1-4233-b358-4ebc298f964f"
+          }
+        ]
+      }
+    }
+  ],
+  "jobs": {
+    "jobs": [
+      {
+        "index": 1,
+        "job_id": "de2d181e-ff05-4457-a953-f6383370d96c",
+        "status": "pending"
+      },
+      {
+        "index": 2,
+        "job_id": "1e77dd95-501d-4480-b1b3-40f2e9b50bde",
+        "status": "pending"
+      },
+      {
+        "index": 3,
+        "job_id": "4463c561-c670-4910-bb69-06b832205dbf",
+        "status": "pending"
+      }
+    ],
+    "submitted_count": 3,
+    "failed_count": 0
+  }
+}

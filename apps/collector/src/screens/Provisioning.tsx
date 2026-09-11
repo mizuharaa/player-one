@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTransport } from '../device/transport-context.tsx';
 import type { BleDevice } from '../device/transport.ts';
+import { UnavailableDeviceTransport } from '../device/transport.ts';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { Body, Button, Card, CardLink, Field, Note, Row, Screen, Tag, Title } from '../ui.tsx';
@@ -24,6 +25,10 @@ export function Provisioning() {
   const [sent, setSent] = useState(false);
   const [ip, setIp] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+
+  if (transport instanceof UnavailableDeviceTransport) {
+    return <Screen title={tt('prov.title')}><Note text={tt('devices.unavailable')} /></Screen>;
+  }
 
   return (
     <Screen title={tt('prov.title')}>

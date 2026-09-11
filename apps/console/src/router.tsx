@@ -13,10 +13,14 @@ import {
   redirect,
 } from '@tanstack/react-router';
 import { HomeScreen } from './routes/Home.tsx';
+import { ProfileScreen } from './routes/Profile.tsx';
+import { ShowcaseScreen } from './showcase/ShowcaseScreen.tsx';
+import { EngineeringScreen } from './engineering/EngineeringScreen.tsx';
 import { ReviewScreen } from './routes/Review.tsx';
 import { PipelineScreen } from './routes/Pipeline.tsx';
 import { LoginScreen } from './routes/Login.tsx';
 import { DiscoverScreen } from './routes/Discover.tsx';
+import { PrivacyScreen } from './routes/Privacy.tsx';
 import { NotFoundScreen } from './routes/NotFound.tsx';
 import { EpisodesScreen } from './routes/Episodes.tsx';
 import { CounterScreen } from './routes/Counter.tsx';
@@ -99,6 +103,7 @@ const discoverRoute = createRoute({
   path: '/discover',
   component: DiscoverScreen,
 });
+const privacyRoute = createRoute({getParentRoute:()=>rootRoute,path:'/privacy',component:PrivacyScreen});
 
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -106,6 +111,10 @@ const homeRoute = createRoute({
   beforeLoad: requireSession,
   component: HomeScreen,
 });
+
+const profileRoute = createRoute({ getParentRoute: () => rootRoute, path: '/profile', beforeLoad: requireSession, component: ProfileScreen });
+const showcaseRoute = createRoute({ getParentRoute: () => rootRoute, path: '/showcase', beforeLoad: requireSession, component: ShowcaseScreen });
+const engineeringRoute = createRoute({ getParentRoute: () => rootRoute, path: '/engineering', beforeLoad: requireSession, component: EngineeringScreen });
 
 const reviewRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -215,8 +224,12 @@ const riskRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
+  profileRoute,
+  showcaseRoute,
+  engineeringRoute,
   loginRoute,
   discoverRoute,
+  privacyRoute,
   reviewRoute,
   backOfficeRoute,
   pipelineRoute,

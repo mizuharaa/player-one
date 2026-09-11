@@ -1,0 +1,97 @@
+/* Optics and decisive typography: the page stays still; accents carry motion. */
+.discover-wide-intro { grid-template-columns:minmax(0,.95fr) minmax(0,1.45fr);gap:clamp(32px,4vw,76px);padding:88px clamp(24px,4.4vw,84px);min-height:0; }
+.discover-wide-intro .discover-aperture-copy { padding:0;gap:24px;align-self:center; }
+.discover-wide-intro .discover-aperture-copy .discover-heading { max-width:none;font-size:clamp(2.8rem,4.2vw,5.5rem);font-weight:700;line-height:1.06;letter-spacing:-.04em; }
+.discover-wide-intro .discover-heading>span,.discover-perspective-keyword { display:block; }
+.discover-perspective-keyword { font-family:Georgia,'Times New Roman',serif;font-weight:400;line-height:1.09;letter-spacing:-.05em;margin-top:.12em;color:#c7f137; }
+@supports(background-clip:text){.discover-perspective-keyword { background:linear-gradient(90deg,#c7f137 var(--keyword-fill,100%),#fffaf0 var(--keyword-fill,100%));background-clip:text;-webkit-background-clip:text;color:transparent; }}
+.discover-wide-intro .discover-product-specimen { min-height:0;padding:0;align-self:stretch; }
+.discover-wide-intro .discover-product-specimen figure { margin:0;width:100%;min-height:540px;height:100%;border-radius:24px; }
+.discover-wide-intro .discover-product-specimen picture,.discover-wide-intro .discover-product-specimen img { height:100%;aspect-ratio:auto;object-fit:cover;object-position:center; }
+.discover-wide-intro .discover-product-circle { width:92%;max-height:none;transform:translate(0,0); }
+.discover-wide-intro .discover-product-callouts { gap:24px;width:100%; }
+.discover-wide-intro .discover-product-callouts h3 { font-size:1rem; }
+.discover-phone-stage { position:relative;z-index:1;width:100%;max-width:390px;justify-self:center;isolation:isolate; }
+.discover-phone-stage::after { content:'';position:absolute;z-index:-1;bottom:-25px;left:12%;width:76%;height:22px;border-radius:50%;background:#28202f35;filter:blur(12px);pointer-events:none; }
+.discover-phone-keys { position:absolute;inset:0;pointer-events:none; }
+.discover-phone-keys::before,.discover-phone-keys::after { content:'';position:absolute;width:4px;border-radius:3px;background:linear-gradient(90deg,#302c32,#a89daa,#312d33); }
+.discover-phone-keys::before { left:-5px;top:118px;height:42px;box-shadow:0 55px 0 #635a67; }
+.discover-phone-keys::after { right:-5px;top:162px;height:66px; }
+.discover-phone-stage .discover-demo-phone.discover-demo-frame { max-width:none;border:7px solid #1d1b20;border-radius:46px;background:#fffdf8;box-shadow:0 0 0 1px #a89aa9,0 0 0 3px #4a414e,0 0 0 4px #b5a7b6,1px 2px 0 5px #3a333e,inset 0 0 0 1px #fff,8px 22px 36px #32273526; }
+.discover-phone-stage .discover-phone-hardware i { background:#171619;box-shadow:inset 0 1px 2px #6b626a,0 1px 0 #fff; }
+.discover-phone-hardware i::after { content:'';position:absolute;right:9px;top:8px;width:8px;height:8px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#487288 0 12%,#182c3d 20% 38%,#090f17 50%);box-shadow:0 0 0 1px #303139; }
+.discover-faq-motion { display:flex;align-items:center;gap:16px;margin-top:24px; }
+.discover-faq-optics { display:block;width:68px;flex:none;color:#665775; }
+.discover-faq-motion .discover-illustration-toggle { margin:0;color:#35271f;background:#fffdf7;border:1px solid #8e7e70; }
+.discover-faq-motion .discover-illustration-toggle:hover { background:#e6edca;border-color:#35271f; }
+.discover-demo-section { position:relative;overflow:clip;background:#e0dcf2;padding-block:96px; }
+.discover-demo-section>.discover-section-heading { margin-bottom:56px;gap:24px; }
+.discover-demo-section>.discover-section-heading .discover-heading { font-size:clamp(2.75rem,5.8vw,5.75rem);font-weight:700;line-height:1.02;max-width:16ch;letter-spacing:-.04em; }
+.discover-demo-section .discover-heading .discover-title-ink:last-child { color:#174ca3; }
+.discover-demo-section>.discover-section-heading .discover-lead { color:var(--discover-ink);max-width:48ch;font-size:1rem; }
+.discover-demo-scene { position:relative;align-items:center;gap:64px; }
+.discover-demo-context { position:relative;z-index:1;max-width:520px;justify-self:start; }
+.discover-demo-context h3 { font-size:clamp(2rem,3.4vw,3.5rem);font-weight:700;max-width:12ch;line-height:1.06; }
+.discover-demo-context>p:not(.discover-eyebrow) { color:var(--discover-ink);font-size:1rem;line-height:1.6; }
+.discover-demo-context ol { border-bottom:1px solid #928397; }
+.discover-demo-context li { position:relative;padding:20px 16px;transition:background 220ms ease-out,border-color 220ms ease-out; }
+.discover-demo-context li[data-current='true'] { background:#c7f137;border-color:transparent; }
+.discover-demo-context li>span { border-radius:50%; }
+.discover-demo-context li strong { font-size:1.15rem; }
+.discover-demo-context li p { color:#382b26;font-size:.875rem;max-width:35ch; }
+.discover-demo-context .discover-demo-footnote { font-size:.75rem!important; }
+.discover-demo-context .discover-illustration-toggle { margin-top:16px; }
+.discover-demo-optics { position:absolute;width:min(48vw,650px);right:-90px;top:70px;color:#766497;pointer-events:none;transform:translate3d(0,var(--optic-pan,0px),0); }
+.discover-scan-motif { display:block;width:100%;height:auto; }
+.discover-scan-orbit { transform-origin:160px 160px;animation:discover-optic-turn 36s linear infinite;animation-play-state:paused; }
+[data-illustration-active='true'] .discover-scan-orbit { animation-play-state:running; }
+.discover-demo-phone.discover-demo-frame { z-index:1;box-shadow:12px 24px 32px #35271f24; }
+.discover-questions.discover-shell { max-width:none;width:100%;padding:96px max(32px,calc((100vw - 1280px)/2));gap:64px;background:#f6f2e9;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); }
+.discover-faq-intro { align-self:start; }
+.discover-faq-intro>.discover-eyebrow { color:#5b4a40;margin-bottom:20px; }
+.discover-questions .discover-heading { max-width:none;font-weight:700;font-size:clamp(3rem,5vw,5rem);line-height:1.04;letter-spacing:-.04em; }
+.discover-faq-intro .discover-truc { display:grid;grid-template-columns:96px minmax(0,1fr);gap:20px;align-items:center;margin-top:36px;padding:24px;border:1px solid #c9bdac;border-radius:20px;background:#fffdf7; }
+.discover-faq-intro .discover-truc-mascot { width:96px; }
+.discover-faq-intro .discover-truc-pause { width:96px;font-size:.6875rem;color:#574237; }
+.discover-faq-intro .discover-truc-copy { min-width:0;gap:10px; }
+.discover-faq-intro .discover-truc-copy .discover-eyebrow { font-size:.625rem;color:#574237; }
+.discover-faq-intro .discover-truc-copy h3 { font-weight:700;font-size:1.5rem; }
+.discover-faq-intro .discover-truc-copy>p:not(.discover-eyebrow) { color:#44352c;font-size:.8125rem;line-height:1.6; }
+.discover-faq-rows { gap:0;border-top:1px solid #c9bdac;align-self:start; }
+.discover-questions .discover-faq-rows details { background:transparent;color:var(--discover-ink);border-radius:0;border-bottom:1px solid #c9bdac!important;overflow:visible;transition:background 200ms ease-out; }
+.discover-questions .discover-faq-rows summary { display:grid;grid-template-columns:28px minmax(0,1fr) 36px;align-items:center;padding:24px 16px;min-height:90px;gap:16px;font-size:1rem;font-weight:600; }
+.discover-faq-number { font-size:.6875rem;font-weight:500;font-variant-numeric:tabular-nums;color:#655248; }
+.discover-questions .discover-faq-rows summary>span { width:36px;height:36px;background:var(--discover-ink);color:#fffdf7;border:0;transition:transform 240ms cubic-bezier(.16,1,.3,1),background 200ms; }
+.discover-questions .discover-faq-rows details[open] { background:#e6edca; }
+.discover-questions .discover-faq-rows details:focus-within { outline:none; }
+.discover-questions .discover-faq-rows summary:focus-visible { outline:2px solid var(--discover-ink);outline-offset:-2px;border-radius:0; }
+.discover-questions .discover-faq-rows details[open] summary>span { background:#315522; }
+.discover-questions .discover-faq-rows details p { color:#35271f;font-size:.9375rem;line-height:1.7;padding:0 68px 24px 60px;max-width:none; }
+.discover-questions .discover-faq-rows details[open] p { animation:discover-answer-enter 250ms cubic-bezier(.16,1,.3,1); }
+@keyframes discover-optic-turn { to{transform:rotate(360deg);} }
+@keyframes discover-answer-enter { from{opacity:.4;transform:translateY(-4px);}to{opacity:1;transform:none;} }
+@media(hover:hover){
+ .discover-page .discover-button,.discover-page .discover-nav-login { transition:translate 220ms cubic-bezier(.16,1,.3,1),box-shadow 220ms,background 220ms,color 220ms; }
+ .discover-page .discover-button:hover,.discover-page .discover-nav-login:hover { translate:0 -2px;box-shadow:0 6px 14px #35271f20; }
+ .discover-page .discover-button>span { display:inline-block;transition:translate 220ms cubic-bezier(.16,1,.3,1); }
+ .discover-page .discover-button:hover>span { translate:3px -2px; }
+ .discover-nav-destinations a { transition:background 200ms,color 200ms; }
+ .discover-nav-destinations a:hover { background:#ffffff20;color:#fffdf7; }
+ .discover-demo-context li:hover { background:#f4f0ff; }
+ .discover-demo-context li[data-current='true']:hover { background:#d5fb61; }
+ .discover-questions .discover-faq-rows details:not([open]):hover { background:#eae4d6; }
+ .discover-settings-gallery figure img { transition:transform 700ms cubic-bezier(.16,1,.3,1); }
+ .discover-settings-gallery figure:hover img { transform:scale(1.035); }
+}
+@media(max-width:900px){.discover-demo-scene{gap:32px;}.discover-questions.discover-shell{gap:32px;padding:64px 24px;}.discover-faq-intro .discover-truc{grid-template-columns:1fr;padding:20px;}.discover-faq-intro .discover-truc-mascot{display:none;}}
+@media(max-width:767px){
+ .discover-demo-section{padding-block:64px;}.discover-demo-section>.discover-section-heading{margin-bottom:32px;}.discover-demo-section>.discover-section-heading .discover-heading{font-size:clamp(2.6rem,10vw,4rem);max-width:14ch;}
+ .discover-demo-section>.discover-section-heading .discover-lead{font-size:.9375rem;}.discover-demo-scene{gap:28px;}.discover-demo-context{width:100%;max-width:390px;justify-self:center;}.discover-demo-context h3{display:block;font-size:1.75rem;max-width:none;margin-bottom:20px;}
+ .discover-demo-context ol{margin:0;}.discover-demo-context li{padding:12px 8px;gap:10px;}.discover-demo-context li strong{font-size:.75rem;}.discover-demo-context .discover-illustration-toggle{font-size:.6875rem;}
+ .discover-demo-optics{width:390px;right:calc(50% - 195px);top:200px;opacity:.7;}.discover-demo-phone.discover-demo-frame{box-shadow:6px 16px 24px #35271f20;}
+ .discover-questions.discover-shell{grid-template-columns:1fr;padding:64px 20px;gap:32px;}.discover-questions .discover-heading{font-size:clamp(2.75rem,11vw,4rem);max-width:12ch;}.discover-faq-intro .discover-truc{margin-top:24px;}.discover-questions .discover-faq-rows summary{padding:20px 8px;gap:10px;grid-template-columns:24px minmax(0,1fr) 32px;font-size:.9375rem;}.discover-questions .discover-faq-rows summary>span{width:32px;height:32px;}.discover-questions .discover-faq-rows details p{padding:0 42px 22px;font-size:.875rem;}
+}
+@media(prefers-reduced-motion:reduce){.discover-scan-orbit,.discover-questions .discover-faq-rows details[open] p{animation:none!important;}.discover-demo-optics{transform:none!important;}.discover-page .discover-button,.discover-page .discover-button>span,.discover-page .discover-nav-login,.discover-settings-gallery figure img{transition:none!important;translate:none!important;}}
+@media(max-width:1100px){.discover-wide-intro{grid-template-columns:1fr;gap:40px;padding:64px 32px;}.discover-wide-intro .discover-aperture-copy{max-width:760px;justify-self:center;align-items:center;text-align:center;}.discover-wide-intro .discover-aperture-copy .discover-heading{font-size:clamp(3rem,6vw,4.5rem);max-width:none;}.discover-wide-intro .discover-product-callouts{text-align:left;}.discover-wide-intro .discover-product-specimen{margin:0;padding:24px 0;}.discover-wide-intro .discover-product-specimen figure{min-height:0;aspect-ratio:1.65;height:auto;}.discover-wide-intro .discover-product-circle{width:80%;max-height:100%;}}
+@media(max-width:767px){.discover-wide-intro{padding:56px 20px;gap:24px;}.discover-wide-intro .discover-aperture-copy{align-items:flex-start;text-align:left;}.discover-wide-intro .discover-aperture-copy .discover-heading{font-size:clamp(2.5rem,10vw,4rem);}.discover-wide-intro .discover-product-specimen{padding:16px 0;}.discover-wide-intro .discover-product-specimen figure{aspect-ratio:1.1;border-radius:16px;}.discover-wide-intro .discover-product-callouts{gap:16px;}.discover-wide-intro .discover-product-callouts h3{font-size:.875rem;}.discover-phone-stage{width:calc(100% - 12px);max-width:378px;}.discover-phone-stage .discover-demo-phone.discover-demo-frame{border-width:6px;border-radius:40px;}.discover-faq-optics{width:56px;}}
+@media(forced-colors:active){.discover-perspective-keyword{background:none;color:CanvasText;}.discover-phone-stage .discover-demo-phone.discover-demo-frame{border-color:CanvasText;}}

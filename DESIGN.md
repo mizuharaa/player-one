@@ -1,5 +1,98 @@
 # Design
 
+## Current public direction: immersive media with warm framing
+
+Latest refinement: [kinetic landing](docs/design/kinetic-landing-2026-09-10.md) adds scroll-linked serif emphasis, shared photo/copy alignment, a stationary metallic CSS phone, stronger localized slogans and numbered FAQ interaction with pausable optical accents. Keep the white intro and exact PLAYER ONE shuffle intact. Decorative optics may rotate; the wordmark and phone do not loop or swing.
+
+The latest correction is [immersive-media-direction-2026-09-10.md](docs/design/immersive-media-direction-2026-09-10.md): restore wide film and photography, dark/lime introduction framing, a lavender demo stage, aligned scenery and readable glass over the review film. The owner rejected the uniform narrow beige treatment. Keep the successful warm navigation, typography, six-row FAQ and footer from [the warm direction](docs/design/warm-landing-direction-2026-09-10.md). The operational console keeps its restrained data-first identity; the orange/blue brand and verdict meanings remain.
+
+The current logo target is the owner's exact real-text `PLAYER ONE` shuffle: 2.3 seconds including its reading hold, shown on a warm-white intro with a smooth handoff to the film. The owner rejected the Spline mockup; restore the prior CSS phone with naturally sized content and proper SVG status icons. See [phone revert](docs/design/phone-revert-2026-09-10.md). This supersedes the Spline and geometric logo motion descriptions below. No orbit or swinging. Current dashboard sheet research must preserve native input behavior, accessible dismissal, explicit form application, and existing financial gates.
+
+## Latest owner correction: fast intro and stable scrolling
+
+The 3.8-second orbit choreography is rejected. Replace it with an approximately
+1.6-second controlled modular scramble: compact mark, direct entry to letter
+slots, two small local bar/curve reconfigurations, exact lock, color and dock.
+No orbit, oscillation, wide scatter or extended intermediate composition.
+The same 32 SVG paths and normal-reload behavior remain.
+
+The reported disappearing heading and gallery jitter are release blockers.
+Content must remain visible throughout re-entry, refresh and idle wake; repeated
+scroll callbacks must not reset visible headings to opacity zero. Gallery
+figures must stay geometrically stable during scroll, with hover treatment
+confined to their images. Remove global animation ownership conflicts and
+repeated ScrollTrigger disable/enable resets. Keep native scrolling and bounded
+GSAP motion; validate wheel down/up, direction reversal, idle wake, anchors,
+resize, locales and reduced motion before deploying. This direction supersedes
+both earlier slow kinetic choreography and stepped-scramble prescriptions.
+
+## Operator workspace replacement and intro update
+
+The owner's subsequent Autosend/Harvey/Harvest references replace the current
+dashboard composition. See `docs/design/dashboard-workspace-direction-2026-09-09.md`:
+anchored sidebar, aligned ledger-like sections, compact scoped figures, real task
+rows, operator profile/settings and an own-operator audit activity calendar.
+Remove dashboard marketing photography, oversized gauges and Truc placements;
+the accepted public landing keeps its own visual world. The main console logo
+links home and remains keyboard accessible.
+
+The landing logo now follows continuous curved kinetic choreography: unfold,
+paired crossings, compression/release, an asymmetric directional sweep, gradual
+letter recognition and exact lock. See docs/design/logo-continuous-choreography-2026-09-09.md.
+The authored total is 3.2–4.0 seconds. This supersedes the stepped scramble;
+normal-reload replay, reduced-motion/Skip and black-to-orange/blue remain.
+
+## Latest showcase polish — 9 September 2026
+
+The active owner-approved scope is recorded in
+`docs/design/showcase-release-direction-2026-09-09.md`. It extends the accepted
+landing to the sign-in and operational shell: black SVG pieces assemble before
+turning orange Player / blue One, context-adjusted colored navigation branding,
+a 50/50 film/form sign-in, grayscale-to-color collector interaction, the expressly
+requested September 6 review film, Truc help and a persistent privacy choice.
+The wordmark color exception and cinematic sign-in supersede older partner-only
+color and plain-login instructions below. The native collector theme stays separate.
+Illustrative media and placeholder assistance remain explicitly identified.
+
+External Claude reached its weekly limit during this batch. A fresh independent
+agent measures UI changes; a separate non-author audits deployment transport.
+Current evidence and deployment limits are linked from
+`docs/design/ui-delivery-status-2026-09-09.md`.
+
+## Public landing replacement — 9 September 2026
+
+`/discover` is a Persuade surface: everyday work, seen from within. Its daylight
+photography and near-white canvas replace the previous page-wide lavender grid.
+This scope does not change the operator console or native collector theme below.
+The page opens with a short slogan and a rising, full-width film; one interactive,
+explicitly illustrative task-preparation demo sits inside a photographic setting.
+Independent unequal images carry ordinary work. Human review and payment remain
+plain, separate facts, with no invented metrics or automated inspection signals.
+
+Landing-only `--discover-*` tokens live in `packages/design/src/tokens.ts`.
+Archivo Variable supplies Latin and Vietnamese display text; the Chinese fallback
+is the same explicitly named CJK family used by the operational UI. Existing
+partner circles and their colours are preserved. The near-white canvas, ink type,
+lavender ambient light and photographic colour are the complete palette; verdict
+colours occur only beside their actual verdict glyphs.
+
+The current bolder pass replaces detached pale bands with an ink/lavender aperture
+introduction, an unequal three-photo wall, and a connected ink/lime review theatre.
+Lime is a solid scene ground, never a text highlighter. Illustrative photography is
+labelled beside the collector heading; the device explanation annotates that wall.
+The logo assembles once per session, then the full-bleed film rises automatically.
+Repeat visits, deep links and restored scroll positions receive the final hero.
+Native scroll drives repeatable heading and bounded scene entrances only.
+The mobile navigation remains fixed outside the story. Reduced motion retains a
+composed still, readable content and manual controls. Ambient CSS light pauses
+offscreen and in hidden tabs. Heading hover changes only the actual inline title;
+it duplicates no DOM, hides no native pointer and draws no rainbow.
+
+`apps/console/style-tile.html` is the editable visual sample. Production direction
+and evidence requirements are in `docs/design/discover-direction-2026-09-09.md`.
+Claude independently verifies the rendered implementation; this records decisions,
+not a claim that the new build has passed visual acceptance.
+
 Recorded from the built console, not from intention. Where this file and the
 code disagree, the code is right and this file is stale — fix it.
 

@@ -24,7 +24,8 @@ export function Training() {
       <Card>
         <Body>{tt('training.body')}</Body>
       </Card>
-      <Button label={tt('training.done')} onPress={() => done.mutate()} />
+      {done.isError ? <Note text={tt('common.actionFailed')} /> : null}
+      <Button disabled={done.isPending} label={tt(done.isPending ? 'common.saving' : 'training.done')} onPress={() => done.mutate()} />
     </Screen>
   );
 }

@@ -1,12 +1,11 @@
 import { createContext, useContext } from 'react';
-import { MockDeviceTransport, type DeviceTransport } from './transport.ts';
+import { UnavailableDeviceTransport, type DeviceTransport } from './transport.ts';
 
 /**
- * ponytail: the default IS the mock — there is no real transport to inject
- * yet. The provider seam exists so the EgoLowBle TurboModule drops in without
- * touching a screen.
+ * No live native implementation is linked yet. Demo callers must explicitly
+ * inject the mock; absence of a provider must never simulate real hardware.
  */
-const TransportContext = createContext<DeviceTransport>(new MockDeviceTransport());
+const TransportContext = createContext<DeviceTransport>(new UnavailableDeviceTransport());
 
 export const TransportProvider = TransportContext.Provider;
 

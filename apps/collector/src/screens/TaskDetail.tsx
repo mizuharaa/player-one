@@ -16,6 +16,8 @@ const CLAIM_ERRORS: Record<string, MessageKey> = {
   training_incomplete: 'detail.needTraining',
   task_at_capacity: 'detail.full',
   already_claimed: 'detail.claimed',
+  not_qualified: 'detail.notQualified',
+  task_not_claimable: 'detail.unavailable',
 };
 
 const claimErrorKey = (error: unknown): MessageKey =>
@@ -79,7 +81,7 @@ export function TaskDetail() {
   }
 
   const examPassed = profile.data !== null && profile.data.examPassed;
-  const alreadyClaimed = claims.data.some((c) => c.taskId === taskId);
+  const alreadyClaimed = task.data.claimedByMe || claims.data.some((c) => c.taskId === taskId);
   const full = task.data.claimants >= task.data.maxClaimants;
 
   return (
@@ -98,24 +100,23 @@ export function TaskDetail() {
         computed once, on the server, and arrives per episode on Income.
       */}
       <FeatureBlock
-        label={tt('hall.perMinute')}
-        value={task.data.unitPriceVndPerMinute}
+        label={tt('hall.pricePerMinute')}
+        value={`${task.data.unitPriceVndPerMinute} ${task.data.currency}`}
         sentence={task.data.paymentRule || tt('detail.notSupplied')}
       />
 
       <Card>
-        <Row label={tt('session.scenario')} value={tt(`scenario.${task.data.scenario}`)} />
+        <Row label={tt('session.scenario')} value={task.data.scenario === null ? tt('detail.notSupplied') : tt(`scenario.${task.data.scenario}`)} />
         <Row label={tt('detail.target')} value={`${task.data.targetMinutes} ${tt('detail.minutes')}`} />
         <Row label={tt('hall.slots')} value={`${task.data.claimants}/${task.data.maxClaimants}`} />
       </Card>
       <Card>
         <Title>{tt('detail.instructions')}</Title>
         <Body>{task.data.instructions || tt('detail.notSupplied')}</Body>
-      </Card>
-      <Card>
         <Title>{tt('detail.privacy')}</Title>
         <Body>{task.data.privacyNotice || tt('detail.notSupplied')}</Body>
       </Card>
+      {!task.data.published ? <Note text={tt('detail.unavailable')} /> : null}
       {!examPassed ? <Note text={tt('detail.needExam')} /> : null}
       {full && !alreadyClaimed ? <Note text={tt('detail.full')} /> : null}
       {/*
@@ -128,9 +129,10 @@ export function TaskDetail() {
       {claim.isError ? <Note text={tt(claimErrorKey(claim.error))} /> : null}
       <Button
         label={claim.isPending ? tt('detail.claiming') : alreadyClaimed ? tt('detail.claimed') : tt('detail.claim')}
-        disabled={!examPassed || full || alreadyClaimed || claim.isPending}
+        disabled={!examPassed || !task.data.claimable || alreadyClaimed || claim.isPending}
         onPress={() => claim.mutate()}
       />
+      {alreadyClaimed ? <Button label={tt('session.title')} onPress={() => nav.push({ name: 'sessionCreate' })} /> : null}
     </Screen>
   );
 }

@@ -49,6 +49,7 @@ import { readOnlyReason, useFinanceRole } from './role.ts';
 type Row = { bill: PayoutBill; income: IncomePeriod | null };
 
 const helper = createColumnHelper<Row>();
+const EMPTY_BILLS: PayoutBill[] = [];
 
 /** Orders two decimal strings without subtracting them. */
 const byNumber = (a: string | null | undefined, b: string | null | undefined): number => {
@@ -66,16 +67,19 @@ export function SettleScreen() {
   const { role } = useFinanceRole();
   const readOnly = readOnlyReason(role);
 
-  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period) });
-  const bills = batch.data?.bills ?? [];
+  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: role === 'finance' });
+  const bills = role === 'finance' ? batch.data?.bills ?? EMPTY_BILLS : EMPTY_BILLS;
   const collectors = useMemo(() => [...new Set(bills.map((b) => b.collector_id))], [bills]);
   const incomes = useQueries({
-    queries: collectors.map((id) => ({ queryKey: keys.income(id), queryFn: () => payout.income(id) })),
+    queries: collectors.map((id) => ({ queryKey: keys.income(id), queryFn: () => payout.income(id), enabled: role === 'finance' })),
+    // useQueries' result array changes on render. Its structurally shared
+    // combined data keeps table rows stable, avoiding an auto-reset loop.
+    combine: (results) => results.map((result) => result.data),
   });
 
   const rows = useMemo<Row[]>(() => {
     const byBill = new Map<string, IncomePeriod>();
-    for (const q of incomes) for (const p of q.data?.periods ?? []) if (p.bill_id) byBill.set(p.bill_id, p);
+    for (const income of incomes) for (const p of income?.periods ?? []) if (p.bill_id) byBill.set(p.bill_id, p);
     return bills.map((bill) => ({ bill, income: byBill.get(bill.id) ?? null }));
   }, [bills, incomes]);
 
@@ -170,7 +174,7 @@ export function SettleScreen() {
     <SettleShell period={period} tab="bills" mode={batch.data?.mode}>
       <RefusedBanner error={refused} onDismiss={() => setRefused(null)} />
 
-      <div className="mb-4 flex flex-wrap items-start gap-3">
+      <div className="workspace-settlement-actions">
         <div>
           <Button variant="primary" disabled={generate.isPending} onClick={() => generate.mutate()}>
             {generate.isPending ? t('bo.working') : t('settle.generate')}
@@ -206,7 +210,7 @@ export function SettleScreen() {
             </div>
           ) : null}
         </div>
-        <div className="sm:ml-auto">
+        <div>
           {readOnly === null ? (
             <Button asChild variant="outline">
               <a href={payout.exportUrl(period)} download>
@@ -236,7 +240,7 @@ export function SettleScreen() {
       ) : rows.length === 0 ? (
         <EmptyState title={t('settle.empty')} body={t('settle.empty.body')} />
       ) : (
-        <div data-guide="settle.bills">
+        <div data-guide="settle.bills" className="workspace-settlement-ledger">
           <Table minWidth={900}>
             <thead>
               {table.getHeaderGroups().map((hg) => (

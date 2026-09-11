@@ -1,0 +1,51 @@
+.assembly-logo {
+  --logo-player: var(--sun-500);
+  --logo-one: var(--tech-600);
+  display: block; width: 100%; height: auto; overflow: visible;
+}
+.assembly-logo[data-logo-surface="dark"] { --logo-one: var(--tech-400); }
+/* GSAP's SVG matrices already include the measured piece pivot. A fill-box
+   CSS origin would apply that pivot twice, sending scaled pieces offscreen. */
+.assembly-logo__piece { transform-box: view-box; transform-origin: 0 0; }
+.logo-intro {
+  --logo-intro-ink: var(--discover-ink);
+  --logo-intro-ground: var(--discover-paper);
+  position: fixed; inset: 0; width: 100%; height: 100dvh; z-index: 999;
+  visibility: hidden; color: var(--logo-intro-ink); isolation: isolate;
+}
+.logo-intro__background { position: absolute; inset: 0; background: var(--logo-intro-ground); }
+.logo-intro__stage { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.logo-intro__carrier { width: min(82vw, 1100px); }
+.logo-intro__skip {
+  position: absolute; right: max(24px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom)); padding: 12px 16px;
+  min-height: 44px; border: 1px solid currentColor; background: var(--logo-intro-ground);
+  color: inherit; font: inherit; font-size: 12px; cursor: pointer;
+}
+.logo-intro__skip:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+.logo-intro__debug {
+  position: absolute; bottom: 92px; left: 5%; width: 90%;
+  display: grid; gap: 8px; font: 12px monospace;
+}
+.logo-intro__debug input[type="range"] { width: 100%; }
+.logo-intro__debug-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.logo-intro__debug-controls button, .logo-intro__debug-controls select {
+  min-height: 44px; background: var(--logo-intro-ground); color: inherit; border: 1px solid currentColor; padding: 6px 10px;
+}
+.logo-intro__debug-controls label { display: inline-flex; align-items: center; gap: 6px; }
+.logo-intro[data-debug] [data-family="stems"] { --family-color: var(--sun-500); }
+.logo-intro[data-debug] [data-family="curves"] { --family-color: var(--tech-600); }
+.logo-intro[data-debug] [data-family="crossbars"] { --family-color: var(--discover-ink); }
+.logo-intro[data-debug] [data-family="connectors"] { --family-color: var(--tech-400); }
+.logo-intro[data-debug] [data-family="anchors"] { --family-color: var(--sun-700); }
+.logo-intro[data-debug] .assembly-logo__piece { stroke: var(--family-color); stroke-width: 1.2; }
+.assembly-logo__label { display: none; font: 8px monospace; fill: var(--family-color); pointer-events: none; }
+.logo-intro[data-show-ids] .assembly-logo__label { display: block; }
+.logo-intro[data-family-isolate="stems"] [data-family]:not([data-family="stems"]),
+.logo-intro[data-family-isolate="curves"] [data-family]:not([data-family="curves"]),
+.logo-intro[data-family-isolate="crossbars"] [data-family]:not([data-family="crossbars"]),
+.logo-intro[data-family-isolate="connectors"] [data-family]:not([data-family="connectors"]),
+.logo-intro[data-family-isolate="anchors"] [data-family]:not([data-family="anchors"]) { visibility: hidden; }
+@media (max-width: 480px) { .logo-intro__carrier { width: 91vw; } }
+@media (prefers-reduced-motion: reduce) { .logo-intro { display: none; } }
+

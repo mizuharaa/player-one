@@ -1,0 +1,3 @@
+import {withBrowser,newPage} from './browser.mjs';
+await withBrowser(async b=>{const{page,context}=await newPage(b,{motion:true,viewport:{width:1440,height:900}});try{await page.addInitScript(()=>{localStorage.setItem('playerone.locale','en');localStorage.setItem('playerone:showcase-cookie-choice:v1','declined');});await page.goto('http://127.0.0.1:5190/discover',{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.querySelector('.hero-shuffle')?.dataset.shuffleState==='hold',null,{polling:'raf',timeout:10000});await page.screenshot({path:'scratchpad/qa/hero-shuffle-independent/1440-hold.png'});console.log(await page.locator('.hero-shuffle').getAttribute('data-shuffle-state'));}finally{await context.close();}});
+

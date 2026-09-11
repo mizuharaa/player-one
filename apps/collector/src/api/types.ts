@@ -67,12 +67,21 @@ export interface CollectorProfile {
   examPassed: boolean;
 }
 
-export type Scenario = 'home' | 'office' | 'shop' | 'warehouse';
+/** Existing codes documented by POST /api/me/sessions; server validates availability. */
+export const SCENARIOS = ['home', 'office', 'shop', 'warehouse'] as const;
+export type Scenario = (typeof SCENARIOS)[number];
 
 export interface Task {
   id: string;
   title: string;
-  scenario: Scenario;
+  /** Task type is not a session scenario. Null means not supplied. */
+  scenario: Scenario | null;
+  type?: string | null;
+  published: boolean;
+  claimable: boolean;
+  claimedByMe: boolean;
+  remainingSlots: number;
+  currency: string;
   /** Display only. The server computes every payment. */
   unitPriceVndPerMinute: string;
   targetMinutes: number;
@@ -88,11 +97,14 @@ export interface Claim {
   id: string;
   taskId: string;
   claimedAt: string;
+  taskName?: string;
 }
 
 export interface BoundDevice {
   serial: string;
   boundAt: string;
+  /** Bind response has no state; the authoritative device list supplies it. */
+  status: string | null;
 }
 
 /** APP-17b: both declarations are required booleans, never defaulted. */
@@ -125,7 +137,8 @@ export type EpisodeState = (typeof EPISODE_STATES)[number];
 export interface EpisodeUpload {
   episodeId: string;
   sessionId: string;
-  sizeBytes: number;
+  /** Missing or invalid server size is unknown, never a measured zero. */
+  sizeBytes: number | null;
   state: EpisodeState;
   /** APP-27: a failed review names its reason, in the collector's language. */
   rejectReason?: string;

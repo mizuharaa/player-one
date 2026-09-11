@@ -60,7 +60,8 @@ export function LocaleSwitch() {
         )}
       >
         {LOCALES.map((l) => (
-          <option key={l} value={l} lang={HTML_LANG[l]}>
+          <option key={l} value={l} lang={HTML_LANG[l]}
+            style={{ color: 'var(--foreground)', backgroundColor: 'var(--surface)' }}>
             {LABEL[l]}
           </option>
         ))}

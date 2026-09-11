@@ -17,7 +17,6 @@ export function Register() {
   const register = useMutation({
     mutationFn: () => api.register(name, phone),
     onSuccess: () => nav.push({ name: 'agreements' }),
-    onError: () => setMissing(true),
   });
 
   return (
@@ -32,7 +31,8 @@ export function Register() {
           keyboardType="phone-pad"
         />
         {missing ? <Note text={tt('register.missing')} /> : null}
-        <Button label={tt('register.submit')} onPress={() => register.mutate()} />
+        {register.isError ? <Note text={tt('common.actionFailed')} /> : null}
+        <Button disabled={register.isPending} label={tt(register.isPending ? 'common.saving' : 'register.submit')} onPress={() => { const incomplete = name.trim() === '' || phone.trim() === ''; setMissing(incomplete); if (!incomplete) register.mutate(); }} />
       </Card>
     </Screen>
   );

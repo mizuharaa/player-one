@@ -64,10 +64,9 @@ export type GuideStep = {
  */
 export const GUIDE_STEPS: Record<string, GuideStep[]> = {
   '/': [
-    { target: 'home.gauge', key: 'guide.home.gauge', placement: 'right' },
-    { target: 'home.start', key: 'guide.home.start', placement: 'bottom' },
-    { target: 'home.settled', key: 'guide.home.settled', placement: 'left' },
-    { target: 'shell.counters', key: 'guide.shell.counters', placement: 'bottom' },
+    { target: 'home.figures', key: 'workspace.guideSummary', placement: 'bottom' },
+    { target: 'home.attention', key: 'workspace.guideWork', placement: 'bottom' },
+    { target: 'home.recent', key: 'workspace.guideRecent', placement: 'top' },
     { target: 'shell.nav', key: 'guide.shell.nav', placement: 'bottom' },
   ],
   '/review': [
@@ -85,13 +84,22 @@ export const GUIDE_STEPS: Record<string, GuideStep[]> = {
   '/risk': [{ target: 'risk.holds', key: 'guide.risk.holds', placement: 'top' }],
   '/episodes': [{ target: 'episodes.scope', key: 'guide.episodes.scope', placement: 'bottom' }],
   '/counter': [{ target: 'counter.plan', key: 'guide.counter.plan', placement: 'bottom' }],
+  '/profile': [{target:'workspace.page',key:'workspace.tourProfile',placement:'top'}],
+  '/showcase': [{target:'workspace.page',key:'workspace.tourShowcase',placement:'top'}],
+  '/engineering': [
+    {target:'engineering.services',key:'workspace.tourEngineeringServices',placement:'bottom'},
+    {target:'engineering.episodes',key:'workspace.tourEngineeringEpisodes',placement:'top'},
+    {target:'engineering.audit',key:'workspace.tourEngineeringAudit',placement:'top'},
+  ],
+  '/settle/preflight': [{target:'workspace.page',key:'workspace.tourPreflight',placement:'top'}],
+  '/settle/bills': [{target:'workspace.page',key:'workspace.tourBill',placement:'top'}],
+  '/settle/exceptions': [{target:'workspace.page',key:'workspace.tourExceptions',placement:'top'}],
 };
 
 /**
  * The steps for a path, longest matching prefix first.
  *
- * `/settle/preflight` gets `/settle`'s tour, because it is the same screen with
- * a different tab and an operator does not think of it as somewhere else.
+ * Dedicated subpage tours take precedence over the broader settlement tour.
  */
 export function stepsFor(pathname: string): GuideStep[] {
   if (pathname === '/') return GUIDE_STEPS['/'] ?? [];
