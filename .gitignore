@@ -43,3 +43,6 @@ CODEX_BRIDGE.md
 .api-*.err
 .vite-*.log
 .vite-*.err
+
+# Session scratch: local demo Postgres data, QA captures, release snapshots — never repo content.
+scratchpad/
