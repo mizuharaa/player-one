@@ -4,6 +4,7 @@ import {
   bigserial,
   boolean,
   check,
+  customType,
   date,
   foreignKey,
   index,
@@ -2705,3 +2706,31 @@ export const cloudVerifications = pgTable(
     index('cloud_verifications_episode_idx').on(t.episodeId),
   ],
 );
+
+/** Bounded demonstration media only; never eligible for production settlement. */
+const showcaseBytes = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
+export const showcaseFootage = pgTable('showcase_footage', {
+  id: uuid('id').primaryKey(),
+  operatorId: uuid('operator_id').notNull().references(() => operators.id),
+  filename: text('filename').notNull(),
+  contentType: text('content_type').notNull(),
+  content: showcaseBytes('content').notNull(),
+  bytes: integer('bytes').notNull(),
+  sha256: text('sha256').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull().default(sql`now() + interval '7 days'`),
+  verdict: text('verdict'),
+  note: text('note').notNull().default(''),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+}, table => [
+  index('showcase_footage_owner').on(table.operatorId, table.createdAt),
+  index('showcase_footage_expiry').on(table.expiresAt),
+  check('showcase_footage_filename_check', sql`length(${table.filename}) between 1 and 180`),
+  check('showcase_footage_content_type_check', sql`${table.contentType} in ('video/mp4', 'video/webm')`),
+  check('showcase_footage_bytes_check', sql`${table.bytes} between 1 and 20971520 and ${table.bytes} = octet_length(${table.content})`),
+  check('showcase_footage_sha256_check', sql`${table.sha256} ~ '^[a-f0-9]{64}$'`),
+  check('showcase_footage_verdict_check', sql`${table.verdict} in ('good', 'partial', 'bad')`),
+  check('showcase_footage_note_check', sql`length(${table.note}) <= 2000`),
+  check('showcase_review_state', sql`(${table.verdict} is null) = (${table.reviewedAt} is null)`),
+  check('showcase_expiry', sql`${table.expiresAt} > ${table.createdAt} and ${table.expiresAt} <= ${table.createdAt} + interval '7 days'`),
+]);

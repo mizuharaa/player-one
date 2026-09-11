@@ -33,6 +33,9 @@ import { registerCounter } from './counter.ts';
 import { registerEpisodes } from './episodes.ts';
 import { registerMedia } from './media.ts';
 import { registerMe } from './me.ts';
+import { registerOperatorProfile } from './operator-profile.ts';
+import { registerShowcaseFootage } from './showcase-footage.ts';
+import { registerEngineering, type EngineeringCapabilities } from './engineering.ts';
 import { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
 import { registerPayout } from './payout/routes/payout.ts';
 import { seedRiskSignals } from './risk/catalogue.ts';
@@ -250,6 +253,9 @@ export type ApiOptions = {
    * The switch is boolean, matching the environment flag the server passes.
    */
   logger?: boolean;
+  /** Deployment boundary only: a local ingress sanitizes forwarded addresses.
+   * False for direct LAN clients. Never trust arbitrary remote proxy headers. */
+  trustLoopbackProxy?: boolean;
   /**
    * How a collector's one-time sign-in code reaches their phone (APP-01).
    *
@@ -267,6 +273,8 @@ export type ApiOptions = {
    * It is not awaited on the request's clock. See `SendSignInCode`.
    */
   sendSignInCode?: SendSignInCode;
+  /** Diagnostic provenance only; injected senders are unknown unless identified. */
+  signInDeliveryMode?: EngineeringCapabilities['signInDeliveryMode'];
   /**
    * The payout rail (payout brief, §2.4). Defaults to what the environment
    * says, which defaults to `manual` on `sandbox`: the pilot shape, where an
@@ -341,6 +349,7 @@ export function buildApi({
   db,
   tokenSecret,
   logger = false,
+  trustLoopbackProxy = false,
   toleranceMs = DEFAULT_TOLERANCE_MS,
   mediaRoot,
   currency,
@@ -351,6 +360,7 @@ export function buildApi({
   uploadProgress,
   reviewerMediaEnabled = false,
   sendSignInCode,
+  signInDeliveryMode,
   payout = payoutOptionsFromEnv(),
   risk = riskConfigFromEnv(),
 }: ApiOptions): FastifyInstance {
@@ -382,7 +392,7 @@ export function buildApi({
         'with TLS terminated in front of this process)',
     );
   }
-  const app = Fastify({ logger });
+  const app = Fastify({ logger, trustProxy: trustLoopbackProxy ? ['127.0.0.1/32', '::1/128'] : false });
 
   /**
    * Every unhandled throw leaves through here, and the reason is one measured
@@ -634,7 +644,10 @@ export function buildApi({
   const limiter = signInLimiter();
 
   app.post('/auth/machine', async (req, reply) => {
-    const { machine_identifier, secret } = (req.body ?? {}) as Record<string, string>;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const machine_identifier = typeof body.machine_identifier === 'string' ? body.machine_identifier.trim() : '';
+    const secret = typeof body.secret === 'string' ? body.secret.trim() : '';
+    if ([machine_identifier, secret].some(value => value.includes('\0') || value.length > 512)) return reply.code(400).send({ error: 'invalid credentials' });
     if (!machine_identifier || !secret) return reply.code(400).send({ error: 'missing credentials' });
 
     const attempt = signInAttempt(db, limiter, req.ip, 'machine.login_failed', [
@@ -653,7 +666,10 @@ export function buildApi({
   });
 
   app.post('/auth/operator', async (req, reply) => {
-    const { external_ref, secret } = (req.body ?? {}) as Record<string, string>;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const external_ref = typeof body.external_ref === 'string' ? body.external_ref.trim() : '';
+    const secret = typeof body.secret === 'string' ? body.secret.trim() : '';
+    if ([external_ref, secret].some(value => value.includes('\0') || value.length > 512)) return reply.code(400).send({ error: 'invalid credentials' });
     if (!external_ref || !secret) return reply.code(400).send({ error: 'missing credentials' });
 
     const attempt = signInAttempt(db, limiter, req.ip, 'operator.login_failed', [
@@ -744,6 +760,14 @@ export function buildApi({
     objectStore: objectStore !== undefined && canPresign(objectStore) ? objectStore : undefined,
   });
   registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate, reviewerMediaEnabled });
+  registerOperatorProfile(app, db, requireActor);
+  registerShowcaseFootage(app, db, requireActor);
+  registerEngineering(app, db, requireActor, {
+    objectStore: !!objectStore, presignedUpload: !!objectStore && canPresign(objectStore),
+    mediaRoot: !!mediaRoot, verificationGate: verificationGate ?? 'local', reviewerMediaEnabled,
+    signInDeliveryMode: sendSignInCode ? signInDeliveryMode ?? 'unknown' : 'unconfigured', payoutMode: payout.mode ?? 'manual',
+    payoutClient: !!payout.client, riskEnabled: risk.engineEnabled,
+  });
   registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays });
   registerPayout(app, db, requireActor, {
     cycleDays: settlementCycleDays,

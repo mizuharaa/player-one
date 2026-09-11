@@ -172,7 +172,13 @@ export function registerSessionRoutes(
 ): void {
   app.post('/api/session', async (req, reply) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const str = (k: string): string => (typeof body[k] === 'string' ? (body[k] as string) : '');
+    // Normalize the same edge whitespace accepted by the console, before both
+    // rate-limit identity and authentication. Internal whitespace stays literal.
+    const str = (k: string): string => (typeof body[k] === 'string' ? (body[k] as string).trim() : '');
+    if (['machine_identifier', 'machine_secret', 'external_ref', 'operator_secret'].some(k =>
+      str(k).includes('\0') || str(k).length > 512)) {
+      return reply.code(400).send({ error: 'invalid credentials' });
+    }
 
     /**
      * The reviewer path is tried first and returns on its own.
