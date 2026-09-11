@@ -8,16 +8,28 @@
  * values live here as data and each surface derives its own form:
  * `toCss()` for the web, the exported objects themselves for React Native.
  *
- * Four constraints, each one a decision rather than taste:
+ * Five constraints, each one a decision rather than taste:
  *
- * **Two brands, two jobs.** VNG's sun and PaXini's tech blue are not
- * interchangeable accents. Sun means *action and progress* — a button that
- * does something, a gauge filling toward a shift target. Tech means *data and
- * system* — links, references, anything the machine is telling you. Nothing
- * decorative uses either. The product owner stated the two colour worlds; the
- * hex values are this system's own choice, because no formal VNG or PaXini
- * brand guideline exists (confirmed, not assumed — do not go hunting for an
- * official palette).
+ * **Three flat fields, one job each.** VNG's sun and PaXini's tech blue are
+ * not interchangeable accents. Sun means *action* — a button that does
+ * something, the focus ring, the active destination. Tech means *data and
+ * system* — links, references, anything the machine is telling you. Bamboo,
+ * added with Trúc, means *the mascot and progress* — the shift gauge's ring, a
+ * fill moving toward a target, the panda's own prop. Progress moved off sun so
+ * that "this is doing something" and "this is how far along you are" stop
+ * sharing a colour. Nothing decorative uses any of the three, and none of them
+ * is ever a gradient: each field is flat. The product owner stated the two
+ * brand worlds; the hex values are this system's own choice, because no formal
+ * VNG or PaXini brand guideline exists (confirmed, not assumed — do not go
+ * hunting for an official palette).
+ *
+ * **Bamboo is never a verdict and never money.** In the wrong hands it is one
+ * hue away from the pass green, so it is barred from a verdict pill, a verdict
+ * glyph, a payment-status label and any money figure — measured, its hue sits
+ * 67° from `verdict.pass.fg`, and `contrast.test.ts` holds that gap. Progress
+ * drawn in bamboo always carries a text label, a unit and geometry of its own
+ * (a ring with a gap, plus a caption), so an arc can never be read as "passed"
+ * or "paid".
  *
  * **The three verdicts are never orange.** `pass`, `partial` and `reject`
  * decide whether a collector is paid, so they own their own hues and are used
@@ -36,11 +48,13 @@
  * **Both faces are self-hosted.** Upload centres sit on a LAN and the counter
  * workflow has to keep working with the link down. A webfont from a CDN would
  * make typography depend on the internet being up, which is the dependency the
- * rest of the system refuses. They arrive through `@fontsource-variable/*` and
- * are bundled, never fetched.
+ * rest of the system refuses. Both are bundled by Vite and never fetched: Be
+ * Vietnam Pro as static per-weight subsets from `@fontsource/be-vietnam-pro`
+ * (no variable package of it exists), JetBrains Mono from
+ * `@fontsource-variable/jetbrains-mono`.
  */
 
-/** VNG's sun. Actions, brand, progress. Never a verdict, never a surface. */
+/** VNG's sun. Action and brand. Never progress, never a verdict, never a surface. */
 export const sun = {
   50: '#FFF4EC',
   100: '#FFE4D1',
@@ -65,6 +79,39 @@ export const tech = {
 } as const;
 
 /**
+ * Bamboo. Trúc the panda, and progress.
+ *
+ * Vietnamese *trúc* is bamboo and is the mascot's name; Chinese writes the
+ * same plant 竹. The ramp exists because progress used to be drawn in sun,
+ * which made a half-filled gauge and a primary button the same colour and left
+ * the reviewer to work out which of them was asking for a click.
+ *
+ * Three steps do the work, and each was chosen against a measured ratio rather
+ * than by eye:
+ *
+ * - **500 is a FILL and only a fill**, under ink text: `light.foreground` on it
+ *   measures 10.02:1. On white it is 1.82:1, so it is never text itself.
+ * - **600 is the stroke** — the gauge ring, a graphic outline: 3.34:1 on the
+ *   page and 3.01:1 on the muted fill, both clearing WCAG 1.4.11's 3:1 for a
+ *   non-text boundary. On the dark page it doubles as text ink at 5.71:1.
+ * - **700 is the light-scheme text ink**: 6.08:1 on white.
+ *
+ * And the exclusions, which matter more than the ratios: **never on a verdict
+ * pill, a verdict glyph, a payment-status label or a money figure.** Those
+ * belong to `verdict` and to the neutrals. See the header.
+ */
+export const bamboo = {
+  50: '#F5FCE3',
+  100: '#E9F8BF',
+  200: '#D6F28A',
+  300: '#C3EB5A',
+  400: '#B0E230',
+  500: '#9BD11C',
+  600: '#6E9A0F',
+  700: '#4C6C0A',
+} as const;
+
+/**
  * §6.9's three outcomes, and nothing else ever.
  *
  * Each carries a `bg` for fills that keeps its `fg` legible — a pill that sets
@@ -82,6 +129,81 @@ export const tech = {
  * — and differ only in lightness. A green pill still means paid in a dark
  * room; it is only light enough to read there.
  */
+/**
+ * Lavender: the ground the whole product now stands on.
+ *
+ * This is not an accent ramp with a job, it is the *page*. Daniel pinned the
+ * world on 2026-09-07 from a reference screen — a soft periwinkle wash under
+ * frosted cards — and replaced a warm white shell that had been neutral by
+ * default rather than by decision. A tinted ground is the one change that
+ * makes every surface above it read as glass, because glass is only legible
+ * when what is behind it varies.
+ *
+ * The steps are the wash, not a scale of accents: 50 is where the page is
+ * lightest, 200 is where it is deepest, and 300 and 400 exist for a border and
+ * a hairline that have to survive on top of both.
+ */
+export const lavender = {
+  50: '#F5F6FC',
+  100: '#EDEEF7',
+  200: '#DFE2F2',
+  300: '#C9CEE8',
+  400: '#A8AFD4',
+} as const;
+
+/**
+ * Lime: the one accent, and the only saturated colour left outside the
+ * verdicts and the two partner marks.
+ *
+ * It replaces sun as *progress and emphasis* and it does not replace sun as
+ * action — action is ink now, a near-black pill, which is what the reference
+ * world does and what a lavender ground wants. Sun and tech survive only in
+ * the partner mark, where they are VNG's and PaXini's colours rather than the
+ * product's.
+ *
+ * Three steps, three jobs, each measured:
+ *
+ * | Step | Job | Measured |
+ * |---|---|---|
+ * | `500` | a **fill** under ink text; never text | ink on it 13.54:1, and 1.16:1 on the page, which is what a fill should be |
+ * | `600` | the **stroke** — a ring, a graphic edge | 3.71:1 on the page, 3.44:1 on muted |
+ * | `700` | **ink** on the light page | 4.94 / 5.70 / 4.59 on page, card and muted |
+ *
+ * `200` is the dark scheme's ink, 16.12:1 on the dark page.
+ */
+export const lime = {
+  200: '#DFF7A6',
+  500: '#B8F04A',
+  600: '#63851C',
+  700: '#566F17',
+} as const;
+
+/**
+ * Warn: a human should look at this, and it is not a verdict.
+ *
+ * The console had a whole family of these — a payout attempt waiting on
+ * ZaloPay, an episode with a preflight issue, Home's needs-a-human strip — and
+ * every one of them was drawn in sun, because sun used to mean "attention" as
+ * well as "action". Sun is the VNG mark now and nothing else, so the meaning
+ * needed a colour of its own rather than borrowing one.
+ *
+ * It is deliberately **not** a verdict step. `partial` is violet and means a
+ * reviewer judged footage partly usable; a payment waiting on a gateway is not
+ * a partial pass, and putting them in one hue would let a money screen imply a
+ * review outcome nobody recorded.
+ *
+ * Amber, because it is the one attention hue that collides with neither the
+ * lime accent nor any of the three verdicts. Measured: the light ink reads
+ * 5.87 / 6.29 / 6.79 / 5.46 on page, surface, card and muted, and 6.23 on its
+ * own tint; the dark ink reads 13.12 on the dark page and 9.62 on its tint.
+ */
+export const warn = {
+  fg: '#7E5200',
+  bg: '#FFF4E0',
+  fgDark: '#FFD08A',
+  bgDark: '#3A2A14',
+} as const;
+
 export const verdict = {
   pass: { fg: '#0D763B', fgDark: '#14B459', bg: '#E8F8EE', bgDark: '#0D2A1A' },
   partial: { fg: '#613AFB', fgDark: '#9B83FD', bg: '#F0EDFF', bgDark: '#1E1840' },
@@ -94,25 +216,107 @@ export type VerdictName = keyof typeof verdict;
  * The theatre. Present in both themes, because it is about the footage and not
  * about the operator's ambient light.
  */
+/**
+ * Trúc's own two furs, which do not move with the scheme.
+ *
+ * A panda is black and white whatever the page behind him is doing. His black
+ * is `stage.ground` — the one near-black both apps already use — and these are
+ * the light half: `coat` for the head and body, `highlight` for the belly, the
+ * muzzle, the eye whites and the catchlights, one step apart so the muzzle
+ * still reads against the head.
+ *
+ * `coat` is not pure white on purpose: a pure-white panda vanishes on the
+ * white page. The console's flat drawing has held these two values since it
+ * was drawn; they live here now because the collector app's version took its
+ * furs from `--muted` and `--background` instead, which are scheme colours —
+ * so on a dark page Trúc was drawn black on black. Measured on the collector
+ * sign-in, where he is 80px in the middle of the screen and rendered as a grey
+ * ghost against the ground he was standing on.
+ */
+export const truc = { coat: '#F4F3F1', highlight: '#FFFFFF' } as const;
+
 export const stage = {
   ground: '#101215',
   panel: '#191C21',
   line: '#2A2F36',
   fg: '#ECEEF1',
   mid: '#9AA1AC',
+  /**
+   * Type drawn over *footage*, under a scrim. Pure white, and only here.
+   *
+   * `fg` is right on a surface whose colour is known — `ground` and `panel` are
+   * fixed, so 4.5:1 is a fact. A film is not a surface: the brightest pixel
+   * under the type is whatever the collector filmed, and a kitchen window is
+   * near enough to white. Measured against the worst case — a pure-white pixel
+   * under the landing's 62% scrim — `fg` gives **4.52:1** and this token gives
+   * **5.26:1**.
+   *
+   * There are two scrims and they are deliberately different, so neither figure
+   * here describes the other surface: the collector landing is 62% because the
+   * film fills the whole screen behind the type, and the console sign-in is 60%
+   * because the film is half of a split and the type sits in its quietest
+   * corner. At 60% the same two inks give 4.22:1 and 4.94:1, quoted where they
+   * belong in `Login.tsx`. An audit read the mismatch as drift; it is not.
+   *
+   * Both clear AA, but 0.02 of margin is not a margin: it is the
+   * `faintForeground` mistake again, where a ratio that rounded to 4.5 was
+   * really 4.49999. The extra step costs nothing on a photograph, where the
+   * difference between #ECEEF1 and white is invisible.
+   *
+   * Never on a surface. On `ground` it is a needlessly hot white where `fg` is
+   * the considered one; `contrast.test.ts` holds both.
+   */
+  over: '#FFFFFF',
 } as const;
 
 /** Light is the shell's default: staffed upload centres are lit rooms. */
 export const light = {
-  background: '#FFFFFF',
-  surface: '#FBFAF9',
+  /*
+   * The page is tinted now, and that is the whole point of the world. A white
+   * page cannot carry glass: a translucent card over white is white, and the
+   * blur has nothing behind it to bend. `lavender-100` is the page and
+   * `lavender-50` the raised surface, so a card lifts by getting *lighter*
+   * toward white rather than by growing a shadow.
+   */
+  background: '#EDEEF7',
+  surface: '#F5F6FC',
   card: '#FFFFFF',
-  muted: '#F4F3F1',
-  border: '#E7E4E0',
-  borderStrong: '#D5D1CC',
-  foreground: '#17150F',
-  mutedForeground: '#6E6A62',
-  faintForeground: '#9C978E',
+  muted: '#E4E6F1',
+  border: '#D5D8EA',
+  borderStrong: '#BFC4DC',
+  /**
+   * The boundary of a control a person types into, and the only border in the
+   * system held to a ratio.
+   *
+   * WCAG 2.1 SC 1.4.11 asks 3:1 of the visual information needed to identify a
+   * component, and a text field's edge is the whole of what identifies it.
+   * `borderStrong` is a *separator* — it divides a card from the page, where
+   * nothing has to be identified — and at 1.52:1 on white it was never going
+   * to carry this job; it was doing it by default because nothing else
+   * existed. Measured: this reads 3.43:1 on `background` and on `card`, where
+   * the old value read 1.52:1. Two of the four boxes on the sign-in are
+   * secrets, with no reveal and no caps-lock hint, so the edge is all a person
+   * has.
+   */
+  fieldBorder: '#767DA0',
+  foreground: '#14151A',
+  mutedForeground: '#4F5468',
+  /**
+   * The hairline. A border, a divider, a control's hover edge — not a text ink.
+   *
+   * It was `#9C978E`, which measured 2.90:1 on the page, 2.79:1 on the surface
+   * and 2.62:1 on the muted fill, and at that value it was carrying the small
+   * uppercase labels on Home's figures, the review rail's headings and the
+   * tour's step count. `#726D64` is the lightest warm grey that clears 4.5:1
+   * on all four light grounds (4.99 / 4.79 / 4.99 / 4.50), so the value is
+   * safe now — but the job is not the value. Ten text declarations across
+   * seven console files were still setting type in it, one step below
+   * `mutedForeground` for no stated reason; they read `mutedForeground` now
+   * and this token draws edges. `contrast.test.ts` keeps holding it to the
+   * text floor anyway, because a border token that fell under it would also
+   * be a border nobody could see.
+   */
+  faintForeground: '#5E6275',
 } as const;
 
 /**
@@ -123,15 +327,23 @@ export const light = {
  * inks (`fgDark`) and on the focus ring (`ring`).
  */
 export const dark = {
-  background: '#0E1013',
-  surface: '#131619',
-  card: '#181B1F',
-  muted: '#1F2328',
-  border: '#2A2F35',
-  borderStrong: '#3A4048',
-  foreground: '#ECEEF1',
-  mutedForeground: '#9BA2AB',
-  faintForeground: '#6C737C',
+  /*
+   * Cool, and carrying the same violet bias the light scheme took. A neutral
+   * grey dark scheme under a lavender world reads as a different product with
+   * the lights off; these are the same hue at the other end of the lightness
+   * range, so glass over them still bends something.
+   */
+  background: '#101119',
+  surface: '#161824',
+  card: '#1C1F2C',
+  muted: '#242838',
+  border: '#2E3346',
+  borderStrong: '#3D4358',
+  /** 4.24:1 on the dark page and 3.69:1 on the card. */
+  fieldBorder: '#6E7794',
+  foreground: '#ECEDF5',
+  mutedForeground: '#A2A8BE',
+  faintForeground: '#8E94AC',
 } as const;
 
 /** The two brand steps that must invert, or a tint becomes a glare. */
@@ -140,6 +352,8 @@ export const darkBrandTints = {
   sun100: '#3D2009',
   tech50: '#0C1A33',
   tech100: '#123061',
+  bamboo50: '#1B2408',
+  bamboo100: '#2C3D0C',
 } as const;
 
 /**
@@ -154,7 +368,57 @@ export const darkBrandTints = {
  * keeps its own override in globals.css, because near-black is a different
  * ground again.
  */
-export const ring = { light: sun[600], dark: sun[400] } as const;
+/**
+ * The focus ring, and it moved off sun with everything else.
+ *
+ * Sun was the most visible orange left on a page that is no longer an orange
+ * product, and a ring is the one thing on a screen that must not look like it
+ * belongs to a partner brand. `lime-600` measures 3.71:1 on the light page and
+ * 3.44:1 on the muted fill, both over SC 1.4.11's 3:1 for a control boundary;
+ * `lime-500` on the dark page is far past it.
+ */
+export const ring = { light: lime[600], dark: lime[500] } as const;
+
+/**
+ * Glass: the material this world is made of, as two numbers rather than a look.
+ *
+ * The reference Daniel pinned is a frosted card on a tinted wash, and the
+ * craft floor rightly calls out blur used as decoration — so it is written
+ * down here as a specific effect with a specific job. A card is translucent so
+ * that the lavender behind it shows through and *varies* across the card,
+ * which is the only reason a surface reads as glass rather than as grey.
+ *
+ * `fill` is how much white sits over the page, `blur` how far the ground is
+ * smeared behind it. React Native has neither `backdrop-filter` nor a blur it
+ * can apply without a native module, so there `fill` is composited straight
+ * over the wash and the varying ground does the work the blur would have done.
+ * That is the honest translation, not a degraded one: the effect people read
+ * as glass is the ground showing through, and the blur only softens it.
+ *
+ * Two weights, because a card and a floating bar are not the same object: a
+ * bar sits over scrolling content and has to stay legible against whatever
+ * passes under it, so it is denser.
+ */
+export const glass = {
+  card: { fill: 0.62, blur: '18px' },
+  /*
+   * The bar is nearly opaque, and that is not a retreat from the material.
+   *
+   * A card sits on the page, where 62% of white over the wash still lets the
+   * lavender vary across it — that variation is the whole effect. A floating
+   * bar sits over *scrolling content*, and on the web a 24px backdrop blur
+   * turns whatever passes under it into a soft field. React Native has no
+   * backdrop blur without a native module, so at 0.78 the text passing beneath
+   * was simply legible through the bar: measured on the collector's dashboard,
+   * a task title read cleanly through the navigation. That is not glass, it is
+   * a transparency bug.
+   *
+   * At 0.92 the ground still tints the bar and the edge still catches light,
+   * and nothing underneath resolves into words. The web keeps its blur on top
+   * of the same number and loses nothing.
+   */
+  bar: { fill: 0.92, blur: '24px' },
+} as const;
 
 /**
  * A fixed rem scale, not fluid. Operators view at a consistent DPI on fixed
@@ -198,7 +462,54 @@ export const space = {
   12: '48px',
   16: '64px',
   20: '80px',
+  /**
+   * The two editorial steps, added 2026-09-08 for `/discover`.
+   *
+   * The scale stopped at 80px because nothing in the console had ever needed
+   * more: a tool's screens are dense on purpose. A public page is not, and the
+   * distance between one section of an argument and the next is the main thing
+   * that makes it read as an argument rather than as a list. 96 and 128 are
+   * the next two doublings the Tailwind scale already names (`mt-24`,
+   * `mt-32`), so nothing new had to be invented.
+   *
+   * `rhythm.mjs` reads this table, so a gap of 128px is on the grid rather
+   * than a finding — which is the point of the audit reading the tokens
+   * instead of assuming a maximum.
+   */
+  24: '96px',
+  32: '128px',
 } as const;
+
+/**
+ * The ambient ground: how the wash behind a sign-in form is built.
+ *
+ * A sign-in screen carries a soft wash of a brand tint behind the form
+ * (`DESIGN.md`, "One exception, granted 2026-09-07", which allows an ambient
+ * ground on the two sign-in surfaces while the ban on decorative and gradient
+ * use of the three inks holds everywhere else). React
+ * Native has no CSS blur, so the wash is `rings` concentric discs of one tint,
+ * each drawn at the same low `step` alpha: they composite to
+ * `1 - (1 - step) ** rings` at the centre and fall off one step per ring
+ * outward, which is what reads as a blur. Three discs at three chosen alphas
+ * was the first version and it read as three rings.
+ *
+ * The two numbers trade against each other: the ceiling is what the ink has to
+ * survive, and the ring count is what stops the falloff reading as a target.
+ * Three discs, then eight, both showed their edges on the dark page, where a
+ * warm tint over near-black has nothing to hide a 5% band in. Fourteen at 0.026
+ * composite to the same 0.31 in steps small enough to disappear.
+ *
+ * `step` is chosen against the text that can end up over it: at a 0.31
+ * composite, `sun[200]` gives #FFECDD on the light page
+ * and #6A5748 on the dark one, where the foreground ink measures about 15:1
+ * and about 7:1. Raising either number is how a decorative wash starts costing
+ * contrast.
+ *
+ * Decorative only, behind the form, never under an ink or on a control. Not
+ * emitted by `toCss()`: the console draws its own wash in CSS, where a real
+ * blur exists and these numbers do not apply.
+ */
+export const ambient = { step: 0.026, rings: 14 } as const;
 
 export const radius = {
   sm: '8px',
@@ -228,15 +539,67 @@ export const shadowDark = {
 } as const;
 
 /**
- * `Noto Sans SC` and `Microsoft YaHei` sit in the stack ahead of the generic
- * fallback because LOC-02 puts this console in front of Chinese reviewers, and
- * Plus Jakarta Sans has no CJK coverage. Without them a Chinese label falls
- * through to whatever the OS picks and the two languages stop looking like one
+ * Be Vietnam Pro carries the interface.
+ *
+ * It replaces Plus Jakarta Sans. The reason is the audience, not a defect in
+ * the old face: this platform pays Vietnamese collectors, three of the console's
+ * screens are read in Vietnamese by the finance operators who pay them, and the
+ * collector app is Vietnamese-first (LOC-01). Be Vietnam Pro was designed in
+ * Vietnam for Vietnamese text, with the language's stacked marks — ế, ộ, ữ —
+ * as first-class glyphs in every one of its nine weights; it is the face the
+ * audience's own products are set in. Plus Jakarta Sans also ships a
+ * `vietnamese` subset (an earlier note here said it did not, which was wrong),
+ * so this is a choice of world, not of coverage. What is verified, in
+ * `settle-bills-mobile-vi.png`, is that Be Vietnam Pro's stacked marks render
+ * at row height at 13px without clipping and without a fallback face.
+ *
+ * `Noto Sans SC` and `Microsoft YaHei` stay in the stack ahead of the generic
+ * fallback because LOC-02 puts this console in front of Chinese reviewers and
+ * no Latin family has CJK coverage. Without them a Chinese label falls through
+ * to whatever the OS picks and the three languages stop looking like one
  * product.
+ *
+ * Mono is JetBrains Mono and it is for `.num` — measurement — only. A
+ * translated label is never mono: monospace for a column of figures somebody
+ * scans is a different thing from monospace as a costume for "technical".
  */
 export const font = {
-  sans: '"Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", Roboto, sans-serif',
+  sans: '"Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", Roboto, sans-serif',
   mono: '"JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace',
+  /**
+   * Display is Hanken Grotesk, and it is for headlines only — the landing's
+   * slogan, a screen title, the one number a page is about. Never a label,
+   * never body, never a control.
+   *
+   * It was chosen against a shortlist the product owner's reference implied
+   * (a wide-aperture neo-grotesque, PP Neue Montreal in feel), and the
+   * shortlist collapsed to one on a constraint nothing else survives: of
+   * Schibsted Grotesk, Instrument Sans, Onest and this, **only Hanken
+   * Grotesk ships a Vietnamese subset**. The other three cover latin and
+   * latin-ext, so `Kiểm tra` sets the K, i, m and t in the display face and
+   * every diacritic vowel in the fallback — two faces inside one word, on a
+   * product whose operators work in Vietnamese. A display face that breaks on
+   * half the product's own language is not a display face.
+   *
+   * Be Vietnam Pro keeps everything else. It is the UI voice and it is better
+   * at small sizes than this is; the pairing is a display face over a text
+   * face, not a replacement.
+   *
+   * **The CJK faces are named, and leaving them out was a rendered defect.**
+   * Neither Hanken Grotesk nor Be Vietnam Pro carries a Han subset, so in the
+   * stack as it first shipped `认识 Ego。` fell past both to `-apple-system` and
+   * `Segoe UI` — which have no Han either — and landed on whatever the browser
+   * picked last. On Windows that is Microsoft YaHei UI at a visibly different
+   * optical weight, so the first line of the product's front page set in two
+   * unrelated faces mid-word. The pair `sans` already names is inserted ahead
+   * of the system fallbacks, which makes the mixed line deterministic and puts
+   * the Han in the *same* face the body sets in. It does not make a Chinese
+   * headline set in Hanken Grotesk — no shortlisted display face has a Han
+   * subset and one weighs megabytes — but a chosen pairing is a design and an
+   * arbitrary fallback is not.
+   */
+  display:
+    '"Hanken Grotesk Variable", "Be Vietnam Pro", "Noto Sans SC", "Microsoft YaHei", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
 } as const;
 
 /**
@@ -257,24 +620,71 @@ export const duration = {
   slow: '320ms',
 } as const;
 
-/**
- * Cú's four states, and the hours that own them.
- *
- * She reads the clock rather than a mood picker: upload centres run shifts and
- * reviewers work nights, so an owl forced onto the 06:00 shift is funny once a
- * day and never in the way. `cuStateAt` is exported rather than inlined
- * because the collector app needs the same answer from the same boundaries.
- */
-export const CU_STATES = ['earlyBird', 'dayShift', 'goldenHour', 'nightOwl'] as const;
-export type CuState = (typeof CU_STATES)[number];
+/** Public story only. Stable daylight material, independent of operator theme. */
+export const discover = {
+  warmPaper: '#F4EFE6',
+  warmSurface: '#FFFCF6',
+  warmInk: '#35271F',
+  warmMuted: '#705D4D',
+  warmLine: '#D3C5B3',
+  warmSoft: '#E8DFD1',
+  warmGlass: 'rgba(53,39,31,.76)',
+  warmHighlight: 'rgba(255,252,246,.24)',
+  paper: '#F7F7F4',
+  surface: '#FFFFFF',
+  ink: '#17191B',
+  muted: '#575C5D',
+  line: '#D6D8D4',
+  soft: '#EDEEEA',
+  light: '#DED8F3',
+  lightInk: '#4E4368',
+  scrim: 'linear-gradient(180deg, rgba(12,16,18,0.12) 0%, rgba(12,16,18,0.04) 30%, rgba(12,16,18,0.76) 100%)',
+  wash: 'linear-gradient(130deg, rgba(222,216,243,0) 10%, rgba(222,216,243,0.72) 60%, rgba(247,247,244,0) 95%)',
+  shadow: '0 28px 80px rgba(20,24,30,0.16)',
+  panelRadius: '28px',
+  frameRadius: '18px',
+  font: '"Archivo Variable", "Be Vietnam Pro", "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif',
+  reveal: '720ms',
+  opening: '1100ms',
+  ambient: '14000ms',
+} as const;
 
-export function cuStateAt(date: Date = new Date()): CuState {
+/**
+ * The mascot's four states, and the hours that own them.
+ *
+ * Trúc reads the clock rather than a mood picker: upload centres run shifts and
+ * reviewers work nights, so a mascot forced onto the 06:00 shift is funny once
+ * a day and never in the way. `mascotStateAt` is exported rather than inlined
+ * because the collector app needs the same answer from the same boundaries at
+ * the same moment.
+ *
+ * The four names and the four boundaries are unchanged from Cú the owl, whom
+ * Trúc replaces. `nightOwl` keeps its name deliberately: `cú đêm` and 夜猫子
+ * are the idioms the shift is named after, and renaming the boundary would
+ * break every stored preference and every test that names it, for nothing.
+ */
+export const MASCOT_STATES = ['earlyBird', 'dayShift', 'goldenHour', 'nightOwl'] as const;
+export type MascotState = (typeof MASCOT_STATES)[number];
+
+export function mascotStateAt(date: Date = new Date()): MascotState {
   const h = date.getHours();
   if (h >= 5 && h < 9) return 'earlyBird';
   if (h >= 9 && h < 17) return 'dayShift';
   if (h >= 17 && h < 22) return 'goldenHour';
   return 'nightOwl';
 }
+
+/**
+ * The owl-era names, kept so `apps/collector` and any console route that has
+ * not been switched over still compile against the same four boundaries.
+ *
+ * @deprecated use `MASCOT_STATES`
+ */
+export const CU_STATES = MASCOT_STATES;
+/** @deprecated use `MascotState` */
+export type CuState = MascotState;
+/** @deprecated use `mascotStateAt` */
+export const cuStateAt = mascotStateAt;
 
 /**
  * The web form of everything above.
@@ -296,6 +706,7 @@ export function toCss(): string {
   --muted: ${n.muted};
   --border: ${n.border};
   --border-strong: ${n.borderStrong};
+  --field-border: ${n.fieldBorder};
   --foreground: ${n.foreground};
   --muted-foreground: ${n.mutedForeground};
   --faint-foreground: ${n.faintForeground};`;
@@ -310,6 +721,11 @@ export function toCss(): string {
   --sun-100: ${darkBrandTints.sun100};
   --tech-50: ${darkBrandTints.tech50};
   --tech-100: ${darkBrandTints.tech100};
+  --bamboo-50: ${darkBrandTints.bamboo50};
+  --bamboo-100: ${darkBrandTints.bamboo100};
+  --bamboo-ink: ${bamboo[200]};
+  --sun-ink: ${sun[200]};
+  --tech-ink: ${tech[200]};
   --pass: ${verdict.pass.fgDark};
   --pass-bg: ${verdict.pass.bgDark};
   --partial: ${verdict.partial.fgDark};
@@ -317,11 +733,62 @@ export function toCss(): string {
   --reject: ${verdict.reject.fgDark};
   --reject-bg: ${verdict.reject.bgDark};
   --ring: ${ring.dark};
+  --action: ${dark.foreground};
+  --action-ink: ${dark.background};
+  --lavender-100: ${dark.surface};
+  --lavender-200: ${dark.muted};
+  --lime-ink: ${lime[200]};
+  --warn: ${warn.fgDark};
+  --warn-bg: ${warn.bgDark};
 ${shadows(shadowDark)}`;
 
   return `:root {
 ${ramp('sun', sun)}
 ${ramp('tech', tech)}
+${ramp('bamboo', bamboo)}
+${ramp('lavender', lavender)}
+${ramp('lime', lime)}
+${Object.entries(discover).map(([key, value]) => `  --discover-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}: ${value};`).join('\n')}
+
+  /*
+   * The action, as a role rather than a colour. It is the ink pill this world
+   * uses for a primary control, and it is a token so the one place that
+   * decides changes once. Sun was this until 2026-09-07.
+   */
+  --action: ${light.foreground};
+  --action-ink: ${light.background};
+
+  --glass-card: ${glass.card.fill};
+  --glass-card-blur: ${glass.card.blur};
+  --glass-bar: ${glass.bar.fill};
+  --glass-bar-blur: ${glass.bar.blur};
+  /* Ink for text on bamboo-50 / bamboo-100, per scheme: the web twin of
+     bambooInk in native.ts, there for the same reason techInk is. The two
+     lowest steps invert in dark mode, so a fixed bamboo-700 label on them goes
+     from 5.76:1 to unreadable the moment the operator flips the theme.
+     Measured: 700 on the light tints reads 5.76 and 5.39; 200 on the dark
+     tints reads 13.00 and 9.51. */
+  --bamboo-ink: ${bamboo[700]};
+
+  /* The same per-scheme ink for the other two fields, and for the same reason:
+     sun-50/100 and tech-50/100 invert in dark mode and the 700 steps do not.
+     Measured on the dark tints, tech-700 reads 1.80:1 on tech-50 (the risk
+     band and the payout attempt rows) and sun-700 reads 3.32:1 on sun-50 and
+     2.87:1 on sun-100 (Home's needs-a-human strip). The 200 steps read
+     10.08 / 7.53 and 11.63 / 10.04 on the same fills.
+
+     They are also the brand text ink on the neutral surfaces, which is the
+     other half of the same bug: tech-600 as a link measured 2.63:1 on the dark
+     card, and four call sites had each patched that by hand with a one-off
+     dark: variant. One token, both grounds - light 700 reads 9.61 / 8.67 on
+     the page and the muted fill, and 5.19 / 4.68; dark 200 reads 11.08 / 9.18
+     and 12.84 / 10.64. contrast.test.ts pins every pair.
+
+     sun-ink is not allowed on sun-100 in the light scheme: 4.27:1, the one
+     pair on these two ramps that does not clear AA. Nothing sets that fill
+     under text. */
+  --sun-ink: ${sun[700]};
+  --tech-ink: ${tech[700]};
 
   --pass: ${verdict.pass.fg};
   --pass-bg: ${verdict.pass.bg};
@@ -330,6 +797,9 @@ ${ramp('tech', tech)}
   --reject: ${verdict.reject.fg};
   --reject-bg: ${verdict.reject.bg};
   --ring: ${ring.light};
+  --lime-ink: ${lime[700]};
+  --warn: ${warn.fg};
+  --warn-bg: ${warn.bg};
 
 ${neutrals(light)}
 
@@ -338,6 +808,7 @@ ${neutrals(light)}
   --stage-line: ${stage.line};
   --stage-fg: ${stage.fg};
   --stage-mid: ${stage.mid};
+  --stage-over: ${stage.over};
 
 ${Object.entries(radius)
   .map(([k, v]) => `  --radius-${k}: ${v};`)
@@ -348,6 +819,7 @@ ${shadows(shadow)}
 
   --font-sans: ${font.sans};
   --font-mono: ${font.mono};
+  --font-display: ${font.display};
   --ease: ${ease};
 ${Object.entries(duration)
   .map(([k, v]) => `  --duration-${k}: ${v};`)

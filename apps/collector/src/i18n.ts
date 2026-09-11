@@ -21,6 +21,19 @@ const vi = {
   'signIn.signOut': 'Đăng xuất / đổi tài khoản',
   'signIn.clearFailed': 'Không xóa được thông tin đăng nhập đã lưu. Hãy thử lại trước khi giao điện thoại cho người khác.',
   'app.name': 'Player One',
+  // Landing (ported 2026-09-11) — the film, three beats, the sheet, the notice.
+  'landing.slogan1': 'Đeo camera.',
+  'landing.slogan2': 'Sống như mọi ngày.',
+  'landing.slogan3': 'Phút được duyệt, được trả.',
+  'landing.videoLabel': 'Video giới thiệu Player One',
+  'landing.centre': 'Điểm hỗ trợ',
+  'landing.signIn': 'Đăng nhập',
+  'landing.register': 'Đăng ký tại quầy',
+  'landing.registerNote':
+    'Tài khoản được mở tại quầy hỗ trợ. Hãy đăng nhập bằng số điện thoại bạn đã khai ở quầy.',
+  'landing.sheetTitle': 'Bắt đầu',
+  'legal.dataNotice': 'Thông báo thu thập dữ liệu',
+  'legal.privacy': 'Chính sách quyền riêng tư',
 
   'common.back': 'Quay lại',
   'common.cancel': 'Hủy',
@@ -223,6 +236,19 @@ const en: Record<MessageKey, string> = {
   'signIn.signOut': 'Sign out / switch account',
   'signIn.clearFailed': 'Could not remove the saved sign-in. Retry before handing this phone to someone else.',
   'app.name': 'Player One',
+  // Landing (ported 2026-09-11) — the film, three beats, the sheet, the notice.
+  'landing.slogan1': 'Wear it.',
+  'landing.slogan2': 'Live your day.',
+  'landing.slogan3': 'Reviewed minutes, paid.',
+  'landing.videoLabel': 'Player One introduction video',
+  'landing.centre': 'Support point',
+  'landing.signIn': 'Sign in',
+  'landing.register': 'Register at the counter',
+  'landing.registerNote':
+    'Accounts are opened at a support counter. Sign in with the number you gave there.',
+  'landing.sheetTitle': 'Get started',
+  'legal.dataNotice': 'Data collection notice',
+  'legal.privacy': 'Privacy policy',
 
   'common.back': 'Back',
   'common.cancel': 'Cancel',
