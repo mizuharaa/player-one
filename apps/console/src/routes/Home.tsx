@@ -1,344 +1,134 @@
-/**
- * Home: what the shift has done, and the one action worth taking.
- *
- * The composition refuses the dashboard default — a row of four identical stat
- * cards above a table. There is exactly one hero here, the gauge, because there
- * is exactly one number a reviewer is judged on, and the primary action sits
- * directly under it so the distance between "how am I doing" and "carry on" is
- * one glance and one key.
- *
- * The three figures to its right are secondary by placement and by scale, not
- * by being shrunk versions of the same card. And the unresolved-episodes strip
- * at the bottom is not a metric at all: it is somebody's unpaid recording
- * sitting still, so it gets a sentence and a way in.
- */
+/** THESIS: a working ledger with one stable reading edge.
+ * OWN-WORLD: Archivo, lavender navigation, paper surfaces, ink actions.
+ * STORY: see measured work, open the right queue, inspect recent decisions.
+ * FIRST VIEWPORT: a lavender hero band with the heading and Truc, four toned
+ * evidence tiles, two operational rows with icon tiles.
+ * FORM: the owner's 2026-09-10 request — light visual effects, contrast, punched
+ * type, illustration — on top of the pinned workspace direction.
+ * Every number remains API evidence; no sample metrics or stock media. The only
+ * illustration is the existing Truc mark. */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '../components/shell/AppShell.tsx';
-import { Button, Key } from '../components/ui/button.tsx';
-import { Panel, Problem, Skeleton, VerdictPill } from '../components/ui/primitives.tsx';
-import { Cu, CU_LABEL, cuStateAt } from '../components/identity/Cu.tsx';
-import { IconAlert, IconArrow } from '../components/icons.tsx';
-import { durationShort, money, pace } from '../lib/format.ts';
-import { api, ApiError } from '../lib/api.ts';
-
-interface Shift {
-  currency: string;
-  reviewer: string;
-  target: number;
-  decided: number;
-  approved: number;
-  payable_seconds: string;
-  median_seconds_to_verdict: string | null;
-  settled_amount: string;
-  queue_depth: number;
-  session_average_seconds: number | null;
-  needs_human: number;
-}
+import { Problem, Skeleton, VerdictPill } from '../components/ui/primitives.tsx';
+import { IconArrow, IconBackOffice, IconReview, IconAlert } from '../components/icons.tsx';
+import { Panda } from '../components/identity/Panda.tsx';
+import { api, backOffice, ApiError } from '../lib/api.ts';
+import { durationShort, money, pace, stampLocal } from '../lib/format.ts';
+import { defaultPeriod } from '../payout/period.ts';
 
 export function HomeScreen() {
   const { t, i18n } = useTranslation();
+  const shift = useQuery({ queryKey: ['shift'], queryFn: () => api.shift(), refetchInterval: 60_000 });
+  const recent = useQuery({ queryKey: ['recent'], queryFn: () => api.recent() });
+  const tasks = useQuery({ queryKey: ['bo', 'tasks'], queryFn: () => backOffice.tasks() });
+  const data = shift.data;
+  const approval = data && data.decided > 0 ? `${Math.round(data.approved / data.decided * 100)}%` : '—';
+  const refreshed = shift.dataUpdatedAt ? new Intl.DateTimeFormat(i18n.language, { hour: '2-digit', minute: '2-digit' }).format(shift.dataUpdatedAt) : null;
+  const refreshing = shift.isFetching || recent.isFetching || tasks.isFetching;
+  const refresh = () => { void shift.refetch(); void recent.refetch(); void tasks.refetch(); };
+  const reviews = recent.data?.reviews;
+  const taskRows = tasks.data?.tasks.slice(0, 6);
 
-  const { data, isPending, error } = useQuery<Shift>({
-    queryKey: ['shift'],
-    queryFn: async () => {
-      const res = await fetch('/api/review/shift', { credentials: 'same-origin' });
-      if (!res.ok) throw new ApiError(res.status, res.statusText);
-      return (await res.json()) as Shift;
-    },
-    /** The shift figures move as the reviewer works; a minute is close enough. */
-    refetchInterval: 60_000,
-  });
-
-  const state = cuStateAt();
-  const shiftName = CU_LABEL[state][i18n.language === 'zh' ? 'zh' : 'en'];
-
-  const approvalRate =
-    data && data.decided > 0 ? Math.round((data.approved / data.decided) * 100) : null;
-
-  return (
-    <AppShell
-      queueDepth={data?.queue_depth}
-      averageSeconds={data?.session_average_seconds}
-      operator={data?.reviewer}
-    >
-      {error ? (
-        <Problem
-          reference={error instanceof ApiError ? error.ref : undefined}
-          title="The shift figures did not load."
-          body="Everything else on this screen still works. The counters come from the review database; if this keeps happening, the API cannot reach Postgres."
-        />
-      ) : null}
-
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-        {/* --- The gauge. The page's one hero. --- */}
-        <Panel className="flex flex-col items-center px-6 pb-6 pt-8">
-          <p className="text-[0.75rem] font-semibold uppercase tracking-[0.08em] text-[var(--faint-foreground)]">
-            {t('home.greeting')} · {shiftName}
-          </p>
-
-          {isPending ? (
-            <Skeleton className="mt-6 h-[196px] w-[300px] rounded-full" />
-          ) : (
-            <Gauge value={data?.decided ?? 0} target={data?.target ?? 60} state={state} />
-          )}
-
-          <Button asChild variant="primary" size="lg" className="mt-6 w-full">
-            <Link to="/review">
-              {t('home.start')}
-              <Key>R</Key>
-            </Link>
-          </Button>
-        </Panel>
-
-        {/* --- The three measured figures. --- */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:content-start">
-          <Figure
-            label={t('home.payable')}
-            value={isPending ? null : durationShort(data?.payable_seconds ?? '0')}
-            note="Effective duration from decided reviews only."
-          />
-          <Figure
-            label={t('home.approval')}
-            value={isPending ? null : approvalRate === null ? '—' : `${approvalRate}%`}
-            note="Passes and partial passes, against every decision today."
-            trailing={
-              approvalRate === null ? null : (
-                <VerdictPill verdict={approvalRate >= 85 ? 'good' : 'partial'} size="sm">
-                  {data?.approved ?? 0}/{data?.decided ?? 0}
-                </VerdictPill>
-              )
-            }
-          />
-          <Figure
-            label={t('home.settled')}
-            value={isPending ? null : money(data?.settled_amount, data?.currency ?? 'VND')}
-            note="Your decisions only. Not the programme's spend."
-          />
-          <Figure
-            label={t('queue.average')}
-            value={isPending ? null : pace(data?.session_average_seconds)}
-            note="Load to verdict. Instrumentation, never money."
-          />
-
-          {/* --- The strip that is not a metric. --- */}
-          {data && data.needs_human > 0 ? (
-            <Link
-              to="/episodes"
-              className="group col-span-full flex items-center gap-3.5 rounded-[var(--radius-lg)] border border-[var(--sun-200)] bg-[var(--sun-50)] px-5 py-4 no-underline transition-colors duration-150 hover:border-[var(--sun-400)]"
-            >
-              <IconAlert size={20} className="shrink-0 text-[var(--sun-600)]" />
-              <div className="min-w-0 flex-1">
-                <p className="text-[0.9375rem] font-bold text-[var(--sun-700)]">
-                  <span className="num">{data.needs_human}</span> {t('home.needsHuman')}
-                </p>
-                <p className="mt-0.5 text-[0.875rem] text-[var(--sun-700)]/80">
-                  {t('home.needsHuman.body')}
-                </p>
-              </div>
-              <IconArrow
-                size={18}
-                className="shrink-0 text-[var(--sun-600)] transition-transform duration-150 group-hover:translate-x-0.5"
-              />
-            </Link>
-          ) : null}
+  return <AppShell operator={data?.reviewer}>
+    <div className="workspace-page workspace-home">
+      <header className="workspace-page-header">
+        <div className="workspace-home-hero-copy"><h1>{t('workspace.overview')}</h1><p>{t('workspace.overviewNote')}</p></div>
+        <span className="workspace-home-mascot" aria-hidden="true"><Panda size={92} state="dayShift" /></span>
+        <div className="workspace-actions">
+          <button type="button" className="workspace-button" disabled={refreshing} onClick={refresh}>{t(refreshing ? 'workspace.refreshing' : 'workspace.refresh')}</button>
+          <Link to="/counter" className="workspace-button workspace-button-primary">{t('workspace.handover')}<IconArrow size={15} /></Link>
         </div>
-      </div>
+      </header>
 
-      <RecentVerdicts currency={data?.currency ?? 'VND'} />
-    </AppShell>
-  );
+      <section className="workspace-section" aria-labelledby="shift-title" data-guide="home.figures">
+        <div className="workspace-section-heading"><div><h2 id="shift-title">{t('workspace.shift')}</h2><p>{t('workspace.shiftScope')}</p></div>
+          {refreshed ? <span className="workspace-freshness">{t('workspace.updated', { time: refreshed })}</span> : null}
+        </div>
+        {shift.isError ? <QueryFailure error={shift.error} cached={!!data} retry={() => void shift.refetch()} busy={shift.isFetching} /> : null}
+        <dl className="workspace-metrics">
+          <Metric tone="ink" label={t('workspace.reviewed')} value={data ? String(data.decided) : null} loading={shift.isPending}
+            note={data ? t('workspace.target', { count: data.target }) : undefined} />
+          <Metric tone="lime" label={t('home.payable')} value={data ? durationShort(data.payable_seconds) : null} loading={shift.isPending} note={t('ui.a.home.payable.note')} />
+          <Metric tone="lavender" label={t('workspace.approval')} value={data ? approval : null} loading={shift.isPending}
+            note={data ? t('workspace.approvalNote', { approved: data.approved, decided: data.decided }) : undefined} />
+          <Metric tone="paper" label={t('home.settled')} value={data ? money(data.settled_amount, data.currency) : null} loading={shift.isPending} note={t('ui.a.home.settled.note')} />
+        </dl>
+        <div className="workspace-summary-footer">
+          <p>{t('ui.a.home.median')}: <strong className="num">{data?.median_seconds_to_verdict == null ? '—' : pace(Number(data.median_seconds_to_verdict))}</strong>
+            <span className="workspace-inline-separator" aria-hidden="true">·</span>{t('queue.average')}: <strong className="num">{pace(data?.session_average_seconds ?? null)}</strong></p>
+          <Link to="/settle" search={{ period: defaultPeriod() }} className="workspace-text-link">{t('workspace.settlement')}<IconArrow size={14} /></Link>
+        </div>
+      </section>
+
+      <section className="workspace-section" aria-labelledby="attention-title" data-guide="home.attention">
+        <div className="workspace-section-heading"><div><h2 id="attention-title">{t('workspace.attention')}</h2><p>{t('workspace.attentionNote')}</p></div></div>
+        <div className="workspace-work-rows">
+          <div className="workspace-work-row" data-guide="home.next"><span className="workspace-home-icon" aria-hidden="true"><IconReview size={22} /></span>
+            <div><h3>{t('workspace.reviewQueue')}</h3><p>{t('workspace.reviewNote')}</p></div>
+            <strong className="workspace-row-count num">{data?.queue_depth ?? '—'}</strong>
+            <Link to="/review" className="workspace-button">{t('workspace.reviewAction')}<IconArrow size={14} /></Link>
+          </div>
+          <div className="workspace-work-row"><span className="workspace-home-icon" data-tone="warn" aria-hidden="true"><IconAlert size={22} /></span>
+            <div><h3>{t('workspace.unresolved')}</h3><p>{t('workspace.unresolvedNote')}</p></div>
+            <strong className="workspace-row-count num">{data?.needs_human ?? '—'}</strong>
+            <Link to="/episodes" className="workspace-button">{t('workspace.resolveAction')}<IconArrow size={14} /></Link>
+          </div>
+        </div>
+        {shift.isError && data ? <p className="workspace-inline-notice">{t('workspace.refreshFailed')}</p> : null}
+      </section>
+
+      <section className="workspace-section" aria-labelledby="recent-title" data-guide="home.recent">
+        <div className="workspace-section-heading"><div><h2 id="recent-title">{t('recent.title')}</h2><p>{t('workspace.recentNote')}</p></div></div>
+        {recent.isError ? <QueryFailure error={recent.error} cached={!!recent.data} retry={() => void recent.refetch()} busy={recent.isFetching} /> : null}
+        {recent.isPending ? <RowsLoading /> : reviews?.length ? <div className="workspace-table-scroll" role="region" aria-labelledby="recent-title" tabIndex={0}>
+          <table className="workspace-table"><thead><tr>
+            {['time', 'episode', 'verdict', 'duration', 'amount', 'pace'].map((key) => <th key={key} scope="col">{t(`ui.a.home.recent.${key}`)}</th>)}
+          </tr></thead><tbody>{reviews.map((review) => {
+            const verdict = review.reviewState === 'pass' ? 'good' : review.reviewState === 'partial_pass' ? 'partial' : 'bad';
+            return <tr key={review.reviewId}>
+              <td className="num">{review.reviewedAt ? stampLocal(review.reviewedAt) : '—'}</td>
+              <td className="num" title={review.episodeId}>{review.episodeId.slice(0, 8)}</td>
+              <td><VerdictPill verdict={verdict} size="sm">{t(`verdict.${verdict}`)}</VerdictPill></td>
+              <td className="num">{durationShort(review.measured)} <span aria-hidden="true">→</span> <strong>{durationShort(review.effective)}</strong></td>
+              <td className="num">{money(review.amount, recent.data!.currency)}</td>
+              <td className="num">{review.seconds === null ? '—' : pace(review.seconds)}</td>
+            </tr>;
+          })}</tbody></table>
+        </div> : !recent.isError ? <div className="workspace-empty workspace-home-empty"><span aria-hidden="true"><Panda size={64} state="goldenHour" /></span><p>{t('recent.empty')}</p></div> : null}
+      </section>
+
+      <section className="workspace-section" aria-labelledby="tasks-title">
+        <div className="workspace-section-heading"><div><h2 id="tasks-title">{t('workspace.tasks')}</h2><p>{t('workspace.tasksNote')}</p></div>
+          <Link to="/backoffice" className="workspace-text-link">{t('workspace.manageTasks')}<IconArrow size={14} /></Link></div>
+        {tasks.isError ? <QueryFailure error={tasks.error} cached={!!tasks.data} retry={() => void tasks.refetch()} busy={tasks.isFetching} /> : null}
+        {tasks.isPending ? <RowsLoading /> : taskRows?.length ? <>
+          <div className="workspace-table-scroll" role="region" aria-labelledby="tasks-title" tabIndex={0}><table className="workspace-table workspace-task-table">
+            <thead><tr><th scope="col">{t('workspace.task')}</th><th scope="col">{t('workspace.state')}</th><th scope="col">{t('workspace.claimants')}</th></tr></thead>
+            <tbody>{taskRows.map((task) => <tr key={task.id}><td><div className="workspace-task-name"><IconBackOffice size={20} /><div><strong>{task.name}</strong>{task.type ? <span>{task.type}</span> : null}</div></div></td>
+              <td><span className="workspace-state">{t(`bo.task.state.${task.status}`)}</span></td><td className="num">{task.claimants} / {task.max_concurrent_claimants}</td></tr>)}</tbody>
+          </table></div><p className="workspace-table-note">{t('workspace.taskSubset', { shown: taskRows.length, total: tasks.data!.tasks.length })}</p>
+        </> : !tasks.isError ? <div className="workspace-empty workspace-home-empty"><span aria-hidden="true"><Panda size={64} state="earlyBird" /></span><div><h3>{t('workspace.taskEmpty')}</h3><p>{t('workspace.taskEmptyNote')}</p></div></div> : null}
+      </section>
+    </div>
+  </AppShell>;
 }
 
-/**
- * The last twenty verdicts this reviewer committed.
- *
- * Home without this is a page of aggregates, and an aggregate is exactly the
- * thing a reviewer cannot check. The individual rows are what let somebody
- * notice that the partial they marked at 11:04 paid less than they expected,
- * which is the first step of every payment dispute — so the row carries the
- * measured duration beside the effective one, and the amount beside both.
- */
-function RecentVerdicts({ currency }: { currency: string }) {
+function Metric({ label, value, note, loading, tone }: { label: string; value: string | null; note?: string; loading: boolean; tone?: 'ink' | 'lime' | 'lavender' | 'paper' }) {
   const { t } = useTranslation();
-  const { data, isPending } = useQuery({
-    queryKey: ['recent'],
-    queryFn: () => api.recent(),
-  });
-
-  const reviews = data?.reviews ?? [];
-
-  return (
-    <section className="mt-6">
-      <h2 className="text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]">
-        {t('recent.title')}
-      </h2>
-
-      <Panel className="mt-2 overflow-hidden">
-        {isPending ? (
-          <div className="flex flex-col gap-2 p-4">
-            <Skeleton className="h-5 w-full" />
-            <Skeleton className="h-5 w-5/6" />
-            <Skeleton className="h-5 w-2/3" />
-          </div>
-        ) : reviews.length === 0 ? (
-          <p className="px-5 py-8 text-center text-[0.9375rem] text-[var(--muted-foreground)]">
-            {t('recent.empty')}
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] border-collapse text-left">
-              <tbody>
-                {reviews.map((r) => {
-                  const verdict =
-                    r.reviewState === 'pass' ? 'good' : r.reviewState === 'partial_pass' ? 'partial' : 'bad';
-                  return (
-                    <tr
-                      key={r.reviewId}
-                      className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]"
-                    >
-                      <td className="py-2.5 pl-5 pr-3">
-                        <VerdictPill verdict={verdict} size="sm">
-                          {t(`verdict.${verdict}`)}
-                        </VerdictPill>
-                      </td>
-                      <td className="num px-3 py-2.5 text-[0.8125rem] text-[var(--muted-foreground)]">
-                        {durationShort(r.measured)}
-                        {' → '}
-                        <span className="font-semibold text-[var(--foreground)]">
-                          {durationShort(r.effective)}
-                        </span>
-                      </td>
-                      <td className="num px-3 py-2.5 text-right text-[0.8125rem] font-semibold">
-                        {money(r.amount, currency)}
-                      </td>
-                      <td className="num py-2.5 pl-3 pr-5 text-right text-[0.8125rem] text-[var(--faint-foreground)]">
-                        {r.seconds === null ? '—' : pace(Number(r.seconds))}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
-    </section>
-  );
+  return <div className="workspace-metric" data-tone={tone}><dt>{label}</dt><dd>{loading ? <Skeleton className="h-8 w-20" /> : <span className="num">{value ?? '—'}</span>}
+    <span className="workspace-metric-note">{!loading && value === null ? t('workspace.unavailable') : note}</span></dd></div>;
 }
 
-/**
- * The gauge: a 240° arc with Cú in the middle.
- *
- * An arc rather than a bar because it holds the target and the current value in
- * one shape at a size worth looking at, and because a bar that reaches its end
- * has nowhere left to go — a reviewer past target should see it, not see a full
- * bar. The sweep is the console's single authored motion: 900ms, once, on load.
- *
- * The value is also printed as text under the arc, and the whole figure carries
- * a `role="img"` label, because an arc alone is unreadable to a screen reader
- * and roughly unreadable at a glance to anyone comparing two numbers.
- */
-function Gauge({ value, target, state }: { value: number; target: number; state: ReturnType<typeof cuStateAt> }) {
-  const R = 104;
-  const CX = 150;
-  const CY = 128;
-  const SWEEP = 240;
-  /**
-   * Degrees clockwise from twelve o'clock: 240° is the lower left, and sweeping
-   * 240° clockwise from there ends at the lower right. That leaves the opening
-   * at the bottom, under the value — which is the only arrangement where the
-   * number reads as the thing the arc is measuring rather than as a caption
-   * that happens to sit nearby.
-   */
-  const START = 240;
-
-  const polar = (deg: number) => {
-    const rad = ((deg - 90) * Math.PI) / 180;
-    return { x: CX + R * Math.cos(rad), y: CY + R * Math.sin(rad) };
-  };
-
-  const a = polar(START);
-  const b = polar(START + SWEEP);
-  /** large-arc-flag 1 because the sweep exceeds 180°; sweep-flag 1 for clockwise. */
-  const track = `M ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${R} ${R} 0 1 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)}`;
-
-  const arcLength = (SWEEP / 360) * 2 * Math.PI * R;
-  const ratio = target > 0 ? Math.min(value / target, 1) : 0;
-  const over = target > 0 && value > target;
-
-  return (
-    <figure
-      className="m-0 mt-3"
-      role="img"
-      aria-label={`${value} of ${target} episodes reviewed this shift`}
-    >
-      <svg viewBox="0 0 300 198" width="300" className="max-w-full">
-        <path d={track} fill="none" stroke="var(--muted)" strokeWidth="15" strokeLinecap="round" />
-        <path
-          className="gauge-fill"
-          d={track}
-          fill="none"
-          stroke={over ? 'var(--pass)' : 'var(--sun-500)'}
-          strokeWidth="15"
-          strokeLinecap="round"
-          strokeDasharray={arcLength}
-          style={
-            {
-              '--sweep-from': `${arcLength}`,
-              '--sweep-to': `${arcLength * (1 - ratio)}`,
-              strokeDashoffset: arcLength * (1 - ratio),
-            } as React.CSSProperties
-          }
-        />
-
-        <foreignObject x="112" y="40" width="76" height="76">
-          <Cu size={76} state={state} />
-        </foreignObject>
-
-        <text
-          x={CX}
-          y="172"
-          textAnchor="middle"
-          className="num"
-          style={{ fontSize: 42, fontWeight: 800, fill: 'var(--foreground)', letterSpacing: '-0.03em' }}
-        >
-          {value}
-        </text>
-      </svg>
-      <figcaption className="mt-1 text-center text-[0.875rem] text-[var(--muted-foreground)]">
-        episodes reviewed · target <span className="num font-semibold">{target}</span>
-      </figcaption>
-    </figure>
-  );
+export function QueryFailure({ error, cached, retry, busy }: { error: unknown; cached: boolean; retry: () => void; busy: boolean }) {
+  const { t } = useTranslation();
+  return <div className="workspace-query-error" role="status"><Problem title={t('workspace.loadFailed')}
+    body={t(cached ? 'workspace.refreshFailed' : 'workspace.loadFailedNote')} reference={error instanceof ApiError ? error.ref : undefined} />
+    <button className="workspace-button" type="button" disabled={busy} onClick={retry}>{t(busy ? 'workspace.refreshing' : 'workspace.retry')}</button></div>;
 }
 
-function Figure({
-  label,
-  value,
-  note,
-  trailing,
-}: {
-  label: string;
-  value: string | null;
-  note: string;
-  trailing?: React.ReactNode;
-}) {
-  return (
-    <Panel className="px-5 py-4">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]">
-          {label}
-        </p>
-        {trailing}
-      </div>
-      {value === null ? (
-        <Skeleton className="mt-2 h-8 w-28" />
-      ) : (
-        <p className="num mt-1.5 text-[1.625rem] font-bold tracking-[-0.02em]">{value}</p>
-      )}
-      <p className="mt-1.5 text-[0.8125rem] leading-snug text-[var(--muted-foreground)]">{note}</p>
-    </Panel>
-  );
+function RowsLoading() {
+  const { t } = useTranslation();
+  return <div className="workspace-rows-loading" aria-label={t('workspace.loading')} aria-busy="true">{[0, 1, 2].map((row) => <Skeleton key={row} className="h-10 w-full" />)}</div>;
 }

@@ -10,7 +10,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/cn.ts';
 import { IconAlert, IconPartial, IconPass, IconReject } from '../icons.tsx';
-import { Cu } from '../identity/Cu.tsx';
+import { Panda } from '../identity/Panda.tsx';
 
 /**
  * A surface.
@@ -28,7 +28,20 @@ export function Panel({
   return (
     <div
       className={cn(
-        'rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow-sm)]',
+        /*
+         * Glass, as the world committed 2026-09-07 defines it: `--card` at the
+         * card fill over the lavender wash, with a `backdrop-filter` so the
+         * ground bends behind it. The page is tinted precisely so this reads
+         * as a material — over a white page a translucent card is white, and
+         * the effect collapses into a grey rectangle.
+         *
+         * The border is white rather than `--border`: what catches the light
+         * on a piece of glass is its edge, and a grey hairline on a
+         * translucent surface reads as a drawn box instead.
+         */
+        'rounded-[var(--radius-lg)] border border-white/70 shadow-[var(--shadow-sm)]',
+        'bg-[color-mix(in_srgb,var(--card)_calc(var(--glass-card)*100%),transparent)]',
+        'backdrop-blur-[var(--glass-card-blur)]',
         className,
       )}
       {...rest}
@@ -58,17 +71,23 @@ export function Field({
   tone?: 'default' | 'warn' | 'data';
   stacked?: boolean;
 }) {
+  /*
+   * `warn` is a discrepancy the machine measured (the device claims 24 s more
+   * than the media holds), not a verdict. It used to borrow `--reject`, which
+   * put a verdict hue on a row that decides nothing about payment. It is set
+   * in weight instead, and the caller's glyph carries the meaning.
+   */
   const valueTone =
     tone === 'warn'
-      ? 'text-[var(--reject)]'
+      ? 'font-semibold text-[var(--foreground)]'
       : tone === 'data'
-        ? 'text-[var(--tech-600)] dark:text-[var(--tech-300)]'
+        ? 'text-[var(--tech-ink)]'
         : '';
 
   if (stacked) {
     return (
       <div>
-        <dt className="text-[0.75rem] font-medium uppercase tracking-[0.06em] text-[var(--faint-foreground)]">
+        <dt className="text-[0.75rem] font-medium uppercase tracking-[0.06em] text-[var(--muted-foreground)]">
           {label}
         </dt>
         <dd className={cn('num mt-1 text-[1.0625rem] font-medium', valueTone)}>{value}</dd>
@@ -148,12 +167,12 @@ export function FlagRow({
         size={16}
         className={cn(
           'mt-0.5 shrink-0',
-          blocking ? 'text-[var(--reject)]' : 'text-[var(--sun-600)]',
+          blocking ? 'text-[var(--reject)]' : 'text-[var(--foreground)]',
         )}
       />
       <div className="min-w-0">
         <p className="text-[0.8125rem] font-medium text-[var(--foreground)]">{description}</p>
-        <p className="num mt-0.5 text-[0.75rem] text-[var(--faint-foreground)]">{code}</p>
+        <p className="num mt-0.5 text-[0.75rem] text-[var(--muted-foreground)]">{code}</p>
         {detail ? (
           <p className="mt-0.5 text-[0.8125rem] leading-snug text-[var(--muted-foreground)]">
             {detail}
@@ -167,9 +186,11 @@ export function FlagRow({
 /**
  * An empty state that teaches rather than apologises.
  *
- * Cú carries these — the queue reaching zero is the one moment in the reviewer's
- * day worth marking, and an owl with nothing to watch says it without a
- * congratulation nobody asked for.
+ * Trúc carries these, on a hatched ground. The hatch is the point: an empty
+ * table on this console can mean "nothing to do" or it can mean "the query is
+ * wrong and somebody is not being paid", and white space reads as the second.
+ * A drawn surface says the screen rendered and is empty on purpose. The panda
+ * marks the queue reaching zero without a congratulation nobody asked for.
  */
 export function EmptyState({
   title,
@@ -181,8 +202,8 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="mx-auto flex max-w-[42ch] flex-col items-center py-16 text-center">
-      <Cu size={104} />
+    <div className="hatch mx-auto flex max-w-[42ch] flex-col items-center rounded-[var(--radius-lg)] border border-[var(--border)] px-8 py-16 text-center">
+      <Panda size={104} />
       <h2 className="mt-5 text-[1.3125rem] font-bold tracking-[-0.02em]">{title}</h2>
       <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">{body}</p>
       {action ? <div className="mt-6">{action}</div> : null}
@@ -272,7 +293,7 @@ export function Problem({
               {t('bo.error.reference')} {reference}
             </p>
           ) : null}
-          {action ? <div className="mt-3.5">{action}</div> : null}
+          {action ? <div className="mt-4">{action}</div> : null}
         </div>
       </div>
     </div>

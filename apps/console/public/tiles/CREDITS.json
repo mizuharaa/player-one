@@ -1,0 +1,107 @@
+[
+  {
+    "file": "kitchen-chopping.jpg",
+    "title": "chop chop",
+    "creator": "marc kjerland",
+    "license": "CC BY-SA 2.0",
+    "source": "https://www.flickr.com/photos/22251370@N02/4669287509"
+  },
+  {
+    "file": "bookshelf.jpg",
+    "title": "Books (118 / 365)",
+    "creator": "somegeekintn",
+    "license": "CC BY 2.0",
+    "source": "https://www.flickr.com/photos/66335021@N00/3484353131"
+  },
+  {
+    "file": "ironing-hands.jpg",
+    "title": "A Local Taylor ironing cloth.jpg",
+    "creator": "Lomwiko Francis",
+    "license": "CC BY-SA 4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:A_Local_Taylor_ironing_cloth.jpg"
+  },
+  {
+    "file": "hf-garden.jpg",
+    "title": "Collector in a head-mounted camera, planting",
+    "creator": "Generated for PlayerOne (Higgsfield, nano_banana_pro)",
+    "license": "generated placeholder",
+    "source": "prompt in the commit message for this file"
+  },
+  {
+    "file": "hf-garden2.jpg",
+    "title": "Collector in a head-mounted camera, planting (variant)",
+    "creator": "Generated for PlayerOne (Higgsfield, nano_banana_pro)",
+    "license": "generated placeholder",
+    "source": "prompt in the commit message for this file"
+  },
+  {
+    "file": "film-face.jpg",
+    "title": "Frame from the PREVIOUS landing.mp4 — portrait",
+    "creator": "PlayerOne demo film",
+    "license": "ours",
+    "source": "apps/console/public/landing.mp4 as it stood before commit 96ec77a; the film was replaced on 2026-09-08 and this still no longer appears in it"
+  },
+  {
+    "file": "film-kitchen.jpg",
+    "title": "Frame from the PREVIOUS landing.mp4 — kitchen, wide",
+    "creator": "PlayerOne demo film",
+    "license": "ours",
+    "source": "apps/console/public/landing.mp4 as it stood before commit 96ec77a; the film was replaced on 2026-09-08 and this still no longer appears in it"
+  },
+  {
+    "file": "film-chop.jpg",
+    "title": "Frame from the PREVIOUS landing.mp4 — kitchen, chopping",
+    "creator": "PlayerOne demo film",
+    "license": "ours",
+    "source": "apps/console/public/landing.mp4 as it stood before commit 96ec77a; the film was replaced on 2026-09-08 and this still no longer appears in it"
+  },
+  {
+    "file": "film-books.jpg",
+    "title": "Frame from the PREVIOUS landing.mp4 — bookshelf",
+    "creator": "PlayerOne demo film",
+    "license": "ours",
+    "source": "apps/console/public/landing.mp4 as it stood before commit 96ec77a; the film was replaced on 2026-09-08 and this still no longer appears in it"
+  },
+  {
+    "file": "film-garden.jpg",
+    "title": "Frame from the PREVIOUS landing.mp4 — planting",
+    "creator": "PlayerOne demo film",
+    "license": "ours",
+    "source": "apps/console/public/landing.mp4 as it stood before commit 96ec77a; the film was replaced on 2026-09-08 and this still no longer appears in it"
+  },
+  {
+    "file": "ref-kitchen.jpg",
+    "title": "chopping vegetables in a kitchen",
+    "creator": "supplied by the product owner as a reference",
+    "license": "UNCLEARED — placeholder only",
+    "source": "pasted into the design conversation 2026-09-07"
+  },
+  {
+    "file": "ref-yoga.jpg",
+    "title": "headset worn at home",
+    "creator": "supplied by the product owner as a reference",
+    "license": "UNCLEARED — placeholder only",
+    "source": "pasted into the design conversation 2026-09-07"
+  },
+  {
+    "file": "ref-cleaning.jpg",
+    "title": "household cleaning",
+    "creator": "supplied by the product owner as a reference",
+    "license": "UNCLEARED — placeholder only",
+    "source": "pasted into the design conversation 2026-09-07"
+  },
+  {
+    "file": "ref-headset.jpg",
+    "title": "headset, studio",
+    "creator": "supplied by the product owner as a reference",
+    "license": "UNCLEARED — placeholder only",
+    "source": "pasted into the design conversation 2026-09-07"
+  },
+  {
+    "file": "ego-worn-rotunda.jpg",
+    "title": "Ego worn in a museum rotunda — 940x720, cropped from the placeholder film at t=4.10s",
+    "creator": "PlayerOne placeholder film (Higgsfield Genjutsu object replacement over third-party footage)",
+    "license": "placeholder — not cleared for publication",
+    "source": "ffmpeg -ss 4.10 -i apps/console/public/landing.mp4 -frames:v 1 -vf crop=940:720:340:0. The crop removes the camera operator arm at the left of the frame. Third person: the wearer is filmed by someone else, NOT by the Ego camera."
+  }
+]

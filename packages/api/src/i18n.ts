@@ -75,6 +75,29 @@ const en = {
   'app.language': 'Language',
 
   'login.title': 'Sign in to review',
+  /* The operator imports cards; only the reviewer reviews. */
+  'login.titleOperator': 'Sign in to the upload centre',
+  /* Group headings, not field names — the legends are drawn now, and a
+     legend that repeats its first field's label makes a screen reader say
+     "Machine identifier group, Machine identifier". */
+  'login.groupMachine': 'Machine',
+  /*
+   * Field labels inside a group, and they are short because the group already
+   * said the noun. "Machine" above "Machine identifier" is the word twice, four
+   * pixels apart, in two sizes — which is what made this form read as broken.
+   */
+  'login.fieldIdentifier': 'Identifier',
+  'login.fieldReference': 'Reference',
+  'login.fieldSecret': 'Secret',
+  /* Trúc's launcher and the placeholder behind it. No model is wired up. */
+  'login.trucOpen': 'Ask Trúc',
+  'login.trucTitle': 'Trúc',
+  'login.trucBody':
+    'Trúc cannot answer yet. When he can, this is where you will ask him what a verdict means, why a card was refused, or where a payment went.',
+  'login.trucSoon': 'Not connected yet',
+  'login.trucClose': 'Close',
+  'login.groupOperator': 'Operator',
+  'login.groupReviewer': 'Reviewer',
   'login.intro':
     'Two credentials, as everywhere else in this service: the machine proves where, the operator proves who.',
   'login.machine': 'Machine identifier',
@@ -269,28 +292,6 @@ const en = {
   'nav.counter': 'Counter',
   'nav.review': 'Review',
   'nav.episodes': 'Episodes',
-  'episodes.intro': 'Browse recordings received at your upload centre, newest first.',
-  'episodes.noBatch': 'Episodes without an upload batch are not shown.',
-  'episodes.task_id': 'Task',
-  'episodes.collector_id': 'Collector',
-  'episodes.device_id': 'Device',
-  'episodes.status': 'Resolution status',
-  'episodes.from': 'First seen from (inclusive)',
-  'episodes.to': 'First seen before (exclusive)',
-  'episodes.timeHint': 'Times filter when the platform first saw an episode. Use ISO 8601 with a time zone offset; leave a box empty for no limit.',
-  'episodes.apply': 'Apply',
-  'episodes.retry': 'Try again',
-  'episodes.all': 'All',
-  'episodes.id': 'Episode ID',
-  'episodes.resolved': 'Resolved',
-  'episodes.quarantined': 'Quarantined',
-  'episodes.unattributed': 'Not attributed',
-  'episodes.firstSeen': 'First seen by platform',
-  'episodes.recorded': 'Recording time (device text)',
-  'episodes.invalid': 'Check the filters: IDs must be UUIDs, status must be resolved or quarantined, and times must include an offset with From before To.',
-  'episodes.empty': 'No episodes match these filters',
-  'episodes.emptyBody': 'Change the filters and apply again.',
-  'episodes.truncated': 'The 200-row limit was reached. Narrow the filters to see a smaller result.',
   'nav.settle': 'Settle',
   'nav.pipeline': 'Pipeline',
   'nav.notBuilt': 'Not built yet',
@@ -625,6 +626,62 @@ const en = {
   'theme.light': 'Light',
   'theme.dark': 'Dark',
 
+  /* ---------------------------------------------------------------------
+     The guided tour (`components/guide/`).
+
+     Optional, dismissible, and never started by the console itself except
+     once on Home. The sentences are the point: each one stands beside the
+     element it names and says what that element is FOR, including the two
+     things this console is most often misread on - the shift gauge is
+     progress and not a verdict, and the settled figure is one person's own
+     decisions and not the programme's spend. */
+
+  'guide.title': 'Guided tour',
+  'guide.start': 'Show me around',
+  'guide.step': 'Step {{current}} of {{total}}',
+  'guide.back': 'Back',
+  'guide.next': 'Next',
+  'guide.done': 'Done',
+  'guide.close': 'Close tour',
+  'guide.panda': 'Truc, pointing at the item this step describes',
+  'guide.offscreen': 'This item is not on the screen right now. Continue to the next step.',
+  'guide.offer': 'First time here? A short tour shows what each part of this screen is for.',
+  'guide.offer.accept': 'Show me around',
+  'guide.offer.decline': 'Not now',
+
+  'guide.home.gauge':
+    'Your shift so far: episodes you have reviewed, against the target for the shift. The ring is progress. It is not a verdict.',
+  'guide.home.start':
+    'This claims the next episode in the queue and opens it. You hold it until you decide or release it.',
+  'guide.home.settled':
+    'The value of your own decisions in this period. It is not the programme spend and it is not a payment.',
+  'guide.shell.counters':
+    'How many episodes are waiting, and the average time one verdict takes. Both stay in the bar on every screen.',
+  'guide.shell.nav':
+    'The whole back office. A dot means the screen is not built yet; a half-filled square means it is built for part of its job.',
+  'guide.review.player':
+    'The footage and the playhead. Space plays and pauses. The arrow keys move five seconds; hold Shift for one frame.',
+  'guide.review.marks':
+    'Mark the start and the end of usable footage with I and O. The server measures the span; this screen never sends a duration.',
+  'guide.review.verdict':
+    'The three outcomes: pass, partial, reject. Keys 1, 2 and 3. Enter commits the one you chose.',
+  'guide.review.reasons':
+    'A reject needs at least one reason code. The collector reads these in Vietnamese, so pick the one that says what to change.',
+  'guide.pipeline.stage':
+    'Each stage of the ingest run, and what is waiting in it. Work stopping at a stage tells you where the import is waiting or has failed. It says nothing about the recording, which is already on the card.',
+  'guide.backoffice.tabs':
+    'Tasks, collectors and devices. Each tab is a list you can filter, and every change here is logged against your operator id.',
+  'guide.settle.period':
+    'One settlement cycle starts on this day. Every bill whose period starts inside it appears below.',
+  'guide.settle.bills':
+    'Every bill in the period. A total comes from its lines and the server rounds it; this screen adds nothing.',
+  'guide.risk.holds':
+    'Payments the engine has held, each with the plain sentence saying why. Release one only when you can say what changed.',
+  'guide.episodes.scope':
+    'Which episodes this screen is showing right now. It is a scope, not the whole catalogue.',
+  'guide.counter.plan':
+    'One question per step, and nothing is written until the last one. The rail says where you are, and every answer stays editable from the summary.',
+
   // ---------------------------------------------------------------------
   // Settle and the payout console (SET-03 → SET-07; payout brief, Agent D).
   // Four screens on one period: the bills, the preflight that has to be read
@@ -642,11 +699,11 @@ const en = {
   'settle.tab.exceptions': 'Exceptions',
   'settle.mode.manual': 'Manual payout: the operator transfers the money and records the reference here.',
   'settle.mode.api': 'API payout: transfers are sent through ZaloPay from the preflight screen.',
-  'settle.readonly': 'Read only',
+  'settle.readonly': 'Finance access required',
   'settle.readonly.operator':
-    'This session does not hold the finance role. Every figure is visible; every payment action is disabled here and refused by the server.',
+    'Only finance accounts can view bills, payment details, and preflight checks. This account does not have that access. Contact your finance operator to review this period.',
   'settle.readonly.unknown':
-    'The finance role could not be confirmed for this session, so payment actions are disabled. Reload to ask again.',
+    'Account access could not be confirmed. Financial data and payment actions remain unavailable. Reload to try again.',
   'settle.readonly.refused': 'The server refused: this session does not hold the finance role. Nothing has been changed.',
   'settle.failed': 'The request did not reach the server. Nothing has been changed.',
   'settle.invalid': 'The server would not read that request. Nothing has been changed.',
@@ -1057,6 +1114,546 @@ const en = {
    * and there was nothing to quote.
    */
   'bo.error.reference': 'Reference:',
+  /**
+   * The console restyle's own strings (`ui.b.*`): the sentences that stand
+   * beside the two ink figures. A figure earns the console's one dark block
+   * only when it carries its own sentence, so these are load-bearing rather
+   * than captions.
+   */
+  'ui.b.settle.total.sentence':
+    'What this batch would send. The server decides each transfer, and a bill can still be refused at the moment it is paid.',
+  'ui.b.risk.holds.count': 'Bills on hold',
+  'ui.b.risk.holds.sentence':
+    'No transfer leaves while a hold is open. Clearing one needs a verdict and a written reason; the engine appends a row and never edits one.',
+
+  // ---------------------------------------------------------------------
+  // The sign-in screen, `/discover`, Home, the not-built page, Pipeline and
+  // /episodes.
+  //
+  // `ui.a.*` are strings that were English literals inside the `.tsx` files.
+  // A literal in a component is a string a Chinese reviewer never sees in
+  // their own language, and the completeness test cannot find it to complain
+  // about, so it survives every review. Moving one here is not a rewrite of
+  // the sentence: the English value below is the sentence that was on screen.
+
+  'login.video.region': 'Demo video',
+
+  /*
+   * The landing's own strings, and there were fourteen more of them on
+   * 2026-09-07: three slogan lines, three burst variants that renamed the
+   * third line under a pointer, a marquee sentence, a circular-type sentence,
+   * two calls to action, a skip link and two labels for a control that paused
+   * a drifting field of photographs.
+   *
+   * Every one of those elements was deleted when the landing was rebuilt, so
+   * every one of those strings is gone with it rather than left as a catalogue
+   * row three locales have to keep carrying. `login.hero` went the same way
+   * and had already had no caller for some time.
+   */
+
+  /*
+   * The legal line under the submit. A lead sentence and two named links,
+   * each translated as a whole unit — see the note in `Login.tsx` for why the
+   * links are not embedded in the sentence.
+   */
+  'login.legal': 'By signing in you accept how PlayerOne handles your data.',
+  'login.legalPrivacy': 'Privacy policy',
+  'login.legalData': 'Data collection notice',
+  'login.network':
+    'The service did not answer. Check the machine is on the centre network and try again.',
+
+  /* ---------------------------------------------------------------------
+     `/discover` — the product story, on its own public route.
+
+     **Every value below is a process fact.** There is not a user count, a
+     payout total or a percentage anywhere in this block, and none may be
+     added. This is a payout-bearing product: a figure on its landing that
+     nobody can reproduce from the system is the single worst thing it could
+     publish, and an illustrative one has to say that it is illustrative.
+
+     The claims that ARE here are all reproducible from the code or the brief:
+     payment is per reviewed effective minute (§5.3.3, UPL-14); payable time
+     is the intersection of stream coverage and not the union; a recording is
+     started and stopped by the camera's own buttons and by nothing else; the
+     TF card is never cleared; a bill's total is rounded down to the whole dong
+     in `wholeVnd`; payout runs through ZaloPay.
+
+     The headline is in two halves because the second half carries the page's
+     one highlight marker, and the condition — that the minutes have to pass
+     review — belongs inside the headline rather than in a footnote under it.
+     --------------------------------------------------------------------- */
+  'discover.headline.a': 'Meet Ego.',
+  'discover.headline.mark': 'Everyday tasks',
+  'discover.headline.b': ', from your point of view.',
+  'discover.lead':
+    'A head-worn camera for recording everyday activities. Collectors earn for reviewed, approved effective minutes.',
+  'discover.signIn': 'Sign in to the console',
+  /* The public product home introduces the whole thing, not one side of it:
+     what Ego is, what the platform does with a recording, and who the two
+     audiences are. The two calls to action below are peers because these two
+     audiences are peers. */
+  'discover.audiences':
+    'Two ways in. Collectors record with an Ego camera and are paid for the effective minutes a reviewer approves. Upload-centre operators and reviewers work in the console.',
+
+
+  /* The demonstration: one player, one caption, nothing over it. */
+  'discover.video.caption':
+    'A placeholder film, and it is not a recording the camera made: someone wearing Ego is filmed at arm’s length in Paris. Ego records from the wearer’s forehead and cannot see the wearer. A real shoot replaces this.',
+
+  'discover.how.title': 'Four steps, in order',
+  'discover.step.record.title': 'Record',
+  'discover.step.record.body':
+    "You wear the camera and do ordinary work — cooking, gardening, cleaning, ironing. The camera's own buttons start and stop the recording.",
+  'discover.step.upload.title': 'Upload',
+  'discover.step.upload.body':
+    'The card goes across the counter at an upload centre. An operator records the handover and imports it on the centre machine.',
+  'discover.step.review.title': 'Human review',
+  'discover.step.review.body':
+    'A reviewer watches the episode and marks the part that is usable, with a reason code for the rest.',
+  'discover.step.payment.title': 'Payment',
+  'discover.step.payment.body':
+    'A bill is raised for the approved effective minutes at the rate the task carries, and paid through ZaloPay.',
+
+  /* The mosaic. Every cell adds detail the four steps do not carry. */
+  'discover.cell.camera.title': 'The camera',
+  'discover.cell.camera.body':
+    'Ego is a head-worn camera supplied by the platform and bound to one person. Its own buttons start and stop a recording — no application on a phone can do it, and none is going to be given the ability.',
+  'discover.cell.pov.caption':
+    'The camera worn on the forehead. A frame taken from the placeholder film above, cropped — a third-person view of the device, not a view through it.',
+  'discover.cell.activities.title': 'Which activities count',
+  'discover.cell.activities.body':
+    'Ordinary activity at home, in offices, in shops and in warehouses. Every recording is claimed against a declared task before it starts, so what is suitable is written down in advance rather than judged afterwards.',
+  'discover.cell.review.title': 'How review works',
+  'discover.cell.review.body':
+    'Every episode is watched by a person, who marks the usable part and records failure reason codes for the rest. That judgement is the only source of the number a collector is paid on; nothing on the platform computes it another way.',
+  'discover.cell.minutes.title': 'How payable minutes are determined',
+  'discover.cell.minutes.body':
+    'Payable time is the span that every recorded stream covers together, not the longest one. The device’s own duration figure is advisory and reads high, so the platform measures the media instead.',
+
+  /* Before you participate. Established facts only, and each one is checkable
+     against the code or the brief. */
+  'discover.before.title': 'Before you participate',
+  'discover.before.q.record': 'What am I expected to record?',
+  'discover.before.a.record':
+    'Ordinary activity, against a task claimed in advance. There is training and an exam before a first task.',
+  'discover.before.q.paid': 'Is every recorded minute paid?',
+  'discover.before.a.paid':
+    'No. Only the part of an episode a reviewer judges usable is payable, and a recording can be rejected in full.',
+  'discover.before.q.when': 'When is a payment decided?',
+  'discover.before.a.when':
+    'After the card is imported and the episode is reviewed. Bills are raised per settlement period, and a total is rounded down to the whole dong.',
+  'discover.before.q.data': 'What is collected about me?',
+  'discover.before.a.data':
+    'The consent declarations the recording agreement asks for, and nothing beyond them. Footage stays resident in Vietnam.',
+
+  'discover.handoff.title': 'Already an operator or a reviewer?',
+  'discover.handoff.body':
+    'Sign in to the console. Upload-centre operators register a handover and import a card; reviewers watch episodes and decide what is payable.',
+  'discover.credits': 'Film and stills: credits and licences',
+  'discover.partners':
+    'PlayerOne is a joint venture of VNG PT Lab and PaXini. VNG runs the platform and the upload centres; PaXini makes the Ego camera and, in this phase, reviews the footage.',
+  /* The thin line under the footer's wordmark. It restates two facts the page
+     has already made — a person decides every payment, and footage stays in
+     Vietnam — because the bottom of a page is where somebody who skipped the
+     middle of it arrives. No figure, and no claim that is not on the page
+     above it. */
+  'discover.foot.legal':
+    'PlayerOne is a joint venture of VNG PT Lab and PaXini. Every recording is judged by a person before any minute of it is payable, and footage stays resident in Vietnam.',
+  /* -----------------------------------------------------------------------
+     The two audiences, and the one that had nowhere to go.
+
+     Every section above this explains the product to a prospective collector,
+     and until 2026-09-08 the only action on the whole page was an *operator*
+     sign-in. A collector read seven sections and arrived at a back-office form
+     asking for machine credentials. So the page now carries a collector path
+     of its own, in the hero and again at the bottom where intent is highest.
+
+     `discover.take.pending` is load-bearing and is not a placeholder for a
+     placeholder: the destination — a store listing, an APK, a Zalo flow — has
+     not been decided, and inventing one on a payout-bearing page is worse than
+     saying it is not published. The control names the action and the sentence
+     under it names the state. When the real destination lands, the control
+     becomes a link and this key comes out.
+     -------------------------------------------------------------------- */
+  'discover.ways.title': 'Where to go from here',
+  'discover.take.cta': 'Download the APK',
+  'discover.take.title': 'Collectors',
+  'discover.take.body':
+    'Collecting starts with training and an exam. Each recording is claimed against a task before the camera is switched on, and the camera itself is supplied by the platform and stays with it. What is paid is the effective minutes a reviewer approves.',
+  'discover.take.pending':
+    'The APK is not published yet, so there is nothing to download from this page today. The build will be linked here when it is released.',
+
+  /* -----------------------------------------------------------------------
+     Build seven, 2026-09-08. The four-step strip is deleted and its content
+     is now the headline: four phrases, one per line, in the order the work
+     happens. A step of a process is a sentence, not a card, and four cards
+     in a row was the arrangement the product owner rejected by name.
+
+     The chips are fragments of the real console — a claimed task, a card
+     received at a counter, a verdict pill out of `primitives.tsx`, the rule
+     a collector is paid under. Nothing here is a figure: this page is
+     payout-bearing and every number on it would be one nobody has cleared.
+     -------------------------------------------------------------------- */
+  'discover.nav.label': 'On this page',
+  'discover.nav.camera': 'The camera',
+  'discover.nav.work': 'The work',
+  'discover.nav.review': 'Review',
+  'discover.nav.payment': 'Payment',
+  'discover.nav.questions': 'Questions',
+
+  'discover.eyebrow': 'Ego — a head-worn camera',
+  'discover.line.1': 'Record.',
+  'discover.line.2': 'Hand in the card.',
+  'discover.line.3': 'A person reviews it.',
+  'discover.line.4': 'The minutes are paid.',
+
+  'discover.chip.task': 'Task claimed',
+  'discover.chip.handover': 'Card in at the counter',
+  'discover.chip.rate': 'Paid per reviewed minute',
+
+  'discover.label.camera': 'The device',
+  'discover.label.work': 'The work',
+  'discover.label.film': 'Placeholder film',
+  'discover.label.review': 'Review',
+  'discover.label.payment': 'Payment',
+  'discover.label.questions': 'Questions',
+  'discover.label.next': 'Next',
+
+  'discover.work.note':
+    'Placeholder stills of ordinary work. None of them is a recording the Ego camera made, and none is captioned as one. A real shoot replaces them.',
+
+  'discover.verdict.note':
+    'A reviewer records one of three outcomes and names a reason code for anything not usable.',
+
+  'discover.streams.video': 'Video',
+  'discover.streams.audio': 'Audio',
+  'discover.streams.imu': 'Motion',
+  'discover.streams.payable': 'Payable: the span every stream covers together',
+  'discover.streams.device':
+    'The device reports its longest stream. That figure is advisory and it reads high.',
+
+  /* -----------------------------------------------------------------------
+     The not-found route. It is a real route rather than a redirect, because
+     a person who mistyped a console URL needs to be told the address is
+     wrong — a silent bounce to the product page reads as the console having
+     lost their screen.
+     -------------------------------------------------------------------- */
+  'nf.eyebrow': 'No such page',
+  'nf.title.a': 'Nothing was',
+  'nf.title.b': 'recorded at',
+  'nf.title.c': 'this address.',
+  'nf.body':
+    'The link is wrong, or the page has moved. Everything the platform explains about itself is on the product page.',
+  'nf.back': 'Back to the product page',
+
+  /* The full-bleed pair. Captions sit at the foot of each panel; the stills are
+     420x420 and are held at a size they are sharp at rather than stretched. */
+
+  'ui.a.home.gauge': 'Reviewed {{value}} of {{target}} episodes this shift',
+  /* The caption under the band's figure, where the count is already drawn. */
+  'ui.a.home.gaugeCaption': 'episodes reviewed this shift',
+  'ui.a.home.payable.note': 'Effective duration from decided reviews only.',
+  'ui.a.home.approval.note': 'Passes and partial passes, against every decision today.',
+  'ui.a.home.pace.note': 'Load to verdict. Instrumentation, never money.',
+  'ui.a.home.clock': 'This machine\'s clock.',
+  'ui.a.home.approval.target': 'Programme target 85–90%.',
+  'ui.a.home.recent.time': 'Time',
+  'ui.a.home.recent.episode': 'Episode',
+  'ui.a.home.recent.verdict': 'Verdict',
+  'ui.a.home.recent.duration': 'Measured → effective',
+  'ui.a.home.recent.amount': 'Amount',
+  'ui.a.home.recent.pace': 'Pace',
+  /**
+   * DESIGN.md, "Copy". This sentence is not decoration and must survive any
+   * rewrite: the figure above it is one reviewer's own decisions and somebody
+   * reading it as the programme's budget would be wrong by orders of
+   * magnitude. The English is byte-identical to the sentence DESIGN.md pins.
+   */
+  'ui.a.home.settled.note': 'Your decisions only. Not the programme\'s spend.',
+  'ui.a.home.settled.open': 'Open settlement',
+  'ui.a.home.error.title': 'The shift figures did not load.',
+  'ui.a.home.error.body':
+    'Everything else on this screen still works. The counters come from the review database; if this keeps happening, the API cannot reach Postgres.',
+  'ui.a.home.recent.error': 'Your recent verdicts did not load.',
+  /* Shown where a figure would be. Not a zero: nothing was measured. */
+  'ui.a.home.unavailable': 'No figure',
+
+  /*
+   * Home, rebuilt around one order: attention needed, next action, shift
+   * results, recent work, optional insights.
+   *
+   * `asOf` is the freshness stamp every operational sentence on that screen
+   * carries — the mascot's included. A claim about the queue with no time on
+   * it is a claim about an unknown moment, and the moment is what makes it
+   * checkable.
+   */
+  'ui.a.home.asOf': 'As of {{time}}',
+  'ui.a.home.next.title': 'One recording at a time.',
+  'ui.a.home.next.body':
+    "A verdict here is the only place a collector's payment comes from. Take the next episode when you are ready.",
+  'ui.a.home.queueWaiting': 'waiting in your queue',
+  'ui.a.home.results': 'What this shift has done',
+  'ui.a.home.median': 'Median time to verdict',
+  'ui.a.home.median.note':
+    'The middle value across the reviews this shift timed. Instrumentation, never money.',
+  'ui.a.home.attention.none': 'Nothing is waiting for a human.',
+  'ui.a.home.attention.unknown':
+    'Not connected. This screen cannot say what needs attention.',
+
+  /*
+   * Trúc's own strings, and the rule they exist under: a greeting is authored,
+   * an operational statement is evidence. `truc.greet` is the authored half.
+   * `truc.offline` is what he says instead of a figure when the request
+   * failed, and `truc.source` is where the one figure he does report came
+   * from. He never gets a sentence that has no counterpart on the page.
+   */
+  'ui.a.home.insights': 'Optional insights',
+  'ui.a.home.truc.lede':
+    'Trúc is an extra channel. Everything he says is written on this page as well, so nothing depends on him.',
+  'ui.a.home.truc.greet': 'Hello. {{shift}}.',
+  'ui.a.home.truc.offline': 'Not connected. I have nothing measured to tell you.',
+  'ui.a.home.truc.source': 'Source: your shift figures.',
+  'ui.a.home.truc.pause': 'Pause Trúc',
+  'ui.a.home.truc.resume': 'Resume Trúc',
+
+  /*
+   * The preview: numerical demonstrations, entered by hand and labelled at
+   * every value rather than once at the top of the group. A heading two
+   * hundred pixels away is not what somebody photographs.
+   */
+  'ui.a.home.preview.show': 'Show example insights',
+  'ui.a.home.preview.hide': 'Hide example insights',
+  'ui.a.home.preview.why':
+    'Nothing here is measured. The examples show the shape of a panel that is not built yet.',
+  'ui.a.home.preview.note':
+    'The shift endpoint returns current figures and no history, so there is no trend behind any of these. They are drawn to agree a layout, and they are never shown in place of a figure that failed to load.',
+  'ui.a.home.preview.badge': 'Example — not live data',
+  'ui.a.home.preview.trend': 'Most recorded scenario',
+  'ui.a.home.preview.trendValue': 'Gardening',
+  'ui.a.home.preview.week': 'Footage you judged this week',
+  'ui.a.home.preview.streak': 'Shifts in a row',
+
+  'ui.a.notBuilt.today': 'How this is done today',
+
+  'ui.a.pipeline.track': 'What a recording passes through',
+  'ui.a.pipeline.owed': 'Waiting on PaXini',
+
+  'episodes.title': 'Episodes needing attention',
+  'episodes.intro':
+    'Browsing every episode by task, collector, device, status and recording time (BO-05) needs a list endpoint that does not exist yet.',
+  'episodes.batch': 'Batches imported on this machine, last 100',
+  'episodes.batch.pick': 'Batch',
+  'episodes.batch.none': 'No batches have been imported on this machine.',
+  'episodes.batch.failed': 'The batch list did not load.',
+  'episodes.blocking': 'Blocking, this batch',
+  'episodes.blocking.scope':
+    'Episodes that hold the chosen batch open. Scoped to this machine, by import time.',
+  'episodes.stuck': 'Stuck, this centre',
+  'episodes.stuck.scope':
+    'Parked or held work anywhere in this upload centre, whichever batch it arrived on.',
+  'episodes.empty': 'No attention items in this scope.',
+  'episodes.filter': 'Filter these rows',
+  'episodes.col.episode': 'Episode',
+  'episodes.col.session': 'Session start',
+  'episodes.col.state': 'Attribution',
+  'episodes.col.needs': 'Needs',
+  'episodes.col.device': 'Card',
+  'episodes.col.hold': 'Hold',
+  'episodes.needs.assignment': 'A session to attribute it to',
+  'episodes.needs.confirmation': 'A person to confirm the match',
+  'episodes.hold.parked': 'Parked',
+  'episodes.hold.held': 'Held in review',
+  'episodes.summary.episodes': 'Episodes',
+  'episodes.summary.sessions': 'Sessions',
+  'episodes.summary.quarantined': 'Quarantined',
+  'episodes.summary.awaiting': 'Awaiting confirmation',
+  'episodes.summary.parked': 'Parked out of review',
+  'episodes.summary.perSession': 'Episodes per session',
+  'episodes.resolve': 'Attribute',
+  'episodes.resolve.title': 'Attribute this episode',
+  'episodes.resolve.session': 'Session',
+  'episodes.resolve.reason': 'Why this session',
+  'episodes.resolve.reasonHint': 'The database refuses a resolution that carries no reason.',
+  'episodes.resolve.done': 'Attributed. The batch has been read again.',
+  'episodes.outcome': 'Review outcome',
+  'episodes.outcome.state': 'Verdict',
+  'episodes.outcome.pending': 'No verdict yet on the delivery that counts.',
+  'episodes.outcome.collector': 'Collector',
+  'episodes.outcome.decided': 'Decided',
+  'episodes.outcome.note': 'Reviewer note',
+  'episodes.outcome.reasons': 'Reason codes',
+  'episodes.outcome.failed': 'The outcome did not load.',
+  'episodes.close': 'Close',
+  'episodes.gone': 'That episode is no longer on the server. Read the batch again.',
+  'episodes.reload': 'Read again',
+  'episodes.noMatch': 'No row in this scope matches the filter.',
+  /* ---------------------------------------------------------------------
+     The wizard grammar, shared by the counter's card intake and the back
+     office's task assignment. One decision per step, a rail that says where
+     you are, and a summary of every answer before anything is written.
+     --------------------------------------------------------------------- */
+
+  'wiz.step': 'Step',
+  'wiz.review': 'Check and commit',
+  'wiz.review.question': 'Check every answer before this is written.',
+  'wiz.unanswered': 'Not answered',
+  'wiz.edit': 'Change',
+  'wiz.back': 'Back',
+  'wiz.next': 'Next',
+  'wiz.needAnswer': 'Answer this question to go on.',
+  'wiz.failed.gone':
+    'The server no longer holds the row this step names. Reload the screen and start again.',
+  'wiz.failed.body':
+    'The server would not accept one of the answers. That is a fault in this console rather than in what you typed; quote the reference below when you report it.',
+  'wiz.failed.session':
+    'This session is not allowed to make that change. Sign in again, or ask an operator who holds the administrator role.',
+
+  /* ---------------------------------------------------------------------
+     The counter: card intake (BO-10, APP-17b).
+     --------------------------------------------------------------------- */
+
+  'counter.title': 'Card intake',
+  'counter.intro':
+    'A collector hands in a TF card. Record who handed it over, which camera it came out of, and what was recorded on it. Nothing is written until the last step.',
+  'counter.review.intro':
+    'Two rows go in: the handover of the card, and the recording declared against it. Change any answer from here.',
+  'counter.group.card': 'The card',
+  'counter.group.recording': 'The recording',
+
+  'counter.step.collector': 'Collector',
+  'counter.step.device': 'Camera',
+  'counter.step.card': 'Card',
+  'counter.step.task': 'Task',
+  'counter.step.scenario': 'Scenario',
+  'counter.step.declare': 'Declarations',
+
+  'counter.q.collector': 'Who handed this card over?',
+  'counter.q.device': 'Which camera did the card come out of?',
+  'counter.q.card': 'Which card is it, and when did it arrive?',
+  'counter.q.task': 'Which task was this recorded against?',
+  'counter.q.scenario': 'Where was it recorded, and when was the recording prepared?',
+  'counter.q.declare': 'What did the collector declare?',
+
+  'counter.note.collector':
+    'One card belongs to one collector, and that is the person at the counter. The centre, this machine and your own name come from the credentials you signed in with, so none of them is asked for here.',
+  'counter.note.device':
+    'Cameras move between collectors and cards move between cameras. Neither is inferred from whoever last held it, so the camera is named rather than guessed.',
+  'counter.note.card':
+    'The label on the card, as it is written on the card. The time is when it changed hands at this counter, not when anything was recorded.',
+  'counter.note.task':
+    'The task decides the rate. The collector has to hold a live claim on it already; if they do not, the server refuses the recording and says which of the three reasons it is.',
+  'counter.note.scenario':
+    'The prepare time is what the collector remembers. It is never matched against the footage automatically, because only a session the app created is, so an operator confirms the attribution after the card is imported.',
+  'counter.note.declare':
+    'Both answers are required. "No" is an answer and "nobody asked" is not, and the record has no way to say the second.',
+
+  'counter.field.card': 'TF card',
+  'counter.hint.card': 'As written on the card.',
+  'counter.field.handoverAt': 'Handed over at',
+  'counter.hint.handoverAt': 'Your own local time.',
+  'counter.field.preparedAt': 'Recording prepared at',
+  'counter.hint.preparedAt':
+    'Your own local time. There is no end time, and there is no field for one.',
+
+  'counter.declare.others': 'Other people appear in the footage',
+  'counter.declare.sensitive': 'Sensitive information appears in the footage',
+  'counter.declare.yes': 'Yes',
+  'counter.declare.no': 'No',
+
+  'counter.privacy.low': 'Low privacy risk',
+  'counter.privacy.medium': 'Medium privacy risk',
+  'counter.privacy.high': 'High privacy risk',
+
+  'counter.empty.collectors':
+    'No collectors have reached this machine. The roll is kept in the back office, and an empty one here usually means the reference sync has not arrived.',
+  'counter.empty.devices':
+    'No cameras have reached this machine. The fleet is kept in the back office, and an empty one here usually means the reference sync has not arrived.',
+  'counter.empty.tasks':
+    'No tasks have reached this machine. A recording is always recorded against a task, so nothing can be declared until one exists.',
+  'counter.empty.scenarios':
+    'No scenarios have reached this machine. Scenarios are reference data seeded with the service, so an empty list means the reference sync did not arrive.',
+
+  'counter.commit': 'Record the handover',
+  'counter.commit.session': 'Record the recording',
+  'counter.recorded':
+    'Already written, under the id this intake started with. Sending it again would change nothing. Start a new card if it is wrong.',
+  'counter.landed':
+    'The handover is on the record. Only the recording is still to be written, and the first three answers cannot change underneath it. Start a new card if one of them is wrong.',
+  'counter.refused.reference':
+    'This machine holds a reference list the server does not recognise. Reload the screen and choose again. Not found:',
+
+  'counter.done.title': 'Card recorded',
+  'counter.done.card':
+    'The card is not cleared. Nothing on this path deletes what is on it, and nothing will.',
+  'counter.done.match':
+    'This was recorded at the counter, so the footage is not matched to it by time. An operator confirms the attribution on Episodes once the card has been imported.',
+  'counter.done.nextCard': 'Next card',
+  'counter.done.nextSession': 'Another recording on this card',
+
+  /* ---------------------------------------------------------------------
+     The back office: creating a task and putting people on it (BO-01,
+     BO-02, APP-10, and the device custody period a settlement reads).
+     --------------------------------------------------------------------- */
+
+  'assign.title': 'New task',
+  'assign.review.intro':
+    'The task is created first, published if you asked for that, then claimed for each collector in turn. Change any answer from here.',
+  'assign.commit': 'Create the task',
+  'assign.group.task': 'The task',
+  'assign.group.people': 'The people',
+
+  'assign.step.name': 'Name',
+  'assign.step.rate': 'Rate',
+  'assign.step.capacity': 'Places',
+  'assign.step.publish': 'Publish',
+  'assign.step.claimants': 'Claimants',
+  'assign.step.cameras': 'Cameras',
+
+  'assign.q.name': 'What is this task called?',
+  'assign.q.rate': 'What does it pay?',
+  'assign.q.capacity': 'How many collectors may hold it at once?',
+  'assign.q.publish': 'Publish it now?',
+  'assign.q.claimants': 'Who is taking it on?',
+  'assign.q.cameras': 'Does a camera go out with anybody?',
+
+  'assign.note.name':
+    'The name is what a collector reads in the task hall. The type follows PaXini own taxonomy and has no fixed list.',
+  'assign.note.rate':
+    'A decimal, up to eight digits and four decimals, exactly as the column stores it. It multiplies into every payment, so nothing rounds it on the way in, and once the task is published the figure cannot move.',
+  'assign.note.capacity':
+    'The cap counts live claims. Releasing a claim gives the place back to the task.',
+  'assign.note.publish':
+    'A draft cannot be claimed: the database refuses a claim on a task that is not published. Leave it a draft to finish the details later and publish it from the table.',
+  'assign.note.claimants':
+    'A claim is this collector holding this task, and what they record against it is paid at its rate. Nobody is a real answer, because a published task can be left for the task hall to fill.',
+  'assign.note.cameras':
+    'A custody period, not a bind: this is what a settlement reads to say who held a camera on a given day. Any period still open on that camera is closed at the same instant.',
+
+  'assign.hint.type': 'PaXini taxonomy. No fixed list.',
+  'assign.hint.target': 'Optional. Effective seconds.',
+
+  'assign.publish.label': 'Publish this task now',
+  'assign.publish.now': 'Published',
+  'assign.publish.draft': 'Left as a draft',
+
+  'assign.claimants.none': 'Nobody',
+  'assign.claimants.empty':
+    'There are no collectors yet. Create one on the collectors tab, then come back.',
+  'assign.cameras.none': 'No camera goes out',
+  'assign.cameras.no': 'No camera',
+  'assign.cameras.noClaimants':
+    'Nobody is taking this task on, so there is no camera to hand out.',
+
+  'assign.done.title': 'Task created',
+  'assign.done.published': 'Published. Collectors can claim it.',
+  'assign.done.draft': 'Left as a draft. Publish it from the table when it is ready.',
+  'assign.done.nobody':
+    'Nobody was put on it. Collectors can claim it themselves from the task hall, or you can claim it for them from this tab.',
+  'assign.done.claimed': 'Holds the task.',
+  'assign.done.assigned': 'Camera handed out.',
+  'assign.done.someRefused':
+    'Part of what you asked for was refused. The task itself was created; the lines above say who was not put on it and why.',
+  'assign.done.close': 'Back to the tasks',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1069,6 +1666,18 @@ const zh: Record<MessageKey, string> = {
   'app.language': '语言',
 
   'login.title': '登录以进行审核',
+  'login.titleOperator': '登录上传中心',
+  'login.groupMachine': '机器',
+  'login.fieldIdentifier': '标识',
+  'login.fieldReference': '编号',
+  'login.fieldSecret': '密钥',
+  'login.trucOpen': '询问小竹',
+  'login.trucTitle': '小竹',
+  'login.trucBody': '小竹暂时还不能回答。接通后，你可以在这里询问某个判定的含义、存储卡为何被拒，或某笔付款去了哪里。',
+  'login.trucSoon': '尚未接通',
+  'login.trucClose': '关闭',
+  'login.groupOperator': '操作员',
+  'login.groupReviewer': '审核员',
   'login.intro': '与本服务其他部分一致，需要两组凭据：机器凭据证明地点，操作员凭据证明身份。',
   'login.machine': '机器标识',
   'login.machineSecret': '机器密钥',
@@ -1224,28 +1833,6 @@ const zh: Record<MessageKey, string> = {
   'nav.counter': '柜台',
   'nav.review': '审核',
   'nav.episodes': '片段',
-  'episodes.intro': '浏览本上传中心收到的录制片段，最新的在前。',
-  'episodes.noBatch': '不显示没有上传批次的片段。',
-  'episodes.task_id': '任务',
-  'episodes.collector_id': '采集员',
-  'episodes.device_id': '设备',
-  'episodes.status': '归属状态',
-  'episodes.from': '首次接收起始时间（含）',
-  'episodes.to': '首次接收截止时间（不含）',
-  'episodes.timeHint': '时间筛选按平台首次收到片段的时间。使用带时区偏移的 ISO 8601 格式；留空表示不限。',
-  'episodes.apply': '应用',
-  'episodes.retry': '重试',
-  'episodes.all': '全部',
-  'episodes.id': '片段 ID',
-  'episodes.resolved': '已确定归属',
-  'episodes.quarantined': '已隔离',
-  'episodes.unattributed': '未确定归属',
-  'episodes.firstSeen': '平台首次接收时间',
-  'episodes.recorded': '录制时间（设备原文）',
-  'episodes.invalid': '请检查筛选条件：ID 必须为 UUID，状态须为已确定归属或已隔离，时间须含时区偏移，且起始时间早于截止时间。',
-  'episodes.empty': '没有符合筛选条件的片段',
-  'episodes.emptyBody': '更改筛选条件后重新应用。',
-  'episodes.truncated': '已达到 200 行上限。请缩小筛选范围。',
   'nav.settle': '结算',
   'nav.pipeline': '流程',
   'nav.notBuilt': '尚未开发',
@@ -1482,6 +2069,37 @@ const zh: Record<MessageKey, string> = {
   'theme.light': '浅色',
   'theme.dark': '深色',
 
+  'guide.title': '导览',
+  'guide.start': '带我看一遍',
+  'guide.step': '第 {{current}} 步，共 {{total}} 步',
+  'guide.back': '上一步',
+  'guide.next': '下一步',
+  'guide.done': '完成',
+  'guide.close': '关闭导览',
+  'guide.panda': '竹，正指向本步骤所说的位置',
+  'guide.offscreen': '该内容当前不在屏幕上。请继续下一步。',
+  'guide.offer': '第一次使用？简短导览会说明本页每个部分的用途。',
+  'guide.offer.accept': '带我看一遍',
+  'guide.offer.decline': '暂不',
+
+  'guide.home.gauge': '本班次进度：你已审核的片段数与本班次目标的对比。这个圆环表示进度，不是审核结论。',
+  'guide.home.start': '领取队列中的下一个片段并打开它。在你作出结论或释放它之前，它一直归你。',
+  'guide.home.settled': '本周期内你自己所作结论对应的金额。它不是项目的总支出，也不是一笔付款。',
+  'guide.shell.counters': '队列中还有多少片段，以及每条结论的平均用时。这两个数字在每个页面都会显示。',
+  'guide.shell.nav': '整个后台。圆点表示该页面尚未开发；半填充方块表示只完成了部分功能。',
+  'guide.review.player': '素材与播放头。空格键播放和暂停。方向键前后移动五秒；按住 Shift 时移动一帧。',
+  'guide.review.marks': '用 I 和 O 标记可用素材的起点和终点。时长由服务端测算；本页不会发送任何时长。',
+  'guide.review.verdict': '三种结论：通过、部分通过、拒绝。对应按键 1、2、3。按回车提交你选择的结论。',
+  'guide.review.reasons': '拒绝时至少要选一个原因代码。采集者看到的是越南语版本，请选择能说明需要改什么的那一条。',
+  'guide.pipeline.stage': '导入流程的每个阶段，以及其中还在等待的内容。卡在某个阶段，说明导入在这里等待或失败了。这与录制无关：素材已经在卡上。',
+  'guide.backoffice.tabs': '任务、采集者和设备。每个标签页都是可筛选的列表；这里的每次修改都会记录你的操作员账号。',
+  'guide.settle.period': '一个结算周期从这一天开始。周期起始日落在其中的账单都会显示在下方。',
+  'guide.settle.bills': '本周期内的全部账单。合计来自明细，由服务端取整；本页不做任何计算。',
+  'guide.risk.holds': '引擎暂扣的付款，以及说明原因的那句话。只有当你能说清变了什么时才释放。',
+  'guide.episodes.scope': '本页当前显示的是哪一部分片段。这是一个范围，不是全部目录。',
+  'guide.counter.plan':
+    '每一步只问一个问题，最后一步之前不写入任何数据。左侧的进度栏说明您走到哪里了，每个答案都可以从汇总页改回来。',
+
   'settle.title': '结算',
   'settle.intro': '某个周期的账单、钱包余额与之的对比、引擎标记的内容，以及每笔付款的记录。这里的每个数字都来自服务端；本页不做任何加总或取整。',
   'settle.period': '周期起始日',
@@ -1493,9 +2111,9 @@ const zh: Record<MessageKey, string> = {
   'settle.tab.exceptions': '异常',
   'settle.mode.manual': '人工付款模式：由操作员自行转账，并在此登记交易参考号。',
   'settle.mode.api': 'API 付款模式：在付款前检查页通过 ZaloPay 发送转账。',
-  'settle.readonly': '只读',
-  'settle.readonly.operator': '本会话没有财务角色。所有数字均可查看；所有付款操作在此禁用，服务端也会拒绝。',
-  'settle.readonly.unknown': '无法确认本会话的财务角色，付款操作已禁用。请刷新后重试。',
+  'settle.readonly': '需要财务权限',
+  'settle.readonly.operator': '只有财务账号可以查看账单、付款详情和付款前检查。此账号没有该权限，请联系财务人员查看本周期。',
+  'settle.readonly.unknown': '无法确认账号权限。财务数据和付款操作暂不可用，请刷新后重试。',
   'settle.readonly.refused': '服务端拒绝：本会话没有财务角色。没有任何内容被修改。',
   'settle.failed': '请求未送达服务端。没有任何内容被修改。',
   'settle.invalid': '服务端无法读取该请求。没有任何内容被修改。',
@@ -1829,6 +2447,374 @@ const zh: Record<MessageKey, string> = {
     '无法连接 Zalo，因此未发送验证码。请让采集者再试一次；如果反复出现，说明与 Zalo 的链路已中断。',
   'bo.refused.zns_refused':
     'Zalo 拒绝发送验证码，给出的原因本服务器无法识别。原因记录在服务器日志中；请一边查阅日志一边让采集者再试。',
+  // 控制台改版自己的字符串（ui.b.*）：两个深色区块里数字旁边的句子。
+  'ui.b.settle.total.sentence':
+    '本批次将要发出的金额。每一笔转账由服务端决定，账单在支付的那一刻仍可能被拒绝。',
+  'ui.b.risk.holds.count': '被暂停的账单',
+  'ui.b.risk.holds.sentence':
+    '只要暂停仍未解除，就不会有任何转账发出。解除暂停需要一个结论和一段书面理由；风险引擎只追加记录，从不修改已有记录。',
+
+  'login.video.region': '演示视频',
+
+  'discover.headline.a': '认识 Ego。',
+  'discover.headline.mark': '日常劳动',
+  'discover.headline.b': '，从你的视角出发。',
+  'discover.lead':
+    '一台用于记录日常活动的头戴相机。采集者按经审核通过的有效分钟获得报酬。',
+  'discover.signIn': '登录控制台',
+  'discover.audiences':
+    '两条入口。采集者用 Ego 相机录制，按审核员认定通过的有效分钟获得报酬；上传中心的运营人员和审核员在控制台工作。',
+  'discover.video.caption':
+    '这是一段占位影片，并非相机拍下的素材：画面是别人举着手臂拍摄的佩戴 Ego 的人，地点在巴黎。Ego 从佩戴者额头向外记录，拍不到佩戴者本人。日后会用实拍素材替换。',
+  'discover.how.title': '四个步骤，依次进行',
+  'discover.step.record.title': '记录',
+  'discover.step.record.body':
+    '你戴上相机，做平常的事——做饭、园艺、打扫、熨衣。只有相机自身的按键能开始和停止录制。',
+  'discover.step.upload.title': '上传',
+  'discover.step.upload.body': '存储卡在上传中心柜台交付。工作人员登记交接，并在中心的机器上导入。',
+  'discover.step.review.title': '人工审核',
+  'discover.step.review.body': '审核员观看该段素材，标出可用的部分，并为其余部分记录原因代码。',
+  'discover.step.payment.title': '付款',
+  'discover.step.payment.body':
+    '按审核通过的有效分钟与该任务的单价开具账单，并通过 ZaloPay 支付。',
+  'discover.cell.camera.title': '这台相机',
+  'discover.cell.camera.body':
+    'Ego 是由平台提供、与一个人绑定的头戴相机。开始和停止录制只能按相机自身的按键——手机上的任何应用都做不到，也不会被赋予这项权限。',
+  'discover.cell.pov.caption':
+    '戴在额头上的相机。取自上方占位影片的一帧，经过裁切——这是从旁观视角看这台设备，而不是透过它看到的画面。',
+  'discover.cell.activities.title': '哪些活动算数',
+  'discover.cell.activities.body':
+    '家里、办公室、店铺和仓库中的日常活动。每次录制都要先认领一项已公布的任务，因此什么算合适是事先写明的，而不是事后判定的。',
+  'discover.cell.review.title': '审核是怎么进行的',
+  'discover.cell.review.body':
+    '每一段素材都由人观看，标出可用部分，并为其余部分记录失败原因代码。这一判定是采集者据以获得报酬的唯一来源；平台上没有第二种算法得出这个数字。',
+  'discover.cell.minutes.title': '可计酬的分钟如何确定',
+  'discover.cell.minutes.body':
+    '计费时长取各路数据共同覆盖的区间，而不是最长的那一路。设备自报的时长仅供参考且偏高，因此平台以素材文件本身为准进行测量。',
+  'discover.before.title': '参与之前',
+  'discover.before.q.record': '我需要记录什么？',
+  'discover.before.a.record': '日常活动，且对应一项事先认领的任务。首个任务之前有培训和一次考核。',
+  'discover.before.q.paid': '录到的每一分钟都有钱吗？',
+  'discover.before.a.paid': '不是。只有审核员认定可用的部分才计酬，一段录制也可能被整段拒绝。',
+  'discover.before.q.when': '付款何时确定？',
+  'discover.before.a.when':
+    '在存储卡导入并完成审核之后。账单按结算周期开具，总额向下取整到整数越南盾。',
+  'discover.before.q.data': '关于我会收集哪些信息？',
+  'discover.before.a.data': '录制协议所要求的同意声明，除此之外一概不收。素材始终存放在越南境内。',
+  'discover.handoff.title': '你已经是运营人员或审核员？',
+  'discover.handoff.body':
+    '请登录控制台。上传中心的工作人员在此登记交接并导入存储卡；审核员在此观看素材并判定哪些可以计酬。',
+  'discover.credits': '影片与图片：来源与授权',
+  'discover.partners':
+    'PlayerOne 是 VNG PT Lab 与 PaXini 的合资项目。VNG 负责平台与各上传中心；PaXini 制造 Ego 相机，并在本阶段负责素材审核。',
+  'discover.foot.legal':
+    'PlayerOne 是 VNG PT Lab 与 PaXini 的合资项目。每一段录制都要先由人工判定，才会产生可结算的分钟数；素材始终存放在越南境内。',
+  'discover.ways.title': '接下来去哪里',
+  'discover.take.cta': '下载 APK',
+  'discover.take.title': '采集者',
+  'discover.take.body':
+    '采集工作从培训和考核开始。每次录制前都要先领取一个任务；相机由平台提供，所有权仍属于平台。支付的是审核员认定通过的有效分钟。',
+  'discover.take.pending':
+    'APK 尚未发布，今天还无法从本页下载。发布后会在这里给出链接。',
+
+  'discover.nav.label': '本页内容',
+  'discover.nav.camera': '相机',
+  'discover.nav.work': '工作',
+  'discover.nav.review': '审核',
+  'discover.nav.payment': '付款',
+  'discover.nav.questions': '问题',
+
+  'discover.eyebrow': 'Ego — 头戴式相机',
+  'discover.line.1': '记录。',
+  'discover.line.2': '交回存储卡。',
+  'discover.line.3': '由人来审核。',
+  'discover.line.4': '按分钟计酬。',
+
+  'discover.chip.task': '已领取任务',
+  'discover.chip.handover': '柜台已收到存储卡',
+  'discover.chip.rate': '按通过审核的分钟计酬',
+
+  'discover.label.camera': '设备',
+  'discover.label.work': '工作',
+  'discover.label.film': '占位影片',
+  'discover.label.review': '审核',
+  'discover.label.payment': '付款',
+  'discover.label.questions': '问题',
+  'discover.label.next': '下一步',
+
+  'discover.work.note':
+    '这些是日常劳动的占位图片。没有一张是 Ego 相机拍下的素材，也没有一张被这样标注。正式拍摄之后会替换。',
+
+  'discover.verdict.note': '审核员记录三种结果之一，并为不可用的部分给出原因代码。',
+
+  'discover.streams.video': '画面',
+  'discover.streams.audio': '声音',
+  'discover.streams.imu': '运动',
+  'discover.streams.payable': '可计酬：所有数据流共同覆盖的时段',
+  'discover.streams.device': '设备报告的是最长的一路数据流。该数字仅供参考，而且偏高。',
+
+  'nf.eyebrow': '没有这个页面',
+  'nf.title.a': '这个地址上',
+  'nf.title.b': '没有记录',
+  'nf.title.c': '任何东西。',
+  'nf.body': '链接不对，或者页面已经移动。平台关于自身的全部说明都在产品介绍页。',
+  'nf.back': '回到产品介绍页',
+  'login.network': '服务没有应答。请确认本机在中心网络内，然后重试。',
+
+  'login.legal': '登录即表示您接受 PlayerOne 处理您数据的方式。',
+  'login.legalPrivacy': '隐私政策',
+  'login.legalData': '数据收集说明',
+
+  'ui.a.home.gauge': '本班已审核 {{value}} 集，目标 {{target}} 集',
+  'ui.a.home.gaugeCaption': '本班已审核集数',
+  'ui.a.home.payable.note': '仅统计已判定审核的有效时长。',
+  'ui.a.home.approval.note': '通过与部分通过，占今天全部判定的比例。',
+  'ui.a.home.pace.note': '从载入到判定。仅作观测，与金额无关。',
+  'ui.a.home.clock': '本机时钟。',
+  'ui.a.home.approval.target': '项目目标 85–90%。',
+  'ui.a.home.recent.time': '时间',
+  'ui.a.home.recent.episode': '集',
+  'ui.a.home.recent.verdict': '判定',
+  'ui.a.home.recent.duration': '实测 → 有效',
+  'ui.a.home.recent.amount': '金额',
+  'ui.a.home.recent.pace': '用时',
+  'ui.a.home.settled.note': '仅限你本人的判定，不是整个项目的支出。',
+  'ui.a.home.settled.open': '打开结算',
+  'ui.a.home.error.title': '本班数据未能载入。',
+  'ui.a.home.error.body':
+    '本屏幕其余部分仍可使用。这些计数来自审核数据库；如果反复出现，说明接口无法连接 Postgres。',
+  'ui.a.home.recent.error': '最近的审核记录未能载入。',
+  'ui.a.home.unavailable': '暂无数据',
+
+  'ui.a.home.asOf': '截至 {{time}}',
+  'ui.a.home.next.title': '一次只看一段录制。',
+  'ui.a.home.next.body': '收集者的报酬只来自这里的结论。准备好了就领取下一集。',
+  'ui.a.home.queueWaiting': '在你的队列中等待',
+  'ui.a.home.results': '本班次已完成的工作',
+  'ui.a.home.median': '判定用时中位数',
+  'ui.a.home.median.note': '本班次已计时审核的中位值。仅作观测，与金额无关。',
+  'ui.a.home.attention.none': '目前没有需要人工处理的事项。',
+  'ui.a.home.attention.unknown': '未连接。本屏幕无法说明哪些事项需要处理。',
+
+  'ui.a.home.insights': '可选洞察',
+  'ui.a.home.truc.lede':
+    'Trúc 只是一个额外渠道。他说的每一句，本页面都另有写明，任何事都不依赖他。',
+  'ui.a.home.truc.greet': '你好。{{shift}}。',
+  'ui.a.home.truc.offline': '未连接。我没有可以告诉你的实测数据。',
+  'ui.a.home.truc.source': '来源：你的本班次数据。',
+  'ui.a.home.truc.pause': '暂停 Trúc',
+  'ui.a.home.truc.resume': '恢复 Trúc',
+
+  'ui.a.home.preview.show': '显示示例洞察',
+  'ui.a.home.preview.hide': '隐藏示例洞察',
+  'ui.a.home.preview.why': '这里没有任何实测数据。示例只展示尚未建成的面板的样子。',
+  'ui.a.home.preview.note':
+    '本班次接口只返回当前数值，不返回历史序列，因此这些数字背后没有任何趋势。它们只用于确定版式，绝不会用来顶替载入失败的数值。',
+  'ui.a.home.preview.badge': '示例 — 非实时数据',
+  'ui.a.home.preview.trend': '记录最多的场景',
+  'ui.a.home.preview.trendValue': '园艺',
+  'ui.a.home.preview.week': '本周你判定的时长',
+  'ui.a.home.preview.streak': '连续班次',
+
+  'ui.a.notBuilt.today': '目前这项工作怎么做',
+
+  'ui.a.pipeline.track': '一段录制会经过哪些环节',
+  'ui.a.pipeline.owed': '等待 PaXini 交付',
+
+  'episodes.title': '需要处理的集',
+  'episodes.intro':
+    '按任务、采集者、设备、状态和录制时间浏览全部集（BO-05），需要一个目前还不存在的列表接口。',
+  'episodes.batch': '本机导入的批次，最近 100 个',
+  'episodes.batch.pick': '批次',
+  'episodes.batch.none': '本机还没有导入过任何批次。',
+  'episodes.batch.failed': '批次列表未能载入。',
+  'episodes.blocking': '阻塞项，本批次',
+  'episodes.blocking.scope': '使所选批次无法关闭的集。范围限于本机，按导入时间。',
+  'episodes.stuck': '停滞项，本中心',
+  'episodes.stuck.scope': '本上传中心内被搁置或被扣住的工作，不论来自哪个批次。',
+  'episodes.empty': '此范围内没有需要处理的项。',
+  'episodes.filter': '筛选这些行',
+  'episodes.col.episode': '集',
+  'episodes.col.session': '会话开始时间',
+  'episodes.col.state': '归属',
+  'episodes.col.needs': '待办',
+  'episodes.col.device': '存储卡',
+  'episodes.col.hold': '扣留',
+  'episodes.needs.assignment': '需要指定所属会话',
+  'episodes.needs.confirmation': '需要有人确认这次匹配',
+  'episodes.hold.parked': '已搁置',
+  'episodes.hold.held': '审核中被扣留',
+  'episodes.summary.episodes': '集数',
+  'episodes.summary.sessions': '会话数',
+  'episodes.summary.quarantined': '已隔离',
+  'episodes.summary.awaiting': '待确认',
+  'episodes.summary.parked': '已移出审核队列',
+  'episodes.summary.perSession': '每个会话的集数',
+  'episodes.resolve': '指定归属',
+  'episodes.resolve.title': '为这一集指定所属会话',
+  'episodes.resolve.session': '会话',
+  'episodes.resolve.reason': '为什么选这个会话',
+  'episodes.resolve.reasonHint': '没有写明理由时，数据库会拒绝这次归属。',
+  'episodes.resolve.done': '已指定归属。该批次已重新读取。',
+  'episodes.outcome': '审核结果',
+  'episodes.outcome.state': '判定结果',
+  'episodes.outcome.pending': '当前交付还没有结论。',
+  'episodes.outcome.collector': '采集者',
+  'episodes.outcome.decided': '判定时间',
+  'episodes.outcome.note': '审核员备注',
+  'episodes.outcome.reasons': '原因代码',
+  'episodes.outcome.failed': '结果未能载入。',
+  'episodes.close': '关闭',
+  'episodes.gone': '服务端上已经没有这一集了。请重新读取该批次。',
+  'episodes.reload': '重新读取',
+  'episodes.noMatch': '此范围内没有符合筛选条件的行。',
+  /* 向导语法：柜台收卡与后台任务派发共用。每一步只问一个问题。 */
+
+  'wiz.step': '步骤',
+  'wiz.review': '核对并提交',
+  'wiz.review.question': '写入之前，请逐项核对。',
+  'wiz.unanswered': '尚未填写',
+  'wiz.edit': '修改',
+  'wiz.back': '上一步',
+  'wiz.next': '下一步',
+  'wiz.needAnswer': '回答本题后才能继续。',
+  'wiz.failed.gone': '服务端已没有这一步所指的记录。请重新载入页面，从头再来。',
+  'wiz.failed.body':
+    '服务端不接受其中一项答案。这是控制台自身的缺陷，而不是您填错了；反馈时请附上下面的编号。',
+  'wiz.failed.session': '当前会话无权做此更改。请重新登录，或改用具备管理员角色的操作员。',
+
+  /* 柜台：收卡登记（BO-10、APP-17b）。 */
+
+  'counter.title': '收卡登记',
+  'counter.intro':
+    '采集者交回一张 TF 卡。请登记交卡人、卡取自哪台相机，以及卡上录了什么。最后一步之前不会写入任何数据。',
+  'counter.review.intro': '将写入两条记录：卡的交接，以及针对它申报的这次采集。可在此修改任一项。',
+  'counter.group.card': '这张卡',
+  'counter.group.recording': '这次采集',
+
+  'counter.step.collector': '采集者',
+  'counter.step.device': '相机',
+  'counter.step.card': '存储卡',
+  'counter.step.task': '任务',
+  'counter.step.scenario': '场景',
+  'counter.step.declare': '申报事项',
+
+  'counter.q.collector': '这张卡是谁交来的？',
+  'counter.q.device': '这张卡取自哪台相机？',
+  'counter.q.card': '是哪张卡，什么时候交到柜台的？',
+  'counter.q.task': '这次采集是针对哪个任务的？',
+  'counter.q.scenario': '在哪里采集的？采集是什么时候准备的？',
+  'counter.q.declare': '采集者是怎么申报的？',
+
+  'counter.note.collector':
+    '一张卡只属于一位采集者，也就是站在柜台前的这个人。中心、这台机器和您本人的身份都取自登录凭证，所以这里不会再问。',
+  'counter.note.device':
+    '相机会在采集者之间流转，卡也会在相机之间流转。两者都不按上一次谁拿着来推断，所以相机要明确指定。',
+  'counter.note.card':
+    '按卡上写的标识填写。这里的时间是卡在本柜台交接的时刻，不是录制的时刻。',
+  'counter.note.task':
+    '任务决定单价。采集者必须已经持有该任务的有效领取；若没有，服务端会拒绝这次采集，并说明是三种原因中的哪一种。',
+  'counter.note.scenario':
+    '准备时间是采集者回忆出来的。系统绝不会拿它去自动匹配素材，只有由手机应用创建的采集才会自动匹配，所以导入之后由操作员确认归属。',
+  'counter.note.declare':
+    '两项都必须回答。否是一个答案，没人问过不是，记录里也无法表达后者。',
+
+  'counter.field.card': 'TF 卡',
+  'counter.hint.card': '按卡上所写填写。',
+  'counter.field.handoverAt': '交卡时间',
+  'counter.hint.handoverAt': '您本地的时间。',
+  'counter.field.preparedAt': '采集准备时间',
+  'counter.hint.preparedAt': '您本地的时间。没有结束时间，也不设这个字段。',
+
+  'counter.declare.others': '画面中出现了其他人',
+  'counter.declare.sensitive': '画面中出现了敏感信息',
+  'counter.declare.yes': '是',
+  'counter.declare.no': '否',
+
+  'counter.privacy.low': '隐私风险低',
+  'counter.privacy.medium': '隐私风险中等',
+  'counter.privacy.high': '隐私风险高',
+
+  'counter.empty.collectors':
+    '本机还没有收到任何采集者名单。名册在后台维护，这里为空通常说明参考数据没有同步过来。',
+  'counter.empty.devices':
+    '本机还没有收到任何相机记录。设备在后台维护，这里为空通常说明参考数据没有同步过来。',
+  'counter.empty.tasks': '本机还没有收到任何任务。采集必须挂在任务下，没有任务就无法申报。',
+  'counter.empty.scenarios':
+    '本机还没有收到任何场景。场景是随服务预置的参考数据，为空即说明参考数据没有同步过来。',
+
+  'counter.commit': '登记交卡',
+  'counter.commit.session': '登记这次采集',
+  'counter.recorded':
+    '已按本次登记开始时的编号写入，再发一次也不会改变什么。若填错了，请另起一张卡重新登记。',
+  'counter.landed':
+    '交卡已入库。只剩这次采集还没写入，而前三项答案不能在它下面改动；若其中一项填错，请另起一张卡。',
+  'counter.refused.reference': '本机的参考数据与服务端不一致。请重新载入页面后再选。未找到：',
+
+  'counter.done.title': '卡已登记',
+  'counter.done.card': '卡不会被清空。这条链路上没有任何环节会删除卡上的内容，以后也不会有。',
+  'counter.done.match':
+    '这是在柜台登记的，所以素材不会按时间自动归到它名下。卡导入之后，由操作员在采集片段页确认归属。',
+  'counter.done.nextCard': '下一张卡',
+  'counter.done.nextSession': '这张卡上的另一次采集',
+
+  /* 后台：新建任务并把人派上去（BO-01、BO-02、APP-10，以及结算读取的设备保管期）。 */
+
+  'assign.title': '新建任务',
+  'assign.review.intro': '先创建任务，若选择发布则发布，然后逐个为采集者领取。可在此修改任一项。',
+  'assign.commit': '创建任务',
+  'assign.group.task': '任务本身',
+  'assign.group.people': '相关人员',
+
+  'assign.step.name': '名称',
+  'assign.step.rate': '单价',
+  'assign.step.capacity': '名额',
+  'assign.step.publish': '发布',
+  'assign.step.claimants': '领取人',
+  'assign.step.cameras': '相机',
+
+  'assign.q.name': '这个任务叫什么？',
+  'assign.q.rate': '它的报酬是多少？',
+  'assign.q.capacity': '同时最多允许几位采集者领取？',
+  'assign.q.publish': '现在就发布吗？',
+  'assign.q.claimants': '由谁来做？',
+  'assign.q.cameras': '有人要领走相机吗？',
+
+  'assign.note.name':
+    '名称是采集者在任务大厅里看到的文字。类型沿用 PaXini 自己的分类，没有固定清单。',
+  'assign.note.rate':
+    '一个小数，最多八位整数、四位小数，与数据库列的存法完全一致。它会乘进每一笔付款，所以录入时不做任何取整；任务一旦发布，这个数字就不能再改。',
+  'assign.note.capacity': '名额按当前有效的领取计数。释放一次领取，名额就还给任务。',
+  'assign.note.publish':
+    '草稿不能被领取：数据库会拒绝对未发布任务的领取。想稍后再补细节就先留作草稿，之后从表格里发布。',
+  'assign.note.claimants':
+    '领取表示这位采集者持有这个任务，他们据此录制的内容按该单价结算。不选任何人也是有效的答案，已发布的任务可以留给任务大厅去认领。',
+  'assign.note.cameras':
+    '这是保管期，不是绑定：结算据此判断某一天相机在谁手上。该相机上仍然开着的保管期，会在同一时刻被关闭。',
+
+  'assign.hint.type': 'PaXini 的分类，没有固定清单。',
+  'assign.hint.target': '可不填。按有效秒数计。',
+
+  'assign.publish.label': '现在发布这个任务',
+  'assign.publish.now': '已发布',
+  'assign.publish.draft': '留作草稿',
+
+  'assign.claimants.none': '无人',
+  'assign.claimants.empty': '目前还没有采集者。请先到采集者页建一位，再回到这里。',
+  'assign.cameras.none': '不发放相机',
+  'assign.cameras.no': '不发相机',
+  'assign.cameras.noClaimants': '没有人接这个任务，也就没有相机需要发放。',
+
+  'assign.done.title': '任务已创建',
+  'assign.done.published': '已发布，采集者可以领取。',
+  'assign.done.draft': '留作草稿。准备好后从表格里发布。',
+  'assign.done.nobody':
+    '没有给任何人派上。采集者可以自己在任务大厅领取，您也可以在本页代为领取。',
+  'assign.done.claimed': '已持有该任务。',
+  'assign.done.assigned': '相机已发放。',
+  'assign.done.someRefused':
+    '您所请求的内容有一部分被拒绝了。任务本身已经创建；上面每一行说明了谁没有派上，以及原因。',
+  'assign.done.close': '返回任务列表',
 };
 
 const vi: Record<MessageKey, string> = {
@@ -1839,6 +2825,19 @@ const vi: Record<MessageKey, string> = {
   'app.language': 'Ngôn ngữ',
 
   'login.title': 'Đăng nhập để duyệt',
+  'login.titleOperator': 'Đăng nhập trung tâm tải lên',
+  'login.groupMachine': 'Máy',
+  'login.fieldIdentifier': 'Mã',
+  'login.fieldReference': 'Mã số',
+  'login.fieldSecret': 'Khóa',
+  'login.trucOpen': 'Hỏi Trúc',
+  'login.trucTitle': 'Trúc',
+  'login.trucBody':
+    'Trúc chưa trả lời được. Khi kết nối xong, đây là nơi bạn hỏi một kết luận nghĩa là gì, vì sao một thẻ bị từ chối, hay một khoản tiền đã đi đâu.',
+  'login.trucSoon': 'Chưa kết nối',
+  'login.trucClose': 'Đóng',
+  'login.groupOperator': 'Nhân viên',
+  'login.groupReviewer': 'Người duyệt',
   'login.intro':
     'Hai thông tin xác thực, như mọi nơi khác trong dịch vụ này: máy chứng minh địa điểm, nhân viên chứng minh danh tính.',
   'login.machine': 'Mã máy',
@@ -2000,28 +2999,6 @@ const vi: Record<MessageKey, string> = {
   'nav.counter': 'Quầy',
   'nav.review': 'Duyệt',
   'nav.episodes': 'Phiên ghi',
-  'episodes.intro': 'Xem các phiên ghi đã nhận tại trung tâm tải lên của bạn, mới nhất trước.',
-  'episodes.noBatch': 'Không hiển thị phiên ghi chưa có lô tải lên.',
-  'episodes.task_id': 'Nhiệm vụ',
-  'episodes.collector_id': 'Người thu thập',
-  'episodes.device_id': 'Thiết bị',
-  'episodes.status': 'Trạng thái xác định',
-  'episodes.from': 'Nhận lần đầu từ (bao gồm)',
-  'episodes.to': 'Nhận lần đầu trước (không bao gồm)',
-  'episodes.timeHint': 'Lọc theo thời điểm nền tảng nhận phiên ghi lần đầu. Dùng ISO 8601 có múi giờ; để trống nếu không giới hạn.',
-  'episodes.apply': 'Áp dụng',
-  'episodes.retry': 'Thử lại',
-  'episodes.all': 'Tất cả',
-  'episodes.id': 'Mã phiên ghi',
-  'episodes.resolved': 'Đã xác định',
-  'episodes.quarantined': 'Đã cách ly',
-  'episodes.unattributed': 'Chưa xác định',
-  'episodes.firstSeen': 'Nền tảng nhận lần đầu',
-  'episodes.recorded': 'Thời gian ghi (văn bản từ thiết bị)',
-  'episodes.invalid': 'Kiểm tra bộ lọc: mã phải là UUID, trạng thái phải là đã xác định hoặc đã cách ly, thời gian phải có múi giờ và Từ phải trước Trước.',
-  'episodes.empty': 'Không có phiên ghi khớp bộ lọc',
-  'episodes.emptyBody': 'Đổi bộ lọc rồi áp dụng lại.',
-  'episodes.truncated': 'Đã đạt giới hạn 200 dòng. Thu hẹp bộ lọc để xem ít kết quả hơn.',
   'nav.settle': 'Thanh toán',
   'nav.pipeline': 'Tiến độ',
   'nav.notBuilt': 'Chưa xây dựng',
@@ -2285,6 +3262,53 @@ const vi: Record<MessageKey, string> = {
   'theme.light': 'Sáng',
   'theme.dark': 'Tối',
 
+  'guide.title': 'Hướng dẫn nhanh',
+  'guide.start': 'Xem qua một lượt',
+  'guide.step': 'Bước {{current}} trên {{total}}',
+  'guide.back': 'Quay lại',
+  'guide.next': 'Tiếp',
+  'guide.done': 'Xong',
+  'guide.close': 'Đóng hướng dẫn',
+  'guide.panda': 'Trúc đang chỉ vào mục mà bước này nói đến',
+  'guide.offscreen': 'Mục này hiện không có trên màn hình. Hãy sang bước tiếp theo.',
+  'guide.offer':
+    'Lần đầu vào đây? Một lượt xem ngắn sẽ cho biết từng phần của màn hình này dùng để làm gì.',
+  'guide.offer.accept': 'Xem qua một lượt',
+  'guide.offer.decline': 'Để sau',
+
+  'guide.home.gauge':
+    'Ca làm của bạn đến lúc này: số tập đã duyệt so với mục tiêu của ca. Vòng tròn là tiến độ, không phải kết luận duyệt.',
+  'guide.home.start':
+    'Nhận tập kế tiếp trong hàng đợi và mở nó. Tập đó thuộc về bạn cho đến khi bạn kết luận hoặc trả lại.',
+  'guide.home.settled':
+    'Giá trị các kết luận của riêng bạn trong kỳ này. Đây không phải chi phí của chương trình và cũng không phải một khoản chi.',
+  'guide.shell.counters':
+    'Số tập đang chờ trong hàng đợi và thời gian trung bình cho một kết luận. Cả hai luôn hiện trên mọi màn hình.',
+  'guide.shell.nav':
+    'Toàn bộ back office. Dấu chấm nghĩa là màn hình chưa được xây. Ô vuông tô một nửa nghĩa là mới xây được một phần.',
+  'guide.review.player':
+    'Đoạn ghi hình và con trỏ thời gian. Phím cách để phát và dừng. Phím mũi tên đi năm giây; giữ Shift để đi từng khung hình.',
+  'guide.review.marks':
+    'Đánh dấu điểm đầu và điểm cuối của phần dùng được bằng I và O. Máy chủ đo khoảng đó; màn hình này không gửi thời lượng.',
+  'guide.review.verdict':
+    'Ba kết luận: đạt, đạt một phần, loại. Phím 1, 2 và 3. Enter để ghi nhận kết luận bạn đã chọn.',
+  'guide.review.reasons':
+    'Kết luận loại phải có ít nhất một mã lý do. Người thu thập đọc các mã này bằng tiếng Việt, nên hãy chọn mã nói rõ cần sửa gì.',
+  'guide.pipeline.stage':
+    'Từng chặng của lần nạp dữ liệu và những gì còn chờ trong đó. Dừng ở một chặng nghĩa là việc nạp đang chờ hoặc đã lỗi ở đó. Điều này không nói gì về việc ghi hình: dữ liệu đã nằm trên thẻ.',
+  'guide.backoffice.tabs':
+    'Tác vụ, người thu thập và thiết bị. Mỗi thẻ là một danh sách có thể lọc, và mọi thay đổi ở đây đều ghi lại tài khoản của bạn.',
+  'guide.settle.period':
+    'Một kỳ quyết toán bắt đầu từ ngày này. Mọi hoá đơn có ngày bắt đầu kỳ nằm trong đó sẽ hiện bên dưới.',
+  'guide.settle.bills':
+    'Toàn bộ hoá đơn trong kỳ. Tổng tiền lấy từ các dòng và do máy chủ làm tròn; màn hình này không cộng thêm gì.',
+  'guide.risk.holds':
+    'Những khoản chi bị hệ thống giữ lại, kèm câu nói rõ lý do. Chỉ mở khoá khi bạn nói được điều gì đã thay đổi.',
+  'guide.episodes.scope':
+    'Phạm vi tập mà màn hình này đang hiển thị. Đây là một phạm vi, không phải toàn bộ danh mục.',
+  'guide.counter.plan':
+    'Mỗi bước chỉ hỏi một điều, và không ghi gì cho tới bước cuối. Thanh bên trái cho biết bạn đang ở đâu, và mọi câu trả lời đều sửa được từ trang tổng kết.',
+
   'settle.title': 'Thanh toán',
   'settle.intro':
     'Các hóa đơn của một kỳ, số dư ví so với chúng, những gì bộ máy rủi ro đã gắn cờ, và bản ghi của từng khoản chi. Mọi con số ở đây là của máy chủ; màn hình này không cộng và không làm tròn gì cả.',
@@ -2297,11 +3321,11 @@ const vi: Record<MessageKey, string> = {
   'settle.tab.exceptions': 'Ngoại lệ',
   'settle.mode.manual': 'Chi trả thủ công: nhân viên tự chuyển tiền và ghi mã tham chiếu tại đây.',
   'settle.mode.api': 'Chi trả qua API: các lệnh chuyển được gửi qua ZaloPay từ màn hình kiểm tra trước khi chi.',
-  'settle.readonly': 'Chỉ xem',
+  'settle.readonly': 'Cần quyền tài chính',
   'settle.readonly.operator':
-    'Phiên này không có vai trò tài chính. Mọi con số đều xem được; mọi thao tác chi trả bị vô hiệu ở đây và bị máy chủ từ chối.',
+    'Chỉ tài khoản tài chính được xem hóa đơn, chi tiết thanh toán và kiểm tra trước khi chi. Tài khoản này chưa có quyền đó. Hãy liên hệ nhân viên tài chính để xem kỳ này.',
   'settle.readonly.unknown':
-    'Không xác nhận được vai trò tài chính của phiên này, nên các thao tác chi trả bị vô hiệu. Tải lại để hỏi lại.',
+    'Chưa xác nhận được quyền của tài khoản. Dữ liệu tài chính và thao tác chi trả tạm thời không khả dụng. Tải lại để thử lại.',
   'settle.readonly.refused': 'Máy chủ từ chối: phiên này không có vai trò tài chính. Chưa có gì bị thay đổi.',
   'settle.failed': 'Yêu cầu không đến được máy chủ. Chưa có gì bị thay đổi.',
   'settle.invalid': 'Máy chủ không đọc được yêu cầu đó. Chưa có gì bị thay đổi.',
@@ -2705,6 +3729,398 @@ const vi: Record<MessageKey, string> = {
     'Không kết nối được tới Zalo nên không gửi được mã. Hãy nhờ cộng tác viên thử lại; nếu vẫn vậy thì đường tới Zalo đang hỏng.',
   'bo.refused.zns_refused':
     'Zalo từ chối gửi mã với một lý do máy chủ này không hiểu. Lý do nằm trong nhật ký máy chủ; hãy nhờ cộng tác viên thử lại trong khi có người đọc nhật ký.',
+  // Chuỗi riêng của bản dựng lại giao diện (ui.b.*): câu đứng cạnh hai con số trên nền mực.
+  'ui.b.settle.total.sentence':
+    'Số tiền lô này sẽ gửi. Máy chủ quyết định từng lần chuyển, và một hóa đơn vẫn có thể bị từ chối ngay lúc chi trả.',
+  'ui.b.risk.holds.count': 'Hóa đơn đang bị giữ',
+  'ui.b.risk.holds.sentence':
+    'Không khoản chuyển nào đi khi lệnh giữ còn mở. Gỡ một lệnh giữ cần một kết luận và một lý do viết ra; bộ máy chỉ thêm dòng mới, không bao giờ sửa dòng cũ.',
+
+  'login.video.region': 'Video giới thiệu',
+
+  'discover.headline.a': 'Gặp Ego.',
+  'discover.headline.mark': 'Việc thường ngày',
+  'discover.headline.b': ', từ góc nhìn của bạn.',
+  'discover.lead':
+    'Một máy quay đội đầu để ghi lại các hoạt động thường ngày. Người thu thập được trả tiền cho những phút hữu hiệu đã qua duyệt.',
+  'discover.signIn': 'Đăng nhập bảng điều khiển',
+  'discover.audiences':
+    'Hai lối vào. Người thu thập ghi hình bằng máy quay Ego và được trả cho số phút hữu hiệu mà người duyệt chấp nhận. Nhân viên trung tâm tải lên và người duyệt làm việc trên bảng điều khiển.',
+  'discover.video.caption':
+    'Đây là phim tạm, không phải bản ghi do camera tạo ra: một người đeo Ego được quay từ khoảng cách một cánh tay tại Paris. Ego ghi hình từ trán người đeo nên không thể quay chính người đeo. Một buổi quay thật sẽ thay thế nó.',
+  'discover.how.title': 'Bốn bước, theo thứ tự',
+  'discover.step.record.title': 'Ghi hình',
+  'discover.step.record.body':
+    'Bạn đeo máy quay và làm việc thường ngày — nấu ăn, làm vườn, dọn dẹp, ủi đồ. Nút bấm trên chính máy quay mới bắt đầu và dừng ghi hình.',
+  'discover.step.upload.title': 'Tải lên',
+  'discover.step.upload.body':
+    'Thẻ nhớ được giao tại quầy của trung tâm tải lên. Nhân viên ghi nhận việc bàn giao và nhập dữ liệu trên máy của trung tâm.',
+  'discover.step.review.title': 'Người duyệt',
+  'discover.step.review.body':
+    'Người duyệt xem tập tư liệu, đánh dấu phần dùng được và ghi mã lý do cho phần còn lại.',
+  'discover.step.payment.title': 'Thanh toán',
+  'discover.step.payment.body':
+    'Hóa đơn được lập cho số phút hữu hiệu đã duyệt theo đơn giá của nhiệm vụ, và được chi trả qua ZaloPay.',
+  'discover.cell.camera.title': 'Máy quay',
+  'discover.cell.camera.body':
+    'Ego là máy quay đội đầu do nền tảng cấp và gắn với một người. Chỉ nút bấm trên chính máy mới bắt đầu và dừng ghi hình — không ứng dụng điện thoại nào làm được, và cũng sẽ không được trao quyền đó.',
+  'discover.cell.pov.caption':
+    'Camera đeo trên trán. Một khung hình cắt ra từ phim tạm ở trên — góc nhìn từ người thứ ba về thiết bị, không phải hình ảnh nhìn qua nó.',
+  'discover.cell.activities.title': 'Những hoạt động nào được tính',
+  'discover.cell.activities.body':
+    'Hoạt động thường ngày ở nhà, ở văn phòng, ở cửa hàng và trong kho. Mỗi lần ghi hình đều được nhận theo một nhiệm vụ đã công bố từ trước, nên điều gì là phù hợp đã được viết ra trước, chứ không phán xét về sau.',
+  'discover.cell.review.title': 'Việc duyệt diễn ra thế nào',
+  'discover.cell.review.body':
+    'Mỗi tập tư liệu đều do một người xem, đánh dấu phần dùng được và ghi mã lý do cho phần còn lại. Chính phán quyết đó là nguồn duy nhất của con số dùng để trả tiền; không có cơ chế nào khác trên nền tảng tính ra con số ấy.',
+  'discover.cell.minutes.title': 'Phút được trả tiền được xác định ra sao',
+  'discover.cell.minutes.body':
+    'Thời gian được trả là khoảng mà mọi luồng dữ liệu ghi được cùng bao phủ, không phải luồng dài nhất. Con số thời lượng do thiết bị tự khai chỉ mang tính tham khảo và thường cao hơn thực tế, nên nền tảng đo trên chính tệp tư liệu.',
+  'discover.before.title': 'Trước khi tham gia',
+  'discover.before.q.record': 'Tôi cần ghi hình những gì?',
+  'discover.before.a.record':
+    'Hoạt động thường ngày, theo một nhiệm vụ đã nhận trước. Có đào tạo và một bài kiểm tra trước nhiệm vụ đầu tiên.',
+  'discover.before.q.paid': 'Mọi phút ghi được đều có tiền chứ?',
+  'discover.before.a.paid':
+    'Không. Chỉ phần được người duyệt cho là dùng được mới được trả, và một đoạn ghi hình có thể bị từ chối toàn bộ.',
+  'discover.before.q.when': 'Khi nào khoản trả được quyết định?',
+  'discover.before.a.when':
+    'Sau khi thẻ nhớ được nhập và tập tư liệu được duyệt. Hóa đơn lập theo từng kỳ quyết toán, và tổng tiền được làm tròn xuống đến đồng.',
+  'discover.before.q.data': 'Những gì về tôi được thu thập?',
+  'discover.before.a.data':
+    'Các cam kết đồng ý mà thỏa thuận ghi hình yêu cầu, và không gì ngoài chúng. Tư liệu được lưu trữ trong lãnh thổ Việt Nam.',
+  'discover.handoff.title': 'Bạn đã là nhân viên vận hành hay người duyệt?',
+  'discover.handoff.body':
+    'Hãy đăng nhập vào console. Nhân viên trung tâm tải lên ghi nhận việc bàn giao và nhập thẻ nhớ; người kiểm duyệt xem tư liệu và quyết định phần nào được trả.',
+  'discover.credits': 'Phim và ảnh: nguồn và giấy phép',
+  'discover.partners':
+    'PlayerOne là liên doanh giữa VNG PT Lab và PaXini. VNG vận hành nền tảng và các trung tâm tải lên; PaXini sản xuất camera Ego và, trong giai đoạn này, kiểm duyệt tư liệu.',
+  'discover.foot.legal':
+    'PlayerOne là liên doanh giữa VNG PT Lab và PaXini. Mọi bản ghi đều do một người duyệt trước khi có phút nào được thanh toán, và tư liệu được lưu trữ trong lãnh thổ Việt Nam.',
+  'discover.ways.title': 'Đi tiếp từ đây',
+  'discover.take.cta': 'Tải APK',
+  'discover.take.title': 'Người thu thập',
+  'discover.take.body':
+    'Công việc thu thập bắt đầu bằng huấn luyện và một bài kiểm tra. Mỗi lần ghi hình đều phải nhận một nhiệm vụ trước khi bật máy; máy quay do nền tảng cấp và vẫn thuộc về nền tảng. Tiền trả cho số phút hữu hiệu mà người duyệt chấp nhận.',
+  'discover.take.pending':
+    'APK chưa được phát hành, nên hôm nay chưa có gì để tải từ trang này. Bản cài sẽ được dẫn ở đây khi phát hành.',
+
+  'discover.nav.label': 'Trong trang này',
+  'discover.nav.camera': 'Máy quay',
+  'discover.nav.work': 'Công việc',
+  'discover.nav.review': 'Kiểm duyệt',
+  'discover.nav.payment': 'Thanh toán',
+  'discover.nav.questions': 'Câu hỏi',
+
+  'discover.eyebrow': 'Ego — máy quay đeo trên đầu',
+  'discover.line.1': 'Ghi hình.',
+  'discover.line.2': 'Nộp thẻ nhớ.',
+  'discover.line.3': 'Một người duyệt.',
+  'discover.line.4': 'Trả theo phút.',
+
+  'discover.chip.task': 'Đã nhận nhiệm vụ',
+  'discover.chip.handover': 'Đã nhận thẻ tại quầy',
+  'discover.chip.rate': 'Trả cho mỗi phút được duyệt',
+
+  'discover.label.camera': 'Thiết bị',
+  'discover.label.work': 'Công việc',
+  'discover.label.film': 'Phim minh hoạ',
+  'discover.label.review': 'Kiểm duyệt',
+  'discover.label.payment': 'Thanh toán',
+  'discover.label.questions': 'Câu hỏi',
+  'discover.label.next': 'Tiếp theo',
+
+  'discover.work.note':
+    'Ảnh minh hoạ về công việc thường ngày. Không tấm nào là tư liệu do máy quay Ego ghi, và không tấm nào được chú thích như vậy. Một buổi quay thật sẽ thay thế chúng.',
+
+  'discover.verdict.note':
+    'Người duyệt ghi một trong ba kết quả và nêu mã lý do cho phần không dùng được.',
+
+  'discover.streams.video': 'Hình',
+  'discover.streams.audio': 'Tiếng',
+  'discover.streams.imu': 'Chuyển động',
+  'discover.streams.payable': 'Được tính: khoảng thời gian mà mọi luồng đều có',
+  'discover.streams.device':
+    'Máy báo theo luồng dài nhất. Con số đó chỉ để tham khảo và cao hơn thực tế.',
+
+  'nf.eyebrow': 'Không có trang này',
+  'nf.title.a': 'Không có gì',
+  'nf.title.b': 'được ghi ở',
+  'nf.title.c': 'địa chỉ này.',
+  'nf.body':
+    'Liên kết sai, hoặc trang đã chuyển. Mọi điều nền tảng nói về chính nó đều nằm ở trang giới thiệu.',
+  'nf.back': 'Về trang giới thiệu',
+  'login.network':
+    'Dịch vụ không trả lời. Hãy kiểm tra máy có nằm trong mạng của trung tâm rồi thử lại.',
+
+  'login.legal': 'Khi đăng nhập, bạn chấp nhận cách PlayerOne xử lý dữ liệu của bạn.',
+  'login.legalPrivacy': 'Chính sách quyền riêng tư',
+  'login.legalData': 'Thông báo thu thập dữ liệu',
+
+  'ui.a.home.gauge': 'Đã duyệt {{value}} trên {{target}} tập trong ca này',
+  'ui.a.home.gaugeCaption': 'tập đã duyệt trong ca này',
+  'ui.a.home.payable.note': 'Thời lượng hữu ích, chỉ tính từ các lượt duyệt đã có kết luận.',
+  'ui.a.home.approval.note': 'Số lượt đạt và đạt một phần, trên tổng số quyết định hôm nay.',
+  'ui.a.home.pace.note': 'Từ lúc tải đến lúc có kết luận. Chỉ để theo dõi, không phải tiền.',
+  'ui.a.home.clock': 'Đồng hồ của máy này.',
+  'ui.a.home.approval.target': 'Mục tiêu chương trình 85–90%.',
+  'ui.a.home.recent.time': 'Thời điểm',
+  'ui.a.home.recent.episode': 'Tập',
+  'ui.a.home.recent.verdict': 'Kết luận',
+  'ui.a.home.recent.duration': 'Đo được → hiệu lực',
+  'ui.a.home.recent.amount': 'Số tiền',
+  'ui.a.home.recent.pace': 'Thời gian xử lý',
+  'ui.a.home.settled.note': 'Chỉ các quyết định của bạn. Không phải chi phí của cả chương trình.',
+  'ui.a.home.settled.open': 'Mở phần thanh toán',
+  'ui.a.home.error.title': 'Không tải được số liệu ca làm việc.',
+  'ui.a.home.error.body':
+    'Mọi phần khác của màn hình này vẫn dùng được. Các con số lấy từ cơ sở dữ liệu duyệt; nếu lỗi lặp lại thì API không kết nối được Postgres.',
+  'ui.a.home.recent.error': 'Không tải được các kết luận gần đây.',
+  'ui.a.home.unavailable': 'Chưa có số liệu',
+
+  'ui.a.home.asOf': 'Tính đến {{time}}',
+  'ui.a.home.next.title': 'Mỗi lần một bản ghi.',
+  'ui.a.home.next.body':
+    'Tiền của người thu thập chỉ đến từ kết luận ở đây. Khi sẵn sàng, hãy nhận tập tiếp theo.',
+  'ui.a.home.queueWaiting': 'đang chờ trong hàng đợi của bạn',
+  'ui.a.home.results': 'Ca này đã làm được gì',
+  'ui.a.home.median': 'Trung vị thời gian ra kết luận',
+  'ui.a.home.median.note':
+    'Giá trị giữa của các lượt duyệt được bấm giờ trong ca này. Chỉ để theo dõi, không phải tiền.',
+  'ui.a.home.attention.none': 'Không có việc nào đang chờ người xử lý.',
+  'ui.a.home.attention.unknown':
+    'Chưa kết nối. Màn hình này không thể nói việc nào cần xử lý.',
+
+  'ui.a.home.insights': 'Thông tin thêm (tuỳ chọn)',
+  'ui.a.home.truc.lede':
+    'Trúc chỉ là một kênh phụ. Mọi điều Trúc nói đều đã được ghi trên trang này, nên không có gì phụ thuộc vào Trúc.',
+  'ui.a.home.truc.greet': 'Xin chào. {{shift}}.',
+  'ui.a.home.truc.offline': 'Chưa kết nối. Tôi không có số liệu đo được nào để báo.',
+  'ui.a.home.truc.source': 'Nguồn: số liệu ca làm việc của bạn.',
+  'ui.a.home.truc.pause': 'Tạm dừng Trúc',
+  'ui.a.home.truc.resume': 'Chạy lại Trúc',
+
+  'ui.a.home.preview.show': 'Hiện ví dụ minh hoạ',
+  'ui.a.home.preview.hide': 'Ẩn ví dụ minh hoạ',
+  'ui.a.home.preview.why':
+    'Không có gì ở đây được đo. Các ví dụ chỉ cho thấy hình dạng của một bảng chưa được xây.',
+  'ui.a.home.preview.note':
+    'Điểm cuối ca làm việc trả về số liệu hiện tại và không có chuỗi lịch sử, nên không có xu hướng nào đứng sau các con số này. Chúng chỉ dùng để chốt bố cục, và không bao giờ thay thế một số liệu tải lỗi.',
+  'ui.a.home.preview.badge': 'Ví dụ — không phải dữ liệu thật',
+  'ui.a.home.preview.trend': 'Bối cảnh được ghi nhiều nhất',
+  'ui.a.home.preview.trendValue': 'Làm vườn',
+  'ui.a.home.preview.week': 'Thời lượng bạn duyệt tuần này',
+  'ui.a.home.preview.streak': 'Số ca liên tiếp',
+
+  'ui.a.notBuilt.today': 'Hiện nay việc này được làm thế nào',
+
+  'ui.a.pipeline.track': 'Một bản ghi đi qua những bước nào',
+  'ui.a.pipeline.owed': 'Đang chờ PaXini',
+
+  'episodes.title': 'Các tập cần xử lý',
+  'episodes.intro':
+    'Việc duyệt toàn bộ tập theo nhiệm vụ, cộng tác viên, thiết bị, trạng thái và thời gian ghi (BO-05) cần một API danh sách hiện chưa có.',
+  'episodes.batch': 'Các lô đã nhập trên máy này, 100 lô gần nhất',
+  'episodes.batch.pick': 'Lô',
+  'episodes.batch.none': 'Máy này chưa nhập lô nào.',
+  'episodes.batch.failed': 'Không tải được danh sách lô.',
+  'episodes.blocking': 'Đang chặn, trong lô này',
+  'episodes.blocking.scope':
+    'Những tập khiến lô đã chọn chưa đóng được. Phạm vi: máy này, theo thời gian nhập.',
+  'episodes.stuck': 'Đang kẹt, tại trung tâm này',
+  'episodes.stuck.scope':
+    'Việc bị tạm dừng hoặc bị giữ ở bất kỳ đâu trong trung tâm này, thuộc lô nào cũng tính.',
+  'episodes.empty': 'Không có mục nào cần xử lý trong phạm vi này.',
+  'episodes.filter': 'Lọc các dòng này',
+  'episodes.col.episode': 'Tập',
+  'episodes.col.session': 'Bắt đầu phiên',
+  'episodes.col.state': 'Quy kết',
+  'episodes.col.needs': 'Cần',
+  'episodes.col.device': 'Thẻ nhớ',
+  'episodes.col.hold': 'Đang giữ',
+  'episodes.needs.assignment': 'Cần gán vào một phiên',
+  'episodes.needs.confirmation': 'Cần người xác nhận kết quả khớp',
+  'episodes.hold.parked': 'Đã tạm dừng',
+  'episodes.hold.held': 'Bị giữ khi duyệt',
+  'episodes.summary.episodes': 'Số tập',
+  'episodes.summary.sessions': 'Số phiên',
+  'episodes.summary.quarantined': 'Bị cách ly',
+  'episodes.summary.awaiting': 'Chờ xác nhận',
+  'episodes.summary.parked': 'Đã đưa ra khỏi hàng chờ duyệt',
+  'episodes.summary.perSession': 'Số tập mỗi phiên',
+  'episodes.resolve': 'Gán phiên',
+  'episodes.resolve.title': 'Gán tập này cho một phiên',
+  'episodes.resolve.session': 'Phiên',
+  'episodes.resolve.reason': 'Vì sao chọn phiên này',
+  'episodes.resolve.reasonHint': 'Cơ sở dữ liệu từ chối nếu việc gán không có lý do.',
+  'episodes.resolve.done': 'Đã gán. Lô này đã được đọc lại.',
+  'episodes.outcome': 'Kết quả duyệt',
+  'episodes.outcome.state': 'Kết luận',
+  'episodes.outcome.pending': 'Bản giao đang tính chưa có kết luận.',
+  'episodes.outcome.collector': 'Cộng tác viên',
+  'episodes.outcome.decided': 'Thời điểm quyết định',
+  'episodes.outcome.note': 'Ghi chú của người duyệt',
+  'episodes.outcome.reasons': 'Mã lý do',
+  'episodes.outcome.failed': 'Không tải được kết quả.',
+  'episodes.close': 'Đóng',
+  'episodes.gone': 'Tập này không còn trên máy chủ. Hãy đọc lại lô.',
+  'episodes.reload': 'Đọc lại',
+  'episodes.noMatch': 'Không có dòng nào trong phạm vi này khớp với bộ lọc.',
+  /* Ngữ pháp của luồng nhiều bước: dùng chung cho quầy nhận thẻ và giao nhiệm vụ. */
+
+  'wiz.step': 'Bước',
+  'wiz.review': 'Kiểm lại rồi ghi',
+  'wiz.review.question': 'Kiểm lại từng câu trả lời trước khi ghi.',
+  'wiz.unanswered': 'Chưa trả lời',
+  'wiz.edit': 'Sửa',
+  'wiz.back': 'Quay lại',
+  'wiz.next': 'Tiếp',
+  'wiz.needAnswer': 'Hãy trả lời câu này rồi mới đi tiếp.',
+  'wiz.failed.gone': 'Máy chủ không còn dòng mà bước này gọi tên. Hãy tải lại màn hình và làm lại.',
+  'wiz.failed.body':
+    'Máy chủ không nhận một trong các câu trả lời. Đây là lỗi của bảng điều khiển chứ không phải của người nhập; khi báo lỗi hãy kèm mã tham chiếu bên dưới.',
+  'wiz.failed.session':
+    'Phiên này không được phép thực hiện thay đổi đó. Hãy đăng nhập lại, hoặc nhờ một người vận hành có vai trò quản trị.',
+
+  /* Quầy: nhận thẻ (BO-10, APP-17b). */
+
+  'counter.title': 'Nhận thẻ',
+  'counter.intro':
+    'Cộng tác viên nộp lại một thẻ TF. Hãy ghi ai nộp, thẻ lấy ra từ máy quay nào, và trên thẻ đã quay gì. Không có gì được ghi cho tới bước cuối.',
+  'counter.review.intro':
+    'Sẽ ghi hai dòng: việc bàn giao thẻ, và buổi quay được khai theo thẻ đó. Có thể sửa bất kỳ câu trả lời nào từ đây.',
+  'counter.group.card': 'Chiếc thẻ',
+  'counter.group.recording': 'Buổi quay',
+
+  'counter.step.collector': 'Cộng tác viên',
+  'counter.step.device': 'Máy quay',
+  'counter.step.card': 'Thẻ nhớ',
+  'counter.step.task': 'Nhiệm vụ',
+  'counter.step.scenario': 'Bối cảnh',
+  'counter.step.declare': 'Phần khai báo',
+
+  'counter.q.collector': 'Ai nộp chiếc thẻ này?',
+  'counter.q.device': 'Thẻ này lấy ra từ máy quay nào?',
+  'counter.q.card': 'Đây là thẻ nào, và nhận lúc mấy giờ?',
+  'counter.q.task': 'Nội dung này quay theo nhiệm vụ nào?',
+  'counter.q.scenario': 'Quay ở đâu, và buổi quay được chuẩn bị lúc nào?',
+  'counter.q.declare': 'Cộng tác viên khai những gì?',
+
+  'counter.note.collector':
+    'Một thẻ thuộc về một cộng tác viên, và đó là người đang đứng ở quầy. Trung tâm, máy này và tên của chính bạn lấy từ thông tin đăng nhập, nên không hỏi lại ở đây.',
+  'counter.note.device':
+    'Máy quay luân chuyển giữa các cộng tác viên và thẻ luân chuyển giữa các máy quay. Không suy ra theo kiểu lần trước ai giữ, nên máy quay phải được chỉ rõ.',
+  'counter.note.card':
+    'Ghi đúng nhãn trên thẻ. Thời gian ở đây là lúc thẻ đổi tay tại quầy này, không phải lúc quay.',
+  'counter.note.task':
+    'Nhiệm vụ quyết định đơn giá. Cộng tác viên phải đang giữ một lượt nhận nhiệm vụ đó; nếu không, máy chủ từ chối buổi quay và nói rõ là lý do nào trong ba lý do.',
+  'counter.note.scenario':
+    'Thời điểm chuẩn bị là điều cộng tác viên nhớ lại. Hệ thống không bao giờ tự khớp nó với dữ liệu quay, vì chỉ buổi quay do ứng dụng tạo mới được khớp tự động, nên sau khi nhập thẻ sẽ có người vận hành xác nhận.',
+  'counter.note.declare':
+    'Bắt buộc trả lời cả hai. Không là một câu trả lời, còn chưa ai hỏi thì không, và bản ghi cũng không có cách nào diễn đạt điều thứ hai.',
+
+  'counter.field.card': 'Thẻ TF',
+  'counter.hint.card': 'Ghi đúng như trên thẻ.',
+  'counter.field.handoverAt': 'Nhận lúc',
+  'counter.hint.handoverAt': 'Giờ địa phương của bạn.',
+  'counter.field.preparedAt': 'Buổi quay chuẩn bị lúc',
+  'counter.hint.preparedAt':
+    'Giờ địa phương của bạn. Không có thời điểm kết thúc, và cũng không có ô để nhập.',
+
+  'counter.declare.others': 'Có người khác xuất hiện trong hình',
+  'counter.declare.sensitive': 'Có thông tin nhạy cảm xuất hiện trong hình',
+  'counter.declare.yes': 'Có',
+  'counter.declare.no': 'Không',
+
+  'counter.privacy.low': 'Rủi ro riêng tư thấp',
+  'counter.privacy.medium': 'Rủi ro riêng tư trung bình',
+  'counter.privacy.high': 'Rủi ro riêng tư cao',
+
+  'counter.empty.collectors':
+    'Máy này chưa nhận được danh sách cộng tác viên nào. Danh sách nằm ở khu vực quản trị, và trống ở đây thường nghĩa là dữ liệu tham chiếu chưa đồng bộ về.',
+  'counter.empty.devices':
+    'Máy này chưa nhận được máy quay nào. Đội thiết bị nằm ở khu vực quản trị, và trống ở đây thường nghĩa là dữ liệu tham chiếu chưa đồng bộ về.',
+  'counter.empty.tasks':
+    'Máy này chưa nhận được nhiệm vụ nào. Buổi quay luôn phải gắn với một nhiệm vụ, nên chưa có nhiệm vụ thì chưa khai được gì.',
+  'counter.empty.scenarios':
+    'Máy này chưa nhận được bối cảnh nào. Bối cảnh là dữ liệu tham chiếu cài sẵn cùng dịch vụ, nên danh sách trống nghĩa là dữ liệu tham chiếu chưa về.',
+
+  'counter.commit': 'Ghi việc bàn giao',
+  'counter.commit.session': 'Ghi buổi quay',
+  'counter.recorded':
+    'Đã ghi rồi, theo mã mà lần nhận thẻ này bắt đầu. Gửi lại cũng không thay đổi gì. Nếu sai, hãy bắt đầu một thẻ mới.',
+  'counter.landed':
+    'Việc bàn giao đã vào sổ. Chỉ còn buổi quay là chưa ghi, và ba câu trả lời đầu không thể đổi bên dưới nó; nếu một trong ba sai, hãy bắt đầu một thẻ mới.',
+  'counter.refused.reference':
+    'Máy này đang giữ dữ liệu tham chiếu mà máy chủ không nhận ra. Hãy tải lại màn hình rồi chọn lại. Không tìm thấy:',
+
+  'counter.done.title': 'Đã ghi nhận thẻ',
+  'counter.done.card':
+    'Thẻ không bị xoá. Không khâu nào trên đường đi này xoá nội dung trên thẻ, và sẽ không bao giờ có.',
+  'counter.done.match':
+    'Việc này được ghi tại quầy, nên dữ liệu quay không tự khớp theo thời gian. Sau khi nhập thẻ, người vận hành xác nhận quy thuộc ở màn hình Tập ghi.',
+  'counter.done.nextCard': 'Thẻ tiếp theo',
+  'counter.done.nextSession': 'Một buổi quay khác trên thẻ này',
+
+  /* Quản trị: tạo nhiệm vụ và giao cho người (BO-01, BO-02, APP-10, và kỳ giữ máy mà thanh toán đọc). */
+
+  'assign.title': 'Nhiệm vụ mới',
+  'assign.review.intro':
+    'Tạo nhiệm vụ trước, đăng lên nếu bạn chọn thế, rồi lần lượt nhận nhiệm vụ cho từng cộng tác viên. Có thể sửa bất kỳ câu trả lời nào từ đây.',
+  'assign.commit': 'Tạo nhiệm vụ',
+  'assign.group.task': 'Nhiệm vụ',
+  'assign.group.people': 'Con người',
+
+  'assign.step.name': 'Tên',
+  'assign.step.rate': 'Đơn giá',
+  'assign.step.capacity': 'Số chỗ',
+  'assign.step.publish': 'Đăng',
+  'assign.step.claimants': 'Người nhận',
+  'assign.step.cameras': 'Máy quay',
+
+  'assign.q.name': 'Nhiệm vụ này tên là gì?',
+  'assign.q.rate': 'Nhiệm vụ này trả bao nhiêu?',
+  'assign.q.capacity': 'Cùng lúc cho phép mấy cộng tác viên giữ?',
+  'assign.q.publish': 'Đăng ngay bây giờ?',
+  'assign.q.claimants': 'Ai sẽ nhận việc này?',
+  'assign.q.cameras': 'Có ai mang máy quay về không?',
+
+  'assign.note.name':
+    'Tên là chữ mà cộng tác viên đọc thấy ở sảnh nhiệm vụ. Loại theo cách phân loại của PaXini và không có danh sách cố định.',
+  'assign.note.rate':
+    'Một số thập phân, tối đa tám chữ số phần nguyên và bốn chữ số phần lẻ, đúng như cột lưu. Nó nhân vào mọi khoản chi trả nên không làm tròn khi nhập; và một khi nhiệm vụ đã đăng thì con số này không đổi được nữa.',
+  'assign.note.capacity':
+    'Giới hạn đếm theo các lượt nhận đang còn hiệu lực. Trả lại một lượt nhận là trả chỗ về cho nhiệm vụ.',
+  'assign.note.publish':
+    'Bản nháp thì không nhận được: cơ sở dữ liệu từ chối lượt nhận trên nhiệm vụ chưa đăng. Cứ để nháp nếu muốn bổ sung chi tiết sau, rồi đăng từ bảng.',
+  'assign.note.claimants':
+    'Lượt nhận nghĩa là cộng tác viên này đang giữ nhiệm vụ này, và những gì họ quay theo đó được trả theo đơn giá của nó. Không chọn ai cũng là một câu trả lời thật, vì nhiệm vụ đã đăng có thể để sảnh nhiệm vụ tự lấp đầy.',
+  'assign.note.cameras':
+    'Đây là kỳ giữ máy chứ không phải việc gán máy: thanh toán đọc nó để biết ngày đó máy nằm trong tay ai. Kỳ nào còn mở trên máy quay đó sẽ được đóng lại ngay tại cùng thời điểm.',
+
+  'assign.hint.type': 'Cách phân loại của PaXini. Không có danh sách cố định.',
+  'assign.hint.target': 'Không bắt buộc. Tính bằng giây hữu hiệu.',
+
+  'assign.publish.label': 'Đăng nhiệm vụ này ngay',
+  'assign.publish.now': 'Đã đăng',
+  'assign.publish.draft': 'Để làm nháp',
+
+  'assign.claimants.none': 'Không ai',
+  'assign.claimants.empty':
+    'Chưa có cộng tác viên nào. Hãy tạo một người ở thẻ cộng tác viên rồi quay lại.',
+  'assign.cameras.none': 'Không phát máy quay',
+  'assign.cameras.no': 'Không phát máy',
+  'assign.cameras.noClaimants': 'Không ai nhận việc này, nên cũng không có máy quay nào để phát.',
+
+  'assign.done.title': 'Đã tạo nhiệm vụ',
+  'assign.done.published': 'Đã đăng. Cộng tác viên có thể nhận.',
+  'assign.done.draft': 'Để làm nháp. Khi nào xong thì đăng từ bảng.',
+  'assign.done.nobody':
+    'Chưa giao cho ai. Cộng tác viên có thể tự nhận ở sảnh nhiệm vụ, hoặc bạn nhận thay họ ngay ở thẻ này.',
+  'assign.done.claimed': 'Đang giữ nhiệm vụ.',
+  'assign.done.assigned': 'Đã phát máy quay.',
+  'assign.done.someRefused':
+    'Một phần yêu cầu đã bị từ chối. Bản thân nhiệm vụ đã được tạo; các dòng trên nói ai chưa được giao và vì sao.',
+  'assign.done.close': 'Về danh sách nhiệm vụ',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { en, zh, vi };

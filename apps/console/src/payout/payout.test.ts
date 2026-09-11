@@ -195,6 +195,34 @@ const NEW_KEYS = [
   'settle.ticket.TICKET.RECON_DISCREPANCY',
 ];
 
+describe('finance access uses a read-only stored-role lookup', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([
+    ['finance', 'active', 'finance'],
+    ['administrator', 'active', 'operator'],
+    ['reviewer', 'active', 'operator'],
+    ['finance', 'retired', 'unknown'],
+  ])('maps %s / %s without probing a payment action', async (role, status, expected) => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ operator: { role, status } }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetcher);
+    expect(await payout.financeRole()).toBe(expected);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const [url, options] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/operator/profile');
+    expect(options.method ?? 'GET').toBe('GET');
+  });
+
+  it('does not infer access from a malformed profile', async () => {
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ role: 'operator' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }));
+    expect(await payout.financeRole()).toBe('unknown');
+  });
+});
+
 describe('the catalogue names every new sentence', () => {
   it('holds each one in English, Chinese and Vietnamese', () => {
     /**

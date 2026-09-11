@@ -1,0 +1,92 @@
+@import '@fontsource-variable/archivo';
+
+/* Shared presentation for sign-in and the working console. Workflow/status
+   colors and tabular money remain the existing operational theme tokens. */
+.ops-world {
+  --font-display: var(--discover-font);
+  font-family: var(--discover-font);
+  color: var(--foreground);
+  background: var(--background);
+  min-height: 100dvh;
+}
+.ops-world *, .ops-world *::before, .ops-world *::after { box-sizing: border-box; }
+.ops-world :focus-visible { outline: 2px solid var(--foreground); outline-offset: 4px; }
+.ops-world button, .ops-world select, .ops-world a { touch-action: manipulation; }
+.ops-brand { display: inline-flex; flex-shrink: 0; align-items: center; min-height: 44px; color: var(--foreground); text-decoration: none; }
+.ops-brand-logo { width: 9.5rem; height: auto; display: block; }
+.ops-header-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.ops-header-controls button, .ops-header-controls select { min-height: 44px; }
+.ops-login { display: flex; flex-direction: column; }
+.ops-login-header { min-height: 80px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .5rem 1rem; padding: 1rem 2rem; border-bottom: 1px solid var(--border); }
+.ops-login-layout { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'film form'; align-items: stretch; }
+.ops-login-form-region { grid-area: form; min-width: 0; display: flex; padding: clamp(2rem, 3vw, 3rem); background: var(--surface); }
+.ops-login-form-wrap { width: 100%; max-width: 28rem; margin: auto; }
+.ops-login-heading { margin-bottom: 1.5rem; }
+.ops-login-heading h1 { font-family: var(--discover-font); font-size: clamp(2rem, 2.8vw, 3rem); letter-spacing: -.035em; line-height: 1.08; font-weight: 550; text-wrap: balance; }
+.ops-login-heading p { color: var(--muted-foreground); font-size: .875rem; line-height: 1.6; margin-top: .75rem; max-width: 44ch; }
+.ops-credentials { display: flex; flex-direction: column; gap: 1.5rem; }
+.ops-credential-group { padding-top: .25rem; }
+.ops-credential-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.ops-credential-fields > label { min-width: 0; }
+.ops-credentials input:not([type='radio']) { min-height: 48px; }
+.ops-credentials [role='presentation'] { height: auto; min-height: 48px; }
+.ops-credentials [role='presentation'] > label { height: auto; min-height: 44px; padding-block: .5rem; text-align: center; }
+.ops-credentials fieldset { min-width: 0; }
+.ops-login-legal { display: flex; flex-direction: column; gap: .5rem; margin-top: 1.5rem; color: var(--muted-foreground); font-size: .75rem; line-height: 1.6; }
+.ops-login-legal > span:last-child { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
+.ops-login-film { grid-area: film; position: relative; min-height: 36rem; overflow: hidden; isolation: isolate; background: var(--stage); color: var(--stage-fg); display: flex; flex-direction: column; justify-content: flex-end; }
+.ops-login-poster, .ops-login-film video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.ops-login-film video[hidden] { display: none; }
+.ops-login-film-copy { position: relative; z-index: 1; padding: 5rem clamp(1.5rem, 3vw, 3rem) 2rem; background: linear-gradient(to bottom, transparent, var(--stage) 55%); }
+.ops-login-film-copy h2 { font-family: var(--discover-font); font-size: clamp(1.75rem, 2.8vw, 2.75rem); font-weight: 500; letter-spacing: -.035em; line-height: 1.12; max-width: 22ch; text-wrap: balance; }
+.ops-login-film-copy p { font-size: .8125rem; line-height: 1.6; color: var(--stage-mid); max-width: 50ch; margin-top: .75rem; }
+.ops-film-toggle { display: inline-flex; align-items: center; gap: .75rem; min-height: 44px; border: 1px solid var(--stage-line); border-radius: var(--radius-pill); padding: .5rem 1rem; margin-top: 1rem; font-size: .875rem; cursor: pointer; }
+.ops-login-film :focus-visible { outline-color: var(--stage-fg); }
+
+.ops-shell { display: flex; flex-direction: column; }
+.ops-shell-header { position: sticky; top: 0; z-index: 30; background: var(--surface); border-bottom: 1px solid var(--border); }
+.ops-shell-top { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem 1.5rem; padding: .75rem 1.5rem; }
+.ops-shell-top > .ops-header-controls { margin-left: auto; }
+.ops-shell-counters { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; }
+.ops-counter { display: inline-flex; align-items: center; gap: .4rem; font-size: .75rem; color: var(--muted-foreground); }
+.ops-counter strong { font-size: .875rem; font-weight: 600; color: var(--foreground); }
+.ops-shell-nav { display: flex; min-width: 0; flex-wrap: wrap; gap: .25rem; padding: 0 1.5rem .75rem; }
+.ops-shell-nav a { display: inline-flex; align-items: center; gap: .5rem; min-height: 44px; padding: .55rem .9rem; border-radius: var(--radius-pill); font-size: .875rem; font-weight: 550; line-height: 1.4; color: var(--muted-foreground); text-decoration: none; }
+.ops-shell-nav a:hover { color: var(--foreground); background: var(--muted); }
+.ops-shell-nav a[aria-current='page'] { color: var(--action-ink); background: var(--action); }
+.ops-shell-nav svg { flex-shrink: 0; }
+.ops-shell-control { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 44px; padding: .5rem .75rem; border: 1px solid var(--border); border-radius: var(--radius-pill); font-size: .8125rem; color: var(--foreground); cursor: pointer; }
+.ops-shell-control:hover { background: var(--muted); }
+.ops-operator { display: inline-flex; align-items: center; min-height: 44px; max-width: 14rem; overflow-wrap: anywhere; font-size: .8125rem; color: var(--muted-foreground); }
+.ops-main { flex: 1; min-width: 0; }
+.ops-main:not(.ops-main-bleed) { width: 100%; max-width: 1280px; margin-inline: auto; padding: 2rem 1.5rem; }
+.ops-skip { position: fixed; top: .75rem; left: 1rem; transform: translateY(-200%); z-index: 100; padding: .75rem 1rem; background: var(--action); color: var(--action-ink); border-radius: var(--radius-base); }
+.ops-skip:focus { transform: none; }
+.ops-drawer { position: fixed; inset: 0 0 0 auto; max-height: 100dvh; height: 100dvh; width: min(26rem, 100%); max-width: 100%; margin: 0; padding: 1.5rem; border: 0; background: var(--surface); color: var(--foreground); overflow-y: auto; font-family: var(--discover-font); }
+.ops-drawer::backdrop { background: var(--scrim); }
+.ops-drawer-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
+.ops-drawer-heading h2 { font-size: 1.5rem; font-weight: 550; }
+.ops-drawer .ops-shell-nav { flex-direction: column; padding: 0; gap: .5rem; }
+.ops-drawer .ops-shell-nav a { min-height: 48px; padding: .75rem 1rem; }
+.ops-drawer :focus-visible { outline: 2px solid var(--foreground); outline-offset: 3px; }
+@media (max-width: 959px) {
+  .ops-login-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'film' 'form'; }
+  .ops-login-form-region { padding: 2rem 1.5rem; }
+  .ops-login-film { min-height: 18rem; }
+  .ops-login-film-copy { padding: 4rem 1.5rem 1.25rem; }
+  .ops-login-film-copy h2 { max-width: 28ch; font-size: 1.75rem; }
+  .ops-login-film-copy p { max-width: 60ch; }
+  .ops-login-form-region { padding-bottom: max(2rem, env(safe-area-inset-bottom)); }
+  .ops-shell-counters { flex-basis: 100%; }
+}
+@media (max-width: 479px) {
+  .ops-login-header, .ops-shell-top { padding-inline: 1rem; }
+  .ops-login-form-region, .ops-main:not(.ops-main-bleed) { padding-inline: 1rem; }
+  .ops-login-film { min-height: 17rem; }
+  .ops-login-film-copy { padding-inline: 1rem; }
+  .ops-login-film-copy h2 { font-size: 1.5rem; }
+  .ops-credential-fields { grid-template-columns: minmax(0, 1fr); }
+  .ops-brand-logo { width: 8rem; }
+  .ops-shell-top > .ops-header-controls { gap: .25rem; }
+  .ops-operator { flex-basis: 100%; max-width: none; }
+}

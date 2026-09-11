@@ -13,12 +13,13 @@
  * The API flow, behind `PLAYERONE_PAYOUT_MODE=api`, sends one transfer for
  * this bill through the same gate and the same retype.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button.tsx';
-import { EmptyState, Panel, Problem } from '../components/ui/primitives.tsx';
+import {ResponsiveSheet,useCompactSheet} from '../components/ui/ResponsiveSheet.tsx';
+import { EmptyState, Problem } from '../components/ui/primitives.tsx';
 import { IconArrow } from '../components/icons.tsx';
 import { payout, settle, type PayoutBill, type PayResult } from '../lib/api.ts';
 import { RiskBlock } from '../risk/pieces.tsx';
@@ -26,6 +27,7 @@ import { asStored, count, day, vnd, when } from './format.ts';
 import { keys } from './period.ts';
 import {
   AttemptPill,
+  FeatureBlock,
   Field,
   Fig,
   IssueList,
@@ -50,12 +52,13 @@ export function BillScreen() {
   const locale = i18n.language;
   const { period } = useSearch({ strict: false }) as { period: string };
   const { billId } = useParams({ strict: false }) as { billId?: string };
-  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period) });
+  const { role } = useFinanceRole();
+  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: role === 'finance' });
   // ponytail: Bill detail stays a second round trip instead of making the period batch carry every line of every bill.
   const detail = useQuery({
     queryKey: keys.bill(billId ?? ''),
     queryFn: () => (billId === undefined ? Promise.resolve(null) : settle.bill(billId)),
-    enabled: billId !== undefined,
+    enabled: billId !== undefined && role === 'finance',
   });
   /**
    * The gate reads the cached snapshot only — rendering this screen must not
@@ -71,7 +74,7 @@ export function BillScreen() {
   return (
     <SettleShell period={period} tab="bills" mode={mode}>
       <p className="mb-4">
-        <Link to="/settle" search={{ period }} className="inline-flex items-center gap-1 text-[0.875rem] font-semibold text-[var(--tech-600)]">
+        <Link to="/settle" search={{ period }} className="inline-flex items-center gap-1 text-[0.875rem] font-semibold text-[var(--tech-ink)]">
           <IconArrow size={15} className="rotate-180" />
           {t('settle.bill.back')}
         </Link>
@@ -87,24 +90,32 @@ export function BillScreen() {
       ) : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <div className="space-y-6">
-            <Panel className="p-5">
-              <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-[var(--foreground)] pb-3">
                 <h2 className="num text-[1.5rem] font-extrabold tracking-[-0.02em]">{bill.collector_ref}</h2>
                 <span className="text-[0.8125rem] text-[var(--muted-foreground)]">
                   {t('settle.bill.period')}: <span className="num">{day(bill.period_start, locale)} – {day(bill.period_end, locale)}</span>
                 </span>
               </div>
-              <div className="mt-5 grid gap-5 sm:grid-cols-3">
+
+              {/*
+                This screen's one ink block: what a transfer would actually
+                move. The sentence beside it is the rounding rule, and it is
+                there because the figure above it in the stored column does not
+                equal it and an operator must not read that as a mistake.
+              */}
+              <FeatureBlock
+                className="mt-4"
+                label={t('settle.bill.amount')}
+                figure={vnd(bill.amount_vnd, locale)}
+                sentence={t('settle.wholeVnd')}
+              />
+
+              <dl className="mt-5 grid gap-5 sm:grid-cols-2">
                 <Fig label={t('settle.bill.total')} value={asStored(bill.total)} hint={t('settle.asStored', { currency: bill.currency })} />
-                <Fig
-                  label={t('settle.bill.amount')}
-                  value={vnd(bill.amount_vnd, locale)}
-                  tone="data"
-                  hint={t('settle.wholeVnd')}
-                />
                 <Fig label={t('settle.col.attempt')} value={<AttemptPill status={bill.attempt?.status ?? null} />} hint={t('settle.lines', { n: count(bill.lines, locale) })} />
-              </div>
-            </Panel>
+              </dl>
+            </div>
 
             {/*
               The lines, and the reason this table exists.
@@ -122,7 +133,7 @@ export function BillScreen() {
               UUIDs no control on this screen can act on; episode_id is the
               identifier SET-04 says the line carries.
             */}
-            <Panel className="p-5">
+            <div className="border-t border-[var(--border)] pt-5">
               <Section title={t('settle.bill.lines.title')}>
                 {detail.isPending ? (
                   <TableSkeleton />
@@ -170,9 +181,9 @@ export function BillScreen() {
                   </>
                 )}
               </Section>
-            </Panel>
+            </div>
 
-            <Panel className="p-5">
+            <div className="border-t border-[var(--border)] pt-5">
               <Section title={t('settle.bill.account')}>
                 {bill.account === null ? (
                   <p className="text-[0.9375rem]">{t('settle.bill.account.none')}</p>
@@ -188,22 +199,22 @@ export function BillScreen() {
                   </dl>
                 )}
               </Section>
-            </Panel>
+            </div>
 
-            <Panel className="p-5">
+            <div className="border-t border-[var(--border)] pt-5">
               <Section title={t('settle.bill.risk')}>
                 <RiskBlock summary={bill.risk} period={period} billId={bill.id} />
               </Section>
-            </Panel>
+            </div>
 
-            <Panel className="p-5">
+            <div className="border-t border-[var(--border)] pt-5">
               <Section title={t('settle.issue.title')}>
                 <IssueList issues={bill.issues} />
               </Section>
-            </Panel>
+            </div>
 
             {bill.attempt ? (
-              <Panel className="p-5">
+              <div className="border-t border-[var(--border)] pt-5">
                 <Section title={t('settle.bill.attempt')}>
                   <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
                     <Fig label={t('settle.bill.attempt.order')} value={bill.attempt.partner_order_id} />
@@ -217,7 +228,7 @@ export function BillScreen() {
                     <Fig label={t('settle.bill.attempt.settled')} value={when(bill.attempt.settled_at, locale)} />
                   </dl>
                 </Section>
-              </Panel>
+              </div>
             ) : null}
           </div>
 
@@ -271,6 +282,8 @@ function PaymentPanel({
   const [reference, setReference] = useState('');
   const [typed, setTyped] = useState('');
   const [result, setResult] = useState<PayResult | null>(null);
+  const compact=useCompactSheet();const [paymentOpen,setPaymentOpen]=useState(false);
+  useEffect(()=>{if(!compact)setPaymentOpen(false);},[compact]);
 
   const done = (r: PayResult | null) => {
     setResult(r);
@@ -307,8 +320,16 @@ function PaymentPanel({
   /** The API rail additionally needs the snapshot to have said the wallet covers the batch. */
   const apiInert = inert ?? (!preflightOk ? t('settle.batch.noneOk') : null);
 
-  return (
-    <Panel className="p-5 lg:sticky lg:top-20">
+  /*
+    No container of its own. The lock notice inside it is already a bordered
+    callout, and a card wrapped around a callout is two boxes saying the same
+    thing — the nesting the rest of this screen was rebuilt to remove. The
+    section heading's rule marks it out exactly as "Lines" and "Risk" are
+    marked out, and it sticks so the amount stays beside the controls that
+    move it.
+  */
+  const content = (
+    <div className="lg:sticky lg:top-20">
       <Section title={t('settle.pay.title')}>
         {result ? (
           <p className="mb-4 text-[0.9375rem] font-semibold" role="status">
@@ -335,7 +356,7 @@ function PaymentPanel({
             />
           </div>
         ) : gated ? (
-          <p className="mb-3 text-[0.75rem] text-[var(--faint-foreground)]">
+          <p className="mb-3 text-[0.75rem] text-[var(--muted-foreground)]">
             {t('settle.preflight.ranAt', { at: when(new Date(preflightAt).toISOString(), locale) })}
           </p>
         ) : null}
@@ -359,7 +380,7 @@ function PaymentPanel({
             autoComplete="off"
             value={reference}
             onChange={(e) => setReference(e.target.value)}
-            disabled={inert !== null}
+            disabled={inert !== null || busy}
             hint={t('settle.pay.reference.hint')}
             required={mode === 'manual'}
           />
@@ -371,13 +392,13 @@ function PaymentPanel({
             autoComplete="off"
             value={typed}
             onChange={(e) => setTyped(e.target.value.replace(/\D/g, ''))}
-            disabled={inert !== null}
+            disabled={inert !== null || busy}
             hint={typed !== '' && !matches ? t('settle.pay.mismatch') : t('settle.pay.retype.hint')}
             aria-invalid={typed !== '' && !matches}
             required
           />
 
-          <div className="grid gap-2">
+          <div className="grid gap-2 workspace-payment-actions">
             <Button
               type="submit"
               variant="primary"
@@ -403,6 +424,18 @@ function PaymentPanel({
           </div>
         </form>
       </Section>
-    </Panel>
+    </div>
   );
+  if(!compact)return content;
+  const dirty=reference!==''||typed!=='';
+  return <div><Button variant="primary" onClick={()=>setPaymentOpen(true)}>{t('workspace.reviewPayment')}</Button>
+    {paymentOpen?<ResponsiveSheet title={t('settle.pay.title')} onClose={()=>setPaymentOpen(false)} dismissible={!busy&&!dirty} draggable={false}
+      footer={<Button variant="outline" disabled={busy} onClick={()=>{setReference('');setTyped('');setPaymentOpen(false);}}>{t('workspace.cancelPayment')}</Button>}>
+      <div className="workspace-sheet-payment-summary"><span>{bill.collector_ref}</span><strong className="num">{asStored(bill.total)} {bill.currency}</strong><span className="num">{vnd(bill.amount_vnd,locale)}</span></div>
+      {dirty&&!busy?<p className="workspace-sheet-note">{t('workspace.dirtyPayment')}</p>:null}
+      <RefusedBanner error={markPaid.error??pay.error} onDismiss={()=>{markPaid.reset();pay.reset();}}/>
+      {content}
+    </ResponsiveSheet>:null}
+  </div>;
+
 }

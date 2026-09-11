@@ -11,16 +11,17 @@
  * — and each carries its word and a filled-dot glyph, so the axis reads
  * without colour at all. Nobody is paid or not paid on a colour here.
  *
- * Every action is rendered for everybody. A session without the finance role
- * sees the button disabled and the reason beside it, never a blank space.
+ * Financial content belongs to finance sessions. Other sessions receive an
+ * explicit access explanation rather than a failed request or an empty batch.
  */
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '../components/shell/AppShell.tsx';
+import {ResponsiveSheet,useCompactSheet} from '../components/ui/ResponsiveSheet.tsx';
 import { Button } from '../components/ui/button.tsx';
-import { Panel, Problem, Skeleton } from '../components/ui/primitives.tsx';
+import { Problem, Skeleton } from '../components/ui/primitives.tsx';
 import { IconAlert } from '../components/icons.tsx';
 import { cn } from '../lib/cn.ts';
 import { ApiError, type AttemptStatus, type PayoutIssue, type PayoutMode, type RiskBand, type VerifyStatus } from '../lib/api.ts';
@@ -54,30 +55,28 @@ export function SettleShell({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [draft, setDraft] = useState(period);
+  const compact=useCompactSheet();const [periodOpen,setPeriodOpen]=useState(false);
+  useEffect(()=>{if(!compact)setPeriodOpen(false);},[compact]);
   const { role, isPending } = useFinanceRole();
   const reason = readOnlyReason(role);
 
-  return (
-    <AppShell>
-      <header className="max-w-[62ch]">
-        <h1 className="text-[2.0625rem] font-extrabold leading-[1.12] tracking-[-0.03em]">
-          {t('settle.title')}
-        </h1>
-        <p className="mt-3 text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
-          {t('settle.intro')}
-        </p>
-      </header>
-
+  const periodForm=(
       <form
-        className="mt-6 flex flex-wrap items-end gap-3"
+        id="settlement-period-form" data-guide="settle.period"
+        className="workspace-period-bar"
         onSubmit={(e) => {
           e.preventDefault();
           if (!isPeriod(draft)) return;
+          setPeriodOpen(false);
           void navigate({ to: TAB_TO[tab], search: { period: draft } });
         }}
       >
         <label className="block">
-          <span className={LABEL}>{t('settle.period')}</span>
+          {/* Block, so the label sits above its field. As an inline span it ran
+              straight into the date input's left edge — "Kỳ bắt đầu từ" had its
+              last letter behind the box — and it was the only label on these
+              screens not stacked over its value. */}
+          <span className={cn(LABEL, 'block')}>{t('settle.period')}</span>
           <input
             type="date"
             name="period"
@@ -87,15 +86,31 @@ export function SettleShell({
             required
           />
         </label>
-        <Button type="submit" variant="outline" disabled={!isPeriod(draft) || draft === period}>
+        {!compact ? <Button type="submit" variant="outline" disabled={!isPeriod(draft) || draft === period}>
           {t('settle.period.apply')}
-        </Button>
+        </Button> : null}
         <p className="basis-full text-[0.8125rem] leading-snug text-[var(--muted-foreground)] sm:basis-auto sm:self-center">
           {t('settle.period.hint')}
         </p>
       </form>
+  );
 
-      <nav className="mt-5 flex flex-wrap items-center gap-1" aria-label={t('settle.title')}>
+
+  return (
+    <AppShell>
+      <div className="workspace-settlement">
+      <header className="workspace-page-header">
+        <div><h1>
+          {t('settle.title')}
+        </h1>
+        <p>
+          {t('settle.intro')}
+        </p></div>
+      </header>
+
+      {compact?<div className="workspace-period-bar"><span className="num">{period}</span><Button variant="outline" onClick={()=>{setDraft(period);setPeriodOpen(true);}}>{t('workspace.choosePeriod')}</Button>{periodOpen?<ResponsiveSheet title={t('workspace.choosePeriod')} onClose={()=>setPeriodOpen(false)} footer={<><Button variant="outline" onClick={()=>setPeriodOpen(false)}>{t('bo.cancel')}</Button><Button type="submit" form="settlement-period-form" variant="primary" disabled={!isPeriod(draft)||draft===period}>{t('settle.period.apply')}</Button></>}>{periodForm}</ResponsiveSheet>:null}</div>:periodForm}
+
+      <nav className="workspace-settlement-tabs" aria-label={t('settle.title')}>
         {TABS.map((name) => (
           <Link
             key={name}
@@ -106,7 +121,7 @@ export function SettleShell({
               'rounded-full px-4 py-1.5 text-[0.9375rem] font-semibold no-underline',
               'transition-colors duration-150 ease-[var(--ease)]',
               tab === name
-                ? 'bg-[var(--sun-50)] text-[var(--sun-700)]'
+                ? 'bg-[var(--foreground)] text-[var(--background)]'
                 : 'text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]',
             )}
           >
@@ -116,7 +131,7 @@ export function SettleShell({
       </nav>
 
       <div className="mt-4 space-y-2">
-        {mode ? (
+        {mode && role === 'finance' ? (
           <p className="text-[0.8125rem] leading-snug text-[var(--muted-foreground)]">
             {t(`settle.mode.${mode}`)}
           </p>
@@ -126,15 +141,16 @@ export function SettleShell({
             className="flex items-start gap-2 rounded-[var(--radius-base)] border border-[var(--border)] bg-[var(--muted)] px-3 py-2 text-[0.8125rem] leading-snug"
             role="status"
           >
-            <IconAlert size={16} className="mt-0.5 shrink-0 text-[var(--sun-600)]" />
+            <IconAlert size={16} className="mt-0.5 shrink-0 text-[var(--foreground)]" />
             <span>
-              <strong className="font-semibold">{t('settle.readonly')}.</strong> {t(reason)}
+              <strong className="font-semibold">{t(role === 'operator' ? 'settle.readonly' : 'workspace.unavailable')}.</strong> {t(reason)}
             </span>
           </p>
         ) : null}
       </div>
 
-      <div className="mt-6">{children}</div>
+      <div className="workspace-settlement-content">{isPending ? <TableSkeleton /> : role === 'finance' ? children : null}</div>
+      </div>
     </AppShell>
   );
 }
@@ -145,8 +161,8 @@ export function SettleShell({
 
 const BAND_STYLE: Record<RiskBand, { pill: string; dots: number }> = {
   clear: { pill: 'bg-[var(--muted)] text-[var(--muted-foreground)]', dots: 0 },
-  notice: { pill: 'bg-[var(--tech-50)] text-[var(--tech-700)]', dots: 1 },
-  review: { pill: 'bg-[var(--sun-50)] text-[var(--sun-700)]', dots: 2 },
+  notice: { pill: 'bg-[var(--tech-50)] text-[var(--tech-ink)]', dots: 1 },
+  review: { pill: 'bg-[var(--warn-bg)] text-[var(--warn)]', dots: 2 },
   hold: { pill: 'bg-[var(--foreground)] text-[var(--background)]', dots: 3 },
 };
 
@@ -179,12 +195,12 @@ export function BandPill({ band, size = 'md' }: { band: RiskBand; size?: 'sm' | 
 
 /** Attempt states as words. `succeeded` is not green: the verdict hues are reserved. */
 const ATTEMPT_STYLE: Record<AttemptStatus | 'none', string> = {
-  none: 'bg-[var(--muted)] text-[var(--faint-foreground)]',
+  none: 'bg-[var(--muted)] text-[var(--muted-foreground)]',
   created: 'bg-[var(--muted)] text-[var(--muted-foreground)]',
-  submitted: 'bg-[var(--tech-50)] text-[var(--tech-700)]',
-  processing: 'bg-[var(--tech-50)] text-[var(--tech-700)]',
-  unknown: 'bg-[var(--sun-50)] text-[var(--sun-700)]',
-  pending_zlp: 'bg-[var(--sun-50)] text-[var(--sun-700)]',
+  submitted: 'bg-[var(--tech-50)] text-[var(--tech-ink)]',
+  processing: 'bg-[var(--tech-50)] text-[var(--tech-ink)]',
+  unknown: 'bg-[var(--warn-bg)] text-[var(--warn)]',
+  pending_zlp: 'bg-[var(--warn-bg)] text-[var(--warn)]',
   succeeded: 'bg-[var(--foreground)] text-[var(--background)]',
   failed: 'border border-[var(--border-strong)] bg-[var(--card)] text-[var(--foreground)]',
 };
@@ -230,7 +246,7 @@ export function IssueList({ issues, className }: { issues: PayoutIssue[]; classN
     <ul className={cn('space-y-1.5', className)}>
       {issues.map((issue) => (
         <li key={issue} className="flex gap-2 text-[0.875rem] leading-snug">
-          <IconAlert size={16} className="mt-0.5 shrink-0 text-[var(--sun-600)]" />
+          <IconAlert size={16} className="mt-0.5 shrink-0 text-[var(--foreground)]" />
           <span>{t(`settle.issue.${issue}`)}</span>
         </li>
       ))}
@@ -243,30 +259,42 @@ export function IssueList({ issues, className }: { issues: PayoutIssue[]; classN
    scrolls sideways.
    ---------------------------------------------------------------------- */
 
-export const LABEL =
-  'text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]';
+/**
+ * A label above a value.
+ *
+ * It was a tracked uppercase eyebrow, and it sat above every figure, every
+ * field and every section on five screens. One named kicker is a system; an
+ * eyebrow on everything is grammar nobody chose, and at 12px tracked caps a
+ * Vietnamese label with two marks on one vowel is the hardest line on the
+ * page to read. Sentence case, at the body's own size, in the muted ink.
+ */
+export const LABEL = 'text-[0.8125rem] font-semibold text-[var(--muted-foreground)]';
 export const INPUT =
   'mt-1 h-10 w-full rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 text-[0.9375rem]';
 
+/**
+ * A table on paper: hairlines, no card, no shadow.
+ *
+ * A shadowed rounded container around a column of figures adds nothing the
+ * operator scanning that column can use, and four of them stacked down a
+ * settlement screen is the panel grid this console refuses. The rule under
+ * the head is ink; the rules between rows are hairlines. It still scrolls
+ * inside its own box so the page never scrolls sideways.
+ */
 export function Table({ children, minWidth = 760 }: { children: ReactNode; minWidth?: number }) {
   return (
-    <Panel className="overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left" style={{ minWidth }}>
-          {children}
-        </table>
-      </div>
-    </Panel>
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-left" style={{ minWidth }}>
+        {children}
+      </table>
+    </div>
   );
 }
 
 export function Th({ children, className, ...rest }: React.ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
-      className={cn(
-        'px-4 py-2.5 text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]',
-        className,
-      )}
+      className={cn('px-3 pb-2 text-[0.8125rem] font-semibold text-[var(--muted-foreground)]', className)}
       {...rest}
     >
       {children}
@@ -275,7 +303,7 @@ export function Th({ children, className, ...rest }: React.ThHTMLAttributes<HTML
 }
 
 export function Td({ className, children }: { className?: string; children: ReactNode }) {
-  return <td className={cn('px-4 py-3 align-top text-[0.875rem]', className)}>{children}</td>;
+  return <td className={cn('px-3 py-2.5 align-top text-[0.875rem]', className)}>{children}</td>;
 }
 
 /** A label above a server figure. Mono, tabular: these are read in columns. */
@@ -295,8 +323,8 @@ export function Fig({
       <p className={LABEL}>{label}</p>
       <p
         className={cn(
-          'num mt-1 text-[1.3125rem] font-semibold tracking-[-0.02em]',
-          tone === 'warn' ? 'text-[var(--sun-700)]' : tone === 'data' ? 'text-[var(--tech-600)]' : '',
+          'num mt-0.5 text-[1.3125rem] font-medium tracking-[-0.02em]',
+          tone === 'warn' ? 'text-[var(--warn)]' : tone === 'data' ? 'text-[var(--tech-ink)]' : '',
         )}
       >
         {value}
@@ -306,12 +334,56 @@ export function Fig({
   );
 }
 
+/**
+ * The one ink block a screen is allowed.
+ *
+ * `.feature-block` is `stage.ground` — the same near-black as the top bar and
+ * the review theatre, because the console has one dark and reuses it rather
+ * than owning two that nearly match. The rule for using it is narrow and it is
+ * the reason this is not a "stat card": a figure earns the ink only when it
+ * carries **its sentence and its action**. A big number with a small label and
+ * an accent underneath is the template this refuses, and one of these per
+ * screen is the ceiling.
+ */
+export function FeatureBlock({
+  label,
+  figure,
+  sentence,
+  action,
+  className,
+  ...rest
+}: {
+  label: ReactNode;
+  figure: ReactNode;
+  sentence: ReactNode;
+  action?: ReactNode;
+} & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn(
+        'feature-block px-5 py-5 ring-1 ring-[var(--stage-line)] sm:px-6',
+        className,
+      )}
+      {...rest}
+    >
+      <p className="text-[0.8125rem] font-semibold text-[var(--stage-mid)]">{label}</p>
+      <p className="figure mt-1 text-[var(--stage-fg)]">{figure}</p>
+      <p className="mt-2 max-w-[54ch] text-[0.875rem] leading-relaxed text-[var(--stage-mid)]">
+        {sentence}
+      </p>
+      {action ? <div className="mt-4">{action}</div> : null}
+    </div>
+  );
+}
+
 /** A section heading inside a panel. */
 export function Section({ title, children, className }: { title: ReactNode; children: ReactNode; className?: string }) {
   return (
     <section className={className}>
-      <h2 className="text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]">{title}</h2>
-      <div className="mt-2">{children}</div>
+      <h2 className="border-b border-[var(--border-strong)] pb-1 text-[0.8125rem] font-semibold text-[var(--foreground)]">
+        {title}
+      </h2>
+      <div className="mt-3">{children}</div>
     </section>
   );
 }
@@ -362,18 +434,22 @@ export function Reason({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
+/** The shape a table is about to take: the same ink rule, five rows of it. */
 export function TableSkeleton() {
   return (
-    <Panel className="p-4">
+    <div className="border-t border-[var(--foreground)] pt-3">
       {[0, 1, 2, 3, 4].map((i) => (
-        <Skeleton key={i} className="mb-2 h-10 w-full last:mb-0" />
+        <Skeleton key={i} className="mb-2 h-9 w-full last:mb-0" />
       ))}
-    </Panel>
+    </div>
   );
 }
 
 export function LoadFailed({ error }: { error: unknown }) {
   const { t } = useTranslation();
+  if (error instanceof ApiError && error.status === 403) {
+    return <Problem title={t('settle.readonly')} body={t('settle.readonly.operator')} reference={error.ref} />;
+  }
   return <Problem title={t('settle.loadFailed')} body={t('settle.loadFailed.body')} reference={error instanceof ApiError ? error.ref : undefined} />;
 }
 

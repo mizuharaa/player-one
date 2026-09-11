@@ -30,7 +30,7 @@ export function FlagCard({ flag, compact = false }: { flag: RiskFlag; compact?: 
     <article className={cn('flex gap-2.5', compact ? 'py-1.5' : 'py-3')}>
       <IconAlert
         size={16}
-        className={cn('mt-0.5 shrink-0', strong ? 'text-[var(--sun-600)]' : 'text-[var(--faint-foreground)]')}
+        className={cn('mt-0.5 shrink-0', strong ? 'text-[var(--foreground)]' : 'text-[var(--faint-foreground)]')}
       />
       <div className="min-w-0 flex-1">
         <p className="text-[0.9375rem] leading-snug">{flagSentence(flag, locale)}</p>
@@ -42,7 +42,7 @@ export function FlagCard({ flag, compact = false }: { flag: RiskFlag; compact?: 
           <dl className="mt-2 grid gap-x-4 gap-y-1 text-[0.8125rem] sm:grid-cols-[max-content_minmax(0,1fr)]">
             {Object.entries(flag.evidence).map(([key, value]) => (
               <div key={key} className="contents">
-                <dt className="num text-[var(--faint-foreground)]">{key}</dt>
+                <dt className="num text-[var(--muted-foreground)]">{key}</dt>
                 <dd className="num min-w-0 break-words">{fmt(value)}</dd>
               </div>
             ))}
@@ -81,7 +81,7 @@ export function RiskBlock({
         <Link
           to="/risk"
           search={{ period, bill: billId }}
-          className="text-[0.8125rem] font-semibold text-[var(--tech-600)]"
+          className="text-[0.8125rem] font-semibold text-[var(--tech-ink)]"
         >
           {t('settle.bill.risk.open')}
         </Link>

@@ -23,12 +23,14 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { MESSAGES } from '@playerone/api/i18n';
 import { AppShell } from '../components/shell/AppShell.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { EmptyState, Panel, Problem, Skeleton } from '../components/ui/primitives.tsx';
-import { durationShort } from '../lib/format.ts';
+import { durationShort, localNow } from '../lib/format.ts';
+import { refusalKey } from './refusal.ts';
+import { TaskAssign } from './TaskAssign.tsx';
 import { cn } from '../lib/cn.ts';
+import { uuid } from '../lib/uuid.ts';
 import {
   ApiError,
   backOffice,
@@ -43,20 +45,6 @@ import {
 type Tab = 'tasks' | 'collectors' | 'devices';
 const TABS: Tab[] = ['tasks', 'collectors', 'devices'];
 
-/**
- * The one place a server refusal becomes a sentence in the reader's language.
- *
- * The catalogue itself is the list of refusals it can name — a hand-kept copy
- * of the server's set is a third place to add a constraint to, and the one
- * nobody remembers. A 409 whose constraint has no sentence falls through to the
- * generic line, which is exactly what an unknown refusal should look like.
- */
-const refusalKey = (error: unknown): string => {
-  const detail = error instanceof ApiError ? error.detail : undefined;
-  const key = `bo.refused.${String(detail)}`;
-  return typeof detail === 'string' && key in MESSAGES.en ? key : 'bo.refused.unknown';
-};
-
 export function BackOfficeScreen() {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('tasks');
@@ -64,16 +52,23 @@ export function BackOfficeScreen() {
 
   return (
     <AppShell>
-      <header className="max-w-[62ch]">
-        <h1 className="text-[2.0625rem] font-extrabold leading-[1.12] tracking-[-0.03em]">
+      <header className="border-b border-[var(--foreground)] pb-5">
+        <h1 className="headline">
           {t('bo.title')}
         </h1>
-        <p className="mt-3 text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
+        <p className="mt-3 max-w-[62ch] text-[1.0625rem] leading-relaxed text-[var(--muted-foreground)]">
           {t('bo.intro')}
         </p>
       </header>
 
-      <div className="mt-6 flex flex-wrap items-center gap-1" role="tablist">
+      {/*
+        Three tables and no hero. This screen is an operations desk, not a
+        dashboard: the quietest thing that answers "which of the three am I
+        looking at" is the right one, and the selected tab is inverted ink
+        rather than a brand tint so sun keeps meaning *action* on a page whose
+        primary button sits four inches below it.
+      */}
+      <div data-guide="backoffice.tabs" className="mt-6 flex flex-wrap items-center gap-1" role="tablist">
         {TABS.map((name) => (
           <button
             key={name}
@@ -88,7 +83,7 @@ export function BackOfficeScreen() {
               'rounded-full px-4 py-1.5 text-[0.9375rem] font-semibold',
               'transition-colors duration-150 ease-[var(--ease)]',
               tab === name
-                ? 'bg-[var(--sun-50)] text-[var(--sun-700)]'
+                ? 'bg-[var(--foreground)] text-[var(--background)]'
                 : 'text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]',
             )}
           >
@@ -112,7 +107,7 @@ export function BackOfficeScreen() {
         </div>
       ) : null}
 
-      <div className="mt-6">
+      <div className="mt-5">
         {tab === 'tasks' ? <Tasks onRefused={setRefused} /> : null}
         {tab === 'collectors' ? <Collectors onRefused={setRefused} /> : null}
         {tab === 'devices' ? <Devices onRefused={setRefused} /> : null}
@@ -128,18 +123,35 @@ export function BackOfficeScreen() {
 function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
   const { t } = useTranslation();
   const client = useQueryClient();
-  const [creating, setCreating] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
   /**
-   * The id this form will submit under, minted once and kept until a create
-   * actually lands. See the comment at the `id:` below for why a retry has to
-   * carry the same one.
+   * Creating a task is a sequence, so it is a wizard and not a row of inputs
+   * above the table.
+   *
+   * There used to be an inline create form here. It is gone rather than kept
+   * beside the wizard: two ways to create the same row is the duplication that
+   * ends with one of them missing a field, and the sequence the wizard walks —
+   * create, publish, claim, hand out a camera — is the order the server's own
+   * triggers impose. The table is untouched; it is what this tab shows when the
+   * wizard is closed.
    */
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  const [assigning, setAssigning] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
 
   const { data, isPending, error } = useQuery({
     queryKey: ['bo', 'tasks'],
     queryFn: backOffice.tasks,
+  });
+
+  /** The wizard needs the roll and the fleet: it claims for people and hands out cameras. */
+  const roll = useQuery({
+    queryKey: ['bo', 'collectors'],
+    queryFn: backOffice.collectors,
+    enabled: assigning,
+  });
+  const fleet = useQuery({
+    queryKey: ['bo', 'devices'],
+    queryFn: backOffice.devices,
+    enabled: assigning,
   });
 
   const done = () => {
@@ -165,31 +177,22 @@ function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
     onError: failed,
   });
 
-  const create = useMutation({
-    mutationFn: backOffice.createTask,
-    onSuccess: () => {
-      setCreating(false);
-      // Landed, so the next form is a new request rather than a replay of this one.
-      setRequestId(crypto.randomUUID());
-      done();
-    },
-    onError: failed,
-  });
-
-  /**
-   * Closing the form ends this request; opening it starts a new one.
-   *
-   * The id is minted once and kept while the form is open, because a retry of
-   * a submit that may already have landed has to carry the same one. It was
-   * only rotated on success, so an id that came back `*_id_reused` stayed in
-   * the form: cancel, reopen, and the operator resubmits the same poisoned id
-   * for ever, with a page reload as the only way out. Cancelling is the
-   * explicit "not this request" the rotation was missing.
-   */
-  const cancelOrOpen = () => {
-    if (creating) setRequestId(crypto.randomUUID());
-    setCreating(!creating);
-  };
+  if (assigning) {
+    if (roll.isPending || fleet.isPending) return <TableSkeleton />;
+    if (roll.error) return <LoadFailed error={roll.error} />;
+    if (fleet.error) return <LoadFailed error={fleet.error} />;
+    return (
+      <TaskAssign
+        collectors={roll.data?.collectors ?? []}
+        devices={fleet.data?.devices ?? []}
+        onLanded={done}
+        onClose={() => {
+          setAssigning(false);
+          done();
+        }}
+      />
+    );
+  }
 
   if (error) return <LoadFailed error={error} />;
   if (isPending) return <TableSkeleton />;
@@ -198,64 +201,11 @@ function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
-        <Button variant={creating ? 'ghost' : 'primary'} onClick={cancelOrOpen}>
-          {creating ? t('bo.cancel') : t('bo.task.new')}
+      <div className="mb-3 flex justify-end">
+        <Button variant="primary" onClick={() => setAssigning(true)}>
+          {t('bo.task.new')}
         </Button>
       </div>
-
-      {creating ? (
-        <Panel className="mb-6 p-5">
-          <form
-            className="grid gap-4 sm:grid-cols-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const form = new FormData(e.currentTarget);
-              const target = String(form.get('target') ?? '').trim();
-              create.mutate({
-                /**
-                 * Held for as long as the form is open, not minted per submit.
-                 * The id is what makes a create idempotent, so a request whose
-                 * reply was lost has to be retried under the SAME id — a fresh
-                 * one on the second click is not a retry, it is a second task.
-                 */
-                id: requestId,
-                name: String(form.get('name')),
-                type: String(form.get('type')),
-                unit_price: String(form.get('price')),
-                ...(target === '' ? {} : { target_effective_duration_s: target }),
-                max_concurrent_claimants: Number(form.get('claimants')),
-              });
-            }}
-          >
-            <Field label={t('bo.task.name')} name="name" required />
-            <Field label={t('bo.task.type')} name="type" required />
-            <Field
-              label={t('bo.task.rate')}
-              name="price"
-              required
-              inputMode="decimal"
-              pattern="\d{1,8}(\.\d{1,4})?"
-              hint={t('bo.task.priceNote')}
-            />
-            <Field label={t('bo.task.target')} name="target" inputMode="decimal" pattern="\d{1,12}(\.\d{1,6})?" />
-            <Field
-              label={t('bo.task.maxClaimants')}
-              name="claimants"
-              type="number"
-              min={1}
-              max={2147483647}
-              defaultValue={1}
-              required
-            />
-            <div className="flex items-end">
-              <Button type="submit" variant="primary" disabled={create.isPending}>
-                {create.isPending ? t('bo.working') : t('bo.task.create')}
-              </Button>
-            </div>
-          </form>
-        </Panel>
-      ) : null}
 
       {tasks.length === 0 ? (
         <EmptyState title={t('bo.empty')} body={t('bo.intro')} />
@@ -273,17 +223,17 @@ function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
         >
           {tasks.map((task) => (
             <Rows key={task.id}>
-              <tr className="border-b border-[var(--border)] hover:bg-[var(--muted)]">
+              <tr className="border-b border-[var(--border)] transition-colors duration-150 ease-[var(--ease)] hover:bg-[var(--muted)]">
                 <Td className="font-semibold">{task.name}</Td>
                 <Td className="text-[var(--muted-foreground)]">{task.type ?? '—'}</Td>
                 {/* As stored. Not through Intl: this number multiplies into a payment. */}
-                <Td className="num text-[var(--tech-600)]">{task.unit_price}</Td>
+                <Td className="num text-[var(--tech-ink)]">{task.unit_price}</Td>
                 <Td className="num">{durationShort(task.target_effective_duration_s)}</Td>
                 <Td className="num">
                   {task.claimants} / {task.max_concurrent_claimants}
                 </Td>
                 <Td>
-                  <Pill tone={task.status === 'published' ? 'pass' : task.status === 'draft' ? 'partial' : 'reject'}>
+                  <Pill tone={task.status === 'published' ? 'live' : task.status === 'draft' ? 'waiting' : 'stopped'}>
                     {t(`bo.task.state.${task.status}`)}
                   </Pill>
                 </Td>
@@ -403,7 +353,7 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
   const [consenting, setConsenting] = useState<string | null>(null);
   const [declaring, setDeclaring] = useState<string | null>(null);
   const [declared, setDeclared] = useState<{ collectorId: string; result: BoPayoutDeclared } | null>(null);
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  const [requestId, setRequestId] = useState(() => uuid());
 
   const { data, isPending, error } = useQuery({
     queryKey: ['bo', 'collectors'],
@@ -430,7 +380,7 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
     mutationFn: backOffice.createCollector,
     onSuccess: () => {
       setCreating(false);
-      setRequestId(crypto.randomUUID());
+      setRequestId(uuid());
       done();
     },
     onError: failed,
@@ -464,7 +414,7 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
    * explicit "not this request" the rotation was missing.
    */
   const cancelOrOpen = () => {
-    if (creating) setRequestId(crypto.randomUUID());
+    if (creating) setRequestId(uuid());
     setCreating(!creating);
   };
 
@@ -481,7 +431,7 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-3 flex justify-end">
         <Button variant={creating ? 'ghost' : 'primary'} onClick={cancelOrOpen}>
           {creating ? t('bo.cancel') : t('bo.collector.new')}
         </Button>
@@ -538,7 +488,7 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
             const missing = names.filter((n) => !accepted.has(n));
             return (
               <Rows key={c.id}>
-                <tr className="border-b border-[var(--border)] hover:bg-[var(--muted)]">
+                <tr className="border-b border-[var(--border)] transition-colors duration-150 ease-[var(--ease)] hover:bg-[var(--muted)]">
                   <Td className="num font-semibold">{c.external_ref}</Td>
                   <Td>
                     <select
@@ -558,7 +508,7 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
                     </select>
                   </Td>
                   <Td>
-                    <Pill tone={c.exam_result === 'pass' ? 'pass' : c.exam_result === 'fail' ? 'reject' : 'partial'}>
+                    <Pill tone={c.exam_result === 'pass' ? 'live' : c.exam_result === 'fail' ? 'stopped' : 'waiting'}>
                       {exam(c.exam_result)}
                     </Pill>
                   </Td>
@@ -588,10 +538,10 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
                   */}
                   <Td>
                     {c.payout_account === null ? (
-                      <Pill tone="reject">{t('bo.collector.payout.none')}</Pill>
+                      <Pill tone="stopped">{t('bo.collector.payout.none')}</Pill>
                     ) : (
                       <>
-                        <Pill tone={c.payout_account.verify_status === 'verified' ? 'pass' : 'partial'}>
+                        <Pill tone={c.payout_account.verify_status === 'verified' ? 'live' : 'waiting'}>
                           {t(`settle.verify.${c.payout_account.verify_status}`)}
                         </Pill>
                         <span className="num ml-2 text-[0.8125rem] text-[var(--muted-foreground)]">
@@ -784,7 +734,7 @@ function PayoutDeclaration({
 }) {
   const { t } = useTranslation();
   const [method, setMethod] = useState<BoPayoutDeclaration['method']>('WALLET');
-  const [id] = useState(() => crypto.randomUUID());
+  const [id] = useState(() => uuid());
 
   return (
     <form
@@ -858,7 +808,7 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
   const client = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  const [requestId, setRequestId] = useState(() => uuid());
 
   const devices = useQuery({ queryKey: ['bo', 'devices'], queryFn: backOffice.devices });
   /** Binding needs the roll of collectors; the same list the other tab reads. */
@@ -890,7 +840,7 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
     mutationFn: backOffice.createDevice,
     onSuccess: () => {
       setCreating(false);
-      setRequestId(crypto.randomUUID());
+      setRequestId(uuid());
       done();
     },
     onError: failed,
@@ -907,7 +857,7 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
    * explicit "not this request" the rotation was missing.
    */
   const cancelOrOpen = () => {
-    if (creating) setRequestId(crypto.randomUUID());
+    if (creating) setRequestId(uuid());
     setCreating(!creating);
   };
 
@@ -920,7 +870,7 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-3 flex justify-end">
         <Button
           variant={creating ? 'ghost' : 'primary'}
           disabled={types.length === 0}
@@ -989,12 +939,12 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
         >
           {rows.map((d) => (
             <Rows key={d.id}>
-              <tr className="border-b border-[var(--border)] hover:bg-[var(--muted)]">
+              <tr className="border-b border-[var(--border)] transition-colors duration-150 ease-[var(--ease)] hover:bg-[var(--muted)]">
                 <Td className="num font-semibold">{d.hardware_serial}</Td>
                 <Td className="text-[var(--muted-foreground)]">{d.device_type_code ?? '—'}</Td>
                 <Td className="num">{d.firmware_version ?? '—'}</Td>
                 <Td>
-                  <Pill tone={d.status === 'active' ? 'pass' : d.status === 'faulty' ? 'reject' : 'partial'}>
+                  <Pill tone={d.status === 'active' ? 'live' : d.status === 'faulty' ? 'stopped' : 'waiting'}>
                     {t(`bo.device.state.${d.status}`)}
                   </Pill>
                   {d.fault_note ? (
@@ -1003,7 +953,7 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
                 </Td>
                 <Td className="num">
                   {d.bound_collector_ref ?? (
-                    <span className="font-sans text-[var(--faint-foreground)]">{t('bo.device.unbound')}</span>
+                    <span className="font-sans text-[var(--muted-foreground)]">{t('bo.device.unbound')}</span>
                   )}
                 </Td>
                 <Td className="space-x-2 whitespace-nowrap text-right">
@@ -1101,33 +1051,35 @@ function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
    The small shared pieces of this screen.
    ---------------------------------------------------------------------- */
 
-/** `<input type="datetime-local">` wants local wall-clock, with no zone on it. */
-function localNow(): string {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-}
-
+/**
+ * A table on paper.
+ *
+ * Not a card: three tables that each sit in their own rounded, shadowed
+ * container is the dashboard-of-panels this console refuses, and a shadow
+ * under a table adds nothing an operator scanning a column can use. The
+ * structure is hairlines — one strong rule under the head, one hairline
+ * between rows — on the page's own white. The table still scrolls inside its
+ * own container so the page never scrolls sideways.
+ */
 function Table({ head, children }: { head: string[]; children: React.ReactNode }) {
   return (
-    <Panel className="overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-left">
-          <thead>
-            <tr className="border-b border-[var(--border)]">
-              {head.map((label, i) => (
-                <th
-                  key={`${label}-${i}`}
-                  className="px-4 py-2.5 text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]"
-                >
-                  {label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>{children}</tbody>
-        </table>
-      </div>
-    </Panel>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[760px] border-collapse text-left">
+        <thead>
+          <tr className="border-b border-[var(--foreground)]">
+            {head.map((label, i) => (
+              <th
+                key={`${label}-${i}`}
+                className="px-3 pb-2 text-[0.8125rem] font-semibold text-[var(--muted-foreground)]"
+              >
+                {label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
   );
 }
 
@@ -1139,7 +1091,7 @@ function Rows({ children }: { children: React.ReactNode }) {
 function EditRow({ span, children }: { span: number; children: React.ReactNode }) {
   return (
     <tr className="border-b border-[var(--border)] bg-[var(--muted)]">
-      <td colSpan={span} className="px-4 py-4">
+      <td colSpan={span} className="px-3 py-4">
         {children}
       </td>
     </tr>
@@ -1147,22 +1099,65 @@ function EditRow({ span, children }: { span: number; children: React.ReactNode }
 }
 
 function Td({ className, children }: { className?: string; children: React.ReactNode }) {
-  return <td className={cn('px-4 py-3 text-[0.875rem]', className)}>{children}</td>;
+  return <td className={cn('px-3 py-2.5 text-[0.875rem]', className)}>{children}</td>;
 }
 
-function Pill({ tone, children }: { tone: 'pass' | 'partial' | 'reject'; children: React.ReactNode }) {
+/**
+ * A lifecycle state, as a pill with its own glyph.
+ *
+ * It used to be drawn in the three verdict hues, and that was wrong twice
+ * over. `--pass` / `--partial` / `--reject` belong to §6.9's three review
+ * outcomes and to nothing else — a published task rendered in the same green
+ * as a passed episode teaches an operator that green means "good" everywhere,
+ * on a console where one of those greens decides whether somebody is paid.
+ * And the payout column here is a *payment-status label*, which the palette
+ * bars from the brand ramps for the same reason.
+ *
+ * So these three climb in weight rather than hue — inverted ink, then the
+ * page's own muted fill, then an outline — and each carries a distinct shape:
+ * a filled disc, a half-filled disc, a bar. The axis reads with no colour at
+ * all, which is what a printed roster or a colour-blind operator gets.
+ */
+type Tone = 'live' | 'waiting' | 'stopped';
+
+const TONE_STYLE: Record<Tone, string> = {
+  live: 'bg-[var(--foreground)] text-[var(--background)]',
+  waiting: 'bg-[var(--muted)] text-[var(--muted-foreground)]',
+  stopped: 'border border-[var(--border-strong)] bg-[var(--card)] text-[var(--foreground)]',
+};
+
+function ToneGlyph({ tone }: { tone: Tone }) {
+  if (tone === 'stopped') {
+    return <span aria-hidden="true" className="h-[2px] w-2.5 rounded-full bg-current" />;
+  }
   return (
     <span
-      className="inline-flex items-center rounded-full px-2.5 py-1 text-[0.75rem] font-bold"
-      style={{ color: `var(--${tone})`, backgroundColor: `var(--${tone}-bg)` }}
+      aria-hidden="true"
+      className="relative h-2.5 w-2.5 overflow-hidden rounded-full border border-current"
     >
+      <span
+        className={cn('absolute inset-y-0 left-0 bg-current', tone === 'live' ? 'right-0' : 'right-1/2')}
+      />
+    </span>
+  );
+}
+
+function Pill({ tone, children }: { tone: Tone; children: React.ReactNode }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[0.75rem] font-semibold',
+        TONE_STYLE[tone],
+      )}
+    >
+      <ToneGlyph tone={tone} />
       {children}
     </span>
   );
 }
 
 const FIELD_LABEL =
-  'text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]';
+  'text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--muted-foreground)]';
 const FIELD_INPUT =
   'mt-1 h-10 w-full rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 text-[0.9375rem]';
 

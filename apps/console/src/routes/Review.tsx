@@ -29,13 +29,15 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppShell } from '../components/shell/AppShell.tsx';
 import { Button, Key } from '../components/ui/button.tsx';
-import { EmptyState, Field, FlagRow, Problem, Skeleton } from '../components/ui/primitives.tsx';
+import { Field, FlagRow, Problem, Skeleton } from '../components/ui/primitives.tsx';
+import { guideBlocksKeys } from '../components/guide/useGuide.ts';
 import { IconKeyboard, IconPartial, IconPass, IconReject, IconRefresh } from '../components/icons.tsx';
 import { MESSAGES } from '@playerone/api/i18n';
 import { api, ApiError, type Claim, type ReasonCode, type Verdict } from '../lib/api.ts';
 import { commitFailure, type CommitFailure } from './refusal.ts';
 import { duration, money, signedPercent, signedSeconds } from '../lib/format.ts';
 import { cn } from '../lib/cn.ts';
+import { uuid } from '../lib/uuid.ts';
 
 const RATES = [0.5, 0.75, 1, 1.5, 2, 3, 4] as const;
 const HEARTBEAT_MS = 60_000;
@@ -50,7 +52,7 @@ export function ReviewScreen() {
   const queryClient = useQueryClient();
 
   const [episode, setEpisode] = useState<Claim | null>(null);
-  const [verdictId, setVerdictId] = useState<string>(() => crypto.randomUUID());
+  const [verdictId, setVerdictId] = useState<string>(() => uuid());
   const [spans, setSpans] = useState<Span[]>([]);
   const [decision, setDecision] = useState<Verdict | null>(null);
   const [reasons, setReasons] = useState<string[]>([]);
@@ -86,7 +88,7 @@ export function ReviewScreen() {
   /** Reset everything that belongs to one episode. */
   const adopt = useCallback((claim: Claim | null) => {
     setEpisode(claim);
-    setVerdictId(crypto.randomUUID());
+    setVerdictId(uuid());
     setSpans([]);
     setDecision(null);
     setReasons([]);
@@ -353,6 +355,13 @@ export function ReviewScreen() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      /**
+       * A tour dialog owns the keyboard while it is open, so Enter cannot
+       * commit and I/O/X cannot mark. The signal is live and module-level, not
+       * React state, because this listener runs in the same tick as the key it
+       * is judging. The lease is untouched by any of it.
+       */
+      if (guideBlocksKeys(event)) return;
       const target = event.target as HTMLElement | null;
       /** Never steal a key from a text field. */
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
@@ -437,8 +446,8 @@ export function ReviewScreen() {
    */
   if (claim.error instanceof ApiError && claim.error.isWithheld) {
     return (
-      <AppShell {...shellProps}>
-        <EmptyState
+      <AppShell {...shellProps} bleed>
+        <Nothing
           title={t('state.playbackWithheld.title')}
           body={t('state.playbackWithheld.body')}
         />
@@ -446,11 +455,11 @@ export function ReviewScreen() {
     );
   }
 
-  /** The queue is empty. A state, and the only one Cú is allowed on. */
+  /** The queue is empty. A sentence on a drawn ground, and no mascot. */
   if (!claim.isPending && episode === null && !claim.isError) {
     return (
-      <AppShell {...shellProps}>
-        <EmptyState
+      <AppShell {...shellProps} bleed>
+        <Nothing
           title={t('queue.empty.title')}
           body={t('queue.empty.body')}
           action={
@@ -489,8 +498,9 @@ export function ReviewScreen() {
               <video
                 ref={videoRef}
                 key={currentPart.url}
+                data-guide="review.player"
                 src={currentPart.url}
-                className="max-h-full w-full max-w-[1100px] rounded-[var(--radius-base)] bg-black"
+                className="max-h-full w-full max-w-[1100px] bg-[var(--stage)] ring-1 ring-[var(--stage-line)]"
                 preload="auto"
                 onTimeUpdate={(e) => setPosition(e.currentTarget.currentTime)}
                 onPlay={() => setPlaying(true)}
@@ -504,7 +514,7 @@ export function ReviewScreen() {
           </div>
 
           {/* Transport. Under the video, on the stage, never floating over it. */}
-          <div className="border-t border-[var(--stage-line)] px-4 py-3">
+          <div className="border-t border-[var(--stage-line)] px-4 py-3 sm:px-6">
             <Scrubber
               position={position}
               measured={measured}
@@ -515,20 +525,18 @@ export function ReviewScreen() {
               }}
             />
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
               <Button variant="stage" size="sm" onClick={togglePlay}>
                 {playing ? t('player.pause') : t('player.play')}
                 <Key onStage>Space</Key>
               </Button>
 
-              <span className="num text-[0.875rem] text-[var(--stage-fg)]">
-                {duration(position)}{' '}
-                <span className="text-[var(--stage-mid)]">/ {duration(measured)}</span>
+              <span className="num text-[0.875rem] font-medium text-[var(--stage-fg)]">
+                {duration(position)}
+                <span className="text-[var(--stage-mid)]"> / {duration(measured)}</span>
               </span>
 
-              <span className="num rounded-full border border-[var(--stage-line)] px-2 py-0.5 text-[0.75rem] text-[var(--stage-mid)]">
-                {rate.toFixed(2)}×
-              </span>
+              <span className="num text-[0.75rem] text-[var(--stage-mid)]">{rate.toFixed(2)}×</span>
 
               {parts.length > 1 ? (
                 <span className="text-[0.8125rem] text-[var(--stage-mid)]">
@@ -536,7 +544,7 @@ export function ReviewScreen() {
                 </span>
               ) : null}
 
-              <div className="ml-auto flex items-center gap-2">
+              <div data-guide="review.marks" className="ml-auto flex items-center gap-2">
                 <Button variant="stage" size="sm" onClick={markIn}>
                   {t('mark.in')}
                   <Key onStage>I</Key>
@@ -560,13 +568,23 @@ export function ReviewScreen() {
               </div>
             </div>
 
-            {/* The estimate, and the sentence that keeps it honest. */}
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="num text-[1.3125rem] font-bold text-[var(--sun-400)]">
+            {/*
+              The running total: this screen's one feature figure, and the only
+              place mono is allowed to be large here. It sits on the theatre's
+              own ink rather than in a block of its own — the stage IS the ink
+              block, and a second dark panel inside it would be two darks that
+              nearly match. It is `--stage-fg` and not sun: sun is action, and a
+              figure is not an action.
+            */}
+            <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-[var(--stage-line)] pt-3">
+              <span className="num text-[2.0625rem] font-medium leading-none tracking-[-0.03em] text-[var(--stage-fg)]">
                 {duration(estimateSeconds)}
               </span>
+              <span className="text-[0.8125rem] font-semibold text-[var(--stage-fg)]">
+                {t('mark.estimate')}
+              </span>
               <span className="text-[0.8125rem] text-[var(--stage-mid)]">
-                {t('mark.estimate')} · {t('mark.estimateHint')}
+                {t('mark.estimateHint')}
               </span>
             </div>
           </div>
@@ -598,11 +616,11 @@ export function ReviewScreen() {
               </div>
             ) : (
               <>
-                <h1 className="num break-all text-[0.9375rem] font-bold leading-snug">
+                <h1 className="num break-all border-b border-[var(--foreground)] pb-2 text-[0.9375rem] font-bold leading-snug">
                   {episode.session_folder}
                 </h1>
 
-                <dl className="mt-4 divide-y divide-[var(--border)]">
+                <dl className="mt-3 divide-y divide-[var(--border)]">
                   <Field
                     label={t('meta.task')}
                     value={episode.task?.name ?? t('meta.unknown')}
@@ -640,11 +658,11 @@ export function ReviewScreen() {
 
                 {/* The declaration a collector made before recording. APP-17b. */}
                 {episode.declared ? (
-                  <div className="mt-4 rounded-[var(--radius-base)] bg-[var(--muted)] px-3.5 py-3">
-                    <p className="text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]">
+                  <div className="mt-5">
+                    <p className="border-b border-[var(--border-strong)] pb-1 text-[0.8125rem] font-semibold text-[var(--foreground)]">
                       {t('meta.declared')}
                     </p>
-                    <dl className="mt-1">
+                    <dl className="mt-1 divide-y divide-[var(--border)]">
                       <Field
                         label={t('meta.othersInFrame')}
                         value={episode.declared.others_in_frame ? t('meta.yes') : t('meta.no')}
@@ -658,8 +676,8 @@ export function ReviewScreen() {
                 ) : null}
 
                 {episode.flags.length > 0 ? (
-                  <div className="mt-4">
-                    <p className="text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]">
+                  <div className="mt-5">
+                    <p className="border-b border-[var(--border-strong)] pb-1 text-[0.8125rem] font-semibold text-[var(--foreground)]">
                       {t('meta.flags')}
                     </p>
                     <div className="divide-y divide-[var(--border)]">
@@ -681,7 +699,12 @@ export function ReviewScreen() {
 
           {/* The decision. Pinned, because a verdict never requires scrolling. */}
           <div className="border-t border-[var(--border)] bg-[var(--card)] p-4">
-            <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t('app.review')}>
+            <div
+              data-guide="review.verdict"
+              className="grid grid-cols-3 gap-2"
+              role="radiogroup"
+              aria-label={t('app.review')}
+            >
               <VerdictChoice
                 value="good"
                 current={decision}
@@ -716,10 +739,12 @@ export function ReviewScreen() {
 
             {/* QR-04: a collector paid nothing has to be told why, in their language. */}
             {decision === 'bad' ? (
-              <fieldset className="mt-3 max-h-40 overflow-y-auto rounded-[var(--radius-base)] border border-[var(--border)] p-2.5">
-                <legend className="px-1 text-[0.75rem] font-semibold text-[var(--muted-foreground)]">
-                  {t('verdict.reasons')}
-                </legend>
+              <fieldset
+                data-guide="review.reasons"
+                className="mt-3 max-h-40 overflow-y-auto border-t border-[var(--border-strong)] pt-2"
+              >
+                <legend className="sr-only">{t('verdict.reasons')}</legend>
+                <p className="px-1 pb-1 text-[0.8125rem] font-semibold">{t('verdict.reasons')}</p>
                 {(reasonQuery.data?.reasons ?? []).map((r: ReasonCode) => (
                   <label
                     key={r.code}
@@ -735,7 +760,7 @@ export function ReviewScreen() {
                             : current.filter((c) => c !== r.code),
                         )
                       }
-                      className="mt-0.5 accent-[var(--sun-500)]"
+                      className="mt-0.5 accent-[var(--action)]"
                     />
                     <span>{i18n.language === 'zh' ? r.label_zh : r.label_en}</span>
                   </label>
@@ -757,7 +782,7 @@ export function ReviewScreen() {
               onChange={(e) => setNote(e.currentTarget.value)}
               placeholder={t('verdict.note')}
               rows={2}
-              className="mt-3 w-full resize-none rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 py-2 text-[0.875rem] focus:border-[var(--sun-500)] focus:outline-none"
+              className="mt-3 w-full resize-none rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 py-2 text-[0.875rem] focus:border-[var(--action)] focus:outline-none"
             />
 
             {/*
@@ -771,7 +796,7 @@ export function ReviewScreen() {
               back to the counter.
             */}
             {refused !== null ? (
-              <div className="mt-3">
+              <div data-guide="review.hold" className="mt-3">
                 {held ? (
                   <Problem title={t('state.refused.held.title')} body={t('state.refused.held.body')} />
                 ) : (
@@ -788,7 +813,7 @@ export function ReviewScreen() {
                               value={holdReason}
                               onChange={(e) => setHoldReason(e.currentTarget.value)}
                               rows={2}
-                              className="mt-1 w-full resize-none rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 py-2 text-[0.875rem] font-normal text-[var(--foreground)] focus:border-[var(--sun-500)] focus:outline-none"
+                              className="mt-1 w-full resize-none rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 py-2 text-[0.875rem] font-normal text-[var(--foreground)] focus:border-[var(--action)] focus:outline-none"
                             />
                           </label>
                           <Button
@@ -828,6 +853,7 @@ export function ReviewScreen() {
             <Button
               variant="primary"
               size="lg"
+              data-guide="review.next"
               className="mt-3 w-full"
               disabled={!canCommit}
               onClick={() => commit.mutate()}
@@ -902,7 +928,7 @@ function Scrubber({
 
       {/* Amber, because it has to stay visible over arbitrary footage. */}
       <div
-        className="pointer-events-none absolute top-1.5 h-6 w-0.5 rounded-full bg-[var(--sun-400)]"
+        className="pointer-events-none absolute top-1.5 h-6 w-0.5 rounded-full bg-[var(--lime-500)]"
         style={{ left: `${pct(position)}%` }}
       />
     </div>
@@ -936,16 +962,47 @@ function VerdictChoice({
       aria-checked={active}
       onClick={() => onSelect(value)}
       className={cn(
-        'flex flex-col items-center gap-1 rounded-[var(--radius-base)] border-2 px-2 py-2.5',
-        'text-[0.8125rem] font-bold transition-all duration-150 ease-[var(--ease)]',
-        active ? '' : 'border-[var(--border)] text-[var(--muted-foreground)] hover:border-[var(--border-strong)]',
+        'flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-2',
+        'text-[0.8125rem] font-semibold transition-colors duration-150 ease-[var(--ease)]',
+        active
+          ? 'font-bold'
+          : 'border-[var(--border-strong)] text-[var(--muted-foreground)] hover:border-[var(--foreground)] hover:text-[var(--foreground)]',
       )}
       style={active ? { borderColor: fg, backgroundColor: bg, color: fg } : undefined}
     >
-      <Glyph size={19} />
-      {label}
+      {/*
+        Nothing here shrinks. The first draft let the label truncate inside the
+        pill and the reject button rendered as "Rej…" on a 1440px screen — an
+        abbreviated verdict on the control that decides whether somebody is
+        paid. The row is sized so the longest label in all three locales fits;
+        if a future one does not, the pill grows and the rail gives up the
+        width, because the word is not the part that may go.
+      */}
+      <Glyph size={16} className="shrink-0" />
+      <span className="shrink-0">{label}</span>
       <Key>{shortcut}</Key>
     </button>
+  );
+}
+
+/**
+ * Nothing to do, on this screen only.
+ *
+ * The shared empty state carries Trúc, and nothing cartoon goes on the screen
+ * where footage is judged — not even when the queue reaches zero. So this is
+ * the same drawn hatch and the same measure, with a sentence where the mascot
+ * would be. It lives here rather than in `components/ui` because it is the one
+ * screen with that rule.
+ */
+function Nothing({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) {
+  return (
+    <div className="mx-auto flex min-h-[calc(100dvh-3.5rem)] items-center justify-center p-6">
+      <div className="hatch w-full max-w-[46ch] rounded-[var(--radius-lg)] border border-[var(--border)] px-8 py-12">
+        <h2 className="text-[1.625rem] font-extrabold leading-[1.15] tracking-[-0.03em]">{title}</h2>
+        <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">{body}</p>
+        {action ? <div className="mt-6">{action}</div> : null}
+      </div>
+    </div>
   );
 }
 

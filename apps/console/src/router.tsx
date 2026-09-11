@@ -13,11 +13,17 @@ import {
   redirect,
 } from '@tanstack/react-router';
 import { HomeScreen } from './routes/Home.tsx';
+import { ProfileScreen } from './routes/Profile.tsx';
+import { ShowcaseScreen } from './showcase/ShowcaseScreen.tsx';
+import { EngineeringScreen } from './engineering/EngineeringScreen.tsx';
 import { ReviewScreen } from './routes/Review.tsx';
 import { PipelineScreen } from './routes/Pipeline.tsx';
 import { LoginScreen } from './routes/Login.tsx';
-import { NotBuiltScreen } from './routes/NotBuilt.tsx';
-import { EpisodesScreen, episodeSearch } from './routes/Episodes.tsx';
+import { DiscoverScreen } from './routes/Discover.tsx';
+import { PrivacyScreen } from './routes/Privacy.tsx';
+import { NotFoundScreen } from './routes/NotFound.tsx';
+import { EpisodesScreen } from './routes/Episodes.tsx';
+import { CounterScreen } from './routes/Counter.tsx';
 import { BackOfficeScreen } from './routes/BackOffice.tsx';
 import { SettleScreen } from './payout/SettleScreen.tsx';
 import { PreflightScreen } from './payout/PreflightScreen.tsx';
@@ -26,7 +32,22 @@ import { ExceptionsScreen } from './payout/ExceptionsScreen.tsx';
 import { RiskScreen } from './risk/RiskScreen.tsx';
 import { periodSearch, riskSearch } from './payout/period.ts';
 
-const rootRoute = createRootRoute({ component: Outlet });
+/**
+ * The root, and it now owns the not-found page.
+ *
+ * `notFoundComponent` here rather than `defaultNotFoundComponent` on the
+ * router: declared on the root route it covers a URL that matches nothing at
+ * all *and* a `notFound()` thrown from any child, and it renders inside the
+ * root's own `Outlet` so a future root layout would wrap it the way it wraps
+ * every other screen. The router-level option is a fallback for routes that
+ * do not declare one, which — with one root — is the same set by a longer
+ * road.
+ *
+ * It is a **page and not a redirect** on purpose. An operator who typed
+ * `/setle` and was bounced silently to the product story would conclude the
+ * console had lost their screen; the address has to be named as wrong.
+ */
+const rootRoute = createRootRoute({ component: Outlet, notFoundComponent: NotFoundScreen });
 
 /**
  * The session check.
@@ -41,11 +62,21 @@ const rootRoute = createRootRoute({ component: Outlet });
  * screen renders a page of refusals; they go to `/review` instead. The
  * redirect is a convenience on top of the server's rule and not the rule
  * itself — the API refuses those routes whatever this file does.
+ *
+ * **Where a refused visit lands depends on which door it knocked on.** A
+ * returning operator who typed `/settle` wants the form, so they get `/login`
+ * and nothing between them and it. Somebody who typed the bare origin has told
+ * us nothing about themselves and is more likely to be new, so `/` goes to
+ * `/discover` — the product story — with sign-in one click away in its bar.
+ *
+ * That split is the whole of the route change made on 2026-09-08. Before it,
+ * the story WAS the sign-in screen: 180vh of landing above the form, which an
+ * operator had to scroll or skip past on every visit to an internal console.
  */
 async function requireSession({ location }: { location: { pathname: string } }) {
   const res = await fetch('/whoami', { credentials: 'same-origin' });
   if (res.status === 401 || res.status === 403) {
-    throw redirect({ to: '/login' });
+    throw redirect({ to: location.pathname === '/' ? '/discover' : '/login' });
   }
   const who = (await res.json().catch(() => ({}))) as { role?: string };
   if (who.role === 'reviewer' && location.pathname !== '/review') {
@@ -59,12 +90,31 @@ const loginRoute = createRoute({
   component: LoginScreen,
 });
 
+/**
+ * The product story, on a public route of its own.
+ *
+ * It used to be the top four fifths of `/login`. Splitting it is the auditor's
+ * finding and the product owner's complaint agreeing: an internal console must
+ * not put a sales presentation between a returning operator and a password
+ * box, and a story worth telling should not have to live inside a form.
+ */
+const discoverRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/discover',
+  component: DiscoverScreen,
+});
+const privacyRoute = createRoute({getParentRoute:()=>rootRoute,path:'/privacy',component:PrivacyScreen});
+
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   beforeLoad: requireSession,
   component: HomeScreen,
 });
+
+const profileRoute = createRoute({ getParentRoute: () => rootRoute, path: '/profile', beforeLoad: requireSession, component: ProfileScreen });
+const showcaseRoute = createRoute({ getParentRoute: () => rootRoute, path: '/showcase', beforeLoad: requireSession, component: ShowcaseScreen });
+const engineeringRoute = createRoute({ getParentRoute: () => rootRoute, path: '/engineering', beforeLoad: requireSession, component: EngineeringScreen });
 
 const reviewRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -89,24 +139,37 @@ const pipelineRoute = createRoute({
 });
 
 /**
- * The three destinations that exist in the product and not yet in the code.
+ * The counter: the card-intake wizard (BO-10).
  *
- * They route to a page that says what the surface is for, which requirement IDs
- * it covers, and how the work is done today — rather than 404ing or, worse,
- * showing an empty table that looks like a bug.
+ * It used to route to the not-built page under ADR 0003. That ADR's cut is
+ * **BO-09** — creating upload centres, binding machines and operators — and it
+ * says so in its own title and its own decision. The handover lane is BO-10,
+ * `POST /handovers` and `POST /handovers/:id/sessions` have been built and
+ * tested since `counter.ts` landed, and nothing in the ADR reserves this path
+ * for the screen it eventually owes. So the stub is gone and the endpoints
+ * have a face. If BO-09's screen is ever built, the ADR's own item 3 offers
+ * `/centres` as the alternative and that is where it goes.
  */
 const counterRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/counter',
   beforeLoad: requireSession,
-  component: () => <NotBuiltScreen surface="counter" />,
+  component: CounterScreen,
 });
 
+/**
+ * `/episodes` is the attention screen, not the not-built page and not BO-05.
+ *
+ * It answers the two questions the counter lane can answer — what is blocking
+ * one batch on this machine, and what is stuck anywhere in this centre — and
+ * says on screen that browsing every episode by task, collector, device,
+ * status and recording time needs a list endpoint that does not exist. The
+ * navigation marks it `partial` rather than dropping its dot for that reason.
+ */
 const episodesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/episodes',
   beforeLoad: requireSession,
-  validateSearch: episodeSearch,
   component: EpisodesScreen,
 });
 
@@ -161,7 +224,12 @@ const riskRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
+  profileRoute,
+  showcaseRoute,
+  engineeringRoute,
   loginRoute,
+  discoverRoute,
+  privacyRoute,
   reviewRoute,
   backOfficeRoute,
   pipelineRoute,

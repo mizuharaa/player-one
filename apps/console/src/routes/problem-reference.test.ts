@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { MESSAGES } from '@playerone/api/i18n';
-import { ApiError } from '../lib/api.ts';
+import { api, ApiError } from '../lib/api.ts';
 import { LoadFailed, RefusedBanner } from '../payout/pieces.tsx';
 
 vi.mock('react-i18next', async (importOriginal) => ({
@@ -30,6 +30,38 @@ describe('the operator can report the server failure reference', () => {
   it('renders the caught mutation reference in the refusal banner', () => {
     expect(renderToStaticMarkup(createElement(RefusedBanner, { error: internal, onDismiss: () => {} }))).toContain('req-abc');
     expect(renderToStaticMarkup(createElement(RefusedBanner, { error: refusal, onDismiss: () => {} }))).not.toContain('bo.error.reference');
+  });
+
+  /**
+   * Home's own request, which is the one that was losing the reference.
+   *
+   * `/api/review/shift` was fetched inline in `Home.tsx` and its `ApiError` was
+   * built from the status line alone, so a 500 that named itself arrived at
+   * `<Problem>` with `ref === undefined`. It goes through `call` now like every
+   * other request on this seam, and this case fails if anyone writes a second
+   * transport for it.
+   */
+  it('carries the 500 reference off the shift request itself', async () => {
+    let requested: unknown;
+    vi.stubGlobal('fetch', async (path: unknown) => {
+      requested = path;
+      return new Response(JSON.stringify({ error: 'internal', ref: 'req-shift-1' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    try {
+      const caught = await api.shift().then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(caught).toBeInstanceOf(ApiError);
+      expect((caught as ApiError).status).toBe(500);
+      expect((caught as ApiError).ref).toBe('req-shift-1');
+      expect(requested).toBe('/api/review/shift');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('has a sentence in all three languages for every corrective commitment refusal', () => {

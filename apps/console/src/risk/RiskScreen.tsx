@@ -21,12 +21,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button.tsx';
-import { EmptyState, Panel, Problem } from '../components/ui/primitives.tsx';
+import { EmptyState, Problem } from '../components/ui/primitives.tsx';
 import { ApiError, payout, risk, type ClearVerdict, type PayoutBill } from '../lib/api.ts';
 import { count, vnd, when } from '../payout/format.ts';
 import { keys } from '../payout/period.ts';
 import {
   BandPill,
+  FeatureBlock,
   Field,
   LoadFailed,
   Reason,
@@ -49,15 +50,43 @@ export function RiskScreen() {
   const period = search.period;
   const [open, setOpen] = useState<string | null>(search.bill ?? null);
   const [refused, setRefused] = useState<unknown>(null);
-  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period) });
+  const { role } = useFinanceRole();
+  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: role === 'finance' });
 
   const ranked = [...(batch.data?.bills ?? [])].sort((a, b) => b.risk.score - a.risk.score);
   const flagged = ranked.filter((b) => b.risk.flags.length > 0 || b.risk.band !== 'clear' || b.id === open);
+  /**
+   * How many bills the engine is holding. A count of rows this screen already
+   * has, not a figure it derived — and the one number on this screen that
+   * stops money, which is what earns it the ink.
+   */
+  const heldCount = ranked.filter((b) => b.risk.band === 'hold').length;
 
   return (
     <SettleShell period={period} tab="flags" mode={batch.data?.mode}>
-      <p className="mb-4 max-w-[62ch] text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">{t('risk.intro')}</p>
+      <p className="mb-5 max-w-[62ch] text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">{t('risk.intro')}</p>
       <RefusedBanner error={refused} onDismiss={() => setRefused(null)} />
+
+      {/*
+        Only when the engine has actually flagged something.
+
+        Two zeroes are not the same zero. A "0" beside "this period did not
+        load" is a measured zero that was never measured, on the one figure
+        that says whether anybody's money is stopped — so it never renders
+        while the period is loading or failed. And when the engine flagged
+        nothing at all, `flagged` is empty and this figure can only ever read
+        zero: a ₫0-shaped block above an empty state says nothing the empty
+        state does not, and spends the screen's one ink block on it.
+      */}
+      {batch.isPending || batch.error || flagged.length === 0 ? null : (
+        <FeatureBlock
+          data-guide="risk.holds"
+          className="mb-6"
+          label={t('ui.b.risk.holds.count')}
+          figure={count(heldCount, locale)}
+          sentence={t('ui.b.risk.holds.sentence')}
+        />
+      )}
 
       {batch.error ? (
         <LoadFailed error={batch.error} />
@@ -66,12 +95,12 @@ export function RiskScreen() {
       ) : flagged.length === 0 ? (
         <EmptyState title={t('risk.empty')} body={t('risk.empty.body')} />
       ) : (
-        <ol className="space-y-3">
+        <ol className="border-t border-[var(--foreground)]">
           {flagged.map((b) => (
-            <li key={b.id}>
-              <Panel className="p-4 sm:p-5">
+            <li key={b.id} className="border-b border-[var(--border)]">
+              <div className="py-4">
                 <div className="flex flex-wrap items-center gap-3">
-                  <Link to="/settle/bills/$billId" params={{ billId: b.id }} search={{ period }} className="num text-[1.0625rem] font-bold text-[var(--tech-600)]">
+                  <Link to="/settle/bills/$billId" params={{ billId: b.id }} search={{ period }} className="num text-[1.0625rem] font-bold text-[var(--tech-ink)]">
                     {b.collector_ref}
                   </Link>
                   <BandPill band={b.risk.band} />
@@ -83,7 +112,7 @@ export function RiskScreen() {
                   </Button>
                 </div>
                 {open === b.id ? <Detail bill={b} onRefused={setRefused} period={period} /> : null}
-              </Panel>
+              </div>
             </li>
           ))}
         </ol>

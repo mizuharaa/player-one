@@ -1,0 +1,14 @@
+{
+  "source": "hf_20260906_224034_559e64c5-136d-46d3-a4ef-61991f646fa1.mp4",
+  "video": "review.mp4",
+  "poster": "review-poster.webp",
+  "width": 1280,
+  "height": 720,
+  "fps": 24,
+  "durationSeconds": 10.041667,
+  "bytes": 1939356,
+  "audio": false,
+  "sha256": "fa166cc6db2e7f5ab14d1894df085219b81b67a2de2f3574998cbf7d0a285fdf",
+  "disclosure": "Illustrative external-view film, not footage captured by Ego or a device-fitting guide.",
+  "knownLimitation": "The supplied source includes inconsistent device placement. It is not used to demonstrate correct wearing."
+}

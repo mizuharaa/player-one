@@ -43,6 +43,20 @@ const sentenceFor = (constraint: string | undefined): string => {
   return constraint !== undefined && key in MESSAGES.en ? key : 'bo.refused.unknown';
 };
 
+/**
+ * The same lookup, from an error rather than from a name.
+ *
+ * One implementation, because the catalogue is the list of refusals this
+ * console can name and a hand-kept second copy is the one nobody remembers to
+ * add a constraint to. The back office, the counter wizard and the task
+ * wizard all call this; a 409 whose constraint has no sentence falls through
+ * to the generic line, which is exactly what an unknown refusal should look
+ * like.
+ */
+export function refusalKey(error: unknown): string {
+  return sentenceFor(error instanceof ApiError ? error.constraint : undefined);
+}
+
 export function commitFailure(error: unknown): CommitFailure {
   if (!(error instanceof ApiError)) {
     return { kind: 'failed', message: error instanceof Error ? error.message : String(error) };

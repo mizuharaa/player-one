@@ -1,37 +1,20 @@
-/**
- * Sign in.
- *
- * Two credentials, because every mutation in this service carries two: a
- * machine token proving *where* and an operator token proving *who* (PRD
- * §8.3.2 rule 1). The form says so rather than presenting four boxes and
- * letting an operator guess why their username is split in half.
- *
- * PLT-10 is now the other half of this screen. PaXini's reviewers are in
- * Shenzhen and are not standing at a VNG counter, so they no longer sign in
- * with upload-centre operator credentials: choosing "Reviewer" drops the
- * machine fieldset entirely, because there is no machine, and the session the
- * server issues reaches the review lane and nothing else.
- *
- * The choice is a real `<fieldset>` of radios rather than two tabs or two
- * pages. It is two options that are visible at once, it works before any script
- * has run, and a screen reader announces it as one question.
- *
- * Composition note: this is not a centred card on a grey field. The left half
- * carries the identity at a size that means it, the right half carries the
- * form, and on a narrow window the identity collapses to the mark above the
- * fields rather than being dropped.
- */
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from '@tanstack/react-router';
-import { Mark } from '../components/identity/Mark.tsx';
-import { Cu } from '../components/identity/Cu.tsx';
+import { Link, useNavigate } from '@tanstack/react-router';
+import { ConsoleLogo } from '../components/shell/ConsoleLogo.tsx';
+import { LoginFilm } from '../components/shell/LoginFilm.tsx';
+import '../styles/operations.css';
 import { Button } from '../components/ui/button.tsx';
+import { Input } from '../components/ui/input.tsx';
+import { Segmented, SegmentedOption } from '../components/ui/segmented.tsx';
 import { LocaleSwitch } from '../components/shell/LocaleSwitch.tsx';
 import { ThemeSwitch } from '../components/shell/ThemeSwitch.tsx';
 import { cn } from '../lib/cn.ts';
 
 type Failure = 'credentials' | 'mismatch' | 'network' | 'sign_in_rate_limited' | null;
+
+/** Consistent readable legends for the role and credential groups. */
+const EYEBROW = 'text-[0.8125rem] font-semibold';
 
 export function LoginScreen() {
   const { t } = useTranslation();
@@ -43,6 +26,7 @@ export function LoginScreen() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setFailure(null);
 
@@ -51,8 +35,10 @@ export function LoginScreen() {
       const res = await fetch('/api/session', {
         method: 'POST',
         credentials: 'same-origin',
+        signal: AbortSignal.timeout(20_000),
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.fromEntries(form)),
+        body: JSON.stringify(Object.fromEntries([...form].map(([key, value]) =>
+          [key, typeof value === 'string' ? value.trim() : value]))),
       });
       if (res.ok) {
         // Where the session can actually go. A reviewer is scoped to the review
@@ -62,9 +48,6 @@ export function LoginScreen() {
         return;
       }
       const body = (await res.json().catch(() => ({}))) as { reason?: string };
-      // SEC-03: a 429 is a refusal with a name, and the person gets the
-      // sentence that says the wait ends by itself — not "wrong password",
-      // which is what they would otherwise read after typing a right one.
       setFailure(
         body.reason === 'mismatch' || body.reason === 'sign_in_rate_limited'
           ? body.reason
@@ -79,181 +62,156 @@ export function LoginScreen() {
   }
 
   return (
-    <div className="grid min-h-dvh lg:grid-cols-[1.05fr_1fr]">
-      {/* The identity half. Sun field, because sign-in is an action. */}
-      <aside className="relative hidden flex-col justify-between overflow-hidden bg-[var(--sun-500)] p-10 lg:flex">
-        <div className="flex items-center gap-2.5 text-white">
-          <Mark size={30} monochrome />
-          <span className="text-[1.1875rem] font-extrabold tracking-[-0.02em]">PlayerOne</span>
-        </div>
+    <div className="ops-world ops-login">
+      <header className="ops-login-header">
+        <Link to="/discover" aria-label="PlayerOne" className="ops-brand">
+          <ConsoleLogo />
+        </Link>
+        <div className="ops-header-controls"><LocaleSwitch /><ThemeSwitch /></div>
+      </header>
+      <main className="ops-login-layout">
+        <LoginFilm />
+        <div className="ops-login-form-region">
+          <div className="ops-login-form-wrap">
+            <div className="ops-login-heading">
+              <h1>{t(reviewer ? 'login.title' : 'login.titleOperator')}</h1>
+              <p>{t(reviewer ? 'login.reviewerIntro' : 'login.intro')}</p>
+            </div>
+            <form onSubmit={submit} className="ops-credentials">
+              <fieldset className="flex flex-col gap-2">
+                <legend className={cn(EYEBROW, 'mb-2 text-[var(--muted-foreground)]')}>
+                  {t('login.role')}
+                </legend>
+                <Segmented>
+                  <SegmentedOption
+                    name="role"
+                    value="operator"
+                    checked={!reviewer}
+                    onSelect={setRole}
+                  >
+                    {t('login.roleCounter')}
+                  </SegmentedOption>
+                  <SegmentedOption
+                    name="role"
+                    value="reviewer"
+                    checked={reviewer}
+                    onSelect={setRole}
+                  >
+                    {t('login.roleReviewer')}
+                  </SegmentedOption>
+                </Segmented>
+              </fieldset>
 
-        <div className="max-w-[34ch]">
-          <p className="text-[2.0625rem] font-extrabold leading-[1.12] tracking-[-0.03em] text-white">
-            Every recorded hour gets an owner, a measurement and a decision.
-          </p>
-          <p className="mt-4 text-[0.9375rem] leading-relaxed text-white/85">
-            VNG PT Lab and PaXini. Footage stays in Vietnam.
-          </p>
-        </div>
+              {/* Reviewers do not submit machine credentials. */}
+              {reviewer ? null : (
+                <Fieldset legend={t('login.groupMachine')}>
+                  <Credential
+                    name="machine_identifier"
+                    label={t('login.fieldIdentifier')}
+                    autoComplete="section-machine username"
+                  />
+                  <Credential
+                    name="machine_secret"
+                    label={t('login.fieldSecret')}
+                    type="password"
+                    autoComplete="section-machine current-password"
+                  />
+                </Fieldset>
+              )}
 
-        {/* Cú sits low and partly cropped: she is the room, not the message. */}
-        <Cu size={172} className="absolute -bottom-6 right-6 opacity-95" />
-      </aside>
-
-      <main className="flex flex-col px-6 py-8 sm:px-12">
-        <div className="flex items-center justify-end gap-1">
-          <LocaleSwitch />
-          <ThemeSwitch />
-        </div>
-
-        <div className="mx-auto flex w-full max-w-[26rem] flex-1 flex-col justify-center py-10">
-          <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <Mark size={28} />
-            <span className="text-[1.0625rem] font-extrabold tracking-[-0.02em]">PlayerOne</span>
-          </div>
-
-          <h1 className="text-[1.625rem] font-extrabold tracking-[-0.025em]">{t('login.title')}</h1>
-          <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">
-            {t(reviewer ? 'login.reviewerIntro' : 'login.intro')}
-          </p>
-
-          <form onSubmit={submit} className="mt-8 flex flex-col gap-5">
-            <fieldset className="flex flex-col gap-2">
-              <legend className="text-[0.8125rem] font-semibold text-[var(--muted-foreground)]">
-                {t('login.role')}
-              </legend>
-              <div className="flex gap-2">
-                <Role
-                  value="operator"
-                  checked={!reviewer}
-                  label={t('login.roleCounter')}
-                  onPick={setRole}
-                />
-                <Role
-                  value="reviewer"
-                  checked={reviewer}
-                  label={t('login.roleReviewer')}
-                  onPick={setRole}
-                />
-              </div>
-            </fieldset>
-
-            {/*
-              Unmounted, not hidden. A hidden-but-present input still posts its
-              value, and a machine identifier travelling with a reviewer
-              sign-in is exactly the confusion this screen exists to end.
-            */}
-            {reviewer ? null : (
-              <Fieldset legend={t('login.machine')}>
-                <Input
-                  name="machine_identifier"
-                  label={t('login.machine')}
+              <Fieldset legend={reviewer ? t('login.groupReviewer') : t('login.groupOperator')}>
+                <Credential
+                  name="external_ref"
+                  label={t('login.fieldReference')}
                   autoComplete="username"
                 />
-                <Input
-                  name="machine_secret"
-                  label={t('login.machineSecret')}
+                <Credential
+                  name="operator_secret"
+                  label={t('login.fieldSecret')}
                   type="password"
                   autoComplete="current-password"
                 />
               </Fieldset>
-            )}
 
-            <Fieldset legend={reviewer ? t('login.reviewer') : t('login.operator')}>
-              <Input
-                name="external_ref"
-                label={reviewer ? t('login.reviewer') : t('login.operator')}
-                autoComplete="username"
-              />
-              <Input
-                name="operator_secret"
-                label={reviewer ? t('login.reviewerSecret') : t('login.operatorSecret')}
-                type="password"
-                autoComplete="current-password"
-              />
-            </Fieldset>
+              <div>
+                {failure ? (
+                  <p
+                    role="alert"
+                    className="mb-3 rounded-[var(--radius-base)] bg-[var(--reject-bg)] px-3.5 py-2.5 text-[0.875rem] font-medium text-[var(--reject)]"
+                  >
+                    {failure === 'mismatch'
+                      ? t('login.mismatch')
+                      : failure === 'sign_in_rate_limited'
+                        ? t('bo.refused.sign_in_rate_limited')
+                        : failure === 'network'
+                          ? t('login.network')
+                          : t('login.failed')}
+                  </p>
+                ) : null}
 
-            {failure ? (
-              <p
-                role="alert"
-                className="rounded-[var(--radius-base)] bg-[var(--reject-bg)] px-3.5 py-2.5 text-[0.875rem] font-medium text-[var(--reject)]"
-              >
-                {failure === 'mismatch'
-                  ? t('login.mismatch')
-                  : failure === 'sign_in_rate_limited'
-                    ? t('bo.refused.sign_in_rate_limited')
-                    : failure === 'network'
-                      ? 'The service did not answer. Check the machine is on the centre network and try again.'
-                      : t('login.failed')}
-              </p>
-            ) : null}
-
-            <Button type="submit" variant="primary" size="lg" disabled={busy} className="mt-1">
-              {busy ? '…' : t('login.submit')}
-            </Button>
-          </form>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="xl"
+                  disabled={busy}
+                  aria-busy={busy}
+                  className="w-full"
+                >
+                  {busy ? '…' : t('login.submit')}
+                </Button>
+              </div>
+            </form>
+            <div className="ops-login-legal">
+              <span>{t('login.legal')}</span>
+              <span>
+                <Legal href="/privacy">{t('login.legalPrivacy')}</Legal>
+                <Legal href="/privacy">{t('login.legalData')}</Legal>
+              </span>
+            </div>
+          </div>
         </div>
       </main>
     </div>
   );
 }
 
+/** Both notices lead to the available privacy draft; it has no section IDs. */
+function Legal({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      className={cn(
+        'underline decoration-current/40 underline-offset-2',
+        'transition-colors duration-150 ease-[var(--ease)]',
+        'hover:decoration-current',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
+      )}
+    >
+      {children}
+    </a>
+  );
+}
+
 /**
- * The two credentials are grouped, and the grouping is a real `<fieldset>`.
+ * The two credentials are grouped, and the grouping is a real `<fieldset>` —
+ * drawn as well as announced.
  *
- * A screen reader announces the legend before each field, which is the whole
- * point: "Machine identifier" and "Operator reference" are not obviously
- * different things to somebody who cannot see them side by side.
+ * The legend used to be `sr-only`, so this screen's entire argument — that a
+ * mutation carries two credentials, a machine proving *where* and an operator
+ * proving *who* — lived in the accessibility tree and nowhere in the pixels,
+ * and a sighted operator got four identical boxes and four identical labels.
  */
 function Fieldset({ legend, children }: { legend: string; children: React.ReactNode }) {
   return (
-    <fieldset className="flex flex-col gap-3">
-      <legend className="sr-only">{legend}</legend>
-      {children}
+    <fieldset className="ops-credential-group">
+      <legend className={cn(EYEBROW, 'mb-2 text-[var(--muted-foreground)]')}>{legend}</legend>
+      <div className="ops-credential-fields">{children}</div>
     </fieldset>
   );
 }
 
-/**
- * One of the two roles. A real radio: arrow keys move between them, the browser
- * enforces that exactly one is chosen, and the label is the hit target.
- */
-function Role({
-  value,
-  checked,
-  label,
-  onPick,
-}: {
-  value: 'operator' | 'reviewer';
-  checked: boolean;
-  label: string;
-  onPick: (role: 'operator' | 'reviewer') => void;
-}) {
-  return (
-    <label
-      className={cn(
-        'flex flex-1 cursor-pointer items-center justify-center rounded-[var(--radius-base)] border px-3 py-2.5',
-        'text-[0.875rem] font-semibold transition-colors duration-150 ease-[var(--ease)]',
-        'has-[:focus-visible]:border-[var(--sun-500)]',
-        checked
-          ? 'border-[var(--sun-500)] bg-[var(--card)] text-[var(--foreground)]'
-          : 'border-[var(--border-strong)] text-[var(--muted-foreground)] hover:border-[var(--faint-foreground)]',
-      )}
-    >
-      <input
-        type="radio"
-        name="role"
-        value={value}
-        checked={checked}
-        onChange={() => onPick(value)}
-        className="sr-only"
-      />
-      {label}
-    </label>
-  );
-}
-
-function Input({
+/** A label above its field. The label is the hit target; the field is `ui/input`. */
+function Credential({
   name,
   label,
   type = 'text',
@@ -265,22 +223,10 @@ function Input({
   autoComplete?: string;
 }) {
   return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-[0.8125rem] font-semibold text-[var(--muted-foreground)]">{label}</span>
-      <input
-        name={name}
-        type={type}
-        autoComplete={autoComplete}
-        required
-        spellCheck={false}
-        className={cn(
-          'num h-11 rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3.5',
-          'text-[0.9375rem] text-[var(--foreground)] placeholder:text-[var(--faint-foreground)]',
-          'transition-colors duration-150 ease-[var(--ease)]',
-          'hover:border-[var(--faint-foreground)]',
-          'focus:border-[var(--sun-500)] focus:outline-none focus-visible:outline-none',
-        )}
-      />
+    <label className="flex flex-col gap-2">
+      <span className="text-[0.8125rem] font-semibold text-[var(--foreground)]">{label}</span>
+      <Input name={name} type={type} autoComplete={autoComplete} required spellCheck={false}
+        autoCapitalize="none" onBlur={event => { event.currentTarget.value = event.currentTarget.value.trim(); }} />
     </label>
   );
 }

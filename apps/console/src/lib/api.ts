@@ -26,19 +26,6 @@
 /** A Postgres `numeric` as it arrives. Display it; never total it. */
 export type Decimal = string;
 
-export interface BrowsedEpisode {
-  episode_id: string;
-  task_name: string | null;
-  collector_ref: string | null;
-  device_serial: string | null;
-  resolution_state: 'resolved' | 'quarantined';
-  first_seen_at: string;
-  session_started_at: string;
-}
-
-export const browseEpisodes = (search: string) =>
-  call<{ episodes: BrowsedEpisode[]; truncated: boolean }>(`/api/episodes${search ? `?${search}` : ''}`);
-
 export type Verdict = 'good' | 'partial' | 'bad';
 
 export interface Flag {
@@ -120,6 +107,29 @@ export interface RecentReview {
   reviewedAt: string | null;
   seconds: number | null;
   amount: Decimal | null;
+}
+
+/**
+ * The shift counters behind Home's gauge and its ledger.
+ *
+ * This lived in `Home.tsx` next to a hand-rolled `fetch`, and that is what lost
+ * the reference on a 500: the route built its own `ApiError` from the status
+ * line alone, so `error.ref` was always `undefined` and `<Problem>` had nothing
+ * to quote. The type is here now and the request goes through `call`, which
+ * reads the body every other request on this seam already reads.
+ */
+export interface Shift {
+  currency: string;
+  reviewer: string;
+  target: number;
+  decided: number;
+  approved: number;
+  payable_seconds: Decimal;
+  median_seconds_to_verdict: Decimal | null;
+  settled_amount: Decimal;
+  queue_depth: number;
+  session_average_seconds: number | null;
+  needs_human: number;
 }
 
 export interface VerdictResult {
@@ -415,6 +425,115 @@ export const backOffice = {
   bindDevice: (id: string, collectorId: string) =>
     send(`/api/devices/${id}/bind`, { collector_id: collectorId }),
   unbindDevice: (id: string) => send(`/api/devices/${id}/unbind`),
+
+  /**
+   * APP-10, taken by an operator on the collector's behalf.
+   *
+   * The id is minted by the caller and the write is idempotent on it, like
+   * every other create on this seam. There is deliberately no `claims()` read
+   * beside this: the API has no operator-reachable list of claims — `GET
+   * /api/me/claims` is scoped to a collector's own token — so the console can
+   * create a claim and cannot enumerate one. `GET /api/tasks` carries the live
+   * claimant *count*, which is what the table shows.
+   */
+  claimTask: (taskId: string, body: { id: string; collector_id: string }) =>
+    send(`/api/tasks/${taskId}/claims`, body),
+
+  /**
+   * Who holds this camera from now on: a custody period, not a bind.
+   *
+   * `bindDevice` is "who has it in their hands"; this is what settlement reads
+   * to answer "who had it on 13 August". One POST does both halves of a swap,
+   * so the caller never closes a period itself.
+   */
+  assignDevice: (deviceId: string, body: { id: string; collector_id: string; valid_from: string }) =>
+    send(`/api/devices/${deviceId}/assignments`, body),
+};
+
+/* -------------------------------------------------------------------------
+   The counter (BO-10). Two writes and one read, and the two writes are
+   deliberately separate objects: the handover is the card arriving, the
+   session is what was recorded on it. `CLAUDE.md` calls that split a decision
+   — the app binds a session before recording (APP-16), the operator creates
+   the handover when the card arrives — and in the pilot the operator creates
+   both, which is why every session written from here is stamped
+   `session_origin = 'handover'` by the server.
+   ---------------------------------------------------------------------- */
+
+/**
+ * The offline cache's reference data, as `GET /reference/sync` sends it.
+ *
+ * Rows straight off the tables, so the keys are the schema's camelCase and not
+ * the snake_case the hand-written routes use. Its scope is the other thing
+ * worth knowing: **authorisation** is centre-scoped and the payload is not, so
+ * a collector who claimed from one task hall can hand a card over at whichever
+ * centre they reach. ADR 0003 carries that argument; `reference_scope` says it
+ * on the wire.
+ */
+export interface Reference {
+  fetched_at: string;
+  upload_centre_id: string;
+  reference_scope: 'global';
+  collectors: {
+    id: string;
+    externalRef: string;
+    status: 'pending' | 'qualified' | 'suspended';
+    examResult: 'pass' | 'fail' | null;
+  }[];
+  devices: {
+    id: string;
+    hardwareSerial: string;
+    status: 'active' | 'faulty' | 'retired';
+    firmwareVersion: string | null;
+    boundCollectorId: string | null;
+  }[];
+  tasks: {
+    id: string;
+    name: string;
+    type: string | null;
+    unitPrice: Decimal;
+    status: 'draft' | 'published' | 'taken_down';
+  }[];
+  scenarios: { id: string; code: string; privacyRiskLevel: 'low' | 'medium' | 'high' }[];
+}
+
+/** What `POST /handovers` takes. Centre, operator and machine come from the tokens. */
+export interface HandoverBody {
+  id: string;
+  collector_id: string;
+  device_id: string;
+  tf_card_id: string;
+  handover_time: string;
+}
+
+/**
+ * What `POST /handovers/:id/sessions` takes.
+ *
+ * `others_in_frame` and `sensitive_info_present` are booleans with no default,
+ * on purpose and all the way down: the column is NOT NULL, the server's schema
+ * is `z.boolean()` rather than `.default(false)`, and the wizard makes it a
+ * required choice. "Nobody asked" is not one of the answers.
+ *
+ * There is **no `session_ended_at`**, here or anywhere. An operator cannot
+ * supply a truthful end, and a retroactively typed end that decides payment
+ * attribution is the failure the brief warns about.
+ */
+export interface SessionBody {
+  id: string;
+  task_id: string;
+  scenario_id: string;
+  collection_point_id?: string;
+  others_in_frame: boolean;
+  sensitive_info_present: boolean;
+  prepare_time: string;
+  client_version?: string;
+}
+
+export const counter = {
+  reference: () => call<Reference>('/reference/sync'),
+  handover: (body: HandoverBody) => send('/handovers', body),
+  session: (handoverId: string, body: SessionBody) =>
+    send(`/handovers/${handoverId}/sessions`, body),
 };
 
 export const api = {
@@ -428,6 +547,9 @@ export const api = {
   peek: () => call<Episode>('/api/review/next'),
 
   reasons: () => call<{ reasons: ReasonCode[] }>('/api/review/reasons'),
+
+  /** The shift counters on Home. */
+  shift: () => call<Shift>('/api/review/shift'),
 
   recent: () => call<{ currency: string; reviews: RecentReview[] }>('/api/review/recent'),
 
@@ -837,15 +959,9 @@ export const payout = {
   exportUrl: (periodStart: string) => `/api/payout/export/${encodeURIComponent(periodStart)}`,
 
   financeRole: async (): Promise<FinanceRole> => {
-    const res = await fetch('/api/payout/attempts/probe/resolve', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
-    });
-    if (res.status === 400) return 'finance';
-    if (res.status === 403) return 'operator';
-    if (res.status === 401) throw new ApiError(401, res.statusText);
-    return 'unknown';
+    const profile = await call<{ operator?: { role?: string; status?: string } }>('/api/operator/profile');
+    if (!profile?.operator?.role || profile.operator.status !== 'active') return 'unknown';
+    return profile.operator.role === 'finance' ? 'finance' : 'operator';
   },
 };
 
@@ -920,4 +1036,112 @@ export const risk = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+};
+
+/* -------------------------------------------------------------------------
+   The counter's episode lane (`packages/api/src/episodes.ts`).
+
+   These four routes are mounted at the API root rather than under `/api`, and
+   they do not share one scope — which is the whole reason the screen that
+   reads them has to say which scope each list is in:
+
+   - `/upload-batches` and `/upload-batches/:id/exceptions` are **machine**
+     scoped, through `actor.machine.uploadDeviceId`. The list window is the
+     server's own default of 100, capped at 500, and its time filters read
+     `import_started_at` — import time, never recording time.
+   - `/episodes/stuck` is **upload-centre** scoped, through
+     `actor.operator.uploadCentreId`, and has no window at all.
+   - `/api/episodes/:id/outcome` is scoped by the episode id it is given.
+
+   Every field below is a field the server already sends; nothing here is
+   derived, and nothing is inferred from a batch's candidate sessions.
+   ---------------------------------------------------------------------- */
+
+/** One row of `GET /upload-batches`. The two counts are per resolution state. */
+export interface BatchRow {
+  id: string;
+  handoverId: string;
+  batchStatus: 'importing' | 'imported' | 'uploading' | 'verifying' | 'verified' | 'closed' | 'failed';
+  importStartedAt: string;
+  importCompletedAt: string | null;
+  resolved: number;
+  quarantined: number;
+}
+
+/**
+ * `GET /upload-batches/:id/exceptions`.
+ *
+ * `blocking` is what holds the batch open; `summary` counts the same batch
+ * including the parked episodes, which block nothing (0018) and are still
+ * worth an operator's eye. `episodes_per_session` is null when the delivery
+ * declared no session, and is the one figure to read even when nothing is
+ * wrong.
+ */
+export interface BatchExceptions {
+  batch_id: string;
+  summary: {
+    episodes: number;
+    sessions: number;
+    quarantined: number;
+    awaiting_confirmation: number;
+    parked: number;
+    episodes_per_session: number | null;
+  };
+  blocking: {
+    episode_id: string;
+    /**
+     * `YYYYMMDD_HHMMSS` from the recording directory's basename, not an ISO
+     * instant — `episodes.session_started_at` is a text column (schema.ts:109).
+     * `Episodes.tsx`'s `stamp()` is what reads it; `new Date()` cannot.
+     */
+    session_started_at: string | null;
+    resolution_state: string;
+    needs: 'assignment' | 'confirmation';
+  }[];
+  sessions: { id: string; prepareTime: string; sessionOrigin: string; collectorId: string }[];
+}
+
+/** `GET /episodes/stuck`. An episode can carry both holds at once. */
+export interface StuckEpisode {
+  episode_id: string;
+  device_serial: string;
+  /** The basename stamp again, `YYYYMMDD_HHMMSS`. Never parsed as a date. */
+  session_started_at: string;
+  resolution_state: string;
+  park: {
+    park_id: string;
+    reason: string | null;
+    parked_at: string;
+    parked_by: string | null;
+    release_with: string;
+  } | null;
+  held: { review_id: string; held_at: string; release_with: string } | null;
+}
+
+/** `GET /api/episodes/:id/outcome`. All three labels are non-null since 0018. */
+export interface EpisodeOutcome {
+  episode_id: string;
+  collector_id: string | null;
+  ingest_id: string | null;
+  review_state: string | null;
+  reviewed_at: string | null;
+  reviewer_note: string | null;
+  reasons: { code: string; category: string; label_en: string; label_vi: string; label_zh: string }[];
+}
+
+export const episodes = {
+  /** The machine's own batches, newest first, in the server's default window. */
+  batches: () => call<{ batches: BatchRow[] }>('/upload-batches'),
+  exceptions: (batchId: string) => call<BatchExceptions>(`/upload-batches/${batchId}/exceptions`),
+  stuck: () => call<{ episodes: StuckEpisode[] }>('/episodes/stuck'),
+  outcome: (episodeId: string) => call<EpisodeOutcome>(`/api/episodes/${episodeId}/outcome`),
+  /**
+   * PLT-05's human resolution path. The reason is mandatory at the database,
+   * so the form makes it mandatory too rather than letting the write fail.
+   */
+  resolve: (episodeId: string, body: { collection_session_id: string; reason: string }) =>
+    call<{ episode_id: string; resolution_state: string; resolution_method: string }>(
+      `/episodes/${episodeId}/resolve`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
 };

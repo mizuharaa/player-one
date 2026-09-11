@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 784 152" fill="currentColor" role="img" aria-labelledby="playerone-title">
+  <title id="playerone-title">PlayerOne</title>
+  <g id="p-stem-top" fill="currentColor"><path d="M108 24h17v48.3h-17Z" /></g>
+  <g id="p-stem-bottom" fill="currentColor"><path d="M108 72h17v48h-17Z" /></g>
+  <g id="p-bowl-top" fill="currentColor"><path d="M125 24h19c43 0 43 36 43 36h-17c0-18-10-20-26-20h-19ZM124.7 24h0.6v16h-0.6Z" /></g>
+  <g id="p-bowl-bottom" fill="currentColor"><path d="M187 59c0 24-17 35-43 35h-19V78h19c15 0 26-3 26-19ZM124.7 78h0.6v16h-0.6Z" /></g>
+  <g id="l-upper" fill="currentColor"><path d="M200 24h17v48.3h-17Z" /></g>
+  <g id="l-lower" fill="currentColor"><path d="M200 72h17v48h-17Z" /></g>
+  <g id="a-left" fill="currentColor"><path d="M260 56a32 32 0 0 0 0 64v-16a16 16 0 0 1 0-32ZM259.7 56v16h0.6v-16ZM259.7 104v16h0.6v-16Z" /></g>
+  <g id="a-right" fill="currentColor"><path d="M260 56a32 32 0 0 1 0 64v-16a16 16 0 0 0 0-32Z" /></g>
+  <g id="a-stem-top" fill="currentColor"><path d="M278 58h16v31.3h-16Z" /></g>
+  <g id="a-stem-bottom" fill="currentColor"><path d="M278 89h16v31h-16Z" /></g>
+  <g id="y-left" fill="currentColor"><path d="M306 58h18l20 43-9 20Z" /></g>
+  <g id="y-right" fill="currentColor"><path d="M353 58h18l-26.511628 60h-18Z" /></g>
+  <g id="y-tail" fill="currentColor"><path d="M332.674419 104h18L333 144h-18Z" /></g>
+  <g id="e1-top" fill="currentColor"><path d="M386 88c0-43 62-43 62 0h-16c0-23-30-23-30 0Z" /></g>
+  <g id="e1-bottom" fill="currentColor"><path d="M386 88h16c0 20 25 23 36 10l11 11c-20 24-63 11-63-21ZM386 87.7h16v0.6h-16Z" /></g>
+  <g id="e1-bar" fill="currentColor"><path d="M401 80h47v16h-47Z" /></g>
+  <g id="r-stem-top" fill="currentColor"><path d="M464 58h16v31.3h-16Z" /></g>
+  <g id="r-stem-bottom" fill="currentColor"><path d="M464 89h16v31h-16Z" /></g>
+  <g id="r-shoulder" fill="currentColor"><path d="M480 72c6-14 16-18 32-15v17c-21-5-32 6-32 20ZM479.7 72h0.3v22h-0.3Z" /></g>
+  <g id="o-top-left" fill="currentColor"><path d="M569 24c-25 0-38 17-38 48h17c0-21 7-32 21-32ZM568.7 24v16h0.6v-16ZM531 71.7v0.6h17v-0.6Z" /></g>
+  <g id="o-top-right" fill="currentColor"><path d="M569 24c25 0 38 17 38 48h-17c0-21-7-32-21-32ZM590 71.7h17v0.6h-17Z" /></g>
+  <g id="o-bottom-left" fill="currentColor"><path d="M531 72c0 31 13 48 38 48v-16c-14 0-21-11-21-32ZM568.7 104v16h0.6v-16Z" /></g>
+  <g id="o-bottom-right" fill="currentColor"><path d="M607 72c0 31-13 48-38 48v-16c14 0 21-11 21-32Z" /></g>
+  <g id="n-stem-top" fill="currentColor"><path d="M627 58h16v31.3h-16Z" /></g>
+  <g id="n-stem-bottom" fill="currentColor"><path d="M627 89h16v31h-16Z" /></g>
+  <g id="n-arch" fill="currentColor"><path d="M643 67c19-23 48-9 48 15h-16c0-19-32-16-32 6ZM675 81.7h16v0.6h-16ZM642.7 67h0.3v21h-0.3Z" /></g>
+  <g id="n-leg" fill="currentColor"><path d="M675 81h16v39h-16Z" /></g>
+  <g id="e2-top" fill="currentColor"><path d="M710 88c0-43 62-43 62 0h-16c0-23-30-23-30 0Z" /></g>
+  <g id="e2-bottom" fill="currentColor"><path d="M710 88h16c0 20 25 23 36 10l11 11c-20 24-63 11-63-21ZM710 87.7h16v0.6h-16Z" /></g>
+  <g id="e2-bar" fill="currentColor"><path d="M725 80h47v16h-47Z" /></g>
+  <g id="lens-left" fill="currentColor"><path d="M7 73a23 23 0 1 0 46 0a23 23 0 1 0-46 0Z" /></g>
+  <g id="lens-right" fill="currentColor"><path d="M32 73a23 23 0 1 0 46 0a23 23 0 1 0-46 0Z" /></g>
+</svg>

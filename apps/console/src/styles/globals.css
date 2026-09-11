@@ -9,9 +9,27 @@
  */
 
 /* Self-hosted, bundled, never fetched at runtime. An upload centre on a LAN
-   with the link down must render in the right typeface. */
-@import '@fontsource-variable/plus-jakarta-sans';
+   with the link down must render in the right typeface.
+
+   Be Vietnam Pro has no variable build, so the weights are imported one file
+   at a time. Each of these six carries the three subsets the console needs and
+   nothing else — `vietnamese`, `latin` and `latin-ext` — because Vietnamese
+   stacks two marks on one vowel (ế, ộ, ữ) inside a 32px table row and the
+   payout screens are read in Vietnamese. Without the `vietnamese` subset those
+   rows fall through to a system face and stop being the same typeface as the
+   English beside them. The OFL licence travels with the package under
+   `node_modules/@fontsource/be-vietnam-pro/LICENSE`. */
+@import '@fontsource/be-vietnam-pro/400.css';
+@import '@fontsource/be-vietnam-pro/500.css';
+@import '@fontsource/be-vietnam-pro/600.css';
+@import '@fontsource/be-vietnam-pro/700.css';
+@import '@fontsource/be-vietnam-pro/800.css';
+@import '@fontsource/be-vietnam-pro/900.css';
 @import '@fontsource-variable/jetbrains-mono';
+/* Display face, headlines only. Variable, so one file covers 100-900 and the
+   landing can set an optical weight per size instead of picking a static cut.
+   OFL, licence at `node_modules/@fontsource-variable/hanken-grotesk/LICENSE`. */
+@import '@fontsource-variable/hanken-grotesk';
 
 @import '@playerone/design/tokens.css';
 
@@ -41,6 +59,7 @@
   --color-sun-500: var(--sun-500);
   --color-sun-600: var(--sun-600);
   --color-sun-700: var(--sun-700);
+  --color-sun-ink: var(--sun-ink);
 
   --color-tech-50: var(--tech-50);
   --color-tech-100: var(--tech-100);
@@ -50,6 +69,43 @@
   --color-tech-500: var(--tech-500);
   --color-tech-600: var(--tech-600);
   --color-tech-700: var(--tech-700);
+  --color-tech-ink: var(--tech-ink);
+
+  --color-bamboo-50: var(--bamboo-50);
+  --color-bamboo-100: var(--bamboo-100);
+  --color-bamboo-200: var(--bamboo-200);
+  --color-bamboo-300: var(--bamboo-300);
+  --color-bamboo-400: var(--bamboo-400);
+  --color-bamboo-500: var(--bamboo-500);
+  --color-bamboo-600: var(--bamboo-600);
+  --color-bamboo-700: var(--bamboo-700);
+  --color-bamboo-ink: var(--bamboo-ink);
+
+  /*
+   * The world committed 2026-09-07. Lavender is the page, lime is the one
+   * accent, and `action` is the primary control as a role rather than a
+   * colour — so `bg-action text-action-ink` is the pill and nothing has to
+   * know it is near-black.
+   */
+  --color-lavender-50: var(--lavender-50);
+  --color-lavender-100: var(--lavender-100);
+  --color-lavender-200: var(--lavender-200);
+  --color-lavender-300: var(--lavender-300);
+  --color-lavender-400: var(--lavender-400);
+
+  --color-lime-200: var(--lime-200);
+  --color-lime-500: var(--lime-500);
+  --color-lime-600: var(--lime-600);
+  --color-lime-700: var(--lime-700);
+  --color-lime-ink: var(--lime-ink);
+
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+
+  --color-action: var(--action);
+  --color-action-ink: var(--action-ink);
+
+  --color-field-border: var(--field-border);
 
   --color-pass: var(--pass);
   --color-pass-bg: var(--pass-bg);
@@ -63,6 +119,7 @@
   --color-stage-line: var(--stage-line);
   --color-stage-fg: var(--stage-fg);
   --color-stage-mid: var(--stage-mid);
+  --color-stage-over: var(--stage-over);
 
   --radius-sm: var(--radius-sm);
   --radius-DEFAULT: var(--radius-base);
@@ -71,6 +128,7 @@
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
 
   --ease-out-quint: var(--ease);
 }
@@ -121,35 +179,35 @@
   :root[data-theme='dark'] ::selection,
   .on-stage ::selection {
     background: var(--sun-700);
-    color: #fff;
+    /* The one white in the system, and it is a token like everything else. */
+    color: var(--stage-over);
   }
 
   html {
     caret-color: var(--sun-500);
-    scrollbar-color: var(--border-strong) transparent;
-    scrollbar-width: thin;
+  }
+
+  /*
+   * Every scroller, not only the document.
+   *
+   * These two were on `html` alone, and Chrome disables the `-webkit-`
+   * scrollbar rules below wherever the standard properties are used — so any
+   * box with its own overflow got the browser's default 15px bar next to the
+   * document's themed 10px one. Measured on the sign-in form at `lg`, where
+   * the pinned column scrolls: two gutters side by side, about 25px of
+   * scrollbar on a four-field form.
+   */
+  /* 2026-09-10, owner: hide the bars everywhere. Scrolling itself — wheel,
+     touch, keyboard, drag-select — is untouched; only the gutter is gone. */
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
 
   *::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-
-  *::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  *::-webkit-scrollbar-thumb {
-    background: var(--border-strong);
-    border: 3px solid transparent;
-    border-radius: 999px;
-    background-clip: padding-box;
-  }
-
-  *::-webkit-scrollbar-thumb:hover {
-    background: var(--faint-foreground);
-    border: 3px solid transparent;
-    background-clip: padding-box;
+    width: 0;
+    height: 0;
+    display: none;
   }
 
   /**
@@ -177,20 +235,23 @@
     outline-color: var(--sun-400);
   }
 
-  /* Links are tech blue: they lead to data. */
+  /*
+   * Links are tech blue: they lead to data. `--tech-ink` and not `--tech-600`,
+   * because the ink has to move with the scheme the way the ground does:
+   * `tech-600` measures 2.63:1 on the dark card. There used to be a
+   * `:root[data-theme='dark'] a` override doing that by hand, and it only
+   * caught the *explicit* dark choice — an operator on system dark read every
+   * link at 2.63:1 and nothing said so.
+   */
   a {
-    color: var(--tech-600);
-    text-decoration-color: color-mix(in srgb, var(--tech-600) 35%, transparent);
+    color: var(--tech-ink);
+    text-decoration-color: color-mix(in srgb, var(--tech-ink) 35%, transparent);
     text-underline-offset: 0.2em;
     text-decoration-thickness: 1px;
   }
 
   a:hover {
     text-decoration-color: currentColor;
-  }
-
-  :root[data-theme='dark'] a {
-    color: var(--tech-300);
   }
 
   input:-webkit-autofill,
@@ -243,6 +304,19 @@
     animation: sweep 900ms var(--ease) both;
   }
 
+  /**
+   * The reveal is GSAP's now, and it lives in `Home.tsx`.
+   *
+   * It was a CSS class with an `opacity: 0` start state that an
+   * `IntersectionObserver` cleared, which is the arrangement with the failure
+   * mode this project cares about: if the observer never runs — no
+   * `IntersectionObserver`, a scroll container the root margin does not match,
+   * a script that threw — the page keeps a hidden section that nothing ever
+   * shows. Held in `gsap.matchMedia` instead, the hidden state is only ever
+   * created by the engine that is going to clear it: no GSAP, no start state,
+   * and the screen is complete in its first frame.
+   */
+
   /* A lease that is running out. Slow, so it reads as a warning, not an alarm. */
   @keyframes lease-pulse {
     0%,
@@ -256,5 +330,723 @@
 
   .lease-expiring {
     animation: lease-pulse 1.6s ease-in-out infinite;
+  }
+
+  /**
+   * The empty state's ground: a diagonal hatch, drawn rather than washed.
+   *
+   * An empty table on this console is ambiguous — it can mean "nothing to do"
+   * or it can mean "the query is wrong and somebody is not being paid" — so
+   * emptiness is given a surface of its own instead of being white space that
+   * looks like a failed render. The stops are hard, so this is a ruled pattern
+   * and not a gradient: no colour blends into another anywhere in it.
+   */
+  .hatch {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      var(--border) 0,
+      var(--border) 1px,
+      transparent 1px,
+      transparent 9px
+    );
+  }
+
+  /**
+   * The one ink block a screen is allowed.
+   *
+   * `stage.ground` again — the console has one dark and reuses it, so the block
+   * on Home and the region around the footage are the same near-black rather
+   * than two that nearly match. It carries a figure, the sentence that says
+   * what the figure is not, and the link to the screen that owns it; a figure
+   * with a small label and an accent underneath is the template this refuses.
+   */
+  .feature-block {
+    background: var(--stage);
+    color: var(--stage-fg);
+    color-scheme: dark;
+    border-radius: var(--radius-lg);
+    /*
+     * The one ink block per screen has to read as a block in the dark
+     * scheme too: `stage.ground` (#101215) on `dark.background` (#0E1013) is
+     * 1.2:1, so without an edge the block dissolves and its 42px figure
+     * floats. The stage's own hairline draws the edge; on the light shell it
+     * sits on ink and costs nothing.
+     */
+    border: 1px solid var(--stage-line);
+  }
+
+  .feature-block .figure {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+    font-size: 2.625rem;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    font-weight: 500;
+  }
+
+  /* ---------------------------------------------------------------
+     The public landing, rebuilt 2026-09-08.
+
+     What used to be here was about 850 lines: a drifting scatter of eleven
+     tilted photographs with per-tile depth, blur and crop; a conic-gradient
+     prism disc with three variants; an opaque halo behind the slogan; a
+     marquee track; a rotating circular type element; and a hover rule that
+     cross-faded every photograph into a different photograph. All of it is
+     deleted. The composition it supported was rejected outright and none of
+     the pieces has a second caller.
+
+     Four rules are left, and all four are structure rather than effect.
+     --------------------------------------------------------------- */
+
+  /**
+   * A region drawn **over footage**, and it is a token remap rather than a look.
+   *
+   * `/discover` is Film First from 2026-09-08: the film fills the first
+   * viewport edge to edge and the type, the buttons and the hairlines sit on
+   * top of it. Every one of those is a shadcn primitive built out of
+   * `--action`, `--foreground`, `--border`, `--card` — roles that invert with
+   * the *scheme*. Footage is not a scheme. In the light theme `--action` is
+   * near-black, so the page's primary call to action rendered as a black pill
+   * on a dark graded film and disappeared; in the dark theme the same control
+   * came out near-white and the disabled one read as *more* available than the
+   * live one, which is the fault the design review named.
+   *
+   * So instead of a second set of variants in `button.tsx` — one more axis for
+   * every control in the console to carry forever — the roles themselves are
+   * repointed at the stage ramp inside this class. `Button`, `details`, the
+   * focus ring and anything else that lands here is then correct by
+   * construction and identical in both themes, because `stage.*` exists in
+   * both. `.on-stage` above is the *surround* around footage; this is the
+   * surface **on** it.
+   *
+   * `--foreground` becomes `stage.over` — pure white — and not `stage.fg`.
+   * `tokens.ts` reserves that value for exactly this case and states the
+   * measurement: against a pure-white pixel of film under a 62% grade, `fg`
+   * gives 4.52:1 and `over` gives 5.26:1. The grade below is heavier than 62%
+   * everywhere type is set, so both clear; the token that was written for type
+   * over footage is the one used for type over footage.
+   */
+  .on-film {
+    --foreground: var(--stage-over);
+    /*
+     * **There is no muted grey over footage, and pretending otherwise was a
+     * measured failure.** `stage.mid` is #9AA1AC and it is right on `stage
+     * .ground`, a surface whose value is known. Over the grade, against the
+     * worst pixel a film can hold, it measures 3.46:1 — under AA for the very
+     * sentence that says the download is not published yet. So the two quiet
+     * roles resolve to `stage.fg` here: over film, "quieter" is expressed in
+     * size and in position, never in value.
+     */
+    --muted-foreground: var(--stage-fg);
+    --faint-foreground: var(--stage-fg);
+    --background: var(--stage);
+    --surface: var(--stage);
+    --card: var(--stage-panel);
+    --muted: var(--stage-panel);
+    --border: var(--stage-line);
+    --border-strong: var(--stage-mid);
+    --action: var(--stage-over);
+    --action-ink: var(--stage);
+    color: var(--stage-over);
+    color-scheme: dark;
+  }
+
+  /**
+   * Glass, at the two weights `tokens.ts` defines, as classes rather than as a
+   * string of Tailwind arbitrary values in a `.tsx`.
+   *
+   * `DESIGN.md`: the page is tinted so a translucent surface has something to
+   * be translucent over, and the blur is what bends it. `fill` is how much
+   * `--card` sits over the ground, `blur` how far the ground smears behind it.
+   * The bar weight is denser because it passes over scrolling content — on
+   * `/discover` it passes over *moving film*, which is the one place in the
+   * product where the material has something genuinely alive to bend.
+   *
+   * The edge is `--stage-over` at 70%, not `--border`: what catches the light
+   * on a piece of glass is its edge, and a grey hairline on a translucent
+   * surface reads as a drawn box instead. `Panel` in `primitives.tsx` writes
+   * the same edge as `border-white/70`; that is the console's only literal
+   * white and this is the token form of it. **The values live here so that no
+   * colour on the landing exists in a `.tsx` file.**
+   */
+  .glass-bar,
+  .glass-card {
+    border: 1px solid color-mix(in srgb, var(--stage-over) 70%, transparent);
+  }
+
+  .glass-bar {
+    background: color-mix(in srgb, var(--card) calc(var(--glass-bar) * 100%), transparent);
+    backdrop-filter: blur(var(--glass-bar-blur));
+  }
+
+  .glass-card {
+    background: color-mix(in srgb, var(--card) calc(var(--glass-card) * 100%), transparent);
+    backdrop-filter: blur(var(--glass-card-blur));
+  }
+
+  /**
+   * The grade: a corner, not a wash.
+   *
+   * A flat 60% black over the whole frame was on this route once and was
+   * removed for flattening the image, and it deserved to be — an even veil
+   * takes the light out of a photograph and announces that the type could not
+   * hold on its own. This is two gradients that meet in the bottom-left corner
+   * and leave the top-right **completely untouched**: the sky, the ceiling and
+   * the far end of a room stay at full contrast, and the ink gathers only
+   * where the words are. It is the grade a film title card has, and it is part
+   * of the composition rather than an apology for it.
+   *
+   * The stops are chosen against the type, not by eye. The tallest block of
+   * words on the page — the slogan, its lead sentence, both calls to action
+   * and the note under them — reaches about half the height of the first
+   * viewport, so the vertical ramp is still at 55 per cent of `--stage` at
+   * 48% and does not reach zero until 74%. Composited with the horizontal ramp
+   * at the left gutter that is 0.68–0.80 of `--stage` across the whole block.
+   * Against the worst pixel a film can hold — pure white — that leaves a
+   * ground of about #495B4D…#5D5F61 under the glyphs and white type on it
+   * measures between 6.5:1 and 9:1. `scripts/contrast.mjs` samples the live
+   * composite at six points across the film's own duration rather than
+   * trusting this arithmetic or the poster.
+   *
+   * It sits in its own element rather than on the video, because a filter or
+   * a gradient on the `<video>` itself is repainted with every decoded frame.
+   */
+  .film-grade {
+    background:
+      linear-gradient(
+        to top,
+        var(--stage) 0%,
+        color-mix(in srgb, var(--stage) 88%, transparent) 24%,
+        color-mix(in srgb, var(--stage) 55%, transparent) 48%,
+        transparent 74%
+      ),
+      linear-gradient(
+        to right,
+        color-mix(in srgb, var(--stage) 60%, transparent) 0%,
+        color-mix(in srgb, var(--stage) 22%, transparent) 34%,
+        transparent 62%
+      );
+  }
+
+  /**
+   * The phone, where the same grade **measured a failure** and the stops had
+   * to be answered rather than reused.
+   *
+   * A hero is 1440x900 on a desk and 390x844 on a phone, and the type does not
+   * shrink with the frame: at 390 the slogan wraps to five lines, the two calls
+   * to action stack full width, and the column reaches about 85% of the band
+   * instead of about 50%. The desktop ramp has cleared to nothing by 74%, so
+   * the top of the headline sat on raw film — and at t=4.80s of this cut that
+   * is an open sky. Measured, white on #6592B1: **3.33:1 at 390 against
+   * 13.95:1 at 1440**, on the same element with the same class. Large text
+   * clears 3:1 on that number, and 3.33 is not a margin.
+   *
+   * So the ramp reaches higher and holds longer here, and the headline is a
+   * step smaller (2.125rem, in `Discover.tsx`) so the column stops climbing.
+   * The top of the frame is still clean film — it is a steeper lower-third,
+   * not the even veil this route carried once.
+   *
+   * **The stops were tuned against the measurement, not by eye, and the first
+   * two attempts are why they are these.** A ramp clearing at 84% put the
+   * worst frame back at 4.79:1 — over AA, and with no room for Vietnamese,
+   * which wraps the same headline one line further up. A ramp clearing at 96%
+   * held 14.41:1 and read as a black panel with a strip of film above it,
+   * which is not Film First on the device most collectors arrive on. These
+   * stops measure **10.03:1 on the worst frame at 390** across six samples of
+   * the film's own duration, and leave the top third of the frame alone. If
+   * the film is replaced, re-run `scripts/contrast.mjs` at 390 before
+   * assuming the numbers survived: they are a property of the footage.
+   */
+  @media (max-width: 639px) {
+    .film-grade {
+      background:
+        linear-gradient(
+          to top,
+          var(--stage) 0%,
+          color-mix(in srgb, var(--stage) 92%, transparent) 36%,
+          color-mix(in srgb, var(--stage) 78%, transparent) 68%,
+          transparent 92%
+        ),
+        linear-gradient(
+          to right,
+          color-mix(in srgb, var(--stage) 38%, transparent) 0%,
+          transparent 64%
+        );
+    }
+  }
+
+  /**
+   * The same idea at a plate's scale, and it is a **separate class because the
+   * hero's grade measurably ruined the photograph.**
+   *
+   * The one still on the page is there to show the device on somebody's head,
+   * and the head is at the left of the frame — exactly where `.film-grade`'s
+   * horizontal ramp is heaviest. Rendered into a 544px panel with a
+   * three-line caption, the hero's stops put 0.6 of `--stage` over the
+   * subject and took the frame to near-black across its whole left half: the
+   * page's only evidence, graded out for the sake of type that occupies the
+   * bottom fifth.
+   *
+   * So the plate has no side ramp at all and its vertical one clears by 44%.
+   * The caption sits inside the bottom 20%, where this is still 0.86–1.0 of
+   * `--stage`, and everything above the halfway line of the picture is the
+   * photograph at full strength.
+   */
+  .plate-grade {
+    background: linear-gradient(
+      to top,
+      var(--stage) 0%,
+      color-mix(in srgb, var(--stage) 86%, transparent) 22%,
+      transparent 44%
+    );
+  }
+
+
+  /**
+   * The highlight marker: the one lime moment a screen is allowed, spent on
+   * the clause the whole product turns on.
+   *
+   * `lime-500` is a **fill under ink text** and never text itself — that is
+   * the rule in `DESIGN.md` and the measurement behind it is 13.54:1 for ink
+   * on this fill. The ink is `--stage`, the console's single near-black, and
+   * it is named rather than inherited because `lime-500` is the same value in
+   * both schemes while `--foreground` is not: inheriting would put near-white
+   * type on a bright green fill the moment an operator switched to dark.
+   *
+   * `box-decoration-break: clone` so a marker that wraps gets its padding and
+   * its radius on both lines instead of one long ribbon with two cut ends.
+   * A `<mark>` also arrives with a browser default background, which is why
+   * the fill is set rather than assumed.
+   */
+  /**
+   * The native cursor comes off ONLY while the lens is painting a replacement.
+   *
+   * `components/CustomCursor.tsx` sets `data-cursor="on"` when its own
+   * `matchMedia` gate passes and deletes it on teardown, so a coarse pointer, a
+   * viewport under 768px, `prefers-reduced-motion: reduce`, a browser that
+   * never ran the script and a reader who turns reduced motion on mid-session
+   * all keep the cursor their operating system gave them. The media query is
+   * repeated here rather than trusted to the attribute alone because the
+   * attribute is set by script and this rule is not: if the two ever disagree,
+   * the failure has to be "the native cursor stayed", never "there is no
+   * cursor at all".
+   *
+   * `text` is left alone on the two things a pointer shape actually tells you
+   * something about — an I-beam over selectable prose and over a field — since
+   * a 12px dot says nothing about where the caret will land.
+   */
+  @media (min-width: 768px) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+    :root[data-cursor='on'],
+    :root[data-cursor='on'] a,
+    :root[data-cursor='on'] button,
+    :root[data-cursor='on'] summary,
+    :root[data-cursor='on'] [role='button'] {
+      cursor: none;
+    }
+
+    :root[data-cursor='on'] input,
+    :root[data-cursor='on'] textarea,
+    :root[data-cursor='on'] select {
+      cursor: auto;
+    }
+
+    /**
+     * An open `<dialog>` gives the pointer back, and this is not a nicety.
+     *
+     * A modal dialog and its backdrop render in the **top layer**, which paints
+     * above every z-index on the page — so the replacement disc, portalled to
+     * `<body>` at 9998, is drawn *underneath* Trúc's panel while it is open.
+     * Without this the operator has no pointer at all inside the one thing on
+     * the screen they are being asked to interact with.
+     *
+     * `:has(dialog[open])` carries the specificity of its argument, so this
+     * pair at (0,3,1) beats the four rules above at (0,2,1) without any of them
+     * having to be rewritten.
+     */
+    :root[data-cursor='on']:has(dialog[open]),
+    :root[data-cursor='on']:has(dialog[open]) * {
+      cursor: auto;
+    }
+  }
+
+  .marker {
+    background: var(--lime-500);
+    color: var(--stage);
+    border-radius: var(--radius-sm);
+    padding: 0 0.14em;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+}
+
+
+/* ---------------------------------------------------------------
+   The dashboard's own two blocks: its display type, and the frame the
+   one photograph sits in.
+
+   Appended rather than folded into the rules above, so this file stays
+   two people's work without either of them restructuring the other's.
+   --------------------------------------------------------------- */
+@layer components {
+  /**
+   * Home's headlines, in the display face, with an optical weight per size.
+   *
+   * Same argument as the landing's slogan and the same direction: Hanken
+   * Grotesk is variable, so the weight comes *down* as the size goes up —
+   * a stroke that reads as bold at 17px reads as heavy at 42px. Two classes
+   * and not one, because Home has exactly two headline sizes and a third
+   * would be a scale nobody asked for.
+   *
+   * The display face is headlines only. Labels, body, controls and every
+   * `.num` measurement stay in the UI voice — a display face on a column
+   * heading is a costume, and on a figure it fights the tabular digits the
+   * whole `.num` rule exists for.
+   */
+  .headline,
+  .headline-sm {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    text-wrap: balance;
+  }
+
+  .headline {
+    font-size: 2.0625rem;
+    font-weight: 610;
+    letter-spacing: -0.024em;
+    line-height: 1.05;
+  }
+
+  @media (min-width: 640px) {
+    .headline {
+      font-size: 2.625rem;
+      font-weight: 520;
+      letter-spacing: -0.028em;
+    }
+  }
+
+  .headline-sm {
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: -0.012em;
+    line-height: 1.3;
+  }
+
+  /**
+   * The photograph's frame, and the reason the picture is no longer a
+   * backdrop.
+   *
+   * It used to run full-bleed behind the type under a 60% ink scrim, which
+   * is the arrangement the product owner described as hiding the image: at
+   * that strength the frame is a texture and the band is a dark rectangle.
+   * The picture now has a box of its own beside the words, at full strength,
+   * and nothing is set on top of it — so there is no scrim to measure and no
+   * contrast that depends on which frame the parallax has scrolled to.
+   *
+   * `--h` is the frame's height rather than an aspect ratio: the band's left
+   * column is type whose height depends on the translation, and a ratio-sized
+   * picture beside it leaves a different gap in every locale.
+   */
+  .photo-frame {
+    position: relative;
+    overflow: hidden;
+    /* No radius of its own: the panel clips, so the band has one edge and not
+       two that nearly agree. `--muted` shows only while the file is decoding. */
+    background: var(--muted);
+    height: var(--h);
+  }
+
+  /*
+   * The parallax pans the crop; it does not move the picture.
+   *
+   * Two earlier versions both failed the same check and it was right both
+   * times. A box 12% taller than the frame is `scrollHeight > clientHeight`,
+   * and a `scale` is worse rather than better — Chrome counts transformed
+   * overflow into the scrollable area, so 1.2 reported 49px of clipping on x.
+   * Either way `rhythm.mjs` sees content cut off by its own container, which is
+   * the fault it exists to find, and a check that has to be argued with on
+   * every run stops being run.
+   *
+   * `object-position` has no such cost: the element's box is exactly its
+   * frame, nothing overflows anything, and what moves is which part of the
+   * photograph the `cover` crop is showing. That is also the truer effect —
+   * the picture stays put and the framing drifts.
+   */
+  .photo-frame > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 50%;
+  }
+}
+
+/* ---------------------------------------------------------------
+   `/discover` and the not-found route, rebuilt 2026-09-08 (build seven).
+
+   Three materials, and each is this product's own rather than a borrowed
+   one. The argument for each is in the header of `routes/Discover.tsx`;
+   what is here is only the drawing.
+
+   Appended as its own layer block for the same reason the block above it
+   is: this file is several people's work and none of them restructures
+   another's.
+   --------------------------------------------------------------- */
+@layer components {
+  /**
+   * The frame grid: the page's texture, and it is a **contact sheet**.
+   *
+   * The reference this build was set against draws graph paper behind its
+   * headline, because the product being sold there is a design tool and a
+   * designer's canvas is graph paper. Copying that literally is how a page
+   * ends up describing somebody else's product. What this platform measures
+   * is *recorded minutes*, and a recorded minute is counted on a ruled sheet
+   * — a contact sheet, a timeline ruler, a strip of frames. So the squares
+   * are frames, and the fragments of the console that float on the page sit
+   * inside them.
+   *
+   * `--border` and nothing else, so it is theme-aware by construction and
+   * `.on-stage` / `.on-film` repoint it at `--stage-line` without this rule
+   * knowing they exist. `--frame` is a length rather than a colour, which is
+   * why it may live here: the token rule binds colour, radius, shadow and
+   * duration.
+   *
+   * The mask is what stops it reading as a wireframe. A grid that runs to
+   * every edge of a band is a table; a grid that fades out before it gets
+   * there is a texture, which is the job.
+   */
+  .frame-grid {
+    --frame: 72px;
+    background-image:
+      linear-gradient(to right, var(--border) 0 1px, transparent 1px 100%),
+      linear-gradient(to bottom, var(--border) 0 1px, transparent 1px 100%);
+    background-size: var(--frame) var(--frame);
+    background-position: center top;
+    -webkit-mask-image: radial-gradient(140% 110% at 38% 46%, #000 38%, transparent 92%);
+    mask-image: radial-gradient(140% 110% at 38% 46%, #000 38%, transparent 92%);
+  }
+
+  @media (min-width: 1024px) {
+    .frame-grid {
+      --frame: 88px;
+    }
+  }
+
+  /**
+   * One frame of that sheet, drawn solid, holding a fragment of the console.
+   *
+   * The fragments are real: a claimed task, a handover that has arrived, a
+   * verdict pill straight out of `primitives.tsx`, the rule a collector is
+   * paid under. They are the equivalent of the reference's floating
+   * `SAVE TO BOARD` chip, and the substitution is the whole point — that
+   * page's chips say what *it* does, so ours have to say what *this* does.
+   */
+  /**
+   * The display line, and its leading is **per language** because the metrics
+   * are.
+   *
+   * 0.9 is the reference's leading and it is right for Latin: the four
+   * phrases stack as one block and the descenders of one line clear the caps
+   * of the next. It is wrong twice over for the other two locales this
+   * console ships, and both were measured on screen rather than reasoned
+   * about.
+   *
+   * **Chinese overlapped outright.** A CJK glyph inks its whole em box, so at
+   * 0.9 the 96px headline drew 记录。 straight through 交回存储卡。 — not tight,
+   * illegible. 1.05 is the first value where the four lines are separate and
+   * still read as one block.
+   *
+   * **Vietnamese is the harder case and the cheaper fix.** Its diacritics
+   * stack above the cap height and below the baseline in the same word —
+   * *Một người duyệt.* over *Trả theo phút.* puts a dot-below over a
+   * hook-above — so it gets a twentieth back rather than a tenth.
+   *
+   * `:lang()` and not a prop: `applyHtmlLang` in `lib/i18n.ts` already stamps
+   * the root element, the selector matches `zh-Hans` from `zh`, and a
+   * typographic property that depends on the script belongs in the
+   * stylesheet rather than in four components' class strings.
+   */
+  .display-line {
+    line-height: 0.9;
+  }
+
+  :root:lang(vi) .display-line {
+    line-height: 0.95;
+  }
+
+  :root:lang(zh) .display-line {
+    line-height: 1.05;
+  }
+
+  .frame-cell {
+    border: 1px solid var(--border);
+    /*
+     * Nearly opaque, and that is what makes the overlap legible rather than
+     * clever. The reference floats its chips over the headline inside a solid
+     * patch of the canvas, so the letters stop where the patch starts; a
+     * translucent chip over 96px type puts two stems through every word on it.
+     * `glass-card`'s own 62% is right for a panel with a page behind it and
+     * wrong for a pill with a headline behind it.
+     */
+    background: color-mix(in srgb, var(--card) 92%, transparent);
+    backdrop-filter: blur(var(--glass-card-blur));
+  }
+
+  /**
+   * The three streams and their intersection, drawn rather than claimed.
+   *
+   * `CLAUDE.md`: *payable time is the intersection of stream coverage, not
+   * the union* — the device's own duration figure is the widest stream and
+   * reads about 3% high, 18% on one real sample. It is the least intuitive
+   * rule on the platform and every previous build stated it in a sentence.
+   * Three bars and one band say it without a number, which also keeps a
+   * payout-bearing page free of a figure nobody has cleared for publication.
+   *
+   * The band is `lime-500`, and it is this screen's **one** lime moment —
+   * `DESIGN.md`'s rule that a screen gets one and if a second appears one of
+   * them is wrong. The highlighter that used to hold it is gone, because the
+   * product owner said so in as many words.
+   */
+  /*
+   * No height of its own: the bar is `inset-y-0` inside its track, so the
+   * track's height is the bar's. That is what makes the three rows exactly
+   * as tall as the grid's row gap, which is what `rhythm.mjs` needs — a
+   * 12px bar centred in a 15.4px row put an 18px gap between two siblings
+   * where the system says 16, and an off-scale gap is the fault that audit
+   * exists to find.
+   */
+  .stream-bar {
+    border-radius: var(--radius-sm);
+    background: var(--border-strong);
+  }
+
+  .stream-band {
+    background: var(--lime-500);
+  }
+
+  /**
+   * The not-found page's falling objects.
+   *
+   * `overflow: clip` on the field rather than `overflow: hidden`: a clipped
+   * box is not a scroll container, so an object hanging past the bottom edge
+   * — which is the whole look — cannot become scrollable overflow, and
+   * `scripts/rhythm.mjs` cannot read it as an element clipping its own
+   * content. Every object is `position: absolute`, which is also what keeps
+   * them out of that script's sibling-gap check: a thing that has fallen out
+   * of flow is not in a rhythm.
+   *
+   * The fall is a **settle**, not a loop. It runs once, `both`, so the page
+   * comes to rest in a composed arrangement and nothing on it is still
+   * moving a second after it loads. A permanently tumbling field is a
+   * repaint bill for as long as the tab is open, and this console has
+   * already paid that bill once.
+   */
+  @keyframes drop-in {
+    from {
+      transform: translate3d(0, -70vh, 0) rotate(var(--spin-from, -24deg));
+      opacity: 0;
+    }
+    to {
+      transform: translate3d(0, 0, 0) rotate(var(--spin-to, 0deg));
+      opacity: 1;
+    }
+  }
+
+  .drop {
+    transform: rotate(var(--spin-to, 0deg));
+    animation: drop-in 900ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+    animation-delay: var(--drop-delay, 0ms);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .drop {
+      animation: none;
+      opacity: 1;
+    }
+  }
+
+  /**
+   * The lens's dispersion, and it is the one place a spectrum is allowed.
+   *
+   * `DESIGN.md` withdrew the landing's rainbow exception on 2026-09-08, and
+   * the rule it restored — *no gradient on an ink, no gradient lettering, no
+   * decorative spectrum* — still stands for every surface, every control and
+   * every letterform on the page. This is none of those. The pointer here is
+   * a **lens**; that is what `CustomCursor.tsx` has called it since it was
+   * ported, and a lens disperses. The spectrum is on the rim of the glass,
+   * where dispersion happens, and it never touches type: the disc under it
+   * stays `--stage`, which is the ground the lime clone inside it is
+   * measured against.
+   *
+   * **No new hex enters the system.** Every stop is `--lime-500` with its
+   * hue rotated by CSS relative colour syntax, so the ring is one token seen
+   * through an angle. If this becomes permanent it wants a real ramp in
+   * `tokens.ts`; that request is in the build report and is not made here.
+   *
+   * The white hairline stays and is drawn *inside* the spectrum, because the
+   * hairline is what keeps a near-black disc findable on the ink bands and a
+   * saturated ring at lime's own lightness cannot do that job on lavender.
+   *
+   * **It only spins while the lens is open.** A conic gradient driven by an
+   * animated custom property repaints every frame for as long as it runs,
+   * which is precisely the cost the rAF loop in that file was rewritten to
+   * stop paying. At rest the ring is a static spectrum and costs nothing;
+   * `data-grow` is set by the same loop that sizes the disc, so the spin
+   * exists only while a reader is holding the lens over something.
+   */
+  @property --lens-spin {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 0deg;
+  }
+
+  .cursor-lens {
+    background: var(--stage);
+    box-shadow:
+      0 0 0 2px var(--stage-over),
+      var(--shadow-sm);
+  }
+
+  .cursor-lens::before {
+    content: '';
+    position: absolute;
+    inset: -7px;
+    border-radius: var(--radius-pill);
+    padding: 3px;
+    background: conic-gradient(
+      from var(--lens-spin),
+      oklch(from var(--lime-500) l c h),
+      oklch(from var(--lime-500) l c calc(h + 60)),
+      oklch(from var(--lime-500) l c calc(h + 120)),
+      oklch(from var(--lime-500) l c calc(h + 180)),
+      oklch(from var(--lime-500) l c calc(h + 240)),
+      oklch(from var(--lime-500) l c calc(h + 300)),
+      oklch(from var(--lime-500) l c h)
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    transition:
+      inset var(--duration-base) var(--ease),
+      padding var(--duration-base) var(--ease);
+  }
+
+  .cursor-lens[data-grow='on']::before {
+    inset: -12px;
+    padding: 5px;
+    animation: lens-turn 3.2s linear infinite;
+  }
+
+  @keyframes lens-turn {
+    to {
+      --lens-spin: 360deg;
+    }
   }
 }

@@ -15,7 +15,7 @@ import { Link, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import type { ReactNode } from 'react';
 import { Button } from '../components/ui/button.tsx';
-import { EmptyState, Panel } from '../components/ui/primitives.tsx';
+import { EmptyState } from '../components/ui/primitives.tsx';
 import { payout, type PayoutBill } from '../lib/api.ts';
 import { count, elapsed, vnd, when } from './format.ts';
 import { keys } from './period.ts';
@@ -52,13 +52,14 @@ export function ExceptionsScreen() {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
   const { period } = useSearch({ strict: false }) as { period: string };
-  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period) });
+  const { role } = useFinanceRole();
+  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: role === 'finance' });
   /**
    * The limits (ceiling, cap) come from the preflight, read under its own key:
    * this screen must not populate the gate's cache, or visiting the
    * exceptions would count as having read the preflight.
    */
-  const pre = useQuery({ queryKey: ['payout', 'limits', period], queryFn: () => payout.preflight(period), staleTime: 5 * 60_000 });
+  const pre = useQuery({ queryKey: ['payout', 'limits', period], queryFn: () => payout.preflight(period), staleTime: 5 * 60_000, enabled: role === 'finance' });
   const [refused, setRefused] = useState<unknown>(null);
 
   const bills = batch.data?.bills ?? [];
@@ -82,7 +83,7 @@ export function ExceptionsScreen() {
       ) : total === 0 ? (
         <EmptyState title={t('settle.exceptions.empty')} body={t('settle.exceptions.empty.body')} />
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-8">
           <Group title={t('settle.exceptions.pending')} body={t('settle.exceptions.pending.body')} bills={pending}>
             {(b) => <AttemptRow bill={b} period={period} resolvable onRefused={setRefused} />}
           </Group>
@@ -119,20 +120,20 @@ function Group({ title, body, bills, children }: { title: string; body: string; 
   const { i18n } = useTranslation();
   if (bills.length === 0) return null;
   return (
-    <Panel className="p-5">
-      <div className="flex items-baseline justify-between gap-3">
+    <section>
+      <div className="flex items-baseline justify-between gap-3 border-b border-[var(--foreground)] pb-2">
         <h2 className="text-[1.0625rem] font-bold tracking-[-0.01em]">{title}</h2>
         <span className="num text-[0.8125rem] text-[var(--muted-foreground)]">{count(bills.length, i18n.language)}</span>
       </div>
-      <p className="mt-1 max-w-[70ch] text-[0.875rem] leading-relaxed text-[var(--muted-foreground)]">{body}</p>
-      <ul className="mt-3 divide-y divide-[var(--border)]">
+      <p className="mt-2 max-w-[70ch] text-[0.875rem] leading-relaxed text-[var(--muted-foreground)]">{body}</p>
+      <ul className="mt-2 divide-y divide-[var(--border)]">
         {bills.map((b) => (
           <li key={b.id} className="py-3">
             {children(b)}
           </li>
         ))}
       </ul>
-    </Panel>
+    </section>
   );
 }
 
@@ -140,12 +141,12 @@ function Head({ bill, period }: { bill: PayoutBill; period: string }) {
   const { t, i18n } = useTranslation();
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <Link to="/settle/bills/$billId" params={{ billId: bill.id }} search={{ period }} className="num text-[0.9375rem] font-semibold text-[var(--tech-600)]">
+      <Link to="/settle/bills/$billId" params={{ billId: bill.id }} search={{ period }} className="num text-[0.9375rem] font-semibold text-[var(--tech-ink)]">
         {bill.collector_ref}
       </Link>
       <span className="num text-[0.8125rem] text-[var(--muted-foreground)]">{vnd(bill.amount_vnd, i18n.language)}</span>
       <AttemptPill status={bill.attempt?.status ?? null} />
-      {bill.attempt ? <span className="num text-[0.75rem] text-[var(--faint-foreground)]">{bill.attempt.partner_order_id}</span> : null}
+      {bill.attempt ? <span className="num text-[0.75rem] text-[var(--muted-foreground)]">{bill.attempt.partner_order_id}</span> : null}
       <span className="sr-only">{t('settle.col.open')}</span>
     </div>
   );
@@ -234,7 +235,7 @@ function AttemptRow({
       {open ? (
         <div className="mt-3 grid gap-4 rounded-[var(--radius-base)] bg-[var(--muted)] p-4 lg:grid-cols-2">
           <div>
-            <h3 className="text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--faint-foreground)]">{t('settle.exceptions.events')}</h3>
+            <h3 className="text-[0.75rem] font-semibold uppercase tracking-[0.06em] text-[var(--muted-foreground)]">{t('settle.exceptions.events')}</h3>
             {detail.data ? (
               detail.data.events.length === 0 ? (
                 <p className="mt-2 text-[0.8125rem] text-[var(--muted-foreground)]">—</p>
