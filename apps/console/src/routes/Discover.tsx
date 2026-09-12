@@ -14,7 +14,9 @@ import {LocaleSwitch} from '../components/shell/LocaleSwitch.tsx';
 import {IconPass,IconPartial,IconReject} from '../components/icons.tsx';
 import {PerspectiveTitle} from '../components/discover/PerspectiveTitle.tsx';
 import {ScanMotif} from '../components/discover/ScanMotif.tsx';
-import {DiscoverDemo} from '../components/discover/DiscoverDemo.tsx';
+import {ScrollDemo} from '../components/discover/ScrollDemo.tsx';
+import {useScrollScene} from '../lib/use-scroll-scene.ts';
+import {useScrollStoryCopy} from '../lib/scroll-story-copy.ts';
 import {DiscoverHelp} from '../components/discover/DiscoverHelp.tsx';
 import {DiscoverPrivacy} from '../components/discover/DiscoverPrivacy.tsx';
 import {DISCOVER_MEDIA,DiscoverVideo,PovPicture} from '../components/discover/DiscoverMedia.tsx';
@@ -26,6 +28,7 @@ import {useDiscoverIllustrationMotion} from '../lib/discover-illustration-motion
 import '../styles/discover.css';
 import '../styles/discover-warm.css';
 import '../styles/discover-kinetics.css';
+import '../styles/discover-scroll-story.css';
 import {useDiscoverKinetics} from '../lib/discover-kinetics.ts';
 
 const destinations=['demo','work','camera','review','questions'] as const;
@@ -64,10 +67,7 @@ export function DiscoverScreen(){
         <div className="discover-product-specimen"><span className="discover-product-circle" aria-hidden="true"/><figure><PovPicture/><span className="discover-frame-corners" aria-hidden="true"/><figcaption>{c('povLabel')}</figcaption></figure></div>
       </section>
 
-      <section className="discover-demo-section" id="demo">
-        <div className="discover-section-heading discover-shell"><h2 className="discover-heading" data-discover-heading=""><TitleInk>{c('demoTitle')}</TitleInk></h2><p className="discover-lead">{c('demoBody')}</p></div>
-        <DiscoverDemo motionControl={motionControl}/>
-      </section>
+      <ScrollDemo/>
 
       <section className="discover-work" id="work">
         <div className="discover-section-heading discover-shell"><h2 className="discover-heading" data-discover-heading=""><TitleInk>{c('workTitle')}</TitleInk></h2><div><p className="discover-lead">{c('workBody')}</p><p className="discover-image-label">{c('imageLabel')}</p></div></div>
@@ -138,13 +138,14 @@ function DiscoverNav({logoRef}:{logoRef:RefObject<SVGSVGElement|null>}){
 }
 
 function ReviewStory(){
+  const root=useRef<HTMLElement>(null);useScrollScene(root);const story=useScrollStoryCopy();
   const {t}=useTranslation();const c=(key:string)=>t(`discoverV2.${key}`);
   const [verdict,setVerdict]=useState<'good'|'partial'|'reject'>('good');
   const icons:Record<typeof verdict,ReactNode>={good:<IconPass size={28}/>,partial:<IconPartial size={28}/>,reject:<IconReject size={28}/>};
-  return <section className="discover-review-theatre discover-review-wide" id="review">
+  return <section ref={root} className="discover-review-scroll" id="review"><div className="discover-review-theatre discover-review-wide">
     <figure className="discover-review-film"><div className="discover-review-film-viewport"><DiscoverVideo src={`${DISCOVER_MEDIA}review.mp4`} poster={`${DISCOVER_MEDIA}review-poster.webp`} label={c('reviewFilmLabel')}/></div><figcaption>{c('reviewFilmLabel')}</figcaption></figure>
-    <div className="discover-review-glass"><div className="discover-review-direction"><h2 className="discover-heading" data-discover-heading=""><TitleInk>{c('humanTitle')}</TitleInk></h2><p className="discover-lead">{c('humanBody')}</p></div><div className="discover-review-screen"><p className="discover-eyebrow">{c('reviewExample')}</p><div role="group" aria-label={c('reviewExample')} className="discover-verdict-options">{(['good','partial','reject'] as const).map(key=><button key={key} onClick={()=>setVerdict(key)} aria-pressed={verdict===key} className={`discover-verdict discover-verdict-${key}`}>{icons[key]}<span>{c(key)}</span></button>)}</div><p className="discover-review-explanation" aria-live="polite">{c(`${verdict}Body`)}</p></div></div>
-  </section>;
+    <div className="discover-review-glass"><div className="discover-review-direction"><h2 className="discover-heading" data-discover-heading=""><span className="discover-review-first">{story.reviewFirst}</span><span className="discover-review-last">{story.reviewLast}</span></h2><p className="discover-lead">{c('humanBody')}</p></div><div className="discover-review-screen"><p className="discover-eyebrow">{c('reviewExample')}</p><div role="group" aria-label={c('reviewExample')} className="discover-verdict-options">{(['good','partial','reject'] as const).map(key=><button key={key} onClick={()=>setVerdict(key)} aria-pressed={verdict===key} className={`discover-verdict discover-verdict-${key}`}>{icons[key]}<span>{c(key)}</span></button>)}</div><p className="discover-review-explanation" aria-live="polite">{c(`${verdict}Body`)}</p></div></div>
+  </div></section>;
 }
 
 /** Verified stock settings are separate from the labelled AI collector scenes. */

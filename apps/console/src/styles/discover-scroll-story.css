@@ -1,0 +1,124 @@
+/* Owner-directed focal sequence: native scroll, real text, working demo fallback. */
+.discover-opening-copy .hero-shuffle { font-family:var(--discover-font);font-size:clamp(3rem,8vw,7.5rem);line-height:1.04;font-weight:750;letter-spacing:-.035em; }
+.discover-opening-copy .hero-shuffle__word:first-child { color:#ff951f; }
+.discover-opening-copy .hero-shuffle__word:last-child { color:#7ea9ff; }
+.discover-opening-film .discover-film-scrim { background:linear-gradient(180deg,#17130f28 0%,#17130f18 22%,#17130fc4 60%,#17130fe6 100%); }
+.discover-opening-copy { top:auto;bottom:88px;gap:20px; }
+.discover-opening-copy>p { margin-top:0;color:#fffdf8;max-width:44ch; }
+.discover-opening-copy .discover-actions { margin-top:0;padding-top:4px; }
+.white-logo-intro .hero-shuffle__word:first-child { color:var(--sun-700); }
+.white-logo-intro .hero-shuffle__word:last-child { color:var(--tech-600); }
+.discover-walkthrough { position:relative;background:#e1ddf0;color:#30261f;--scene-progress:0; }
+.discover-walkthrough-sticky { padding:104px clamp(24px,5vw,88px) 64px; }
+.discover-walkthrough-top { display:flex;align-items:center;justify-content:space-between;gap:24px;max-width:1440px;margin:auto; }
+.discover-walkthrough-top h2 { margin:0;font-family:var(--discover-font);font-size:clamp(2.6rem,4vw,4rem);font-weight:700;letter-spacing:-.035em;line-height:1.05; }
+.discover-walkthrough-tools { display:flex;gap:20px;align-items:center; }
+.discover-walkthrough-tools button,.discover-walkthrough-tools a { display:inline-flex;gap:16px;align-items:center;justify-content:center;min-height:44px;color:#30261f;font-size:.8125rem; }
+.discover-walkthrough-tools button { border:1px solid #8c7e92;border-radius:99px;background:#fffdf7;padding:10px 18px;cursor:pointer; }
+.discover-walkthrough-tools button:hover { background:#c7f137; }
+.discover-walkthrough-tools a:hover { text-decoration:underline; }
+.discover-walkthrough-grid { display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:clamp(40px,7vw,120px);align-items:center;max-width:1280px;margin:44px auto 0; }
+.discover-walkthrough-copy { min-width:0; }
+.discover-walkthrough p.discover-walkthrough-intro { margin:0 0 30px;font-size:1rem;line-height:1.6; }
+.discover-walkthrough-copy ol { list-style:none;padding:0;margin:0;border-top:1px solid #a499ae; }
+.discover-walkthrough-copy li { border-bottom:1px solid #a499ae; }
+.discover-walkthrough-copy li button { display:grid;grid-template-columns:24px minmax(0,1fr) 24px;gap:14px;align-items:center;width:100%;min-height:76px;padding:14px 8px;border:0;text-align:left;background:none;color:#6a5d6a;cursor:pointer;font:inherit;font-size:clamp(1.4rem,2.3vw,2.4rem);font-weight:600;letter-spacing:-.035em;transition:color 220ms,background 220ms; }
+.discover-walkthrough-copy li[data-active='true'] button { color:#241c18;background:#c7f137; }
+.discover-walkthrough-copy li button:hover { color:#241c18;background:#ffffff65; }
+.discover-step-index { font-size:.6875rem;letter-spacing:0;font-variant-numeric:tabular-nums; }
+.discover-step-arrow { font-size:1.2rem;opacity:0;transform:translate(-6px,6px);transition:transform 300ms,opacity 300ms; }
+li[data-active='true'] .discover-step-arrow { opacity:1;transform:none; }
+.discover-walkthrough p.discover-step-description { margin:24px 0 0;max-width:42ch;min-height:5em;font-size:1rem;line-height:1.6;animation:discover-step-arrive 420ms cubic-bezier(.16,1,.3,1); }
+.discover-walkthrough-disclosure { max-width:45ch;font-size:.75rem;line-height:1.6;margin:12px 0 20px;color:#5b4c55; }
+.discover-scroll-cue { display:flex;gap:12px;align-items:center;font-size:.75rem; }
+.discover-scroll-cue>span { width:28px;height:28px;border:1px solid #968a9e;border-radius:50%;display:grid;place-items:center; }
+.discover-walkthrough-device { position:relative;min-width:0;perspective:1200px; }
+.discover-device-halo { position:absolute;width:110%;aspect-ratio:1;border-radius:50%;top:10%;left:-5%;background:#f3f0fa;pointer-events:none; }
+.discover-device-caption { position:relative;display:flex;gap:20px;justify-content:space-between;max-width:340px;margin:0 auto 16px;font-size:.6875rem;color:#594b5e; }
+.discover-device-note { position:absolute;bottom:62px;right:-20px;z-index:4;max-width:200px;padding:12px 16px;border-radius:12px;background:#fffdf7e8;backdrop-filter:blur(12px);box-shadow:0 12px 28px #3c294c20;color:#30261f;font-size:.8125rem;line-height:1.5;display:flex;gap:10px;align-items:center;animation:discover-step-arrive 500ms cubic-bezier(.16,1,.3,1);pointer-events:none; }
+.discover-device-note>span { display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#c7f137;flex:none; }
+.discover-walkthrough .discover-demo-scene[data-guided='true'] { display:block;margin:0;padding:0;min-height:0;max-width:none;background:transparent;border-radius:0;overflow:visible; }
+.discover-walkthrough [data-guided='true'] .discover-phone-stage { margin:auto;max-width:320px;transform:rotateY(var(--phone-turn,0deg)) rotateZ(var(--phone-lean,0deg));transform-style:preserve-3d; }
+.discover-walkthrough [data-guided='true'] .discover-demo-phone { display:flex;flex-direction:column;min-height:580px;height:580px; }
+.discover-walkthrough [data-guided='true'] .discover-demo-content { flex:1 1 auto; }
+/* discover-warm.css pins this button to margin-top:4px, which left the short 'ready'
+   screen with its action floating mid-phone. Guided screens anchor it to the bottom. */
+.discover-walkthrough [data-guided='true'] .discover-demo-content>.discover-button { margin-top:auto; }
+.discover-walkthrough [data-guided='true'] .discover-demo-content { padding:18px;min-height:0;gap:12px;animation:discover-phone-arrive 420ms cubic-bezier(.16,1,.3,1); }
+.discover-walkthrough .discover-phone-hardware { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#171717; }
+.discover-walkthrough .discover-phone-hardware i { width:76px; }
+.discover-walkthrough [data-guided='true'] .discover-demo-content h3 { font-size:1.4rem;letter-spacing:-.025em;font-weight:700;color:#132e3d; }
+.discover-walkthrough .discover-demo-phone { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#193342; }
+.discover-walkthrough .discover-demo-phone .discover-demo-top { border-color:#e3e7e9;padding:8px 18px 12px; }
+.discover-walkthrough .discover-demo-phone .discover-native-tasks { border:0;gap:16px; }
+.discover-walkthrough .discover-demo-phone .discover-native-task { position:relative;display:flex;flex-direction:column;align-items:stretch;padding:0;border:0;border-radius:18px;overflow:hidden;background:#fff;color:#132e3d;box-shadow:0 5px 14px #17344412;gap:0;text-align:left; }
+.discover-task-image { width:100%;height:130px;object-fit:cover;display:block; }
+.discover-walkthrough .discover-native-task-context { position:absolute;top:12px;left:12px;max-width:calc(100% - 24px);padding:5px 9px;border-radius:99px;color:white;background:#173545e8;font-size:.625rem;line-height:1.4; }
+.discover-walkthrough .discover-native-task-ai { position:absolute;top:12px;right:12px;padding:5px 9px;border-radius:99px;color:white;background:#173545e8;font-size:.5625rem;line-height:1.4; }
+.discover-walkthrough .discover-native-task-context { max-width:calc(100% - 116px); }
+.discover-walkthrough .discover-native-task>strong { margin:12px 14px 6px;font-size:1rem; }
+.discover-walkthrough .discover-native-task-action { padding:0 14px 14px;font-size:.6875rem; }
+.discover-walkthrough [data-guided='true'] .discover-native-task:nth-child(2) .discover-task-image { height:72px; }
+.discover-walkthrough .discover-demo-phone .discover-demo-content>p { font-size:.8125rem;line-height:1.5; }
+.discover-walkthrough [data-guided='true'] .discover-demo-content>.discover-demo-footnote { display:none; }
+.discover-walkthrough .discover-demo-phone .discover-demo-instructions { margin:0;padding-left:18px;font-size:.8125rem;line-height:1.55; }
+.discover-walkthrough .discover-demo-phone .discover-demo-instructions li { margin-block:5px; }
+.discover-walkthrough [data-guided='true'] .discover-demo-instructions li { padding-block:7px;margin:0;border:0; }
+.discover-walkthrough [data-guided='true'] [data-phone-screen='details']>.discover-demo-task-name+p { display:none; }
+.discover-walkthrough [data-guided='true'] .discover-demo-back { display:none; }
+.discover-walkthrough .discover-demo-phone .discover-demo-notice { font-size:.6875rem;line-height:1.5;padding:12px;background:#eef1f5;border-radius:12px; }
+.discover-walkthrough .discover-demo-phone .discover-button { background:#143646;color:#fff;min-height:44px;font-size:.8125rem;padding:12px 16px; }
+.discover-walkthrough .discover-demo-phone .discover-demo-back { color:#214d64;min-height:32px;font-size:.75rem; }
+.discover-guided-checks { display:grid;gap:8px;padding-block:8px; }
+.discover-guided-checks p { display:flex;gap:10px;align-items:center;font-size:.8125rem;line-height:1.5; }
+.discover-guided-checks span { flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#e0eecf;color:#305022; }
+.discover-demo-cursor { position:absolute;pointer-events:none;z-index:5;animation:discover-cursor-tap 850ms cubic-bezier(.16,1,.3,1) both;filter:drop-shadow(0 3px 3px #112b3e40); }
+.discover-native-task>.discover-demo-cursor { left:56%;top:38%; }
+.discover-walkthrough .discover-demo-phone .discover-button { position:relative; }
+.discover-button>.discover-demo-cursor { left:60%;top:8px; }
+.discover-demo-cursor i { position:absolute;top:0;left:0;width:24px;height:24px;border:2px solid #79aaff;border-radius:50%;animation:discover-tap-ring 700ms 350ms both; }
+.discover-walkthrough-manual { margin:48px auto 0;max-width:1160px; }
+.discover-walkthrough-manual .discover-demo-context h3 { font-size:2.75rem; }
+.discover-walkthrough-manual .discover-demo-phone { height:auto; }
+.discover-walkthrough-manual .discover-demo-context { align-self:start;padding-top:32px; }
+.discover-walkthrough[data-scene-pinned='true'] { height:400svh; }
+.discover-walkthrough[data-scene-pinned='true'] .discover-walkthrough-sticky { position:sticky;top:0;height:100svh;padding-block:96px 28px;box-sizing:border-box; }
+.discover-walkthrough[data-scene-pinned='true'] .discover-walkthrough-grid { margin-top:28px; }
+.discover-review-scroll { position:relative;--scene-progress:0; }
+.discover-review-scroll[data-scene-pinned='true'] { height:180svh; }
+.discover-review-scroll .discover-review-wide { display:block;position:relative;width:100%;height:100svh;min-height:720px;margin:0;padding:0;overflow:hidden; }
+.discover-review-scroll[data-scene-pinned='true'] .discover-review-wide { position:sticky;top:0; }
+.discover-review-scroll .discover-review-film,.discover-review-scroll .discover-review-film-viewport { position:absolute;inset:0;width:100%;height:100%;aspect-ratio:auto;min-height:0; }
+.discover-review-scroll .discover-review-film video { width:100%;height:100%;object-fit:cover;object-position:center; }
+.discover-review-scroll .discover-review-film .discover-film-scrim { background:linear-gradient(180deg,#171717dd 0%,#17171791 32%,#17171708 52%,#17171718 68%,#171717bf 100%); }
+.discover-review-scroll .discover-review-film figcaption { position:absolute;top:auto;bottom:24px;left:clamp(24px,5vw,80px);max-width:calc(100% - 520px);font-size:.6875rem;background:#211b17bf;border-radius:99px;padding:8px 12px; }
+.discover-review-scroll .discover-review-film .discover-video-control { top:auto;bottom:24px;right:24px;z-index:5; }
+.discover-review-scroll .discover-review-glass { position:absolute;inset:0;display:flex;flex-direction:column;justify-content:space-between;width:auto;padding:120px clamp(24px,5vw,80px) 28px;background:none;border:0;border-radius:0;backdrop-filter:none;pointer-events:none; }
+.discover-review-scroll .discover-review-direction { display:grid;grid-template-columns:1.1fr 1fr;align-items:start;gap:64px; }
+.discover-review-scroll .discover-review-glass .discover-heading { font-size:clamp(2.8rem,4.8vw,5.5rem);font-weight:700;line-height:1.04;letter-spacing:-.035em;max-width:none; }
+.discover-review-first,.discover-review-last { display:block; }
+.discover-review-first { opacity:clamp(.42,calc(1 - var(--scene-progress)*1.5),1); }
+.discover-review-last { color:#e2edbd;opacity:clamp(.45,calc(.45 + var(--scene-progress)*1.4),1);transform:translateY(calc(8px - clamp(0px,var(--scene-progress)*20px,8px))); }
+.discover-review-scroll .discover-review-glass .discover-lead { font-size:1rem;line-height:1.6;max-width:42ch;margin:0;padding-top:6px;color:#fffdf7; }
+.discover-review-scroll .discover-review-screen { align-self:flex-end;width:390px;max-width:100%;pointer-events:auto;margin:0 44px 0 0!important;padding:18px 22px!important;border:1px solid #ffffff45!important;border-radius:18px!important;background:#211b17c9!important;backdrop-filter:blur(14px); }
+.discover-review-scroll .discover-review-explanation { min-height:3.2em;font-size:.8125rem; }
+.discover-review-scroll .discover-verdict-options { margin-block:12px; }
+@keyframes discover-step-arrive { from{opacity:.5;transform:translateY(16px);}to{opacity:1;transform:none;} }
+@keyframes discover-phone-arrive { from{opacity:.5;transform:translate3d(14px,10px,0);}to{opacity:1;transform:none;} }
+@keyframes discover-cursor-tap { 0%{opacity:0;transform:translate(20px,25px) scale(1);}35%{opacity:1;transform:translate(0,0) scale(1);}55%{opacity:1;transform:scale(.85);}75%,100%{opacity:1;transform:scale(1);} }
+@keyframes discover-tap-ring { from{opacity:.7;transform:translate(-50%,-50%) scale(.2);}to{opacity:0;transform:translate(-50%,-50%) scale(2);} }
+@media(min-width:900px) and (max-height:850px){.discover-walkthrough[data-scene-pinned='true'] .discover-walkthrough-sticky{padding-top:90px;}.discover-walkthrough[data-scene-pinned='true'] .discover-walkthrough-grid{margin-top:20px;}.discover-walkthrough [data-guided='true'] .discover-phone-stage{max-width:280px;}.discover-walkthrough [data-guided='true'] .discover-demo-phone{height:530px;min-height:530px;}.discover-walkthrough [data-guided='true'] .discover-task-image{height:115px;}.discover-walkthrough [data-guided='true'] .discover-native-task:nth-child(2) .discover-task-image{height:56px;}.discover-walkthrough-copy li button{min-height:66px;}.discover-walkthrough-intro{margin-bottom:20px;}.discover-device-caption{max-width:280px;}.discover-step-description{font-size:.9375rem;margin-top:18px;}}
+@media(max-width:899px){.discover-walkthrough-sticky{padding:80px 24px 56px;}.discover-walkthrough-top{align-items:flex-start;flex-direction:column;gap:18px;}.discover-walkthrough-grid{grid-template-columns:1fr;gap:28px;margin-top:32px;}.discover-walkthrough-copy{max-width:620px;width:100%;margin:auto;}.discover-walkthrough-copy ol{display:grid;grid-template-columns:1fr 1fr;border:0;gap:8px;}.discover-walkthrough-copy li button{font-size:1.05rem;min-height:60px;gap:8px;grid-template-columns:20px minmax(0,1fr) 16px;letter-spacing:-.02em;}.discover-step-description{min-height:3.2em;margin-top:20px;}.discover-walkthrough-intro{margin-bottom:20px;}.discover-scroll-cue{display:none;}.discover-device-halo{width:380px;left:calc(50% - 190px);top:12%;}.discover-device-note{right:calc(50% - 180px);max-width:170px;bottom:34px;}.discover-walkthrough-device{max-width:600px;width:100%;margin:auto;}.discover-walkthrough-manual .discover-demo-context{display:none;}.discover-walkthrough-manual .discover-demo-scene{grid-template-columns:1fr;padding:0;}.discover-review-scroll .discover-review-wide{min-height:850px;}.discover-review-scroll .discover-review-direction{grid-template-columns:1fr;gap:18px;max-width:620px;}.discover-review-scroll .discover-review-glass{padding:104px 24px 80px;}.discover-review-scroll .discover-review-glass .discover-heading{font-size:clamp(2.8rem,7vw,4.5rem);}.discover-review-scroll .discover-review-glass .discover-lead{font-size:.9375rem;}.discover-review-scroll .discover-review-screen{margin:0!important;align-self:flex-end;}.discover-review-scroll .discover-review-film figcaption{position:absolute;bottom:20px;left:20px;max-width:calc(100% - 90px);background:#211b17d9;font-size:.625rem;}.discover-review-scroll .discover-review-film video{object-position:46% center;}.discover-review-scroll .discover-review-film .discover-film-scrim{background:linear-gradient(180deg,#171717ed,#17171778 35%,#17171700 55%,#1717178c);}}
+@media(max-width:479px){.discover-walkthrough-sticky{padding-inline:20px;}.discover-walkthrough-tools{gap:14px;flex-wrap:wrap;}.discover-walkthrough-tools button,.discover-walkthrough-tools a{font-size:.75rem;}.discover-device-note{right:-4px;}.discover-device-halo{width:100%;left:0;}.discover-walkthrough [data-guided='true'] .discover-phone-stage{max-width:300px;}.discover-walkthrough [data-guided='true'] .discover-phone-hardware{padding-inline:18px;}.discover-walkthrough [data-guided='true'] .discover-phone-hardware i{width:62px;}.discover-review-scroll .discover-review-glass{padding-inline:20px;}.discover-review-scroll .discover-review-screen{padding:16px!important;}.discover-opening-copy{bottom:100px;}.discover-opening-copy .hero-shuffle{font-size:clamp(2.5rem,10vw,4.5rem);}.discover-opening-copy>p{font-size:.875rem;}.discover-opening-copy .discover-actions{gap:16px;}}
+@media(prefers-reduced-motion:reduce){.discover-walkthrough[data-scene-pinned='true'],.discover-review-scroll[data-scene-pinned='true']{height:auto;}.discover-walkthrough .discover-walkthrough-sticky,.discover-review-scroll .discover-review-wide{position:relative!important;}.discover-demo-cursor{display:none;}.discover-review-first,.discover-review-last{opacity:1!important;transform:none!important;}.discover-walkthrough .discover-phone-stage{transform:none!important;}.discover-phone-arrive,.discover-step-description,.discover-device-note{animation:none;}}
+@media(min-width:900px) and (max-height:850px){.discover-walkthrough [data-guided='true'] .discover-demo-phone{height:500px;min-height:500px;}.discover-walkthrough [data-guided='true'] .discover-task-image{height:90px;}.discover-walkthrough [data-guided='true'] .discover-native-task:nth-child(2) .discover-task-image{height:45px;}.discover-walkthrough [data-guided='true'] .discover-demo-content{padding:14px;gap:10px;}.discover-walkthrough [data-guided='true'] .discover-demo-instructions{font-size:.75rem;}.discover-walkthrough [data-guided='true'] .discover-demo-top{padding-block:6px 8px;}.discover-walkthrough p.discover-walkthrough-intro{margin-bottom:16px;}.discover-walkthrough p.discover-step-description{margin-top:16px;min-height:3.5em;}}
+
+/* Step controls sit beside the phone on narrow screens, where the numbered list
+   above has already scrolled out of view by the time the phone is on screen. */
+.discover-device-steps { display:none; }
+@media(max-width:899px){
+  .discover-device-steps { position:relative;z-index:5;display:flex;gap:16px;align-items:center;justify-content:center;margin-top:16px;font-size:.75rem;color:#594b5e;font-variant-numeric:tabular-nums; }
+  .discover-device-steps button { display:grid;place-items:center;width:44px;height:44px;border:1px solid #8c7e92;border-radius:50%;background:#fffdf7;color:#30261f;font-size:1rem;cursor:pointer; }
+  .discover-device-steps button:disabled { opacity:.4;cursor:not-allowed; }
+  .discover-device-note { bottom:94px; }
+}
