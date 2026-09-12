@@ -230,13 +230,6 @@ export const REFUSALS = new Set([
   'device_assignments_no_overlap',
   'device_assignments_device_id_devices_id_fk',
   'device_assignments_collector_id_collectors_id_fk',
-  /*
-   * Sent as a 409 by the assignment route and missing from this set until now.
-   * It has sentences in all three locales, so it always reached the operator
-   * correctly; what it did not do was satisfy this file's own rule that both
-   * lists hold every refusal. Found while building the assignment wizard.
-   */
-  'device_assignments_id_reused',
   /**
    * QR-08 (0016). Raised by `POST /api/review/dispute`, which lives in
    * review.ts and answers them the same way this file does.
@@ -260,6 +253,18 @@ export const REFUSALS = new Set([
    * one sentence to show either way. `refused` answers 403 for this one.
    */
   ADMIN_REFUSAL,
+  /**
+   * The showcase quotas (0026, re-declared under RLS by 0028). Raised by the
+   * `showcase_footage_quota` trigger and reached by `POST /api/showcase/footage`
+   * in showcase-footage.ts, which catches both by name and answers 409 the same
+   * way this file does — the same arrangement as the dispute and park refusals
+   * above. The migration's own comment says an *uploader* trips them: five
+   * clips per operator and 200 MB across the demo table are limits a person
+   * meets by uploading one more clip, so they are a sentence on the screen and
+   * not a 500.
+   */
+  'showcase_owner_quota',
+  'showcase_storage_quota',
 ]);
 
 /**
@@ -270,6 +275,14 @@ export const REFUSALS = new Set([
  */
 export const API_REFUSALS = new Set([
   'device_already_bound',
+  /*
+   * Sent as a 409 by the assignment route, which writes the name itself rather
+   * than reading it off a constraint. It was put in `REFUSALS` when the
+   * assignment wizard was built, and no constraint carries it — which is the
+   * one thing that set forbids, and the reason this one exists. The catalogue
+   * test never said so because it stopped at an earlier name; it says so now.
+   */
+  'device_assignments_id_reused',
   'task_claims_id_reused',
   'task_claims_released',
   'tasks_id_reused',

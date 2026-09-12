@@ -1109,15 +1109,24 @@ describe.skipIf(!hasDb())('the risk engine', () => {
       expect(history.json().history[1].clear_verdict).toBe('false_positive');
 
       /**
-       * The window is derived from today, not written down. `risk_holds.raised_at`
-       * is stamped by the database at the moment this test raises the hold, so a
-       * fixed `to` bound stops containing it the day the calendar passes it — this
-       * assertion was written with `to=2026-09-01` and went red on 2026-09-02
-       * without one line of the report changing. Same fault as the timing
-       * assertions that measured the machine: it measured the date.
+       * The window is derived, not written down. A fixed `to` bound stops
+       * containing the hold the day the calendar passes it — this assertion was
+       * written with `to=2026-09-01` and went red on 2026-09-02 without one line
+       * of the report changing. Same fault as the timing assertions that
+       * measured the machine: it measured the date.
+       *
+       * Derived from `NOW`, though, and not from `Date.now()`. `raised_at` is
+       * stamped from the engine's clock — `raiseHold` writes `input.now` — and
+       * every engine in this file is held at `NOW`, which is the next whole
+       * hour plus two. So it is up to three hours ahead of the wall clock, and
+       * a `to` bound of "tomorrow, at UTC midnight" stops containing it for the
+       * last three hours of every UTC day: measured red at 22:53 UTC on a
+       * UTC−4 machine, where `NOW` was 01:00 the next day and `to` was that
+       * day's midnight. The window has to be read off the same clock that
+       * stamped the row.
        */
       const day = 86_400_000;
-      const win = (offsetDays: number) => new Date(Date.now() + offsetDays * day).toISOString().slice(0, 10);
+      const win = (offsetDays: number) => new Date(NOW.getTime() + offsetDays * day).toISOString().slice(0, 10);
       const report = await ops.inject({ method: 'GET', url: `/api/risk/report/false-positives?from=${win(-1)}&to=${win(1)}` });
       expect(report.json().holds).toMatchObject({ raised: 1, cleared_false_positive: 1, false_positive_rate: 1, over_budget: true });
       await Promise.all([ops.close(), fin.close(), rev.close()]);

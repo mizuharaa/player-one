@@ -543,6 +543,13 @@ const en = {
     'This collector released their claim on that task. A new claim is needed before a session can be recorded.',
   'bo.refused.session_task_not_published':
     'That task has been taken down, so no new session can be recorded against it.',
+  // The showcase quotas (0026/0028). The demo studio screen has its own copy in
+  // `apps/console/src/showcase/copy.ts`; these are the same two sentences for
+  // anything that renders a back-office refusal by name.
+  'bo.refused.showcase_owner_quota':
+    'Your five clip slots are full. Delete a clip before uploading another.',
+  'bo.refused.showcase_storage_quota':
+    'Demo storage is full. Delete an unused clip or try again later.',
   'bo.refused.review_duration_implausible':
     'This episode claims to run longer than one card can record, so it cannot be paid. Send it back to the counter to have the delivery checked.',
 
@@ -2051,6 +2058,8 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.session_claim_missing': '该采集者未领取此任务，为其录制的内容无法结算。请先领取任务。',
   'bo.refused.session_claim_released': '该采集者已释放对此任务的领取。需要重新领取后才能登记采集会话。',
   'bo.refused.session_task_not_published': '该任务已下架，不能再登记新的采集会话。',
+  'bo.refused.showcase_owner_quota': '已达到五个视频的限制，请先删除一个视频。',
+  'bo.refused.showcase_storage_quota': '演示存储已满，请删除不用的视频或稍后再试。',
   'bo.refused.review_duration_implausible':
     '该片段声称的时长超过一张存储卡所能录制的上限，无法结算。请退回柜台核查该次交付。',
 
@@ -3258,6 +3267,10 @@ const vi: Record<MessageKey, string> = {
     'Cộng tác viên này đã trả lại nhiệm vụ đó. Cần nhận lại nhiệm vụ trước khi ghi một phiên mới.',
   'bo.refused.session_task_not_published':
     'Nhiệm vụ đó đã được gỡ xuống, nên không thể ghi phiên mới cho nó.',
+  'bo.refused.showcase_owner_quota':
+    'Đã đủ năm video. Xóa một video trước khi tải thêm.',
+  'bo.refused.showcase_storage_quota':
+    'Bộ nhớ trình diễn đã đầy. Xóa video không dùng hoặc thử lại sau.',
 
   'bo.refused.review_already_decided':
     'Phân đoạn này đã có kết quả duyệt. Những gì bạn đánh dấu không được ghi lại. Hãy nhận phân đoạn tiếp theo.',
