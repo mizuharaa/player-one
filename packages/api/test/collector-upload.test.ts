@@ -772,8 +772,15 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
       session_basename: 'my documents',
       files: c.files,
     });
+    // 400 as the contract froze it, and the NAME in `constraint` — which is the
+    // field every client in this repo reads a refusal name out of. Under
+    // `error` the phone flattened it to a generic invalid-request.
     expect(res.statusCode, res.body).toBe(400);
-    expect(res.json().error).toBe('session_basename_unrecognised');
+    expect(res.json()).toMatchObject({
+      error: 'refused',
+      constraint: 'session_basename_unrecognised',
+      session_basename: 'my documents',
+    });
     const d = await db();
     const [n] = (await d.execute(sql`select count(*)::int as n from collector_uploads`)) as unknown as { n: number }[];
     expect(n!.n).toBe(0);

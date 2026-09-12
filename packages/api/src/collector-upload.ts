@@ -137,6 +137,18 @@ export const UPLOAD_API_REFUSALS = new Set([
    * materialised copy stays, and nothing is deleted.
    */
   'upload_ingest_failed',
+  /**
+   * The directory the phone offered is not a session directory: the engine's
+   * own naming rule (`parseSessionBasename`) does not recognise the name.
+   *
+   * The only refusal in this set that answers 400 rather than 409: the
+   * contract froze it that way, because it is a malformed request and not a
+   * rule refusing a well-formed one. It is in the set all the same, because
+   * the name reaches the phone in `constraint` like every other refusal here
+   * and a collector reads the sentence it maps to — so it needs one in all
+   * three languages, which is what the i18n test over this set asserts.
+   */
+  'session_basename_unrecognised',
 ]);
 
 /**
@@ -656,8 +668,17 @@ export function registerCollectorUpload(
      */
     const identity = parseSessionBasename(body.session_basename);
     if (identity === null) {
+      /**
+       * 400, as the contract froze it, but shaped like every other refusal in
+       * this file: the name goes in `constraint`, which is the field the phone
+       * reads a refusal name out of. Under `error` the name reached it as an
+       * unrecognised body and was flattened to a generic "invalid request",
+       * which loses the one thing this refusal has to say — that the directory
+       * the collector picked is not a session directory.
+       */
       return reply.code(400).send({
-        error: 'session_basename_unrecognised',
+        error: 'refused',
+        constraint: 'session_basename_unrecognised',
         session_basename: body.session_basename,
         expected: '<device>_<SERIAL>_<YYYYMMDD>_<HHMMSS>',
       });

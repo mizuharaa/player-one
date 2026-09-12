@@ -592,6 +592,8 @@ const en = {
     'A recording folder of that name is already on the upload machine and it holds different files. Nothing was changed and nothing was overwritten. An operator has to decide which recording is the real one.',
   'bo.refused.upload_ingest_failed':
     'Every file arrived intact, and then the measuring engine could not read the recording. The files are kept. Report this upload to an operator.',
+  'bo.refused.session_basename_unrecognised':
+    'That folder is not a recording folder. Pick the folder the camera made, whose name starts with the device and its serial number.',
 
   /**
    * The collector app's own refusals (`COLLECTOR_API_REFUSALS` in
@@ -2089,6 +2091,8 @@ const zh: Record<MessageKey, string> = {
     '上传机上已存在同名的录制文件夹，且其中的文件并不相同。系统未做任何修改，也未覆盖任何文件。需要由操作员判断哪一份才是真实的录制。',
   'bo.refused.upload_ingest_failed':
     '所有文件都完整到达，但测量引擎无法读取该录制。文件已保留。请将本次上传报告给操作员。',
+  'bo.refused.session_basename_unrecognised':
+    '该文件夹不是录制文件夹。请选择相机生成的文件夹，其名称以设备名和序列号开头。',
 
   /** 采集端应用自身的拒绝原因（collector-app.ts 的 COLLECTOR_API_REFUSALS）。 */
   'bo.refused.task_not_found': '该任务已不存在。',
@@ -3306,6 +3310,8 @@ const vi: Record<MessageKey, string> = {
     'Máy tải lên đã có một thư mục ghi hình cùng tên nhưng chứa các tệp khác. Không có gì bị thay đổi và không có gì bị ghi đè. Một nhân viên vận hành phải quyết định bản ghi nào mới là thật.',
   'bo.refused.upload_ingest_failed':
     'Mọi tệp đều đến nguyên vẹn, nhưng bộ máy đo không đọc được đoạn ghi hình. Các tệp vẫn được giữ. Hãy báo lần tải lên này cho nhân viên vận hành.',
+  'bo.refused.session_basename_unrecognised':
+    'Thư mục đó không phải là thư mục ghi hình. Hãy chọn thư mục do máy ảnh tạo ra, tên của nó bắt đầu bằng thiết bị và số sê-ri.',
 
   /**
    * Lời từ chối của chính ứng dụng người thu thập (`COLLECTOR_API_REFUSALS`).
