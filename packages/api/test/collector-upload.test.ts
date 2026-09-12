@@ -1,4 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
@@ -17,6 +20,14 @@ import {
 } from '../src/index.ts';
 import { MESSAGES, LOCALES } from '../src/i18n.ts';
 import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
+/**
+ * The engine itself, and the real corpus. An unmeasured delivery is measured by
+ * this service, so the proofs for it have to run the same engine the route
+ * runs, over real recordings — a synthetic fixture proves the plumbing and says
+ * nothing about whether ffprobe can read what a phone actually sends.
+ */
+import { ingest } from '../../ingest/src/ingest.ts';
+import { hasSession, session as corpusSession } from '../../ingest/test/sessions.ts';
 import { episodeRecord } from './fixtures.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -209,12 +220,23 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
    * query scoped to the wrong parent passed the whole suite; "not your session"
    * cannot be tested with one collector in the database.
    */
-  async function harness(store: MemoryStore = new MemoryStore()) {
+  /**
+   * `mediaRoot` and `reviewerMedia` are for the unmeasured half of the route
+   * only: the server measures the delivery on its own disk, so that half needs
+   * somewhere to put it, and proving a reviewer can then play it needs the
+   * PLT-10 flag — which `buildApi` refuses without TLS, so it brings
+   * `secureCookies` with it exactly as a deployment must.
+   */
+  async function harness(
+    store: MemoryStore = new MemoryStore(),
+    options: { mediaRoot?: string; reviewerMedia?: boolean } = {},
+  ) {
     const d = await db();
     const ids = {
       centre: uid(),
       machine: uid(),
       operator: uid(),
+      reviewer: uid(),
       collector: uid(),
       collector2: uid(),
       deviceType: uid(),
@@ -228,6 +250,9 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     await d.execute(sql`insert into upload_centres (id, region, name, status) values (${ids.centre}, 'HCM', 'c', 'active')`);
     await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash) values (${ids.machine}, ${ids.centre}, 'M1', 'active', ${hash})`);
     await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.operator}, ${ids.centre}, 'op', 'centre_operator', ${hash})`);
+    // The PaXini reviewer: no centre at all, which `operators_centre_check`
+    // allows only because the role says reviewer.
+    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${ids.reviewer}, null, 'pax-01', 'reviewer', ${hash})`);
     await d.execute(sql`insert into collectors (id, external_ref, status) values (${ids.collector}, 'c1', 'qualified')`);
     await d.execute(sql`insert into collectors (id, external_ref, status) values (${ids.collector2}, 'c2', 'qualified')`);
     await d.execute(sql`insert into device_types (id, code, generation) values (${ids.deviceType}, 'ego', 'g1')`);
@@ -250,7 +275,14 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
                 false, false, 'app')`);
     }
 
-    const app = buildApi({ db: await appDb(), tokenSecret: SECRET, objectStore: store });
+    const app = buildApi({
+      db: await appDb(),
+      tokenSecret: SECRET,
+      objectStore: store,
+      mediaRoot: options.mediaRoot,
+      reviewerMediaEnabled: options.reviewerMedia,
+      secureCookies: options.reviewerMedia === true,
+    });
     await app.ready();
 
     /**
@@ -278,14 +310,29 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
       authorization: `Bearer ${o.json().token}`,
     };
 
+    /**
+     * The reviewer's own token, read back out of the cookie the console's
+     * sign-in route set — the same value a browser would carry. Nothing here
+     * mints one by hand, so the test fails if sign-in stops issuing it.
+     */
+    const session = await app.inject({
+      method: 'POST',
+      url: '/api/session',
+      payload: { external_ref: 'pax-01', operator_secret: 'pw' } as never,
+    });
+    const reviewerCookie = [session.headers['set-cookie'] ?? []].flat().join(' | ');
+    const reviewerHeaders: Record<string, string> = {
+      authorization: `Bearer ${decodeURIComponent(/po_operator=([^;]+)/.exec(reviewerCookie)?.[1] ?? '')}`,
+    };
+
     const headers = tokenFor(ids.collector);
     const otherHeaders = tokenFor(ids.collector2);
     const post = async (url: string, payload?: unknown, who = headers) =>
       (await app.inject({ method: 'POST', url, payload: payload as never, headers: who })) as unknown as LightMyRequestResponse;
-    const get = async (url: string, who = headers) =>
-      (await app.inject({ method: 'GET', url, headers: who })) as unknown as LightMyRequestResponse;
+    const get = async (url: string, who = headers, extra: Record<string, string> = {}) =>
+      (await app.inject({ method: 'GET', url, headers: { ...who, ...extra } })) as unknown as LightMyRequestResponse;
 
-    return { app, store, ids, headers, otherHeaders, staffHeaders, post, get };
+    return { app, store, ids, headers, otherHeaders, staffHeaders, reviewerHeaders, post, get };
   }
 
   const register = (h: Harness, d: Delivery, session: string, id = uid()) =>
@@ -297,7 +344,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     });
 
   /** Send every file the plan still wants, through the "signed" URLs it named. */
-  function sendPlan(h: Harness, d: Delivery, files: { relative_path: string; put_url?: string; parts?: { part_number: number; start: number; end: number; url: string }[] }[]): void {
+  function sendPlan(h: Harness, d: { blobs: Map<string, Buffer> }, files: { relative_path: string; put_url?: string; parts?: { part_number: number; start: number; end: number; url: string }[] }[]): void {
     for (const f of files) {
       const body = d.blobs.get(f.relative_path)!;
       if (f.put_url !== undefined) h.store.putDirect(f.put_url, body);
@@ -647,6 +694,498 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     expect(claimed.json().episode_id).toBe(plan.episode_id);
   });
 
+  // -------------------------------------------------------------------------
+  // The UNMEASURED delivery: the one a phone can actually make.
+  //
+  // Everything above sends a finished `EpisodeRecord`, which no Android device
+  // can produce — the engine needs Node's fs and ffprobe. These send the
+  // directory's name and every file's size and digest, and the SERVER measures.
+
+  /** Somewhere for the server to put a delivery it is about to measure. */
+  const mediaRoots: string[] = [];
+  const newMediaRoot = async (): Promise<string> => {
+    const root = await mkdtemp(join(tmpdir(), 'playerone-l2-'));
+    mediaRoots.push(root);
+    return root;
+  };
+  afterAll(async () => {
+    for (const root of mediaRoots) await rm(root, { recursive: true, force: true });
+  });
+
+  /**
+   * A real session directory read off disk, exactly as a phone reads a card:
+   * every file, its length, and its sha256. No measurement of any kind.
+   */
+  async function declaredFrom(dir: string) {
+    const blobs = new Map<string, Buffer>();
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      if (entry.isFile()) blobs.set(entry.name, await readFile(join(dir, entry.name)));
+    }
+    return {
+      dir,
+      basename: basename(dir),
+      blobs,
+      files: [...blobs]
+        .map(([relative_path, b]) => ({ relative_path, bytes: b.length, sha256: sha(b) }))
+        .sort((a, b) => (a.relative_path < b.relative_path ? -1 : 1)),
+    };
+  }
+
+  /** The committed synthetic session: engine-measurable, and on every machine. */
+  const SYNTH = join(
+    import.meta.dirname,
+    '..',
+    '..',
+    '..',
+    'fixtures',
+    'sessions',
+    'delivery-a',
+    'ego_SYNTH0000001_20260813_090800',
+  );
+
+  type Declared = Awaited<ReturnType<typeof declaredFrom>>;
+
+  const registerUnmeasured = (h: Harness, c: Declared, sessionId: string, id = uid()) =>
+    h.post('/api/me/uploads', {
+      id,
+      collection_session_id: sessionId,
+      session_basename: c.basename,
+      files: c.files,
+      client_version: 'phone-test/0.1',
+    });
+
+  /** Register, send every byte through the plan, and ask for the verdict. */
+  async function deliver(h: Harness, c: Declared, sessionId: string, id = uid()) {
+    const registered = await registerUnmeasured(h, c, sessionId, id);
+    expect(registered.statusCode, registered.body).toBe(200);
+    sendPlan(h, c, registered.json().files);
+    const completed = await h.post(`/api/me/uploads/${id}/complete`);
+    return { id, registered, completed };
+  }
+
+  it('refuses a session directory name the engine does not recognise, by name', async () => {
+    const h = await harness(new MemoryStore(), { mediaRoot: await newMediaRoot() });
+    const c = await declaredFrom(SYNTH);
+    const res = await h.post('/api/me/uploads', {
+      id: uid(),
+      collection_session_id: h.ids.session,
+      session_basename: 'my documents',
+      files: c.files,
+    });
+    expect(res.statusCode, res.body).toBe(400);
+    expect(res.json().error).toBe('session_basename_unrecognised');
+    const d = await db();
+    const [n] = (await d.execute(sql`select count(*)::int as n from collector_uploads`)) as unknown as { n: number }[];
+    expect(n!.n).toBe(0);
+  });
+
+  it('answers 503 rather than choosing a directory when no media root is configured', async () => {
+    const h = await harness();
+    const c = await declaredFrom(SYNTH);
+    const id = uid();
+    const plan = await registerUnmeasured(h, c, h.ids.session, id);
+    expect(plan.statusCode, plan.body).toBe(200);
+    sendPlan(h, c, plan.json().files);
+    const res = await h.post(`/api/me/uploads/${id}/complete`);
+    expect(res.statusCode, res.body).toBe(503);
+  });
+
+  /**
+   * Proof A. The whole route over a real recording: nothing measured by the
+   * client, the server measures, and a reviewer plays the result.
+   */
+  it.skipIf(!hasSession('072310'))(
+    'A: measures a real phone delivery on the server and serves its footage to a reviewer',
+    async () => {
+      const root = await newMediaRoot();
+      const h = await harness(new MemoryStore(), { mediaRoot: root, reviewerMedia: true });
+      const c = await declaredFrom(corpusSession('072310'));
+      const id = uid();
+
+      const registered = await registerUnmeasured(h, c, h.ids.session, id);
+      expect(registered.statusCode, registered.body).toBe(200);
+      const plan = registered.json();
+      const episodeId = deriveEpisodeId(c.basename);
+
+      expect(plan.measured).toBe(false);
+      expect(plan.state).toBe('registered');
+      expect(plan.episode_id).toBe(episodeId);
+      // No ingest yet, because an ingest is a measurement and none has happened.
+      expect(plan.ingest_id).toBeNull();
+      expect(plan.part_size).toBe(PART_SIZE);
+      expect(plan.files).toHaveLength(c.files.length);
+      for (const f of plan.files) {
+        expect(f.key).toBe(objectKey(episodeId, id, f.relative_path));
+        expect(f.done).toBe(false);
+      }
+      // Nothing measured is stored, and nothing is on this machine's disk yet.
+      const d = await db();
+      const [before] = (await d.execute(sql`select count(*)::int as n from episodes`)) as unknown as { n: number }[];
+      expect(before!.n).toBe(0);
+      expect(await readdir(root)).toEqual([]);
+
+      sendPlan(h, c, plan.files);
+
+      // The one moment the server can observe that bytes are moving.
+      const moving = await h.get(`/api/me/uploads/${id}`);
+      expect(moving.json().state).toBe('transferring');
+
+      const done = await h.post(`/api/me/uploads/${id}/complete`);
+      expect(done.statusCode, done.body).toBe(200);
+      const body = done.json();
+      expect(body.state).toBe('ingested');
+      expect(body.verification_state).toBe('verified');
+      expect(body.attributed).toBe(true);
+      expect(body.outcome).toBe('new');
+      expect(body.reused).toBe(false);
+      expect(body.transported).toBe(c.files.length);
+      expect(body.ingest_id).not.toBeNull();
+
+      // The engine measured it, and the measurement is the engine's, not the phone's.
+      const [ing] = (await d.execute(sql`
+        select i.ingest_id, i.measured_duration_s::float8 as duration, i.state, i.source_basename,
+               e.verification_state, e.upload_path, e.collection_session_id,
+               (select count(*)::int from episode_streams s where s.ingest_id = i.ingest_id) as streams,
+               (select count(*)::int from episode_files f where f.ingest_id = i.ingest_id) as files
+          from episode_ingests i join episodes e on e.episode_id = i.episode_id
+         where i.episode_id = ${episodeId}
+      `)) as unknown as Record<string, unknown>[];
+      expect(ing).toMatchObject({
+        source_basename: c.basename,
+        verification_state: 'verified',
+        upload_path: 'A',
+        collection_session_id: h.ids.session,
+      });
+      expect(ing!['duration'] as number).toBeGreaterThan(0);
+      expect(ing!['streams'] as number).toBeGreaterThan(0);
+      expect(body.ingest_id).toBe(ing!['ingest_id']);
+
+      // One delivery, one episode, and the row names both.
+      const [row] = (await d.execute(sql`
+        select measured, state, episode_id, ingest_id, held_reason, failed_reason,
+               jsonb_array_length(declared_files) as declared, file_count
+          from collector_uploads where id = ${id}
+      `)) as unknown as Record<string, unknown>[];
+      expect(row).toMatchObject({
+        measured: false,
+        state: 'ingested',
+        episode_id: episodeId,
+        ingest_id: body.ingest_id,
+        held_reason: null,
+        failed_reason: null,
+        file_count: c.files.length,
+      });
+
+      // The cloud verification is recorded the way Path C records it.
+      const [receipts] = (await d.execute(sql`
+        select count(*)::int as n from cloud_verifications where episode_id = ${episodeId}
+      `)) as unknown as { n: number }[];
+      expect(receipts!.n).toBe(c.files.length);
+
+      // Every declared byte is on this machine's disk, unchanged.
+      const onDisk = await declaredFrom(join(root, c.basename));
+      expect(onDisk.files).toEqual(c.files);
+
+      /**
+       * And a reviewer can play it. This is what the lane is for: a
+       * phone-delivered session that the review lane can watch and settle,
+       * reached through the audited claim and nothing else.
+       */
+      const claim = await h.post('/api/review/claim', undefined, h.reviewerHeaders);
+      expect(claim.statusCode, claim.body).toBe(200);
+      expect(claim.json().episode_id).toBe(episodeId);
+      const part = claim.json().media.parts[0].url as string;
+      expect(part).toBe(`/media/episode/${episodeId}/part/0`);
+
+      const ranged = await h.get(part, h.reviewerHeaders, { range: 'bytes=0-4095' });
+      expect(ranged.statusCode, ranged.body).toBe(206);
+      expect(ranged.headers['content-range']).toMatch(/^bytes 0-4095\/\d+$/);
+      expect(ranged.rawPayload).toHaveLength(4096);
+      // Actual bytes: the first 4 KiB of the real file the phone sent.
+      const served = ranged.headers['content-range']!.toString();
+      const total = Number(served.slice(served.indexOf('/') + 1));
+      const name = [...c.blobs.keys()].find((k) => c.blobs.get(k)!.length === total);
+      expect(name, 'the served part is one of the delivered files').toBeDefined();
+      expect(Buffer.from(ranged.rawPayload).equals(c.blobs.get(name!)!.subarray(0, 4096))).toBe(true);
+    },
+    180_000,
+  );
+
+  /**
+   * Proof B, phone first. The card follows it to a counter and the counter
+   * reports the reuse: one episode, one ingest, so one bill is possible.
+   */
+  it.skipIf(!hasSession('072310'))(
+    'B: the same session imported at a counter afterwards is one episode and reports the reuse',
+    async () => {
+      const root = await newMediaRoot();
+      const h = await harness(new MemoryStore(), { mediaRoot: root });
+      const c = await declaredFrom(corpusSession('072310'));
+      const { completed } = await deliver(h, c, h.ids.session);
+      expect(completed.statusCode, completed.body).toBe(200);
+      const episodeId = completed.json().episode_id as string;
+
+      // Path C, over the very same directory: a card at a counter, on a batch.
+      const handover = uid();
+      const batch = uid();
+      const post = (url: string, payload: unknown) => h.post(url, payload, h.staffHeaders);
+      expect((await post('/handovers', {
+        id: handover,
+        collector_id: h.ids.collector,
+        device_id: h.ids.device,
+        tf_card_id: 'CARD-L2',
+        handover_time: new Date().toISOString(),
+      })).statusCode).toBeLessThan(300);
+      expect((await post('/upload-batches', {
+        id: batch,
+        handover_id: handover,
+        import_started_at: new Date().toISOString(),
+      })).statusCode).toBeLessThan(300);
+
+      const record = await ingest(join(root, c.basename));
+      const submitted = await post(`/upload-batches/${batch}/episodes`, { episodes: [record] });
+      expect(submitted.statusCode, submitted.body).toBe(200);
+      // The counter's own answer names the reuse: no second ingest row.
+      expect(submitted.json().episodes[0]).toMatchObject({
+        episode_id: episodeId,
+        outcome: 'duplicate',
+      });
+
+      const d = await db();
+      const [counts] = (await d.execute(sql`
+        select (select count(*)::int from episodes) as episodes,
+               (select count(*)::int from episode_ingests) as ingests,
+               (select ingest_count from episodes where episode_id = ${episodeId}) as ingest_count
+      `)) as unknown as Record<string, number>[];
+      // One episode and one ingest is what makes one bill the only possibility:
+      // review, settlement and bill all hang off the ingest.
+      expect(counts).toMatchObject({ episodes: 1, ingests: 1, ingest_count: 1 });
+    },
+    180_000,
+  );
+
+  /**
+   * Proof B, card first. The directory is already on this machine and its bytes
+   * are the delivery's bytes, so the phone's copy is recognised rather than
+   * written over, and still only one episode exists.
+   */
+  it.skipIf(!hasSession('072516'))(
+    'B: a session already on this machine is reused, not overwritten, and stays one episode',
+    async () => {
+      const root = await newMediaRoot();
+      const h = await harness(new MemoryStore(), { mediaRoot: root });
+      const c = await declaredFrom(corpusSession('072516'));
+      const d = await db();
+
+      // What a counter import leaves behind: the session folder under the media
+      // root, and the measurement on a batch.
+      await cp(c.dir, join(root, c.basename), { recursive: true });
+      const handover = uid();
+      const batch = uid();
+      const post = (url: string, payload: unknown) => h.post(url, payload, h.staffHeaders);
+      await post('/handovers', {
+        id: handover,
+        collector_id: h.ids.collector,
+        device_id: h.ids.device,
+        tf_card_id: 'CARD-L2-FIRST',
+        handover_time: new Date().toISOString(),
+      });
+      await post('/upload-batches', {
+        id: batch,
+        handover_id: handover,
+        import_started_at: new Date().toISOString(),
+      });
+      const imported = await post(`/upload-batches/${batch}/episodes`, {
+        episodes: [await ingest(join(root, c.basename))],
+      });
+      expect(imported.statusCode, imported.body).toBe(200);
+      expect(imported.json().episodes[0].outcome).toBe('new');
+      const [counter] = (await d.execute(sql`
+        select episode_id, ingest_id, collection_session_id, resolution_state, upload_path
+          from episodes join episode_ingests using (episode_id)
+      `)) as unknown as Record<string, unknown>[];
+
+      const { completed } = await deliver(h, c, h.ids.session);
+      expect(completed.statusCode, completed.body).toBe(200);
+      const body = completed.json();
+      expect(body.state).toBe('ingested');
+      expect(body.outcome).toBe('duplicate');
+      expect(body.reused).toBe(true);
+      expect(body.ingest_id).toBe(counter!['ingest_id']);
+      /**
+       * And the counter's attribution is not moved. The operator's answer was
+       * made against the card with a handover behind it, and settlement may
+       * already have read it.
+       */
+      expect(body.episode_upload_path).toBe('C');
+      expect(body.attributed).toBe(false);
+
+      const [counts] = (await d.execute(sql`
+        select (select count(*)::int from episodes) as episodes,
+               (select count(*)::int from episode_ingests) as ingests
+      `)) as unknown as Record<string, number>[];
+      expect(counts).toMatchObject({ episodes: 1, ingests: 1 });
+      const [after] = (await d.execute(sql`
+        select collection_session_id, resolution_state, upload_path, verification_state
+          from episodes where episode_id = ${counter!['episode_id'] as string}
+      `)) as unknown as Record<string, unknown>[];
+      expect(after).toMatchObject({
+        collection_session_id: counter!['collection_session_id'],
+        resolution_state: counter!['resolution_state'],
+        upload_path: 'C',
+        // What the phone delivery DID add: a cloud copy that has been read back.
+        verification_state: 'verified',
+      });
+      // Byte for byte what the counter left there.
+      expect((await declaredFrom(join(root, c.basename))).files).toEqual(c.files);
+      // And no staging directory left behind.
+      expect((await readdir(root)).sort()).toEqual([c.basename]);
+    },
+    180_000,
+  );
+
+  /** Proof C. The phone's connection died before the answer arrived, so it asks again. */
+  it('C: completing twice is idempotent — no second ingest and no second episode', async () => {
+    const h = await harness(new MemoryStore(), { mediaRoot: await newMediaRoot() });
+    const c = await declaredFrom(SYNTH);
+    const { id, completed } = await deliver(h, c, h.ids.session);
+    expect(completed.statusCode, completed.body).toBe(200);
+    expect(completed.json().replayed).toBe(false);
+
+    const again = await h.post(`/api/me/uploads/${id}/complete`);
+    expect(again.statusCode, again.body).toBe(200);
+    expect(again.json().replayed).toBe(true);
+    // The same sentence, read back from the database both times.
+    const { replayed: _a, ...first } = completed.json();
+    const { replayed: _b, ...second } = again.json();
+    expect(second).toEqual(first);
+
+    const d = await db();
+    const [counts] = (await d.execute(sql`
+      select (select count(*)::int from episodes) as episodes,
+             (select count(*)::int from episode_ingests) as ingests,
+             (select count(*)::int from audit_events where action = 'upload.ingest') as ingested_rows
+    `)) as unknown as Record<string, number>[];
+    expect(counts).toMatchObject({ episodes: 1, ingests: 1, ingested_rows: 1 });
+  }, 60_000);
+
+  /** Proof D. One byte wrong in the cloud, and nothing reaches this machine. */
+  it('D: a tampered byte fails read-back, and nothing is written under the media root', async () => {
+    const root = await newMediaRoot();
+    const h = await harness(new MemoryStore(), { mediaRoot: root });
+    const c = await declaredFrom(SYNTH);
+    const id = uid();
+    const plan = await registerUnmeasured(h, c, h.ids.session, id);
+    sendPlan(h, c, plan.json().files);
+    // A store that wrote the object and got the bytes wrong. Its metadata still
+    // reads clean, which is why the verdict has to be a read-back.
+    const damaged = plan.json().files.find((f: { bytes: number }) => f.bytes > 0);
+    h.store.corrupt(damaged.key);
+
+    const res = await h.post(`/api/me/uploads/${id}/complete`);
+    expect(res.statusCode, res.body).toBe(409);
+    expect(res.json().constraint).toBe('upload_checksum_mismatch');
+    expect(res.json().mismatches[0].relative_path).toBe(damaged.relative_path);
+
+    const d = await db();
+    const [row] = (await d.execute(sql`
+      select state, failed_reason, episode_id, ingest_id, completed_at is not null as completed
+        from collector_uploads where id = ${id}
+    `)) as unknown as Record<string, unknown>[];
+    expect(row).toMatchObject({
+      state: 'failed',
+      failed_reason: 'checksum_mismatch',
+      episode_id: null,
+      ingest_id: null,
+      completed: true,
+    });
+    // No episode was invented for bytes that were never proven, and the media
+    // root is exactly as it was found.
+    const [n] = (await d.execute(sql`select count(*)::int as n from episodes`)) as unknown as { n: number }[];
+    expect(n!.n).toBe(0);
+    expect(await readdir(root)).toEqual([]);
+  }, 60_000);
+
+  /** Proof E. A directory of that name is already here and it is not this recording. */
+  it('E: a basename collision holds the delivery and leaves the original untouched', async () => {
+    const root = await newMediaRoot();
+    const h = await harness(new MemoryStore(), { mediaRoot: root });
+    const c = await declaredFrom(SYNTH);
+
+    // The same names and the same sizes, different bytes — a re-recorded session
+    // at the same basename is exactly the case that must not silently pass.
+    const there = join(root, c.basename);
+    await mkdir(there, { recursive: true });
+    const original = new Map<string, Buffer>();
+    for (const [name, body] of c.blobs) {
+      const other = Buffer.alloc(body.length, 0x5a);
+      original.set(name, other);
+      await writeFile(join(there, name), other);
+    }
+
+    const { id, completed } = await deliver(h, c, h.ids.session);
+    expect(completed.statusCode, completed.body).toBe(409);
+    expect(completed.json().constraint).toBe('upload_basename_collision');
+
+    const d = await db();
+    const [row] = (await d.execute(sql`
+      select state, held_reason, episode_id, ingest_id from collector_uploads where id = ${id}
+    `)) as unknown as Record<string, unknown>[];
+    expect(row).toMatchObject({ state: 'held', held_reason: 'basename_collision', episode_id: null, ingest_id: null });
+    // Nothing measured, nothing overwritten, nothing left lying about.
+    const [n] = (await d.execute(sql`select count(*)::int as n from episodes`)) as unknown as { n: number }[];
+    expect(n!.n).toBe(0);
+    for (const [name, body] of original) {
+      expect(Buffer.from(await readFile(join(there, name))).equals(body), name).toBe(true);
+    }
+    expect((await readdir(root)).sort()).toEqual([c.basename]);
+
+    // And asking again says the same thing rather than trying again.
+    const again = await h.post(`/api/me/uploads/${id}/complete`);
+    expect(again.statusCode).toBe(409);
+    expect(again.json().constraint).toBe('upload_basename_collision');
+  }, 60_000);
+
+  it('finishes a delivery whose read-back passed before the process died', async () => {
+    /**
+     * `verified` is resumable, not terminal. The bytes are proven and the only
+     * route that ingests is this one, so refusing would leave the delivery
+     * unfinishable — which is what it used to do.
+     */
+    const h = await harness(new MemoryStore(), { mediaRoot: await newMediaRoot() });
+    const c = await declaredFrom(SYNTH);
+    const id = uid();
+    const plan = await registerUnmeasured(h, c, h.ids.session, id);
+    sendPlan(h, c, plan.json().files);
+    const d = await db();
+    await d.execute(sql`
+      update collector_uploads set state = 'verified', completed_at = now() where id = ${id}`);
+
+    const res = await h.post(`/api/me/uploads/${id}/complete`);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().state).toBe('ingested');
+  }, 60_000);
+
+  it('refuses a delivery that declares no files at all', async () => {
+    const h = await harness(new MemoryStore(), { mediaRoot: await newMediaRoot() });
+    const res = await h.post('/api/me/uploads', {
+      id: uid(),
+      collection_session_id: h.ids.session,
+      session_basename: 'ego_AZER76400FE_20260813_072310',
+      files: [],
+    });
+    expect(res.statusCode, res.body).toBe(400);
+  });
+
+  it('will not let an unmeasured delivery reuse a measured delivery’s id, or the reverse', async () => {
+    const h = await harness(new MemoryStore(), { mediaRoot: await newMediaRoot() });
+    const id = uid();
+    await register(h, delivery(), h.ids.session, id);
+    const crossed = await registerUnmeasured(h, await declaredFrom(SYNTH), h.ids.session, id);
+    expect(crossed.statusCode, crossed.body).toBe(400);
+    expect(crossed.json().error).toMatch(/measured delivery/);
+  });
+
   // -- who may call it -------------------------------------------------------
 
   it('scopes a collector token to /api/me and nothing else', async () => {
@@ -866,6 +1405,120 @@ describe.skipIf(!hasDb())('what the schema refuses about a Path A upload', () =>
       'collector_uploads_completed_check',
       insertUpload(d, ids, { state: 'registered', completedAt: new Date().toISOString() }),
     );
+  });
+
+  // -- what 0029 made unrepresentable ---------------------------------------
+
+  /** An unmeasured row: no episode, no ingest, and its own inventory. */
+  const insertUnmeasured = (
+    d: Awaited<ReturnType<typeof db>>,
+    ids: Record<string, string>,
+    over: Partial<{
+      state: string;
+      completedAt: string | null;
+      episode: string | null;
+      ingest: string | null;
+      held: string | null;
+      failed: string | null;
+      declared: string;
+      fileCount: number;
+    }> = {},
+  ) =>
+    d.execute(sql`
+      insert into collector_uploads
+        (id, collector_id, collection_session_id, device_serial, measured, episode_id, ingest_id,
+         source_basename, file_count, total_bytes, declared_files, state, held_reason, failed_reason, completed_at)
+      values (${uid()}, ${ids.collector}, ${ids.session}, 'AZER76400FE', false,
+              ${over.episode === undefined ? null : over.episode},
+              ${over.ingest === undefined ? null : over.ingest},
+              'ego_AZER76400FE_20260813_072310', ${over.fileCount ?? 1}, 4096,
+              ${sql.raw(`'${over.declared ?? '[{"relative_path":"a","bytes":1,"sha256":"x"}]'}'::jsonb`)},
+              ${over.state ?? 'registered'},
+              ${over.held ?? null}, ${over.failed ?? null},
+              ${
+                over.completedAt === undefined
+                  ? ['registered', 'transferring'].includes(over.state ?? 'registered')
+                    ? null
+                    : new Date().toISOString()
+                  : over.completedAt
+              })`);
+
+  it('cannot let a MEASURED delivery enter a state only the server-side ingest reaches', async () => {
+    const { d, ids } = await seed();
+    /**
+     * `transferring` carries no completion and the other two carry one, so each
+     * row is legal in every respect but the one being tested. `held` is left
+     * out because it also needs a reason, and a row refused by two constraints
+     * does not say which one is doing the work.
+     */
+    const states: [string, string | null][] = [
+      ['transferring', null],
+      ['ingesting', new Date().toISOString()],
+      ['ingested', new Date().toISOString()],
+    ];
+    for (const [state, completedAt] of states) {
+      await violates(
+        'collector_uploads_measured_state_check',
+        insertUpload(d, ids, { state, completedAt }),
+      );
+    }
+    // The unmeasured shape reaches them, which is what the constraint is for.
+    await insertUnmeasured(d, ids, { state: 'transferring' });
+  });
+
+  it('cannot record a measured delivery with no episode, nor half a delivery reference', async () => {
+    const { d, ids } = await seed();
+    await violates(
+      'collector_uploads_measured_delivery_check',
+      d.execute(sql`
+        insert into collector_uploads
+          (id, collector_id, collection_session_id, device_serial, source_basename, file_count, total_bytes)
+        values (${uid()}, ${ids.collector}, ${ids.session}, 'AZER76400FE', 'ego_AZER76400FE_20260813_072310', 4, 4096)`),
+    );
+    await violates(
+      'collector_uploads_delivery_pair_check',
+      insertUnmeasured(d, ids, { episode: ids.episode, ingest: null }),
+    );
+  });
+
+  it('cannot call a delivery ingested without naming the episode it became', async () => {
+    const { d, ids } = await seed();
+    await violates('collector_uploads_ingested_check', insertUnmeasured(d, ids, { state: 'ingested' }));
+    await insertUnmeasured(d, ids, { state: 'ingested', episode: ids.episode, ingest: ids.ingest });
+    // And not twice: one recording delivered twice and read as two is the shape
+    // that pays twice.
+    await violates(
+      'collector_uploads_ingested_key',
+      insertUnmeasured(d, ids, { state: 'ingested', episode: ids.episode, ingest: ids.ingest }),
+    );
+  });
+
+  it('cannot hold a delivery without saying why, or say why without holding it', async () => {
+    const { d, ids } = await seed();
+    await violates('collector_uploads_held_reason_check', insertUnmeasured(d, ids, { state: 'held' }));
+    await violates(
+      'collector_uploads_held_reason_check',
+      insertUnmeasured(d, ids, { state: 'verified', held: 'basename_collision' }),
+    );
+    await violates(
+      'collector_uploads_failed_reason_check',
+      insertUnmeasured(d, ids, { state: 'verified', failed: 'checksum_mismatch' }),
+    );
+    await insertUnmeasured(d, ids, { state: 'held', held: 'basename_collision' });
+  });
+
+  it('cannot let the declared inventory disagree with the count of it', async () => {
+    const { d, ids } = await seed();
+    await violates(
+      'collector_uploads_declared_files_check',
+      insertUnmeasured(d, ids, { fileCount: 3 }),
+    );
+    await violates(
+      'collector_uploads_declared_files_check',
+      insertUnmeasured(d, ids, { declared: '{"relative_path":"a"}' }),
+    );
+    // A measured row is exempt: its inventory is `episode_files`.
+    await insertUpload(d, ids, {});
   });
 
   it('cannot write an audit row that gives a collector a machine or an operator row', async () => {

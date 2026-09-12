@@ -244,8 +244,15 @@ const UnmeasuredBody = z.object({
    * against the engine's own naming knowledge, so the refusal can be named.
    */
   session_basename: z.string().min(1).max(200),
-  /** EVERY file in the directory. Not `source_files`: the manifest is in here too. */
-  files: z.array(DeclaredFile),
+  /**
+   * EVERY file in the directory. Not `source_files`: the manifest is in here too.
+   *
+   * At least one. A delivery of nothing would verify — there is nothing to read
+   * back — and then have the server create an empty session directory under the
+   * media root for the engine to fail on, leaving a folder named after a
+   * recording that was never delivered.
+   */
+  files: z.array(DeclaredFile).min(1),
   client_version: z.string().max(64).optional(),
 });
 
@@ -1100,7 +1107,20 @@ export function registerCollectorUpload(
      * collector did.
      */
     let state = row.state;
-    if (state === 'registered' && plan.some((f) => f.done || (f.held_parts?.length ?? 0) > 0)) {
+    /**
+     * And only for an UNMEASURED delivery. `collector_uploads_measured_state_check`
+     * holds a measured row to the three states it had before 0029, so writing
+     * `transferring` on one is a constraint violation and a 500 on the resume
+     * route — which is what it was, measured by the existing resume test.
+     * Nothing reads a measured delivery's progress: the phone that sends one
+     * has already measured it and `/complete` is the only thing that changes
+     * anything. So the observation is made where it is asked for.
+     */
+    if (
+      !row.measured &&
+      state === 'registered' &&
+      plan.some((f) => f.done || (f.held_parts?.length ?? 0) > 0)
+    ) {
       const [moved] = await db
         .update(schema.collectorUploads)
         .set({ state: 'transferring' })
@@ -1169,9 +1189,27 @@ export function registerCollectorUpload(
       .select({
         sessionId: schema.episodes.collectionSessionId,
         verificationState: schema.episodes.verificationState,
+        uploadPath: schema.episodes.uploadPath,
       })
       .from(schema.episodes)
       .where(eq(schema.episodes.episodeId, row.episodeId!));
+    /**
+     * `storeEpisode`'s own word on what this delivery turned out to be —
+     * `new`, `duplicate` or `mismatch` — read back out of the audit row that
+     * recorded the ingest rather than carried out of the work that just ran, so
+     * a replay says the same thing. It is the same vocabulary Path C's import
+     * route answers in, on purpose: one word for one fact.
+     */
+    const [audited] = await db
+      .select({ after: schema.auditEvents.after })
+      .from(schema.auditEvents)
+      .where(
+        and(
+          eq(schema.auditEvents.action, 'upload.ingest'),
+          eq(schema.auditEvents.targetId, row.id),
+        ),
+      );
+    const outcome = (audited?.after as { outcome?: string } | null)?.outcome ?? null;
     return {
       upload_id: row.id,
       replayed,
@@ -1182,6 +1220,16 @@ export function registerCollectorUpload(
       verification_state: ep?.verificationState ?? null,
       /** Whether the episode ended up on the session this delivery named. */
       attributed: ep?.sessionId === row.collectionSessionId,
+      /** `new`, `duplicate` or `mismatch`: what the store made of this delivery. */
+      outcome,
+      /**
+       * The same recording had already reached the platform by another route —
+       * a card at a counter, or an earlier delivery — so this one added no
+       * second episode and can add no second bill. UPL-15 as the phone sees it.
+       */
+      reused: outcome !== null && outcome !== 'new',
+      /** Which route the episode's attribution belongs to: `A` here, `C` if a counter got there first. */
+      episode_upload_path: ep?.uploadPath ?? null,
       transported: row.fileCount,
     };
   };
@@ -1407,7 +1455,29 @@ export function registerCollectorUpload(
         return updated;
       },
     );
-    if (verified === undefined) return refused(reply, 'upload_superseded', { upload_id: row.id });
+    /**
+     * `verified` and `ingesting` are resumable, not terminal.
+     *
+     * The read-back passed and then this process died, or the phone's request
+     * timed out, before the episode existed. The WHERE above cannot move such a
+     * row, and refusing on that would leave a delivery whose bytes are proven
+     * answering `upload_superseded` for ever — the phone can neither finish it
+     * nor start again, because `/complete` is the only route that ingests. So
+     * those two states fall through and the work below re-runs, which is safe
+     * because every step after the read-back is idempotent on the delivery:
+     * `materialise` recognises its own directory by digest, and `storeEpisode`
+     * answers `duplicate` for a measurement already stored.
+     *
+     * ponytail: no lock, so two `/complete` calls racing on one delivery both
+     * measure. The cost is one wasted engine run; what must not happen — two
+     * episodes, or two ingests read as two recordings — cannot, because
+     * `storeEpisode` owns that rule and `collector_uploads_ingested_key`
+     * refuses the second row. A row lock on the delivery is the upgrade path,
+     * the day completion stops being synchronous.
+     */
+    if (verified === undefined && !['verified', 'ingesting'].includes(row.state)) {
+      return refused(reply, 'upload_superseded', { upload_id: row.id });
+    }
 
     await note(row.id, 'ingesting', ['verified']);
 
