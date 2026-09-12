@@ -1,11 +1,29 @@
-import { basename } from 'node:path';
-import { and, eq, isNull, ne } from 'drizzle-orm';
+import { createWriteStream } from 'node:fs';
+import { mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { and, eq, inArray, isNull, ne } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { deriveEpisodeId, EpisodeRecord } from '@playerone/contracts';
+import { deriveEpisodeId, EpisodeRecord, parseSessionBasename } from '@playerone/contracts';
 import { schema, storeEpisode, type Db } from '@playerone/store';
+/**
+ * The engine, reached exactly the way Path C's counter import reaches it
+ * (`packages/api/bin/counter.ts`): the same relative import of the same
+ * function. Not a fork and not a second entry point — `ingest(dir)` is what
+ * measures a session directory, and the whole point of this lane is that a
+ * phone-delivered session becomes an ordinary episode measured by that code.
+ *
+ * The dependency only ever points this way. The engine still never needs a
+ * database (`env -u DATABASE_URL` keeps passing), because nothing here is
+ * imported by it.
+ */
+import { ingest } from '../../ingest/src/ingest.ts';
+import { sha256File } from '../../ingest/src/hash.ts';
 import { mutate } from './audit.ts';
 import type { CollectorActor } from './actor.ts';
+import { safeJoin } from './media.ts';
 import {
   objectKey,
   planParts,
@@ -13,6 +31,7 @@ import {
   PART_SIZE,
   PRESIGN_TTL_S,
   type DirectUploadStore,
+  type Mismatch,
   type ObjectStore,
   type TransportFile,
 } from './upload-worker.ts';
@@ -86,6 +105,8 @@ import {
  */
 
 type Reply = { code: (n: number) => { send: (b: unknown) => unknown } };
+/** A reply a handler answers 200 on directly, as Fastify hands it to one. */
+type FullReply = Reply & { send: (b: unknown) => unknown };
 
 /**
  * The refusals this file raises. Same shape and same purpose as `API_REFUSALS`
@@ -103,6 +124,19 @@ export const UPLOAD_API_REFUSALS = new Set([
   'upload_payload_too_large',
   /** A redelivery landed while these bytes were moving; this verdict names an ingest that is no longer current. */
   'upload_superseded',
+  /**
+   * A session directory of that name is already on this machine holding
+   * different bytes. Nothing was overwritten and nothing was ingested — the two
+   * deliveries disagree about what the recording is, and only a person can say
+   * which is real.
+   */
+  'upload_basename_collision',
+  /**
+   * Every byte verified against the phone's own digests, and then the engine
+   * could not measure the directory they make. The objects stay, the
+   * materialised copy stays, and nothing is deleted.
+   */
+  'upload_ingest_failed',
 ]);
 
 /**
@@ -118,6 +152,14 @@ export const MAX_DELIVERY_BYTES = 64 * 1024 * 1024 * 1024;
 export type CollectorUploadOptions = {
   /** Absent until a storage endpoint exists; the routes answer 503 saying so. */
   objectStore?: (ObjectStore & DirectUploadStore) | undefined;
+  /**
+   * Where this machine keeps the imported `ego_*` session folders — the same
+   * directory Path C's cloud leg reads from and the review console streams
+   * from. An unmeasured delivery is materialised into it and measured there,
+   * so without it that half of this file answers 503 rather than inventing a
+   * location. The measured path never touches it.
+   */
+  mediaRoot?: string | undefined;
 };
 
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
@@ -177,6 +219,38 @@ const RegisterBody = z.object({
   extra_files: z.array(DeclaredFile).default([]),
   client_version: z.string().max(64).optional(),
 });
+
+/**
+ * The second shape, and the one a phone can actually produce.
+ *
+ * There is no `episode` on it, and that absence is the discriminator. The
+ * engine needs Node's fs and ffprobe to measure a session; an Android device
+ * has neither, so everything the measured body asserts — duration, streams,
+ * timing, state, fingerprint — is absent here by design and is measured by this
+ * service after the bytes have been proven. Nothing in this schema could carry
+ * a measurement even if a client wanted to send one.
+ *
+ * `session_basename` is the on-card directory name and the only identity in the
+ * request. The episode id derives from it and from nothing else, exactly as it
+ * does on every other path.
+ */
+const UnmeasuredBody = z.object({
+  /** Client-generated, same as the measured shape and for the same reason. */
+  id: z.string().uuid(),
+  collection_session_id: z.string().uuid(),
+  /**
+   * Length-bounded because it becomes a directory name on this machine's disk
+   * and a path segment in every object key. The *shape* is checked separately,
+   * against the engine's own naming knowledge, so the refusal can be named.
+   */
+  session_basename: z.string().min(1).max(200),
+  /** EVERY file in the directory. Not `source_files`: the manifest is in here too. */
+  files: z.array(DeclaredFile),
+  client_version: z.string().max(64).optional(),
+});
+
+/** What a phone declares about one file, before anything has measured it. */
+type DeclaredFileRow = { relative_path: string; bytes: number; sha256: string };
 
 /** One file of the delivery, and what the phone has to do about it. */
 export type FilePlan = {
@@ -245,6 +319,12 @@ export function registerCollectorUpload(
     extras: readonly TransportFile[],
   ): TransportFile[] =>
     [...sourceFiles, ...extras].sort((a, b) => (a.relative_path < b.relative_path ? -1 : 1));
+
+  /** A declared file, as the transport sees it: a name and the digest to prove. */
+  const transportOf = (f: DeclaredFileRow): TransportFile => ({
+    relative_path: f.relative_path,
+    sha256: f.sha256,
+  });
 
   /**
    * The plan, freshly signed, for one delivery.
@@ -317,6 +397,43 @@ export function registerCollectorUpload(
   }
 
   /**
+   * Assembly, for the files that were sent in parts. Shared by both delivery
+   * shapes: how a multipart is finished has nothing to do with who measured it.
+   *
+   * `openMultipart` rather than `beginMultipart`: this step must never start an
+   * upload. A file with nothing in flight is a file the phone has not sent, or
+   * one already assembled by an earlier attempt at this delivery, and neither
+   * wants an empty multipart left in the bucket.
+   *
+   * There is deliberately no "the object is already there, skip it" check. An
+   * object being there is not a reason not to assemble: after a failed
+   * read-back the object that is there is the wrong one, and the phone has just
+   * re-sent every part into a new multipart precisely to replace it.
+   *
+   * The part count is checked against the plan before assembling. Completing a
+   * short upload would produce a truncated object that then fails read-back,
+   * which is the correct verdict reached the expensive way; not assembling it
+   * at all reaches the same verdict without writing anything.
+   */
+  async function assemble(
+    s: DirectUploadStore,
+    files: readonly TransportFile[],
+    sizes: ReadonlyMap<string, number>,
+    keyOf: (relativePath: string) => string,
+  ): Promise<void> {
+    for (const f of files) {
+      const bytes = sizes.get(f.relative_path) ?? 0;
+      if (bytes < PART_SIZE) continue;
+      const key = keyOf(f.relative_path);
+      const uploadId = await s.openMultipart(key);
+      if (uploadId === null) continue;
+      const held = await s.heldParts(key, uploadId);
+      if (held.length < planParts(bytes).length) continue;
+      await s.finishMultipart(key, uploadId);
+    }
+  }
+
+  /**
    * The upload row, scoped to the caller. Undefined for anyone else's id and
    * for an id that is not a uuid at all — `collector_uploads.id` is a `uuid`
    * column, so an unparseable one is a cast error raised by Postgres, which is
@@ -337,14 +454,27 @@ export function registerCollectorUpload(
   };
 
   /**
-   * The inventory of a registered upload, rebuilt from what was stored: the
-   * fingerprinted files from `episode_files` — the same rows the fingerprint
-   * is recomputable from — plus the declared remainder off the upload row.
+   * The inventory of a registered upload, rebuilt from what was stored.
+   *
+   * A measured delivery's inventory is the fingerprinted files from
+   * `episode_files` — the same rows the fingerprint is recomputable from — plus
+   * the declared remainder off the upload row. An unmeasured one has neither
+   * until the engine has run, so it is `declared_files`, which is the whole
+   * delivery as the phone described it and the only record of it that exists
+   * before the measurement.
    */
   const storedInventory = async (row: {
-    ingestId: string;
+    measured: boolean;
+    ingestId: string | null;
     extraFiles: unknown;
+    declaredFiles: unknown;
   }): Promise<{ files: TransportFile[]; sizes: Map<string, number> }> => {
+    const sizes = new Map<string, number>();
+    if (!row.measured) {
+      const declared = DeclaredFile.array().parse(row.declaredFiles ?? []);
+      for (const f of declared) sizes.set(f.relative_path, f.bytes);
+      return { files: inventoryOf(declared.map(transportOf), []), sizes };
+    }
     const rows = await db
       .select({
         relativePath: schema.episodeFiles.relativePath,
@@ -352,9 +482,8 @@ export function registerCollectorUpload(
         sha256: schema.episodeFiles.sha256,
       })
       .from(schema.episodeFiles)
-      .where(eq(schema.episodeFiles.ingestId, row.ingestId));
+      .where(eq(schema.episodeFiles.ingestId, row.ingestId!));
     const extras = DeclaredFile.array().parse(row.extraFiles ?? []);
-    const sizes = new Map<string, number>();
     for (const r of rows) sizes.set(r.relativePath, r.sizeBytes);
     for (const e of extras) sizes.set(e.relative_path, e.bytes);
     const files = inventoryOf(
@@ -362,6 +491,314 @@ export function registerCollectorUpload(
       extras.map((e) => ({ relative_path: e.relative_path, sha256: e.sha256 })),
     );
     return { files, sizes };
+  };
+
+  /**
+   * The two halves of an object key for one delivery, whichever shape it is.
+   *
+   * A measured delivery has an ingest id from the moment it registers, and
+   * `objectKey`'s rule holds unchanged: one ingest, one prefix, forever, so a
+   * session arriving by card and by phone lands on one object set.
+   *
+   * An unmeasured delivery has no ingest id — the measurement that mints one
+   * has not happened — so the prefix is the UPLOAD id, which is the only thing
+   * unique to this delivery before the engine has run. The guarantee that
+   * matters is preserved exactly: one delivery, one prefix, and it can never
+   * overwrite another delivery's objects, because no other delivery has that
+   * upload id. What is NOT preserved is the second half of UPL-15, that a phone
+   * delivery and a card delivery of one session share their keys. It cannot be:
+   * the shared segment is the ingest id and there is no ingest id yet, and
+   * guessing one by reusing an existing episode's would mean planning signed
+   * PUTs over objects that have already been reviewed and paid for.
+   *
+   * ponytail: the consequence is that a later Path C run over the same episode
+   * re-uploads from `mediaRoot` under the canonical prefix rather than
+   * recognising these objects. That costs one upload of a session that is
+   * already on this machine's disk, and it never destroys anything. Closing it
+   * properly means a server-side copy to the canonical prefix after the ingest,
+   * which is a second transfer of every byte for a bookkeeping tidiness nobody
+   * has asked for yet.
+   */
+  const deliveryOf = (row: {
+    id: string;
+    measured: boolean;
+    episodeId: string | null;
+    ingestId: string | null;
+    sourceBasename: string;
+  }): { episodeId: string; deliveryId: string } => ({
+    episodeId: row.episodeId ?? deriveEpisodeId(row.sourceBasename),
+    deliveryId: row.measured ? row.ingestId! : row.id,
+  });
+
+  /**
+   * The session the caller named, if it is theirs. Null when it is refused, and
+   * the refusal has already been sent.
+   *
+   * Shared by both registration shapes because the rule is the same one and has
+   * to stay one rule: the token's collector against the session's, and no other
+   * comparison is possible because the caller never supplied a collector id.
+   */
+  const sessionFor = async (
+    reply: Reply,
+    sessionId: string,
+    collectorId: string,
+  ): Promise<{ id: string } | null> => {
+    const [session] = await db
+      .select({
+        id: schema.collectionSessions.id,
+        collectorId: schema.collectionSessions.collectorId,
+      })
+      .from(schema.collectionSessions)
+      .where(eq(schema.collectionSessions.id, sessionId));
+    if (session === undefined) {
+      refused(reply, 'upload_unknown_session', { collection_session_id: sessionId });
+      return null;
+    }
+    if (session.collectorId !== collectorId) {
+      refused(reply, 'upload_foreign_session', { collection_session_id: sessionId });
+      return null;
+    }
+    return { id: session.id };
+  };
+
+  /** What every answer about one upload carries, whichever shape it is. */
+  const stateOf = (row: {
+    state: string;
+    measured: boolean;
+    episodeId: string | null;
+    ingestId: string | null;
+    heldReason: string | null;
+    failedReason: string | null;
+    collectionSessionId: string;
+    sourceBasename: string;
+  }) => ({
+    state: row.state,
+    measured: row.measured,
+    /**
+     * Derived from the basename when the row does not carry it yet, which is
+     * every unmeasured delivery before its ingest. It is the same value the
+     * object keys already contain and the same value the episode will have, so
+     * answering null here would hide an id the caller has been handed anyway.
+     * `ingest_id` is the field that stays null, because an ingest is a
+     * measurement and no measurement has happened.
+     */
+    episode_id: row.episodeId ?? deriveEpisodeId(row.sourceBasename),
+    ingest_id: row.ingestId,
+    held_reason: row.heldReason,
+    failed_reason: row.failedReason,
+    collection_session_id: row.collectionSessionId,
+    session_basename: row.sourceBasename,
+    upload_path: 'A' as const,
+  });
+
+  /**
+   * An unmeasured delivery of this session that has already become an episode.
+   *
+   * Looked up by basename rather than by episode id because the episode id is
+   * derived from the basename and the basename is what the row stores: one
+   * query, one column, and no dependence on whether the episode row exists yet.
+   */
+  const ingestedAlready = async (sourceBasename: string) => {
+    const [row] = await db
+      .select({ id: schema.collectorUploads.id, episodeId: schema.collectorUploads.episodeId })
+      .from(schema.collectorUploads)
+      .where(
+        and(
+          eq(schema.collectorUploads.sourceBasename, sourceBasename),
+          eq(schema.collectorUploads.state, 'ingested'),
+        ),
+      );
+    return row;
+  };
+
+  // -------------------------------------------------------------------------
+
+  /**
+   * The registration a phone can actually make: UNMEASURED.
+   *
+   * Nothing in the body is a measurement and nothing here produces one. What
+   * arrives is the session directory's name, and every file in it with its size
+   * and its sha256 — which is all a phone can honestly say, because the only
+   * thing it can do to a file it cannot decode is hash it.
+   *
+   * The episode id is derived from `session_basename` here so the object keys
+   * can exist, and that is the only thing derived from it. No `episodes` row is
+   * written: an episode that exists before anything measured it would sit in
+   * front of the review queue with no duration, and `storeEpisode` — which owns
+   * the rule about what an episode's state is — has nothing to be given yet.
+   */
+  const registerUnmeasured = async (req: FastifyRequest, reply: FullReply) => {
+    const parsed = UnmeasuredBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: 'invalid body', detail: parsed.error.issues.slice(0, 5) });
+    }
+    const s = store(reply);
+    if (s === null) return reply;
+    const body = parsed.data;
+    const collectorId = collectorOf(req);
+
+    /**
+     * The naming rule, and it is the engine's own — `parseSessionBasename` in
+     * `@playerone/contracts`, which is the function `deriveEpisodeId` parses
+     * with and which `packages/ingest` carries its knowledge of the layout in.
+     * A name this does not recognise is not a session directory, and accepting
+     * one would mean a `raw:` identity string, a directory of that name created
+     * on this machine's disk, and an episode nobody can attribute to a device.
+     */
+    const identity = parseSessionBasename(body.session_basename);
+    if (identity === null) {
+      return reply.code(400).send({
+        error: 'session_basename_unrecognised',
+        session_basename: body.session_basename,
+        expected: '<device>_<SERIAL>_<YYYYMMDD>_<HHMMSS>',
+      });
+    }
+
+    /**
+     * The delivery is a flat directory, so two files cannot share a name. Left
+     * unchecked, `file_count` would count a file the directory will not hold
+     * and the plan would sign two URLs for one key.
+     */
+    const seen = new Set<string>();
+    const duplicate = body.files.find((f) => (seen.has(f.relative_path) ? true : (seen.add(f.relative_path), false)));
+    if (duplicate !== undefined) {
+      return reply.code(400).send({
+        error: 'a file is declared twice',
+        relative_path: duplicate.relative_path,
+      });
+    }
+
+    const totalBytes = body.files.reduce((n, f) => n + f.bytes, 0);
+    if (totalBytes > ceiling) {
+      return refused(reply, 'upload_payload_too_large', {
+        declared_bytes: totalBytes,
+        limit_bytes: ceiling,
+      });
+    }
+
+    /** A replay, or a second attempt at a delivery that is already up. */
+    const [existing] = await db
+      .select()
+      .from(schema.collectorUploads)
+      .where(eq(schema.collectorUploads.id, body.id));
+    if (existing !== undefined) {
+      if (existing.collectorId !== collectorId) {
+        return reply.code(404).send({ error: 'no such upload' });
+      }
+      if (existing.measured) {
+        return reply.code(400).send({
+          error: 'that upload id was registered as a measured delivery',
+          upload_id: existing.id,
+        });
+      }
+      if (existing.state === 'ingested') {
+        return refused(reply, 'upload_already_complete', {
+          upload_id: existing.id,
+          episode_id: existing.episodeId,
+        });
+      }
+      const { files, sizes } = await storedInventory(existing);
+      const at = deliveryOf(existing);
+      return reply.send({
+        upload_id: existing.id,
+        replayed: true,
+        ...stateOf(existing),
+        part_size: PART_SIZE,
+        expires_in_s: ttl,
+        files: await planFor(
+          s,
+          at.episodeId,
+          at.deliveryId,
+          files,
+          sizes,
+          existing.state === 'failed',
+        ),
+      });
+    }
+
+    const session = await sessionFor(reply, body.collection_session_id, collectorId);
+    if (session === null) return reply;
+
+    /**
+     * The same session, already measured and stored by an earlier delivery.
+     *
+     * The honest answer is that there is nothing to do. Planning it anyway
+     * would have the phone re-send a whole session into a fresh prefix and then
+     * be refused at `/complete` by `collector_uploads_ingested_key`, which is
+     * the right verdict reached after the expensive part.
+     */
+    const already = await ingestedAlready(body.session_basename);
+    if (already !== undefined) {
+      return refused(reply, 'upload_already_complete', {
+        upload_id: already.id,
+        episode_id: already.episodeId,
+      });
+    }
+
+    const episodeId = deriveEpisodeId(body.session_basename);
+
+    /** The platform row this serial names, when the fleet has one. Evidence either way. */
+    const [device] = await db
+      .select({ id: schema.devices.id })
+      .from(schema.devices)
+      .where(eq(schema.devices.hardwareSerial, identity.serial));
+
+    const written = await mutate(
+      db,
+      actorOf(req),
+      {
+        action: 'upload.register',
+        targetTable: 'collector_uploads',
+        targetId: body.id,
+        after: {
+          measured: false,
+          state: 'registered',
+          session_basename: body.session_basename,
+          episode_id: episodeId,
+          collection_session_id: body.collection_session_id,
+          device_serial: identity.serial,
+          device_id: device?.id ?? null,
+          file_count: body.files.length,
+          total_bytes: totalBytes,
+          client_version: body.client_version ?? null,
+        },
+      },
+      async (tx) => {
+        const [row] = await tx
+          .insert(schema.collectorUploads)
+          .values({
+            id: body.id,
+            collectorId,
+            collectionSessionId: body.collection_session_id,
+            deviceSerial: identity.serial,
+            deviceId: device?.id ?? null,
+            measured: false,
+            episodeId: null,
+            ingestId: null,
+            sourceBasename: body.session_basename,
+            fileCount: body.files.length,
+            totalBytes,
+            extraFiles: [],
+            declaredFiles: body.files,
+            clientVersion: body.client_version ?? null,
+          })
+          .returning();
+        return row;
+      },
+    );
+    if (written === undefined) throw new Error('the registration wrote nothing');
+
+    const sizes = new Map(body.files.map((f) => [f.relative_path, f.bytes]));
+    return reply.send({
+      upload_id: body.id,
+      replayed: false,
+      ...stateOf(written),
+      part_size: PART_SIZE,
+      expires_in_s: ttl,
+      files: await planFor(s, episodeId, body.id, body.files.map(transportOf), sizes),
+    });
   };
 
   // -------------------------------------------------------------------------
@@ -372,8 +809,19 @@ export function registerCollectorUpload(
    * The answer is everything it needs and nothing it could have chosen: the
    * object keys, the part boundaries, one signed URL per part still missing,
    * and which parts the store already holds.
+   *
+   * Two body shapes, discriminated on the presence of `episode` — measured, the
+   * original, where the phone ran the engine and posted a finished record; and
+   * unmeasured, where it could not and this service measures instead. The
+   * discriminator is a field's presence rather than a `kind` tag because the
+   * measured shape is already deployed and a tag would have had to be optional,
+   * which is the same test written less directly.
    */
   app.post('/api/me/uploads', opts, async (req, reply) => {
+    const raw = req.body;
+    if (typeof raw === 'object' && raw !== null && !('episode' in raw)) {
+      return registerUnmeasured(req, reply);
+    }
     const parsed = RegisterBody.safeParse(req.body);
     if (!parsed.success) {
       return reply
@@ -448,6 +896,12 @@ export function registerCollectorUpload(
       if (existing.collectorId !== collectorId) {
         return reply.code(404).send({ error: 'no such upload' });
       }
+      if (!existing.measured) {
+        return reply.code(400).send({
+          error: 'that upload id was registered as an unmeasured delivery',
+          upload_id: existing.id,
+        });
+      }
       if (existing.state === 'verified') {
         return refused(reply, 'upload_already_complete', {
           upload_id: existing.id,
@@ -455,6 +909,7 @@ export function registerCollectorUpload(
         });
       }
       const { files, sizes } = await storedInventory(existing);
+      const at = deliveryOf(existing);
       return reply.send({
         upload_id: existing.id,
         replayed: true,
@@ -466,8 +921,8 @@ export function registerCollectorUpload(
         expires_in_s: ttl,
         files: await planFor(
           s,
-          existing.episodeId,
-          existing.ingestId,
+          at.episodeId,
+          at.deliveryId,
           files,
           sizes,
           existing.state === 'failed',
@@ -475,29 +930,14 @@ export function registerCollectorUpload(
       });
     }
 
-    const [session] = await db
-      .select({
-        id: schema.collectionSessions.id,
-        collectorId: schema.collectionSessions.collectorId,
-      })
-      .from(schema.collectionSessions)
-      .where(eq(schema.collectionSessions.id, body.collection_session_id));
-    if (session === undefined) {
-      return refused(reply, 'upload_unknown_session', {
-        collection_session_id: body.collection_session_id,
-      });
-    }
     /**
      * The token's collector against the session's, and no other comparison is
      * possible: the caller never supplied a collector id. The composite
      * `collector_uploads_session_fk` says the same thing to Postgres, so the
-     * refused state cannot be written by any other writer either.
+     * refused state cannot be written by any other writer either. One copy of
+     * that rule, shared with the unmeasured registration.
      */
-    if (session.collectorId !== collectorId) {
-      return refused(reply, 'upload_foreign_session', {
-        collection_session_id: body.collection_session_id,
-      });
-    }
+    if ((await sessionFor(reply, body.collection_session_id, collectorId)) === null) return reply;
 
     /**
      * The measurement is stored by the code that owns that job, exactly as
@@ -623,6 +1063,11 @@ export function registerCollectorUpload(
    * the store. No state is kept on the phone's behalf and none is needed: the
    * boundaries come from `planParts`, which is a function of size alone, and
    * what the cloud holds comes from the cloud.
+   *
+   * It is also the progress endpoint for an unmeasured delivery, which is why
+   * `state`, `held_reason`, `failed_reason` and `episode_id` are on the answer:
+   * the phone asks this after `/complete` to see what the server made of its
+   * bytes.
    */
   app.get('/api/me/uploads/:id', opts, async (req, reply) => {
     const s = store(reply);
@@ -631,21 +1076,550 @@ export function registerCollectorUpload(
     if (row === undefined) return reply.code(404).send({ error: 'no such upload' });
 
     const { files, sizes } = await storedInventory(row);
+    const at = deliveryOf(row);
+    /**
+     * Nothing left to ask for, once the bytes have had their verdict. `failed`
+     * is the exception and is the retry: the plan is re-issued, forced past the
+     * "already there" shortcut, because the objects that are there are the ones
+     * that did not match.
+     */
+    const settled = ['verified', 'ingesting', 'ingested', 'held'].includes(row.state);
+    const plan = settled
+      ? []
+      : await planFor(s, at.episodeId, at.deliveryId, files, sizes, row.state === 'failed');
+
+    /**
+     * `transferring`, recorded where it can be observed and nowhere else.
+     *
+     * The server never sees a byte of a Path A delivery — the phone PUTs to the
+     * store directly — so the only moment it can tell that bytes are moving is
+     * when it asks the store what it holds, which is this route. A plan that
+     * comes back with something already up is that observation, and the row is
+     * moved once, forwards, from `registered`. It is deliberately not an
+     * audited mutation: it records what the cloud says, not something a
+     * collector did.
+     */
+    let state = row.state;
+    if (state === 'registered' && plan.some((f) => f.done || (f.held_parts?.length ?? 0) > 0)) {
+      const [moved] = await db
+        .update(schema.collectorUploads)
+        .set({ state: 'transferring' })
+        .where(
+          and(
+            eq(schema.collectorUploads.id, row.id),
+            eq(schema.collectorUploads.state, 'registered'),
+          ),
+        )
+        .returning({ state: schema.collectorUploads.state });
+      state = moved?.state ?? state;
+    }
+
     return reply.send({
       upload_id: row.id,
-      state: row.state,
-      episode_id: row.episodeId,
-      ingest_id: row.ingestId,
-      collection_session_id: row.collectionSessionId,
-      upload_path: 'A',
+      ...stateOf(row),
+      state,
       part_size: PART_SIZE,
       expires_in_s: ttl,
-      files:
-        row.state === 'verified'
-          ? []
-          : await planFor(s, row.episodeId, row.ingestId, files, sizes, row.state === 'failed'),
+      files: plan,
     });
   });
+
+  // -------------------------------------------------------------------------
+  // The ingest stage: what happens to an unmeasured delivery once its bytes
+  // have been proven.
+
+  /** One upload row, as every helper below reads it. */
+  type UploadRow = NonNullable<Awaited<ReturnType<typeof uploadOf>>>;
+
+  /**
+   * Move the row without auditing it, for the two states that describe work in
+   * progress rather than a decision.
+   *
+   * `transferring` and `ingesting` are both observations this service makes of
+   * itself — one of the object store, one of its own engine run — and neither
+   * is something a collector did. The decisions on either side of them
+   * (`upload.complete` and `upload.ingest`) are audited, and they are what a
+   * dispute reads.
+   */
+  const note = (id: string, state: string, from: string[]) =>
+    db
+      .update(schema.collectorUploads)
+      .set({ state })
+      .where(
+        and(
+          eq(schema.collectorUploads.id, id),
+          inArray(schema.collectorUploads.state, from),
+        ),
+      );
+
+  /**
+   * The terminal answer about an unmeasured delivery that became an episode.
+   *
+   * Every field is read back from the database rather than carried out of the
+   * work that just ran, so the replay of a `/complete` whose answer was lost on
+   * the way to the phone is the same sentence as the original — which is what
+   * "idempotent" has to mean for a client that retries.
+   */
+  const ingestedBody = async (row: UploadRow, replayed: boolean) => {
+    const [ing] = await db
+      .select({ state: schema.episodeIngests.state })
+      .from(schema.episodeIngests)
+      .where(eq(schema.episodeIngests.ingestId, row.ingestId!));
+    const [ep] = await db
+      .select({
+        sessionId: schema.episodes.collectionSessionId,
+        verificationState: schema.episodes.verificationState,
+      })
+      .from(schema.episodes)
+      .where(eq(schema.episodes.episodeId, row.episodeId!));
+    return {
+      upload_id: row.id,
+      replayed,
+      ...stateOf(row),
+      /** The engine's verdict on the recording: `ok`, `flagged` or `quarantined`. */
+      episode_state: ing?.state ?? null,
+      /** The read-back this service performed on these exact objects. */
+      verification_state: ep?.verificationState ?? null,
+      /** Whether the episode ended up on the session this delivery named. */
+      attributed: ep?.sessionId === row.collectionSessionId,
+      transported: row.fileCount,
+    };
+  };
+
+  /**
+   * Put the delivered directory on this machine's disk, or refuse to.
+   *
+   * Three outcomes and no fourth:
+   *
+   *   `downloaded` there was no such directory, so every verified object was
+   *                pulled out of the store and written into a directory of its
+   *                own name. Written into a temporary directory first and
+   *                renamed into place, so a transfer that dies halfway never
+   *                leaves a session directory holding half a recording — the
+   *                engine would measure that and produce a shorter episode
+   *                than the collector actually recorded.
+   *   `reused`     the directory is already here and every file in it has
+   *                exactly the digest the phone declared. That is the same
+   *                session arriving twice, by card and by phone, and the right
+   *                answer is to ingest what is already on disk.
+   *   `collision`  the directory is already here and its contents are not this
+   *                delivery. Nothing is written, nothing is overwritten and
+   *                nothing is ingested. Two deliveries disagree about what a
+   *                recording is, and no rule in this system can decide that.
+   *
+   * The comparison is over sha256 and the whole file set, not sizes or names:
+   * a re-recorded session at the same basename with the same file names and
+   * the same sizes is exactly the case that must not silently pass.
+   */
+  const materialise = async (
+    s: ObjectStore,
+    root: string,
+    dir: string,
+    declared: readonly DeclaredFileRow[],
+    keyOf: (relativePath: string) => string,
+  ): Promise<'downloaded' | 'reused' | 'collision'> => {
+    const onDisk = await readdir(dir, { withFileTypes: true }).catch((err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
+      throw err;
+    });
+    if (onDisk !== null) {
+      const want = new Map(declared.map((f) => [f.relative_path, f.sha256]));
+      const names = onDisk.filter((e) => e.isFile()).map((e) => e.name);
+      if (names.length !== want.size) return 'collision';
+      for (const name of names) {
+        const expected = want.get(name);
+        if (expected === undefined) return 'collision';
+        const path = safeJoin(dir, name);
+        if (path === null) return 'collision';
+        if ((await sha256File(path)) !== expected) return 'collision';
+      }
+      return 'reused';
+    }
+
+    /**
+     * A sibling of the session directory rather than a system temp directory:
+     * `rename` has to be a rename and not a copy, which it only is inside one
+     * filesystem, and the media root is where the bytes have to end up.
+     */
+    const staging = join(root, `.incoming-${basename(dir)}`);
+    await rm(staging, { recursive: true, force: true });
+    await mkdir(staging, { recursive: true });
+    try {
+      for (const f of declared) {
+        const path = safeJoin(staging, f.relative_path);
+        if (path === null) throw new Error(`unsafe path in delivery: ${f.relative_path}`);
+        const body = await s.read(keyOf(f.relative_path));
+        if (body === null) throw new Error(`the store no longer holds ${f.relative_path}`);
+        await pipeline(Readable.from(body), createWriteStream(path));
+      }
+      await rename(staging, dir);
+    } catch (err) {
+      await rm(staging, { recursive: true, force: true });
+      /**
+       * A directory appeared under this name while the bytes were coming down.
+       * Nothing of ours is on disk and nothing of theirs was touched, which is
+       * the same verdict as finding it there in the first place.
+       */
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'EEXIST' || code === 'ENOTEMPTY' || code === 'EPERM') return 'collision';
+      throw err;
+    }
+    return 'downloaded';
+  };
+
+  /**
+   * UPL-04/05 and then the measurement: read every byte back, and if it is what
+   * the phone said it was, materialise the delivery and run the engine over it.
+   *
+   * The order is the whole safety argument. Nothing reaches this machine's disk
+   * until the cloud copy has been proved byte for byte against digests computed
+   * on the phone at source, so a delivery that fails read-back leaves the media
+   * root exactly as it found it. And nothing is measured except what is on
+   * disk: the phone asserts no duration, no stream, no state and no amount, and
+   * this route would have nowhere to put one if it did.
+   *
+   * ponytail: synchronous ingest, ceiling ~200 MB per delivery; job table +
+   * worker for production sessions.
+   */
+  const completeUnmeasured = async (req: FastifyRequest, reply: FullReply, row: UploadRow) => {
+    const s = options.objectStore!;
+    const actor = actorOf(req);
+
+    /**
+     * The replay. A phone whose connection died between this service finishing
+     * and the answer arriving asks again, and gets the same sentence — not a
+     * refusal, because nothing it did was wrong and there is nothing for it to
+     * fix. No second ingest and no second episode: this returns before any
+     * work starts.
+     */
+    if (row.state === 'ingested') return reply.send(await ingestedBody(row, true));
+    if (row.state === 'held') {
+      return refused(reply, 'upload_basename_collision', {
+        upload_id: row.id,
+        session_basename: row.sourceBasename,
+        held_reason: row.heldReason,
+      });
+    }
+    /**
+     * Another delivery of the same session already became an episode. Refused
+     * before a byte is downloaded, the same way the measured path refuses a
+     * second attempt at a delivery another attempt verified — and by
+     * `collector_uploads_ingested_key` if it ever got past this.
+     */
+    const already = await ingestedAlready(row.sourceBasename);
+    if (already !== undefined) {
+      return refused(reply, 'upload_already_complete', {
+        upload_id: already.id,
+        episode_id: already.episodeId,
+      });
+    }
+
+    if (options.mediaRoot === undefined || options.mediaRoot === '') {
+      return reply
+        .code(503)
+        .send({ error: 'no media root is configured on this machine' });
+    }
+    const mediaRoot = options.mediaRoot;
+    const dir = safeJoin(mediaRoot, row.sourceBasename, '.');
+    if (dir === null) return reply.code(400).send({ error: 'bad session basename' });
+
+    const episodeId = deriveEpisodeId(row.sourceBasename);
+    const declared = DeclaredFile.array().parse(row.declaredFiles ?? []);
+    const { files, sizes } = await storedInventory(row);
+    const keyOf = (relativePath: string) => objectKey(episodeId, row.id, relativePath);
+
+    await assemble(s, files, sizes, keyOf);
+    const mismatches: Mismatch[] = await verifyReadBack(s, files, keyOf);
+
+    if (mismatches.length > 0) {
+      /**
+       * UPL-04. The bytes in the cloud are not the bytes the phone measured, so
+       * there is nothing here worth measuring. No episode is created, nothing
+       * is written under the media root, and the objects stay exactly where
+       * they are because what is in the bucket is the evidence.
+       */
+      const failed = await mutate(
+        db,
+        actor,
+        {
+          action: 'upload.complete',
+          targetTable: 'collector_uploads',
+          targetId: row.id,
+          before: { state: row.state },
+          after: {
+            state: 'failed',
+            failed_reason: 'checksum_mismatch',
+            session_basename: row.sourceBasename,
+            transported: files.length,
+            mismatches,
+          },
+        },
+        async (tx) => {
+          const [updated] = await tx
+            .update(schema.collectorUploads)
+            .set({ state: 'failed', failedReason: 'checksum_mismatch', completedAt: new Date() })
+            .where(
+              and(
+                eq(schema.collectorUploads.id, row.id),
+                inArray(schema.collectorUploads.state, ['registered', 'transferring', 'failed']),
+              ),
+            )
+            .returning();
+          return updated;
+        },
+      );
+      if (failed === undefined) return refused(reply, 'upload_superseded', { upload_id: row.id });
+      return refused(reply, 'upload_checksum_mismatch', {
+        upload_id: row.id,
+        episode_id: episodeId,
+        mismatches,
+      });
+    }
+
+    /** The verdict on the bytes, recorded before anything is done with them. */
+    const verified = await mutate(
+      db,
+      actor,
+      {
+        action: 'upload.complete',
+        targetTable: 'collector_uploads',
+        targetId: row.id,
+        before: { state: row.state },
+        after: {
+          state: 'verified',
+          session_basename: row.sourceBasename,
+          episode_id: episodeId,
+          transported: files.length,
+          mismatches: [],
+        },
+      },
+      async (tx) => {
+        const [updated] = await tx
+          .update(schema.collectorUploads)
+          .set({ state: 'verified', failedReason: null, completedAt: new Date() })
+          .where(
+            and(
+              eq(schema.collectorUploads.id, row.id),
+              inArray(schema.collectorUploads.state, ['registered', 'transferring', 'failed']),
+            ),
+          )
+          .returning();
+        return updated;
+      },
+    );
+    if (verified === undefined) return refused(reply, 'upload_superseded', { upload_id: row.id });
+
+    await note(row.id, 'ingesting', ['verified']);
+
+    const placed = await materialise(s, mediaRoot, dir, declared, keyOf);
+    if (placed === 'collision') {
+      const held = await mutate(
+        db,
+        actor,
+        {
+          action: 'upload.held',
+          targetTable: 'collector_uploads',
+          targetId: row.id,
+          before: { state: 'ingesting' },
+          after: {
+            state: 'held',
+            held_reason: 'basename_collision',
+            session_basename: row.sourceBasename,
+          },
+          reason: 'basename_collision',
+        },
+        async (tx) => {
+          const [updated] = await tx
+            .update(schema.collectorUploads)
+            .set({ state: 'held', heldReason: 'basename_collision' })
+            .where(eq(schema.collectorUploads.id, row.id))
+            .returning();
+          return updated;
+        },
+      );
+      if (held === undefined) return refused(reply, 'upload_superseded', { upload_id: row.id });
+      return refused(reply, 'upload_basename_collision', {
+        upload_id: row.id,
+        session_basename: row.sourceBasename,
+        held_reason: 'basename_collision',
+      });
+    }
+
+    /**
+     * The engine, on this machine, over the directory that is now on this
+     * machine's disk. The same call Path C's counter import makes, so the same
+     * rules decide the same things: the episode id from the basename, the
+     * fingerprint from the source files, the duration from the PTS sidecars,
+     * and the state from the discrepancies. Nothing in this file re-derives any
+     * of them.
+     */
+    let record;
+    try {
+      record = await ingest(dir);
+    } catch (err) {
+      await mutate(
+        db,
+        actor,
+        {
+          action: 'upload.complete',
+          targetTable: 'collector_uploads',
+          targetId: row.id,
+          before: { state: 'ingesting' },
+          after: {
+            state: 'failed',
+            failed_reason: 'ingest_failed',
+            session_basename: row.sourceBasename,
+            detail: (err as Error).message,
+          },
+        },
+        async (tx) => {
+          const [updated] = await tx
+            .update(schema.collectorUploads)
+            .set({ state: 'failed', failedReason: 'ingest_failed' })
+            .where(eq(schema.collectorUploads.id, row.id))
+            .returning();
+          return updated;
+        },
+      );
+      /**
+       * The directory stays. Its bytes have been proved against the phone's own
+       * digests, so it is a good copy of something this engine cannot read —
+       * which is evidence, and nothing in this system deletes evidence.
+       */
+      return refused(reply, 'upload_ingest_failed', {
+        upload_id: row.id,
+        session_basename: row.sourceBasename,
+        detail: (err as Error).message,
+      });
+    }
+
+    /** The basename decides the id on both sides; a disagreement is this file being wrong. */
+    if (record.episode_id !== episodeId) {
+      throw new Error(
+        `the engine derived ${record.episode_id} for ${row.sourceBasename}, planned ${episodeId}`,
+      );
+    }
+
+    /**
+     * The measurement is stored by the code that owns that job, exactly as Path
+     * C does: its own transaction, the three redelivery cases, and the stored
+     * state. A duplicate delivery returns the EXISTING ingest id, so a session
+     * that arrived by card and then by phone is one episode and one delivery.
+     */
+    const stored = await storeEpisode(db, record);
+    if (stored.ingestId === null) {
+      throw new Error(`storeEpisode returned no ingest for ${stored.episodeId}`);
+    }
+    const ingestId = stored.ingestId;
+
+    const written = await mutate(
+      db,
+      actor,
+      {
+        action: 'upload.ingest',
+        targetTable: 'collector_uploads',
+        targetId: row.id,
+        before: { state: 'ingesting' },
+        after: {
+          state: 'ingested',
+          episode_id: stored.episodeId,
+          ingest_id: ingestId,
+          outcome: stored.outcome,
+          episode_state: record.state,
+          materialised: placed,
+          collection_session_id: row.collectionSessionId,
+          verification_state: 'verified',
+          engine_version: record.source.ingest_tool_version,
+          files: files.length,
+        },
+      },
+      async (tx) => {
+        /**
+         * APP-16, and the same rule the measured path applies: the collector
+         * bound this session before recording, so the attribution is a
+         * declaration made before the fact by the person who made the
+         * recording. `upload_path is null` is the guard — an episode a counter
+         * already imported carries `upload_path = 'C'` and a session an
+         * operator resolved it to, and settlement has possibly already read it.
+         * The bytes are still accepted; the attribution is left where it was.
+         */
+        await tx
+          .update(schema.episodes)
+          .set({
+            collectionSessionId: row.collectionSessionId,
+            resolutionState: 'resolved',
+            resolutionMethod: 'app_declared',
+            uploadPath: 'A',
+          })
+          .where(
+            and(
+              eq(schema.episodes.episodeId, stored.episodeId),
+              isNull(schema.episodes.uploadPath),
+            ),
+          );
+
+        /**
+         * The cloud verification, recorded the way Path C records it — and it
+         * is the same fact, reached by the same evidence. Every object was read
+         * back out of the store and re-hashed against the digest computed at
+         * source minutes ago; that is what `verifyReadBack` did above, and it
+         * is the only thing in this system that can say a cloud copy is good.
+         * Under `REVIEW_VERIFICATION_GATE=cloud` this is what lets the episode
+         * into the review queue.
+         *
+         * `latest_ingest_id` is in the WHERE for the reason Path C gives: the
+         * verdict belongs to the ingest whose bytes were checked.
+         */
+        const [episode] = await tx
+          .update(schema.episodes)
+          .set({ verificationState: 'verified' })
+          .where(
+            and(
+              eq(schema.episodes.episodeId, stored.episodeId),
+              eq(schema.episodes.latestIngestId, ingestId),
+            ),
+          )
+          .returning();
+        if (episode === undefined) return undefined;
+
+        /** The per-object receipts, the same rows and the same shape as `verificationReceipts`. */
+        for (const f of declared) {
+          await tx
+            .insert(schema.cloudVerifications)
+            .values({
+              objectKey: keyOf(f.relative_path),
+              episodeId: stored.episodeId,
+              ingestId,
+              sha256: f.sha256,
+            })
+            .onConflictDoUpdate({
+              target: schema.cloudVerifications.objectKey,
+              set: { ingestId, sha256: f.sha256, verifiedAt: new Date() },
+            });
+        }
+
+        const [updated] = await tx
+          .update(schema.collectorUploads)
+          .set({
+            state: 'ingested',
+            episodeId: stored.episodeId,
+            ingestId,
+            heldReason: null,
+            failedReason: null,
+          })
+          .where(
+            and(
+              eq(schema.collectorUploads.id, row.id),
+              inArray(schema.collectorUploads.state, ['ingesting', 'verified']),
+            ),
+          )
+          .returning();
+        return updated;
+      },
+    );
+    if (written === undefined) return refused(reply, 'upload_superseded', { upload_id: row.id });
+    return reply.send(await ingestedBody(written, false));
+  };
 
   /**
    * UPL-04/05: assemble what arrived, read every byte of it back, and record
@@ -663,6 +1637,7 @@ export function registerCollectorUpload(
     if (s === null) return reply;
     const row = await uploadOf((req.params as { id: string }).id, collectorOf(req));
     if (row === undefined) return reply.code(404).send({ error: 'no such upload' });
+    if (!row.measured) return completeUnmeasured(req, reply, row);
     /**
      * This attempt, or any other attempt at the same delivery.
      *
@@ -677,8 +1652,8 @@ export function registerCollectorUpload(
       .from(schema.collectorUploads)
       .where(
         and(
-          eq(schema.collectorUploads.episodeId, row.episodeId),
-          eq(schema.collectorUploads.ingestId, row.ingestId),
+          eq(schema.collectorUploads.episodeId, row.episodeId!),
+          eq(schema.collectorUploads.ingestId, row.ingestId!),
           eq(schema.collectorUploads.state, 'verified'),
         ),
       );
@@ -690,37 +1665,10 @@ export function registerCollectorUpload(
     }
 
     const { files, sizes } = await storedInventory(row);
-    const keyOf = (relativePath: string) => objectKey(row.episodeId, row.ingestId, relativePath);
+    const at = deliveryOf(row);
+    const keyOf = (relativePath: string) => objectKey(at.episodeId, at.deliveryId, relativePath);
 
-    /**
-     * Assembly, for the files that were sent in parts.
-     *
-     * `openMultipart` rather than `beginMultipart`: this step must never start
-     * an upload. A file with nothing in flight is a file the phone has not
-     * sent, or one already assembled by an earlier attempt at this delivery,
-     * and neither wants an empty multipart left in the bucket.
-     *
-     * There is deliberately no "the object is already there, skip it" check.
-     * An object being there is not a reason not to assemble: after a failed
-     * read-back the object that is there is the wrong one, and the phone has
-     * just re-sent every part into a new multipart precisely to replace it.
-     *
-     * The part count is checked against the plan before assembling. Completing
-     * a short upload would produce a truncated object that then fails
-     * read-back, which is the correct verdict reached the expensive way; not
-     * assembling it at all reaches the same verdict without writing anything.
-     */
-    for (const f of files) {
-      const bytes = sizes.get(f.relative_path) ?? 0;
-      if (bytes < PART_SIZE) continue;
-      const key = keyOf(f.relative_path);
-      const uploadId = await s.openMultipart(key);
-      if (uploadId === null) continue;
-      const held = await s.heldParts(key, uploadId);
-      if (held.length < planParts(bytes).length) continue;
-      await s.finishMultipart(key, uploadId);
-    }
-
+    await assemble(s, files, sizes, keyOf);
     const mismatches = await verifyReadBack(s, files, keyOf);
     const ok = mismatches.length === 0;
     const state = ok ? 'verified' : 'failed';
@@ -755,8 +1703,8 @@ export function registerCollectorUpload(
           .set({ verificationState: ok ? 'verified' : 'failed' })
           .where(
             and(
-              eq(schema.episodes.episodeId, row.episodeId),
-              eq(schema.episodes.latestIngestId, row.ingestId),
+              eq(schema.episodes.episodeId, row.episodeId!),
+              eq(schema.episodes.latestIngestId, row.ingestId!),
             ),
           )
           .returning();

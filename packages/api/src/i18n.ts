@@ -588,6 +588,10 @@ const en = {
     'That delivery is larger than one upload may declare. Send it as more than one upload, or hand the card in at an upload centre.',
   'bo.refused.upload_superseded':
     'A newer delivery of this recording arrived while these files were being sent, so this result was not recorded. Start the upload again.',
+  'bo.refused.upload_basename_collision':
+    'A recording folder of that name is already on the upload machine and it holds different files. Nothing was changed and nothing was overwritten. An operator has to decide which recording is the real one.',
+  'bo.refused.upload_ingest_failed':
+    'Every file arrived intact, and then the measuring engine could not read the recording. The files are kept. Report this upload to an operator.',
 
   /**
    * The collector app's own refusals (`COLLECTOR_API_REFUSALS` in
@@ -2081,6 +2085,10 @@ const zh: Record<MessageKey, string> = {
     '本次交付超过单次上传允许的大小。请分多次上传，或将存储卡交至上传中心。',
   'bo.refused.upload_superseded':
     '文件传输期间，该段素材出现了更新的交付，因此本次结果未被记录。请重新发起上传。',
+  'bo.refused.upload_basename_collision':
+    '上传机上已存在同名的录制文件夹，且其中的文件并不相同。系统未做任何修改，也未覆盖任何文件。需要由操作员判断哪一份才是真实的录制。',
+  'bo.refused.upload_ingest_failed':
+    '所有文件都完整到达，但测量引擎无法读取该录制。文件已保留。请将本次上传报告给操作员。',
 
   /** 采集端应用自身的拒绝原因（collector-app.ts 的 COLLECTOR_API_REFUSALS）。 */
   'bo.refused.task_not_found': '该任务已不存在。',
@@ -3294,6 +3302,10 @@ const vi: Record<MessageKey, string> = {
     'Lần giao đó lớn hơn mức một lần tải lên được phép khai báo. Hãy gửi thành nhiều lần tải lên, hoặc nộp thẻ nhớ tại trung tâm tải lên.',
   'bo.refused.upload_superseded':
     'Một lần giao mới hơn của đoạn ghi hình này đã đến trong khi các tệp đang được gửi, nên kết quả lần này không được ghi nhận. Hãy tải lên lại.',
+  'bo.refused.upload_basename_collision':
+    'Máy tải lên đã có một thư mục ghi hình cùng tên nhưng chứa các tệp khác. Không có gì bị thay đổi và không có gì bị ghi đè. Một nhân viên vận hành phải quyết định bản ghi nào mới là thật.',
+  'bo.refused.upload_ingest_failed':
+    'Mọi tệp đều đến nguyên vẹn, nhưng bộ máy đo không đọc được đoạn ghi hình. Các tệp vẫn được giữ. Hãy báo lần tải lên này cho nhân viên vận hành.',
 
   /**
    * Lời từ chối của chính ứng dụng người thu thập (`COLLECTOR_API_REFUSALS`).

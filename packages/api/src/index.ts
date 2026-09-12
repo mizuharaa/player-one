@@ -771,6 +771,14 @@ export function buildApi({
    */
   registerCollectorUpload(app, db, requireActor, {
     objectStore: objectStore !== undefined && canPresign(objectStore) ? objectStore : undefined,
+    /**
+     * The same media root Path C's cloud leg reads and the review console
+     * streams from. An unmeasured Path A delivery is materialised into it and
+     * measured there, so a phone-delivered session ends up in exactly the place
+     * a card-delivered one does. Absent, and that half of the route answers
+     * 503 rather than choosing a directory for the operator.
+     */
+    mediaRoot,
   });
   registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate, reviewerMediaEnabled });
   registerOperatorProfile(app, db, requireActor);
