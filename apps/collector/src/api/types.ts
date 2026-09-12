@@ -12,6 +12,8 @@
  *   here or on `DeviceTransport`. Recording is the device's own affair.
  */
 
+import type { DeliveryApi } from '../upload/delivery.ts';
+
 /**
  * A refusal both implementations throw, carrying a code and never a sentence.
  *
@@ -158,8 +160,19 @@ export interface IncomeEntry {
  * The typed client every screen talks to. `MockCollectorApi` implements it for
  * development and the screen tests; `HttpCollectorApi` implements it against
  * the platform's `/api/me/*` routes.
+ *
+ * The three Path A methods come in from `DeliveryApi` (`upload/delivery.ts`)
+ * rather than being written out again here, because the state machine that
+ * drives them is defined against that interface and the two must not drift.
+ *
+ * APP-25 is not a method any more and could not be: an upload now starts with
+ * a directory the collector picked out of the system picker, which is as
+ * explicit as a confirmation gets, and it still runs only from the panel they
+ * tap through — never from an effect, a timer, or a network-state listener.
+ * What replaced `confirmUpload` is in `upload/delivery.ts`; what `confirmUpload`
+ * was is in the history, and it never moved a byte.
  */
-export interface CollectorApi {
+export interface CollectorApi extends DeliveryApi {
   /**
    * APP-01. Ask the platform to send a one-time code to this number.
    *
@@ -217,11 +230,5 @@ export interface CollectorApi {
   createSession(input: SessionInput): Promise<CollectionSession>;
   sessions(): Promise<CollectionSession[]>;
   episodes(): Promise<EpisodeUpload[]>;
-  /**
-   * APP-25: the ONLY code path that starts an upload. Called from the
-   * confirmation step the collector explicitly taps through — never from an
-   * effect, a timer, or a network-state listener.
-   */
-  confirmUpload(episodeId: string): Promise<EpisodeUpload>;
   income(): Promise<IncomeEntry[]>;
 }

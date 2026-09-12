@@ -1,5 +1,13 @@
 import type { TokenStore } from './token-store.ts';
 import {
+  DELIVERY_STATES,
+  type DeliveryOutcome,
+  type DeliveryPlan,
+  type DeliveryRecord,
+  type DeliveryState,
+  type FilePlan,
+} from '../upload/delivery.ts';
+import {
   ApiError,
   SCENARIOS,
   type AgreementId,
@@ -58,8 +66,9 @@ import {
  * It sends no duration and no amount, and computes neither: effective minutes
  * and money arrive as server strings, already rounded by `quantise`, the single
  * rounding site in the platform. It starts no upload except from
- * `confirmUpload`, which a collector taps. It has no queue, no retry policy and
- * no offline cache — the server is the record, and every screen refetches.
+ * `registerDelivery`, which runs from the confirmation a collector taps through
+ * (APP-25). Its only cache is the delivery resume record in `upload/delivery.ts`
+ * — every screen refetches, because the server is the record.
  */
 export class HttpCollectorApi implements CollectorApi {
   /** The token in memory, so every request does not hit the keystore. */
@@ -433,22 +442,69 @@ export class HttpCollectorApi implements CollectorApi {
     }));
   }
 
+  // -- Path A: a recorded session, from the phone to the cloud -------------
+
   /**
-   * ponytail: THERE IS NO SERVER ROUTE FOR THIS, and it is not an oversight.
+   * UPL-01/APP-26. Register an UNMEASURED delivery, and get the plan back.
    *
-   * Path A upload — the phone pulling media off the camera and pushing it to
-   * the cloud — is out of the pilot: footage reaches the platform on the TF
-   * card, at an upload centre. So no route exists to confirm an upload to, and
-   * inventing a local success here would show a collector that their footage
-   * was on its way when nothing had moved.
+   * The unmeasured shape is the one this app can honestly fill: a directory
+   * name, and every file in it with its size and digest. The measured shape —
+   * a finished `EpisodeRecord` — is Path C's, posted by a console on a machine
+   * with ffprobe. The server discriminates on the absence of `episode`, so
+   * there is no tag to get wrong; there is simply nothing in this request that
+   * could carry a duration, a stream count or an amount.
    *
-   * It is also unreachable in practice. `Uploads.tsx` only offers the button
-   * for `pending_upload`, and `/api/me/episodes` cannot return that state: the
-   * server only knows episodes that have already been ingested. It throws
-   * rather than resolving so that if the button ever does appear, it says so.
+   * The same id twice is a replay and is answered with the plan re-signed
+   * against what the store holds now. That is how a retry over a dropped
+   * connection stays one delivery, and it is also how an expired signed URL is
+   * refreshed (`upload/delivery.ts`).
    */
-  async confirmUpload(_episodeId: string): Promise<EpisodeUpload> {
-    throw new ApiError('upload_not_supported');
+  async registerDelivery(record: DeliveryRecord): Promise<DeliveryPlan> {
+    const res = (await this.req('POST', '/api/me/uploads', {
+      id: record.uploadId,
+      collection_session_id: record.collectionSessionId,
+      session_basename: record.sessionBasename,
+      files: record.files.map((f) => ({
+        relative_path: f.relativePath,
+        bytes: f.bytes,
+        sha256: f.sha256,
+      })),
+    })) as RawDelivery;
+    return toDeliveryPlan(record.uploadId, res);
+  }
+
+  /**
+   * The plan and the state, read off the server.
+   *
+   * Two jobs, one route, because the server answers both from the same row:
+   * resume (what does the cloud not hold yet) and progress (what did the
+   * platform make of the bytes). Nothing is inferred here from what this phone
+   * did — `done` and the missing parts are the object store's answer.
+   */
+  async deliveryPlan(uploadId: string): Promise<DeliveryPlan> {
+    const res = (await this.req('GET', `/api/me/uploads/${encodeURIComponent(uploadId)}`)) as RawDelivery;
+    return toDeliveryPlan(uploadId, res);
+  }
+
+  /**
+   * UPL-04/05. Ask the server to read every object back, re-hash it, and — if
+   * the bytes are what the phone said they were — measure the session.
+   *
+   * No body: the server already knows the inventory it planned. The verdict
+   * comes back as a state and, when there is one, the server's own reason.
+   */
+  async completeDelivery(uploadId: string): Promise<DeliveryOutcome> {
+    const res = (await this.req(
+      'POST',
+      `/api/me/uploads/${encodeURIComponent(uploadId)}/complete`,
+    )) as RawDelivery;
+    const plan = toDeliveryPlan(uploadId, res);
+    return {
+      state: plan.state,
+      episodeId: plan.episodeId,
+      heldReason: plan.heldReason,
+      failedReason: plan.failedReason,
+    };
   }
 
   async income(): Promise<IncomeEntry[]> {
@@ -508,6 +564,72 @@ interface RawIncome {
   confirmed: boolean;
   state: string;
 }
+
+/**
+ * `FilePlan` off `packages/api/src/collector-upload.ts`, and the answer every
+ * one of the three delivery routes carries.
+ *
+ * Every field is optional here because a plan for a file the store already
+ * holds carries `done` and nothing else, and a settled delivery carries no
+ * files at all. Treating an absent `parts` as "no parts to send" is the
+ * server's own meaning, not a guess.
+ */
+interface RawFilePlan {
+  relative_path: string;
+  done?: boolean;
+  put_url?: string;
+  parts?: { part_number: number; start: number; end: number; url: string }[];
+}
+
+interface RawDelivery {
+  state?: string;
+  episode_id?: string | null;
+  held_reason?: string | null;
+  failed_reason?: string | null;
+  files?: RawFilePlan[];
+}
+
+/**
+ * A state this app does not know is a server it does not know, and the honest
+ * answer is to refuse rather than to pick the nearest neighbour.
+ *
+ * `toEpisodeState` below falls back to `under_review` for an unknown episode
+ * state, and that is right there: the list is APP-23's and an unreviewed
+ * episode read as "somebody has it" is conservative. It would be wrong here. A
+ * delivery state decides whether a collector is told their footage is safe, so
+ * a fallback would eventually mean showing `ingested` for a word the server
+ * added meaning "we lost it".
+ */
+const toDeliveryState = (state: unknown): DeliveryState => {
+  const known = DELIVERY_STATES.find((s) => s === state);
+  if (known === undefined) throw new ApiError('server_error');
+  return known;
+};
+
+const toDeliveryPlan = (uploadId: string, res: RawDelivery | undefined): DeliveryPlan => ({
+  uploadId,
+  state: toDeliveryState(res?.state),
+  episodeId: res?.episode_id ?? null,
+  // The server's own words, carried through untouched. `i18n.ts` has a
+  // sentence for the reasons it can raise and shows the raw name for anything
+  // it does not, because a reason a collector was not paid on is not the place
+  // for this app to guess.
+  heldReason: res?.held_reason ?? null,
+  failedReason: res?.failed_reason ?? null,
+  files: (res?.files ?? []).map(
+    (f): FilePlan => ({
+      relativePath: f.relative_path,
+      done: f.done === true,
+      putUrl: f.put_url ?? null,
+      parts: (f.parts ?? []).map((p) => ({
+        partNumber: p.part_number,
+        start: p.start,
+        end: p.end,
+        url: p.url,
+      })),
+    }),
+  ),
+});
 
 /** Preserve an actual zero without treating missing or malformed metadata as zero. */
 const toSizeBytes = (value: unknown): number | null => {
@@ -632,7 +754,7 @@ const toEpisodeState = (state: string): EpisodeState => EPISODE_STATE_OF[state] 
  * a collision costs a refusal (`claim_id_reused`) rather than a wrong payment.
  * Swap it for `expo-crypto` at the first build that has a native project.
  */
-const uuid = (): string => {
+export const uuid = (): string => {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   if (typeof c?.randomUUID === 'function') return c.randomUUID();
   return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (ch) => {

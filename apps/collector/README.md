@@ -109,15 +109,17 @@ Three of them are hard, and each is pinned by a test rather than a convention:
    rounded by the single rounding site in the platform. No input type here
    carries either.
 
-A fourth is structural: **uploads start only from an explicit tap.**
-`confirmUpload` is the only transition out of `pending_upload` — no effect, no
-timer, no network-state listener (APP-25, PRV-03: the collector decides what
-leaves their phone).
+A fourth is structural: **uploads start only from an explicit tap.** A delivery
+begins when the collector opens the panel on the uploads screen, points the
+system directory picker at a recorded session and names the collection session
+it belongs to — no effect, no timer, no network-state listener (APP-25, PRV-03:
+the collector decides what leaves their phone).
 
 ## Layout
 
 ```
 src/api/       CollectorApi (the typed seam) + the mock that fills it today
+src/upload/    Path A: the delivery state machine, its sha256, its native half
 src/device/    DeviceTransport (BLE provisioning) + DeviceTransfer (Path A)
 src/screens/   one file per screen
 src/ui.tsx     Screen, ListScreen, Card, CardLink, Choice, Button, Field, Tag, Note
@@ -135,10 +137,15 @@ Every one of these is marked `ponytail:` at the place it bites:
   survives a kill; nothing else is stored, on purpose — a phone's copy of claims
   and money goes stale the moment the app closes, and Path A upload is out of
   the pilot so there is nothing a collector can do offline that needs replaying.
-- `confirmUpload` has no server route and throws `upload_not_supported`
-  (`src/api/http.ts`). It is unreachable in practice: the button only renders
-  for `pending_upload`, and the server cannot return that state because it only
-  knows episodes already ingested at an upload centre.
+- The session is hashed in JavaScript, a megabyte at a time
+  (`src/upload/sha256.ts`). Fine for demo clips; native hashing when sessions
+  reach GB scale, and the only alternative today is a third native module.
+- A file at or above the server's 64 MiB part size is sent part by part, and a
+  part is read into memory before it is PUT (`src/upload/delivery-native.ts`).
+  The peak is one part, not one session, but the Kotlin foreground-service
+  uploader Path A always owed is still what this becomes.
+- The resume record lives in `expo-secure-store`, which warns above 2048 bytes
+  per value — roughly fourteen files (`src/upload/delivery.ts`).
 - A task's `scenario`, `instructions`, `privacyNotice` and `paymentRule` have no
   server source — APP-09 is not built and `collector-app.ts` says why. The three
   text fields come back empty and render `detail.notSupplied`; `scenario` is
