@@ -92,6 +92,124 @@ nothing about the pilot. At 1 Gbps a verification read-back of one hourly
 camera file (6,829 MB) is about 55 s; twenty collectors' eight-hour days,
 two cameras, are about five hours of read-back on one instance per day.
 
+### Storage plan and egress — answered 2026-09-07
+
+Asked: is the 300 Mbps international cap raisable and at what cost, given
+verification re-reads every stored byte (2.0× upload, measured 13,683 MB moved
+for 6,829 MB stored); and for ~640 TB in Phase 1, the per-GB rate for Gold and
+Instant Archive, whether a committed-volume rate exists, and whether Instant
+Archive's free-egress allowance counts reads made from inside the VPC.
+
+Both answered. The bandwidth half had in fact been answered on 2026-09-06
+(above) and a later edit of this file wrongly called it open; it is not.
+
+**Bandwidth, confirmed from the portal 2026-09-07.** International bandwidth
+is a self-service package under vServer, Bandwidths, Create: 10, 20, 50, 200,
+500, 1000, 2000, 3000, 4000 and 5000 Mbps international, attached to a server
+by adding its IP to the package. 200 and 500 Mbps are the ones GreenNode
+points at; 500 Mbps lists at 150,000,000 VND/month and is offered at
+75,000,000 (-50%). A domestic 500 Mbps package alongside it is 2,400,000
+(from 4,800,000). So the 300 Mbps figure on the vStorage quota page is the
+shared default, not a ceiling. Separately, the vServer flavor decides the
+internal link: every `s-general` flavor from 1x2 to 16x32 is "up to 1 Gbps",
+and the `-n10` flavors (`s-general-8x16-n10`, `s-general-16x32-n10`,
+`s1-standard-8x32-n10`) are "up to 10 Gbps". That is the resize GreenNode
+meant.
+
+- Provision the 640 TB in Gold and let a lifecycle policy move objects down to
+  Instant Archive. That is what we intended; it is the standard S3 lifecycle
+  transition and needs the Instant Archive `StorageClass` string, which is
+  still to be tested with one `PutObject` when we get there.
+- API requests — GET, PUT, DELETE — are free. Charges apply to download and
+  egress traffic only.
+- **Internal reads are charged as downloads.** Their words: "internal reads
+  are also treated as downloads, as the data must be downloaded under the hood
+  to be processed." So a vServer inside HCM04 reading an object from vStorage
+  pays the download rate, the same as a reader on the internet.
+- At ~640 TB the account qualifies for a committed-volume discount; per-GB
+  rates for both tiers come as a custom quotation against a commitment term.
+
+**What "internal reads are downloads" does to the cost model.** Verification
+reads back 100% of every stored byte by design (the metadata-hash shortcut was
+rejected above because it proves nothing). Every byte stored is therefore also
+a byte downloaded, once, at the download rate — before any reviewer streams
+anything. At 640 TB stored that is 640 TB of billable download for
+verification alone. The "2×" traffic figure was measured as bandwidth; it is
+now also the shape of the bill. Two consequences for the quotation request:
+
+1. Ask for the download rate as a line item, and ask whether a
+   verification-only read pattern — each object read exactly once, in full,
+   within hours of being written — can be priced differently from ad-hoc
+   egress. That is the question that moves the number.
+2. Ask whether Instant Archive's free-egress allowance (2× stored) is
+   consumed by these internal verification reads. Under the answer above it
+   is, which means the allowance is spent by our own integrity check before
+   any real egress happens.
+
+Neither changes the design. Verification stays a full read-back; the
+alternative is trusting a hash we sent ourselves.
+
+### Storage classes and lifecycle transitions — probed 2026-09-07
+
+Two probes against `playerone-pilot-test`, both cleaned up, both from the
+org PC over the US link. **Configuration acceptance was observed; no object
+was watched actually transitioning, and no archived object was read back.**
+That second half is still untested.
+
+Storage class strings, by `PutObject` with `StorageClass` set, then
+`HeadObject`, then delete:
+
+| String | Result |
+|---|---|
+| `STANDARD_IA` | accepted; `HeadObject` reports `STANDARD_IA` |
+| `DEEP_ARCHIVE` | accepted; `HeadObject` reports `DEEP_ARCHIVE` |
+| `GLACIER_IR`, `GLACIER`, `INSTANT_ARCHIVE`, `ARCHIVE_INSTANT`, `COLD` | `InvalidArgument`, HTTP 400 |
+
+The default class reads back as `STANDARD_TIERING`, which the portal shows
+as Gold. **Which of `STANDARD_IA` and `DEEP_ARCHIVE` GreenNode calls Instant
+Archive is not knowable from the API** and is a question for them; the class
+string therefore stays out of code and in the bucket's lifecycle rule.
+
+Lifecycle rules, by `PutBucketLifecycleConfiguration` carrying the existing
+`abort-stale-multipart` rule plus one probe rule, `GetBucketLifecycleConfiguration`
+to confirm, then a put of the original rules alone:
+
+| Rule | Result |
+|---|---|
+| transition by prefix, after 1 day, to `STANDARD_IA` | accepted and read back |
+| transition by prefix, after 1 day, to `DEEP_ARCHIVE` | accepted and read back |
+| transition by **object tag** `reviewed=true`, after 0 days, to `STANDARD_IA` | accepted and read back |
+
+After the third probe the configuration read back byte-identical to the
+original single rule. Tag-filtered transitions being accepted is what lets
+archive tiering be event-driven: code tags an object when its footage has
+done its job, and one bucket rule does the move.
+
+`PutBucketLifecycleConfiguration` **replaces the whole rule set.** Any rule
+added later has to be put together with `abort-stale-multipart`, or that
+rule is gone and the orphaned-part cost it exists to reap comes back.
+
+### The whole pipeline on a real recording, against HCM04 — 2026-09-08
+
+`packages/api/scripts/e2e-loop.mjs` with `STORAGE_*` set to the pilot bucket
+and `PLAYERONE_SESSIONS` at the real corpus, on a throwaway database
+`po_e2e_real`, from the org PC over the US link. Both passes ran: the
+synthetic session, then the real `ego_AZER76400FE_20260813_072310`.
+
+**131 checks passed, exit 0.** The real session ingested as `flagged`, its
+eleven files went to the bucket under `episodes/<episode>/<ingest>/` (both
+cameras, audio, the IMU stream, every PTS sidecar, both calibration files and
+the manifest, 40.6 MB), every one was read back with its sha256 matching, the
+episode was held out of review until then, reviewed, billed at 159.9996 VND,
+marked paid manually against reference `VCB-realcorp-0001` for 159 VND (the
+floor), the collector's own view read paid, and two shadow cycles diffed
+clean. The bucket was snapshotted before and the eleven objects deleted
+after; it holds what it held before. The database was dropped.
+
+This is the first time the built pieces have been proven together on
+PaXini's own encoder output against GreenNode rather than on synthetic
+footage or a stand-in store.
+
 ## What was NOT tested
 
 - **GreenNode itself.** S3 keys now exist for HCM04. Everything measured here is MinIO

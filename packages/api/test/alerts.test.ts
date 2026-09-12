@@ -7,7 +7,7 @@ import { appDb, closeDb, db, hasDb, truncate, useDatabase } from '../../store/te
 useDatabase('alerts');
 
 /**
- * PLT-12 / PRD §11.4: the nine alert conditions, derived from rows the platform
+ * PLT-12 / PRD §11.4: nine PRD conditions plus capacity, derived from rows the platform
  * already writes. See `packages/api/src/alerts.ts` for why three of them answer
  * `no_signal` instead of zero.
  */
@@ -25,25 +25,43 @@ const ORDER = [
   'checksum_failures',
   'review_cannot_read_cloud',
   'cross_border_timeouts',
+  'storage_near_quota',
+  'archive_tag_failures',
 ];
 
 describe.skipIf(!hasDb())('operational alerts', () => {
   beforeEach(truncate);
   afterAll(closeDb);
 
-  const byId = async (): Promise<Record<string, Alert>> =>
-    Object.fromEntries((await readAlerts(await db())).map((a) => [a.id, a]));
+  const byId = async (storageQuotaBytes?: number): Promise<Record<string, Alert>> =>
+    Object.fromEntries((await readAlerts(await db(), { storageQuotaBytes })).map((a) => [a.id, a]));
 
-  it('answers all nine in the PRD\'s order, and names the two nothing records', async () => {
+  it('11: counts failed archive operations in the previous 24 hours even after a successful retry', async () => {
+    const d = await db();
+    const centre = uid(), machine = uid(), operator = uid();
+    await d.execute(sql`insert into upload_centres (id, region, name, status) values (${centre}, 'HCM', 'A', 'active')`);
+    await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status) values (${machine}, ${centre}, 'M1', 'active')`);
+    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role) values (${operator}, ${centre}, 'op1', 'centre_operator')`);
+    const event = (action: string, hoursAgo: number, after: unknown) => d.execute(sql`
+      insert into audit_events (occurred_at, action, target_table, target_id, actor_role, operator_id, upload_device_id, upload_centre_id, after)
+      values (now() - ${hoursAgo} * interval '1 hour', ${action}, 'bills', ${uid()}, 'operator', ${operator}, ${machine}, ${centre}, ${JSON.stringify(after)}::jsonb)`);
+    expect((await byId())['archive_tag_failures']).toMatchObject({ state: 'ok', observed: 0, threshold: 1 });
+    await event('bill.archive_tag_failed', 2, { operation: 'billing', attempted: 100, confirmed: 0, failed_object_keys: Array.from({ length: 100 }, (_, i) => `key-${i}`), query_failed: false });
+    await event('bill.archive_tag_failed', 1, { operation: 'retry', attempted: 0, confirmed: 0, failed_object_keys: [], query_failed: true });
+    await event('bill.archive_tag_failed', 25, {});
+    await event('bill.archive_tag_failed', -1, {});
+    expect((await byId())['archive_tag_failures']).toMatchObject({ state: 'firing', observed: 2, threshold: 1 });
+    await event('bill.archive_tag_retry', 0, { operation: 'retry', attempted: 5, confirmed: 5, failed_object_keys: [], query_failed: false });
+    expect((await byId())['archive_tag_failures']).toMatchObject({ state: 'firing', observed: 2, threshold: 1 });
+  });
+
+  it('answers all ten in order, and names the three blind conditions without a quota', async () => {
     const rows = await readAlerts(await db());
     expect(rows.map((a) => a.id)).toEqual(ORDER);
 
     // An empty platform has nothing wrong with it, except what it cannot see.
-    // Two conditions still have no source at all and say so rather than
-    // reading a reassuring zero. The other seven now read from rows: on an
-    // empty platform there are no active machines to be quiet about and no
-    // recorded transport failure, so their zeroes are honest.
-    const blind = new Set(['review_cannot_read_cloud', 'cross_border_timeouts']);
+    // Two conditions have no source; capacity has no configured allocation.
+    const blind = new Set(['review_cannot_read_cloud', 'cross_border_timeouts', 'storage_near_quota']);
     for (const a of rows) {
       if (blind.has(a.id)) {
         expect(a, a.id).toMatchObject({ state: 'no_signal', observed: null, threshold: null });
@@ -70,7 +88,7 @@ describe.skipIf(!hasDb())('operational alerts', () => {
       values (${operator}, ${centre}, 'op1', 'centre_operator', ${hash}),
              (${reviewer}, null, 'pax-01', 'reviewer', ${hash})`);
 
-    const app = buildApi({ db: await appDb(), tokenSecret: 'k' });
+    const app = buildApi({ db: await appDb(), tokenSecret: 'k', storageQuotaBytes: 200_000_000_000 });
     await app.ready();
     const token = async (url: string, payload: unknown) =>
       (await app.inject({ method: 'POST', url, payload: payload as never })).json().token as string;
@@ -91,7 +109,10 @@ describe.skipIf(!hasDb())('operational alerts', () => {
       headers: { 'x-machine-token': `Bearer ${m}`, authorization: `Bearer ${o}` },
     });
     expect(asOperator.statusCode, asOperator.body).toBe(200);
-    expect(asOperator.json().alerts).toHaveLength(9);
+    expect(asOperator.json().alerts).toHaveLength(11);
+    expect(asOperator.json().alerts).toContainEqual({
+      id: 'storage_near_quota', state: 'ok', observed: 0, threshold: 160,
+    });
 
     // A PaXini reviewer is scoped to the review lane and this is not in it.
     const asReviewer = await app.inject({
@@ -102,6 +123,104 @@ describe.skipIf(!hasDb())('operational alerts', () => {
     expect(asReviewer.statusCode).toBe(403);
     expect((await app.inject({ method: 'GET', url: '/api/alerts' })).statusCode).toBe(401);
     await app.close();
+  });
+
+  const storageIngest = async (files: { path: string; bytes: number; sha256?: string }[]) => {
+    const d = await db();
+    const episode = uid();
+    const ingest = uid();
+    await d.execute(sql`insert into episodes
+      (episode_id, device_serial, session_started_at, first_seen_at, last_seen_at)
+      values (${episode}, 'AZER76400FE', '20260813_072310', now(), now())`);
+    await d.execute(sql`insert into episode_ingests
+      (ingest_id, episode_id, content_fingerprint, state, source_basename, measured_duration_s,
+       timing_source, timing_confidence, manifest_present, engine_version, host, ingested_at, record_json)
+      values (${ingest}, ${episode}, 'f', 'ok', 'ego_x', 1, 'pts_sidecar', 'exact', true, '0', 'h', now(), '{}'::jsonb)`);
+    for (const file of files) {
+      await d.execute(sql`insert into episode_files (ingest_id, relative_path, size_bytes, sha256)
+        values (${ingest}, ${file.path}, ${file.bytes}, ${file.sha256 ?? 'a'.repeat(64)})`);
+    }
+    return async (index: number) => {
+      const file = files[index]!;
+      await d.execute(sql`insert into cloud_verifications (object_key, episode_id, ingest_id, sha256)
+        values (${`episodes/${episode}/${ingest}/${file.path}`}, ${episode}, ${ingest},
+                ${file.sha256 ?? 'a'.repeat(64)})`);
+    };
+  };
+
+  it('10: fires at 170 GB against 200 GB, but has no signal without an allocation', async () => {
+    const receipt = await storageIngest([
+      { path: 'left.mp4', bytes: 100_000_000_000 },
+      { path: 'right.mp4', bytes: 70_000_000_000, sha256: 'b'.repeat(64) },
+    ]);
+    await receipt(0);
+    await receipt(1);
+    expect((await byId(200_000_000_000))['storage_near_quota']).toMatchObject({
+      state: 'firing', observed: 170, threshold: 160,
+    });
+    expect((await byId())['storage_near_quota']).toMatchObject({
+      state: 'no_signal', observed: null, threshold: null,
+    });
+  });
+
+  it('10: the threshold follows the allocation, 240 GB at 300 GB, not a constant', async () => {
+    const receipt = await storageIngest([{ path: 'left.mp4', bytes: 250_000_000_000 }]);
+    await receipt(0);
+    expect((await byId(300_000_000_000))['storage_near_quota']).toMatchObject({
+      state: 'firing', observed: 250, threshold: 240,
+    });
+    expect((await byId(400_000_000_000))['storage_near_quota']).toMatchObject({
+      state: 'ok', observed: 250, threshold: 320,
+    });
+  });
+
+  it('10: reads zero with a quota and no receipts', async () => {
+    await storageIngest([{ path: 'left.mp4', bytes: 170_000_000_000 }]);
+    expect((await byId(200_000_000_000))['storage_near_quota']).toMatchObject({
+      state: 'ok', observed: 0, threshold: 160,
+    });
+  });
+
+  it('10: counts only the receipted file in a partly verified ingest', async () => {
+    const receipt = await storageIngest([
+      { path: 'left.mp4', bytes: 100_000_000_000 },
+      { path: 'right.mp4', bytes: 70_000_000_000, sha256: 'b'.repeat(64) },
+    ]);
+    await receipt(0);
+    expect((await byId(200_000_000_000))['storage_near_quota']).toMatchObject({
+      state: 'ok', observed: 100, threshold: 160,
+    });
+  });
+
+  it('10: identical non-empty files at two paths count once per receipt', async () => {
+    const receipt = await storageIngest([
+      { path: 'left.mp4', bytes: 85_000_000_000 },
+      { path: 'right.mp4', bytes: 85_000_000_000 },
+    ]);
+    await receipt(0);
+    expect((await byId(200_000_000_000))['storage_near_quota']).toMatchObject({
+      state: 'ok', observed: 85, threshold: 160,
+    });
+    await receipt(1);
+    expect((await byId(200_000_000_000))['storage_near_quota']).toMatchObject({
+      state: 'firing', observed: 170, threshold: 160,
+    });
+  });
+
+  it('10: floors 159.5 GB to 159 and stays below the 200 GB allocation threshold', async () => {
+    const receipt = await storageIngest([{ path: 'left.mp4', bytes: 159_500_000_000 }]);
+    await receipt(0);
+    expect((await byId(200_000_000_000))['storage_near_quota']).toMatchObject({
+      state: 'ok', observed: 159, threshold: 160,
+    });
+  });
+
+  it('10: accepts the whole-GB approximation for a 201 GB allocation', async () => {
+    const receipt = await storageIngest([{ path: 'left.mp4', bytes: 160_000_000_000 }]);
+    await receipt(0);
+    expect((await byId(201_000_000_000))['storage_near_quota']).toMatchObject({
+      state: 'firing', observed: 160, threshold: 160,
+    });
   });
 
   it('7: fires on one episode whose bytes did not read back', async () => {

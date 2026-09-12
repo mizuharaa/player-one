@@ -128,9 +128,51 @@ bad argument, `3` measured fine but the store could not be written.
 `packages/api` is a Fastify app, built by `buildApi({ db, tokenSecret })`.
 
 Two credentials are required on every mutation: a machine token and an operator
-token. Seed a centre, a machine and an operator with `credential_hash` set from
-`hashCredential()`, then `POST /auth/machine` and `POST /auth/operator`.
+token. Bootstrap the centre and credentials:
+
+```bash
+DATABASE_URL=... node packages/api/bin/bootstrap.ts   --centre-region HCM --centre-name "Upload centre HCM-01"   --machine counter-1 --machine-secret '<secret>'   --operator 'op-1:administrator:<secret>'   --operator 'fin-1:finance:<secret>'   --operator 'clerk-1:centre_operator:<secret>'
+```
+
+Then `POST /auth/machine` and `POST /auth/operator` with those secrets.
 `packages/api/test/counter.test.ts` is the shortest worked example.
+
+Import a card with the counter command, which signs in those existing identities
+and creates none. Set `PLAYERONE_MACHINE_IDENTIFIER`, `PLAYERONE_MACHINE_SECRET`,
+`PLAYERONE_OPERATOR_REF` (the operator's `external_ref`) and
+`PLAYERONE_OPERATOR_SECRET` in the command's environment, then run:
+
+```bash
+node packages/api/bin/counter.ts import \
+  --session-dir <ego_*/ directory> \
+  --collector <uuid> --device <uuid> --card <tf card id> \
+  --task <uuid> --scenario <uuid> \
+  --others-in-frame yes|no --sensitive yes|no \
+  [--prepare-time <ISO>] \
+  [--api http://127.0.0.1:8080]
+```
+
+`--prepare-time` defaults to now; `--api` defaults to `http://127.0.0.1:8080`.
+The command signs in the machine and operator, creates a handover, batch and
+session, ingests the directory locally, submits the episode over HTTP, and
+uploads with synchronous cloud read-back. It does not need `DATABASE_URL`.
+
+The session directory must be directly inside the API's `PLAYERONE_MEDIA_ROOT`
+on the machine the API runs on. Submitting the ingest record does not move
+bytes: the API must independently have the same session bytes at
+`<its media root>/<session basename>`. The command compares the directory's
+parent with `PLAYERONE_MEDIA_ROOT` from its own environment and refuses a
+mismatch with exit 2. If unset, it skips that check and says so on stderr.
+This is a local sanity check only: server-side media availability is not
+verified by this command, including when `--api` names another host.
+
+Stdout always contains one JSON object: `handover_id`, `session_id`, `batch_id`,
+`episode_id`, `ingest_state` (the local ingest record's `state`),
+`cloud_verified`, `elapsed_s`, and `failed_step` (null on success). Fields not
+reached are null. The raw upload response and diagnostics go to stderr. Exit 0
+requires a 2xx upload response with `cloud_verified: true`; usage, missing
+credentials or a missing directory exit 2; other failures exit 1. There are no
+retries or rollback; a partial import remains visible in the pipeline screen.
 
 The one exception is `POST /upload-devices/:id/heartbeat`. The upload-centre
 process sends current disk and queue state when no clerk may be signed in, so
@@ -151,6 +193,10 @@ expiry:
 
 ## Running it
 
+For a real LAN centre on Windows, follow the [centre deployment runbook](../deploy/centre/README.md):
+database bootstrap, built console behind Caddy, environment and Task Scheduler
+setup, then one-card verification on the centre PC.
+
 ```
 DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 ```
@@ -161,7 +207,9 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 | `PLAYERONE_TOKEN_SECRET` | required | Fails closed. A secret invented at boot would sign tokens that stop verifying on the next restart, which shows up as reviewers being randomly signed out. |
 | `PLAYERONE_MEDIA_ROOT` | | The directory holding the imported `ego_*` folders. Without it the console runs and the stream route answers 503 saying so. |
 | `PLAYERONE_MACHINE_IDENTIFIER` | | The fixed upload device this process runs on. When this, `PLAYERONE_MACHINE_SECRET` and `PLAYERONE_MEDIA_ROOT` are all set, the process sends its heartbeat once at boot and every minute. A back-office host leaves them unset and sends nothing. |
-| `PLAYERONE_MACHINE_SECRET` | | The credential for `PLAYERONE_MACHINE_IDENTIFIER`, used only to obtain the machine token for that heartbeat. Set both machine variables, or neither. |
+| `PLAYERONE_MACHINE_SECRET` | | The credential for `PLAYERONE_MACHINE_IDENTIFIER`, used to obtain the machine token for the heartbeat and the counter command. Set both machine variables, or neither; both are required by the counter command. |
+| `PLAYERONE_OPERATOR_REF` | counter command: required | The existing operator's `external_ref`, used to sign in at `/auth/operator`. |
+| `PLAYERONE_OPERATOR_SECRET` | counter command: required | The credential for `PLAYERONE_OPERATOR_REF`. |
 | `PLAYERONE_CURRENCY` | `VND` | What `tasks.unit_price` is denominated in. Configuration because there is no currency column — see the gaps in `docs/review.md`. |
 | `PLAYERONE_SETTLEMENT_CYCLE_DAYS` | `7` | SET-07's settlement cycle. Weekly is `[ASSUMED]` in the brief's §13.2 rather than decided, so it is a setting and not a constant. It only supplies the *end* of a period whose start the caller gave. |
 | `PLAYERONE_SECURE_COOKIES` | off | Turn on wherever there is TLS. Off by default because a `Secure` cookie is never sent over plain HTTP and the symptom is a sign-in that silently does nothing. It is also this repo's single "there is TLS in front of this process" signal: with it on, the API sends HSTS, and `PLAYERONE_REVIEWER_MEDIA=1` is allowed. |
@@ -169,17 +217,78 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 | `PLAYERONE_DB_POOL` | `10` | A single connection serialises the claim queue: `for update skip locked` has nothing to skip. |
 | `PLAYERONE_ALERT_WEBHOOK` | | Alert delivery URL. Unset means log-only: each notice is delivered to the alert worker's own stdout, not the API server's log. |
 | `PLAYERONE_ALERT_INTERVAL_MS` | `60000` | Time between alert worker ticks, in milliseconds. |
+| `PLAYERONE_STORAGE_QUOTA_BYTES` | | Cloud storage allocation in bytes, supplied to both the API and alert worker. Unset or empty makes `storage_near_quota` `no_signal`; a malformed value (not digits only or not a safe integer) or one below 1,250,000,000 bytes refuses to boot. Set `200000000000` for today's POC and change it when the allocation converts. The comparison uses whole GB of Path C verified source bytes, a lower bound on cloud storage use. |
 | `HOST` / `PORT` | `127.0.0.1` / `8080` | |
 | `STORAGE_ENDPOINT` | | The S3-compatible endpoint of the cloud store (GreenNode, once the contract is signed). Unset, the upload routes answer 503 saying so and everything else runs. |
 | `STORAGE_BUCKET` / `STORAGE_KEY` / `STORAGE_SECRET` | | Required together with `STORAGE_ENDPOINT`; a partial set fails closed at boot naming what is missing. |
 | `PLAYERONE_ZNS_ACCESS_TOKEN` / `PLAYERONE_ZNS_TEMPLATE_ID` | | How a collector's sign-in code reaches their phone: Zalo Notification Service (`packages/api/src/zns.ts`). Set both, or neither. With neither, the server writes each code to its own log instead of sending it, so a pilot runs before VNG has issued a ZNS account — every such line says `NOT SENT`. With one of the two, boot fails naming the other. |
 | `PLAYERONE_ZNS_ENV` | `sandbox` | `production` refuses to boot with no ZNS credentials, because production with no ZNS account is not a development mode — it is a server that prints live sign-in codes into a production log. |
+| `PLAYERONE_DEMO_PHONE` | | **One** phone number whose sign-in code comes back in the `request-code` response, so a demonstration does not need somebody reading a server log aloud. Byte-for-byte comparison, no normalisation. Every other number behaves exactly as it does with this unset, which is the default everywhere. See "Demo sign-in" below. |
 | `PLAYERONE_ZNS_CODE_PARAM` | `otp` | The `template_data` key the six digits go in. Whatever the approved template names it. |
 | `PLAYERONE_ZNS_BASE_URL` | Zalo's | Override only to point at a proxy or a test double. |
 | `REVIEW_VERIFICATION_GATE` | `cloud` | Which integrity check QR-02's review gate reads. `cloud` (the default since 2026-09-06) requires a read-back-verified upload before an episode can be reviewed; ADR 0001's exit conditions are met and policy B is in code. Set `local` only on a machine with no bucket — including any dev box running `seed-console.mjs`, whose seeded footage has no cloud copy and would otherwise never reach the queue. |
 
 The API serves JSON and media only. The back office is the SPA; see
 [`The back-office console`](#the-back-office-console) below.
+
+
+### Demo sign-in
+
+For showing the app to people. It changes the behaviour of **one** phone number
+and nothing else.
+
+The collector app composes the number it sends from its country picker, so it
+sends E.164 — `+84…`, never `0…`. The lookup is a byte-for-byte comparison
+against `collectors.phone`, so set this in the same spelling or the app's
+sign-in finds no row and answers the same silent `204` as an unknown number.
+
+```bash
+export PLAYERONE_DEMO_PHONE=+84900000001
+DATABASE_URL=... node packages/api/scripts/seed-demo.mjs   # the collector
+DATABASE_URL=... PLAYERONE_DEMO_PHONE=$PLAYERONE_DEMO_PHONE pnpm serve
+```
+
+`request-code` for that number answers `200` with `{"demo_code":"123456"}`
+instead of `204`, and the app fills the field in and says on screen that it did.
+The sign-in exchange itself is unchanged: the code is the one that was stored,
+the collector still taps to verify, and the token still comes from
+`/auth/collector/verify`. Nothing new mints a token.
+
+**Why one number rather than a mode.** There is no reliable way to detect
+production from inside this process — the pilot upload centre runs plain HTTP
+with `PLAYERONE_SECURE_COOKIES` off on purpose, and a TLS proxy in front of an
+unmarked server looks like a laptop. So this does not try. Left set where it
+should not be, what leaks is the one account that exists to be demonstrated.
+
+`seed-demo.mjs` creates a collector who is already past registration, the six
+agreements, training, the exam, a task claim and a bound device — which is what
+`startRoute` in `apps/collector/src/App.tsx` checks before opening on Home. It
+**never truncates**, runs in one transaction, and refuses rather than
+overwriting if another collector already holds its id, its `external_ref` or the
+demo phone. Rerunning it is the same demo, not a second one. A claim that has
+been released cannot be reopened, so after a demo has consumed it, seed a fresh
+database.
+
+### One sign-in code per number per minute
+
+Every code is a paid ZNS message. The sign-in limiter counts *failures* and
+gives a credential's budget back when a code turns out to be right, so
+request-then-verify in a loop used to reset the counter and send nine more. A
+separate counter now allows one send a minute per number and is never refunded,
+including for the demo number.
+
+It is claimed for every number that parses, before the lookup that decides
+whether anybody owns it, so an enrolled number and an unknown one are refused
+identically. A refusal does not extend the window. The refusal is the usual
+`429` with `retry-after`.
+
+One consequence worth knowing. One send a minute is tighter than ten per five
+minutes, so `request-code` calls **alone** can no longer fill a number's failure
+counter, and a burst made only of code requests is no longer detected there.
+Mixed traffic still is: one request plus nine failed guesses fills the same
+counter, and the next request-code a minute later is refused by the limiter and
+audited as before. Guessing is counted and audited on `/auth/collector/verify`
+either way, which is where a credential is actually checked.
 
 ## The bucket needs one rule set on it, by hand
 
@@ -201,17 +310,30 @@ bucket can time that out.
 GreenNode is S3-compatible, so the AWS CLI sets it. Seven days, which is far
 longer than any legitimate resume (a 16 GB session is about 2.7 hours at the
 13 Mbps the brief assumes) and short enough that a dropped batch is not still
-billing next month:
+billing next month. The same configuration also transitions billed deliveries
+by tag. Replace `<archive class>` before applying it: GreenNode must name its
+Instant Archive class; `STANDARD_IA` and `DEEP_ARCHIVE` are the two strings
+HCM04 accepts.
+
+`PutBucketLifecycleConfiguration` replaces the whole rule set. Always put the
+rules together, preserve any other installed rules, and read the configuration
+back afterwards.
 
 ```bash
 cat > lifecycle.json <<'JSON'
 {
   "Rules": [
     {
-      "ID": "abort-incomplete-multipart-uploads",
+      "ID": "abort-stale-multipart",
       "Status": "Enabled",
       "Filter": { "Prefix": "" },
       "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+    },
+    {
+      "ID": "archive-billed-deliveries",
+      "Status": "Enabled",
+      "Filter": { "Tag": { "Key": "tier", "Value": "archive" } },
+      "Transitions": [{ "Days": 0, "StorageClass": "<archive class>" }]
     }
   ]
 }
@@ -235,6 +357,46 @@ aws s3api list-multipart-uploads          --endpoint-url "$STORAGE_ENDPOINT" --b
 
 The second command is the only way to see this cost. Run it when the storage
 bill does not match what `ListObjectsV2` says the bucket holds.
+
+After a new bill commits, the API tags every receipt key of each billed
+settlement's own reviewed ingest with `tier=archive`. Receipts must match both
+the review's episode and ingest; a newer delivery awaiting review is not
+eligible. Replaying bill generation or releasing an exception onto an existing
+bill does not tag again. With no object store configured, tagging is skipped.
+
+Tagging is best effort. Each call has a ten-second caller deadline as well as
+an abort signal; calls are sequential, so the worst-case delay per bill is ten
+seconds per receipt. A failed receipt query or tag is logged and never prevents
+a bill. A failed or timed-out tag is unconfirmed: the server may have applied
+it before losing the response, and the object may remain in Gold.
+
+The pilot accepts these Gold costs:
+
+- Footage awaiting first review, including newer deliveries of a reviewed episode.
+- Reviewed footage earning nothing, including rejected verdicts, and unresolved
+  disputes. These are not billed; their eventual disposition needs a retention policy.
+- Repair uploads after billing. Replacement objects are written without tags
+  and no new bill is created. A later fix can reapply the tag after read-back to
+  receipts whose settlement is already billed.
+
+An exception prevents only that settlement from newly establishing archive
+eligibility. It does not undo an earlier tag; a replacement settlement after a
+disagreed dispute can bill and tag the same ingest while the superseded
+settlement remains in exception. Failed tags may add to the Gold cost. Any later
+retag pass must derive eligible receipt keys from billed review/ingest pairs
+and reapply the tag; untagged objects alone are not a safe candidate list.
+
+Only HCM04's acceptance of the configuration has been observed. On the first
+real bill, check one billed object in this order:
+
+1. `GetObjectTagging` shows `tier=archive`.
+2. After lifecycle has had time to act, `HeadObject` reports the configured archive class.
+3. `GetObject` returns bytes whose sha256 matches the receipt.
+
+A successful bill proves none of these. Until the transition and read-back
+have been seen, archive behavior is unverified. Record the observations in
+`docs/cloud-scale-findings.md` when they happen. Retention periods, deletion,
+archive restoration and Path A tagging remain outside this change.
 
 ## Forcing the cloud to prove one batch again
 
@@ -413,7 +575,8 @@ Two things to know:
 ## Operational alerts
 
 `GET /api/alerts` answers PLT-12's nine conditions — PaXini's PRD §11.4 list,
-adopted verbatim — as one derived query over rows the platform already writes.
+adopted verbatim — plus a tenth, `storage_near_quota`, as one derived query over
+rows the platform already writes.
 Any operator session may read it. There is no alerts table. A separate alert
 worker reads the same conditions at boot and every minute, delivering firing
 and cleared transitions to `PLAYERONE_ALERT_WEBHOOK`, or its own stdout when
@@ -449,8 +612,9 @@ live in memory, so a restart drops pending notices and re-notifies conditions
 still firing once. A transition to `no_signal` is not
 a recovery and sends no cleared notice.
 
-This closes only PLT-12's delivery half. The Part 8 capacity comparison and
-conditions 8 and 9 remain open. Thresholds are unchanged: a single cloud
+Alert delivery and the capacity alert against the allocation are built. The
+Part 8 intake comparison and conditions 8 and 9 remain open. The nine PRD
+thresholds are unchanged: a single cloud
 transport failure still does not fire the condition whose threshold is three.
 
 ```json
@@ -460,11 +624,19 @@ transport failure still does not fire the condition whose threshold is three.
 ```
 
 `state` is `firing` when `observed >= threshold`, `ok` when it is not, and
-`no_signal` when **nothing in this system records the fact**. Two of the nine
+`no_signal` when **the condition lacks a required signal**. Two of the nine PRD conditions
 are `no_signal` today and say so rather than reading a reassuring zero:
 `review_cannot_read_cloud` (the review lane reads local media — ADR 0001 — so
 there is no cloud read to fail) and `cross_border_timeouts` (nothing times the
 link).
+
+`storage_near_quota` counts Path C verified source bytes, a lower bound that
+excludes manifests, files outside the inventory, Path A uploads and unverified
+objects. It compares floored whole GB against the floored 80% allocation mark,
+an accepted approximation: 159.5 GB against 200 GB stays `ok` at 159 versus 160,
+while 160 GB against 201 GB fires at 160 versus 160. Without
+`PLAYERONE_STORAGE_QUOTA_BYTES`, both figures are null and the condition is
+`no_signal`; with a quota and no receipts, it reads zero.
 
 The other seven read rows. `cloud_write_failures` counts
 `episode.cloud_transport_failed` audit events from the last day — an upload

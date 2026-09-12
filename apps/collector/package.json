@@ -2,19 +2,27 @@
   "name": "@playerone/collector",
   "version": "0.0.0",
   "private": true,
-  "description": "Player One collector app (React Native). UI scaffold: the server and the device are mocked, there is no native project, and it does not launch on a phone yet — see README.md.",
+  "description": "Player One collector app (Expo / React Native), with a real HTTP client and mocked device layer — see README.md.",
   "type": "module",
+  "main": "index.js",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "web": "vite --config web/vite.config.ts",
-    "shots": "node web/shots.mjs"
+    "shots": "node web/shots.mjs",
+    "start": "expo start",
+    "android": "expo run:android",
+    "test:release": "node --test scripts/*.test.mjs",
+    "apk": "node scripts/build-android.mjs demo",
+    "aab": "node scripts/build-android.mjs play"
   },
   "dependencies": {
     "@playerone/design": "workspace:*",
     "@tanstack/react-query": "^5.66.0",
-    "expo-secure-store": "^57.0.2",
-    "react": "^19.1.0",
-    "react-native": "^0.82.0"
+    "expo": "57.0.20",
+    "expo-build-properties": "57.0.17",
+    "expo-secure-store": "57.0.3",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
   },
   "devDependencies": {
     "@fontsource/be-vietnam-pro": "^5.2.5",

@@ -3,7 +3,7 @@
 // which reads `localStorage` while it is being imported. Nothing here uses
 // the DOM; jsdom is only what makes that import legal.
 /**
- * The two pieces of `/episodes` that a screenshot cannot check.
+ * The two pieces of `/episodes/attention` that a screenshot cannot check.
  *
  * Both attention scopes are empty on the console seed — `/episodes/stuck`
  * returns no rows and the seed's batches have nothing blocking — so the tables,
@@ -14,7 +14,7 @@
 import { describe, expect, it } from 'vitest';
 import { MESSAGES } from '@playerone/api/i18n';
 import { ApiError } from '../lib/api.ts';
-import { episodeRefusal, holdKey, stamp } from './Episodes.tsx';
+import { episodeRefusal, holdKey, stamp } from './EpisodeAttention.tsx';
 
 describe('a refusal on the episode lane', () => {
   it('does not tell an operator a bill is missing when an episode is', () => {

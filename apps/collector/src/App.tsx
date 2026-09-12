@@ -1,7 +1,7 @@
 import { sessionEntry, type SessionEntry } from './api/session-entry.ts';
 import { TransportProvider } from './device/transport-context.tsx';
 import { MockDeviceTransport, UnavailableDeviceTransport } from './device/transport.ts';
-import { useEffect, useState, type ComponentType } from 'react';
+import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MockCollectorApi } from './api/mock.ts';
@@ -26,13 +26,14 @@ import { MyTasks } from './screens/MyTasks.tsx';
 import { Provisioning } from './screens/Provisioning.tsx';
 import { Register } from './screens/Register.tsx';
 import { SessionCreate } from './screens/SessionCreate.tsx';
+import { SessionReminder } from './screens/SessionReminder.tsx';
 import { TaskDetail } from './screens/TaskDetail.tsx';
 import { TaskHall } from './screens/TaskHall.tsx';
 import { Landing } from './screens/Landing.tsx';
 import { SignIn } from './screens/SignIn.tsx';
 import { Training } from './screens/Training.tsx';
 import { Uploads } from './screens/Uploads.tsx';
-import { Body, Button, Note } from './ui.tsx';
+import { Body, Button } from './ui.tsx';
 import { useT } from './locale.tsx';
 import { useTheme } from './theme.tsx';
 
@@ -53,6 +54,7 @@ const SCREENS: Record<RouteName, ComponentType> = {
   devices: Devices,
   provisioning: Provisioning,
   sessionCreate: SessionCreate,
+  sessionReminder: SessionReminder,
   uploads: Uploads,
   income: Income,
   forum: Forum,
@@ -89,7 +91,6 @@ function Current() {
   );
 }
 
-const queryClient = new QueryClient();
 
 /**
  * While the keystore is being read and the token checked.
@@ -139,77 +140,126 @@ function Restoring() {
  * the Kotlin foreground-service TurboModule for the transfer itself; the
  * `CollectorApi` seam is what it lands behind and the screens do not change.
  *
- * A 401 anywhere clears the token and drops straight back to sign-in. A network
- * failure does NOT: the token is kept and a recoverable error is shown until
- * the profile can be read. Unknown onboarding state never means registration.
+ * A 401 clears the token and retires the client, its cache and its navigation
+ * stack. Network failures keep the token and offer retry; an unreadable profile
+ * never means registration is incomplete. Local sign-out clears the private
+ * query cache before switching, so the next collector on this phone cannot see
+ * the last one's income in a stale cache.
+ *
+ * `sessionEntry` decides where a restored session opens; it is the same helper
+ * `api.test.ts` pins directly, so the rule lives in one place and is tested
+ * without mounting React.
  */
-function Session() {
-  /** `null` while restoring, `'out'` at the landing, else where to open. */
-  const [state, setState] = useState<SessionEntry | null>(null);
+type ApiFactory = (onUnauthorized: () => void) => CollectorApi;
+const createApi: ApiFactory = (onUnauthorized) => USE_MOCK_API
+  ? new MockCollectorApi()
+  : new HttpCollectorApi(API_BASE_URL, secureTokenStore, onUnauthorized);
+
+/** A new client, cache and navigation stack for every signed-in identity. */
+export function CollectorSession({ factory = createApi }: { factory?: ApiFactory }) {
+  const [epoch, setEpoch] = useState(0);
+  return <Session key={epoch} factory={factory} restore={epoch === 0} onExited={() => setEpoch((n) => n + 1)} />;
+}
+
+function Session({ factory, restore, onExited }: { factory: ApiFactory; restore: boolean; onExited: () => void }) {
+  const [state, setState] = useState<SessionEntry | 'leaving' | 'clearFailed' | null>(restore ? null : 'out');
   /** Whether the landing has handed over to the sign-in form. */
   const [signingIn, setSigningIn] = useState(false);
-  // Created once, so `onUnauthorized` can close over `setState`.
-  const [api] = useState<CollectorApi>(() =>
-    USE_MOCK_API
-      ? new MockCollectorApi()
-      : new HttpCollectorApi(API_BASE_URL, secureTokenStore, () => setState('out')),
-  );
+  const alive = useRef(true);
+  const signingOut = useRef(false);
+  const run = useRef(0);
+  const [queryClient] = useState(() => new QueryClient());
+  const [api] = useState(() => factory(() => { if (alive.current) void leave(); }));
+  const tt = useT();
+  const theme = useTheme();
 
-  /**
-   * Cold start, and again after a sign-in: the token, then where it lands.
-   *
-   * Retry keeps the same API client and token. Only an actual profile chooses
-   * an onboarding screen; a failed read remains a recoverable unknown state.
-   */
-  const [attempt, setAttempt] = useState(0);
-  const enter = () => { setState(null); setAttempt((n) => n + 1); };
+  async function leave() {
+    if (signingOut.current) return;
+    signingOut.current = true;
+    run.current += 1;
+    setState('leaving');
+    api.dispose();
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    try {
+      await api.signOut();
+      if (alive.current) onExited();
+    } catch {
+      if (alive.current) setState('clearFailed');
+    } finally { signingOut.current = false; }
+  }
+
+  async function enter() {
+    const current = ++run.current;
+    setState(null);
+    const next = await sessionEntry(api);
+    if (alive.current && current === run.current) setState(next);
+  }
+
   useEffect(() => {
-    let live = true;
-    void sessionEntry(api).then((next) => { if (live) setState(next); });
-    return () => { live = false; };
-  }, [api, attempt]);
+    alive.current = true;
+    if (restore) void enter();
+    return () => {
+      alive.current = false;
+      run.current += 1;
+      void queryClient.cancelQueries();
+      queryClient.clear();
+      // StrictMode runs setup again synchronously; only a real unmount retires it.
+      queueMicrotask(() => { if (!alive.current) api.dispose(); });
+    };
+  }, [api, queryClient, restore]);
 
-  if (state === null) return <Restoring />;
-  if (state === 'unavailable') return <RestoreFailure retry={enter} />;
+  if (state === null || state === 'leaving') return <Restoring />;
+  if (state === 'unavailable' || state === 'clearFailed') return (
+    <View style={{ flex: 1, backgroundColor: theme.color.surface, padding: theme.space[4], gap: theme.space[3] }}>
+      <Body>{tt(state === 'clearFailed' ? 'signIn.clearFailed' : 'common.loadFailed')}</Body>
+      <Button label={tt('common.retry')} onPress={() => void (state === 'clearFailed' ? leave() : enter())} />
+      {state === 'unavailable' ? <Button variant='ghost' label={tt('signIn.signOut')} onPress={() => void leave()} /> : null}
+    </View>
+  );
 
   return (
     <ApiProvider value={api}>
       <QueryClientProvider client={queryClient}>
-        {state === 'out' ? (
-          /**
-           * Neither the landing nor sign-in is a `Route`, and neither has an
-           * entry in `SCREENS`: they are not somewhere a collector navigates
-           * to, they are what the app is when there is no session. So the route
-           * registry's completeness check is untouched. They still need a
-           * `NavProvider` above them because `ui.tsx`'s header reads nav.
-           *
-           * The landing comes first and sign-in is one tap behind it. That tap
-           * is the only thing between them: the landing's hero is progressive
-           * enhancement and its "Đăng nhập" button is live from the first frame.
-           */
-          <NavProvider initial={{ name: 'register' }}>
-            {signingIn ? (
-              <SignIn onSignedIn={() => void enter()} onBack={() => setSigningIn(false)} />
-            ) : (
-              <Landing onSignIn={() => setSigningIn(true)} />
-            )}
-          </NavProvider>
-        ) : (
-          <NavProvider initial={state}>
-            <GuideProvider>
-              <Current />
-            </GuideProvider>
-          </NavProvider>
-        )}
+        <View style={{ flex: 1 }}>
+          {state === 'out' ? (
+            /**
+             * Neither the landing nor sign-in is a `Route`, and neither has an
+             * entry in `SCREENS`: they are not somewhere a collector navigates
+             * to, they are what the app is when there is no session. So the
+             * route registry's completeness check is untouched. They still need
+             * a `NavProvider` above them because `ui.tsx`'s header reads nav.
+             *
+             * **The landing is a cold start's door, not a sign-out's.** On a
+             * fresh launch the product story comes first and sign-in is one tap
+             * behind it. Somebody who just signed out on this phone has already
+             * been told what the product is and is handing it to the next
+             * collector, so they get the form with nothing in front of it —
+             * the same split the console makes between `/` and `/login`.
+             * `restore` is exactly "this is the first session of this launch".
+             */
+            <NavProvider key='out' initial={{ name: 'register' }}>
+              {restore && !signingIn ? (
+                <Landing onSignIn={() => setSigningIn(true)} />
+              ) : (
+                <SignIn
+                  onSignedIn={() => { if (alive.current && !signingOut.current) void enter(); }}
+                  onBack={restore ? () => setSigningIn(false) : undefined}
+                />
+              )}
+            </NavProvider>
+          ) : (
+            <NavProvider key='in' initial={state}>
+              <GuideProvider>
+                <Current />
+              </GuideProvider>
+            </NavProvider>
+          )}
+          {state !== 'out' ? <Button variant='ghost' label={tt('signIn.signOut')} onPress={() => void leave()} /> : null}
+        </View>
       </QueryClientProvider>
     </ApiProvider>
   );
-}
-
-function RestoreFailure({ retry }: { retry: () => void }) {
-  const tt = useT();
-  const theme = useTheme();
-  return <View style={{ flex: 1, backgroundColor: theme.color.surface, padding: theme.space[4], gap: theme.space[3] }}><Note text={tt('common.loadFailed')} /><Button label={tt('common.retry')} onPress={retry} /></View>;
 }
 
 const transport = USE_MOCK_API ? new MockDeviceTransport() : new UnavailableDeviceTransport();
@@ -218,7 +268,7 @@ export function App() {
   return (
     <ThemeProvider>
       <LocaleProvider>
-        <TransportProvider value={transport}><Session /></TransportProvider>
+        <TransportProvider value={transport}><CollectorSession /></TransportProvider>
       </LocaleProvider>
     </ThemeProvider>
   );

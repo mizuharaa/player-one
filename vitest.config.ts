@@ -7,7 +7,13 @@ import { configDefaults, defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   test: {
-    exclude: [...configDefaults.exclude, '.claude/**'],
+    /**
+     * Native release checks and the deployment scripts use node:test; run them
+     * with `pnpm --filter @playerone/collector test:release` and
+     * `node --test deploy/*.test.mjs`. Collected here, vitest finds no suite in
+     * them and reports that as a failed file.
+     */
+    exclude: [...configDefaults.exclude, '.claude/**', 'apps/collector/scripts/**/*.test.mjs', 'deploy/**/*.test.mjs'],
     /**
      * Every database test file creates and migrates its own throwaway database
      * in a `beforeAll`, and vitest runs those files in parallel. On a slow CI

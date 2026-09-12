@@ -34,7 +34,7 @@ import type { Db } from '@playerone/store';
  *   - **9, cross-border link timeouts.** Nothing in this repository times the
  *     link to Shenzhen or to the bucket. It needs a latency record per request.
  *
- * `observed` is a count of offending things right now, `threshold` is the count
+ * `observed` is a count with the unit/window named by each condition, `threshold` is the count
  * at which the condition fires. The PRD gives no numbers, so the ones below are
  * chosen for a twenty-device pilot and are deliberately literals in the query
  * rather than settings: nobody has operated this yet, and a setting invented
@@ -53,19 +53,29 @@ export type AlertState = 'ok' | 'firing' | 'no_signal';
 export type Alert = {
   id: string;
   state: AlertState;
-  /** How many offending things there are, or null when nothing records the fact. */
+  /** Offending count or whole GB, or null when the condition has no signal. */
   observed: number | null;
   threshold: number | null;
 };
 
+export function storageQuotaFromEnv(env: Record<string, string | undefined>): number | undefined {
+  const value = env['PLAYERONE_STORAGE_QUOTA_BYTES'];
+  if (value === undefined || value === '') return undefined;
+  const quota = Number(value);
+  if (!/^[0-9]+$/.test(value) || !Number.isSafeInteger(quota) || quota < 1_250_000_000) {
+    throw new Error(`PLAYERONE_STORAGE_QUOTA_BYTES=${JSON.stringify(value)} must be digits only and a safe integer of at least 1,250,000,000 bytes`);
+  }
+  return quota;
+}
+
 /**
- * The nine conditions, evaluated in one statement.
+ * The nine PRD conditions, capacity and archive failures, in one statement.
  *
  * Each condition is a scalar subquery, so adding one is a `union all` branch
  * and nothing else. `ord` is the PRD's own numbering and is what the rows are
  * ordered by, so the board reads in the order the PRD lists them.
  */
-const ALERTS = sql`
+const alerts = (quota: number | null) => sql`
   select a.id,
          a.observed,
          a.threshold,
@@ -147,11 +157,31 @@ const ALERTS = sql`
       select 8, 'review_cannot_read_cloud', null, null
       union all
       select 9, 'cross_border_timeouts', null, null
+      union all
+      -- 10. Path C verified source bytes, a lower bound on cloud storage use.
+      -- Comparing floored whole GB is an accepted approximation of the 80% mark.
+      select 10, 'storage_near_quota', floor(0.8 * ${quota}::numeric / 1e9)::int,
+        case when ${quota}::numeric is null then null else (
+          select floor(coalesce(sum(ef.size_bytes), 0) / 1e9)::int
+            from cloud_verifications cv
+              join episode_files ef
+                on ef.ingest_id = cv.ingest_id
+               and cv.object_key = 'episodes/' || cv.episode_id::text || '/'
+                                              || cv.ingest_id::text || '/' || ef.relative_path
+        ) end
+      union all
+      -- 11. Historical failed operations, not an unresolved object backlog.
+      -- Successful retries do not erase failures; zero cannot prove archiving.
+      select 11, 'archive_tag_failures', 1, (
+        select count(*)::int from audit_events
+         where action = 'bill.archive_tag_failed'
+           and occurred_at > now() - interval '24 hours'
+           and occurred_at <= now())
     ) a
    order by a.ord`;
 
-export async function readAlerts(db: Db): Promise<Alert[]> {
-  return (await db.execute(ALERTS)) as unknown as Alert[];
+export async function readAlerts(db: Db, o?: { storageQuotaBytes?: number }): Promise<Alert[]> {
+  return (await db.execute(alerts(o?.storageQuotaBytes ?? null))) as unknown as Alert[];
 }
 
 type Reply = { code: (n: number) => { send: (b: unknown) => unknown } };
@@ -160,6 +190,7 @@ export function registerAlerts(
   app: FastifyInstance,
   db: Db,
   requireActor: (req: FastifyRequest, reply: Reply) => Promise<unknown>,
+  o?: { storageQuotaBytes?: number },
 ): void {
   /**
    * Read-only, and open to any operator session — a counter clerk noticing that
@@ -168,6 +199,6 @@ export function registerAlerts(
    */
   app.get('/api/alerts', { preHandler: requireActor }, async () => ({
     at: new Date().toISOString(),
-    alerts: await readAlerts(db),
+    alerts: await readAlerts(db, o),
   }));
 }

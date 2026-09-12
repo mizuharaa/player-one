@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
 import { buildApi, hashCredential } from '../src/index.ts';
+import { objectKey, type ObjectStore } from '../src/upload-worker.ts';
 import { ZERO, add, fromDecimal, mul, quantise } from '../src/money.ts';
-import { open } from '@playerone/store';
-import { appDb, closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
+import { open, schema } from '@playerone/store';
+import { appDb, closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('settle');
@@ -100,7 +101,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
    * signed in.
    */
   async function harness(
-    options: { cycleDays?: number; each?: number; reject?: number } = {},
+    options: { cycleDays?: number; each?: number; reject?: number; objectStore?: ObjectStore } = {},
   ) {
     const d = await db();
     const each = options.each ?? 2;
@@ -138,7 +139,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       await liveClaim(d, ids.taskFactory, collector);
     }
 
-    const app = buildApi({ db: await appDb(), tokenSecret: SECRET, settlementCycleDays: options.cycleDays });
+    const app = buildApi({ db: await appDb(), tokenSecret: SECRET, settlementCycleDays: options.cycleDays, objectStore: options.objectStore });
     await app.ready();
 
     const login = async (machine: string, operator: string) => {
@@ -285,6 +286,346 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
   // -------------------------------------------------------------------------
 
   describe('SET-07: generating a cycle', () => {
+    // PLAN 3b: database-backed; written here, NOT run by the archive-tier implementer.
+    // Claude runs this group on a throwaway database.
+    describe('archive tags after committed bill creation', () => {
+      const store = (): ObjectStore => ({
+        put: vi.fn(async () => 'uploaded' as const),
+        read: vi.fn(async () => null),
+        tag: vi.fn(async () => {}),
+      });
+
+      async function reviewedReceipts(h: Awaited<ReturnType<typeof harness>>, files = ['left_part0001.mp4', 'right_part0001.mp4', 'manifest.json']) {
+        const [review] = await h.d.execute<{ settlement_id: string; episode_id: string; ingest_id: string }>(sql`
+          select s.id as settlement_id, r.episode_id, r.ingest_id
+            from settlements s
+            join episode_reviews r on r.id = s.episode_review_id
+            join episodes e on e.episode_id = r.episode_id
+            join collection_sessions cs on cs.id = e.collection_session_id
+           where cs.collector_id = ${h.ids.collector1}
+        `);
+        expect(review).toBeDefined();
+        const keys = files
+          .map((file) => objectKey(review!.episode_id, review!.ingest_id, file));
+        await h.d.insert(schema.cloudVerifications).values(keys.map((key) => ({
+          objectKey: key, episodeId: review!.episode_id, ingestId: review!.ingest_id,
+          sha256: 'b'.repeat(64),
+        })));
+        return { ...review!, keys };
+      }
+
+      const archiveEvents = (h: Awaited<ReturnType<typeof harness>>) => h.d.execute<{
+        action: string; target_id: string; operator_id: string; upload_device_id: string; upload_centre_id: string; after: unknown;
+      }>(sql`select action, target_id, operator_id, upload_device_id, upload_centre_id, after
+               from audit_events where action in ('bill.archive_tag_failed', 'bill.archive_tag_retry') order by occurred_at, id`);
+      const promote = (h: Awaited<ReturnType<typeof harness>>) => h.d.execute(sql`
+        update operators set role = 'administrator' where id = ${h.ids.operatorA}`);
+      const billFor = async (h: Awaited<ReturnType<typeof harness>>) => {
+        const [row] = await h.d.select().from(schema.bills).where(eq(schema.bills.collectorId, h.ids.collector1));
+        expect(row).toBeDefined();
+        return row!;
+      };
+
+      it('records one attributed failed operation after a partial tag failure and preserves the committed bill', async () => {
+        const cloud = store();
+        const h = await harness({ each: 1, objectStore: cloud });
+        try {
+          const reviewed = await reviewedReceipts(h);
+          vi.mocked(cloud.tag).mockImplementation(async (key) => { if (key === reviewed.keys[1]) throw new Error('fake rejection'); });
+          const generated = await h.send('POST', '/api/settle/bills', period());
+          expect(generated.statusCode, generated.body).toBe(200);
+          expect(generated.json().created).toBe(2);
+          const bill = await billFor(h);
+          expect(bill.total).toBe('320.0004');
+          const events = await archiveEvents(h);
+          expect(events).toHaveLength(1);
+          expect(events[0]).toMatchObject({
+            action: 'bill.archive_tag_failed', target_id: bill.id,
+            operator_id: h.ids.operatorA, upload_device_id: h.ids.machineA, upload_centre_id: h.ids.centreA,
+            after: { operation: 'billing', attempted: 3, confirmed: 2, failed_object_keys: [reviewed.keys[1]], query_failed: false },
+          });
+          expect((await h.d.select().from(schema.settlements).where(eq(schema.settlements.id, reviewed.settlement_id)))[0]?.settlementState).toBe('bill_generated');
+        } finally { await h.app.close(); }
+      });
+
+      it('bounds retries to five keys, advances past failures and restarts explicitly without changing money', async () => {
+        const cloud = store();
+        const h = await harness({ each: 1, objectStore: cloud });
+        try {
+          const reviewed = await reviewedReceipts(h, Array.from({ length: 7 }, (_, i) => `part-${i}.mp4`));
+          await h.send('POST', '/api/settle/bills', period());
+          const bill = await billFor(h);
+          const moneyBefore = await h.d.select().from(schema.settlements).orderBy(schema.settlements.id);
+          await promote(h);
+          vi.mocked(cloud.tag).mockClear().mockImplementation(async (key) => { if (key === reviewed.keys[0]) throw new Error('fake rejection'); });
+          const url = `/api/settle/bills/${bill.id}/archive/retry`;
+          const first = await h.send('POST', url);
+          expect(first.statusCode, first.body).toBe(200);
+          expect(first.json()).toEqual({ attempted: 5, confirmed: 4, failed_object_keys: [reviewed.keys[0]], next_after: reviewed.keys[4], query_failed: false, audit_recorded: true });
+          expect(vi.mocked(cloud.tag).mock.calls.map(([key]) => key)).toEqual(reviewed.keys.slice(0, 5));
+          const second = await h.send('POST', `${url}?after=${encodeURIComponent(first.json().next_after)}`);
+          expect(second.statusCode, second.body).toBe(200);
+          expect(second.json()).toMatchObject({ attempted: 2, confirmed: 2, failed_object_keys: [], next_after: null });
+          expect(vi.mocked(cloud.tag).mock.calls.map(([key]) => key)).toEqual(reviewed.keys);
+          vi.mocked(cloud.tag).mockResolvedValue(undefined);
+          await h.send('POST', url);
+          const events = await archiveEvents(h);
+          expect(events.map((event) => event.action)).toEqual(['bill.archive_tag_failed', 'bill.archive_tag_retry', 'bill.archive_tag_retry']);
+          expect(events[0]?.after).toMatchObject({ operation: 'retry', attempted: 5, confirmed: 4, failed_object_keys: [reviewed.keys[0]], query_failed: false });
+          expect(events.every((event) => event.operator_id === h.ids.operatorA && event.target_id === bill.id)).toBe(true);
+          expect(await billFor(h)).toEqual(bill);
+          expect(await h.d.select().from(schema.settlements).orderBy(schema.settlements.id)).toEqual(moneyBefore);
+        } finally { await h.app.close(); }
+      });
+
+      it('requires an administrator and validates the bill and bounded cursor before tagging', async () => {
+        const cloud = store();
+        const h = await harness({ each: 1, objectStore: cloud });
+        try {
+          await reviewedReceipts(h);
+          await h.send('POST', '/api/settle/bills', period());
+          vi.mocked(cloud.tag).mockClear();
+          const url = `/api/settle/bills/${(await billFor(h)).id}/archive/retry`;
+          for (const [headers, status] of [[{}, 401], [h.headersA, 403], [h.headersF, 403], [h.headersR, 403]] as const) {
+            expect((await h.send('POST', url, undefined, headers)).statusCode).toBe(status);
+          }
+          await promote(h);
+          for (const suffix of ['?after=', `?after=${'x'.repeat(1025)}`, `?after=${encodeURIComponent('é'.repeat(513))}`, '?after=%00', '?after=a&after=b', '?limit=100']) {
+            expect((await h.send('POST', url + suffix)).statusCode, suffix).toBe(400);
+          }
+          expect((await h.send('POST', '/api/settle/bills/not-a-uuid/archive/retry')).statusCode).toBe(400);
+          expect((await h.send('POST', `/api/settle/bills/${uid()}/archive/retry`)).statusCode).toBe(404);
+          // Quotes are legal in an object key; they must be bound as a value.
+          expect((await h.send('POST', url + '?after=' + encodeURIComponent("z' OR true --"))).statusCode).toBe(200);
+          expect(cloud.tag).not.toHaveBeenCalled();
+        } finally { await h.app.close(); }
+      });
+
+      it('returns an actionable storage-unavailable refusal', async () => {
+        const h = await harness({ each: 1 });
+        try {
+          await h.send('POST', '/api/settle/bills', period());
+          await promote(h);
+          const reply = await h.send('POST', `/api/settle/bills/${(await billFor(h)).id}/archive/retry`);
+          expect(reply.statusCode).toBe(503);
+          expect(reply.json().error).toContain('Configure storage before retrying.');
+          expect(await archiveEvents(h)).toHaveLength(0);
+        } finally { await h.app.close(); }
+      });
+
+      it.each(['manual_hold', 'cloud_verification_failed', 'superseded'] as const)('does not retag billed receipts parked under %s', async (reason) => {
+        const cloud = store();
+        const h = await harness({ each: 1, objectStore: cloud });
+        try {
+          const reviewed = await reviewedReceipts(h);
+          await h.send('POST', '/api/settle/bills', period());
+          const bill = await billFor(h);
+          const [settlement] = await h.d.select().from(schema.settlements).where(eq(schema.settlements.id, reviewed.settlement_id));
+          // Post-bill open disputes are impossible under the actual schema.
+          await violates('review_disputes_unbilled_check', h.d.insert(schema.reviewDisputes).values({
+            id: uid(), reviewId: settlement!.episodeReviewId, raisedBy: h.ids.operatorA, reason: 'after billing',
+          }));
+          if (reason === 'cloud_verification_failed') {
+            await h.d.transaction(async (tx) => {
+              await tx.execute(sql`update settlements set settlement_state = 'manually_paid', updated_at = now() where id = ${reviewed.settlement_id}`);
+              await tx.execute(sql`insert into audit_events (action, target_table, target_id, actor_role, operator_id, upload_device_id, upload_centre_id)
+                values ('bill.pay', 'bills', ${bill.id}, 'operator', ${h.ids.financeA}, ${h.ids.machineA}, ${h.ids.centreA})`);
+            });
+          }
+          const [other] = await h.d.select().from(schema.settlements).where(sql`id <> ${reviewed.settlement_id}`);
+          await h.d.execute(sql`update settlements set exception_from_state = settlement_state,
+            settlement_state = 'exception', exception_reason = ${reason}, exception_note = 'archive eligibility test',
+            superseded_by = ${reason === 'superseded' ? other!.id : null}
+            where id = ${reviewed.settlement_id}`);
+          await promote(h);
+          vi.mocked(cloud.tag).mockClear();
+          const reply = await h.send('POST', `/api/settle/bills/${bill.id}/archive/retry`);
+          expect(reply.statusCode, reply.body).toBe(200);
+          expect(reply.json()).toMatchObject({ attempted: 0, confirmed: 0, failed_object_keys: [], next_after: null });
+          expect(cloud.tag).not.toHaveBeenCalled();
+          expect(await billFor(h)).toEqual(bill);
+          expect((await h.d.select().from(schema.settlements).where(eq(schema.settlements.id, reviewed.settlement_id)))[0]).toMatchObject({
+            amount: settlement!.amount, settlementState: 'exception', exceptionReason: reason,
+          });
+        } finally { await h.app.close(); }
+      });
+
+      it.skipIf(process.env['PLAYERONE_DB_ROLE'] !== 'playerone_app')('audits receipt-query failures once per operation without losing committed bills', async () => {
+        const cloud = store();
+        const h = await harness({ each: 1, objectStore: cloud });
+        try {
+          await reviewedReceipts(h);
+          await h.d.execute(sql`revoke select on cloud_verifications from playerone_app, playerone_risk`);
+          const [privilege] = await (await appDb()).execute<{ can_select: boolean }>(sql`
+            select has_table_privilege(current_user, 'cloud_verifications', 'SELECT') as can_select`);
+          expect(privilege?.can_select).toBe(false);
+          const generated = await h.send('POST', '/api/settle/bills', period());
+          expect(generated.statusCode, generated.body).toBe(200);
+          expect(generated.json().created).toBe(2);
+          const bill = await billFor(h);
+          expect(await archiveEvents(h)).toHaveLength(2);
+          for (const event of await archiveEvents(h)) expect(event.after).toEqual({ operation: 'billing', attempted: 0, confirmed: 0, failed_object_keys: [], query_failed: true });
+          await promote(h);
+          const retried = await h.send('POST', `/api/settle/bills/${bill.id}/archive/retry`);
+          expect(retried.statusCode).toBe(503);
+          expect(retried.json()).toMatchObject({ attempted: 0, confirmed: 0, failed_object_keys: [], query_failed: true, audit_recorded: true });
+          expect(await archiveEvents(h)).toHaveLength(3);
+          expect(cloud.tag).not.toHaveBeenCalled();
+          expect((await billFor(h)).total).toBe(bill.total);
+        } finally {
+          await h.d.execute(sql`grant select on cloud_verifications to playerone_app, playerone_risk`);
+          await h.app.close();
+        }
+      });
+
+      it('keeps bills when archive audit persistence fails and returns retry results with an honest 503', async () => {
+        const cloud = store();
+        const h = await harness({ each: 1, objectStore: cloud });
+        try {
+          const reviewed = await reviewedReceipts(h);
+          vi.mocked(cloud.tag).mockRejectedValue(new Error('fake tag failure'));
+          await h.d.execute(sql`create function archive_test_refuse_audit() returns trigger language plpgsql as $$
+            begin if NEW.action in ('bill.archive_tag_failed', 'bill.archive_tag_retry') then raise exception 'archive_test_audit_failure'; end if; return NEW; end; $$`);
+          await h.d.execute(sql`create trigger archive_test_refuse_audit before insert on audit_events for each row execute function archive_test_refuse_audit()`);
+          const generated = await h.send('POST', '/api/settle/bills', period());
+          expect(generated.statusCode, generated.body).toBe(200);
+          expect(generated.json().created).toBe(2);
+          const bill = await billFor(h);
+          expect(await archiveEvents(h)).toHaveLength(0);
+          await promote(h);
+          const url = `/api/settle/bills/${bill.id}/archive/retry`;
+          const failed = await h.send('POST', url);
+          expect(failed.statusCode, failed.body).toBe(503);
+          expect(failed.json()).toMatchObject({ attempted: 3, confirmed: 0, failed_object_keys: [...reviewed.keys].sort(), audit_recorded: false });
+          vi.mocked(cloud.tag).mockResolvedValue(undefined);
+          const succeeded = await h.send('POST', url);
+          expect(succeeded.statusCode, succeeded.body).toBe(503);
+          expect(succeeded.json()).toMatchObject({ attempted: 3, confirmed: 3, failed_object_keys: [], audit_recorded: false });
+          expect(succeeded.json().error).toContain('Tag calls may already have completed');
+          expect(await billFor(h)).toEqual(bill);
+          expect(await archiveEvents(h)).toHaveLength(0);
+        } finally {
+          await h.d.execute(sql`drop trigger if exists archive_test_refuse_audit on audit_events`);
+          await h.d.execute(sql`drop function if exists archive_test_refuse_audit()`);
+          await h.app.close();
+        }
+      });
+
+      it('tags only the billed review ingest after commit, and tags nothing on replay', async () => {
+        const cloud = store();
+        const h = await harness({ each: 1, objectStore: cloud });
+        const reviewed = await reviewedReceipts(h);
+        const [ingest] = await h.d.select().from(schema.episodeIngests)
+          .where(eq(schema.episodeIngests.ingestId, reviewed.ingest_id));
+        const newer = uid();
+        await h.d.insert(schema.episodeIngests).values({
+          ...ingest!, ingestId: newer, contentFingerprint: 'c'.repeat(64),
+          ingestedAt: new Date(ingest!.ingestedAt.getTime() + 1_000),
+        });
+        await h.d.insert(schema.episodeReviews).values({
+          id: uid(), episodeId: reviewed.episode_id, ingestId: newer,
+          measuredDurationS: ingest!.measuredDurationS, reviewState: 'pending',
+        });
+        await h.d.update(schema.episodes).set({ latestIngestId: newer })
+          .where(eq(schema.episodes.episodeId, reviewed.episode_id));
+        const newerKeys = ['left_part0001.mp4', 'manifest.json']
+          .map((file) => objectKey(reviewed.episode_id, newer, file));
+        await h.d.insert(schema.cloudVerifications).values(newerKeys.map((key) => ({
+          objectKey: key, episodeId: reviewed.episode_id, ingestId: newer, sha256: 'c'.repeat(64),
+        })));
+
+        const observer = await open(dbUrl());
+        const visible: { bills: number; lines: number; state: string }[] = [];
+        vi.mocked(cloud.tag).mockImplementation(async () => {
+          // A separate connection cannot see uncommitted bills or lines.
+          const rows = await observer.execute<{ bills: number; lines: number; state: string }>(sql`
+            select (select count(*)::int from bills where collector_id = ${h.ids.collector1}) as bills,
+                   (select count(*)::int from bill_lines bl join bills b on b.id = bl.bill_id
+                     where b.collector_id = ${h.ids.collector1}) as lines,
+                   settlement_state as state
+              from settlements where id = ${reviewed.settlement_id}
+          `);
+          visible.push(...rows);
+        });
+        try {
+          const generated = await h.send('POST', '/api/settle/bills', period());
+          expect(generated.statusCode, generated.body).toBe(200);
+          expect(generated.json().created).toBe(2);
+          expect(vi.mocked(cloud.tag).mock.calls.sort()).toEqual(
+            reviewed.keys.map((key) => [key, { tier: 'archive' }]).sort(),
+          );
+          expect(visible).toEqual(reviewed.keys.map(() => ({ bills: 1, lines: 1, state: 'bill_generated' })));
+          const replay = await h.send('POST', '/api/settle/bills', period());
+          expect(replay.statusCode, replay.body).toBe(200);
+          expect(replay.json().created).toBe(0);
+          expect(cloud.tag).toHaveBeenCalledTimes(reviewed.keys.length);
+          await promote(h);
+          vi.mocked(cloud.tag).mockClear();
+          const retryUrl = `/api/settle/bills/${(await billFor(h)).id}/archive/retry`;
+          const retried = await h.send('POST', retryUrl);
+          expect(retried.statusCode, retried.body).toBe(200);
+          expect(vi.mocked(cloud.tag).mock.calls.sort()).toEqual(reviewed.keys.map((key) => [key, { tier: 'archive' }]).sort());
+          // A newer receipt cannot stand in for a missing receipt of the billed ingest.
+          await h.d.delete(schema.cloudVerifications).where(eq(schema.cloudVerifications.ingestId, reviewed.ingest_id));
+          vi.mocked(cloud.tag).mockClear();
+          expect((await h.send('POST', retryUrl)).json().attempted).toBe(0);
+          expect(cloud.tag).not.toHaveBeenCalled();
+        } finally {
+          await observer.close();
+          await h.app.close();
+        }
+      });
+
+      it('tags nothing when bill generation rolls back at commit', async () => {
+        const cloud = store();
+        const h = await harness({ each: 1, objectStore: cloud });
+        await reviewedReceipts(h);
+        await h.d.execute(sql`
+          create function archive_test_refuse_bill() returns trigger language plpgsql as $$
+          begin raise exception 'archive_test_commit_failure'; end; $$
+        `);
+        try {
+          await h.d.execute(sql`
+            create constraint trigger archive_test_refuse_bill after insert on bills
+            deferrable initially deferred for each row execute function archive_test_refuse_bill()
+          `);
+          const generated = await h.send('POST', '/api/settle/bills', period());
+          expect(generated.statusCode).toBe(500);
+          expect(cloud.tag).not.toHaveBeenCalled();
+          const [counts] = await h.d.execute<{ bills: number; lines: number; pending: number }>(sql`
+            select (select count(*)::int from bills) as bills,
+                   (select count(*)::int from bill_lines) as lines,
+                   (select count(*)::int from settlements where settlement_state = 'pending_settlement') as pending
+          `);
+          expect(counts).toEqual({ bills: 0, lines: 0, pending: 2 });
+        } finally {
+          await h.d.execute(sql`drop trigger if exists archive_test_refuse_bill on bills`);
+          await h.d.execute(sql`drop function archive_test_refuse_bill()`);
+          await h.app.close();
+        }
+      });
+
+      it('keeps bill generation successful and bills present when tagging rejects', async () => {
+        const cloud = store();
+        vi.mocked(cloud.tag).mockRejectedValue(new Error('tag unavailable'));
+        const h = await harness({ each: 1, objectStore: cloud });
+        const reviewed = await reviewedReceipts(h);
+        try {
+          const generated = await h.send('POST', '/api/settle/bills', period());
+          expect(generated.statusCode, generated.body).toBe(200);
+          expect(generated.json().created).toBe(2);
+          expect(cloud.tag).toHaveBeenCalledTimes(reviewed.keys.length);
+          const [counts] = await h.d.execute<{ bills: number; lines: number }>(sql`
+            select (select count(*)::int from bills) as bills,
+                   (select count(*)::int from bill_lines) as lines
+          `);
+          expect(counts).toEqual({ bills: 2, lines: 2 });
+        } finally {
+          await h.app.close();
+        }
+      });
+    });
+
     it('writes one bill per collector, totalling exactly its own lines', async () => {
       const h = await harness();
       const res = await h.send('POST', '/api/settle/bills', period());
@@ -366,6 +707,65 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       expect(before['bills']).toBe(2);
       expect(before['lines']).toBe(4);
       expect(before['audits']).toBe(2);
+    });
+
+    it('races the same cycle on separate connections, then recovers its lost response after restart', async () => {
+      const h = await harness();
+      const url = new URL(dbUrl());
+      if (process.env['PLAYERONE_DB_ROLE']) url.searchParams.set('role', process.env['PLAYERONE_DB_ROLE']);
+      const connection = await open(url.toString());
+      const blocker = await open(dbUrl());
+      const other = buildApi({ db: connection, tokenSecret: SECRET });
+      const pending: Promise<LightMyRequestResponse>[] = [];
+      try {
+        await other.ready();
+        await blocker.transaction(async (tx) => {
+          await tx.execute(sql`select 1 from settlements for update`);
+          pending.push(h.send('POST', '/api/settle/bills', period()));
+          pending.push(Promise.resolve(other.inject({
+            method: 'POST', url: '/api/settle/bills', headers: h.headersA, payload: period(),
+          })));
+          // The winner waits on a settlement; the loser waits on the unique
+          // collector/period index. Observe both waits before releasing either.
+          await expect.poll(async () => {
+            await tx.execute(sql`select pg_stat_clear_snapshot()`);
+            const [row] = await tx.execute<{ n: number }>(sql`
+              select count(*)::int as n from pg_stat_activity
+               where datname = current_database() and wait_event_type = 'Lock'
+            `);
+            return row!.n;
+          }, { timeout: 15_000 }).toBe(2);
+        });
+        const pair = await Promise.all(pending);
+        expect(pair.map((r) => r.statusCode)).toEqual([200, 200]);
+        expect(pair.reduce((n, r) => n + r.json().created, 0)).toBe(2);
+        const snapshot = async () => {
+          const [row] = await h.d.execute<{ bills: number; lines: number; distinct_lines: number; audits: number; total: string }>(sql`
+            select (select count(*) from bills)::int as bills,
+                   (select count(*) from bill_lines)::int as lines,
+                   (select count(distinct settlement_id) from bill_lines)::int as distinct_lines,
+                   (select count(*) from audit_events where action = 'bill.generate')::int as audits,
+                   (select sum(total)::text from bills) as total
+          `);
+          return row;
+        };
+        const before = await snapshot();
+        expect(before).toEqual({ bills: 2, lines: 4, distinct_lines: 4, audits: 2, total: '1120.0014' });
+        // Neither response reaches the caller. Its retry reaches a fresh API.
+        await h.app.close();
+        const restarted = buildApi({ db: await appDb(), tokenSecret: SECRET });
+        try {
+          const replay = await restarted.inject({ method: 'POST', url: '/api/settle/bills', headers: h.headersA, payload: period() });
+          expect(replay.statusCode, replay.body).toBe(200);
+          expect(replay.json().created).toBe(0);
+          expect(await snapshot()).toEqual(before);
+        } finally { await restarted.close(); }
+      } finally {
+        await Promise.allSettled(pending);
+        await other.close();
+        await connection.close();
+        await blocker.close();
+      }
     });
 
     it('takes the cycle length as a parameter, because weekly is only assumed', async () => {

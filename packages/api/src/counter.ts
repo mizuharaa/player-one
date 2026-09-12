@@ -24,7 +24,7 @@ import type { CounterActor } from './actor.ts';
 
 const uuid = z.string().uuid();
 
-const HandoverBody = z.object({
+export const HandoverBody = z.object({
   id: uuid,
   collector_id: uuid,
   device_id: uuid,
@@ -32,7 +32,7 @@ const HandoverBody = z.object({
   handover_time: z.string().datetime(),
 });
 
-const SessionBody = z.object({
+export const SessionBody = z.object({
   id: uuid,
   task_id: uuid,
   scenario_id: uuid,
@@ -54,13 +54,13 @@ const SessionBody = z.object({
   client_version: z.string().optional(),
 });
 
-const BatchBody = z.object({
+export const BatchBody = z.object({
   id: uuid,
   handover_id: uuid,
   import_started_at: z.string().datetime(),
 });
 
-const BatchPatch = z.object({
+export const BatchPatch = z.object({
   import_completed_at: z.string().datetime().optional(),
   file_count: z.number().int().nonnegative().optional(),
   total_size_bytes: z.number().int().nonnegative().optional(),

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Switch, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
 import { AGREEMENTS, type AgreementId } from '../api/types.ts';
@@ -20,12 +20,26 @@ export function Agreements() {
   const theme = useTheme();
   const [checked, setChecked] = useState<Partial<Record<AgreementId, boolean>>>({});
   const allChecked = AGREEMENTS.every((a) => checked[a.id] === true);
+  const submitting = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const accept = useMutation({
     mutationFn: () =>
       api.acceptAgreements(AGREEMENTS.map((a) => ({ agreementId: a.id, version: a.version }))),
-    onSuccess: () => nav.push({ name: 'training' }),
+    onSuccess: () => { if (mounted.current) nav.push({ name: 'training' }); },
+    onSettled: () => { submitting.current = false; },
   });
+
+  const submit = () => {
+    // Native events can arrive before React renders the disabled controls.
+    if (!mounted.current || submitting.current || !allChecked) return;
+    submitting.current = true;
+    accept.mutate();
+  };
 
   return (
     <Screen title={tt('agreements.title')}>
@@ -50,7 +64,10 @@ export function Agreements() {
               accessibilityLabel={tt(`agreement.${a.id}`)}
               disabled={accept.isPending}
               value={checked[a.id] === true}
-              onValueChange={(v) => setChecked((c) => ({ ...c, [a.id]: v }))}
+              onValueChange={(v) => {
+                if (submitting.current) return;
+                setChecked((c) => ({ ...c, [a.id]: v }));
+              }}
               thumbColor={theme.color.background}
               /* On is the ink pill, the same mark `Chip` and `Button` carry:
                  the control's selected state is where the collector's action
@@ -68,7 +85,11 @@ export function Agreements() {
       ))}
       {!allChecked ? <Note text={tt('agreements.incomplete')} /> : null}
       {accept.isError ? <Note text={tt('common.actionFailed')} /> : null}
-      <Button label={tt(accept.isPending ? 'common.saving' : 'agreements.submit')} disabled={!allChecked || accept.isPending} onPress={() => accept.mutate()} />
+      <Button
+        label={tt(accept.isPending ? 'common.loading' : accept.isError ? 'common.retry' : 'agreements.submit')}
+        disabled={!allChecked || accept.isPending}
+        onPress={submit}
+      />
     </Screen>
   );
 }

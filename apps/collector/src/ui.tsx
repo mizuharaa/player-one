@@ -108,7 +108,8 @@ export function useReducedMotion(): boolean {
     const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
     return () => {
       live = false;
-      sub.remove();
+      // Not every platform's implementation returns a subscription here.
+      sub?.remove();
     };
   }, []);
   return reduced;
@@ -1077,7 +1078,7 @@ export function Choice({
       accessibilityRole="button"
       accessibilityState={{ selected, disabled }}
       accessibilityLabel={describedBy === undefined ? label : `${describedBy}: ${label}`}
-      onPress={onPress}
+      onPress={disabled ? undefined : onPress}
       disabled={disabled}
       style={{
         maxWidth: '100%',
@@ -1122,6 +1123,7 @@ export function Field({
   onChangeText,
   secure = false,
   keyboardType,
+  editable = true,
 }: {
   label: string;
   /**
@@ -1140,6 +1142,7 @@ export function Field({
   onChangeText: (v: string) => void;
   secure?: boolean;
   keyboardType?: 'default' | 'phone-pad' | 'number-pad';
+  editable?: boolean;
 }) {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
@@ -1163,6 +1166,7 @@ export function Field({
         onBlur={() => setFocused(false)}
         secureTextEntry={secure}
         keyboardType={keyboardType}
+        editable={editable}
         accessibilityLabel={label}
         placeholderTextColor={theme.color.faintForeground}
         style={{

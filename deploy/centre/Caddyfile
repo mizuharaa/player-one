@@ -1,0 +1,28 @@
+# Explicit HTTP LAN or certificate-backed HTTPS, selected by centre.env.
+# Counter /handovers, /upload-batches, /upload-devices and /episodes use 127.0.0.1:8080 directly;
+# heartbeat uses Fastify inject inside the API process. /episodes here belongs to the console SPA.
+{$PLAYERONE_PUBLIC_URL} {
+	bind {$PLAYERONE_BIND}
+	handle /api/* {
+		reverse_proxy 127.0.0.1:{$PORT}
+	}
+	handle /auth/* {
+		reverse_proxy 127.0.0.1:{$PORT}
+	}
+	handle /whoami {
+		reverse_proxy 127.0.0.1:{$PORT}
+	}
+	handle /reference/* {
+		reverse_proxy 127.0.0.1:{$PORT}
+	}
+	handle /media/* {
+		reverse_proxy 127.0.0.1:{$PORT} {
+			flush_interval -1
+		}
+	}
+	handle {
+		root * "{$PLAYERONE_CONSOLE_ROOT}"
+		try_files {path} /index.html
+		file_server
+	}
+}

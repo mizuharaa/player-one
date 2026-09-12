@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { schema, type Db } from '@playerone/store';
 import { auditLogin, mutate } from './audit.ts';
@@ -190,7 +190,20 @@ const CREDENTIALS = { error: 'credentials', reason: 'credentials' };
 export function registerCollectorAuth(
   app: FastifyInstance,
   db: Db,
-  options: { tokenSecret: string; limiter: SignInLimiter; sendSignInCode?: SendSignInCode },
+  options: {
+    tokenSecret: string;
+    limiter: SignInLimiter;
+    sendSignInCode?: SendSignInCode;
+    /**
+     * One phone number whose sign-in code comes back in the response, compared
+     * byte for byte against the string the request carried. No normalisation:
+     * `zns.ts` normalises for delivery only and that must not be borrowed for
+     * identity. Unset, the default everywhere, changes nothing. Scoped to one
+     * number rather than a mode because production cannot be detected from in
+     * here — see "Demo sign-in" in `docs/RUNNING.md`.
+     */
+    demoPhone?: string;
+  },
 ): void {
   /**
    * APP-01. Ask for a code.
@@ -211,6 +224,27 @@ export function registerCollectorAuth(
     const { phone } = (req.body ?? {}) as Record<string, string>;
     if (typeof phone !== 'string' || phone === '') {
       return reply.code(400).send({ error: 'missing phone' });
+    }
+
+    const refs = [{ id: phone, kind: 'collector' }] as const;
+    const attempt = signInAttempt(db, options.limiter, req.ip, 'collector.login_failed', refs);
+    const sourceWait = options.limiter.refusedFor(req.ip, refs);
+    if (sourceWait !== null) {
+      // A blocked caller must not reserve send slots for other collectors.
+      await attempt.blocked();
+      return reply.code(429).header('retry-after', String(sourceWait)).send(rateLimited(sourceWait));
+    }
+
+    /**
+     * One code per number per minute. Claimed for every number that parses,
+     * before the lookup below: charging only real sends would answer 429 for an
+     * enrolled number and 204 for an unknown one, which `constantLatency`
+     * cannot hide because it equalises time and not answers. Before counting
+     * an attempt so being told to wait does not also spend security budget.
+     */
+    const cooldown = options.limiter.reserveSend(phone);
+    if (cooldown !== null) {
+      return reply.code(429).header('retry-after', String(cooldown)).send(rateLimited(cooldown));
     }
 
     /**
@@ -237,13 +271,17 @@ export function registerCollectorAuth(
      * would put "which numbers are not collectors" in a table, from an
      * unauthenticated request, which is the question the 204 exists to refuse.
      */
-    const attempt = signInAttempt(db, options.limiter, req.ip, 'collector.login_failed', [
-      { id: phone, kind: 'collector' },
-    ]);
     const wait = await attempt.blocked();
     if (wait !== null) {
       return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
     }
+
+    /**
+     * Set only for the demo number, and only once a collector owns it, so an
+     * unenrolled demo number still answers 204 and the route does not become a
+     * way to ask whether any *other* number is enrolled.
+     */
+    let demoCode: string | null = null;
 
     await constantLatency(async () => {
       // Generated and hashed whether or not anybody owns this number, so the
@@ -280,8 +318,17 @@ export function registerCollectorAuth(
        * ever reaches this line.
        */
       deliverAndRecord(db, send, collector, phone, code);
+      if (options.demoPhone !== undefined && phone === options.demoPhone) demoCode = code;
     });
 
+    /**
+     * The one place this route can answer something other than 204, and only
+     * for the configured number. It is an enrolment oracle for that number and
+     * that is accepted rather than papered over: we seed it ourselves and its
+     * existence is not a secret. Every other number keeps the answers that say
+     * nothing.
+     */
+    if (demoCode !== null) return reply.code(200).send({ demo_code: demoCode });
     return reply.code(204).send();
   });
 
@@ -332,6 +379,7 @@ export function registerCollectorAuth(
 
       if (collector === undefined) return null;
       if (collector.attempts > CODE_ATTEMPTS) return null;
+      if (collector.hash === null) return null;
       if (collector.expiresAt === null || collector.expiresAt.getTime() <= Date.now()) return null;
       if (!(await verifyCredential(code, collector.hash))) return null;
 
@@ -339,9 +387,12 @@ export function registerCollectorAuth(
        * The code is spent. Clearing both columns together is what
        * `collectors_sign_in_code_check` insists on, and it is what makes the
        * code single-use: a replay of the same six digits a second later finds
-       * no hash and is refused like any other wrong code.
+       * no hash and is refused like any other wrong code. Match the verified
+       * snapshot as well: another caller may have consumed or replaced it
+       * while scrypt ran, or the phone/epoch may have changed. Only the UPDATE
+       * winner signs in, and an old verification cannot erase a fresh code.
        */
-      await db
+      const [consumed] = await db
         .update(schema.collectors)
         .set({
           signInCodeHash: null,
@@ -349,7 +400,15 @@ export function registerCollectorAuth(
           signInCodeAttempts: 0,
           updatedAt: new Date(),
         })
-        .where(eq(schema.collectors.id, collector.id));
+        .where(and(
+          eq(schema.collectors.id, collector.id),
+          eq(schema.collectors.phone, phone),
+          eq(schema.collectors.tokenEpoch, collector.epoch),
+          eq(schema.collectors.signInCodeHash, collector.hash),
+          sql`${schema.collectors.signInCodeExpiresAt} > clock_timestamp()`,
+        ))
+        .returning({ id: schema.collectors.id });
+      if (consumed === undefined) return null;
 
       await auditLogin(db, 'collector.login', 'collectors', collector.id, {
         collectorId: collector.id,

@@ -39,6 +39,7 @@ import { sql } from 'drizzle-orm';
 import { contentFingerprint, deriveEpisodeId } from '../../contracts/src/identity.ts';
 import { ingest } from '../../ingest/src/ingest.ts';
 import { open } from '../../store/src/index.ts';
+import { s3StoreFromEnv } from '../src/upload-worker.ts';
 import { wholeVnd } from '../src/payout/domain/attempts.ts';
 import { verifyExport } from '../src/payout/domain/export.ts';
 import { shadowDiff, shadowRun } from '../src/payout/recon/index.ts';
@@ -80,7 +81,7 @@ const noRail = async () => {
 };
 
 /**
- * The cloud, as an fs-backed stub of the two-method `ObjectStore` seam.
+ * The cloud, as an fs-backed stub of the `ObjectStore` seam.
  *
  * `upload.test.ts` has a richer one — it can corrupt an object on write and
  * interrupt a run partway — and this is deliberately not that. Those knobs
@@ -96,6 +97,8 @@ const noRail = async () => {
  */
 class FsObjectStore {
   #meta = new Map();
+
+  async tag(_key, _tags) {}
 
   constructor(root) {
     this.root = root;
@@ -225,7 +228,8 @@ async function runLoop({ label, mediaRoot, basename, record, spans, prepareTime,
     tokenSecret: 'k',
     mediaRoot,
     currency: 'VND',
-    objectStore: new FsObjectStore(cloudRoot),
+    // The real store when STORAGE_* names one, so this loop can be run against HCM04.
+    objectStore: s3StoreFromEnv() ?? new FsObjectStore(cloudRoot),
     /**
      * QR-02 as written, rather than the ADR 0001 deviation.
      *

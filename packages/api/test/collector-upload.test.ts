@@ -56,6 +56,12 @@ const hasStore = (): boolean => (process.env['STORAGE_ENDPOINT'] ?? '') !== '';
  * stub can answer it.
  */
 class MemoryStore implements ObjectStore, DirectUploadStore {
+  readonly tags = new Map<string, Record<string, string>>();
+
+  async tag(key: string, tags: Record<string, string>): Promise<void> {
+    this.tags.set(key, tags);
+  }
+
   readonly objects = new Map<string, Buffer>();
   /** The sha256 the presign or the multipart create carried, as S3 metadata would. */
   private readonly meta = new Map<string, string>();

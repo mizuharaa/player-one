@@ -77,12 +77,18 @@ export async function harness(over: Partial<PayoutOptions> = {}, opts: HarnessOp
   const pooled = opts.pool === undefined ? null : await open(dbUrl(), { max: opts.pool });
   const d = pooled ?? (await db());
   const ids = await seedPayout(d);
+  // The API needs the requested pool too: passing appDb() here silently put
+  // concurrent HTTP requests back onto its single connection. Keep the owner
+  // connection for fixtures and the application role for route writes.
+  const appUrl = new URL(dbUrl());
+  if (process.env['PLAYERONE_DB_ROLE']) appUrl.searchParams.set('role', process.env['PLAYERONE_DB_ROLE']);
+  const pooledApp = opts.pool === undefined ? null : await open(appUrl.toString(), { max: opts.pool });
   const mode = opts.mode ?? 'api';
   const payout: PayoutOptions =
     mode === 'api'
       ? { mode: 'api', zaloPayEnv: 'production', credentialsPresent: PRODUCTION, client, ...over }
       : { mode: 'manual', zaloPayEnv: 'sandbox', client, ...over };
-  const app = buildApi({ db: await appDb(), tokenSecret: 'k', payout });
+  const app = buildApi({ db: pooledApp ?? await appDb(), tokenSecret: 'k', payout });
   await app.ready();
 
   const login = async (machine: string, operator: string): Promise<Headers> => {
@@ -113,6 +119,7 @@ export async function harness(over: Partial<PayoutOptions> = {}, opts: HarnessOp
   const close = async () => {
     await app.close();
     await fake.close();
+    if (pooledApp !== null) await pooledApp.close();
     if (pooled !== null) await pooled.close();
   };
   return { fake, client, d, ids, app, opA, finA, finB, send, actor, close };

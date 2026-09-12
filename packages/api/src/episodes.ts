@@ -61,6 +61,28 @@ const ParkBody = z.object({
   reason: z.string().trim().min(1),
 });
 
+const BrowseTime = z.string().datetime({ offset: true }).refine((v) => Number.isFinite(Date.parse(v)));
+/**
+ * The instant in microseconds. `Date.parse` stops at milliseconds, and the
+ * column is `timestamptz`, so comparing parsed dates called two timestamps one
+ * microsecond apart an empty range and answered 400.
+ */
+const micros = (iso: string): number => {
+  const digits = /\.(\d+)/.exec(iso)?.[1] ?? '';
+  return Date.parse(iso) * 1000 + Number(digits.padEnd(6, '0').slice(3));
+};
+const BrowseQuery = z.object({
+  task_id: z.string().uuid().optional(),
+  collector_id: z.string().uuid().optional(),
+  device_id: z.string().uuid().optional(),
+  status: z.enum(['resolved', 'quarantined']).optional(),
+  from: BrowseTime.optional(),
+  to: BrowseTime.optional(),
+}).strict().refine(
+  (q) => q.from === undefined || q.to === undefined || micros(q.from) < micros(q.to),
+  { message: 'from must be before to' },
+);
+
 export function registerEpisodes(
   app: FastifyInstance,
   db: Db,
@@ -1052,6 +1074,58 @@ export function registerEpisodes(
       release_id: (written ?? replayed)!.id,
       parked: false,
       replayed: written === undefined,
+    });
+  });
+
+  /** BO-05: browse only the recordings received at the caller's centre. */
+  app.get('/api/episodes', opts, async (req, reply) => {
+    const q = BrowseQuery.safeParse(req.query ?? {});
+    if (!q.success) {
+      return reply.code(400).send({ error: 'invalid query', detail: q.error.issues.slice(0, 3) });
+    }
+    const { task_id, collector_id, device_id, status, from, to } = q.data;
+    const actor = actorOf(req);
+    const rows = (await db.execute(sql`
+      select e.episode_id, t.name as task_name, c.external_ref as collector_ref,
+             d.hardware_serial as device_serial, e.resolution_state,
+             e.first_seen_at, e.session_started_at
+        from episodes e
+        join upload_batches b on b.id = e.upload_batch_id
+        join handovers h on h.id = b.handover_id
+        left join collection_sessions s on s.id = e.collection_session_id
+        left join tasks t on t.id = s.task_id
+        left join collectors c on c.id = s.collector_id
+        left join collection_session_devices sd on sd.collection_session_id = s.id
+        left join devices d on d.id = sd.device_id
+       where h.upload_centre_id = ${actor.operator.uploadCentreId}
+         ${task_id === undefined ? sql`` : sql`and s.task_id = ${task_id}`}
+         ${collector_id === undefined ? sql`` : sql`and s.collector_id = ${collector_id}`}
+         ${device_id === undefined ? sql`` : sql`and sd.device_id = ${device_id}`}
+         ${status === undefined ? sql`` : sql`and e.resolution_state = ${status}`}
+         ${from === undefined ? sql`` : sql`and e.first_seen_at >= ${from}::timestamptz`}
+         ${to === undefined ? sql`` : sql`and e.first_seen_at < ${to}::timestamptz`}
+       order by e.first_seen_at desc, e.episode_id asc
+       limit 200
+    `)) as unknown as {
+      episode_id: string;
+      task_name: string | null;
+      collector_ref: string | null;
+      device_serial: string | null;
+      resolution_state: 'resolved' | 'quarantined';
+      first_seen_at: Date;
+      session_started_at: string;
+    }[];
+    return reply.send({
+      episodes: rows.map((r) => ({
+        episode_id: r.episode_id,
+        task_name: r.task_name,
+        collector_ref: r.collector_ref,
+        device_serial: r.device_serial,
+        resolution_state: r.resolution_state,
+        first_seen_at: new Date(r.first_seen_at).toISOString(),
+        session_started_at: r.session_started_at,
+      })),
+      truncated: rows.length === 200,
     });
   });
 

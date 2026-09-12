@@ -24,7 +24,7 @@ const DESTINATIONS: Destination[] = [
   { to: '/counter', key: 'nav.counter', Icon: IconCounter, built: true },
   { to: '/review', key: 'nav.review', Icon: IconReview, built: true },
   { to: '/showcase', key: 'workspace.showcase', Icon: IconEpisodes, built: true },
-  { to: '/episodes', key: 'nav.episodes', Icon: IconEpisodes, built: 'partial' },
+  { to: '/episodes', key: 'nav.episodes', Icon: IconEpisodes, built: true },
   { to: '/settle', key: 'nav.settle', Icon: IconSettle, built: true },
   { to: '/backoffice', key: 'nav.backoffice', Icon: IconBackOffice, built: true },
   { to: '/pipeline', key: 'nav.pipeline', Icon: IconPipeline, built: true },

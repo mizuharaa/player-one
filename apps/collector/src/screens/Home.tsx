@@ -60,7 +60,7 @@ export function Home() {
         : devices.isPending ? <Body muted>{tt('common.loading')}</Body>
         : devices.data?.length === 0 ? <Note text={tt('home.gateDevice')} /> : null}
       <NavRow label={tt('home.devices')} onPress={() => nav.push({ name: 'devices' })} />
-      <NavRow label={tt('session.title')} onPress={() => nav.push({ name: 'sessionCreate' })} />
+      <NavRow label={tt('session.title')} onPress={() => nav.push({ name: 'sessionReminder' })} />
       <View ref={ringTarget} collapsable={false}>
         <NavRow label={`${tt('home.uploads')} · ${ringLabel}`} onPress={() => nav.selectTab('uploads')} />
       </View>

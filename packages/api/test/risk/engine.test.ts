@@ -579,7 +579,7 @@ describe.skipIf(!hasDb())('the risk engine', () => {
      *
      * The clock is held at NOW throughout on purpose. `collectorsDue` sweeps
      * every collector once an hour and a fresh collector run makes its bills
-     * due, so in production the gap does close within `collectorStaleMs` —
+     * due, so in production the gap does close within that hour —
      * which is exactly why moving the clock here would make this test pass
      * without the fix. Frozen, the second tick can only pick the bill up
      * because the run's own `holds_enabled` evidence says it was judged with

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Switch, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
 import { EXAM_QUESTION_COUNT } from '../api/mock.ts';
@@ -19,13 +19,33 @@ export function Exam() {
   const theme = useTheme();
   const [answers, setAnswers] = useState<boolean[]>(Array(EXAM_QUESTION_COUNT).fill(false));
   const [result, setResult] = useState<'passed' | 'failed' | null>(null);
+  const submitting = useRef(false);
+  const completed = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const questions = [tt('exam.q1'), tt('exam.q2'), tt('exam.q3')];
 
   const submit = useMutation({
-    mutationFn: () => api.submitExam(answers),
-    onSuccess: ({ passed }) => setResult(passed ? 'passed' : 'failed'),
+    mutationFn: (snapshot: boolean[]) => api.submitExam(snapshot),
+    onSuccess: ({ passed }) => {
+      if (!mounted.current) return;
+      // The server preserves a pass; this screen must preserve its handoff too.
+      completed.current = passed;
+      setResult(passed ? 'passed' : 'failed');
+    },
+    onSettled: () => { submitting.current = false; },
   });
+
+  const sendAnswers = () => {
+    if (!mounted.current || submitting.current || completed.current) return;
+    submitting.current = true;
+    setResult(null);
+    submit.mutate([...answers]);
+  };
 
   return (
     <Screen title={tt('exam.title')}>
@@ -47,7 +67,11 @@ export function Exam() {
               accessibilityLabel={q}
               disabled={submit.isPending || result === 'passed'}
               value={answers[i] === true}
-              onValueChange={(v) => setAnswers((a) => a.map((x, j) => (j === i ? v : x)))}
+              onValueChange={(v) => {
+                if (submitting.current || completed.current) return;
+                setResult(null);
+                setAnswers((a) => a.map((x, j) => (j === i ? v : x)));
+              }}
               thumbColor={theme.color.background}
               /* On is the ink pill, the same mark `Chip` and `Button` carry:
                  the control's selected state is where the collector's action
@@ -73,7 +97,11 @@ export function Exam() {
       {result === 'passed' ? (
         <Button label={tt('home.tasks')} onPress={() => nav.reset({ name: 'home' })} />
       ) : (
-        <Button disabled={submit.isPending} label={tt(submit.isPending ? 'common.saving' : 'exam.submit')} onPress={() => submit.mutate()} />
+        <Button
+          label={tt(submit.isPending ? 'common.loading' : submit.isError ? 'common.retry' : 'exam.submit')}
+          disabled={submit.isPending}
+          onPress={sendAnswers}
+        />
       )}
     </Screen>
   );

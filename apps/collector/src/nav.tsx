@@ -22,6 +22,7 @@ export type Route =
   | { name: 'myTasks' }
   | { name: 'devices' }
   | { name: 'provisioning' }
+  | { name: 'sessionReminder' }
   | { name: 'sessionCreate' }
   | { name: 'uploads' }
   | { name: 'income' }

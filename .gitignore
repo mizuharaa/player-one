@@ -10,6 +10,8 @@ docs/sample_data/
 # source. The whole directory, so a one-off probe cannot be staged by accident.
 .impeccable/
 apps/console/dist/
+apps/collector/android/
+apps/collector/ios/
 
 # Extracted vendor SDKs and the kit they come from: hundreds of MB, not source.
 tools/*

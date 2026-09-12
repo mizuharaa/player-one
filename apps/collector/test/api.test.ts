@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EXAM_QUESTION_COUNT, MockCollectorApi } from '../src/api/mock.ts';
 import { HttpCollectorApi } from '../src/api/http.ts';
 import { sessionEntry } from '../src/api/session-entry.ts';
@@ -391,6 +391,74 @@ describe('collector wire truth and cold-start recovery', () => {
     const store = fakeStore('revoked');
     const { fn } = fakeFetch({ 'GET /api/me/profile': { status: 401 } });
     expect(await sessionEntry(new HttpCollectorApi(BASE, store, () => {}, fn))).toBe('out');
+  });
+});
+
+describe('local account isolation', () => {
+  it.each([200, 401])('ignores an old response (%s) after sign-out and another account signs in', async (status) => {
+    const store = fakeStore('old-token');
+    let respond!: (res: Response) => void;
+    let signal: AbortSignal | null | undefined;
+    const unauthorized = vi.fn();
+    const fn = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith('/profile')) return { status: 200, text: async () => JSON.stringify(PROFILE) } as Response;
+      signal = init?.signal;
+      return new Promise<Response>((resolve) => { respond = resolve; });
+    }) as typeof fetch;
+    const old = new HttpCollectorApi(BASE, store, unauthorized, fn);
+    await old.restoreSession();
+    const pending = old.income();
+    const rejected = expect(pending).rejects.toThrow('unauthorized');
+    await old.signOut();
+    expect(signal?.aborted).toBe(true);
+    const next = new HttpCollectorApi(BASE, store, () => {}, fakeFetch({
+      'POST /auth/collector/verify': { status: 200, body: { token: 'new-token' } },
+    }).fn);
+    await next.signIn('0903000002', '123456');
+    respond({ status, text: async () => JSON.stringify({ entries: [] }) } as Response);
+    await rejected;
+    expect(store.value).toBe('new-token');
+    expect(unauthorized).not.toHaveBeenCalled();
+  });
+
+  it('clears a sign-in write already in flight before allowing account switching', async () => {
+    const store = fakeStore();
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      store.set = async (token) => {
+        resolve();
+        await new Promise<void>((done) => { release = done; });
+        store.value = token;
+      };
+    });
+    const api = new HttpCollectorApi(BASE, store, () => {}, fakeFetch({
+      'POST /auth/collector/verify': { status: 200, body: { token: 'old-token' } },
+    }).fn);
+    const signingIn = api.signIn('0903000001', '123456');
+    const rejected = expect(signingIn).rejects.toThrow('unauthorized');
+    await started;
+    const leaving = api.signOut();
+    release();
+    await leaving;
+    await rejected;
+    expect(store.value).toBeNull();
+  });
+
+  it('rejects late keystore restoration and permits retry when clearing fails', async () => {
+    const store = fakeStore('old-token');
+    let release!: (token: string) => void;
+    store.get = () => new Promise((resolve) => { release = resolve; });
+    const api = new HttpCollectorApi(BASE, store, () => {}, fakeFetch({}).fn);
+    const restoring = api.restoreSession();
+    const rejected = expect(restoring).rejects.toThrow('unauthorized');
+    const clear = store.clear.bind(store);
+    store.clear = async () => { throw new Error('keystore unavailable'); };
+    await expect(api.signOut()).rejects.toThrow('keystore unavailable');
+    release('old-token');
+    await rejected;
+    expect(store.value).toBe('old-token');
+    store.clear = clear;
+    await api.signOut();
     expect(store.value).toBeNull();
   });
 });
@@ -448,6 +516,43 @@ describe('signing in (APP-01)', () => {
     const api = new HttpCollectorApi(BASE, fakeStore(), () => {}, fn);
     await expect(api.requestSignInCode('0903000001')).resolves.toBeUndefined();
     await expect(api.requestSignInCode('0000000000')).resolves.toBeUndefined();
+  });
+
+  it.each([302, 401, 403, 404, 500, 502])('does not report a sent code after HTTP %s', async (status) => {
+    const { fn } = fakeFetch({ 'POST /auth/collector/request-code': { status } });
+    const api = new HttpCollectorApi(BASE, fakeStore(), () => {}, fn);
+    await expect(api.requestSignInCode('0903000001')).rejects.toThrow(new ApiError('server_error'));
+  });
+
+  it('keeps request-shape errors separate from number eligibility', async () => {
+    const { fn } = fakeFetch({ 'POST /auth/collector/request-code': { status: 400 } });
+    await expect(new HttpCollectorApi(BASE, fakeStore(), () => {}, fn).requestSignInCode(''))
+      .rejects.toThrow(new ApiError('invalid_request'));
+  });
+
+  /**
+   * A demonstration server echoes one configured number's code so nobody has to
+   * read it out of a log while people watch. The client reacts to what the
+   * server sent and carries no flag of its own, so a normal server gives a
+   * normal app and there is nothing to leave switched on in a shipped build.
+   */
+  it('takes a demo code only from a 200 carrying exactly six digits', async () => {
+    const ok = fakeFetch({
+      'POST /auth/collector/request-code': { status: 200, body: { demo_code: '123456' } },
+    });
+    await expect(
+      new HttpCollectorApi(BASE, fakeStore(), () => {}, ok.fn).requestSignInCode('0900000001'),
+    ).resolves.toEqual({ demo_code: '123456' });
+
+    // Anything else on a 200 is the ordinary "nothing to say" answer, not an
+    // error: a malformed body means there is no code to fill in, and showing a
+    // collector a failure for it would be a lie about their sign-in.
+    for (const body of [{ demo_code: '12345' }, { demo_code: 'abcdef' }, { demo_code: 7 }, {}, undefined]) {
+      const odd = fakeFetch({ 'POST /auth/collector/request-code': { status: 200, body } });
+      await expect(
+        new HttpCollectorApi(BASE, fakeStore(), () => {}, odd.fn).requestSignInCode('0900000001'),
+      ).resolves.toBeUndefined();
+    }
   });
 
   it('names the two refusals that are about this service and not about a number', async () => {
@@ -614,7 +719,7 @@ describe('a token that has stopped working', () => {
     expect(signedOut).toBe(1);
 
     // Nothing is sent under a token that has been thrown away.
-    await api.profile();
+    await expect(api.profile()).rejects.toThrow('unauthorized');
     expect(calls).toHaveLength(1);
   });
 
@@ -713,6 +818,54 @@ describe('what the client sends, and what it refuses to', () => {
     // `session_id_reused` and refuses it.
     await api.createSession({ ...declaration, sensitiveInfo: true });
     expect((calls[2]?.body as { id: string }).id).not.toBe(first);
+  });
+
+  /**
+   * PRV-02, at the seam. The client outlives the screen, so without an attempt
+   * boundary a second visit answering identically would replay the first
+   * session and the reminder would have been shown for a recording that never
+   * happened. `SessionCreate` calls this on mount.
+   */
+  it('starts a new session id per attempt and keeps the claim id across them', async () => {
+    const { fn, calls } = fakeFetch({
+      'POST /api/me/sessions': {
+        status: 201,
+        body: { id: 's-9', collector_id: 'c-1', created_at: '2026-08-30T05:00:00.000Z' },
+      },
+      'POST /api/me/tasks/t-1/claims': {
+        status: 201,
+        body: { id: 'cl-1', task_id: 't-1', claimed_at: '2026-08-30T05:00:00.000Z' },
+      },
+    });
+    const api = new HttpCollectorApi(BASE, fakeStore('tok-good'), () => {}, fn);
+    const declaration = {
+      taskId: 't-1',
+      deviceSerial: 'EGO-0007',
+      scenario: 'home',
+      othersInFrame: false,
+      sensitiveInfo: false,
+    } as const;
+
+    await api.claimTask('t-1');
+    await api.createSession(declaration);
+    const firstClaim = (calls[0]?.body as { id: string }).id;
+    const first = (calls[1]?.body as { id: string }).id;
+
+    // Two visits, identical answers, two recordings: two sessions.
+    api.beginSessionAttempt();
+    await api.createSession(declaration);
+    expect((calls[2]?.body as { id: string }).id).not.toBe(first);
+
+    // Within the second visit a retry is still a replay, or the server's
+    // `onConflictDoNothing` contract is unreachable from this side.
+    await api.createSession(declaration);
+    expect((calls[3]?.body as { id: string }).id).toBe((calls[2]?.body as { id: string }).id);
+
+    // Only sessions are scoped to an attempt. A claim is not: tapping claim
+    // again after a timeout must still be one claim, and `task_claims_capacity`
+    // is what a second one would hit.
+    await api.claimTask('t-1');
+    expect((calls[4]?.body as { id: string }).id).toBe(firstClaim);
   });
 
   it('sends both APP-17b declarations and never the phone on register', async () => {

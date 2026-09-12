@@ -169,7 +169,16 @@ export interface CollectorApi {
    * five hundred numbers belong to collectors — and this app must not undo
    * that by telling the collector which one they typed.
    */
-  requestSignInCode(phone: string): Promise<void>;
+  /**
+   * Ask for a sign-in code.
+   *
+   * Resolves with `{ demo_code }` only when the server is configured to echo
+   * that one number's code for a demonstration, and with nothing otherwise. The
+   * app reacts to what the server sent rather than to a build-time flag, so a
+   * normal server gives a normal app and there is nothing to leave switched on
+   * in a shipped APK.
+   */
+  requestSignInCode(phone: string): Promise<void | { demo_code: string }>;
   /**
    * APP-01. Exchange the code for a thirty-day token, and keep the token.
    *
@@ -186,6 +195,10 @@ export interface CollectorApi {
    * no signal is not a signed-out session, and must not clear the token.
    */
   restoreSession(): Promise<boolean>;
+  /** Local-device sign-out, not server token revocation. Retire this client. */
+  signOut(): Promise<void>;
+  /** Stop accepting results from this client without deleting its stored token. */
+  dispose(): void;
   profile(): Promise<CollectorProfile | null>;
   register(name: string, phone: string): Promise<CollectorProfile>;
   /** APP-02: all six at once, each acceptance naming the version shown. */
@@ -200,6 +213,7 @@ export interface CollectorApi {
   myClaims(): Promise<Claim[]>;
   boundDevices(): Promise<BoundDevice[]>;
   bindDevice(serial: string): Promise<BoundDevice>;
+  beginSessionAttempt(): void;
   createSession(input: SessionInput): Promise<CollectionSession>;
   sessions(): Promise<CollectionSession[]>;
   episodes(): Promise<EpisodeUpload[]>;

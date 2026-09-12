@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
@@ -63,6 +63,24 @@ function YesNo({
 export function SessionCreate() {
   const api = useApi();
   const nav = useNav();
+  const submitting = useRef(false);
+  /**
+   * Whether this screen is still the one on the stack.
+   *
+   * A mutation's callbacks outlive the component that started them. Submit,
+   * press Back to Home while the request is in flight, and the success that
+   * arrives afterwards used to call `nav.reset` — which pulled the collector
+   * out of Home and into a fresh, editable session form without the reminder
+   * in front of it. That is the exact bypass PRV-02 exists to close, reached
+   * from the other direction.
+   */
+  const mounted = useRef(true);
+  useEffect(() => {
+    api.beginSessionAttempt();
+    return () => {
+      mounted.current = false;
+    };
+  }, [api]);
   const tt = useT();
   const theme = useTheme();
 
@@ -96,7 +114,17 @@ export function SessionCreate() {
         sensitiveInfo: sensitive,
       });
     },
-    onSuccess: (session) => setCreatedId(session.id),
+    onSuccess: (session) => {
+      // The session was created and the server is the record; it shows up under
+      // Uploads. Somebody who left mid-request stays where they went.
+      if (!mounted.current) return;
+      setCreatedId(session.id);
+      nav.reset({ name: 'sessionCreate' });
+    },
+    onError: () => {
+      if (!mounted.current) return;
+      submitting.current = false;
+    },
   });
 
   const queries = [claims, tasks, devices];
@@ -123,11 +151,25 @@ export function SessionCreate() {
           label={label(item)}
           describedBy={describedBy}
           selected={selected === key(item)}
-          onPress={() => onPick(key(item))}
+          onPress={() => { if (!submitting.current) onPick(key(item)); }}
         />
       ))}
     </View>
   );
+
+  if (createdId !== null) {
+    return (
+      <Screen title={tt('session.created')}>
+        <Card>
+          <Row label={tt('session.id')} value={createdId} />
+          <Row label={tt('session.task')} value={task?.title ?? ''} />
+          <Row label={tt('session.device')} value={deviceSerial ?? ''} />
+        </Card>
+        <Note text={tt('session.noRecord')} />
+        <Button label={tt('session.home')} onPress={() => nav.reset({ name: 'home' })} />
+      </Screen>
+    );
+  }
 
   return (
     <Screen title={tt('session.title')}>
@@ -187,18 +229,13 @@ export function SessionCreate() {
       <Card>
         <Title>{tt('session.declare')}</Title>
         <View style={{ gap: theme.space[5] }}>
-        <YesNo question={tt('session.othersTitle')} value={others} onChange={setOthers} disabled={create.isPending || createdId !== null} />
-        <YesNo question={tt('session.sensitiveTitle')} value={sensitive} onChange={setSensitive} disabled={create.isPending || createdId !== null} />
+        <YesNo question={tt('session.othersTitle')} value={others} disabled={create.isPending || createdId !== null}
+          onChange={(v) => { if (!submitting.current) setOthers(v); }} />
+        <YesNo question={tt('session.sensitiveTitle')} value={sensitive} disabled={create.isPending || createdId !== null}
+          onChange={(v) => { if (!submitting.current) setSensitive(v); }} />
         </View>
         {others === null || sensitive === null ? <Note text={tt('session.needDeclarations')} /> : null}
       </Card>
-
-      {createdId !== null ? (
-        <Card>
-          <Title>{tt('session.created')}</Title>
-          <Row label={tt('session.id')} value={createdId} />
-        </Card>
-      ) : null}
 
       {create.isError ? <Note text={tt(SESSION_ERRORS[create.error.message] ?? 'common.actionFailed')} /> : null}
       <Button
@@ -206,7 +243,11 @@ export function SessionCreate() {
         disabled={
           task === undefined || device === undefined || scenario === null || others === null || sensitive === null || create.isPending || createdId !== null
         }
-        onPress={() => create.mutate()}
+        onPress={() => {
+          if (submitting.current) return;
+          submitting.current = true;
+          create.mutate();
+        }}
       />
       <Note text={tt('session.noRecord')} />
     </Screen>

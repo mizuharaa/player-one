@@ -256,6 +256,17 @@ export function registerUpload(
         continue;
       }
 
+      const recordTransportFailure = (error: string) => mutate(
+        db,
+        actor,
+        {
+          action: 'episode.cloud_transport_failed',
+          targetTable: 'episodes',
+          targetId: row.episodeId,
+          after: { ingest_id: row.ingestId, error },
+        },
+        async () => true,
+      );
       let outcome;
       try {
         outcome = await uploadEpisode(
@@ -288,21 +299,15 @@ export function registerUpload(
         // its audit row must carry the operator, machine and centre together;
         // returning `true` is the existing audit-only write shape used for a
         // fact with no separate row behind it.
-        await mutate(
-          db,
-          actor,
-          {
-            action: 'episode.cloud_transport_failed',
-            targetTable: 'episodes',
-            targetId: row.episodeId,
-            after: { ingest_id: row.ingestId, error: (err as Error).message },
-          },
-          async () => true,
-        );
+        await recordTransportFailure((err as Error).message);
         results.push({ episode_id: row.episodeId, error: (err as Error).message });
         continue;
       }
 
+      // A mismatch in an earlier file remains proof of damage even if a later
+      // read loses its connection. Keep both facts: the transport audit and
+      // the existing failed-copy transaction (including settlement exceptions).
+      if (outcome.transportError !== undefined) await recordTransportFailure(outcome.transportError);
       const state = outcome.mismatches.length === 0 ? 'verified' : 'failed';
       const written = await mutate(
         db,
@@ -399,6 +404,7 @@ export function registerUpload(
         uploaded: outcome.uploaded,
         kept: outcome.kept,
         verification_state: state,
+        ...(outcome.transportError !== undefined ? { error: outcome.transportError } : {}),
         ...(outcome.mismatches.length > 0 ? { mismatches: outcome.mismatches } : {}),
       });
     }

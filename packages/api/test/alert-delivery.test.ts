@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Db } from '@playerone/store';
-import type { Alert, AlertState } from '../src/alerts.ts';
+import { storageQuotaFromEnv, type Alert, type AlertState } from '../src/alerts.ts';
 import { deliverAlerts, noticesFor, post, runAlertWorker, type AlertNotice } from '../src/alert-delivery.ts';
 
 const alert = (state: AlertState, id = 'checksum_failures'): Alert => ({
@@ -17,6 +17,20 @@ afterEach(() => {
 });
 
 describe('alert delivery', () => {
+  it('names archive failures as historical operations rather than an object backlog', () => {
+    const [notice] = noticesFor(new Map(), [{ id: 'archive_tag_failures', state: 'firing', observed: 2, threshold: 1 }]);
+    expect(notice?.text).toBe('archive_tag_failures firing: 2 recorded archive tagging operations failed in the last 24 hours (not unresolved objects) (threshold 1).');
+  });
+  it('includes the observed and threshold GB when storage becomes near quota', () => {
+    const notices = noticesFor(new Map([['storage_near_quota', 'ok']]), [{
+      id: 'storage_near_quota', state: 'firing', observed: 170, threshold: 160,
+    }]);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.text).toBe(
+      'storage_near_quota firing: 170 GB of verified source bytes in the cloud (threshold is 80% of the allocation) (threshold 160).',
+    );
+  });
+
   it('5a: retries a failed notice on the next pass rather than losing it', async () => {
     const execute = vi.fn().mockResolvedValueOnce([alert('firing')]).mockResolvedValueOnce([alert('no_signal')]);
     const db = database(execute);
@@ -174,6 +188,30 @@ describe('alert delivery', () => {
     expect(noticesFor(new Map(), [alert('firing')])[0]?.text)
       .toBe('checksum_failures firing: 2 episodes failed read-back (threshold 1).');
   });
+});
+
+describe('storageQuotaFromEnv', () => {
+  it('returns undefined when unset', () => {
+    expect(storageQuotaFromEnv({})).toBeUndefined();
+  });
+
+  it('returns undefined when empty', () => {
+    expect(storageQuotaFromEnv({ PLAYERONE_STORAGE_QUOTA_BYTES: '' })).toBeUndefined();
+  });
+
+  it.each<[string, number]>([
+    ['200000000000', 200_000_000_000],
+    ['1250000000', 1_250_000_000],
+  ])('accepts %s bytes', (value, expected) => {
+    expect(storageQuotaFromEnv({ PLAYERONE_STORAGE_QUOTA_BYTES: value })).toBe(expected);
+  });
+
+  it.each(['0', '-1', 'abc', '1.5', '1249999999', '200000000000000000000', ' 200000000000', '2e11'])
+    ('refuses %s naming the variable, value and floor', (value) => {
+      expect(() => storageQuotaFromEnv({ PLAYERONE_STORAGE_QUOTA_BYTES: value })).toThrow(
+        `PLAYERONE_STORAGE_QUOTA_BYTES=${JSON.stringify(value)} must be digits only and a safe integer of at least 1,250,000,000 bytes`,
+      );
+    });
 });
 
 describe('webhook delivery', () => {

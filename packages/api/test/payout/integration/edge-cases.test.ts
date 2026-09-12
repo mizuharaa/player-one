@@ -72,8 +72,21 @@ describe.skipIf(!hasDb())('the edge-case suite, E01–E29, over a real socket to
   describe('double-spend', () => {
     it('E01 two POST /pay at once for one bill: one attempt, one transfer-fund request, the loser refused by the row lock', async () => {
       const h = await seeded({}, { pool: 8 });
+      const pending: ReturnType<typeof pay>[] = [];
       try {
-        const pair = await Promise.all([pay(h, h.bill1, h.finA), pay(h, h.bill1, h.finB)]);
+        await h.d.transaction(async (tx) => {
+          await tx.execute(sql`select 1 from bills where id = ${h.bill1} for update`);
+          pending.push(pay(h, h.bill1, h.finA), pay(h, h.bill1, h.finB));
+          await expect.poll(async () => {
+            await tx.execute(sql`select pg_stat_clear_snapshot()`);
+            const [row] = await tx.execute<{ n: number }>(sql`
+              select count(*)::int as n from pg_stat_activity
+               where datname = current_database() and wait_event_type = 'Lock'
+            `);
+            return row!.n;
+          }, { timeout: 15_000 }).toBe(2);
+        });
+        const pair = await Promise.all(pending);
         expect(pair.map((r) => r.statusCode).sort()).toEqual([201, 409]);
         expect(pair.find((r) => r.statusCode === 409)!.json().constraint).toBe('payout_attempts_previous_not_failed');
         expect(await attemptCount(h.d)).toBe(1);
@@ -81,6 +94,7 @@ describe.skipIf(!hasDb())('the edge-case suite, E01–E29, over a real socket to
         expect(transfers(h)[0]!.body['partner_order_id']).toBe(po(h.bill1, 1));
         expect(transfers(h)[0]!.macValid).toBe(true);
       } finally {
+        await Promise.allSettled(pending);
         await h.close();
       }
     });

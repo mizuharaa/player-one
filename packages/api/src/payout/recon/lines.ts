@@ -73,33 +73,6 @@ export async function finishRun(db: Db | Tx, runId: string, finishedAt: Date, su
   `);
 }
 
-/**
- * Whether the same discrepancy is already open, so a daily run does not
- * raise it — and ticket it — again every morning. "Same" is the kind and the
- * thing it is about: the attempt when there is one, else the bill and the
- * probed order id, else the statement line — reference, amount AND date,
- * the three the matcher matches on, so two unmatched lines under one bank
- * reference are two discrepancies (0016). An open line is never
- * touched; a resolved one does not count, so a discrepancy that returns
- * after being resolved is raised afresh, which is what "resolved" ought to
- * mean.
- */
-export async function openLineExists(db: Db | Tx, f: Finding): Promise<boolean> {
-  const rows = (await db.execute(sql`
-    select 1 from recon_lines
-     where resolved_at is null
-       and discrepancy_kind = ${f.kind}
-       and payout_attempt_id is not distinct from ${f.payoutAttemptId}::uuid
-       and bill_id is not distinct from ${f.billId}::uuid
-       and partner_order_id is not distinct from ${f.partnerOrderId}::text
-       and reference is not distinct from ${f.reference}::text
-       and their_amount is not distinct from ${f.theirAmount}::bigint
-       and their_at is not distinct from ${f.theirAt?.toISOString() ?? null}::timestamptz
-     limit 1
-  `)) as unknown as unknown[];
-  return rows.length > 0;
-}
-
 /** The sentence an operator reads. The numbers are in it; nothing is hidden behind a code. */
 export function describe(f: Finding): string {
   const ours = f.ourAmount === null ? 'no amount' : `${f.ourAmount} VND`;
@@ -132,16 +105,34 @@ export function describe(f: Finding): string {
 /**
  * Writes one line and its ticket, in the caller's transaction. Returns the
  * line id, or `null` when the same discrepancy is already open — in which
- * case nothing is written and the caller counts it as `still_open`.
+ * case nothing is written and the caller counts it as `still_open`, so a
+ * daily run does not raise and ticket the same thing every morning.
  *
- * The read-then-insert is not what keeps two runs from raising the same line:
- * `recon_lines_open_key` (0015) is. The INSERT names that index as its
- * arbiter, so a concurrent writer that got there first makes this one a
- * no-op — and then no ticket is written either, because the ticket follows
- * the returned id, not the intention (F-44).
+ * "Same" is what `recon_lines_open_key` (0016) says it is: all seven of
+ * kind, attempt, bill, partner order id, reference, amount and date, equal
+ * together, with `NULLS NOT DISTINCT` so an absent value matches an absent
+ * value. Including the statement line's amount and date is what lets two
+ * unmatched lines under one bank reference, differing in amount or date, be
+ * two discrepancies rather than one. The index is
+ * partial on `resolved_at is null`, so a resolved line leaves it and a
+ * discrepancy that returns after being resolved is raised afresh.
+ *
+ * The INSERT's `on conflict` clause lists those columns and that predicate,
+ * which is how Postgres infers the index as the arbiter. A concurrent writer
+ * whose conflicting line commits first makes this one a no-op, and then no
+ * ticket is written either, because the ticket follows the returned id and
+ * not the intention (F-44); one that rolls back lets this INSERT proceed.
+ *
+ * There used to be a SELECT before the INSERT asking the same question. It
+ * was removed because the index answers it, and the only way the two could
+ * differ was a race the SELECT got wrong: it cannot see a duplicate another
+ * transaction has not yet committed, which the INSERT then catches anyway.
+ * Racing a concurrent resolve of the same line, the INSERT returns null if it
+ * arbitrates before that resolve commits and inserts if after; either is
+ * right, because a discrepancy that returns after being resolved is meant to
+ * be raised afresh.
  */
 export async function writeLine(tx: Tx, runId: string, f: Finding, raisedAt: Date): Promise<string | null> {
-  if (await openLineExists(tx, f)) return null;
   const id = randomUUID();
   const inserted = (await tx.execute(sql`
     insert into recon_lines

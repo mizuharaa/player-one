@@ -162,6 +162,7 @@ declare module 'fastify' {
 
 export type ApiOptions = {
   db: Db;
+  storageQuotaBytes?: number;
   /** Token signing key. Fails closed at construction rather than defaulting. */
   tokenSecret: string;
   /**
@@ -275,6 +276,15 @@ export type ApiOptions = {
   sendSignInCode?: SendSignInCode;
   /** Diagnostic provenance only; injected senders are unknown unless identified. */
   signInDeliveryMode?: EngineeringCapabilities['signInDeliveryMode'];
+  /** One phone number whose sign-in code comes back in the response. See `collector.ts`. */
+  demoPhone?: string;
+  /**
+   * The clock the sign-in limiter counts on. Same seam, and same rule, as
+   * `signInLimiter(now)`: it exists so a five-minute window and a one-minute
+   * send cooldown can be tested without waiting for them. It is not
+   * configuration and nothing outside a test passes it.
+   */
+  now?: () => number;
   /**
    * The payout rail (payout brief, §2.4). Defaults to what the environment
    * says, which defaults to `manual` on `sandbox`: the pilot shape, where an
@@ -347,6 +357,7 @@ const canPresign = (s: ObjectStore): s is ObjectStore & DirectUploadStore =>
 
 export function buildApi({
   db,
+  storageQuotaBytes,
   tokenSecret,
   logger = false,
   trustLoopbackProxy = false,
@@ -361,6 +372,8 @@ export function buildApi({
   reviewerMediaEnabled = false,
   sendSignInCode,
   signInDeliveryMode,
+  demoPhone,
+  now,
   payout = payoutOptionsFromEnv(),
   risk = riskConfigFromEnv(),
 }: ApiOptions): FastifyInstance {
@@ -641,7 +654,7 @@ export function buildApi({
    * 400 stays ahead of it: it costs nothing to answer, so it is not an attempt
    * worth counting or recording.
    */
-  const limiter = signInLimiter();
+  const limiter = signInLimiter(now);
 
   app.post('/auth/machine', async (req, reply) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -743,7 +756,7 @@ export function buildApi({
   // The band the payout side reads means "there is a live hold", not "the score is in the hold band".
   const riskReader = { billSummary: (billId: string) => riskEngine.payoutSummary(billId) };
 
-  registerAlerts(app, db, requireActor);
+  registerAlerts(app, db, requireActor, { storageQuotaBytes });
   registerBackOffice(app, db, requireActor);
   registerCounter(app, db, requireActor, currency);
   registerEpisodes(app, db, requireActor, toleranceMs);
@@ -768,7 +781,7 @@ export function buildApi({
     signInDeliveryMode: sendSignInCode ? signInDeliveryMode ?? 'unknown' : 'unconfigured', payoutMode: payout.mode ?? 'manual',
     payoutClient: !!payout.client, riskEnabled: risk.engineEnabled,
   });
-  registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays });
+  registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays, objectStore });
   registerPayout(app, db, requireActor, {
     cycleDays: settlementCycleDays,
     ...payout,
@@ -803,7 +816,7 @@ export function buildApi({
    */
   registerSessionRoutes(app, db, { tokenSecret, secureCookies, limiter });
   /** The collector's phone sign-in. Same limiter, same failed-sign-in rows. */
-  registerCollectorAuth(app, db, { tokenSecret, limiter, sendSignInCode });
+  registerCollectorAuth(app, db, { tokenSecret, limiter, sendSignInCode, demoPhone });
 
   /**
    * Who the caller is. Proves both-tokens and centre scope on its own, with no

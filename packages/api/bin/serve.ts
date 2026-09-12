@@ -24,6 +24,7 @@ import {
   startHeartbeat,
 } from '../src/index.ts';
 import { riskConfigFromEnv } from '../src/risk/config.ts';
+import { storageQuotaFromEnv } from '../src/alerts.ts';
 import { zaloPayClientFromEnv } from '../src/payout/zalopay/client.ts';
 
 const required = (name: string): string => {
@@ -47,6 +48,7 @@ if (trustLoopbackProxy && host !== '127.0.0.1' && host !== '::1') {
 const mediaRoot = env['PLAYERONE_MEDIA_ROOT'];
 const machineIdentifier = env['PLAYERONE_MACHINE_IDENTIFIER'];
 const machineSecret = env['PLAYERONE_MACHINE_SECRET'];
+const storageQuotaBytes = storageQuotaFromEnv(env);
 
 /**
  * `buildApi` refuses the two together — reviewer media on with the session
@@ -83,6 +85,7 @@ if (verificationGate !== 'local' && verificationGate !== 'cloud') {
 
 const app = buildApi({
   db,
+  storageQuotaBytes,
   tokenSecret,
   /**
    * On unless `PLAYERONE_LOG=0`. A deployed server that logs nothing cannot be
@@ -133,6 +136,9 @@ const app = buildApi({
    */
   sendSignInCode: signInCodeSenderFromEnv(env),
   signInDeliveryMode: env['PLAYERONE_ZNS_ACCESS_TOKEN'] && env['PLAYERONE_ZNS_TEMPLATE_ID'] ? 'zns' : 'dev_log',
+  // One number, or nothing. `serve.ts` is the only file under src/ or bin/ that
+  // reads it; `scripts/seed-demo.mjs` reads it too, which is the point of it.
+  demoPhone: env['PLAYERONE_DEMO_PHONE'],
   /**
    * The payout rail's client, from PLAYERONE_ZALOPAY_*. Null in sandbox with
    * no credentials — verification then stores `unverified` and pay refuses

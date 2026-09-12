@@ -431,7 +431,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
               <Animated.View
                 key={line}
                 style={{
-                  ...StyleSheet.absoluteFillObject,
+                  ...StyleSheet.absoluteFill,
                   justifyContent: 'center',
                   paddingHorizontal: theme.space[5],
                   ...beatStyle(i),

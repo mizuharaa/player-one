@@ -22,7 +22,8 @@ import { LoginScreen } from './routes/Login.tsx';
 import { DiscoverScreen } from './routes/Discover.tsx';
 import { PrivacyScreen } from './routes/Privacy.tsx';
 import { NotFoundScreen } from './routes/NotFound.tsx';
-import { EpisodesScreen } from './routes/Episodes.tsx';
+import { EpisodesScreen, episodeSearch } from './routes/Episodes.tsx';
+import { EpisodeAttentionScreen } from './routes/EpisodeAttention.tsx';
 import { CounterScreen } from './routes/Counter.tsx';
 import { BackOfficeScreen } from './routes/BackOffice.tsx';
 import { SettleScreen } from './payout/SettleScreen.tsx';
@@ -158,19 +159,39 @@ const counterRoute = createRoute({
 });
 
 /**
- * `/episodes` is the attention screen, not the not-built page and not BO-05.
+ * `/episodes` is BO-05, and `/episodes/attention` is the counter lane's own view.
  *
- * It answers the two questions the counter lane can answer — what is blocking
- * one batch on this machine, and what is stuck anywhere in this centre — and
- * says on screen that browsing every episode by task, collector, device,
- * status and recording time needs a list endpoint that does not exist. The
- * navigation marks it `partial` rather than dropping its dot for that reason.
+ * Two screens were built against this path on two branches, and both survive
+ * because they answer different questions over different endpoints.
+ *
+ * - `/episodes` browses every episode by task, collector, device, status and
+ *   recording time, over `GET /api/episodes`. That endpoint did not exist when
+ *   the attention screen was written, which is the whole reason that screen
+ *   said on its face that BO-05 was not built; it exists now, so BO-05 keeps
+ *   the plain path and the navigation stops calling itself `partial`.
+ * - `/episodes/attention` is what is *blocking*, over
+ *   `GET /upload-batches/:id/exceptions` (one machine, one batch) and
+ *   `GET /episodes/stuck` (the whole centre). Nothing in the browse screen
+ *   answers either one, so it is not superseded and was not dropped.
+ *
+ * The attention screen carries no navigation entry of its own on purpose —
+ * `AppShell` already resolves any `/episodes` prefix to `nav.episodes`, so
+ * giving it a second dot would need a fourth translation of a label for a
+ * screen an operator reaches from the counter lane, not from the top bar.
  */
 const episodesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/episodes',
   beforeLoad: requireSession,
+  validateSearch: episodeSearch,
   component: EpisodesScreen,
+});
+
+const episodeAttentionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/episodes/attention',
+  beforeLoad: requireSession,
+  component: EpisodeAttentionScreen,
 });
 
 /**
@@ -235,6 +256,7 @@ const routeTree = rootRoute.addChildren([
   pipelineRoute,
   counterRoute,
   episodesRoute,
+  episodeAttentionRoute,
   settleRoute,
   preflightRoute,
   billRoute,

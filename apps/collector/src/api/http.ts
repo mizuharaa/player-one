@@ -64,6 +64,32 @@ import {
 export class HttpCollectorApi implements CollectorApi {
   /** The token in memory, so every request does not hit the keystore. */
   private token: string | null = null;
+  private disposed = false;
+  private readonly lifetime = new AbortController();
+  private tokenWrite: Promise<void> = Promise.resolve();
+
+  private active(): void {
+    if (this.disposed) throw new ApiError('unauthorized');
+  }
+
+  private persist(write: () => Promise<void>): Promise<void> {
+    const next = this.tokenWrite.catch(() => {}).then(write);
+    this.tokenWrite = next;
+    return next;
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.token = null;
+    this.ids.clear();
+    this.lifetime.abort();
+  }
+
+  async signOut(): Promise<void> {
+    this.dispose();
+    // A keystore write already in flight must finish BEFORE the clear.
+    await this.persist(() => this.tokens.clear());
+  }
 
   /**
    * The client-generated ids already handed to a claim and a session, by what
@@ -77,7 +103,10 @@ export class HttpCollectorApi implements CollectorApi {
    * call turns "the request timed out, tap again" into a second row: a second
    * claim, or two collection sessions for one recording.
    *
-   * ponytail: a Map for the life of the client, not a persisted outbox. It
+   * Claims live for the client lifetime; session ids are cleared when a new
+   * creation attempt begins. Within that attempt, retries keep their identity.
+   *
+   * ponytail: an in-memory Map, not a persisted outbox. It
    * covers the case that actually happens — the collector taps again on the
    * screen they are standing on. A retry after the app is killed gets a new id
    * and is refused by the server's own guards (`task_claims_capacity`,
@@ -110,8 +139,10 @@ export class HttpCollectorApi implements CollectorApi {
   // -- the wire ------------------------------------------------------------
 
   private async body(res: Response): Promise<unknown> {
+    this.active();
     if (res.status === 204) return undefined;
     const text = await res.text();
+    this.active();
     if (text === '') return undefined;
     try {
       return JSON.parse(text) as unknown;
@@ -121,14 +152,18 @@ export class HttpCollectorApi implements CollectorApi {
   }
 
   private async send(path: string, method: string, payload?: unknown): Promise<Response> {
+    this.active();
     const headers: Record<string, string> = {};
     if (this.token !== null) headers['authorization'] = `Bearer ${this.token}`;
     if (payload !== undefined) headers['content-type'] = 'application/json';
-    return this.fetchFn(`${this.baseUrl}${path}`, {
+    const response = await this.fetchFn(`${this.baseUrl}${path}`, {
       method,
       headers,
       body: payload === undefined ? undefined : JSON.stringify(payload),
+      signal: this.lifetime.signal,
     });
+    this.active();
+    return response;
   }
 
   /**
@@ -139,15 +174,15 @@ export class HttpCollectorApi implements CollectorApi {
    */
   private async req(method: string, path: string, payload?: unknown): Promise<unknown> {
     const res = await this.send(path, method, payload);
+    this.active();
 
     if (res.status === 401) {
-      this.token = null;
-      await this.tokens.clear();
-      this.onUnauthorized();
+      try { await this.signOut(); } finally { this.onUnauthorized(); }
       throw new ApiError('unauthorized');
     }
 
     const parsed = await this.body(res);
+    this.active();
     if (res.status >= 200 && res.status < 300) return parsed;
 
     const constraint = (parsed as { constraint?: unknown } | undefined)?.constraint;
@@ -159,7 +194,7 @@ export class HttpCollectorApi implements CollectorApi {
 
   // -- sign in (APP-01) ----------------------------------------------------
 
-  async requestSignInCode(phone: string): Promise<void> {
+  async requestSignInCode(phone: string): Promise<void | { demo_code: string }> {
     const res = await this.send('/auth/collector/request-code', 'POST', { phone });
     if (res.status === 429) throw new ApiError('rate_limited');
     // No gateway configured on this deployment. Nothing the collector can do,
@@ -167,7 +202,18 @@ export class HttpCollectorApi implements CollectorApi {
     if (res.status === 503) throw new ApiError('sign_in_unavailable');
     // A 400 is about the shape of the request, never about the number.
     if (res.status === 400) throw new ApiError('invalid_request');
-    // 204, and every other answer, is the same answer. Say nothing more.
+    if (res.status < 200 || res.status >= 300) throw new ApiError('server_error');
+    /**
+     * A demonstration server echoes that one number's code so nobody has to
+     * read it out of a log. A successful answer without a 200 carrying exactly
+     * six digits is treated as the ordinary 204 — a malformed body is not an error
+     * worth showing a collector, it just means there is no code to fill in.
+     */
+    if (res.status === 200) {
+      const code = (await this.body(res) as { demo_code?: unknown } | undefined)?.demo_code;
+      if (typeof code === 'string' && /^\d{6}$/.test(code)) return { demo_code: code };
+    }
+    // Successful answers reveal nothing about whether the number is enrolled.
   }
 
   async signIn(phone: string, code: string): Promise<void> {
@@ -179,17 +225,23 @@ export class HttpCollectorApi implements CollectorApi {
     if (res.status < 200 || res.status >= 300) throw new ApiError('server_error');
 
     const token = (await this.body(res)) as { token?: unknown } | undefined;
+    this.active();
     if (typeof token?.token !== 'string') throw new ApiError('server_error');
-    this.token = token.token;
-    await this.tokens.set(token.token);
+    const value = token.token;
+    this.token = value;
+    await this.persist(() => this.tokens.set(value));
+    this.active();
   }
 
   async restoreSession(): Promise<boolean> {
+    this.active();
     const stored = await this.tokens.get();
+    this.active();
     if (stored === null) return false;
     this.token = stored;
     try {
       await this.req('GET', '/api/me/profile');
+      this.active();
       return true;
     } catch (err) {
       // A 401 has already cleared the token on the way through `req`. Anything
@@ -203,6 +255,7 @@ export class HttpCollectorApi implements CollectorApi {
   // -- the collector (APP-01 to APP-05) ------------------------------------
 
   async profile(): Promise<CollectorProfile | null> {
+    this.active();
     if (this.token === null) return null;
     return toProfile(await this.req('GET', '/api/me/profile'));
   }
@@ -295,6 +348,12 @@ export class HttpCollectorApi implements CollectorApi {
   }
 
   // -- sessions (APP-16, APP-17b) ------------------------------------------
+
+  beginSessionAttempt(): void {
+    for (const key of this.ids.keys()) {
+      if (key.startsWith('session:')) this.ids.delete(key);
+    }
+  }
 
   async createSession(input: SessionInput): Promise<CollectionSession> {
     /**
