@@ -536,7 +536,7 @@ export function registerMe(
    * per route simply has no route to occur on.
    *
    * `requireActor` has already refused an operator or reviewer token on this
-   * prefix (`ME_SCOPE` in `index.ts`). This is the second half of the same
+   * scope (`inCollectorScope` in `index.ts`). This is the second half of the same
    * statement, and it is not redundant: it is what makes the guarantee local
    * to this file, so a future mounting of these routes cannot lose it.
    */

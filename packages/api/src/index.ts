@@ -2,7 +2,6 @@ import { eq } from 'drizzle-orm';
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
 import { schema, seedCatalogues, type Db } from '@playerone/store';
 import { registerAlerts } from './alerts.ts';
-import { auditLogin } from './audit.ts';
 import { registerBackOffice } from './backoffice.ts';
 
 export { readAlerts, type Alert, type AlertState } from './alerts.ts';
@@ -294,17 +293,6 @@ export type ApiOptions = {
 const REVIEW_SCOPE = '/api/review/';
 /** Raw footage. In scope for a reviewer only behind `reviewerMediaEnabled`. */
 const MEDIA_SCOPE = '/media/';
-/**
- * What a collector session may reach, and the whole of it.
- *
- * The prefix is the guard, exactly as `REVIEW_SCOPE` is for a reviewer: a
- * `/api/me/` route added next month is in scope by its path, and a route added
- * anywhere else is out of it without anybody remembering to say so. It cuts
- * both ways — an operator or reviewer token gets 403 here, because the routes
- * under it read the collector id off the token and there is no collector id on
- * either of those.
- */
-const ME_SCOPE = '/api/me/';
 /**
  * The one route outside the review lane a reviewer may call, named exactly and
  * not by prefix.

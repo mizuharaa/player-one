@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import type { LightMyRequestResponse } from 'fastify';
+import Fastify, { type LightMyRequestResponse } from 'fastify';
+import type { Db } from '@playerone/store';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApi, hashCredential, SIGN_IN_RATE_LIMITED, signInLimiter } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
+import { registerCollectorAuth } from '../src/collector.ts';
 import { appDb, closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -148,6 +150,52 @@ describe('the sign-in limiter', () => {
     // And the whole map drains itself, so the refusal is not permanent.
     c.advance(61_000);
     expect(limiter.reserveSend('n-one-too-many')).toBeNull();
+  });
+
+  it('a blocked source cannot reserve another collector’s send slot', async () => {
+    const limiter = signInLimiter(() => 1_000_000);
+    const source = '192.0.2.1';
+    for (let i = 0; i < 30; i++) limiter.attempted(source, []);
+    // The first refusal was already audited; repetitions must touch no database.
+    limiter.noteRefusal(source, []);
+    const noDb = new Proxy({} as Db, { get() { throw new Error('database must not be touched'); } });
+    const app = Fastify();
+    registerCollectorAuth(app, noDb, {
+      tokenSecret: SECRET, limiter, sendSignInCode: async () => {},
+    });
+    try {
+      const phone = '0988888888';
+      const response = await app.inject({
+        method: 'POST', url: '/auth/collector/request-code', remoteAddress: source, payload: { phone },
+      });
+      expect(response.statusCode).toBe(429);
+      expect(limiter.reserveSend(phone)).toBeNull();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('cooldown refusals do not spend the credential failure budget', async () => {
+    const limiter = signInLimiter(() => 1_000_000);
+    const phone = '0988888888';
+    const source = '192.0.2.2';
+    limiter.reserveSend(phone);
+    const noDb = new Proxy({} as Db, { get() { throw new Error('database must not be touched'); } });
+    const app = Fastify();
+    registerCollectorAuth(app, noDb, {
+      tokenSecret: SECRET, limiter, sendSignInCode: async () => {},
+    });
+    try {
+      for (let i = 0; i < 12; i++) {
+        const response = await app.inject({
+          method: 'POST', url: '/auth/collector/request-code', remoteAddress: source, payload: { phone },
+        });
+        expect(response.statusCode).toBe(429);
+      }
+      expect(limiter.refusedFor(source, [{ id: phone, kind: 'collector' }])).toBeNull();
+    } finally {
+      await app.close();
+    }
   });
 
   it('does not count a blank field as a reference', () => {

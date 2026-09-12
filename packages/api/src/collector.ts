@@ -226,12 +226,21 @@ export function registerCollectorAuth(
       return reply.code(400).send({ error: 'missing phone' });
     }
 
+    const refs = [{ id: phone, kind: 'collector' }] as const;
+    const attempt = signInAttempt(db, options.limiter, req.ip, 'collector.login_failed', refs);
+    const sourceWait = options.limiter.refusedFor(req.ip, refs);
+    if (sourceWait !== null) {
+      // A blocked caller must not reserve send slots for other collectors.
+      await attempt.blocked();
+      return reply.code(429).header('retry-after', String(sourceWait)).send(rateLimited(sourceWait));
+    }
+
     /**
      * One code per number per minute. Claimed for every number that parses,
      * before the lookup below: charging only real sends would answer 429 for an
      * enrolled number and 204 for an unknown one, which `constantLatency`
-     * cannot hide because it equalises time and not answers. Before the limiter
-     * so being told to wait does not also spend security budget.
+     * cannot hide because it equalises time and not answers. Before counting
+     * an attempt so being told to wait does not also spend security budget.
      */
     const cooldown = options.limiter.reserveSend(phone);
     if (cooldown !== null) {
@@ -262,9 +271,6 @@ export function registerCollectorAuth(
      * would put "which numbers are not collectors" in a table, from an
      * unauthenticated request, which is the question the 204 exists to refuse.
      */
-    const attempt = signInAttempt(db, options.limiter, req.ip, 'collector.login_failed', [
-      { id: phone, kind: 'collector' },
-    ]);
     const wait = await attempt.blocked();
     if (wait !== null) {
       return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));

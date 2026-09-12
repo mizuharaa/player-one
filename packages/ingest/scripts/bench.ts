@@ -56,23 +56,6 @@ const T0 = 1_786_611_600_000_000n;
 /** Frames chosen so the sidecars stay honest about a session this long. */
 const FRAMES = 30 * 60 * 30; // 30 minutes at 30 fps
 
-const NL = String.fromCharCode(10);
-
-/** Streamed, so the generator itself never holds the session in memory and the RSS reading means something. */
-async function writeLines(path: string, count: number, line: (i: number) => string, header: string): Promise<void> {
-  const out = createWriteStream(path);
-  let buf = header + NL;
-  for (let i = 0; i < count; i++) {
-    buf += line(i) + NL;
-    if (buf.length > 1 << 20) {
-      if (!out.write(buf)) await new Promise((r) => out.once('drain', r));
-      buf = '';
-    }
-  }
-  out.write(buf);
-  await new Promise((r) => out.end(r));
-}
-
 async function writeBytes(path: string, bytes: number): Promise<void> {
   const chunk = Buffer.alloc(1 << 20, 0x5a); // 1 MiB, reused, so the writer is constant memory too
   const out = createWriteStream(path);

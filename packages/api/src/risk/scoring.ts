@@ -107,7 +107,7 @@ export function rollup(groups: readonly { subjectType: SubjectType; subjectId: s
             ...flag,
             evidence: {
               ...flag.evidence,
-              subject: carriers.find((c) => true),
+              subject: carriers[0],
               also_on: carriers.length - 1,
               carriers,
             },

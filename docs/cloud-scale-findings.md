@@ -122,29 +122,24 @@ meant.
   still to be tested with one `PutObject` when we get there.
 - API requests — GET, PUT, DELETE — are free. Charges apply to download and
   egress traffic only.
-- **Internal reads are charged as downloads.** Their words: "internal reads
+- **Internal reads count as downloads.** Their words: "internal reads
   are also treated as downloads, as the data must be downloaded under the hood
-  to be processed." So a vServer inside HCM04 reading an object from vStorage
-  pays the download rate, the same as a reader on the internet.
+  to be processed." That classification alone does not establish a charge:
+  included traffic allowances still apply.
 - At ~640 TB the account qualifies for a committed-volume discount; per-GB
   rates for both tiers come as a custom quotation against a commitment term.
 
-**What "internal reads are downloads" does to the cost model.** Verification
-reads back 100% of every stored byte by design (the metadata-hash shortcut was
-rejected above because it proves nothing). Every byte stored is therefore also
-a byte downloaded, once, at the download rate — before any reviewer streams
-anything. At 640 TB stored that is 640 TB of billable download for
-verification alone. The "2×" traffic figure was measured as bandwidth; it is
-now also the shape of the bill. Two consequences for the quotation request:
+**Correction, 2026-09-09 — traffic is not a bill.** The session handoff reports
+included domestic download allowances of 10× capacity for Gold and 2× for
+Instant Archive. One complete verification read-back is 1× stored volume;
+on that basis it fits within either domestic allowance by itself. Upload plus
+read-back traffic therefore does not establish doubled cost or billable
+download. Retries and reviewer reads must be counted alongside verification.
 
-1. Ask for the download rate as a line item, and ask whether a
-   verification-only read pattern — each object read exactly once, in full,
-   within hours of being written — can be priced differently from ad-hoc
-   egress. That is the question that moves the number.
-2. Ask whether Instant Archive's free-egress allowance (2× stored) is
-   consumed by these internal verification reads. Under the answer above it
-   is, which means the allowance is spent by our own integrity check before
-   any real egress happens.
+These allowances come from the owner's handoff, not an invoice measured in
+this checkout. Confirm their billing scope with GreenNode, including whether
+tiering is priced per object or per project. Until then, archive tags are not
+proof of savings.
 
 Neither changes the design. Verification stays a full read-back; the
 alternative is trusting a hash we sent ourselves.
