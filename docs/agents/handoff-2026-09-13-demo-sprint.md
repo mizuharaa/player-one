@@ -51,10 +51,13 @@ Not run at `e765f0e`, so still owed before the candidate is trusted:
    now on this PC. Run with `PLAYERONE_REQUIRE_CORPUS=1` on a throwaway
    `po_*` database, and record the numbers.
 2. `node --test deploy/*.test.mjs`. On `sprint/ui-revamp` this passes 8 of 8
-   in under a second. On the merged tree it produced no output for 600 s.
-   Not diagnosed. The L1 agent also excluded these files from vitest
-   collection, so right now nothing runs them. Diagnose before anything else
-   in L2 touches `deploy/`.
+   in under a second. On the merged tree the run was killed by the machine
+   for low memory before it printed a summary: `http-server.test.mjs` had
+   reported 6 passed, 0 failed; `security-independent.test.mjs` never ran.
+   So one file is provisionally green and one is unmeasured. Run each file
+   alone. The L1 agent also excluded these files from vitest collection, so
+   right now nothing runs them automatically. Settle this before anything in
+   L2 touches `deploy/`.
 3. Console production build.
 4. The centre preflight in `deploy/centre/`.
 
