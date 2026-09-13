@@ -1,0 +1,36 @@
+/* Reference: Luma mobile access section supplied by the owner and found on Mobbin. */
+.discover-download {
+  --download-paper:#f7f8fa;--download-white:#fff;--download-ink:#131517;
+  --download-muted:#606367;--download-rule:#e6e8eb;--download-link:#edeef0;
+  --download-blue:#287cff;--download-green:#32ae61;--download-yellow:#ffc400;
+  --download-red:#f34140;--download-orange:#f7a157;--download-pink:#ff6487;
+  --download-purple:#7953ff;--download-cyan:#21b6ee;
+  background:var(--download-paper);color:var(--download-ink);padding:112px 24px 144px;
+  font-family:var(--discover-font);scroll-margin-top:88px;
+}
+.discover-download-layout { position:relative;max-width:640px;margin:auto;padding:20px 40px 36px;text-align:center; }
+.discover-download h2 { font:600 1.75rem/1.25 var(--discover-font);letter-spacing:-.025em;margin:0 0 20px; }
+.discover-download-description { max-width:440px;margin:auto;font-size:1.125rem;line-height:1.6;color:var(--download-muted); }
+.discover-download-description a { display:inline;background:var(--download-link);padding:2px 5px;border-radius:4px;white-space:nowrap;text-decoration:none; }
+.discover-download-description a:hover { text-decoration:underline; }
+.discover-download-qr { display:block;width:320px;max-width:100%;margin:40px auto 0;padding:24px;border:1px solid var(--download-rule);border-radius:16px;background:var(--download-white); }
+.discover-download-qr img { display:block;width:100%;height:auto; }
+.discover-download a:focus-visible { outline:2px solid var(--download-ink);outline-offset:5px; }
+.discover-download-note { margin:20px auto 0;max-width:36ch;font-size:.75rem;line-height:1.5;color:var(--download-muted); }
+.discover-download-sticker { position:absolute;display:block;width:64px;pointer-events:none;filter:drop-shadow(0 3px 2px #1b233014); }
+.discover-download-sticker svg { width:100%;height:auto; }
+.discover-download-sticker--app { top:-40px;left:20px;transform:rotate(-14deg); }
+.discover-download-sticker--play { top:-32px;right:20px;transform:rotate(12deg); }
+.discover-download-sticker--ticket { bottom:-20px;left:0;width:76px;transform:rotate(9deg); }
+.discover-download-sticker--phone { bottom:-42px;right:12px;width:58px;transform:rotate(-9deg); }
+@media(max-width:599px) {
+  .discover-download { padding:96px 24px 100px; }
+  .discover-download-layout { padding:16px 0 32px; }
+  .discover-download h2 { font-size:1.5rem; }
+  .discover-download-description { font-size:1rem;max-width:30ch; }
+  .discover-download-qr { width:280px;padding:20px;margin-top:28px; }
+  .discover-download-sticker--app { width:44px;top:-48px;left:0; }
+  .discover-download-sticker--play { width:44px;top:-44px;right:0; }
+  .discover-download-sticker--ticket { width:52px;bottom:-30px;left:0; }
+  .discover-download-sticker--phone { width:42px;bottom:-46px;right:0; }
+}
