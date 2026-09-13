@@ -7,7 +7,7 @@ import { useLocale, useT } from '../locale.tsx';
 import { nextLocale } from '../i18n.ts';
 import { useTheme } from '../theme.tsx';
 import { useGuide, useGuideTarget } from '../guide/Guide.tsx';
-import { Amount, Body, Button, Card, CardLink, Chip, Hatch, NavRow, Note, Screen, Title } from '../ui.tsx';
+import { Body, Button, Card, CardLink, Chip, Hatch, Loading, NavRow, Note, Row, Screen, Title } from '../ui.tsx';
 
 const REVIEWED = ['review_passed', 'review_failed'];
 
@@ -43,12 +43,20 @@ export function Home() {
     <View ref={tasksTarget} collapsable={false} style={{ gap: theme.space[3], paddingTop: theme.space[4] }}>
       <Title>{tt('home.claimable')}</Title>
       {tasks.isError ? <><Note text={tt(tasks.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} /><Button label={tt('common.retry')} variant="secondary" disabled={tasks.isFetching} onPress={() => void tasks.refetch()} /></> : null}
-      {tasks.isFetching ? <Body muted>{tt('common.loading')}</Body> : null}
+      {tasks.isFetching ? <Loading /> : null}
       {tasks.data !== undefined && claimable.length === 0 && !tasks.isError ? <Hatch text={tt('home.claimableEmpty')} /> : null}
+      {/* The same card as the hall's, and for the same reason: the task's name
+          is what the collector is choosing between, and the unit price is a
+          measured quantity beside it rather than a 24sp figure above it. Three
+          of these stacked under one heading was three hero metrics on the screen
+          the app opens on — `DESIGN.md` allows one ink figure per screen, on
+          `TaskDetail`, where it carries the payment rule and the claim button. */}
       {claimable.slice(0, 3).map((task) => <CardLink key={task.id} label={task.title} hint={tt('detail.title')} onPress={() => nav.push({ name: 'taskDetail', taskId: task.id })}>
-        <Title>{task.title}</Title>
-        <Body muted>{task.scenario === null ? (task.type || tt('detail.notSupplied')) : tt(`scenario.${task.scenario}`)}</Body>
-        <Amount value={`${task.unitPriceVndPerMinute} ${task.currency}`} label={tt('hall.pricePerMinute')} />
+        <View style={{ gap: theme.space[1] }}>
+          <Title>{task.title}</Title>
+          <Body muted>{task.scenario === null ? (task.type || tt('detail.notSupplied')) : tt(`scenario.${task.scenario}`)}</Body>
+        </View>
+        <Row label={tt('hall.pricePerMinute')} value={`${task.unitPriceVndPerMinute} ${task.currency}`} />
         <Body>{tt('detail.title')} ›</Body>
       </CardLink>)}
     </View>
@@ -57,7 +65,7 @@ export function Home() {
       <Title>{tt('session.title')}</Title>
       {profile.data !== undefined && profile.data !== null && !profile.data.examPassed ? <Note text={tt('home.gateExam')} /> : null}
       {devices.isError ? <><Note text={tt('common.loadFailed')} /><Button label={tt('common.retry')} variant="secondary" disabled={devices.isFetching} onPress={() => void devices.refetch()} /></>
-        : devices.isPending ? <Body muted>{tt('common.loading')}</Body>
+        : devices.isPending ? <Loading />
         : devices.data?.length === 0 ? <Note text={tt('home.gateDevice')} /> : null}
       <NavRow label={tt('home.devices')} onPress={() => nav.push({ name: 'devices' })} />
       <NavRow label={tt('session.title')} onPress={() => nav.push({ name: 'sessionReminder' })} />
