@@ -288,6 +288,52 @@ const vi = {
   'uploads.session': 'Phiên',
   'uploads.confirmCancel': 'Chưa tải lên',
 
+  // APP-26: the phone-to-cloud delivery of a recorded session. Every state and
+  // every reason below is the server's own; nothing here is computed on the
+  // phone, and the word "uploaded" deliberately does not appear - the server
+  // says `verified`, then `ingested`, and until then nothing is safe.
+  'uploads.deliverTitle': 'Tải lên phiên đã ghi',
+  'uploads.deliverBody':
+    'Chọn thư mục phiên trên điện thoại. Máy chủ kiểm tra và đo, không phải điện thoại.',
+  'uploads.pick': 'Chọn thư mục phiên',
+  'uploads.pickFailed': 'Chưa chọn được thư mục. Hãy chọn thư mục phiên ghi hình.',
+  'uploads.directory': 'Thư mục',
+  'uploads.files': 'Số tệp',
+  'uploads.chooseSession': 'Chọn phiên thu thập mà bản ghi này thuộc về.',
+  'uploads.noSessions':
+    'Bạn chưa khai phiên thu thập nào. Hãy tạo phiên trước khi tải lên.',
+  'uploads.hashing': 'Đang tính mã kiểm tra tệp',
+  'uploads.sending': 'Đang gửi tệp',
+  'uploads.start': 'Bắt đầu tải lên',
+  'uploads.resume': 'Tiếp tục lần tải lên chưa xong',
+  'uploads.reasonChecksum':
+    'Bản trên máy chủ không khớp với tệp trên điện thoại. Hãy gửi lại.',
+  'uploads.reasonCollision':
+    'Máy chủ đã có một phiên khác cùng tên. Nhân viên sẽ kiểm tra; không tệp nào bị ghi đè.',
+  'uploads.reasonUnknownSession': 'Không tìm thấy phiên thu thập này.',
+  'uploads.reasonForeignSession': 'Phiên thu thập này không thuộc về bạn.',
+  'uploads.reasonAlreadyComplete': 'Phiên này đã được tải lên xong trước đó.',
+  'uploads.reasonTooLarge':
+    'Phiên này lớn hơn mức máy chủ nhận cho một lần tải lên.',
+  'uploads.reasonSuperseded':
+    'Đã có lần tải lên khác cho phiên này. Hãy tải lại danh sách.',
+  'uploads.reasonBadName':
+    'Tên thư mục không phải tên một phiên ghi hình. Hãy chọn đúng thư mục trên thẻ.',
+  'uploads.reasonTransport': 'Không gửi được tệp. Kiểm tra kết nối rồi thử lại.',
+  'uploads.reasonExpired': 'Đường dẫn tải lên đã hết hạn. Hãy thử lại.',
+  'uploads.reasonPlanMismatch':
+    'Danh sách tệp của máy chủ khác với trên điện thoại. Hãy chọn lại thư mục.',
+  'uploads.reasonNotReady':
+    'Hãy chọn thư mục phiên và phiên thu thập trước khi tải lên.',
+
+  'delivery.registered': 'Đã ghi nhận',
+  'delivery.transferring': 'Đang truyền',
+  'delivery.verified': 'Đã kiểm tra dữ liệu',
+  'delivery.ingesting': 'Máy chủ đang đo',
+  'delivery.ingested': 'Máy chủ đã nhận và đo xong',
+  'delivery.held': 'Đang giữ để kiểm tra',
+  'delivery.failed': 'Thất bại',
+
   'state.pending_upload': 'Chờ tải lên',
   'state.uploading': 'Đang tải lên',
   'state.uploaded': 'Đã tải lên',
@@ -621,6 +667,45 @@ const en: Record<MessageKey, string> = {
   'uploads.session': 'Session',
   'uploads.confirmCancel': 'Not uploaded',
 
+  'uploads.deliverTitle': 'Upload a recorded session',
+  'uploads.deliverBody':
+    'Pick the session folder on this phone. The server checks and measures it, not the phone.',
+  'uploads.pick': 'Choose session folder',
+  'uploads.pickFailed': 'No folder was chosen. Pick the recorded session folder.',
+  'uploads.directory': 'Folder',
+  'uploads.files': 'Files',
+  'uploads.chooseSession': 'Choose the collection session this recording belongs to.',
+  'uploads.noSessions':
+    'You have not declared a collection session yet. Create one before uploading.',
+  'uploads.hashing': 'Hashing files',
+  'uploads.sending': 'Sending files',
+  'uploads.start': 'Start upload',
+  'uploads.resume': 'Resume the unfinished upload',
+  'uploads.reasonChecksum':
+    'The cloud copy does not match the files on this phone. Send them again.',
+  'uploads.reasonCollision':
+    'Another session with the same name is already on the server. Staff will check it; nothing was overwritten.',
+  'uploads.reasonUnknownSession': 'That collection session was not found.',
+  'uploads.reasonForeignSession': 'That collection session is not yours.',
+  'uploads.reasonAlreadyComplete': 'This session has already been uploaded.',
+  'uploads.reasonTooLarge': 'This session is larger than the server accepts in one upload.',
+  'uploads.reasonSuperseded': 'Another upload of this session happened. Reload the list.',
+  'uploads.reasonBadName':
+    'That folder name is not a recorded session name. Pick the right folder on the card.',
+  'uploads.reasonTransport': 'The files could not be sent. Check the connection and try again.',
+  'uploads.reasonExpired': 'The upload links expired. Try again.',
+  'uploads.reasonPlanMismatch':
+    "The server's file list differs from this phone's. Pick the folder again.",
+  'uploads.reasonNotReady': 'Pick the session folder and the collection session before uploading.',
+
+  'delivery.registered': 'Registered',
+  'delivery.transferring': 'Transferring',
+  'delivery.verified': 'Bytes verified',
+  'delivery.ingesting': 'Server is measuring',
+  'delivery.ingested': 'Received and measured',
+  'delivery.held': 'Held for checking',
+  'delivery.failed': 'Failed',
+
   'state.pending_upload': 'Pending upload',
   'state.uploading': 'Uploading',
   'state.uploaded': 'Uploaded',
@@ -929,6 +1014,43 @@ const zh: Record<MessageKey, string> = {
   'uploads.empty': '还没有数据集。',
   'uploads.session': '场次',
   'uploads.confirmCancel': '未上传',
+
+  'uploads.deliverTitle': '上传已录制的场次',
+  'uploads.deliverBody':
+    '在手机上选择场次文件夹。校验和测量由服务器完成，不由手机完成。',
+  'uploads.pick': '选择场次文件夹',
+  'uploads.pickFailed': '未选择文件夹。请选择已录制的场次文件夹。',
+  'uploads.directory': '文件夹',
+  'uploads.files': '文件数',
+  'uploads.chooseSession': '选择这段录制所属的采集场次。',
+  'uploads.noSessions': '你还没有申报采集场次。上传前请先创建。',
+  'uploads.hashing': '正在计算文件校验值',
+  'uploads.sending': '正在发送文件',
+  'uploads.start': '开始上传',
+  'uploads.resume': '继续未完成的上传',
+  'uploads.reasonChecksum': '云端副本与手机上的文件不一致。请重新发送。',
+  'uploads.reasonCollision':
+    '服务器上已有同名场次。工作人员会核查；没有任何文件被覆盖。',
+  'uploads.reasonUnknownSession': '未找到该采集场次。',
+  'uploads.reasonForeignSession': '该采集场次不属于你。',
+  'uploads.reasonAlreadyComplete': '该场次已经上传完成。',
+  'uploads.reasonTooLarge': '该场次超过服务器单次上传的上限。',
+  'uploads.reasonSuperseded': '该场次已有另一次上传。请重新加载列表。',
+  'uploads.reasonBadName':
+    '该文件夹名不是录制场次的名称。请在卡上选择正确的文件夹。',
+  'uploads.reasonTransport': '文件发送失败。请检查网络后重试。',
+  'uploads.reasonExpired': '上传链接已过期。请重试。',
+  'uploads.reasonPlanMismatch':
+    '服务器的文件清单与手机上的不一致。请重新选择文件夹。',
+  'uploads.reasonNotReady': '上传前请先选择场次文件夹和采集场次。',
+
+  'delivery.registered': '已登记',
+  'delivery.transferring': '正在传输',
+  'delivery.verified': '数据已校验',
+  'delivery.ingesting': '服务器正在测量',
+  'delivery.ingested': '已接收并测量',
+  'delivery.held': '暂缓核查',
+  'delivery.failed': '失败',
 
   'state.pending_upload': '待上传',
   'state.uploading': '上传中',

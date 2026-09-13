@@ -10,6 +10,12 @@ import type {
   SessionInput,
   Task,
 } from './types.ts';
+import type {
+  DeliveryOutcome,
+  DeliveryPlan,
+  DeliveryRecord,
+  DeliveryState,
+} from '../upload/delivery.ts';
 import { AGREEMENTS, ApiError } from './types.ts';
 
 /**
@@ -290,18 +296,64 @@ export class MockCollectorApi implements CollectorApi {
     return this.episodeRows.map((e) => ({ ...e }));
   }
 
-  async confirmUpload(episodeId: string): Promise<EpisodeUpload> {
+  // -- Path A, in memory ---------------------------------------------------
+
+  /**
+   * The two gates the server has on a delivery registration, and nothing else.
+   *
+   * A mock delivery moves no bytes and measures nothing, so what it is for is
+   * the refusals: a session that is not this collector's is the one thing a
+   * phone can get wrong that no amount of retrying fixes. Everything past that
+   * is the server's own work — read-back verification and the ingest engine —
+   * and this object does not pretend to it: `completeDelivery` answers
+   * `ingested` because in this fiction the bytes never had a chance to be
+   * wrong, not because anything checked them.
+   */
+  private deliveries = new Map<string, { record: DeliveryRecord; state: DeliveryState }>();
+
+  async registerDelivery(record: DeliveryRecord): Promise<DeliveryPlan> {
     this.mustProfile();
-    const episode = this.episodeRows.find((e) => e.episodeId === episodeId);
-    if (episode === undefined) throw new ApiError('episode_not_found');
-    if (episode.state !== 'pending_upload') throw new ApiError('not_pending');
-    // `uploading` is where it stops. A two-second timer used to flip it to
-    // `uploaded` for demo effect: it moved no bytes, told React Query nothing,
-    // so the screen sat on `uploading` anyway, and it put a state change in
-    // the one class that must not have one. Removed. The transition out of
-    // `uploading` belongs to the transfer worker that does not exist yet.
-    episode.state = 'uploading';
-    return { ...episode };
+    if (!this.sessionRows.some((row) => row.id === record.collectionSessionId)) {
+      throw new ApiError('upload_unknown_session');
+    }
+    const held = this.deliveries.get(record.uploadId);
+    if (held === undefined) this.deliveries.set(record.uploadId, { record, state: 'registered' });
+    return this.planOf(record.uploadId);
+  }
+
+  async deliveryPlan(uploadId: string): Promise<DeliveryPlan> {
+    this.mustProfile();
+    return this.planOf(uploadId);
+  }
+
+  async completeDelivery(uploadId: string): Promise<DeliveryOutcome> {
+    this.mustProfile();
+    const delivery = this.deliveries.get(uploadId);
+    if (delivery === undefined) throw new ApiError('upload_not_found');
+    delivery.state = 'ingested';
+    const plan = this.planOf(uploadId);
+    return { state: plan.state, episodeId: plan.episodeId, heldReason: null, failedReason: null };
+  }
+
+  private planOf(uploadId: string): DeliveryPlan {
+    const delivery = this.deliveries.get(uploadId);
+    if (delivery === undefined) throw new ApiError('upload_not_found');
+    const settled = delivery.state === 'ingested';
+    return {
+      uploadId,
+      state: delivery.state,
+      episodeId: settled ? `mock-${delivery.record.sessionBasename}` : null,
+      heldReason: null,
+      failedReason: null,
+      files: settled
+        ? []
+        : delivery.record.files.map((f) => ({
+            relativePath: f.relativePath,
+            done: false,
+            putUrl: `mock://put/${encodeURIComponent(f.relativePath)}`,
+            parts: [],
+          })),
+    };
   }
 
   async income(): Promise<IncomeEntry[]> {

@@ -66,3 +66,27 @@ No `android/` directory exists yet, so nothing here declares a minSdk. When
 `expo prebuild` (PRODUCT.md's stated path) generates it, **minSdkVersion is
 28** — Android 9+ per PRODUCT.md — and the EgoLowBle TurboModule slots in
 behind `DeviceTransport` with the JNI pieces above.
+
+## Native modules this app links, and what each is for
+
+Every entry here is a reason the APK has to be rebuilt; there is nothing in this
+list that a JavaScript-only change can add or remove.
+
+| Module | Version | Why |
+|---|---|---|
+| `expo` | 57.0.20 | the runtime |
+| `expo-build-properties` | 57.0.17 | config plugin only, no runtime surface |
+| `expo-secure-store` | 57.0.3 | the collector token (NFR-03/04) and the Path A resume record |
+| `expo-file-system` | 57.0.7 | Path A: the Storage Access Framework directory picker, chunked reads for hashing and for ranged parts, and the native whole-file PUT |
+| `react-native` | 0.86.3 | the runtime |
+
+**`expo-file-system` is the only module added for the phone-upload lane**, and
+it is added at `57.0.7`. `expo-document-picker` was installed first and then
+removed: everything the lane needs is `Directory.pickDirectoryAsync`, which is
+`expo-file-system`'s own SAF document-tree picker, and a second autolinked
+native module for a picker nothing calls is a larger APK and a larger
+permissions surface for no behaviour.
+
+Nothing here is `expo-crypto`. The session digests are computed in JavaScript
+(`src/upload/sha256.ts`) precisely so that a third native module is not needed;
+that is a measured ceiling, not an oversight, and it is marked where it bites.

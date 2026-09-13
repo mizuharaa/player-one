@@ -201,11 +201,16 @@ describe('session creation (APP-14/15/16/17b)', () => {
 });
 
 describe('uploads are manual, never automatic, never silent (APP-23/24/25)', () => {
-  it('moves an episode only through confirmUpload, and only from pending', async () => {
+  it('never moves an episode on its own, and never from what a screen wrote', async () => {
+    // `confirmUpload` is gone: it threw `upload_not_supported` on the real
+    // client because no route existed, and the route exists now — a delivery
+    // starts from a directory the collector picked, not from an episode row
+    // (`upload/delivery.ts`, pinned in `test/delivery.test.ts`). What this
+    // test still holds is the half that was never about that method: nothing
+    // in this client promotes an episode by itself.
     const api = await onboarded();
     const before = await api.episodes();
-    const pending = before.filter((e) => e.state === 'pending_upload');
-    expect(pending.length).toBeGreaterThan(0);
+    expect(before.filter((e) => e.state === 'pending_upload').length).toBeGreaterThan(0);
 
     // Time passing and re-listing change nothing: no upload starts on its own.
     // This assertion is only worth something because `episodes()` hands out
@@ -220,15 +225,6 @@ describe('uploads are manual, never automatic, never silent (APP-23/24/25)', () 
     const wasFirst = before[0]!.state;
     before[0]!.state = 'review_passed';
     expect((await api.episodes())[0]?.state).toBe(wasFirst);
-
-    const first = pending[0]!;
-    const confirmed = await api.confirmUpload(first.episodeId);
-    expect(confirmed.state).toBe('uploading');
-
-    // Confirming again is a client bug, not a second upload.
-    await expect(api.confirmUpload(first.episodeId)).rejects.toThrow('not_pending');
-    // Nor can an episode in review be "uploaded" again.
-    await expect(api.confirmUpload('ego1-20260820-1830')).rejects.toThrow('not_pending');
   });
 
   it('names APP-23’s six states verbatim, and seeds the ones no tap can produce', async () => {
@@ -895,16 +891,6 @@ describe('what the client sends, and what it refuses to', () => {
     const session = calls[1]?.body as Record<string, unknown>;
     expect(session['others_in_frame']).toBe(false);
     expect(session['sensitive_info_present']).toBe(true);
-  });
-
-  it('refuses to pretend an upload started, because there is no route for one', async () => {
-    // Path A is out of the pilot: footage reaches the platform on a TF card at
-    // an upload centre, and no server route confirms an upload. Resolving here
-    // would tell a collector their footage was on its way when nothing moved.
-    const api = new HttpCollectorApi(BASE, fakeStore('tok-good'), () => {}, fakeFetch({}).fn);
-    await expect(api.confirmUpload('ego1-20260819-1120')).rejects.toThrow(
-      new ApiError('upload_not_supported'),
-    );
   });
 
   it('passes a refusal through under the name the server chose for it', async () => {

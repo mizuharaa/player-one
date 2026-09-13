@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 /**
- * The browser harness's build. Three aliases and one define; nothing else.
+ * The browser harness's build. Four aliases and one define; nothing else.
  *
  * - `react-native` → `react-native-web`, which is the whole trick.
  * - `expo-secure-store` → a stub, because it is a native module and the two
@@ -11,6 +11,10 @@ import react from '@vitejs/plugin-react';
  *   from `App.tsx` at module load. The stub is `web/stubs/expo-secure-store.ts`
  *   and is memory-only, which is correct here: a harness has no keystore and
  *   should not pretend to remember anything between reloads.
+ * - `expo-file-system` → a stub, for the same reason: `upload/delivery-native.ts`
+ *   is imported from the uploads screen at module load and there is no Storage
+ *   Access Framework in a browser. Every entry point throws rather than
+ *   inventing a session directory.
  * - `.ts`/`.tsx` extensions resolve, because this project imports its own files
  *   with the extension on (`allowImportingTsExtensions`) and esbuild needs to
  *   be told that is fine.
@@ -27,6 +31,7 @@ export default defineConfig({
     alias: {
       'react-native': 'react-native-web',
       'expo-secure-store': here('./stubs/expo-secure-store.ts'),
+      'expo-file-system': here('./stubs/expo-file-system.ts'),
     },
     extensions: ['.web.tsx', '.web.ts', '.tsx', '.ts', '.jsx', '.js', '.json'],
   },
