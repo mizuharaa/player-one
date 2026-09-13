@@ -15,10 +15,14 @@ export function WalkthroughAtmosphere({paused}:{paused:boolean}) {
       const y=Math.max(-1,Math.min(1,(event.clientY-bounds.top)/bounds.height*2-1));
       node.style.setProperty('--art-pointer-x',`${x*14}px`);
       node.style.setProperty('--art-pointer-y',`${y*10}px`);
+      stage.style.setProperty('--phone-pointer-y',`${x*5}deg`);
+      stage.style.setProperty('--phone-pointer-x',`${-y*4}deg`);
     };
     const reset=()=>{
       node.style.removeProperty('--art-pointer-x');
       node.style.removeProperty('--art-pointer-y');
+      stage.style.removeProperty('--phone-pointer-y');
+      stage.style.removeProperty('--phone-pointer-x');
     };
     stage.addEventListener('pointermove',move,{passive:true});
     stage.addEventListener('pointerleave',reset);

@@ -12,7 +12,7 @@ import {useTranslation} from 'react-i18next';
 import {Link} from '@tanstack/react-router';
 import {LocaleSwitch} from '../components/shell/LocaleSwitch.tsx';
 import {IconPass,IconPartial,IconReject} from '../components/icons.tsx';
-import {PerspectiveTitle} from '../components/discover/PerspectiveTitle.tsx';
+import {OperatorDemo} from '../components/discover/OperatorDemo.tsx';
 import {ScanMotif} from '../components/discover/ScanMotif.tsx';
 import {ScrollDemo} from '../components/discover/ScrollDemo.tsx';
 import {DownloadApp} from '../components/discover/DownloadApp.tsx';
@@ -20,7 +20,7 @@ import {useScrollScene} from '../lib/use-scroll-scene.ts';
 import {useScrollStoryCopy} from '../lib/scroll-story-copy.ts';
 import {DiscoverHelp} from '../components/discover/DiscoverHelp.tsx';
 import {DiscoverPrivacy} from '../components/discover/DiscoverPrivacy.tsx';
-import {DISCOVER_MEDIA,DiscoverVideo,PovPicture} from '../components/discover/DiscoverMedia.tsx';
+import {DISCOVER_MEDIA,DiscoverVideo} from '../components/discover/DiscoverMedia.tsx';
 import {AssemblyLogo} from '../components/logo-animation/AssemblyLogo.tsx';
 import {HeroLetterShuffle} from '../components/logo-animation/HeroLetterShuffle.tsx';
 import {WhiteLogoIntro} from '../components/logo-animation/WhiteLogoIntro.tsx';
@@ -32,6 +32,7 @@ import '../styles/discover-kinetics.css';
 import '../styles/discover-scroll-story.css';
 import '../styles/discover-walkthrough.css';
 import '../styles/discover-download.css';
+import '../styles/discover-faq-color.css';
 import {useDiscoverKinetics} from '../lib/discover-kinetics.ts';
 
 const destinations=['demo','work','camera','review','questions'] as const;
@@ -65,10 +66,7 @@ export function DiscoverScreen(){
         </div>
       </section>
 
-      <section className="discover-aperture-section discover-wide-intro" id="introduction" data-perspective-scroll="">
-        <div className="discover-aperture-copy"><p className="discover-eyebrow">VNG PT Lab × PaXini</p><h2 className="discover-heading" data-discover-heading=""><PerspectiveTitle text={c('introTitle')}/></h2><p className="discover-lead">{c('introBody')}</p><div className="discover-product-callouts">{['Tasks','Review'].map(key=><div key={key}><h3>{c(`product${key}`)}</h3><p>{c(`product${key}Body`)}</p></div>)}</div></div>
-        <div className="discover-product-specimen"><span className="discover-product-circle" aria-hidden="true"/><figure><PovPicture/><span className="discover-frame-corners" aria-hidden="true"/><figcaption>{c('povLabel')}</figcaption></figure></div>
-      </section>
+      <OperatorDemo motionPaused={paused||reduced} reducedMotion={reduced}/>
 
       <ScrollDemo motionPaused={paused||reduced} reducedMotion={reduced} onToggleMotion={toggle}/>
 

@@ -11,7 +11,7 @@
   --walk-confirm-ink:#315944;
   --walk-metal:#969ba2;
   --walk-frame:#24262a;
-  --walk-shadow:0 24px 36px -20px #18212f45;
+  --walk-shadow:12px 24px 28px -15px #111e4266,28px 48px 64px -28px #15254b66;
   --walk-ease:cubic-bezier(.22,1,.36,1);
   --walk-phone-width:292px;
   --walk-phone-height:610px;
@@ -220,3 +220,38 @@ li[data-active='true'] .discover-step-arrow { opacity:1;transform:none; }
   .discover-walkthrough-sticky { --art-turn:-24deg;--art-shift:0px;--art-hue:0deg; }
   .discover-walkthrough-art,.discover-walkthrough-art *,.discover-walkthrough-copy li::after { animation:none!important;transition:none!important; }
 }
+
+/* The heading anchors the stage; material moves around a readable device. */
+.discover-walkthrough-top{display:grid;grid-template-columns:1fr;justify-items:center;position:relative;text-align:center}
+.discover-walkthrough-heading{display:grid;gap:12px;justify-items:center}
+.discover-walkthrough .discover-walkthrough-heading .discover-walkthrough-intro{margin:0;font-size:1rem}
+.discover-walkthrough-top .discover-walkthrough-tools{position:absolute;right:0;top:0;gap:12px}
+.discover-walkthrough-top .discover-walkthrough-tools button,.discover-walkthrough-top .discover-walkthrough-tools a{font-size:.6875rem;gap:8px}
+.discover-walkthrough-top .discover-walkthrough-mode{padding-inline:14px}
+.discover-walkthrough-grid{margin-top:32px;gap:clamp(48px,8vw,124px)}
+.discover-walkthrough-device{perspective:1400px;--phone-pointer-x:0deg;--phone-pointer-y:0deg}
+.discover-walkthrough [data-guided='true'] .discover-phone-stage{transform-style:preserve-3d;transform:rotateX(calc(5deg + var(--phone-pointer-x))) rotateY(calc(-12deg + var(--screen-position,0) * 7deg + var(--phone-pointer-y))) rotateZ(calc(-2deg + var(--screen-position,0) * 1deg));transition:transform 1100ms var(--walk-ease)}
+.discover-walkthrough [data-guided='true'] .discover-phone-stage .discover-demo-phone.discover-demo-frame{border-color:#292d35;box-shadow:inset 1px 0 0 #e0e6f3,3px 1px 0 #a4adbf,6px 2px 0 #343b49,var(--walk-shadow);animation:walk-phone-hover 8s ease-in-out infinite paused}
+.discover-walkthrough .discover-phone-stage::after{display:block;content:'';position:absolute;inset:auto -12% -32px;height:24px;background:#1b30594d;border-radius:50%;filter:blur(18px);transform:rotateX(65deg);z-index:-1;pointer-events:none}
+.discover-walkthrough-art{isolation:isolate;inset:28px -17% -12px}
+.discover-walkthrough-form{width:92%;height:62%;filter:hue-rotate(var(--art-hue)) saturate(1.5);mix-blend-mode:multiply}
+.discover-walkthrough-form span{animation-name:walk-material-morph;animation-duration:13s;filter:blur(9px);opacity:.94}
+.discover-walkthrough-form--warm{top:2%;left:-10%}.discover-walkthrough-form--warm span{background-image:radial-gradient(ellipse at 24% 25%,#ffc467 0%,#ff894b 30%,#ff597c 65%,#e895fb 100%)}
+.discover-walkthrough-form--cool{bottom:0;right:-10%}.discover-walkthrough-form--cool span{background-image:radial-gradient(ellipse at 76% 70%,#58d8e3 0%,#5079ef 38%,#9b70ee 76%);animation-delay:-6.5s}
+.discover-walkthrough-orbit{border-color:#647bd44d;inset:2% -4% 0;transform:rotate(calc(var(--art-turn) - 20deg)) scaleX(.86);box-shadow:16px 0 0 -15px #ffffff99}
+.discover-walkthrough-satellite--lime{background:linear-gradient(135deg,#b6c9ff,#778fe9);width:40px;height:86px;border-radius:45% 55% 58% 42%;box-shadow:8px 16px 22px -12px #3c54a577}
+.discover-walkthrough-spark{opacity:.55;transform:rotate(calc(var(--art-turn) + 25deg)) scale(.7)}
+[data-illustration-active='true']:not([data-art-paused='true']) [data-guided='true'] .discover-phone-stage .discover-demo-phone.discover-demo-frame{animation-play-state:running}
+[data-art-paused='true'] .discover-walkthrough-art *,[data-art-paused='true'] .discover-phone-stage .discover-demo-phone.discover-demo-frame{animation-play-state:paused!important}
+.discover-walkthrough [data-art-paused='true'] [data-guided='true'] .discover-phone-stage{transform:none;transition:none}
+@keyframes walk-material-morph{0%{border-radius:38% 62% 65% 35% / 38% 32% 68% 62%;transform:translate3d(-4%,-3%,0) rotate(-14deg) scale(.92);background-position:0% 20%}50%{border-radius:68% 32% 38% 62% / 58% 66% 34% 42%;transform:translate3d(8%,9%,0) rotate(18deg) scale(1.08);background-position:85% 70%}100%{border-radius:42% 58% 30% 70% / 65% 40% 60% 35%;transform:translate3d(-3%,2%,0) rotate(-6deg) scale(.98);background-position:20% 100%}}
+@keyframes walk-phone-hover{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@media(min-width:900px) and (max-height:850px){.discover-walkthrough-heading{gap:8px}.discover-walkthrough-top h2{font-size:2.5rem}.discover-walkthrough-grid{margin-top:14px}.discover-walkthrough .discover-walkthrough-heading .discover-walkthrough-intro{font-size:.8125rem}.discover-device-caption{margin-bottom:8px}.discover-walkthrough{--walk-phone-height:490px}}
+@media(max-width:1450px){.discover-walkthrough-top .discover-walkthrough-tools{position:static;margin-top:14px}.discover-walkthrough-top{gap:0}.discover-walkthrough-grid{margin-top:20px}}
+@media(min-width:900px) and (max-width:1450px) and (max-height:850px){.discover-walkthrough-top{grid-template-columns:1fr;text-align:center;justify-items:center}.discover-walkthrough-heading{justify-items:center}.discover-walkthrough-top .discover-walkthrough-tools{position:absolute;right:0;top:0;margin-top:0;align-self:center}.discover-walkthrough-top .discover-walkthrough-tools a{display:none}.discover-walkthrough-grid{margin-top:14px}}
+@media(max-width:899px){.discover-walkthrough-sticky{padding-top:72px}.discover-walkthrough-top{justify-items:center;text-align:center}.discover-walkthrough-top .discover-walkthrough-tools{justify-content:center}.discover-walkthrough-copy{order:2}.discover-walkthrough-device{order:1;margin-top:8px}.discover-walkthrough-grid{gap:42px}.discover-walkthrough-art{inset:28px 50% 56px;width:390px;margin-left:-195px}.discover-walkthrough-form{width:85%;height:56%}.discover-walkthrough .discover-walkthrough-heading .discover-walkthrough-intro{font-size:.9375rem}.discover-walkthrough [data-guided='true'] .discover-phone-stage{transform:rotateX(4deg) rotateY(-9deg) rotateZ(-2deg)}.discover-walkthrough-copy ol{gap:8px 16px}.discover-walkthrough-top .discover-walkthrough-tools{display:flex;flex-wrap:wrap;width:auto}.discover-walkthrough-top .discover-walkthrough-tools a{order:3}.discover-walkthrough-satellite--lime{width:32px;height:70px}}
+@media(prefers-reduced-motion:reduce){.discover-walkthrough .discover-phone-stage .discover-demo-phone.discover-demo-frame{animation:none}.discover-walkthrough [data-guided='true'] .discover-phone-stage{transform:none}.discover-walkthrough-form span{animation:none;filter:blur(9px)}.discover-walkthrough-form--cool span{transform:rotate(12deg)}}
+
+@media(min-width:900px) and (min-height:851px) and (max-height:1000px){.discover-walkthrough{--walk-phone-height:560px;--walk-phone-width:272px}.discover-walkthrough[data-scene-pinned='true'] .discover-walkthrough-sticky{padding-top:88px}.discover-walkthrough-top .discover-walkthrough-tools{position:absolute;right:0;top:0;margin-top:0}.discover-walkthrough-top .discover-walkthrough-tools a{display:none}}
+
+@media(min-width:900px) and (max-width:1450px){.discover-walkthrough-top .discover-walkthrough-tools{position:absolute;inset:0 0 auto;justify-content:flex-end;pointer-events:none;margin:0}.discover-walkthrough-top .discover-walkthrough-tools button,.discover-walkthrough-top .discover-walkthrough-tools a{pointer-events:auto}.discover-walkthrough-top .discover-walkthrough-tools a{display:inline-flex;position:absolute;left:0;top:0}}
