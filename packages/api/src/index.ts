@@ -23,6 +23,7 @@ import { registerCollectorApp } from './collector-app.ts';
 import { registerCollectorAuth, type SendSignInCode } from './collector.ts';
 export {
   MAX_DELIVERY_BYTES,
+  MAX_UNMEASURED_DELIVERY_BYTES,
   UPLOAD_API_REFUSALS,
   type CollectorUploadOptions,
   type FilePlan,

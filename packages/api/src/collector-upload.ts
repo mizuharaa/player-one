@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { mkdir, readdir, rename, rm } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -161,6 +162,24 @@ export const UPLOAD_API_REFUSALS = new Set([
  */
 export const MAX_DELIVERY_BYTES = 64 * 1024 * 1024 * 1024;
 
+/**
+ * And the much smaller ceiling on a delivery this service has to MEASURE.
+ *
+ * A measured delivery costs this process one read-back: the bytes are hashed
+ * as they stream and nothing is kept, so 64 GiB is a long request and not a
+ * large one. An unmeasured delivery is read back, written to this machine's
+ * disk, and then decoded by ffprobe inside the same request — the ceiling the
+ * lane declared for synchronous ingest is ~200 MB, and declaring a ceiling
+ * without enforcing it is how a demo discovers it at the worst moment.
+ *
+ * 200 MiB is about three minutes of Ego footage and about five times the
+ * largest sample session, which is what the pilot's phone deliveries look
+ * like. Past it the registration refuses by name before a byte moves, rather
+ * than accepting a delivery whose `/complete` cannot finish inside a request.
+ * The number goes up with the job table, not before it.
+ */
+export const MAX_UNMEASURED_DELIVERY_BYTES = 200 * 1024 * 1024;
+
 export type CollectorUploadOptions = {
   /** Absent until a storage endpoint exists; the routes answer 503 saying so. */
   objectStore?: (ObjectStore & DirectUploadStore) | undefined;
@@ -298,6 +317,7 @@ export function registerCollectorUpload(
   const opts = { preHandler: requireActor };
   const ttl = PRESIGN_TTL_S;
   const ceiling = MAX_DELIVERY_BYTES;
+  const unmeasuredCeiling = MAX_UNMEASURED_DELIVERY_BYTES;
 
   /**
    * The collector, always, and from the token only.
@@ -617,9 +637,13 @@ export function registerCollectorUpload(
    * derived from the basename and the basename is what the row stores: one
    * query, one column, and no dependence on whether the episode row exists yet.
    */
-  const ingestedAlready = async (sourceBasename: string) => {
+  const ingestedAlready = async (sourceBasename: string, collectorId: string) => {
     const [row] = await db
-      .select({ id: schema.collectorUploads.id, episodeId: schema.collectorUploads.episodeId })
+      .select({
+        id: schema.collectorUploads.id,
+        collectorId: schema.collectorUploads.collectorId,
+        episodeId: schema.collectorUploads.episodeId,
+      })
       .from(schema.collectorUploads)
       .where(
         and(
@@ -627,7 +651,20 @@ export function registerCollectorUpload(
           eq(schema.collectorUploads.state, 'ingested'),
         ),
       );
-    return row;
+    if (row === undefined) return undefined;
+    /**
+     * The scan is deliberately not scoped to the caller — the rule is one
+     * episode per recording, whoever delivered it, and a second delivery of a
+     * session somebody else already ingested has to be refused too. But the
+     * ANSWER is scoped: `upload_id` is another collector's delivery id, which
+     * is not this collector's to be told. The episode id is derived from the
+     * basename the caller supplied, so it tells them nothing they did not
+     * already have.
+     */
+    return {
+      episodeId: row.episodeId,
+      uploadId: row.collectorId === collectorId ? row.id : undefined,
+    };
   };
 
   // -------------------------------------------------------------------------
@@ -666,8 +703,23 @@ export function registerCollectorUpload(
      * one would mean a `raw:` identity string, a directory of that name created
      * on this machine's disk, and an episode nobody can attribute to a device.
      */
+    /**
+     * Two questions about one string, and both have to be asked here.
+     *
+     * `parseSessionBasename` says whether this is a session directory name. It
+     * does NOT say whether it is a single path segment: its serial group is
+     * permissive, so `ego_a/../x_20260813_072310` parses, and that name becomes
+     * a directory created wherever the traversal points and an `episode_id`
+     * the engine then derives differently — an uncaught throw at the guard
+     * below, which is a 500 on a request a client chose. `RelativePath` is the
+     * same check the delivered file names get, for the same reason: on Path C
+     * these names come off a directory listing, here they come off the network.
+     *
+     * One refusal for both, because from a collector's side they are one fact:
+     * that is not a recording folder.
+     */
     const identity = parseSessionBasename(body.session_basename);
-    if (identity === null) {
+    if (identity === null || !RelativePath.safeParse(body.session_basename).success) {
       /**
        * 400, as the contract froze it, but shaped like every other refusal in
        * this file: the name goes in `constraint`, which is the field the phone
@@ -698,11 +750,17 @@ export function registerCollectorUpload(
       });
     }
 
+    /**
+     * The smaller ceiling, because this service measures this one. Same
+     * refusal name as the measured path — from the collector's side it is the
+     * same sentence, "that is more than one upload may carry" — with the limit
+     * that actually applied in the body.
+     */
     const totalBytes = body.files.reduce((n, f) => n + f.bytes, 0);
-    if (totalBytes > ceiling) {
+    if (totalBytes > unmeasuredCeiling) {
       return refused(reply, 'upload_payload_too_large', {
         declared_bytes: totalBytes,
-        limit_bytes: ceiling,
+        limit_bytes: unmeasuredCeiling,
       });
     }
 
@@ -757,10 +815,10 @@ export function registerCollectorUpload(
      * be refused at `/complete` by `collector_uploads_ingested_key`, which is
      * the right verdict reached after the expensive part.
      */
-    const already = await ingestedAlready(body.session_basename);
+    const already = await ingestedAlready(body.session_basename, collectorId);
     if (already !== undefined) {
       return refused(reply, 'upload_already_complete', {
-        upload_id: already.id,
+        ...(already.uploadId === undefined ? {} : { upload_id: already.uploadId }),
         episode_id: already.episodeId,
       });
     }
@@ -1287,11 +1345,19 @@ export function registerCollectorUpload(
     declared: readonly DeclaredFileRow[],
     keyOf: (relativePath: string) => string,
   ): Promise<'downloaded' | 'reused' | 'collision'> => {
-    const onDisk = await readdir(dir, { withFileTypes: true }).catch((err: NodeJS.ErrnoException) => {
-      if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
-      throw err;
-    });
-    if (onDisk !== null) {
+    /**
+     * What is already at that name, judged by digest over the whole file set.
+     * Asked twice: once before downloading anything, and again when the rename
+     * loses — the two are the same question and have to give the same answer.
+     */
+    const already = async (): Promise<'reused' | 'collision' | null> => {
+      const onDisk = await readdir(dir, { withFileTypes: true }).catch(
+        (err: NodeJS.ErrnoException) => {
+          if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
+          throw err;
+        },
+      );
+      if (onDisk === null) return null;
       const want = new Map(declared.map((f) => [f.relative_path, f.sha256]));
       const names = onDisk.filter((e) => e.isFile()).map((e) => e.name);
       if (names.length !== want.size) return 'collision';
@@ -1303,15 +1369,28 @@ export function registerCollectorUpload(
         if ((await sha256File(path)) !== expected) return 'collision';
       }
       return 'reused';
-    }
+    };
+
+    const there = await already();
+    if (there !== null) return there;
 
     /**
      * A sibling of the session directory rather than a system temp directory:
      * `rename` has to be a rename and not a copy, which it only is inside one
      * filesystem, and the media root is where the bytes have to end up.
+     *
+     * One staging directory per ATTEMPT, not per delivery, and nothing is
+     * deleted before writing. A fixed name plus a pre-emptive `rm` was a
+     * corruption: `/complete` is designed to re-run from `verified` or
+     * `ingesting`, so a retry landing while the first attempt was still
+     * downloading deleted the files that attempt had already written, and the
+     * first attempt then renamed a SHORT directory into place for the engine
+     * to measure. A partial session can measure longer than the real one —
+     * payable time is the intersection of stream coverage, so losing the
+     * shortest stream's files widens it — which is the one way this route
+     * could have overpaid.
      */
-    const staging = join(root, `.incoming-${basename(dir)}`);
-    await rm(staging, { recursive: true, force: true });
+    const staging = join(root, `.incoming-${basename(dir)}-${randomUUID()}`);
     await mkdir(staging, { recursive: true });
     try {
       for (const f of declared) {
@@ -1325,12 +1404,17 @@ export function registerCollectorUpload(
     } catch (err) {
       await rm(staging, { recursive: true, force: true });
       /**
-       * A directory appeared under this name while the bytes were coming down.
-       * Nothing of ours is on disk and nothing of theirs was touched, which is
-       * the same verdict as finding it there in the first place.
+       * A directory appeared under this name while the bytes were coming down,
+       * and nothing of ours is on disk any more. Whose directory it is has to
+       * be decided the same way as before the download: if it holds this
+       * delivery's digests it is our own other attempt and this one reuses it,
+       * and only different bytes are a collision. Answering `collision` on the
+       * rename alone held a delivery that had just succeeded.
        */
       const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'EEXIST' || code === 'ENOTEMPTY' || code === 'EPERM') return 'collision';
+      if (code === 'EEXIST' || code === 'ENOTEMPTY' || code === 'EPERM') {
+        return (await already()) ?? 'collision';
+      }
       throw err;
     }
     return 'downloaded';
@@ -1348,7 +1432,10 @@ export function registerCollectorUpload(
    * this route would have nowhere to put one if it did.
    *
    * ponytail: synchronous ingest, ceiling ~200 MB per delivery; job table +
-   * worker for production sessions.
+   * worker for production sessions. The ceiling is enforced and not just
+   * declared — `MAX_UNMEASURED_DELIVERY_BYTES` refuses a larger delivery at
+   * registration, before a byte moves, because a ceiling nobody checks is
+   * discovered by the first request that exceeds it.
    */
   const completeUnmeasured = async (req: FastifyRequest, reply: FullReply, row: UploadRow) => {
     const s = options.objectStore!;
@@ -1375,10 +1462,10 @@ export function registerCollectorUpload(
      * second attempt at a delivery another attempt verified — and by
      * `collector_uploads_ingested_key` if it ever got past this.
      */
-    const already = await ingestedAlready(row.sourceBasename);
+    const already = await ingestedAlready(row.sourceBasename, row.collectorId);
     if (already !== undefined) {
       return refused(reply, 'upload_already_complete', {
-        upload_id: already.id,
+        ...(already.uploadId === undefined ? {} : { upload_id: already.uploadId }),
         episode_id: already.episodeId,
       });
     }
@@ -1490,11 +1577,18 @@ export function registerCollectorUpload(
      * answers `duplicate` for a measurement already stored.
      *
      * ponytail: no lock, so two `/complete` calls racing on one delivery both
-     * measure. The cost is one wasted engine run; what must not happen — two
-     * episodes, or two ingests read as two recordings — cannot, because
-     * `storeEpisode` owns that rule and `collector_uploads_ingested_key`
-     * refuses the second row. A row lock on the delivery is the upgrade path,
-     * the day completion stops being synchronous.
+     * download and both measure, and the state column is not the thing that
+     * keeps them apart — it is read before either writes. What keeps them
+     * apart is that every step after the read-back is safe to repeat: each
+     * attempt downloads into a staging directory of its own, the rename is the
+     * one atomic step, the attempt that loses it recognises the winner's
+     * directory by digest and reuses it, `storeEpisode` answers `duplicate`
+     * for a measurement already stored, and `collector_uploads_ingested_key`
+     * refuses a second `ingested` row. So the honest ceiling is cost, not
+     * correctness: two racing attempts pay for two downloads and two engine
+     * runs of the same session. `SELECT … FOR UPDATE` on the delivery row is
+     * the upgrade path and it is what the job table would bring anyway, the
+     * day completion stops being synchronous.
      */
     if (verified === undefined && !['verified', 'ingesting'].includes(row.state)) {
       return refused(reply, 'upload_superseded', { upload_id: row.id });
@@ -1523,7 +1617,18 @@ export function registerCollectorUpload(
           const [updated] = await tx
             .update(schema.collectorUploads)
             .set({ state: 'held', heldReason: 'basename_collision' })
-            .where(eq(schema.collectorUploads.id, row.id))
+            /**
+             * Only from a delivery that is still being worked on. Without the
+             * predicate a retry that lost the rename could hold a row another
+             * attempt had already ingested — turning a delivery that succeeded
+             * into one an operator has to adjudicate.
+             */
+            .where(
+              and(
+                eq(schema.collectorUploads.id, row.id),
+                inArray(schema.collectorUploads.state, ['ingesting', 'verified']),
+              ),
+            )
             .returning();
           return updated;
         },
@@ -1548,7 +1653,7 @@ export function registerCollectorUpload(
     try {
       record = await ingest(dir);
     } catch (err) {
-      await mutate(
+      const failed = await mutate(
         db,
         actor,
         {
@@ -1567,11 +1672,22 @@ export function registerCollectorUpload(
           const [updated] = await tx
             .update(schema.collectorUploads)
             .set({ state: 'failed', failedReason: 'ingest_failed' })
-            .where(eq(schema.collectorUploads.id, row.id))
+            /**
+             * Same predicate and same reason as the hold above: a retry whose
+             * engine run threw must not fail a row another attempt has already
+             * measured and ingested.
+             */
+            .where(
+              and(
+                eq(schema.collectorUploads.id, row.id),
+                inArray(schema.collectorUploads.state, ['ingesting', 'verified']),
+              ),
+            )
             .returning();
           return updated;
         },
       );
+      if (failed === undefined) return refused(reply, 'upload_superseded', { upload_id: row.id });
       /**
        * The directory stays. Its bytes have been proved against the phone's own
        * digests, so it is a good copy of something this engine cannot read —
@@ -1718,10 +1834,16 @@ export function registerCollectorUpload(
    *
    * ponytail: one synchronous request per delivery, which is the same shape
    * and the same ceiling as Path C's batch upload — a 16 GB delivery is 16 GB
-   * of download and hashing inside one request. The upgrade path is the same
-   * too: a queue and a progress endpoint, the day a delivery stops fitting in
-   * a request timeout. It is deliberately not built now, because a phone that
-   * has to poll is a second protocol and nothing in the pilot needs it.
+   * of download and hashing inside one request, up to
+   * `MAX_DELIVERY_BYTES`. That is this route, the MEASURED one, where the
+   * bytes are hashed as they stream and nothing is kept; the unmeasured half
+   * of this file also writes them to disk and decodes them, so it carries the
+   * much lower `MAX_UNMEASURED_DELIVERY_BYTES` instead. Two ceilings because
+   * the two shapes cost different things, and both are refused by name at
+   * registration. The upgrade path is the same for both: a queue and a
+   * progress endpoint, the day a delivery stops fitting in a request timeout.
+   * Deliberately not built now, because a phone that has to poll is a second
+   * protocol and nothing in the pilot needs it.
    */
   app.post('/api/me/uploads/:id/complete', opts, async (req, reply) => {
     const s = store(reply);

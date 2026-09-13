@@ -12,6 +12,8 @@ import {
   objectKey,
   signToken,
   s3StoreFromEnv,
+  MAX_DELIVERY_BYTES,
+  MAX_UNMEASURED_DELIVERY_BYTES,
   PART_SIZE,
   UPLOAD_API_REFUSALS,
   type DirectUploadStore,
@@ -85,7 +87,39 @@ class MemoryStore implements ObjectStore, DirectUploadStore {
     return 'uploaded';
   }
 
-  async read(key: string): Promise<AsyncIterable<Uint8Array> | null> {
+  /**
+   * A download this test can stop in the middle.
+   *
+   * It holds the first read that carries NO byte offset, which is the
+   * distinction that separates the two things this store is read for: the
+   * read-back always asks from a position (`sha256OfObject` resumes from the
+   * byte its hash has eaten), and the materialise step asks for the whole
+   * object. So this holds an attempt inside its download and nowhere else,
+   * which is what makes a retry genuinely overlap it instead of hoping the
+   * scheduler interleaves two fast requests.
+   */
+  private held: { entered: () => void; released: Promise<void> } | null = null;
+
+  holdNextDownload(): { entered: Promise<void>; release: () => void } {
+    let release!: () => void;
+    let entered!: () => void;
+    const released = new Promise<void>((r) => {
+      release = r;
+    });
+    const enteredPromise = new Promise<void>((r) => {
+      entered = r;
+    });
+    this.held = { entered, released };
+    return { entered: enteredPromise, release };
+  }
+
+  async read(key: string, from?: number): Promise<AsyncIterable<Uint8Array> | null> {
+    if (from === undefined && this.held !== null) {
+      const hold = this.held;
+      this.held = null;
+      hold.entered();
+      await hold.released;
+    }
     const body = this.objects.get(key);
     if (body === undefined) return null;
     return (async function* () {
@@ -1171,6 +1205,183 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     const res = await h.post(`/api/me/uploads/${id}/complete`);
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json().state).toBe('ingested');
+  }, 60_000);
+
+  it('survives two completes racing on one delivery, and measures the whole session', async () => {
+    /**
+     * `/complete` re-runs from `verified` and `ingesting` on purpose, so two
+     * attempts overlapping is a designed-for state and not an exotic one — a
+     * phone whose request timed out asks again while the first is still
+     * downloading.
+     *
+     * It used to corrupt the measurement. Both attempts staged into one fixed
+     * `.incoming-<basename>` directory and each `rm`ed it before writing, so
+     * the second deleted what the first had already downloaded and the first
+     * renamed a SHORT directory into place. A partial session can measure
+     * LONGER than the real one — payable time is the intersection of stream
+     * coverage, so losing the shortest stream's files widens it — which is the
+     * one way this route could have overpaid.
+     */
+    const root = await newMediaRoot();
+    const h = await harness(new MemoryStore(), { mediaRoot: root });
+    const c = await declaredFrom(SYNTH);
+    const id = uid();
+    const plan = await registerUnmeasured(h, c, h.ids.session, id);
+    sendPlan(h, c, plan.json().files);
+
+    /**
+     * The overlap is forced, not hoped for: the first attempt is stopped inside
+     * its download, the retry is run to completion, and only then is the first
+     * one let go. That is the interleave the shared staging directory could not
+     * survive — the retry deleted the first attempt's half-written directory
+     * and renamed its own into place, and the first attempt then wrote into a
+     * path that no longer existed and answered 500. Measured: with the fixed
+     * name and the pre-emptive `rm` restored, this assertion fails on a 500.
+     */
+    const race = h.store.holdNextDownload();
+    const firstAttempt = h.post(`/api/me/uploads/${id}/complete`);
+    await race.entered;
+    const retry = await h.post(`/api/me/uploads/${id}/complete`);
+    race.release();
+    const both = [await firstAttempt, retry];
+
+    for (const r of both) {
+      expect(r.statusCode, r.body).toBeLessThan(500);
+      expect(r.json().constraint, r.body).not.toBe('upload_basename_collision');
+    }
+    // Whatever order they landed in, at least one finished the delivery.
+    expect(both.some((r) => r.statusCode === 200), both.map((r) => r.body).join(' | ')).toBe(true);
+
+    const d = await db();
+    const [row] = (await d.execute(sql`
+      select state, held_reason, failed_reason from collector_uploads where id = ${id}
+    `)) as unknown as Record<string, unknown>[];
+    expect(row).toMatchObject({ state: 'ingested', held_reason: null, failed_reason: null });
+
+    const [counts] = (await d.execute(sql`
+      select (select count(*)::int from episodes) as episodes,
+             (select count(*)::int from episode_ingests) as ingests
+    `)) as unknown as Record<string, number>[];
+    expect(counts).toMatchObject({ episodes: 1, ingests: 1 });
+
+    /**
+     * And the measurement is the whole session's, not a partial directory's.
+     * Compared against the engine run over the original fixture, which is the
+     * only thing that can tell a short measurement from a correct one.
+     */
+    const truth = await ingest(c.dir);
+    const [measured] = (await d.execute(sql`
+      select measured_duration_s::float8 as duration, content_fingerprint from episode_ingests
+    `)) as unknown as Record<string, unknown>[];
+    expect(measured!['content_fingerprint']).toBe(truth.content_fingerprint);
+    // `measured_duration_s` is the record's own `timing.raw_duration_s`, which
+    // is what `writeIngest` stores and what settlement reads.
+    expect(measured!['duration']).toBeCloseTo(truth.timing.raw_duration_s, 6);
+    // Every declared file is on disk, and no staging directory survived.
+    expect((await declaredFrom(join(root, c.basename))).files).toEqual(c.files);
+    expect((await readdir(root)).sort()).toEqual([c.basename]);
+  }, 60_000);
+
+  it('refuses a session basename that would escape the media root', async () => {
+    /**
+     * `parseSessionBasename` accepts this: its serial group is permissive, so
+     * `ego_a/../x_20260813_072310` parses as a session name. It is not a single
+     * path segment, which is a different question and has to be asked here —
+     * unasked, it created a directory wherever the traversal pointed and then
+     * threw uncaught at the episode-id guard, which is a 500 on a request a
+     * client chose.
+     */
+    const root = await newMediaRoot();
+    const h = await harness(new MemoryStore(), { mediaRoot: root });
+    const c = await declaredFrom(SYNTH);
+    for (const name of [
+      'ego_a/../x_20260813_072310',
+      'ego_a\\..\\x_20260813_072310',
+      'ego_../../x_20260813_072310',
+    ]) {
+      const res = await h.post('/api/me/uploads', {
+        id: uid(),
+        collection_session_id: h.ids.session,
+        session_basename: name,
+        files: c.files,
+      });
+      expect(res.statusCode, `${name}: ${res.body}`).toBe(400);
+      expect(res.json().constraint).toBe('session_basename_unrecognised');
+    }
+    const d = await db();
+    const [n] = (await d.execute(sql`select count(*)::int as n from collector_uploads`)) as unknown as { n: number }[];
+    expect(n!.n).toBe(0);
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it('refuses an unmeasured delivery past the ceiling this service can measure in one request', async () => {
+    /**
+     * The measured path may declare 64 GiB, because completing it is one
+     * read-back and nothing is kept. This one is read back, written to disk and
+     * decoded inside the same request, and the lane's declared ceiling for that
+     * is ~200 MB — so the registration refuses past it, before a byte moves.
+     */
+    const h = await harness(new MemoryStore(), { mediaRoot: await newMediaRoot() });
+    const res = await h.post('/api/me/uploads', {
+      id: uid(),
+      collection_session_id: h.ids.session,
+      session_basename: 'ego_AZER76400FE_20260813_072310',
+      files: [
+        {
+          relative_path: 'ego_AZER76400FE_20260813_072310_camera_left_part0001.mp4',
+          bytes: MAX_UNMEASURED_DELIVERY_BYTES + 1,
+          sha256: 'b'.repeat(64),
+        },
+      ],
+    });
+    expect(res.statusCode, res.body).toBe(409);
+    expect(res.json()).toMatchObject({
+      constraint: 'upload_payload_too_large',
+      limit_bytes: MAX_UNMEASURED_DELIVERY_BYTES,
+    });
+    // And the measured shape is unaffected by the smaller ceiling.
+    expect(MAX_UNMEASURED_DELIVERY_BYTES).toBeLessThan(MAX_DELIVERY_BYTES);
+    const ok = await h.post('/api/me/uploads', {
+      id: uid(),
+      collection_session_id: h.ids.session,
+      session_basename: 'ego_AZER76400FE_20260813_072310',
+      files: [
+        {
+          relative_path: 'ego_AZER76400FE_20260813_072310_camera_left_part0001.mp4',
+          bytes: MAX_UNMEASURED_DELIVERY_BYTES,
+          sha256: 'b'.repeat(64),
+        },
+      ],
+    });
+    expect(ok.statusCode, ok.body).toBe(200);
+  });
+
+  it('does not tell one collector another collector’s upload id', async () => {
+    /**
+     * The scan for "this recording is already an episode" is deliberately not
+     * scoped to the caller — one episode per recording, whoever delivered it.
+     * The ANSWER has to be, because a delivery id belonging to somebody else is
+     * not this collector's to be told.
+     */
+    const h = await harness(new MemoryStore(), { mediaRoot: await newMediaRoot() });
+    const c = await declaredFrom(SYNTH);
+    const theirs = uid();
+    const first = await h.post(
+      '/api/me/uploads',
+      { id: theirs, collection_session_id: h.ids.session2, session_basename: c.basename, files: c.files },
+      h.otherHeaders,
+    );
+    expect(first.statusCode, first.body).toBe(200);
+    sendPlan(h, c, first.json().files);
+    expect((await h.post(`/api/me/uploads/${theirs}/complete`, undefined, h.otherHeaders)).statusCode).toBe(200);
+
+    const mine = await registerUnmeasured(h, c, h.ids.session);
+    expect(mine.statusCode, mine.body).toBe(409);
+    expect(mine.json().constraint).toBe('upload_already_complete');
+    // The episode id derives from the basename this caller supplied, so it is
+    // theirs to know. The other collector's upload id is not on the answer.
+    expect(mine.json().episode_id).toBe(deriveEpisodeId(c.basename));
+    expect(mine.json()).not.toHaveProperty('upload_id');
   }, 60_000);
 
   it('refuses a delivery that declares no files at all', async () => {
