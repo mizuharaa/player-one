@@ -1,0 +1,42 @@
+diff --git a/android/src/main/java/expo/modules/filesystem/FileSystemFileHandle.kt b/android/src/main/java/expo/modules/filesystem/FileSystemFileHandle.kt
+index a39dfeb96731d8c75afa084742573ae0cebb0bc7..38bff5d210707bbc2d4bcc0eb793f44e5c1188fd 100644
+--- a/android/src/main/java/expo/modules/filesystem/FileSystemFileHandle.kt
++++ b/android/src/main/java/expo/modules/filesystem/FileSystemFileHandle.kt
+@@ -2,6 +2,7 @@ package expo.modules.filesystem
+ 
+ import android.content.ContentResolver
+ import android.net.Uri
++import android.os.ParcelFileDescriptor
+ import expo.modules.kotlin.exception.Exceptions
+ import expo.modules.kotlin.sharedobjects.SharedRef
+ import expo.modules.kotlin.types.Enumerable
+@@ -51,7 +52,11 @@ enum class FileMode(val descriptor: String) : Enumerable {
+ 
+ class FileSystemFileHandle private constructor(
+   channel: FileChannel,
+-  private val mode: FileMode
++  private val mode: FileMode,
++  // Held so the descriptor outlives the channel reading it. Nothing referenced
++  // the ParcelFileDescriptor, so the first GC after forContentURI ran its
++  // CloseGuard finalizer and closed the fd while a read was still in progress.
++  private val parcelFileDescriptor: ParcelFileDescriptor? = null
+ ) : SharedRef<FileChannel>(channel), AutoCloseable {
+   companion object {
+     fun forJavaFile(file: File, mode: FileMode): FileSystemFileHandle {
+@@ -81,7 +86,7 @@ class FileSystemFileHandle private constructor(
+         else -> throw Exceptions.IllegalArgument("Unsupported file mode: '$mode'")
+       }
+ 
+-      return FileSystemFileHandle(channel, mode)
++      return FileSystemFileHandle(channel, mode, pfd)
+     }
+   }
+ 
+@@ -99,6 +104,7 @@ class FileSystemFileHandle private constructor(
+ 
+   override fun close() {
+     fileChannel.close()
++    parcelFileDescriptor?.close()
+   }
+ 
+   fun read(length: Long): ByteArray {

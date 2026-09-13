@@ -15,6 +15,13 @@
     "apk": "node scripts/build-android.mjs demo",
     "aab": "node scripts/build-android.mjs play"
   },
+  "expo": {
+    "autolinking": {
+      "android": {
+        "buildFromSource": ["expo-file-system"]
+      }
+    }
+  },
   "dependencies": {
     "@playerone/design": "workspace:*",
     "@tanstack/react-query": "^5.66.0",

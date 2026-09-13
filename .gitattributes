@@ -1,2 +1,7 @@
 # Fixture bytes are the test subject. No line-ending translation, ever.
 fixtures/** -text
+
+# The patch hash in pnpm-lock.yaml is a hash of these bytes, and `core.autocrlf`
+# is true on the Windows machines here. Translated to CRLF on checkout, a patch
+# fails `pnpm install --frozen-lockfile` on its hash before it is ever applied.
+patches/** -text
