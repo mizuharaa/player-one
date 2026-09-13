@@ -611,6 +611,122 @@ describe.skipIf(!hasDb())('episode submission and resolution', () => {
     expect(after[0]!['a']).toBe(before[0]!['a']! + 2);
   });
 
+  // -- what a card import must not overwrite --------------------------------
+
+  /**
+   * Path A got there first, so the card is the second way the same recording
+   * arrived and not new evidence about whose session it is.
+   *
+   * The episode row is written by hand because the order is the whole point:
+   * the phone declared the session before recording (APP-16), delivered it,
+   * and the server read it back and measured it. `upload_path = 'A'` is what
+   * that leaves behind, and it is exactly what `collector-upload.ts` writes.
+   */
+  const phoneDelivered = async (
+    h: Awaited<ReturnType<typeof harness>>,
+    episode: EpisodeRecord,
+    sessionId: string,
+  ) => {
+    const started = episode.source.path.split('_').slice(2).join('_');
+    const ingest = uid();
+    await h.d.execute(sql`
+      insert into episodes
+        (episode_id, device_serial, session_started_at, first_seen_at, last_seen_at, ingest_count,
+         collection_session_id, resolution_state, resolution_method, upload_path)
+      values (${episode.episode_id}, 'AZER76400FE', ${started}, now(), now(), 0,
+              ${sessionId}, 'resolved', 'app_declared', 'A')`);
+    // The phone's delivery, so the card is a re-import of bytes already here
+    // and `storeEpisode` answers `duplicate` — the shape this route already
+    // has for a second delivery of one recording.
+    await h.d.execute(sql`
+      insert into episode_ingests
+        (ingest_id, episode_id, content_fingerprint, state, source_basename, measured_duration_s,
+         timing_source, timing_confidence, manifest_present, engine_version, host, ingested_at, record_json)
+      values (${ingest}, ${episode.episode_id}, ${episode.content_fingerprint}, 'ok',
+              ${episode.source.path}, 8.5, 'pts_sidecar', 'exact', false, '0.3.1', 'phone', now(), '{}'::jsonb)`);
+    await h.d.execute(sql`
+      update episodes set latest_ingest_id = ${ingest}, ingest_count = 1
+       where episode_id = ${episode.episode_id}`);
+  };
+
+  it('keeps a phone-made attribution when the same session is imported from a card', async () => {
+    const h = await harness();
+    // Two sessions on the card, which is the shape that would otherwise send
+    // this episode to an operator — so the resolver's answer is visibly not
+    // the one that stands.
+    await h.addSession(-60);
+    const declared = await h.addSession(240);
+    const episode = record({});
+    await phoneDelivered(h, episode, declared);
+
+    const res = await h.submit([episode]);
+    expect(res.statusCode, res.body).toBe(200);
+    const [out] = res.json().episodes;
+    // The route's existing answer for a second delivery of one recording, and
+    // the attribution field alongside it.
+    expect(out.outcome).toBe('duplicate');
+    expect(out.attribution_kept).toBe('app_declared');
+    expect(out.collection_session_id).toBe(declared);
+    expect(out.resolution_state).toBe('resolved');
+    expect(out.resolution_method).toBe('app_declared');
+    // Nothing for an operator to confirm: `app_declared` is not a proposal.
+    expect(out.needs_confirmation).toBe(false);
+
+    const rows = (await h.d.execute(sql`
+      select upload_path, collection_session_id, resolution_method, resolution_state,
+             upload_batch_id, ingest_count
+        from episodes where episode_id = ${episode.episode_id}`)) as unknown as Record<
+      string,
+      unknown
+    >[];
+    // The attribution is untouched; the delivery is recorded, because the card
+    // did arrive in this batch and the measurement was still stored.
+    expect(rows[0]).toMatchObject({
+      upload_path: 'A',
+      collection_session_id: declared,
+      resolution_method: 'app_declared',
+      resolution_state: 'resolved',
+      upload_batch_id: h.batch,
+      ingest_count: 1,
+    });
+
+    // The audit row says what stands and why it was not moved, and still
+    // carries what this counter computed.
+    const events = (await h.d.execute(sql`
+      select after from audit_events
+       where action = 'episode.submit' and target_id = ${episode.episode_id}`)) as unknown as {
+      after: Record<string, unknown>;
+    }[];
+    expect(events[0]!.after).toMatchObject({
+      upload_path: 'A',
+      attribution_kept: 'app_declared',
+      collection_session_id: declared,
+    });
+    expect(events[0]!.after['candidate_count']).toBe(2);
+
+    // An episode whose attribution was kept does not hold the batch open.
+    const exceptions = await h.send('GET', `/upload-batches/${h.batch}/exceptions`);
+    expect(exceptions.json().blocking).toEqual([]);
+    await assertNoThirdState();
+  });
+
+  it('still attributes a card import of an episode nothing has claimed', async () => {
+    const h = await harness();
+    const session = await h.addSession(-60);
+    const episode = record({});
+
+    const res = await h.submit([episode]);
+    const [out] = res.json().episodes;
+    expect(out.attribution_kept).toBe(null);
+    expect(out.collection_session_id).toBe(session);
+    expect(out.resolution_state).toBe('resolved');
+
+    const rows = (await h.d.execute(sql`
+      select upload_path, collection_session_id from episodes
+       where episode_id = ${episode.episode_id}`)) as unknown as Record<string, unknown>[];
+    expect(rows[0]).toMatchObject({ upload_path: 'C', collection_session_id: session });
+  });
+
   // -- the human resolution path -------------------------------------------
 
   it('lets an operator attach a quarantined episode, and demands a reason', async () => {

@@ -272,18 +272,29 @@ export function registerEpisodes(
       );
       const defects = resolverDefects(record, ctx.handover, resolution.sessionId);
 
-      await mutate(
+      const written = await mutate(
         db,
         actor,
-        {
+        (result: { row: typeof schema.episodes.$inferSelect; kept: boolean }) => ({
           action: 'episode.submit',
           targetTable: 'episodes',
           targetId: stored.episodeId,
           before: { outcome: stored.outcome },
           after: {
-            collection_session_id: resolution.sessionId,
-            resolution_state: resolution.state,
-            resolution_method: resolution.method,
+            /**
+             * What the episode now carries, read off the row rather than off
+             * the resolver — they are the same thing except when the card
+             * import kept a phone's attribution, and then the resolver's
+             * answer is what this machine computed and not what stands. Both
+             * are here: these four say what the episode holds, and the keys
+             * below say what the counter decided and under what configuration.
+             */
+            collection_session_id: result.row.collectionSessionId,
+            resolution_state: result.row.resolutionState,
+            resolution_method: result.row.resolutionMethod,
+            upload_path: result.row.uploadPath,
+            /** Non-null when this import left an existing attribution standing. */
+            attribution_kept: result.kept ? 'app_declared' : null,
             reason: resolution.reason,
             proposed_session_id: resolution.proposedSessionId,
             defects: defects.map((d) => d.code),
@@ -305,20 +316,58 @@ export function registerEpisodes(
             start_confidence: resolution.startConfidence,
             start_flag: resolution.startFlag,
           },
-        },
+        }),
         async (tx) => {
-          const [row] = await tx
+          /**
+           * Path A's guard, mirrored — and it is the same argument read from
+           * the other side.
+           *
+           * An episode already carrying `upload_path = 'A'` was bound to its
+           * session by the collector before recording (APP-16), and the phone
+           * delivery behind it has been read back byte for byte and measured.
+           * The card is that same recording arriving a second way; it is not
+           * new evidence about whose session it is, and settlement has possibly
+           * already read the answer. So the measurement is stored, the delivery
+           * is recorded against this batch, and the attribution is left exactly
+           * where it was — the symmetric half of what `collector-upload.ts`
+           * does with `upload_path is null`.
+           *
+           * `is distinct from` rather than a read-then-branch: the guard is in
+           * the WHERE, so a phone attributing this episode in the moment
+           * between the two statements loses on the statement and not on this
+           * code having looked a microsecond earlier.
+           */
+          const [moved] = await tx
             .update(schema.episodes)
             .set({
               collectionSessionId: resolution.sessionId,
               resolutionState: resolution.state,
               resolutionMethod: resolution.method,
-              uploadBatchId: batchId,
               // Path C: this arrived on a card at a counter, by definition.
               uploadPath: 'C',
             })
+            .where(
+              and(
+                eq(schema.episodes.episodeId, stored.episodeId),
+                sql`${schema.episodes.uploadPath} is distinct from 'A'`,
+              ),
+            )
+            .returning();
+
+          /**
+           * The batch link is delivery, not attribution, and is written either
+           * way: the card did arrive in this batch, and
+           * `/upload-batches/:id/exceptions` is what an operator reads to see
+           * what was on it. An episode whose attribution was kept is not
+           * blocking there — it is resolved, and `app_declared` is not the
+           * automatic time window that asks for a confirmation.
+           */
+          const [row] = await tx
+            .update(schema.episodes)
+            .set({ uploadBatchId: batchId })
             .where(eq(schema.episodes.episodeId, stored.episodeId))
             .returning();
+          if (row === undefined) return undefined;
 
           // Store-time defects hang off the ingest, exactly as CHECKSUM-MISMATCH
           // does. A duplicate delivery has no new ingest, so there is nothing to
@@ -335,18 +384,38 @@ export function registerEpisodes(
                 })),
               );
           }
-          return row;
+          return { row, kept: moved === undefined };
         },
       );
 
       results.push({
         episode_id: stored.episodeId,
         outcome: stored.outcome,
-        resolution_state: resolution.state,
-        resolution_method: resolution.method,
-        reason: resolution.reason,
-        proposed_session_id: resolution.proposedSessionId,
-        needs_confirmation: resolution.needsConfirmation,
+        /**
+         * The attribution the platform now holds — which, when a phone got
+         * there first, is not the one this import computed. `attribution_kept`
+         * names why it did not move, and the operator reads the session the
+         * collector declared rather than the one the counter proposed.
+         */
+        ...(written?.kept === true
+          ? {
+              collection_session_id: written.row.collectionSessionId,
+              resolution_state: written.row.resolutionState,
+              resolution_method: written.row.resolutionMethod,
+              reason: null,
+              proposed_session_id: null,
+              needs_confirmation: false,
+              attribution_kept: 'app_declared',
+            }
+          : {
+              collection_session_id: resolution.sessionId,
+              resolution_state: resolution.state,
+              resolution_method: resolution.method,
+              reason: resolution.reason,
+              proposed_session_id: resolution.proposedSessionId,
+              needs_confirmation: resolution.needsConfirmation,
+              attribution_kept: null,
+            }),
         defects: defects.map((d) => d.code),
         /**
          * Additive. The console shows the operator which clock the start came

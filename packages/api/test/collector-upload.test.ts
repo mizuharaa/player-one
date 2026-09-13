@@ -1289,7 +1289,119 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     const again = await h.post(`/api/me/uploads/${id}/complete`);
     expect(again.statusCode).toBe(409);
     expect(again.json().constraint).toBe('upload_basename_collision');
+
+    /**
+     * 0030: and then an operator ends it, which is the only way out of `held`.
+     * The row becomes `failed` with a reason the phone has a sentence for, and
+     * the recording that caused the collision is still there — the release
+     * touches the database and nothing else.
+     */
+    const release = await h.post(
+      `/api/backoffice/uploads/${id}/release`,
+      { decision: 'discard', note: 'the recording on the machine is the real one' },
+      h.staffHeaders,
+    );
+    expect(release.statusCode, release.body).toBe(200);
+    expect(release.json()).toMatchObject({
+      upload_id: id,
+      state: 'failed',
+      failed_reason: 'released_by_operator',
+      released_held_reason: 'basename_collision',
+    });
+
+    const [released] = (await d.execute(sql`
+      select state, held_reason, failed_reason from collector_uploads where id = ${id}
+    `)) as unknown as Record<string, unknown>[];
+    expect(released).toMatchObject({
+      state: 'failed',
+      // Cleared in the same statement: only a held row may carry one.
+      held_reason: null,
+      failed_reason: 'released_by_operator',
+    });
+
+    // The operator is named, and the audit row is where "it was held for a
+    // basename collision" survives the cleared column.
+    const [event] = (await d.execute(sql`
+      select actor_role, operator_id, before, after from audit_events
+       where action = 'upload.release' and target_id = ${id}
+    `)) as unknown as { actor_role: string; operator_id: string; before: Record<string, unknown>; after: Record<string, unknown> }[];
+    expect(event!.actor_role).toBe('operator');
+    expect(event!.operator_id).toBe(h.ids.operator);
+    expect(event!.before).toMatchObject({ state: 'held', held_reason: 'basename_collision' });
+    expect(event!.after).toMatchObject({
+      state: 'failed',
+      failed_reason: 'released_by_operator',
+      decision: 'discard',
+      note: 'the recording on the machine is the real one',
+    });
+
+    // Nothing under the media root was deleted, moved or overwritten.
+    for (const [name, body] of original) {
+      expect(Buffer.from(await readFile(join(there, name))).equals(body), name).toBe(true);
+    }
+    expect((await readdir(root)).sort()).toEqual([c.basename]);
+
+    // And it does not release twice: the row is no longer held.
+    const twice = await h.post(
+      `/api/backoffice/uploads/${id}/release`,
+      { decision: 'discard' },
+      h.staffHeaders,
+    );
+    expect(twice.statusCode, twice.body).toBe(409);
+    expect(twice.json().constraint).toBe('upload_not_held');
   }, 60_000);
+
+  it('refuses to release a delivery nothing is holding, and refuses a collector outright', async () => {
+    const h = await harness(new MemoryStore(), { mediaRoot: await newMediaRoot() });
+    const c = await declaredFrom(SYNTH);
+    const id = uid();
+    expect((await registerUnmeasured(h, c, h.ids.session, id)).statusCode).toBe(200);
+
+    // Registered and still transferring: there is nothing being held.
+    const early = await h.post(
+      `/api/backoffice/uploads/${id}/release`,
+      { decision: 'discard' },
+      h.staffHeaders,
+    );
+    expect(early.statusCode, early.body).toBe(409);
+    expect(early.json().constraint).toBe('upload_not_held');
+
+    // An id that names nothing at all gets the same answer, not a 404 that
+    // tells an enumerator which upload ids exist.
+    const nothing = await h.post(
+      `/api/backoffice/uploads/${uid()}/release`,
+      { decision: 'discard' },
+      h.staffHeaders,
+    );
+    expect(nothing.statusCode).toBe(409);
+    expect(nothing.json().constraint).toBe('upload_not_held');
+
+    // The only decision this route takes.
+    const wrong = await h.post(
+      `/api/backoffice/uploads/${id}/release`,
+      { decision: 'ingest_this_one' },
+      h.staffHeaders,
+    );
+    expect(wrong.statusCode).toBe(400);
+
+    /**
+     * And it is an operator's route. The collector's own token — the one that
+     * registered this delivery — is refused before anything is read: the
+     * collector scope is `/api/me`, and whose footage it is does not make the
+     * decision theirs to take.
+     */
+    const asCollector = await h.post(`/api/backoffice/uploads/${id}/release`, {
+      decision: 'discard',
+    });
+    expect(asCollector.statusCode, asCollector.body).toBe(403);
+    expect(asCollector.json().error).toContain('collector session');
+
+    const d = await db();
+    const [row] = (await d.execute(sql`
+      select state, failed_reason from collector_uploads where id = ${id}
+    `)) as unknown as Record<string, unknown>[];
+    expect(row).toMatchObject({ state: 'registered', failed_reason: null });
+  });
 
   it('finishes a delivery whose read-back passed before the process died', async () => {
     /**
@@ -1827,6 +1939,21 @@ describe.skipIf(!hasDb())('what the schema refuses about a Path A upload', () =>
       insertUnmeasured(d, ids, { state: 'verified', failed: 'checksum_mismatch' }),
     );
     await insertUnmeasured(d, ids, { state: 'held', held: 'basename_collision' });
+  });
+
+  /**
+   * 0030. The column reaches a collector, and the app prints the value itself
+   * when it has no sentence for it, so the set of values is closed.
+   */
+  it('cannot name a failure reason the collector has no sentence for', async () => {
+    const { d, ids } = await seed();
+    await violates(
+      'collector_uploads_failed_reason_check',
+      insertUnmeasured(d, ids, { state: 'failed', failed: 'released' }),
+    );
+    for (const failed of ['checksum_mismatch', 'ingest_failed', 'released_by_operator']) {
+      await insertUnmeasured(d, ids, { state: 'failed', failed });
+    }
   });
 
   it('cannot let the declared inventory disagree with the count of it', async () => {

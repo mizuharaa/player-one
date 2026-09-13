@@ -325,6 +325,8 @@ const vi = {
     'Danh sách tệp của máy chủ khác với trên điện thoại. Hãy chọn lại thư mục.',
   'uploads.reasonNotReady':
     'Hãy chọn thư mục phiên và phiên thu thập trước khi tải lên.',
+  'uploads.reasonReleased':
+    'Nhân viên đã kết thúc lần tải lên này. Không có tệp nào bị xoá. Bạn có thể gửi lại phiên này như một lần tải lên mới.',
 
   'delivery.registered': 'Đã ghi nhận',
   'delivery.transferring': 'Đang truyền',
@@ -697,6 +699,8 @@ const en: Record<MessageKey, string> = {
   'uploads.reasonPlanMismatch':
     "The server's file list differs from this phone's. Pick the folder again.",
   'uploads.reasonNotReady': 'Pick the session folder and the collection session before uploading.',
+  'uploads.reasonReleased':
+    'An operator ended this upload. Nothing was deleted. You can send this session again as a new upload.',
 
   'delivery.registered': 'Registered',
   'delivery.transferring': 'Transferring',
@@ -1043,6 +1047,7 @@ const zh: Record<MessageKey, string> = {
   'uploads.reasonPlanMismatch':
     '服务器的文件清单与手机上的不一致。请重新选择文件夹。',
   'uploads.reasonNotReady': '上传前请先选择场次文件夹和采集场次。',
+  'uploads.reasonReleased': '运营人员已结束本次上传。没有文件被删除。你可以将该场次作为一次新的上传重新发送。',
 
   'delivery.registered': '已登记',
   'delivery.transferring': '正在传输',

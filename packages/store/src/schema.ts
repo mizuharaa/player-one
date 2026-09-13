@@ -1577,10 +1577,18 @@ export const collectorUploads = pgTable(
      * One direction only. Every unmeasured failure names its reason, and the
      * measured path — written before this column existed — records the verdict
      * detail in the audit row instead and leaves this null.
+     *
+     * The set is closed (0030). This column is printed to the collector whose
+     * footage was refused, and the app prints the value itself when it has no
+     * sentence for it, so a new reason has to be added here — where the
+     * sentences are remembered — and not written by whichever route invents it.
+     * `released_by_operator` is the operator's own release of a held delivery.
      */
     check(
       'collector_uploads_failed_reason_check',
-      sql`${t.failedReason} is null or ${t.state} = 'failed'`,
+      sql`${t.failedReason} is null
+          or (${t.state} = 'failed'
+              and ${t.failedReason} in ('checksum_mismatch', 'ingest_failed', 'released_by_operator'))`,
     ),
     /**
      * The declared inventory is the delivery, so it has to agree with the count

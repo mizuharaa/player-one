@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_LOCALE,
   LOCALES,
@@ -6,6 +6,22 @@ import {
   missingKeys,
   type MessageKey,
 } from '../src/i18n.ts';
+
+/**
+ * The delivery screen's reason map is plain data, but it lives in a screen, so
+ * importing it pulls the native modules that screen reaches. Stubbed rather
+ * than rendered: this file asserts about the catalogue, not about the UI.
+ */
+vi.mock('react-native', () => ({ Text: () => null, View: () => null }));
+vi.mock('expo-secure-store', () => ({}));
+vi.mock('expo-file-system', () => ({
+  Directory: class {},
+  File: class {},
+  FileMode: {},
+  Paths: {},
+  UploadType: {},
+}));
+const { REASON_KEYS } = await import('../src/screens/Uploads.tsx');
 
 /**
  * The collector app's catalogue, held to the same standard as the console's
@@ -33,5 +49,20 @@ describe('the collector message catalogue', () => {
       (key) => !sameOnPurpose.has(key) && MESSAGES.en[key] === MESSAGES.vi[key],
     );
     expect(copied).toEqual([]);
+  });
+
+  /**
+   * Every server reason the delivery screen maps, and its sentence in all three
+   * languages. `reasonText` prints the server's raw column when the map has no
+   * key for a value, so a reason the server can write and this map does not
+   * carry is a collector reading `released_by_operator` off a database column.
+   */
+  it('maps every server reason it can be shown, including a released delivery', () => {
+    expect(REASON_KEYS['released_by_operator']).toBe('uploads.reasonReleased');
+    for (const key of Object.values(REASON_KEYS)) {
+      for (const locale of LOCALES) {
+        expect(MESSAGES[locale][key], `${locale} has no sentence for ${key}`).toBeTruthy();
+      }
+    }
   });
 });
