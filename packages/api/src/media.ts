@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
+import { episodeAtCentre } from './episodes.ts';
 import { holdsReview } from './review.ts';
 
 /**
@@ -130,6 +131,26 @@ export function registerMedia(
     const reviewer = req.actor?.reviewer;
     if (reviewer !== undefined && !(await holdsReview(db, reviewer.reviewerId, id))) {
       return reply.code(403).send({ error: 'not an episode you hold' });
+    }
+
+    /**
+     * An operator sees the footage that arrived at their own centre, and no
+     * other. SEC-02, the same rule `episodes.ts` applies to every other episode
+     * route, asked here through the same query.
+     *
+     * The route guard alone let any signed-in operator at any centre stream any
+     * episode id they could name — and the console prints episode ids, so
+     * naming one is not the hard part. Twenty pilot devices at one centre hid
+     * it; a second centre is where it would have been discovered.
+     *
+     * A Path A episode has no upload batch, so it is at no centre and is
+     * refused here. That is the honest answer rather than a gap: a
+     * phone-delivered recording never passed a counter, and the route that
+     * serves it to the person who may see it is the review lane's.
+     */
+    const operator = req.actor?.operator;
+    if (operator !== undefined && !(await episodeAtCentre(db, id, operator.uploadCentreId))) {
+      return reply.code(403).send({ error: 'not an episode at your centre' });
     }
 
     const [row] = await db

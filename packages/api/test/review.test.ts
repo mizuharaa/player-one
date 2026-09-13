@@ -1547,6 +1547,43 @@ describe.skipIf(!hasDb())('the review lane', () => {
       }
     });
 
+    it('serves an operator their own centre’s footage and refuses another centre’s', async () => {
+      /**
+       * SEC-02 on the media route. The route guard alone let any signed-in
+       * operator at any centre stream any episode id they could name, and the
+       * console prints episode ids — naming one was never the hard part.
+       * Twenty pilot devices at one centre is what hid it.
+       */
+      const { h, root } = await withMedia(Buffer.alloc(64, 7));
+      try {
+        const episodeId = h.episodeIds[0]!;
+
+        const mine = await h.send('GET', `/media/episode/${episodeId}/part/0`);
+        expect(mine.statusCode, mine.body).toBe(200);
+        expect(mine.rawPayload).toHaveLength(64);
+
+        // A second centre with a machine and an operator of its own, and no
+        // handover at all: the episode above arrived at the first centre.
+        const centre2 = uid();
+        const hash = await hashCredential('pw');
+        await h.d.execute(sql`insert into upload_centres (id, region, name, status) values (${centre2}, 'HN', 'media-c2', 'active')`);
+        await h.d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash) values (${uid()}, ${centre2}, 'MEDIA-M2', 'active', ${hash})`);
+        await h.d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${uid()}, ${centre2}, 'media-op2', 'centre_operator', ${hash})`);
+        const m = await h.app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: 'MEDIA-M2', secret: 'pw' } });
+        const o = await h.app.inject({ method: 'POST', url: '/auth/operator', payload: { external_ref: 'media-op2', secret: 'pw' } });
+        const elsewhere = {
+          'x-machine-token': `Bearer ${m.json().token}`,
+          authorization: `Bearer ${o.json().token}`,
+        };
+
+        const theirs = await h.send('GET', `/media/episode/${episodeId}/part/0`, undefined, elsewhere);
+        expect(theirs.statusCode).toBe(403);
+        expect(theirs.json().error).toBe('not an episode at your centre');
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
     it('advertises range support on a plain request too', async () => {
       const { h, root } = await withMedia(Buffer.alloc(64, 7));
       try {

@@ -83,6 +83,35 @@ const BrowseQuery = z.object({
   { message: 'from must be before to' },
 );
 
+/**
+ * SEC-02, as one query: did this episode arrive at this operator's centre?
+ *
+ * The chain is the only one there is — `episodes.upload_batch_id` names the
+ * batch, the batch names the handover, and the handover names the centre — so
+ * a Path A episode, which has no batch, belongs to no centre and is refused
+ * here. That is deliberate: a phone-delivered recording never passed through a
+ * counter, and there is no centre an operator could claim it for.
+ *
+ * Exported because `media.ts` asks the same question about the same episodes
+ * and a second copy would be a second answer. `registerEpisodes` wraps it in
+ * `atThisCentre` to save repeating the actor.
+ */
+export async function episodeAtCentre(
+  db: Db,
+  episodeId: string,
+  uploadCentreId: string,
+): Promise<boolean> {
+  const [episode] = await db
+    .select({ episodeId: schema.episodes.episodeId })
+    .from(schema.episodes)
+    .innerJoin(schema.uploadBatches, eq(schema.uploadBatches.id, schema.episodes.uploadBatchId))
+    .innerJoin(schema.handovers, eq(schema.handovers.id, schema.uploadBatches.handoverId))
+    .where(
+      and(eq(schema.episodes.episodeId, episodeId), eq(schema.handovers.uploadCentreId, uploadCentreId)),
+    );
+  return episode !== undefined;
+}
+
 export function registerEpisodes(
   app: FastifyInstance,
   db: Db,
@@ -551,20 +580,8 @@ export function registerEpisodes(
    * an id that does not exist, so another centre's episodes cannot be
    * enumerated from here either.
    */
-  const atThisCentre = async (episodeId: string, actor: CounterActor): Promise<boolean> => {
-    const [episode] = await db
-      .select({ episodeId: schema.episodes.episodeId })
-      .from(schema.episodes)
-      .innerJoin(schema.uploadBatches, eq(schema.uploadBatches.id, schema.episodes.uploadBatchId))
-      .innerJoin(schema.handovers, eq(schema.handovers.id, schema.uploadBatches.handoverId))
-      .where(
-        and(
-          eq(schema.episodes.episodeId, episodeId),
-          eq(schema.handovers.uploadCentreId, actor.operator.uploadCentreId),
-        ),
-      );
-    return episode !== undefined;
-  };
+  const atThisCentre = (episodeId: string, actor: CounterActor): Promise<boolean> =>
+    episodeAtCentre(db, episodeId, actor.operator.uploadCentreId);
 
   /**
    * Clearing ONE episode out of a CHECKSUM-MISMATCH quarantine.
