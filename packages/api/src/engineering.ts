@@ -19,6 +19,8 @@ export type EngineeringCapabilities = {
   payoutMode: 'manual' | 'api';
   payoutClient: boolean;
   riskEnabled: boolean;
+  /** `PLAYERONE_DEBUG_DELIVERY=1`: the console may show its debug-delivery page. */
+  debugDelivery: boolean;
 };
 const e = schema.episodes;
 const episodeFields = {
@@ -113,6 +115,22 @@ export function registerEngineering(
       checked_at: new Date().toISOString(),
       read_only: true,
       security,
+      /**
+       * The one field on this read-only route that a screen switches on rather
+       * than displays.
+       *
+       * The debug-delivery page needs to know whether this deployment wants it
+       * shown, and this is already the route the console asks for what the
+       * server can do — administrator-only, `no-store`, and fetched by the
+       * Engineering screen on load. Putting it on `/whoami` instead would
+       * publish the answer to every signed-in reviewer and collector, which is
+       * a larger surface for a flag whose only reader is an administrator.
+       *
+       * It is not a capability: the page's own calls are refused or allowed by
+       * the collector token and the operator cookie exactly as they always
+       * were. Turning the flag on hides nothing and unlocks nothing.
+       */
+      debug_delivery: cap.debugDelivery,
       services: [
         {
           id: 'database',

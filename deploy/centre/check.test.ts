@@ -85,6 +85,10 @@ describe('deployment configuration boundaries', () => {
       .toContainEqual(expect.objectContaining({ check: 'demo-phone' }));
     expect(failures({ ...production, PLAYERONE_ZNS_ACCESS_TOKEN: undefined }))
       .toContainEqual(expect.objectContaining({ check: 'zns' }));
+    expect(failures({ ...production, PLAYERONE_DEBUG_DELIVERY: '1' }))
+      .toContainEqual(expect.objectContaining({ check: 'debug-delivery' }));
+    // Off is off, and an old `.env` carrying the switch set to zero is off too.
+    expect(failures({ ...production, PLAYERONE_DEBUG_DELIVERY: '0' })).toEqual([]);
   });
 
   it('refuses production ZNS without credentials even on a LAN demo', () => {

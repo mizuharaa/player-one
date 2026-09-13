@@ -140,6 +140,13 @@ const app = buildApi({
   // reads it; `scripts/seed-demo.mjs` reads it too, which is the point of it.
   demoPhone: env['PLAYERONE_DEMO_PHONE'],
   /**
+   * The console's debug-delivery page. One value, `1`, and nothing else turns
+   * it on — the same shape as every other switch read here, so a deployment
+   * that copies an old `.env` with `PLAYERONE_DEBUG_DELIVERY=0` in it gets the
+   * off state rather than a truthy string.
+   */
+  debugDelivery: env['PLAYERONE_DEBUG_DELIVERY'] === '1',
+  /**
    * The payout rail's client, from PLAYERONE_ZALOPAY_*. Null in sandbox with
    * no credentials — verification then stores `unverified` and pay refuses
    * `payout_no_client`; production without every credential throws by name.

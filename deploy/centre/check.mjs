@@ -79,6 +79,7 @@ export function configurationChecks(env) {
       }
       if (env.PLAYERONE_SECURE_COOKIES !== '1') fail('cookies', 'HTTPS production needs PLAYERONE_SECURE_COOKIES=1.');
       if (env.PLAYERONE_DEMO_PHONE) fail('demo-phone', 'Remove PLAYERONE_DEMO_PHONE before production; it exposes that account\'s demo code.');
+      if (env.PLAYERONE_DEBUG_DELIVERY === '1') fail('debug-delivery', 'Remove PLAYERONE_DEBUG_DELIVERY before production; it offers operators a page that signs in as a collector and pushes a folder.');
       if (env.PLAYERONE_ZNS_ENV !== 'production') fail('zns-mode', 'Production must use PLAYERONE_ZNS_ENV=production, never logged development codes.');
     }
   } catch { fail('public-origin', 'Set PLAYERONE_PUBLIC_URL to the actual reachable HTTP/HTTPS origin.'); }
