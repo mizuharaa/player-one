@@ -8,7 +8,7 @@ import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import type { NativeTheme } from '@playerone/design/native';
 import { useGuideTarget } from '../guide/Guide.tsx';
-import { Body, Button, Card, Choice, Hatch, ListScreen, Note, Row, Tag, Title, face } from '../ui.tsx';
+import { Body, Button, Card, Choice, Hatch, ListScreen, Loading, Note, Progress, Row, Tag, Title, face } from '../ui.tsx';
 import type { DeliveryRecord, DeliveryState, DeliveryStep } from '../upload/delivery.ts';
 import { runDelivery } from '../upload/delivery.ts';
 import {
@@ -77,6 +77,26 @@ const stateColors = (theme: NativeTheme, state: EpisodeState): { fg: string; bg:
 };
 
 /**
+ * The shape a verdict carries as well as its hue.
+ *
+ * `DESIGN.md`: "never colour alone — every verdict carries a shape too, because
+ * red/green colour blindness is common and this axis decides whether somebody is
+ * paid". The two pills on this screen that mean a human decided — passed and
+ * failed — were separated by hue alone, on the one screen in this app where the
+ * decision is about money. The console answers the same rule with `IconPass` /
+ * `IconReject`; this app draws its icons out of Views and has no verdict pair,
+ * so the mark is the character `Choice` and `Timeline` already tick with.
+ *
+ * Only a verdict gets one. `under_review` is a human holding it and `uploading`
+ * is the bytes moving: neither is an outcome, and giving those a tick too is how
+ * a mark stops meaning anything.
+ */
+const stateMarks: Partial<Record<EpisodeState, string>> = {
+  review_passed: '✓',
+  review_failed: '✕',
+};
+
+/**
  * The delivery's own pill, off the same three-way palette as an episode's.
  *
  * `verified` and `ingesting` wear the ink of work in progress rather than a
@@ -96,6 +116,18 @@ const deliveryColors = (theme: NativeTheme, state: DeliveryState): { fg: string;
     default:
       return { fg: theme.color.actionInk, bg: theme.color.action };
   }
+};
+
+/**
+ * The delivery's own verdict marks, on the same argument as `stateMarks`.
+ * `ingested` is the cloud copy proven and accepted; `held` and `failed` are
+ * refusals. `registered`, `verified` and `ingesting` are work in progress and
+ * carry no mark.
+ */
+const deliveryMarks: Partial<Record<DeliveryState, string>> = {
+  ingested: '✓',
+  held: '✕',
+  failed: '✕',
 };
 
 const gb = (bytes: number): string => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
@@ -294,11 +326,27 @@ export function Uploads() {
                   </View>
                 ) : null}
 
+                {/* The two slow phases, as the measured fractions they are.
+                    They were a muted sentence each — the faintest type on the
+                    screen carrying the one thing the collector is waiting on,
+                    while a task in the hall got a bar for its claimed minutes.
+                    `Progress` is that bar, lime as `DESIGN.md` assigns it, with
+                    the count still printed beside it because a band alone is
+                    never how a quantity is read here. Both counts come from the
+                    delivery's own callbacks; neither is interpolated. */}
                 {hashed !== null ? (
-                  <Body muted>{`${tt('uploads.hashing')} ${hashed.done}/${hashed.total}`}</Body>
+                  <Progress
+                    label={tt('uploads.hashing')}
+                    value={`${hashed.done}/${hashed.total}`}
+                    fraction={hashed.total <= 0 ? 0 : hashed.done / hashed.total}
+                  />
                 ) : null}
                 {step !== null ? (
-                  <Body muted>{`${tt('uploads.sending')} ${step.sentFiles}/${step.totalFiles}`}</Body>
+                  <Progress
+                    label={tt('uploads.sending')}
+                    value={`${step.sentFiles}/${step.totalFiles}`}
+                    fraction={step.totalFiles <= 0 ? 0 : step.sentFiles / step.totalFiles}
+                  />
                 ) : null}
 
                 {/* The server's verdict, and only ever the server's. */}
@@ -308,6 +356,7 @@ export function Uploads() {
                       label={tt(`delivery.${outcome.state}`)}
                       fg={deliveryColors(theme, outcome.state).fg}
                       bg={deliveryColors(theme, outcome.state).bg}
+                      mark={deliveryMarks[outcome.state]}
                     />
                     {outcome.heldReason !== null ? (
                       <Note text={reasonText(tt, outcome.heldReason)} />
@@ -360,7 +409,7 @@ export function Uploads() {
             </>
           ) : null}
           {episodes.isPending || episodes.isFetching ? (
-            <Body muted>{tt('common.loading')}</Body>
+            <Loading />
           ) : null}
         </View>
       }
@@ -374,7 +423,7 @@ export function Uploads() {
         return (
           <Card>
             <Title>{episode.episodeId}</Title>
-            <Tag label={tt(`state.${episode.state}`)} fg={colors.fg} bg={colors.bg} />
+            <Tag label={tt(`state.${episode.state}`)} fg={colors.fg} bg={colors.bg} mark={stateMarks[episode.state]} />
             <Row label={tt('uploads.size')} value={episode.sizeBytes === null ? tt('uploads.sizeUnknown') : gb(episode.sizeBytes)} />
             {episode.sessionId === '' ? null : (
               <Row label={tt('uploads.session')} value={episode.sessionId} />

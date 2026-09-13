@@ -5,7 +5,7 @@ import { USE_MOCK_API } from '../api/config.ts';
 import type { MessageKey } from '../i18n.ts';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
-import { Body, Button, Card, Field, Hatch, Note, Row, Screen, Title } from '../ui.tsx';
+import { Body, Button, Card, Field, Hatch, Loading, Note, Row, Screen, Title } from '../ui.tsx';
 
 /**
  * APP-14/18: bind by QR or typed serial; list what is bound. The QR path is a
@@ -42,7 +42,7 @@ export function Devices() {
   return (
     <Screen title={tt('devices.title')}>
       {devices.isError ? <><Note text={tt(devices.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} /><Button label={tt('common.retry')} disabled={devices.isFetching} onPress={() => void devices.refetch()} /></> : null}
-      {devices.isPending ? <Body muted>{tt('common.loading')}</Body> : null}
+      {devices.isPending ? <Loading /> : null}
       {!devices.isError && devices.data !== undefined && devices.data.length === 0 ? (
         <Hatch text={tt('devices.empty')} />
       ) : null}

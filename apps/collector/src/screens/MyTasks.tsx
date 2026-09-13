@@ -4,7 +4,7 @@ import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { View } from 'react-native';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, CardLink, Hatch, ListScreen, NavRow, Note, Row, Title } from '../ui.tsx';
+import { Body, Button, CardLink, Hatch, ListScreen, Loading, NavRow, Note, Row, Title } from '../ui.tsx';
 
 /** APP-11: claimed tasks and their state. */
 export function MyTasks() {
@@ -26,7 +26,7 @@ export function MyTasks() {
       </View>}
       empty={
         claims.isError ? null : claims.isPending ? (
-          <Body muted>{tt('common.loading')}</Body>
+          <Loading />
         ) : (
           <><Hatch text={tt('mine.empty')} /><Button label={tt('hall.title')} onPress={() => nav.push({ name: 'taskHall' })} /></>
         )
