@@ -5,7 +5,7 @@ import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { useGuideTarget } from '../guide/Guide.tsx';
-import { Amount, Body, Button, Hatch, ListScreen, Note, Row, Tag, Timeline, Title } from '../ui.tsx';
+import { Amount, Body, Button, Hatch, ListScreen, Loading, Note, Row, Tag, Timeline, Title } from '../ui.tsx';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -117,7 +117,7 @@ export function Income() {
         <View ref={listTarget} collapsable={false} style={{ gap: theme.space[3] }}>
           <Body muted>{tt('income.intro')}</Body>
           {income.isError ? <><Note text={tt(income.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} /><Button label={tt('common.retry')} variant="secondary" disabled={income.isFetching} onPress={() => void income.refetch()} /></> : null}
-          {income.isPending || income.isFetching ? <Body muted>{tt('common.loading')}</Body> : null}
+          {income.isPending || income.isFetching ? <Loading /> : null}
         </View>
       }
       empty={

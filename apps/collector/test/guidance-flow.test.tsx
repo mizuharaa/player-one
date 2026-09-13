@@ -26,6 +26,7 @@ vi.mock('../src/ui.tsx', () => ({
   Card: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   Screen: ({ title, children }: { title: string; children: ReactNode }) => <main><h1>{title}</h1>{children}</main>,
   Note: ({ text }: { text: string }) => <p role="status">{text}</p>,
+  Loading: () => <p role="status">loading</p>,
   Row: ({ label, value }: { label: string; value: string }) => <p>{label}: {value}</p>,
   Button: ({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) =>
     <button disabled={disabled} onClick={onPress}>{label}</button>,

@@ -500,8 +500,15 @@ export function Body({ children, muted = false }: { children: ReactNode; muted?:
 }
 
 /**
- * A label/value line. `value` sits in tabular figures so a column of them —
- * sizes on Uploads, minutes and amounts on Income — lines up digit for digit.
+ * The one figure a row is *about*, set large.
+ *
+ * Its only caller is the amount on an income row, where the row is a payment
+ * and the figure is the payment. It was also on the task cards in the hall and
+ * on Home, three deep under one heading, where the card's subject is the task
+ * and not its unit price — `DESIGN.md` allows one ink figure per screen and
+ * `TaskDetail`'s `FeatureBlock` is where a unit price earns it, beside the
+ * server's payment rule and the claim button. Those cards print it through
+ * `Row` now. Do not reintroduce this into a list card.
  */
 export function Amount({ value, label }: { value: string; label: string }) {
   const theme = useTheme();
@@ -1190,12 +1197,29 @@ export function Field({
   );
 }
 
-/** A status pill. Callers pass theme colours, never literals. */
-export function Tag({ label, fg, bg }: { label: string; fg: string; bg: string }) {
+/**
+ * A status pill. Callers pass theme colours, never literals.
+ *
+ * `mark` is a glyph printed before the label, and it exists for one rule:
+ * `DESIGN.md`, "never colour alone — every verdict carries a shape too, because
+ * red/green colour blindness is common and this axis decides whether somebody
+ * is paid". A pill whose only difference from the pill above it is a hue is a
+ * verdict a colour-blind collector cannot read. It is drawn in the same ink as
+ * the label and is not spoken: the label already says the state in words, and
+ * TalkBack reading "check mark Duyệt đạt" adds nothing.
+ *
+ * A pill that is not a verdict takes no mark. That the two marked pills on
+ * Uploads are exactly the two that decide money is the point, not an
+ * inconsistency.
+ */
+export function Tag({ label, fg, bg, mark }: { label: string; fg: string; bg: string; mark?: string }) {
   const theme = useTheme();
   return (
     <View
       style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.space[1],
         backgroundColor: bg,
         borderRadius: theme.radius.pill,
         paddingVertical: theme.space[1],
@@ -1204,16 +1228,82 @@ export function Tag({ label, fg, bg }: { label: string; fg: string; bg: string }
         maxWidth: '100%',
       }}
     >
+      {mark === undefined ? null : (
+        <Text
+          importantForAccessibility="no"
+          style={{ color: fg, fontFamily: face(theme), fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.semibold }}
+        >
+          {mark}
+        </Text>
+      )}
       <Text
         style={{
           color: fg,
           fontFamily: face(theme),
           fontSize: theme.fontSize.xs,
           fontWeight: theme.fontWeight.semibold,
+          flexShrink: 1,
         }}
       >
         {label}
       </Text>
+    </View>
+  );
+}
+
+/**
+ * How far along something measured is: a task's claimed minutes, a session's
+ * files hashed, a delivery's files sent.
+ *
+ * The bar is `lime[600]` on the muted track, which is the one job `DESIGN.md`
+ * gives that step — "500 fills, 600 strokes, 600 is also progress and the focus
+ * ring" — and it is the screen's one lime moment. It is determinate and it does
+ * not animate: a bar that eases to a figure is showing a number nobody measured
+ * yet, and motion here conveys state or it is not there.
+ *
+ * **The figure is never the bar alone.** `label` and `value` print above it
+ * through `Row`, so the fraction is readable digit for digit and the bar is the
+ * shape of it — the same argument `RingChip` makes for the episode ring, and the
+ * reason a 6dp band is not left to carry a quantity on its own. `value` is a
+ * string because its unit belongs to the caller: minutes on a task, a file count
+ * on a delivery.
+ */
+export function Progress({ label, value, fraction }: { label: string; value: string; fraction: number }) {
+  const theme = useTheme();
+  const clamped = Math.min(1, Math.max(0, Number.isFinite(fraction) ? fraction : 0));
+  return (
+    <View style={{ gap: theme.space[2] }}>
+      <Row label={label} value={value} />
+      <View
+        accessibilityRole="progressbar"
+        accessibilityValue={{ min: 0, max: 100, now: Math.round(clamped * 100) }}
+        style={{
+          height: theme.space[1.5],
+          borderRadius: theme.space[1],
+          backgroundColor: theme.color.muted,
+          overflow: 'hidden',
+        }}
+      >
+        <View style={{ width: `${clamped * 100}%`, height: '100%', backgroundColor: theme.color.lime[600] }} />
+      </View>
+    </View>
+  );
+}
+
+/**
+ * A query is in flight.
+ *
+ * One component rather than `<Body muted>{tt('common.loading')}</Body>` written
+ * out on eight screens, for the reason the sentence needed to be one and was
+ * not: it appears *after* something — a mount, a retry, a tab switch — so a
+ * screen reader has to be told to read it, the way `Note` is. Every one of
+ * those eight copies was silent to TalkBack.
+ */
+export function Loading() {
+  const tt = useT();
+  return (
+    <View accessibilityLiveRegion="polite">
+      <Body muted>{tt('common.loading')}</Body>
     </View>
   );
 }

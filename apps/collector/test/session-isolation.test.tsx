@@ -9,6 +9,7 @@ import { MockCollectorApi } from '../src/api/mock.ts';
 import { AGREEMENTS, type IncomeEntry } from '../src/api/types.ts';
 import { LocaleProvider } from '../src/locale.tsx';
 import { MESSAGES } from '../src/i18n.ts';
+import { useSignOut } from '../src/session.tsx';
 
 // The shell now renders the real tab bar, guide and landing, so the handful of
 // hand-written stubs this test used to carry no longer covers what `ui.tsx`
@@ -34,14 +35,24 @@ vi.mock('../src/screens/SignIn.tsx', () => ({
   SignIn: ({ onSignedIn }: { onSignedIn: () => void }) => <button onClick={onSignedIn}>Sign in test</button>,
 }));
 const observed = vi.hoisted(() => ({ clients: [] as QueryClient[] }));
+// The stub draws the sign-out control too, because that is where the real Home
+// draws it: it moved off the app shell — where it sat across the foot of every
+// tab, under the bar and outside the bottom inset — into the foot of Home, and
+// it reaches `leave()` through `session.tsx`'s context. So this stub renders the
+// same control from the same context, and the two sign-out paths below are still
+// driven the way a collector drives them.
 vi.mock('../src/screens/Home.tsx', () => ({
   Home: () => {
     const api = useApi();
     const client = useQueryClient();
+    const signOut = useSignOut();
     if (!observed.clients.includes(client)) observed.clients.push(client);
     const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
     const income = useQuery({ queryKey: ['income'], queryFn: () => api.income() });
-    return <p>Private: {profile.data?.name} {income.data?.[0]?.amountVnd}</p>;
+    return <>
+      <p>Private: {profile.data?.name} {income.data?.[0]?.amountVnd}</p>
+      <button onClick={signOut}>{MESSAGES.vi['signIn.signOut']}</button>
+    </>;
   },
 }));
 

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { useNav, useRoute } from '../nav.tsx';
 import { useT } from '../locale.tsx';
-import { Body, Button, Card, FeatureBlock, Note, Row, Screen, Title } from '../ui.tsx';
+import { Body, Button, Card, FeatureBlock, Loading, Note, Row, Screen, Title } from '../ui.tsx';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -75,7 +75,7 @@ export function TaskDetail() {
   if (task.data === undefined || profile.data === undefined || claims.data === undefined) {
     return (
       <Screen title={tt('detail.title')}>
-        <Body muted>{tt('common.loading')}</Body>
+        <Loading />
       </Screen>
     );
   }

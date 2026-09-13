@@ -7,7 +7,7 @@ import type { MessageKey } from '../i18n.ts';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Card, Choice, Note, Row, Screen, Title } from '../ui.tsx';
+import { Body, Button, Card, Choice, Loading, Note, Row, Screen, Title } from '../ui.tsx';
 
 const SESSION_ERRORS: Record<string, MessageKey> = {
   scenario_not_found: 'session.scenarioUnavailable',
@@ -132,7 +132,7 @@ export function SessionCreate() {
     return <Screen title={tt('session.title')}><Note text={tt('common.loadFailed')} /><Button label={tt('common.retry')} disabled={queries.some((q) => q.isFetching)} onPress={() => { for (const q of queries) void q.refetch(); }} /></Screen>;
   }
   if (queries.some((q) => q.isPending)) {
-    return <Screen title={tt('session.title')}><Body muted>{tt('common.loading')}</Body></Screen>;
+    return <Screen title={tt('session.title')}><Loading /></Screen>;
   }
 
   const pick = <T,>(
