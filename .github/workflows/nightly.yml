@@ -28,6 +28,9 @@ jobs:
           --health-timeout 5s --health-retries 5
     env:
       DATABASE_URL: postgres://postgres:playerone@localhost:5432/postgres
+      # e2e-loop.mjs truncates every table, which only the owner may do, and
+      # since the superuser guard in packages/store/src/db.ts that needs saying.
+      PLAYERONE_ALLOW_SUPERUSER: '1'
     steps:
       - uses: actions/checkout@v7
       # The script encodes its own twenty seconds of footage with ffmpeg, and
