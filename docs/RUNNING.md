@@ -197,6 +197,13 @@ For a real LAN centre on Windows, follow the [centre deployment runbook](../depl
 database bootstrap, built console behind Caddy, environment and Task Scheduler
 setup, then one-card verification on the centre PC.
 
+For one Linux VM in Vietnam — the console and API behind Caddy with automatic
+HTTPS on a real domain, ffmpeg in the image, a persistent media volume,
+GreenNode storage and `REVIEW_VERIFICATION_GATE=cloud` — follow the
+[cloud VM kit](../deploy/cloud/README.md). It is the deployment that can run the
+whole loop, including the parts Railway cannot: `deploy/showcase.mjs` and
+`railway.toml` are unchanged and still serve the public showcase site.
+
 ```
 DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 ```

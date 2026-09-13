@@ -1,0 +1,89 @@
+# One Linux VM in Vietnam. Automatic HTTPS for the deployment's own domain, the
+# console from the image's build, the API beside it on loopback.
+#
+# The API shares this container's network namespace (`network_mode:
+# "service:caddy"` in docker-compose.yml), which is why every upstream here is
+# 127.0.0.1 and why `PLAYERONE_TRUST_LOOPBACK_PROXY=1` is honest: the API's
+# Fastify instance trusts a forwarded address only from 127.0.0.1/32, and only
+# this listener can reach it. `packages/api/src/ratelimit.ts` explains what the
+# alternative costs — a proxy the API does not trust makes every request arrive
+# from one address, and thirty failed sign-ins anywhere lock out everybody.
+#
+# Nothing here rewrites X-Forwarded-For, deliberately. Caddy appends the real
+# peer to whatever chain the caller sent, and Fastify reads that chain from the
+# right, stopping at the first address it does not trust — which is the one
+# Caddy just appended. A caller who forges the header only lengthens it.
+{
+	email {$PLAYERONE_ACME_EMAIL}
+}
+
+{$PLAYERONE_PUBLIC_URL} {
+	bind {$PLAYERONE_BIND}
+	# The same four headers `deploy/http-server.mjs` sends for the Railway
+	# console, on every response this listener makes — the console SPA, the
+	# proxied API and the media stream. Verbatim from that file on purpose:
+	# `deploy/cloud/check.test.ts` compares the two and fails if they drift,
+	# exactly as `deploy/centre/check.test.ts` does for the centre listener.
+	header {
+		# Applied after the response is written, which is load-bearing: Caddy
+		# sets these up front and `reverse_proxy` then *adds* the upstream's
+		# own headers to the same map. Without `defer`, the API's own HSTS
+		# arrived as a second Strict-Transport-Security line and RFC 6797
+		# makes a browser obey the first one it sees. Measured on this kit.
+		defer
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: https:; connect-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		# The fifth header, which the centre's HTTP LAN cannot have and this
+		# deployment always can: `http-server.mjs` sends it whenever
+		# PLAYERONE_SECURE_COOKIES=1, and here that is not optional. The value
+		# is the API's own (`packages/api/src/index.ts`), not the showcase
+		# listener's shorter one, so that one policy covers the console's
+		# static responses and the API's alike.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	# `deploy/http-server.mjs` answers /healthz by asking the API for /whoami
+	# with no credentials and treating 401 as ready: that one status proves the
+	# process is up, its routes are mounted and its database-backed
+	# authentication answered. The API has no health route of its own, and a
+	# /healthz this listener answered by itself would report the proxy's health
+	# and call it the deployment's.
+	handle /healthz {
+		reverse_proxy 127.0.0.1:{$PORT} {
+			rewrite /whoami
+			@ready status 401
+			handle_response @ready {
+				header Content-Type application/json
+				header Cache-Control no-store
+				respond `{"ready":true}` 200
+			}
+		}
+	}
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:{$PORT}
+	}
+	handle /auth/* {
+		reverse_proxy 127.0.0.1:{$PORT}
+	}
+	handle /whoami {
+		reverse_proxy 127.0.0.1:{$PORT}
+	}
+	handle /reference/* {
+		reverse_proxy 127.0.0.1:{$PORT}
+	}
+	handle /media/* {
+		reverse_proxy 127.0.0.1:{$PORT} {
+			# A reviewer seeks inside an MP4; buffering the range response
+			# stalls the lane this deployment exists to run.
+			flush_interval -1
+		}
+	}
+	handle {
+		root * "{$PLAYERONE_CONSOLE_ROOT}"
+		try_files {path} /index.html
+		file_server
+	}
+}
