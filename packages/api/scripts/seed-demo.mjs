@@ -25,7 +25,17 @@ const REF = 'demo-collector';
 const SERIAL = 'EGO-DEMO-0001';
 /** What marks each fixed row as this script's rather than somebody's real data. */
 const TASK_NAME = 'Demo housework';
-const SCENARIO_CODE = 'demo-home';
+/**
+ * One of `SCENARIOS` in `apps/collector/src/api/types.ts`, and it has to be.
+ * The app sends a code from that list to `POST /api/me/sessions` and reads one
+ * back from `GET /api/me/sessions`, where `asScenario` throws
+ * `unsupported_scenario` on anything else. This was `demo-home` and neither
+ * call could work: the create was `scenario_not_found` because no row carried
+ * the code the app sends, and a session somehow created against `demo-home`
+ * failed the whole sessions list on the way back. Pinned by
+ * `packages/api/test/seed-demo.test.ts`.
+ */
+const SCENARIO_CODE = 'home';
 const DEVICE_TYPE_CODE = 'ego_headset';
 /** The app's current agreement version. `liveClaim` writes `v1`; the app sends this. */
 const AGREEMENT_VERSION = '1.0';
@@ -129,9 +139,13 @@ try {
         from unnest(${sql.raw(`array['${AGREEMENTS.join("','")}']`)}) as a
       on conflict do nothing`);
 
+    // No arbiter: `home` is shared, not this script's own string, and
+    // `scenarios_code_key` is unique, so a database that already has a `home`
+    // scenario under another id conflicts on the code and not on `id`. The app
+    // only needs a row carrying the code; whose row it is does not matter.
     await tx.execute(sql`
       insert into scenarios (id, code, privacy_risk_level) values (${ID.scenario}, ${SCENARIO_CODE}, 'low')
-      on conflict (id) do nothing`);
+      on conflict do nothing`);
 
     await tx.execute(sql`
       insert into tasks (id, name, unit_price, max_concurrent_claimants, status)

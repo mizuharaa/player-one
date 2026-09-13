@@ -91,6 +91,45 @@ Nothing here is `expo-crypto`. The session digests are computed in JavaScript
 (`src/upload/sha256.ts`) precisely so that a third native module is not needed;
 that is a measured ceiling, not an oversight, and it is marked where it bites.
 
+## The one patched dependency
+
+`expo-file-system@57.0.7` is patched in this repo — `pnpm`'s
+`patchedDependencies`, the diff in `patches/expo-file-system@57.0.7.patch`, and
+the patch hash recorded in `pnpm-lock.yaml`. A build from a checkout that skips
+`pnpm install` does not get it. **What:** the handle now keeps the
+`ParcelFileDescriptor` that `forContentURI` opened, in a field, and closes it in
+`close()` after the channel. **Why:** upstream opens the descriptor, takes
+`FileInputStream(pfd.fileDescriptor).channel` from it and then keeps no
+reference to the descriptor, so the first garbage collection runs
+`ParcelFileDescriptor`'s CloseGuard finalizer and closes the file descriptor
+while the channel is still reading. Measured on an API 34 emulator: every
+Storage-Access-Framework file over 1 MiB failed in `hashSession`
+(`src/upload/delivery-native.ts`) with `UnableToReadHandleException` about a
+second in, with "A resource failed to call close" from the finalizer daemon in
+logcat. `putRange` opens its source the same way and had the same fault, which
+is why the fix is in the module and not in either caller.
+**ponytail: remove this patch when upstream fixes it** — 57.0.7 is the newest
+57.x on npm today, so there is nothing to bump to; re-read the package's
+`CHANGELOG.md` at the next expo upgrade and delete the patch file, the
+`patchedDependencies` entry and this section together once it is fixed there.
+
+The patch on its own does nothing, and that is the part to remember. Expo 57
+ships each of its modules as a **prebuilt AAR inside the npm package** —
+`node_modules/expo-file-system/local-maven-repo/host/exp/exponent/expo.modules.filesystem/57.0.7/`
+— and `expo-module.config.json` declares that publication, so autolinking adds a
+Maven dependency and never includes the module's Gradle project. The Kotlin
+under `node_modules/expo-file-system/android/src` is then not compiled at all, so
+a patched source file changes nothing in the APK. Measured, not assumed: the
+first build of the patch looked clean, and `dexdump` on
+`classes2.dex` showed `FileSystemFileHandle` with two instance fields,
+`fileChannel` and `mode`, and a `(FileChannel, FileMode)` constructor — the
+unpatched class. The build log says which is which: a module printed with a 📦
+came from its AAR, a module printed without one was built from source.
+
+`expo.autolinking.android.buildFromSource` in `apps/collector/package.json`
+names `expo-file-system` and is what forces the Gradle project in. Both halves
+are needed, and neither is any use alone.
+
 ## iOS
 
 `src/upload/delivery-native.ts` calls `Directory.pickDirectoryAsync()` and then
