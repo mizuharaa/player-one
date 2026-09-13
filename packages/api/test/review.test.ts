@@ -1516,6 +1516,37 @@ describe.skipIf(!hasDb())('the review lane', () => {
       }
     });
 
+    it('is cacheable to that reviewer while nothing under /api is cacheable at all', async () => {
+      /**
+       * Two different answers, and the difference is the point. A reviewer
+       * scrubbing a 437 MB part re-fetches the same ranges continuously, so
+       * media is `private, max-age=3600` — private, because the bytes are
+       * scoped to the token that asked. Every `/api` answer is scoped the same
+       * way and is not worth caching, and nothing said so: an upload-centre PC
+       * is shared, so a browser or proxy holding one person's review history or payout
+       * figures for the next person was left to whatever the browser decided.
+       */
+      const { h, root } = await withMedia(Buffer.alloc(64, 7));
+      try {
+        const episodeId = (await claim(h)).json().episode_id;
+
+        const media = await h.send('GET', `/media/episode/${episodeId}/part/0`);
+        expect(media.statusCode).toBe(200);
+        expect(media.headers['cache-control']).toBe('private, max-age=3600');
+
+        const api = await h.send('GET', '/api/review/recent');
+        expect(api.statusCode).toBe(200);
+        expect(api.headers['cache-control']).toBe('private, no-store');
+
+        // A refusal is as scoped as an answer, so it is not cacheable either.
+        const denied = await h.send('GET', '/api/review/recent', undefined, {});
+        expect(denied.statusCode).toBe(401);
+        expect(denied.headers['cache-control']).toBe('private, no-store');
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
     it('advertises range support on a plain request too', async () => {
       const { h, root } = await withMedia(Buffer.alloc(64, 7));
       try {
