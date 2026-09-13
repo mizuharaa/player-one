@@ -29,14 +29,14 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:playerone@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The script encodes its own twenty seconds of footage with ffmpeg, and
       # ffprobe is still the container-timing fallback the engine falls back to.
       # The runner image ships neither.
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with: { version: 9 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       # `ci.yml` has no such step and does not need one: the suite creates and

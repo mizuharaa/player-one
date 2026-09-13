@@ -14,21 +14,32 @@ jobs:
           --health-timeout 5s --health-retries 5
     env:
       DATABASE_URL: postgres://postgres:playerone@localhost:5432/postgres
+      # The role the deployment runs the API under (0021_app_role.sql). Without
+      # it buildApi gets the superuser, which bypasses row-level security, and
+      # the RLS tests measure nothing. docs/RUNNING.md documents this invocation.
+      PLAYERONE_DB_ROLE: playerone_app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # ffprobe is the container-timing fallback for sessions whose PTS sidecars
       # are unusable. The runner image does not ship it, and probeContainer
       # cannot tell a missing binary from a damaged file, so without this six
       # tests fail and the money path is measured wrong.
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with: { version: 9 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       # Fails the run on a high/critical advisory in a production dependency.
-      # Measured clean on 2026-08-30 ("No known vulnerabilities found"), so
-      # this gate starts green; dev-only advisories are deliberately not gated.
+      # Dev-only advisories are deliberately not gated. A branch that pins an
+      # older lockfile can trip on an advisory published after it was cut
+      # (js-yaml via react-native 0.82, 2026-09-08): rebase, do not ignore.
       - run: pnpm audit --audit-level=high --prod
       - run: pnpm typecheck
       - run: pnpm test
+      # The suites vitest.config.ts deliberately excludes. The deploy browser
+      # policy (CSP, frame-ancestors, nosniff, HSTS) needs a built console; the
+      # collector release-config and build-provenance suites run under node:test.
+      - run: pnpm --dir apps/console build
+      - run: node --test deploy/*.test.mjs
+      - run: pnpm --dir apps/collector test:release
