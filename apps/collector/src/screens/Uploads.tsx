@@ -110,10 +110,13 @@ const gb = (bytes: number): string => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
  * Same argument as APP-27's reject reasons, which are PaXini's rows and are
  * shown verbatim.
  */
-const REASON_KEYS: Record<string, MessageKey> = {
+export const REASON_KEYS: Record<string, MessageKey> = {
   // What `collector_uploads.held_reason` and `failed_reason` can hold.
   checksum_mismatch: 'uploads.reasonChecksum',
   basename_collision: 'uploads.reasonCollision',
+  // An operator ended a held delivery (0030). `held` is not terminal any more,
+  // and the collector reads why it ended rather than watching it sit for ever.
+  released_by_operator: 'uploads.reasonReleased',
   // The refusals this delivery path can raise, server-side and phone-side.
   upload_unknown_session: 'uploads.reasonUnknownSession',
   upload_foreign_session: 'uploads.reasonForeignSession',

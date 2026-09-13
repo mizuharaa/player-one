@@ -594,6 +594,16 @@ const en = {
     'Every file arrived intact, and then the measuring engine could not read the recording. The files are kept. Report this upload to an operator.',
   'bo.refused.session_basename_unrecognised':
     'That folder is not a recording folder. Pick the folder the camera made, whose name starts with the device and its serial number.',
+  'bo.refused.upload_not_held':
+    'No delivery is being held under that id, so there is nothing to release. Look at the delivery again — it may still be transferring, it may have finished, or somebody may have released it already.',
+  /**
+   * Not a refusal: `collector_uploads.failed_reason` after an operator ended a
+   * held delivery (0030). Same namespace as the reasons above, because it is
+   * the same column and the same reader — a support operator looking at a
+   * delivery that failed.
+   */
+  'bo.refused.upload_released_by_operator':
+    'An operator ended this held delivery. Nothing was deleted and the recording already on the upload machine was left alone. The collector can send this recording again as a new upload.',
 
   /**
    * The collector app's own refusals (`COLLECTOR_API_REFUSALS` in
@@ -2093,6 +2103,10 @@ const zh: Record<MessageKey, string> = {
     '所有文件都完整到达，但测量引擎无法读取该录制。文件已保留。请将本次上传报告给操作员。',
   'bo.refused.session_basename_unrecognised':
     '该文件夹不是录制文件夹。请选择相机生成的文件夹，其名称以设备名和序列号开头。',
+  'bo.refused.upload_not_held':
+    '该编号下没有被挂起的交付，因此没有可以解除的内容。请再查看该交付：它可能仍在传输、已经完成，或者已被他人解除。',
+  'bo.refused.upload_released_by_operator':
+    '操作员已结束这次被挂起的交付。系统未删除任何文件，上传机上原有的录制也未被改动。采集员可以将这份录制作为一次新的上传重新发送。',
 
   /** 采集端应用自身的拒绝原因（collector-app.ts 的 COLLECTOR_API_REFUSALS）。 */
   'bo.refused.task_not_found': '该任务已不存在。',
@@ -3312,6 +3326,10 @@ const vi: Record<MessageKey, string> = {
     'Mọi tệp đều đến nguyên vẹn, nhưng bộ máy đo không đọc được đoạn ghi hình. Các tệp vẫn được giữ. Hãy báo lần tải lên này cho nhân viên vận hành.',
   'bo.refused.session_basename_unrecognised':
     'Thư mục đó không phải là thư mục ghi hình. Hãy chọn thư mục do máy ảnh tạo ra, tên của nó bắt đầu bằng thiết bị và số sê-ri.',
+  'bo.refused.upload_not_held':
+    'Không có lần giao nào đang bị giữ dưới mã đó, nên không có gì để giải phóng. Hãy xem lại lần giao đó: nó có thể vẫn đang truyền, đã hoàn tất, hoặc đã được người khác giải phóng.',
+  'bo.refused.upload_released_by_operator':
+    'Một nhân viên vận hành đã kết thúc lần giao bị giữ này. Không có tệp nào bị xoá và bản ghi đã có trên máy tải lên vẫn được giữ nguyên. Người thu thập có thể gửi lại bản ghi này như một lần tải lên mới.',
 
   /**
    * Lời từ chối của chính ứng dụng người thu thập (`COLLECTOR_API_REFUSALS`).

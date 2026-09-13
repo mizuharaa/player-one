@@ -99,6 +99,17 @@ const TaskPatch = z
   })
   .refine((b) => Object.keys(b).length > 0, 'nothing to change');
 
+/**
+ * Releasing a held delivery (0029/0030). One decision, spelled out rather than
+ * implied by the route's existence, so the operator's answer is in the request
+ * and in the audit row and not inferred from which URL they posted to.
+ */
+const ReleaseBody = z.object({
+  decision: z.literal('discard'),
+  /** Why, in the operator's own words. Optional, and audit-only. */
+  note: z.string().trim().max(500).optional(),
+});
+
 const AGREEMENTS = [
   'user',
   'privacy',
@@ -288,6 +299,13 @@ export const API_REFUSALS = new Set([
   'tasks_id_reused',
   'collectors_id_reused',
   'devices_id_reused',
+  /**
+   * Raised by `POST /api/backoffice/uploads/:id/release`: no held delivery
+   * under that id to end. Not a constraint and not one it could be — "the row
+   * is not in that state" is a fact about the row the request named, and the
+   * release guards itself with the same predicate in its own WHERE.
+   */
+  'upload_not_held',
   /** Raised by `POST /episodes/:id/clear` in episodes.ts, same shape. */
   'episode_clearing_nothing_to_clear',
   'episode_clearing_id_reused',
@@ -1317,6 +1335,98 @@ export function registerBackOffice(
       .where(eq(schema.deviceAssignments.collectorId, (req.params as { id: string }).id))
       .orderBy(desc(schema.deviceAssignments.validFrom));
     return { assignments: rows };
+  });
+
+  // -- held deliveries (0029/0030) ------------------------------------------
+
+  /**
+   * The one way out of `held`, and the reason this route exists at all.
+   *
+   * A phone delivery whose session directory name is already on the upload
+   * machine holding different bytes stops at `held` with
+   * `held_reason = 'basename_collision'` (0029). That state was terminal:
+   * `/complete` answers `upload_basename_collision` for ever, and nothing
+   * un-held the row. The collector's phone showed a delivery that could never
+   * finish, under an upload id that could never be reused, and the sentence it
+   * printed said an operator would decide — while no route let one.
+   *
+   * `discard` is the whole decision the platform can act on today. The held
+   * delivery ends as `failed`, which is the state the phone already reads as
+   * over, and the collector may send the recording again under a fresh id — or
+   * not, if the operator judged the recording already on disk to be the real
+   * one. What this route never does is touch the media root: nothing under it
+   * is deleted, moved or overwritten, and the recording that caused the
+   * collision stays exactly where it is. Rule 6's other half is not deviable.
+   *
+   * The other decision — keep this delivery and set the existing directory
+   * aside — is not built. It needs a name for the displaced recording, a way
+   * to re-measure it and an answer for a payment already made on it, and none
+   * of those is a `decision` field. When it exists it is a second literal
+   * here, not a flag on this one.
+   *
+   * `opts` and not `admin`: this is the operator the collision's own sentence
+   * already sends the collector to, and it is one delivery at a counter, not
+   * the shape of the platform. `held_reason` has to be cleared in the same
+   * statement — `collector_uploads_held_reason_check` says only a held row
+   * carries one — so the audit row is where "it was held for a basename
+   * collision" survives, and it is read inside the transaction rather than
+   * inferred afterwards.
+   */
+  app.post('/api/backoffice/uploads/:id/release', opts, async (req, reply) => {
+    const id = pathId(req);
+    if (id === null) return reply.code(400).send({ error: 'invalid id' });
+    const body = ReleaseBody.safeParse(req.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
+    }
+
+    const written = await mutate(
+      db,
+      actorOf(req),
+      (result: { heldReason: string | null }) => ({
+        action: 'upload.release',
+        targetTable: 'collector_uploads',
+        targetId: id,
+        before: { state: 'held', held_reason: result.heldReason },
+        after: {
+          state: 'failed',
+          failed_reason: 'released_by_operator',
+          decision: body.data.decision,
+          /** Free text, and the only place it goes. Nothing reads it back. */
+          note: body.data.note ?? null,
+        },
+      }),
+      async (tx) => {
+        const [held] = await tx
+          .select({ heldReason: schema.collectorUploads.heldReason })
+          .from(schema.collectorUploads)
+          .where(
+            and(eq(schema.collectorUploads.id, id), eq(schema.collectorUploads.state, 'held')),
+          )
+          .for('update');
+        if (held === undefined) return undefined;
+
+        const [row] = await tx
+          .update(schema.collectorUploads)
+          .set({ state: 'failed', heldReason: null, failedReason: 'released_by_operator' })
+          .where(eq(schema.collectorUploads.id, id))
+          .returning();
+        return { row: row!, heldReason: held.heldReason };
+      },
+    );
+    /**
+     * Nothing held by that id. A delivery still transferring, one that ingested,
+     * one already released, and an id that names nothing all get the same
+     * answer: there is no held delivery here to end.
+     */
+    if (written === undefined) return refused(reply, 'upload_not_held');
+
+    return reply.send({
+      upload_id: id,
+      state: written.row.state,
+      failed_reason: written.row.failedReason,
+      released_held_reason: written.heldReason,
+    });
   });
 }
 
