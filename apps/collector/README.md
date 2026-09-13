@@ -29,8 +29,13 @@ client against a fake `fetch` — the sign-in exchange, the cold-start restore,
 and what a 401, a 403 and a lost connection each do to the stored token.
 
 Two environment variables decide what a build talks to, and there are no others:
-`EXPO_PUBLIC_API_URL` (default `http://10.0.2.2:8080`, the Android emulator's
-route to the host) and `EXPO_PUBLIC_MOCK_API=1`.
+`EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_MOCK_API=1`. Both are read by dot
+access in `src/api/config.ts` because that is the only form Expo substitutes.
+`EXPO_PUBLIC_API_URL` defaults to `http://10.0.2.2:8080` — the Android
+emulator's route to the host — and that default belongs to the development
+profile alone: `app.config.cjs` refuses a `demo` or `play` build without an
+explicit origin, and neither `10.0.2.2` nor a loopback address is reachable
+from a handset.
 
 ```sh
 pnpm install
@@ -61,11 +66,14 @@ and SDK licences accepted:
 
 ```sh
 export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-17.0.20.101-hotspot" ANDROID_HOME=/c/Android/sdk ANDROID_SDK_ROOT=/c/Android/sdk
-export EXPO_PUBLIC_API_URL=http://192.168.1.10:8080
+export EXPO_PUBLIC_API_URL=http://192.168.1.10
 pnpm -F @playerone/collector apk
 ```
 
-Replace the API address before building: it is embedded in the APK. Gradle
+Replace the API address before building: it is embedded in the APK. For the
+centre kit that address is Caddy's `PLAYERONE_PUBLIC_URL` (port 80 in the LAN
+template), **not** `:8080` — the API binds `127.0.0.1:8080` and only Caddy is
+on the LAN (`deploy/centre/`). Gradle
 may download the NDK and CMake versions pinned by the template. The script
 regenerates the native project and builds
 `apps/collector/android/app/build/outputs/apk/release/app-release.apk`.
