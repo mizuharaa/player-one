@@ -1,8 +1,10 @@
 import {SHEET_COPY} from './sheet-copy.ts';
 import {ENGINEERING_COPY} from './engineering-copy.ts';
+import {DEBUG_DELIVERY_COPY} from './debug-delivery-copy.ts';
 const en = {
   ...SHEET_COPY.en,
   ...ENGINEERING_COPY.en,
+  ...DEBUG_DELIVERY_COPY.en,
   showcase: 'Demo studio',
   homeLink: 'PlayerOne — Home', overview: 'Overview', workspace: 'Workspace', management: 'Management',
   overviewNote: 'Review work, resolve exceptions, and keep the counter moving.',
@@ -50,6 +52,7 @@ export const WORKSPACE_COPY: Record<'en' | 'vi' | 'zh', Record<keyof typeof en, 
   vi: {
     ...SHEET_COPY.vi,
     ...ENGINEERING_COPY.vi,
+    ...DEBUG_DELIVERY_COPY.vi,
     showcase: 'Phòng thử nghiệm',
     homeLink: 'PlayerOne — Trang chủ', overview: 'Tổng quan', workspace: 'Không gian làm việc', management: 'Quản lý',
     overviewNote: 'Duyệt dữ liệu, xử lý ngoại lệ và theo dõi công việc tại quầy.',
@@ -94,6 +97,7 @@ export const WORKSPACE_COPY: Record<'en' | 'vi' | 'zh', Record<keyof typeof en, 
   zh: {
     ...SHEET_COPY.zh,
     ...ENGINEERING_COPY.zh,
+    ...DEBUG_DELIVERY_COPY.zh,
     showcase: '演示工作室',
     homeLink: 'PlayerOne — 首页', overview: '概览', workspace: '工作区', management: '管理',
     overviewNote: '审核数据、处理异常，跟进柜台工作。',

@@ -1,5 +1,6 @@
 import {useState,type ReactNode} from 'react';
 import {useQuery} from '@tanstack/react-query';
+import {Link,useSearch} from '@tanstack/react-router';
 import {useTranslation} from 'react-i18next';
 import {AppShell} from '../components/shell/AppShell.tsx';
 import {useOperatorProfile} from '../lib/profile-api.ts';
@@ -21,9 +22,18 @@ export function EngineeringScreen(){
 
 function Diagnostics({locale}:{locale:string}){
   const {t}=useTranslation();const c=(key:string)=>t(`workspace.${key}`);
+  /**
+   * `?episode=<uuid>` opens the inspector on that episode. The route validates
+   * it to a UUID and drops anything else, so an absent or mistyped parameter
+   * lands on the screen with nothing selected — which is where it was before
+   * the parameter existed. Initial state only: selecting another episode here
+   * does not rewrite the address, because the inspector is a place to look at
+   * one row and not a screen worth sharing a cursor into.
+   */
+  const linked=useSearch({from:'/engineering'}).episode??null;
   const [episodeCursor,setEpisodeCursor]=useState<string|null>(null);const [episodeHistory,setEpisodeHistory]=useState<(string|null)[]>([]);
   const [auditCursor,setAuditCursor]=useState<string|null>(null);const [auditHistory,setAuditHistory]=useState<(string|null)[]>([]);
-  const [draft,setDraft]=useState('');const [selected,setSelected]=useState<string|null>(null);const [invalid,setInvalid]=useState(false);
+  const [draft,setDraft]=useState(linked??'');const [selected,setSelected]=useState<string|null>(linked);const [invalid,setInvalid]=useState(false);
   const status=useQuery({queryKey:['engineering','status'],queryFn:engineering.status,retry:false});
   const episodes=useQuery({queryKey:['engineering','episodes',episodeCursor],queryFn:()=>engineering.episodes(episodeCursor),retry:false});
   const detail=useQuery({queryKey:['engineering','episode',selected],queryFn:()=>engineering.episode(selected!),enabled:selected!==null,retry:false});
@@ -36,6 +46,14 @@ function Diagnostics({locale}:{locale:string}){
       {status.isPending?<Loading/>:status.data?<><p className="engineering-meta">{c('engineeringChecked').replace('{{time}}',stamp(status.data.checked_at,locale))}</p><div className="engineering-services">{status.data.services.map(service=><article className="engineering-service" key={service.id}><div><code>{service.id}</code><span className="engineering-state" data-state={service.state}>{c(states[service.state]??'engineeringUnknown')}</span></div><p>{service.detail}</p></article>)}</div><details className="engineering-disclosure"><summary>{c('engineeringSecurity')}</summary><dl className="engineering-facts"><div><dt>{c('engineeringRls')}</dt><dd>{c(status.data.security.showcase_rls?'engineeringTrue':'engineeringFalse')}</dd></div><div><dt>{c('engineeringBypass')}</dt><dd>{c(status.data.security.runtime_bypass_rls?'engineeringTrue':'engineeringFalse')}</dd></div></dl></details></>:null}
       <div className="engineering-probe"><div><h3>{c('engineeringProbe')}</h3><p>{c('engineeringProbeNote')}</p></div><button className="workspace-button" type="button" disabled={probe.isFetching} onClick={()=>void probe.refetch()}>{c(probe.isFetching?'refreshing':'engineeringRunProbe')}</button></div>
       {probe.error?<Failure error={probe.error} stale={Boolean(probe.data)} retry={()=>void probe.refetch()} busy={probe.isFetching}/>:null}
+      {/*
+        Engineering's one door out to a tool that WRITES, and it is a link
+        rather than a panel: this screen is read-only and says so at the top,
+        and a delivery that moves bytes cannot live inside that promise.
+        Rendered only where the server reports the flag — the page itself
+        checks the same thing again, because a hidden link is not a gate.
+      */}
+      {status.data?.debug_delivery?<div className="engineering-probe"><div><h3>{c('dbg')}</h3><p>{c('dbgNote')}</p></div><Link className="workspace-button" to="/engineering/debug-delivery">{c('dbgOpen')}</Link></div>:null}
       {probe.data?<div className="engineering-probe-result"><p>{probe.data.scope}</p><ul>{probe.data.checks.map(check=><li key={check.id}><code>{check.id}</code><strong>{c(check.passed?'engineeringProbePassed':'engineeringProbeFailed')}</strong></li>)}</ul></div>:null}
     </section>
 

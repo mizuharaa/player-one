@@ -16,6 +16,7 @@ import { HomeScreen } from './routes/Home.tsx';
 import { ProfileScreen } from './routes/Profile.tsx';
 import { ShowcaseScreen } from './showcase/ShowcaseScreen.tsx';
 import { EngineeringScreen } from './engineering/EngineeringScreen.tsx';
+import { DebugDeliveryScreen } from './debug-delivery/DebugDeliveryScreen.tsx';
 import { ReviewScreen } from './routes/Review.tsx';
 import { PipelineScreen } from './routes/Pipeline.tsx';
 import { LoginScreen } from './routes/Login.tsx';
@@ -115,7 +116,48 @@ const homeRoute = createRoute({
 
 const profileRoute = createRoute({ getParentRoute: () => rootRoute, path: '/profile', beforeLoad: requireSession, component: ProfileScreen });
 const showcaseRoute = createRoute({ getParentRoute: () => rootRoute, path: '/showcase', beforeLoad: requireSession, component: ShowcaseScreen });
-const engineeringRoute = createRoute({ getParentRoute: () => rootRoute, path: '/engineering', beforeLoad: requireSession, component: EngineeringScreen });
+/**
+ * `/engineering?episode=<uuid>` opens the episode inspector on that episode.
+ *
+ * The search parameter exists so something can LINK to an episode. Nothing in
+ * this console could before: `/episodes` filters by task, collector, device
+ * and status and has no id filter, and `/review` hands out the next queued
+ * episode rather than one you name. The debug-delivery page finishes with an
+ * episode id and an operator who wants to look at it, so the inspector that was
+ * already on this screen got an address.
+ *
+ * Validated to a UUID and dropped otherwise, so a mistyped link opens the
+ * screen with nothing selected instead of putting a caller's string into a
+ * request path.
+ */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const engineeringRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/engineering',
+  beforeLoad: requireSession,
+  validateSearch: (raw: Record<string, unknown>): { episode?: string } =>
+    typeof raw['episode'] === 'string' && UUID.test(raw['episode'])
+      ? { episode: raw['episode'] }
+      : {},
+  component: EngineeringScreen,
+});
+
+/**
+ * Engineering → Debug delivery, and a route of its own rather than a section
+ * of the diagnostics screen.
+ *
+ * The Engineering screen is read-only and says so on its face
+ * (`engineeringReadOnly`); this page signs in as a collector and moves bytes.
+ * Putting a tool that writes inside a screen labelled read-only would make one
+ * of the two labels a lie, and the one that matters is the read-only promise.
+ */
+const debugDeliveryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/engineering/debug-delivery',
+  beforeLoad: requireSession,
+  component: DebugDeliveryScreen,
+});
 
 const reviewRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -248,6 +290,7 @@ const routeTree = rootRoute.addChildren([
   profileRoute,
   showcaseRoute,
   engineeringRoute,
+  debugDeliveryRoute,
   loginRoute,
   discoverRoute,
   privacyRoute,

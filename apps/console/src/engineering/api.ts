@@ -1,7 +1,9 @@
 import {ApiError} from '../lib/api.ts';
 
 export interface ServiceStatus {id:string;state:'healthy'|'configured_unprobed'|'unconfigured'|'manual'|'available'|'unknown';detail:string}
-export interface EngineeringStatus {checked_at:string;read_only:true;services:ServiceStatus[];security:{showcase_rls:boolean;runtime_bypass_rls:boolean}}
+export interface EngineeringStatus {checked_at:string;read_only:true;services:ServiceStatus[];security:{showcase_rls:boolean;runtime_bypass_rls:boolean};
+  /** `PLAYERONE_DEBUG_DELIVERY=1`. The only field on this route a screen switches on rather than displays. */
+  debug_delivery?:boolean}
 export interface EpisodeSummary {episode_id:string;last_seen_at:string|null;resolution_state:string|null;verification_state:string|null;upload_path:string|null;ingest_count:number}
 export interface EpisodePage {episodes:EpisodeSummary[];next_cursor:string|null}
 export interface EpisodeDetail {episode:EpisodeSummary;ingest:Record<string,unknown>|null;record_json:unknown;record_redacted:true;record_limit_bytes?:number}
