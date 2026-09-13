@@ -1,0 +1,40 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "PLAYERONE_BUILD_PROFILE": "development"
+      }
+    },
+    "demo": {
+      "distribution": "internal",
+      "env": {
+        "PLAYERONE_BUILD_PROFILE": "demo",
+        "EXPO_PUBLIC_API_URL": "$EXPO_PUBLIC_API_URL",
+        "PLAYERONE_VERSION_CODE": "$PLAYERONE_VERSION_CODE"
+      }
+    },
+    "store": {
+      "distribution": "store",
+      "env": {
+        "PLAYERONE_BUILD_PROFILE": "play",
+        "EXPO_PUBLIC_API_URL": "$EXPO_PUBLIC_API_URL",
+        "PLAYERONE_VERSION_CODE": "$PLAYERONE_VERSION_CODE"
+      }
+    }
+  },
+  "submit": {
+    "store": {
+      "ios": {
+        "ascAppId": "$EAS_SUBMIT_ASC_APP_ID",
+        "appleId": "$EAS_SUBMIT_APPLE_ID",
+        "appleTeamId": "$EAS_SUBMIT_APPLE_TEAM_ID"
+      }
+    }
+  }
+}

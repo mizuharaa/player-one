@@ -119,3 +119,48 @@ accurate Data safety declarations, a usable account-deletion request path in-app
 and on the web, and reviewer access. Retention exceptions for financial/audit
 records need approved wording; deleting an account must not erase financial proof.
 Do not invent approved documents or publish a placeholder deletion form.
+
+## iOS
+
+There is no Mac and no Apple Developer account on this machine, so nothing
+signed can be built or uploaded here — the two commands below run on EAS's
+cloud builders instead, which is the point of having them ready. Prerequisites,
+none of which exist yet:
+
+- **Apple Developer Program enrolment** for the organization (not an individual
+  account) — this is what everything else below depends on. Apple typically
+  clears an organization enrolment in 1–3 days once submitted, longer if
+  D-U-N-S number verification is needed for an org Apple does not already
+  recognize; start the D-U-N-S check first if the organization does not have
+  one, since that step alone can take longer than enrolment.
+- An **App Store Connect app record** (bundle id `vn.vng.playerone.collector`,
+  matching `app.json`), created after enrolment clears.
+- An **EAS account** with access to this project, and `eas login` run once from
+  a machine that has it.
+
+Once those exist, `eas build` can create the iOS signing identity and
+provisioning profile itself (`eas credentials` if it needs to be done by hand).
+The two commands, run from `apps/collector`:
+
+```sh
+eas build --platform ios --profile demo
+eas submit --platform ios --profile store
+```
+
+`demo` builds an internal-distribution `.demo` bundle id build for ad hoc
+device installs, matching the Android demo profile. `store` builds and, as a
+separate step, submits the signed `vn.vng.playerone.collector` build to
+TestFlight; it reads `ascAppId`, `appleId` and `appleTeamId` from the shell
+environment (`eas.json`'s `submit.store.ios` interpolates them, it does not
+hold them), the same way `EXPO_PUBLIC_API_URL` and `PLAYERONE_VERSION_CODE`
+are supplied to `build.demo`/`build.store` rather than hardcoded.
+
+What cannot happen before enrolment: any signed iOS build at all — EAS refuses
+to build for a physical device or the App Store without a matching Apple
+credential — and therefore no TestFlight upload either. `eas build --profile
+development` (a simulator/dev-client build) needs no Apple account and could
+run today from a machine with EAS access, but nobody has run it yet; prebuild
+itself cannot even generate the `ios/` project on this Windows machine (Expo
+skips native iOS project generation outside macOS/Linux), so the earliest this
+was checked was `expo prebuild --platform ios` reaching a config-only warning
+and no `ios/` directory.

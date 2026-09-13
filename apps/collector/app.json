@@ -9,6 +9,20 @@
     "android": {
       "package": "vn.vng.playerone.collector"
     },
+    "ios": {
+      "bundleIdentifier": "vn.vng.playerone.collector",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        },
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSFaceIDUsageDescription": "Face ID unlocks your saved sign-in so you do not have to request a new code every time.",
+        "NSBluetoothAlwaysUsageDescription": "Bluetooth connects to your Ego camera to set it up and check its status.",
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true
+      }
+    },
     "plugins": [
       [
         "expo-build-properties",
