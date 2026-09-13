@@ -22,6 +22,13 @@
 !packages/store/drizzle/
 !packages/store/drizzle/**
 !packages/store/drizzle.config.ts
+# The API imports the ingest engine directly (collector-upload.ts), so the
+# runtime cannot start without it. Left out here, the image built and then
+# died on ERR_MODULE_NOT_FOUND at boot.
+!packages/ingest/
+!packages/ingest/package.json
+!packages/ingest/src/
+!packages/ingest/src/**
 !packages/design/
 !packages/design/package.json
 !packages/design/src/

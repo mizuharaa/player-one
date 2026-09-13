@@ -1,0 +1,94 @@
+# One Linux VM in Vietnam, Docker, three services and six volumes.
+#
+#   docker compose up -d --build                 # managed Postgres elsewhere
+#   docker compose --profile db up -d --build    # Postgres on this VM too
+#
+# Every variable comes from `cloud.env` (copy `cloud.env.example`). The API is
+# deliberately not published: it listens on 127.0.0.1 inside Caddy's own
+# network namespace, so the only way in is Caddy's TLS listener.
+name: playerone
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file:
+      - cloud.env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The console build, seeded from the API image by the `api` service
+      # below. Read-only here: Caddy serves it and never writes it.
+      - console:/srv/console:ro
+      # The ACME account key and the issued certificate. Lose this volume and
+      # every restart asks Let's Encrypt for a new certificate, which is how a
+      # deployment reaches the rate limit and then has no TLS at all.
+      - caddy_data:/data
+      - caddy_config:/config
+
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: runtime
+    image: playerone-api:local
+    restart: unless-stopped
+    env_file:
+      - cloud.env
+    # The image's own entrypoint is `deploy/showcase.mjs`, which serves the
+    # console and proxies the API for Railway, where there is no Caddy. Here
+    # Caddy does both, so this runs the API alone.
+    command: ["node", "packages/api/bin/serve.ts"]
+    # Caddy's network namespace, on purpose. It is the only arrangement in
+    # which the API can keep HOST=127.0.0.1 and still be reachable by the
+    # proxy, and therefore the only one in which the forwarded client address
+    # is trusted (Fastify's trustProxy is 127.0.0.1/32 — see
+    # `packages/api/src/ratelimit.ts`). It also means this service cannot
+    # publish a port of its own, which is the point.
+    network_mode: "service:caddy"
+    depends_on:
+      caddy:
+        condition: service_started
+    volumes:
+      - media:/data/media
+      - backups:/data/backups
+      - console:/app/apps/console/dist
+    # `deploy/http-server.mjs`'s /healthz rule, which the Caddyfile also uses:
+    # an unauthenticated /whoami answering 401 is the API up, routed and
+    # talking to its database. The image's own HEALTHCHECK probes /healthz,
+    # which only the showcase entrypoint serves.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/whoami').then(r=>process.exit(r.status===401?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 4s
+      start_period: 30s
+      retries: 3
+
+  # Only with `--profile db`. A managed Postgres (DATABASE_URL pointing off the
+  # VM, with sslmode=require) leaves this service unstarted and the `db` volume
+  # uncreated.
+  postgres:
+    profiles: ["db"]
+    image: postgres:16
+    restart: unless-stopped
+    # The same file, so there is one place to edit. Postgres reads POSTGRES_*
+    # and ignores the rest; both containers already hold the database password.
+    env_file:
+      - cloud.env
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  media:
+  backups:
+  console:
+  db:
+  caddy_data:
+  caddy_config:
