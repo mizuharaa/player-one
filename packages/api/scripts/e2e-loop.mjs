@@ -30,7 +30,6 @@
  * through `useDatabase`; a script has no such hook.
  */
 import { createHash, randomUUID as uid } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -41,6 +40,7 @@ import { ingest } from '../../ingest/src/ingest.ts';
 import { open } from '../../store/src/index.ts';
 import { s3StoreFromEnv } from '../src/upload-worker.ts';
 import { wholeVnd } from '../src/payout/domain/attempts.ts';
+import { mediaFileName, sessionStamp, syntheticClip } from './session-footage.mjs';
 import { verifyExport } from '../src/payout/domain/export.ts';
 import { shadowDiff, shadowRun } from '../src/payout/recon/index.ts';
 import {
@@ -678,23 +678,20 @@ async function runLoop({ label, mediaRoot, basename, record, spans, prepareTime,
 // Run one: footage this script made, so it needs no corpus.
 
 const SERIAL = 'SYNTH76400FE';
-// `yyyymmdd_hhmmss`, which is the only stamp `parseSessionBasename` accepts.
-const stamp = new Date().toISOString().slice(0, 19).replaceAll('-', '').replace('T', '_').replaceAll(':', '');
-const BASENAME = `ego_${SERIAL}_${stamp}`;
+// The naming rule and the footage both come from `session-footage.mjs`, which
+// `make-session.mjs` shares — so a stamp format that stops being accepted
+// breaks one place rather than two.
+const BASENAME = `ego_${SERIAL}_${sessionStamp()}`;
 const mediaRoot = await mkdtemp(join(tmpdir(), 'playerone-loop-media-'));
 scratch.push(mediaRoot);
 const sessionDir = join(mediaRoot, BASENAME);
 await mkdir(sessionDir, { recursive: true });
-const mediaName = `${BASENAME}_camera_left_part0001.mp4`;
+const mediaName = mediaFileName(BASENAME);
 const mediaPath = join(sessionDir, mediaName);
 
-// A real, seekable MP4 rather than a stub: the cloud leg hashes these bytes for
-// real on the way out and again on the way back, so they have to be bytes.
-execFileSync('ffmpeg', [
-  '-hide_banner', '-loglevel', 'error', '-y',
-  '-f', 'lavfi', '-i', 'testsrc=size=640x480:rate=30:duration=20',
-  '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mediaPath,
-], { stdio: 'inherit' });
+// Twenty seconds, which is what the arithmetic below is pinned on: three
+// overlapping marks over it make sixteen payable seconds.
+syntheticClip(mediaPath, { seconds: 20 });
 const media = await readFile(mediaPath);
 ok(`made ${media.length} bytes of footage at ${mediaPath}`);
 

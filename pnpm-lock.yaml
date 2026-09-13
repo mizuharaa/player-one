@@ -39,6 +39,9 @@ importers:
 
   apps/collector:
     dependencies:
+      '@playerone/delivery':
+        specifier: workspace:*
+        version: link:../../packages/delivery
       '@playerone/design':
         specifier: workspace:*
         version: link:../../packages/design
@@ -100,6 +103,9 @@ importers:
       '@playerone/api':
         specifier: workspace:*
         version: link:../../packages/api
+      '@playerone/delivery':
+        specifier: workspace:*
+        version: link:../../packages/delivery
       '@playerone/design':
         specifier: workspace:*
         version: link:../../packages/design
@@ -209,6 +215,8 @@ importers:
       zod:
         specifier: ^3.23.8
         version: 3.25.76
+
+  packages/delivery: {}
 
   packages/design: {}
 

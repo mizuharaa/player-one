@@ -239,6 +239,21 @@ export type ApiOptions = {
    */
   reviewerMediaEnabled?: boolean;
   /**
+   * The console's debug-delivery page (`PLAYERONE_DEBUG_DELIVERY=1`).
+   *
+   * It changes no route and grants no access: every call that page makes is a
+   * route that already exists, made with the credential that route already
+   * requires. What the flag decides is whether `/api/engineering/status`
+   * ADMITS the page exists, so a deployment does not put an operator-facing
+   * "sign in as a collector and push a folder" tool on a production console
+   * that nobody asked for one on.
+   *
+   * Off by default, and read only by the engineering status route — which is
+   * already administrator-only, so a non-administrator cannot learn the flag's
+   * value either.
+   */
+  debugDelivery?: boolean;
+  /**
    * Request and error logging, off by default.
    *
    * Off is right for the 1,300-test suite and for an embedded caller: a logger
@@ -371,6 +386,7 @@ export function buildApi({
   verificationGate,
   uploadProgress,
   reviewerMediaEnabled = false,
+  debugDelivery = false,
   sendSignInCode,
   signInDeliveryMode,
   demoPhone,
@@ -816,7 +832,7 @@ export function buildApi({
     objectStore: !!objectStore, presignedUpload: !!objectStore && canPresign(objectStore),
     mediaRoot: !!mediaRoot, verificationGate: verificationGate ?? 'local', reviewerMediaEnabled,
     signInDeliveryMode: sendSignInCode ? signInDeliveryMode ?? 'unknown' : 'unconfigured', payoutMode: payout.mode ?? 'manual',
-    payoutClient: !!payout.client, riskEnabled: risk.engineEnabled,
+    payoutClient: !!payout.client, riskEnabled: risk.engineEnabled, debugDelivery,
   });
   registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays, objectStore });
   registerPayout(app, db, requireActor, {

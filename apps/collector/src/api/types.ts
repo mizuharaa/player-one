@@ -12,7 +12,7 @@
  *   here or on `DeviceTransport`. Recording is the device's own affair.
  */
 
-import type { DeliveryApi } from '../upload/delivery.ts';
+import type { DeliveryApi } from '@playerone/delivery';
 
 /**
  * A refusal both implementations throw, carrying a code and never a sentence.
@@ -22,14 +22,13 @@ import type { DeliveryApi } from '../upload/delivery.ts';
  * already collector-facing names rather than database constraint names, so the
  * HTTP client passes them straight through.
  *
- * It lives here rather than in `mock.ts` because both the mock and the HTTP
- * client throw it, and a screen that catches one must catch the other.
+ * It is declared in `@playerone/delivery` and re-exported here, which is the
+ * whole of the change that sharing the state machine cost this app. `mock.ts`,
+ * `http.ts` and every screen still import it from this file, and they still
+ * catch the same class the state machine throws — which is the property that
+ * matters and which two ApiError classes would have quietly broken.
  */
-export class ApiError extends Error {
-  constructor(readonly code: string) {
-    super(code);
-  }
-}
+export { ApiError } from '@playerone/delivery';
 
 /**
  * APP-02's six agreements, versioned. Acceptance names the version it saw.

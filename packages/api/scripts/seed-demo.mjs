@@ -152,14 +152,33 @@ try {
       values (${ID.task}, ${TASK_NAME}, 1200.0000, 5, 'published')
       on conflict (id) do update set status = 'published'`);
 
-    // A bound device: `SessionCreate` will not let a session be created without
-    // one, so without this the demo stops one screen early.
+    /**
+     * A bound device: `SessionCreate` will not let a session be created without
+     * one, so without this the demo stops one screen early.
+     *
+     * Same argument as `scenarios` above, and it had the same bug. `ego_headset`
+     * is a shared code rather than this script's own string, and
+     * `device_types_code_key` is unique — so a database that already holds one
+     * under another id collides on the CODE and not on `id`, which
+     * `on conflict (id)` does not catch. Measured 2026-09-13: running this
+     * after `seed-console.mjs` (which creates `ego_headset`) failed here on
+     * `device_types_code_key`, and seeding a console and then a demo collector
+     * into one database is exactly what a demonstration does.
+     *
+     * So: insert if the code is free, then read back whichever row owns the
+     * code and hang the demo device off that one. The device's own row still
+     * keys on this script's fixed id, which is what `owned()` checked.
+     */
     await tx.execute(sql`
       insert into device_types (id, code, generation) values (${ID.deviceType}, ${DEVICE_TYPE_CODE}, 'gen1')
-      on conflict (id) do nothing`);
+      on conflict (code) do nothing`);
+    const [deviceType] = await tx.execute(
+      sql`select id from device_types where code = ${DEVICE_TYPE_CODE}`,
+    );
+    if (deviceType === undefined) fail(`no device_types row carries the code ${DEVICE_TYPE_CODE}`);
     await tx.execute(sql`
       insert into devices (id, device_type_id, hardware_serial, status, bound_collector_id, bound_at)
-      values (${ID.device}, ${ID.deviceType}, ${SERIAL}, 'active', ${ID.collector}, now())
+      values (${ID.device}, ${deviceType.id}, ${SERIAL}, 'active', ${ID.collector}, now())
       on conflict (id) do update set bound_collector_id = excluded.bound_collector_id,
                                      bound_at = excluded.bound_at, status = excluded.status`);
 

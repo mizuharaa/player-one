@@ -1,0 +1,23 @@
+/*
+ * Only what `engineering.css` does not already have. Every value is a token
+ * from `packages/design/src/tokens.ts` through `generated/tokens.css`; there is
+ * no colour written down here, which is the rule (DESIGN.md, "Where the values
+ * live") and the reason the collector app can have the same palette.
+ */
+.dbg-steps { display:grid;gap:12px;padding:0;margin:0;list-style:none; }
+.dbg-steps li { max-width:80ch;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:var(--muted);font-size:.8125rem;line-height:1.65;font-family:var(--font-mono);overflow-wrap:anywhere; }
+
+.dbg-choices { display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px; }
+/* Selected, and not by colour alone: `aria-pressed` carries it for a screen
+   reader and the border weight carries it for anybody who cannot see the tint. */
+.dbg-choices button[data-selected='true'] { border-color:var(--border-strong);background:var(--tech-50);color:var(--tech-ink);font-weight:600; }
+
+.dbg-actions { display:flex;flex-wrap:wrap;gap:12px;margin-top:16px; }
+.dbg-actions a { text-decoration:none; }
+
+.dbg-landed { margin-top:20px;padding:20px;border:1px solid var(--border);border-radius:8px;background:var(--muted); }
+.dbg-landed p { max-width:72ch;font-size:.875rem;line-height:1.65; }
+
+.engineering-page input[type='file'] { max-width:100%;font:inherit;font-size:.875rem; }
+
+@media(max-width:767px){.dbg-actions button,.dbg-actions a{width:100%;justify-content:center;}}

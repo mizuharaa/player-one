@@ -1,15 +1,15 @@
 import * as SecureStore from 'expo-secure-store';
 import { Directory, File, FileMode, Paths, UploadType } from 'expo-file-system';
 import { ApiError } from '../api/types.ts';
-import { Sha256 } from './sha256.ts';
 import {
+  Sha256,
   looksLikeSessionDirectory,
   nameFromUri,
   type DeclaredFile,
   type DeliveryRecord,
   type DeliveryStore,
   type DeliveryTransport,
-} from './delivery.ts';
+} from '@playerone/delivery';
 
 /**
  * The phone's half of Path A that only exists on a phone.

@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { HttpCollectorApi } from '../src/api/http.ts';
 import type { TokenStore } from '../src/api/token-store.ts';
 import { ApiError } from '../src/api/types.ts';
-import { Sha256 } from '../src/upload/sha256.ts';
 import {
+  Sha256,
   looksLikeSessionDirectory,
   nameFromUri,
   runDelivery,
@@ -12,7 +12,7 @@ import {
   type DeliveryRecord,
   type DeliveryStore,
   type DeliveryTransport,
-} from '../src/upload/delivery.ts';
+} from '@playerone/delivery';
 
 /**
  * Path A from the phone's side, with no phone.

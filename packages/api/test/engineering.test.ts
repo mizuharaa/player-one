@@ -103,6 +103,22 @@ describe.skipIf(!hasDb())('engineering read-only authorization and probes', () =
     );
     expect(result.services.find((s: any) => s.id === 'payment_delivery').state).toBe('manual');
     expect(result.services.find((s: any) => s.id === 'jobs').state).toBe('unknown');
+    /**
+     * The debug-delivery flag is off unless a deployment asks for it, and it
+     * is administrator-only because it is on this route and nowhere else.
+     * A page that appeared because a flag defaulted on would be an operator
+     * tool nobody chose to deploy.
+     */
+    expect(result.debug_delivery).toBe(false);
+    const flagged = buildApi({ db: await appDb(), tokenSecret: secret, debugDelivery: true });
+    try {
+      const said = await flagged.inject({ url: '/api/engineering/status', headers: headers(admin) });
+      expect(said.json().debug_delivery).toBe(true);
+      // Still administrator-only: the flag does not widen who may ask.
+      expect((await flagged.inject({ url: '/api/engineering/status', headers: headers(ordinary) })).statusCode).toBe(403);
+    } finally {
+      await flagged.close();
+    }
     await (await db()).execute(sql`update operators set status='retired' where id=${admin}`);
     expect(
       (await app.inject({ url: '/api/engineering/status', headers: headers(admin) })).statusCode,

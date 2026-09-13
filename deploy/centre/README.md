@@ -208,6 +208,21 @@ Commands below use PowerShell, except the explicitly labelled cmd block.
     Follow its import/upload/read-back verification through to a verified
     delivery and check the episode in the console. Never clear the source card.
 
+## A browser PUT needs a CORS rule on the bucket
+
+Only if this centre turns on `PLAYERONE_DEBUG_DELIVERY=1`, which
+`deploy/centre/check.mjs` refuses under `https-production`. That flag shows the
+console's **Debug delivery** page, which pushes a session directory from the
+operator's own browser straight into the object store with a signed PUT — the
+only browser client in the platform, and the only one a bucket's CORS policy
+applies to. Run `node packages/api/scripts/bucket-cors.mjs
+http://<the console origin an operator types>` once per origin, with the
+`STORAGE_*` variables loaded; it replaces the bucket's whole CORS
+configuration, so name every origin in one run, and it reads the rule back
+rather than trusting the store's 200. Without it the page fails with
+`TypeError: Failed to fetch`, no status, and nothing in the API log — the
+request never leaves the browser.
+
 The HTTPS template provides the proxy configuration, not a hostname or
 certificate promise; follow
 [RUNNING.md](../../docs/RUNNING.md#the-server-speaks-plain-http-and-always-will)

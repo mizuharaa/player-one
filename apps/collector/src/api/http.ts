@@ -6,7 +6,7 @@ import {
   type DeliveryRecord,
   type DeliveryState,
   type FilePlan,
-} from '../upload/delivery.ts';
+} from '@playerone/delivery';
 import {
   ApiError,
   SCENARIOS,
