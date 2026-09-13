@@ -5,6 +5,47 @@ about 01:30 +07 on 2026-09-13. Read this, then the lane briefs in
 `docs/agents/lanes/`, then `CLAUDE.md` at the repo root. Verify every SHA and
 count below against Git before trusting it; this file is a dated snapshot.
 
+## Update, 2026-09-12 evening on the ROG G14 (user `Khang`)
+
+Written by the orchestrating session that resumed after the laptop crash.
+Worktrees are under `C:\Users\Khang\pw\`. The candidate now lives on the
+local branch `fix/candidate-gates` in worktree `pw/l1-closeout`; it is NOT
+pushed. `git log --oneline -6` there shows the chain: L1's two gate fixes,
+the L5 merge, the L2 merge, the L3 merge.
+
+- **L1 closed.** The two database failures (showcase quota refusals, risk
+  window off the engine clock) are fixed; deploy `node --test` is 8/8 once
+  the console is built; console build is clean.
+- **L5 merged.** The GreenNode e2e loop cannot be proven from this laptop:
+  uploads work but downloads from HCM04 run at 2–5 KB/s (measured with curl,
+  Node fetch and the SDK), so `e2e-loop.mjs` stalls at its 88th check, the
+  read-back. Run that proof from Vietnam. Noted on the way: `S3ObjectStore`
+  sets no request or connection timeout, so a stalled read hangs a batch
+  upload forever instead of failing.
+- **L2 merged** (`feat/phone-ingest`, migration 0029). Built by Opus, audited
+  read-only by a second Opus that reproduced every gate and found five
+  defects, all fixed before the merge. Wire and refusal names are in the
+  merge commit message and the lane brief; L3 was built against them.
+- **L3 merged** (`feat/phone-upload`). Same build-then-audit shape, six
+  findings fixed. One new native module, `expo-file-system 57.0.7`. Not
+  tested on a device; the handset list is in the L3 commit message.
+- **L4.** Early APK built from `25456fc` (versionCode 2, targetSdk 36,
+  debug-signed demo profile). Final APK from the merged candidate is in
+  progress as this is written; its numbers go in the next update. No demo
+  origin is recorded anywhere in the repo, so both builds used
+  `https://demo.playerone.invalid`: rebuild with the centre PC's LAN origin
+  before the demo. AAB is blocked on an upload keystore.
+- **Gates on the merged tree**, fresh database `po_merge*` on the docker
+  container: typecheck root/collector/console clean; collector
+  `test:release` 13/13; engine-free 73 files, 1053 pass, 854 skip, 0 fail;
+  with a database 111 files, 1896 pass, 11 skip, 0 fail.
+- **Open, from the audits:** Path C's import route overwrites a phone-made
+  attribution unconditionally (pre-existing); no route un-holds a `held`
+  delivery; the unmeasured path has not run against a real S3 endpoint
+  (4 tests skip without `STORAGE_ENDPOINT`).
+- Laptop trap: `NoDefaultCurrentDirectoryInExePath=1` breaks `pnpm apk`
+  (`gradlew.bat` not found); unset it for that child process.
+
 The goal is unchanged: on Thursday 2026-09-17, one truthful paid transaction.
 A fresh physical recording becomes a cloud-verified episode, a human reviews
 it, finance records a real manual payment to a verified destination, the
