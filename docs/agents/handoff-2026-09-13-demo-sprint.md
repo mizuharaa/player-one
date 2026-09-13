@@ -5,6 +5,43 @@ about 01:30 +07 on 2026-09-13. Read this, then the lane briefs in
 `docs/agents/lanes/`, then `CLAUDE.md` at the repo root. Verify every SHA and
 count below against Git before trusting it; this file is a dated snapshot.
 
+## Update, 2026-09-13 on the ROG G14 — after the hardening day
+
+`fix/candidate-gates` is on origin (head is the merge of `lane/filehandle`).
+Read `git log --first-parent --oneline -8` there; each merge message says
+what was measured. In one day, all built by one agent and audited by
+another, or proved on an emulator:
+
+- The eleven pre-demo fixes from `PLAN.md` (argued through three Codex
+  rounds): the app reads `EXPO_PUBLIC_API_URL` (both earlier APKs pointed at
+  the emulator loopback), stalled cloud reads time out and the copy step
+  checks bytes, the store refuses to open as a superuser, scrypt cost is
+  stored in the hash, centre security headers, no-store on `/api`, operator
+  media scope, https-only external links, the ingest spec and the card
+  procedure corrected.
+- iOS: bundle id, plist strings, `eas.json`; everything except the Apple
+  membership. Play: a signed AAB (upload keystore under `~/.playerone`,
+  never in git), versionCode 4, placeholder origin.
+- Card import keeps a phone-made attribution; operators can release a held
+  delivery (`POST /api/backoffice/uploads/:id/release`, migration 0030).
+- `deploy/cloud/`: one Linux VM in Vietnam runs the whole loop (compose,
+  Caddy with HTTPS, ffmpeg in the image). The image had been unable to
+  start the API since the L2 merge (missing `packages/ingest`); fixed.
+- Phone upload proven end to end on an Android emulator against the real
+  routes with MinIO: SAF pick, hash, PUT, complete, `ingested`, resume after
+  a force-stop under the same id. Two blockers found and fixed on the way:
+  expo-file-system 57.0.7 closed the file descriptor mid-read (pnpm patch,
+  module built from source) and `seed-demo.mjs` seeded a scenario the app
+  rejects.
+
+**Still parked on the owner:** Apple membership (TestFlight), ZaloPay
+sandbox keys and wallet type, the Ubuntu box's sudo password (BLE
+diagnostics), the physical card and reader on the centre PC (card
+procedure, GreenNode proof, the 1 GiB timing), PaXini's camera-to-phone
+transfer protocol, a GreenNode VM plus domain, Play console access. The
+demo APK must be rebuilt with the real origin once the host exists; the
+handset half of A1 (`runtime_api_verified`) is still owed on a real phone.
+
 ## Update, 2026-09-12 evening on the ROG G14 (user `Khang`)
 
 Written by the orchestrating session that resumed after the laptop crash.
