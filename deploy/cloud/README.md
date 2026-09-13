@@ -194,6 +194,20 @@ nested route such as `/episodes` to confirm the SPA fallback.
   build would be smaller and would not be the distro's package; the distro's is
   what gets security updates without us noticing.
 
+- **A browser PUT into the bucket needs one CORS rule, applied once per
+  console origin.** Every other upload path in this platform is a server
+  process PUTting from Node, which no browser policy applies to; the console's
+  **Debug delivery** page (`PLAYERONE_DEBUG_DELIVERY=1`) is the exception, and
+  it sends a signed PUT from the operator's own browser. Run
+  `node packages/api/scripts/bucket-cors.mjs https://<this deployment's console
+  origin>` with the `STORAGE_*` variables loaded — it allows PUT/GET/HEAD from
+  exactly those origins, reads the configuration back to prove the store kept
+  it, and replaces the bucket's whole CORS configuration, so name every origin
+  in one run. Without it the page fails with `TypeError: Failed to fetch`, no
+  status and nothing in the API log, because the request never leaves the
+  browser. On GreenNode this is still to do: the rule has to be applied against
+  the real bucket with the real keys, and nothing local proves it.
+
 ## What only the VM can prove
 
 Everything above was run locally against Docker except these, which need the
