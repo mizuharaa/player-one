@@ -180,6 +180,9 @@ importers:
       '@playerone/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@playerone/ingest':
+        specifier: workspace:*
+        version: link:../ingest
       '@playerone/store':
         specifier: workspace:*
         version: link:../store

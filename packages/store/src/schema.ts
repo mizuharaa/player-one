@@ -1429,12 +1429,40 @@ export const collectorUploads = pgTable(
     deviceSerial: text('device_serial').notNull(),
     /** The platform row that serial resolves to, when the fleet has one. */
     deviceId: uuid('device_id').references(() => devices.id),
-    episodeId: uuid('episode_id')
-      .notNull()
-      .references(() => episodes.episodeId),
-    ingestId: uuid('ingest_id')
-      .notNull()
-      .references(() => episodeIngests.ingestId),
+    /**
+     * Whether the phone measured this delivery before sending it (migration 0029).
+     *
+     * `true` is the original Path A: the phone ran the engine and posted a
+     * finished `EpisodeRecord`, so the episode and the ingest exist the moment
+     * the registration commits. `false` is the delivery a real phone can
+     * actually make — the engine needs Node fs and ffprobe and an Android
+     * device has neither — so the bytes arrive unmeasured and the SERVER runs
+     * the engine over them after read-back.
+     *
+     * The column exists because the two shapes have different legal states, and
+     * the CHECKs below say which: an unmeasured row has no episode and no
+     * ingest until it has been ingested, and a measured row may never enter the
+     * states that only the server-side ingest can produce.
+     */
+    measured: boolean('measured').notNull().default(true),
+    /**
+     * Nullable since 0029, and only for an unmeasured delivery.
+     *
+     * The episode id is still derived from the session basename and nothing
+     * else — that rule does not move — but `episodes.episode_id` is a foreign
+     * key and the row it names does not exist until the server has measured the
+     * bytes. Writing a derived id into a column that references a table with no
+     * such row is not possible, and inventing the row early would put an
+     * episode with no measurement in front of the review queue.
+     */
+    episodeId: uuid('episode_id').references(() => episodes.episodeId),
+    ingestId: uuid('ingest_id').references(() => episodeIngests.ingestId),
+    /**
+     * The on-card directory name. For a measured delivery it is the record's
+     * own `source.path`; for an unmeasured one it is `session_basename` off the
+     * request, validated against the naming rule before anything is written.
+     * Either way it is what the episode id derives from.
+     */
     sourceBasename: text('source_basename').notNull(),
     /** Declared by the phone, never measured here: the server never sees its disk. */
     fileCount: integer('file_count').notNull(),
@@ -1446,7 +1474,22 @@ export const collectorUploads = pgTable(
      * Path A has no disk to scan, so the phone declares it and it is stored.
      */
     extraFiles: jsonb('extra_files').notNull().default([]),
+    /**
+     * Every file of an unmeasured delivery, as the phone declared it: relative
+     * path, bytes and sha256 (0029). Empty for a measured delivery, whose
+     * inventory is `episode_files` plus `extra_files`.
+     *
+     * It has to be stored rather than recomputed because until the ingest runs
+     * there is no `episode_files` row to recompute it from, and the resume
+     * route has to be able to re-plan the same delivery after the phone has
+     * been reinstalled.
+     */
+    declaredFiles: jsonb('declared_files').notNull().default([]),
     state: text('state').notNull().default('registered'),
+    /** Why an unmeasured delivery stopped at `held`. Set exactly when the state is `held`. */
+    heldReason: text('held_reason'),
+    /** Why a delivery stopped at `failed`. Never set in any other state. */
+    failedReason: text('failed_reason'),
     clientVersion: text('client_version'),
     registeredAt: timestamp('registered_at', { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
@@ -1467,10 +1510,88 @@ export const collectorUploads = pgTable(
       foreignColumns: [episodeIngests.episodeId, episodeIngests.ingestId],
       name: 'collector_uploads_delivery_fk',
     }),
-    check('collector_uploads_state_check', sql`${t.state} in ('registered', 'verified', 'failed')`),
+    /**
+     * The seven states of a delivery, four of which only an unmeasured one can
+     * reach. Widened in 0029 under the same name rather than replaced by a
+     * second constraint: two overlapping state checks on one column is how a
+     * state nobody meant becomes representable.
+     *
+     *   registered   the plan has been issued; nothing is known to be in the cloud.
+     *   transferring at least one object is up and the delivery is not complete.
+     *   verified     every object read back and matched the phone's digests.
+     *   ingesting    the bytes are being materialised and measured by the engine.
+     *   ingested     the episode exists, measured by the server. Terminal, good.
+     *   held         the delivery cannot be ingested without destroying something.
+     *   failed       read-back disagreed with the phone. Terminal until re-sent.
+     */
+    check(
+      'collector_uploads_state_check',
+      sql`${t.state} in ('registered', 'transferring', 'verified', 'ingesting', 'ingested', 'held', 'failed')`,
+    ),
+    /**
+     * A measured delivery keeps exactly the three states it had before 0029.
+     * The four new ones describe work only the server-side ingest does, and a
+     * measured row reaching one of them would mean this service had measured a
+     * record it was told never to re-measure.
+     */
+    check(
+      'collector_uploads_measured_state_check',
+      sql`${t.measured} = false or ${t.state} in ('registered', 'verified', 'failed')`,
+    ),
+    /**
+     * Same sentence as before, widened for the states that come after the
+     * read-back: `completed_at` is when the bytes got their verdict, so every
+     * state past `verified` carries it and neither state before it does.
+     */
     check(
       'collector_uploads_completed_check',
-      sql`(${t.state} = 'registered') = (${t.completedAt} is null)`,
+      sql`(${t.state} in ('registered', 'transferring')) = (${t.completedAt} is null)`,
+    ),
+    /**
+     * A measured delivery names its episode and its delivery from the first
+     * statement — `storeEpisode` has already run — and an unmeasured one names
+     * neither until the engine has measured it. Both halves matter: the second
+     * is what makes the nullable columns safe, and the first is what stops the
+     * original Path A quietly acquiring them.
+     */
+    check(
+      'collector_uploads_measured_delivery_check',
+      sql`${t.measured} = false or (${t.episodeId} is not null and ${t.ingestId} is not null)`,
+    ),
+    /** Half a delivery reference is worse than none: it names an episode with no bytes behind it. */
+    check(
+      'collector_uploads_delivery_pair_check',
+      sql`(${t.episodeId} is null) = (${t.ingestId} is null)`,
+    ),
+    /** `ingested` is the sentence "this became that episode", so it has to name one. */
+    check(
+      'collector_uploads_ingested_check',
+      sql`${t.state} <> 'ingested' or (${t.episodeId} is not null and ${t.ingestId} is not null)`,
+    ),
+    /** A held delivery says why, and nothing else carries a held reason. */
+    check(
+      'collector_uploads_held_reason_check',
+      sql`(${t.state} = 'held') = (${t.heldReason} is not null)`,
+    ),
+    /**
+     * One direction only. Every unmeasured failure names its reason, and the
+     * measured path — written before this column existed — records the verdict
+     * detail in the audit row instead and leaves this null.
+     */
+    check(
+      'collector_uploads_failed_reason_check',
+      sql`${t.failedReason} is null or ${t.state} = 'failed'`,
+    ),
+    /**
+     * The declared inventory is the delivery, so it has to agree with the count
+     * of it. `file_count` is what the registration answered and what an
+     * operator reads; a list that disagrees with it would make the two
+     * different facts about one delivery.
+     */
+    check(
+      'collector_uploads_declared_files_check',
+      sql`jsonb_typeof(${t.declaredFiles}) = 'array'
+          and (${t.measured} = true or jsonb_array_length(${t.declaredFiles}) = ${t.fileCount})`,
     ),
     /**
      * `>= 0`. Sample session 072415 is a real recorded session with no media in
@@ -1490,6 +1611,19 @@ export const collectorUploads = pgTable(
     uniqueIndex('collector_uploads_verified_key')
       .on(t.episodeId, t.ingestId)
       .where(sql`state = 'verified'`),
+    /**
+     * And the same rule for the state an unmeasured delivery ends in (0029).
+     *
+     * `collector_uploads_verified_key` cannot cover it: an unmeasured delivery
+     * is `verified` while its episode id is still null, and null is distinct
+     * from null in a unique index, so every unmeasured delivery would pass it.
+     * What must not exist twice is "this delivery became that episode" — two
+     * such rows is one recording read as two, which is the shape that pays
+     * twice.
+     */
+    uniqueIndex('collector_uploads_ingested_key')
+      .on(t.episodeId, t.ingestId)
+      .where(sql`state = 'ingested'`),
   ],
 );
 
