@@ -14,6 +14,7 @@ import { LocaleProvider } from './locale.tsx';
 import { NavProvider, useNav, type RouteName } from './nav.tsx';
 import { GuideProvider, useGuideTarget } from './guide/Guide.tsx';
 import { TabBar } from './shell/TabBar.tsx';
+import { SignOutProvider } from './session.tsx';
 import { ThemeProvider } from './theme.tsx';
 import { Agreements } from './screens/Agreements.tsx';
 import { Devices } from './screens/Devices.tsx';
@@ -249,13 +250,15 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
               )}
             </NavProvider>
           ) : (
-            <NavProvider key='in' initial={state}>
-              <GuideProvider>
-                <Current />
-              </GuideProvider>
-            </NavProvider>
+            /* Home draws it; see `session.tsx` for why it is not here. */
+            <SignOutProvider signOut={() => void leave()}>
+              <NavProvider key='in' initial={state}>
+                <GuideProvider>
+                  <Current />
+                </GuideProvider>
+              </NavProvider>
+            </SignOutProvider>
           )}
-          {state !== 'out' ? <Button variant='ghost' label={tt('signIn.signOut')} onPress={() => void leave()} /> : null}
         </View>
       </QueryClientProvider>
     </ApiProvider>

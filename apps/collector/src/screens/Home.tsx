@@ -7,6 +7,7 @@ import { useLocale, useT } from '../locale.tsx';
 import { nextLocale } from '../i18n.ts';
 import { useTheme } from '../theme.tsx';
 import { useGuide, useGuideTarget } from '../guide/Guide.tsx';
+import { useSignOut } from '../session.tsx';
 import { Body, Button, Card, CardLink, Chip, Hatch, Loading, NavRow, Note, Row, Screen, Title } from '../ui.tsx';
 
 const REVIEWED = ['review_passed', 'review_failed'];
@@ -19,6 +20,7 @@ export function Home() {
   const theme = useTheme();
   const { locale, setLocale } = useLocale();
   const guide = useGuide();
+  const signOut = useSignOut();
   const shift = mascotStateAt();
   const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
   const devices = useQuery({ queryKey: ['devices'], queryFn: () => api.boundDevices() });
@@ -80,6 +82,13 @@ export function Home() {
       <NavRow label={tt('forum.title')} onPress={() => nav.selectTab('forum')} />
       <NavRow label={tt('home.training')} onPress={() => nav.push({ name: 'training' })} />
       <NavRow label={tt('guide.open')} onPress={guide.accept} />
+    </View>
+    {/* The account, last, and the only place it is offered. Ghost, because it
+        is a way out rather than a commitment, and at the foot of the screen
+        that carries the collector's name — not across the foot of all four
+        tabs, which is where it used to be (`session.tsx`). */}
+    <View style={{ paddingTop: theme.space[4] }}>
+      <Button label={tt('signIn.signOut')} variant="ghost" onPress={signOut} />
     </View>
     {guide.offered ? <Card>
       <Title>{tt('guide.offerTitle')}</Title><Body muted>{tt('guide.offerBody')}</Body>
