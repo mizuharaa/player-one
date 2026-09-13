@@ -81,9 +81,51 @@ export interface ObjectStore {
    * the brief's 13 Mbps, so a link that drops hourly never verified that
    * episode, and an unverified episode is never paid.
    */
-  read(key: string, from?: number): Promise<AsyncIterable<Uint8Array> | null>;
+  read(key: string, from?: number, budget?: ReadBudget): Promise<AsyncIterable<Uint8Array> | null>;
   tag(key: string, tags: Record<string, string>): Promise<void>;
 }
+
+/**
+ * What bounds ONE logical object transfer, however many ranged GETs it takes.
+ *
+ * `signal` is an absolute deadline for the whole object and is created once, by
+ * the caller, and handed to every resumed read. That is the point: a per-call
+ * timeout is extended by any progress at all, so a link that delivers a byte,
+ * stalls, delivers a byte, stalls can hold a request open forever while every
+ * individual call looks healthy. One deadline for the object cannot be
+ * extended by progress.
+ *
+ * `idleMs` is the shorter of the two and the only one a healthy transfer ever
+ * meets: no chunk for this long and the stream is destroyed. It fails a stall
+ * fast so the resume loop can re-open the range, instead of waiting out the
+ * object's whole deadline on a socket that is never going to speak again.
+ */
+export type ReadBudget = { signal: AbortSignal; idleMs: number };
+
+/** How long a body may go without delivering a chunk before it is abandoned. */
+export const BODY_IDLE_MS = 30_000;
+
+/**
+ * The most time one object's transfer may take, in total, across every resume.
+ *
+ * An hourly camera part is ~6.4 GB and the brief's link is 13 Mbps, which is
+ * about 65 minutes of download for one object with nothing going wrong. Two
+ * hours is that with room for the drops `READBACK_STALLS` exists for, and it is
+ * still a bound: past it the route answers instead of holding a request open.
+ *
+ * ponytail: one number, not a setting. The callers below take an override
+ * because the tests need seconds rather than hours, and nothing else does.
+ */
+export const OBJECT_DEADLINE_MS = 2 * 60 * 60 * 1000;
+
+/** What a caller may shorten, in a test. Absent means the two constants above. */
+export type ReadLimits = { deadlineMs?: number; idleMs?: number };
+
+/** A fresh budget for one object. Called once per object, never once per GET. */
+export const objectBudget = (limits: ReadLimits = {}): ReadBudget => ({
+  signal: AbortSignal.timeout(limits.deadlineMs ?? OBJECT_DEADLINE_MS),
+  idleMs: limits.idleMs ?? BODY_IDLE_MS,
+});
 
 /**
  * What Path A needs on top of `ObjectStore`: the store handing a URL to
@@ -377,6 +419,62 @@ async function withRetry<T>(open: () => Promise<T>): Promise<T> {
   throw last;
 }
 
+/**
+ * The same bytes, with a body that stops speaking turned into an error.
+ *
+ * This exists because `requestTimeout` does not cover it. Smithy's node
+ * handler clears its request timers the moment response HEADERS resolve, so a
+ * server that answers `200 OK` and then never sends another byte leaves an
+ * `for await` that waits forever — and the read-back's no-progress budget only
+ * advances on exceptions, so a silent body never reaches it. Measured shape,
+ * not a hypothesis: GreenNode HCM04 from outside Vietnam delivers 2–5 KB/s and
+ * the e2e loop stopped at its read-back with no error at all.
+ *
+ * Two things end a body here. `idleMs` without a chunk destroys the stream, and
+ * that is a stall the caller can resume from. The object's absolute deadline is
+ * the SDK's `abortSignal` and is checked here too, so an expiry between chunks
+ * is an error even if the socket has not noticed yet.
+ *
+ * `destroy` on the way out covers every exit — the idle timer, the deadline,
+ * and a consumer that stops early because a later file failed — so the socket
+ * is released rather than left to the SDK's finalizer.
+ */
+async function* idleBounded(
+  body: AsyncIterable<Uint8Array>,
+  budget: ReadBudget,
+): AsyncIterable<Uint8Array> {
+  const it = body[Symbol.asyncIterator]();
+  try {
+    for (;;) {
+      if (budget.signal.aborted) throw new Error('object transfer deadline reached');
+      const pending = it.next();
+      // Abandoned when the timer wins the race below; without this its
+      // rejection has no handler and takes the process down.
+      pending.catch(() => {});
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let next;
+      try {
+        next = await Promise.race([
+          pending,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`object body delivered no chunk for ${budget.idleMs} ms`)),
+              budget.idleMs,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (next.done === true) return;
+      yield next.value;
+    }
+  } finally {
+    (body as { destroy?: (err?: Error) => void }).destroy?.();
+    await it.return?.().catch(() => {});
+  }
+}
+
 export async function withTagDeadline(operation: Promise<unknown>): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -405,6 +503,13 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
       region: 'auto',
       forcePathStyle: true,
       credentials: { accessKeyId: config.key, secretAccessKey: config.secret },
+      /**
+       * A socket that never connects, bounded. This is the one timeout the
+       * handler does enforce usefully; `requestTimeout` is deliberately not set
+       * because it stops at response headers and the stall this system actually
+       * meets is after them — see `idleBounded`.
+       */
+      requestHandler: { connectionTimeout: 10_000 },
     });
   }
 
@@ -506,7 +611,7 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
     return 'uploaded';
   }
 
-  async read(key: string, from = 0): Promise<AsyncIterable<Uint8Array> | null> {
+  async read(key: string, from = 0, budget = objectBudget()): Promise<AsyncIterable<Uint8Array> | null> {
     try {
       const r = await this.client.send(
         new GetObjectCommand({
@@ -516,8 +621,13 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
           // Omitted at zero so the common case stays an ordinary GET.
           ...(from > 0 ? { Range: `bytes=${from}-` } : {}),
         }),
+        // The object's deadline, not this call's. It also covers the SDK's own
+        // retry back-off, which ignores aborts otherwise — the same reason
+        // `tag` races a timer.
+        { abortSignal: budget.signal },
       );
-      return (r.Body ?? null) as AsyncIterable<Uint8Array> | null;
+      const body = (r.Body ?? null) as AsyncIterable<Uint8Array> | null;
+      return body === null ? null : idleBounded(body, budget);
     } catch (err) {
       if (notFound(err)) return null;
       // Asked for bytes the object does not have: the caller already holds all
@@ -717,15 +827,26 @@ export const READBACK_STALLS = 3;
  * Null when the key is absent, which is a mismatch of a different kind and the
  * caller's to report.
  */
-async function sha256OfObject(store: Pick<ObjectStore, 'read'>, key: string): Promise<string | null> {
+export async function sha256OfObject(
+  store: Pick<ObjectStore, 'read'>,
+  key: string,
+  limits: ReadLimits = {},
+): Promise<string | null> {
   const h = createHash('sha256');
+  /**
+   * One budget for the whole object, made here and handed to every resumed
+   * GET below. Not one per call: `stalls` resets on any progress, so a link
+   * that trickles a byte between stalls would otherwise re-arm the timeout
+   * forever and hold this request open with nothing ever completing.
+   */
+  const budget = objectBudget(limits);
   let at = 0;
   for (let stalls = 0; ; ) {
     const before = at;
     try {
       // Opening the next ranged GET can fail before a body arrives too. Keep
       // the same hash and offset, with the same bounded no-progress budget.
-      const body = await store.read(key, at);
+      const body = await store.read(key, at, budget);
       if (body === null) return null;
       for await (const chunk of body) {
         h.update(chunk);
@@ -733,6 +854,9 @@ async function sha256OfObject(store: Pick<ObjectStore, 'read'>, key: string): Pr
       }
       return h.digest('hex');
     } catch (err) {
+      // The object's deadline is spent. Progress does not buy another attempt,
+      // which is the whole reason the deadline is not per call.
+      if (budget.signal.aborted) throw err;
       stalls = at > before ? 0 : stalls + 1;
       if (stalls >= READBACK_STALLS || !retryableTransport(err)) throw err;
       await new Promise((r) => setTimeout(r, 200 * 2 ** stalls));

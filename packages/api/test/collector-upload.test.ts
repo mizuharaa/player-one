@@ -195,6 +195,48 @@ class MemoryStore implements ObjectStore, DirectUploadStore {
   }
 }
 
+/**
+ * The store, damaging only the download `materialise` makes.
+ *
+ * The two reads are told apart the way `MemoryStore.holdNextDownload` already
+ * tells them apart: the read-back resumes from a byte offset and always passes
+ * one, and `materialise` asks for the whole object and passes none. So every
+ * verification below passes on clean bytes and only the copy that lands on this
+ * machine's disk is spoiled — which is the gap this exists to close. Read-back
+ * and materialise are two downloads of one object minutes apart, and the first
+ * says nothing about the second.
+ */
+class SpoilingStore extends MemoryStore {
+  damage: 'none' | 'truncate' | 'rewrite' | 'drop' = 'none';
+  victim = '';
+
+  override async read(key: string, from?: number): Promise<AsyncIterable<Uint8Array> | null> {
+    if (from !== undefined || this.damage === 'none' || key !== this.victim) {
+      return super.read(key, from);
+    }
+    const body = this.objects.get(key);
+    if (body === undefined) return null;
+    const damage = this.damage;
+    return (async function* () {
+      if (damage === 'truncate') {
+        // A body that ends early and reports nothing. No HTTP error, no abort:
+        // this is what a clean truncation looks like from inside a read.
+        yield body.subarray(0, Math.floor(body.length / 2));
+        return;
+      }
+      if (damage === 'rewrite') {
+        // The same number of bytes, different bytes. What an object rewritten
+        // between verification and materialisation delivers.
+        yield Buffer.alloc(body.length, 0x5a);
+        return;
+      }
+      // What an exhausted read budget delivers: some bytes, then an error.
+      yield body.subarray(0, 1);
+      throw new Error('object transfer deadline reached');
+    })();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // A recorded session, as a phone would present it
 
@@ -1146,6 +1188,68 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     expect(n!.n).toBe(0);
     expect(await readdir(root)).toEqual([]);
   }, 60_000);
+
+  /**
+   * The other half of the cloud-read hardening: the copy that lands on THIS
+   * machine is checked, not just the copy in the cloud.
+   *
+   * Before this, `materialise` pipelined bytes into a staging directory and
+   * renamed it, and nothing compared what arrived against what the phone
+   * declared. The read-back above is not that comparison — it happened minutes
+   * earlier, over a different download, and `already()` hashes a directory that
+   * is already on disk, never the one being written. So all three of these
+   * published a session directory the engine then measured: a truncation the
+   * HTTP layer never reported, an object rewritten in between, and a read that
+   * died part way down.
+   */
+  for (const [damage, what] of [
+    ['truncate', 'a body that ends early with no error at all'],
+    ['rewrite', 'bytes that changed after they were verified'],
+    ['drop', 'a read that runs out of its budget part way down'],
+  ] as const) {
+    it(`refuses ${what}, and leaves nothing under the media root`, async () => {
+      const root = await newMediaRoot();
+      const store = new SpoilingStore();
+      const h = await harness(store, { mediaRoot: root });
+      const c = await declaredFrom(SYNTH);
+      const id = uid();
+      const plan = await registerUnmeasured(h, c, h.ids.session, id);
+      expect(plan.statusCode, plan.body).toBe(200);
+      sendPlan(h, c, plan.json().files);
+
+      // The largest file of the delivery, so the damage is to media and not to
+      // a sidecar the engine might not read.
+      const target = (plan.json().files as { key: string; relative_path: string; bytes: number }[])
+        .reduce((a, b) => (b.bytes > a.bytes ? b : a));
+      store.victim = target.key;
+      store.damage = damage;
+
+      const res = await h.post(`/api/me/uploads/${id}/complete`);
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json().constraint).toBe('upload_ingest_failed');
+      // The file is named, because an operator has to know which one.
+      if (damage !== 'drop') expect(res.json().detail).toContain(target.relative_path);
+
+      const d = await db();
+      const [row] = (await d.execute(sql`
+        select state, failed_reason, episode_id, ingest_id from collector_uploads where id = ${id}
+      `)) as unknown as Record<string, unknown>[];
+      expect(row).toMatchObject({
+        state: 'failed',
+        failed_reason: 'ingest_failed',
+        episode_id: null,
+        ingest_id: null,
+      });
+      const [n] = (await d.execute(sql`select count(*)::int as n from episodes`)) as unknown as { n: number }[];
+      expect(n!.n).toBe(0);
+      /**
+       * Nothing published and nothing staged. Empty covers both claims at once:
+       * no `<basename>` directory for the engine to measure, and no
+       * `.incoming-<basename>-<uuid>` sibling left behind either.
+       */
+      expect(await readdir(root)).toEqual([]);
+    }, 60_000);
+  }
 
   /** Proof E. A directory of that name is already here and it is not this recording. */
   it('E: a basename collision holds the delivery and leaves the original untouched', async () => {
