@@ -90,3 +90,39 @@ permissions surface for no behaviour.
 Nothing here is `expo-crypto`. The session digests are computed in JavaScript
 (`src/upload/sha256.ts`) precisely so that a third native module is not needed;
 that is a measured ceiling, not an oversight, and it is marked where it bites.
+
+## iOS
+
+`src/upload/delivery-native.ts` calls `Directory.pickDirectoryAsync()` and then
+`directory.list()` to enumerate a picked session flat. Checked against the
+installed `expo-file-system@57.0.7` (not against a general assumption):
+**`pickDirectoryAsync` is not Android-only in this version.**
+`ios/FileSystemModule.swift` implements it with a real
+`UIDocumentPickerViewController` in directory mode
+(`ios/FilePickingHandler.swift`), and the package's own `CHANGELOG.md` records
+`[iOS] Add pickDirectoryAsync support` and `[iOS] Add pickFileAsync support`.
+So `pickSessionDirectory()` is expected to run unmodified on iOS — pick a
+folder from Files (on-device, iCloud Drive, or a third-party provider), list
+it flat, hash and upload exactly as today. That is unverified because there is
+no Mac or iOS device on this machine, not because the API is missing.
+
+The real gap is resume-after-kill, not picking. Android's SAF grant
+(`takePersistableUriPermission`) is designed to survive the app being killed
+and relaunched, which is why the resume record in `delivery.ts` is written to
+`expo-secure-store` in the first place — it exists to survive a kill. iOS's
+picker instead hands back a security-scoped URL, and this package's iOS side
+(`ios/FileSystemScopedAccess.swift`, `ios/FileSystemPath.swift`) calls
+`url.startAccessingSecurityScopedResource()` directly on that URL for each
+operation — it never creates or resolves a persisted security-scoped
+bookmark (`URL.bookmarkData` / `URL(resolvingBookmarkData:)`), and there is no
+JS API in this package to do so either. Apple's documented pattern for
+surviving a relaunch is exactly that bookmark; without it, re-accessing a
+picked directory after the app process has been fully terminated and
+restarted is not guaranteed to keep working. What iOS needs, if this is
+confirmed on a device: either (a) accept the narrower guarantee — an
+in-progress delivery resumes across a background/foreground cycle but not
+across a full kill, and the uploads screen re-prompts the picker instead of
+trusting a stale `directoryUri` — or (b) a bookmark-persisting picker, which
+means a change inside `expo-file-system`'s native module, not this app. Do
+not build either until a device confirms which case it is; today this is
+unverified, not broken.

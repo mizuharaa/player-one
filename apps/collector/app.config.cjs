@@ -29,6 +29,15 @@ module.exports = ({ config }) => {
     ...config,
     name: play ? config.name : `${config.name} Demo`,
     android: { ...config.android, package: `${config.android.package}${play ? '' : '.demo'}`, versionCode: Number(version) },
+    ios: {
+      ...config.ios,
+      bundleIdentifier: `${config.ios.bundleIdentifier}${play ? '' : '.demo'}`,
+      buildNumber: version,
+      infoPlist: {
+        ...config.ios?.infoPlist,
+        NSAppTransportSecurity: { NSAllowsArbitraryLoads: !play },
+      },
+    },
     plugins: (config.plugins || []).map((plugin) => Array.isArray(plugin) && plugin[0] === 'expo-build-properties'
       ? [plugin[0], { ...plugin[1], android: { ...plugin[1]?.android, targetSdkVersion: 36, usesCleartextTraffic: !play } }]
       : plugin),
