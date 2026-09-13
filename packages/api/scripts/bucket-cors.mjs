@@ -117,7 +117,37 @@ if (store === null) {
 const client = /** @type {any} */ (store).client;
 const bucket = /** @type {any} */ (store).bucket;
 
-await client.send(new PutBucketCorsCommand({ Bucket: bucket, CORSConfiguration: { CORSRules: [rule] } }));
+/**
+ * A store that does not implement the bucket CORS API at all.
+ *
+ * Measured against `quay.io/minio/minio:latest` on 2026-09-13: `PutBucketCors`
+ * answers **501 NotImplemented**. MinIO does not keep a per-bucket CORS
+ * configuration; it takes one server-wide allowance from the environment,
+ * `MINIO_API_CORS_ALLOW_ORIGIN`, which defaults to `*`. So a local MinIO needs
+ * no rule to make the console's PUT work and cannot be given one, and this
+ * script says that rather than printing a stack trace at somebody who is about
+ * to conclude their bucket is broken.
+ *
+ * GreenNode's store is the one that has to answer this call, and nothing local
+ * can prove it does. That is recorded in `deploy/cloud/README.md`.
+ */
+try {
+  await client.send(new PutBucketCorsCommand({ Bucket: bucket, CORSConfiguration: { CORSRules: [rule] } }));
+} catch (err) {
+  if (err?.name === 'NotImplemented' || err?.Code === 'NotImplemented') {
+    console.error(
+      [
+        `bucket ${bucket} at ${process.env['STORAGE_ENDPOINT']} does not implement PutBucketCors (501).`,
+        'MinIO is the store that answers this way: it keeps no per-bucket CORS configuration and takes',
+        'one server-wide allowance instead — run it with MINIO_API_CORS_ALLOW_ORIGIN=<origin>, whose',
+        'default is *. Nothing else needs doing there, and nothing there proves this call works.',
+        'A real S3-compatible bucket must accept it.',
+      ].join(String.fromCharCode(10)),
+    );
+    process.exit(3);
+  }
+  throw err;
+}
 
 /**
  * Read it back. A store that accepted the call and stored something else — or
