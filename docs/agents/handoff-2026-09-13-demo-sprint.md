@@ -30,9 +30,14 @@ the L5 merge, the L2 merge, the L3 merge.
   findings fixed. One new native module, `expo-file-system 57.0.7`. Not
   tested on a device; the handset list is in the L3 commit message.
 - **L4.** Early APK built from `25456fc` (versionCode 2, targetSdk 36,
-  debug-signed demo profile). Final APK from the merged candidate is in
-  progress as this is written; its numbers go in the next update. No demo
-  origin is recorded anywhere in the repo, so both builds used
+  debug-signed demo profile). Final APK built from the merged tree
+  (`ff79d12`, the tree of both `4707442` and `b4ecb23`): versionCode 3,
+  targetSdk 36, 81,734,669 bytes, sha256 `8715c92d…1c529d`, at
+  `C:\build\playerone\apps\collector\android\app\build\outputs\apk\release\app-release.apk`
+  with its provenance manifest beside it; `expo-file-system` is linked
+  (FileSystemFileProvider in the manifest, 178 classes in the dex); no new
+  runtime permission versus the early build. Not installed on a handset. No
+  demo origin is recorded anywhere in the repo, so both builds used
   `https://demo.playerone.invalid`: rebuild with the centre PC's LAN origin
   before the demo. AAB is blocked on an upload keystore.
 - **Gates on the merged tree**, fresh database `po_merge*` on the docker
