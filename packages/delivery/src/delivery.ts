@@ -1,4 +1,4 @@
-import { ApiError } from '../api/types.ts';
+import { ApiError } from './errors.ts';
 
 /**
  * Path A, the phone half: what happens between a collector picking a recorded

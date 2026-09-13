@@ -23,6 +23,7 @@
     }
   },
   "dependencies": {
+    "@playerone/delivery": "workspace:*",
     "@playerone/design": "workspace:*",
     "@tanstack/react-query": "^5.66.0",
     "expo": "57.0.20",

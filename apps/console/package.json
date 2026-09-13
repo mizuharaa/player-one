@@ -15,6 +15,7 @@
     "@fontsource-variable/jetbrains-mono": "^5.1.1",
     "@fontsource/be-vietnam-pro": "5.3.0",
     "@playerone/api": "workspace:*",
+    "@playerone/delivery": "workspace:*",
     "@playerone/design": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.6",
     "@radix-ui/react-slot": "^1.1.2",

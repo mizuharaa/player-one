@@ -9,8 +9,8 @@ import { useTheme } from '../theme.tsx';
 import type { NativeTheme } from '@playerone/design/native';
 import { useGuideTarget } from '../guide/Guide.tsx';
 import { Body, Button, Card, Choice, Hatch, ListScreen, Note, Row, Tag, Title, face } from '../ui.tsx';
-import type { DeliveryRecord, DeliveryState, DeliveryStep } from '../upload/delivery.ts';
-import { runDelivery } from '../upload/delivery.ts';
+import type { DeliveryRecord, DeliveryState, DeliveryStep } from '@playerone/delivery';
+import { runDelivery } from '@playerone/delivery';
 import {
   hashSession,
   nativeDeliveryStore,

@@ -15,7 +15,7 @@ import type {
   DeliveryPlan,
   DeliveryRecord,
   DeliveryState,
-} from '../upload/delivery.ts';
+} from '@playerone/delivery';
 import { AGREEMENTS, ApiError } from './types.ts';
 
 /**
