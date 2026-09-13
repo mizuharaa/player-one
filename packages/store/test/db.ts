@@ -13,6 +13,21 @@ import { migrateTo, open, type Db } from '../src/index.ts';
  *   set DATABASE_URL=postgres://postgres:playerone@localhost:5432/postgres
  */
 export const DB_URL = process.env['DATABASE_URL'] ?? '';
+
+/**
+ * Before the first `open()` in this file, and deliberately at module scope.
+ *
+ * `open()` refuses a superuser connection (`db_superuser_refused`) because the
+ * application must not be one. This harness is the exception it exists for: it
+ * creates each file's database, migrates it, truncates between tests, and
+ * disables triggers to prove that the trigger is what refuses a write. Those
+ * are the schema OWNER's jobs and `playerone_app` cannot do any of them — see
+ * `APP_ROLE` below, which is how a test reaches the restricted role instead.
+ *
+ * `db()` is called lazily, so an assignment here always lands first; it is not
+ * in `db()` because `appDb()` and several tests call `open()` themselves.
+ */
+process.env['PLAYERONE_ALLOW_SUPERUSER'] = '1';
 export const hasDb = (): boolean => DB_URL !== '';
 
 /**
