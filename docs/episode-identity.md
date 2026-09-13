@@ -13,7 +13,7 @@ nothing is ever discarded (ING-17) — it falls back to `playerone:episode:v1:ra
 derives identically, and carries `EPISODE-ID-FALLBACK` at `flag` severity so a human can fix
 the name later. v8 is used rather than v7 because v7 is time-ordered and partly random: a
 re-run would mint a different id and break both ING-32 (same identity on a re-run) and ING-N2
-(byte-identical output). The derivation lives in `packages/ingest/src/identity.ts`, which is
+(byte-identical output). The derivation lives in `packages/contracts/src/identity.ts`, which is
 pure — no I/O, no path handling — so it can be audited by reading it.
 
 **Why not derive the id from the content fingerprint.** v0.3.1 did exactly that, and it was

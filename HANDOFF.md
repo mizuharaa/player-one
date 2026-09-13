@@ -107,7 +107,8 @@ same *summaries* plus proxies via the debug-fixtures plan (§5) if the residency
 decision allows; if not, it shows synthetic clips labelled as such.
 
 **1c. App on the phone (day 2–3).** Build the `demo` profile pointed at the
-LAN API (`EXPO_PUBLIC_API_URL=http://<centre-ip>:8080`, cleartext allowed for
+LAN API (`EXPO_PUBLIC_API_URL=http://<centre-ip>` — Caddy's public URL, not the
+API's own loopback `:8080` — cleartext allowed for
 demo) or the `play` profile at the Railway HTTPS origin (accepted by
 `app.config.cjs`). Sign in with the seeded demo phone (`PLAYERONE_DEMO_PHONE`,
 no ZNS needed), walk onboarding → task hall → claim → session prep. Wire

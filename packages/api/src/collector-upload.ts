@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { mkdir, readdir, rename, rm } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -26,6 +26,7 @@ import { mutate } from './audit.ts';
 import type { CollectorActor } from './actor.ts';
 import { safeJoin } from './media.ts';
 import {
+  objectBudget,
   objectKey,
   planParts,
   verifyReadBack,
@@ -1396,9 +1397,37 @@ export function registerCollectorUpload(
       for (const f of declared) {
         const path = safeJoin(staging, f.relative_path);
         if (path === null) throw new Error(`unsafe path in delivery: ${f.relative_path}`);
-        const body = await s.read(keyOf(f.relative_path));
+        const body = await s.read(keyOf(f.relative_path), undefined, objectBudget());
         if (body === null) throw new Error(`the store no longer holds ${f.relative_path}`);
-        await pipeline(Readable.from(body), createWriteStream(path));
+        /**
+         * Hashed and counted as it is written, and checked before anything is
+         * renamed into place. The read-back above proved the cloud copy minutes
+         * ago; this proves the copy that actually landed on this disk, and they
+         * are not the same claim. A body that ends early with no error is a
+         * clean truncation the HTTP layer never reports, and an object rewritten
+         * between the two steps carries no error at all — both arrive here as a
+         * digest that is not the declared one, and neither may be published.
+         */
+        const h = createHash('sha256');
+        let bytes = 0;
+        await pipeline(
+          Readable.from(body),
+          async function* (source: AsyncIterable<Uint8Array>) {
+            for await (const chunk of source) {
+              h.update(chunk);
+              bytes += chunk.length;
+              yield chunk;
+            }
+          },
+          createWriteStream(path),
+        );
+        const got = h.digest('hex');
+        if (bytes !== f.bytes || got !== f.sha256) {
+          throw new Error(
+            `materialised ${f.relative_path} is not the declared file: ` +
+              `${bytes} bytes sha256 ${got}, declared ${f.bytes} bytes sha256 ${f.sha256}`,
+          );
+        }
       }
       await rename(staging, dir);
     } catch (err) {
@@ -1596,7 +1625,72 @@ export function registerCollectorUpload(
 
     await note(row.id, 'ingesting', ['verified']);
 
-    const placed = await materialise(s, mediaRoot, dir, declared, keyOf);
+    /**
+     * The delivery could not be turned into a measurement on this machine.
+     *
+     * Two ways in, one answer, because a phone can do nothing different about
+     * either: the copy that landed on this disk was not the declared file
+     * (`materialise` checked every byte it wrote), or the engine could not
+     * read the directory. Neither deletes the objects and neither publishes a
+     * directory — a `materialise` refusal never renamed one into place, and an
+     * engine refusal keeps the one it measured because those bytes are proven
+     * evidence of something this engine cannot read.
+     */
+    const failDelivery = async (err: unknown) => {
+      const failed = await mutate(
+        db,
+        actor,
+        {
+          action: 'upload.complete',
+          targetTable: 'collector_uploads',
+          targetId: row.id,
+          before: { state: 'ingesting' },
+          after: {
+            state: 'failed',
+            failed_reason: 'ingest_failed',
+            session_basename: row.sourceBasename,
+            detail: (err as Error).message,
+          },
+        },
+        async (tx) => {
+          const [updated] = await tx
+            .update(schema.collectorUploads)
+            .set({ state: 'failed', failedReason: 'ingest_failed' })
+            /**
+             * Same predicate and same reason as the hold below: a retry whose
+             * engine run threw must not fail a row another attempt has already
+             * measured and ingested.
+             */
+            .where(
+              and(
+                eq(schema.collectorUploads.id, row.id),
+                inArray(schema.collectorUploads.state, ['ingesting', 'verified']),
+              ),
+            )
+            .returning();
+          return updated;
+        },
+      );
+      if (failed === undefined) return refused(reply, 'upload_superseded', { upload_id: row.id });
+      return refused(reply, 'upload_ingest_failed', {
+        upload_id: row.id,
+        session_basename: row.sourceBasename,
+        detail: (err as Error).message,
+      });
+    };
+
+    let placed;
+    try {
+      placed = await materialise(s, mediaRoot, dir, declared, keyOf);
+    } catch (err) {
+      /**
+       * A size or digest that did not match what the phone declared, or a read
+       * that ran out of its budget part way down. The staging directory is
+       * already gone (`materialise` removes it on any failure) and the session
+       * directory was never created, so the media root is as it was found.
+       */
+      return await failDelivery(err);
+    }
     if (placed === 'collision') {
       const held = await mutate(
         db,
@@ -1653,51 +1747,12 @@ export function registerCollectorUpload(
     try {
       record = await ingest(dir);
     } catch (err) {
-      const failed = await mutate(
-        db,
-        actor,
-        {
-          action: 'upload.complete',
-          targetTable: 'collector_uploads',
-          targetId: row.id,
-          before: { state: 'ingesting' },
-          after: {
-            state: 'failed',
-            failed_reason: 'ingest_failed',
-            session_basename: row.sourceBasename,
-            detail: (err as Error).message,
-          },
-        },
-        async (tx) => {
-          const [updated] = await tx
-            .update(schema.collectorUploads)
-            .set({ state: 'failed', failedReason: 'ingest_failed' })
-            /**
-             * Same predicate and same reason as the hold above: a retry whose
-             * engine run threw must not fail a row another attempt has already
-             * measured and ingested.
-             */
-            .where(
-              and(
-                eq(schema.collectorUploads.id, row.id),
-                inArray(schema.collectorUploads.state, ['ingesting', 'verified']),
-              ),
-            )
-            .returning();
-          return updated;
-        },
-      );
-      if (failed === undefined) return refused(reply, 'upload_superseded', { upload_id: row.id });
       /**
        * The directory stays. Its bytes have been proved against the phone's own
        * digests, so it is a good copy of something this engine cannot read —
        * which is evidence, and nothing in this system deletes evidence.
        */
-      return refused(reply, 'upload_ingest_failed', {
-        upload_id: row.id,
-        session_basename: row.sourceBasename,
-        detail: (err as Error).message,
-      });
+      return await failDelivery(err);
     }
 
     /** The basename decides the id on both sides; a disagreement is this file being wrong. */

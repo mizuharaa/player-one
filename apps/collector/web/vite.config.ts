@@ -19,7 +19,7 @@ import react from '@vitejs/plugin-react';
  *   with the extension on (`allowImportingTsExtensions`) and esbuild needs to
  *   be told that is fine.
  *
- * `PLAYERONE_MOCK_API` is defined to `'1'` so `api/config.ts` selects
+ * `EXPO_PUBLIC_MOCK_API` is defined to `'1'` so `api/config.ts` selects
  * `MockCollectorApi`. The harness never talks to the platform.
  */
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
@@ -36,8 +36,8 @@ export default defineConfig({
     extensions: ['.web.tsx', '.web.ts', '.tsx', '.ts', '.jsx', '.js', '.json'],
   },
   define: {
-    'process.env.PLAYERONE_MOCK_API': JSON.stringify('1'),
-    'process.env.PLAYERONE_API_URL': JSON.stringify(''),
+    'process.env.EXPO_PUBLIC_MOCK_API': JSON.stringify('1'),
+    'process.env.EXPO_PUBLIC_API_URL': JSON.stringify(''),
     // The real film, served out of `web/public/`. On a phone this stays unset
     // and the landing renders the poster frame instead — there is no <Video>
     // in React Native core (DEVICE_DEPS.md).

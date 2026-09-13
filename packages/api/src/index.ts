@@ -495,6 +495,34 @@ export function buildApi({
   }
 
   /**
+   * Nothing under `/api` is cacheable.
+   *
+   * Every one of these answers is scoped to the token that asked for it: a
+   * collector's own income, a reviewer's queue, an operator's centre. A shared
+   * upload-centre PC's browser cache, or any proxy between the handset and the
+   * centre, is then holding one person's payout figures for the next person who
+   * asks the same URL. Nothing here set the header at all, so what happened was
+   * whatever the browser and the proxy each decided.
+   *
+   * `onSend` rather than `onRequest` so a route that has its own answer keeps
+   * it: `engineering.ts` and `showcase-footage.ts` already say `no-store`, and
+   * `media.ts` says `private, max-age=3600` because a reviewer scrubbing a
+   * 437 MB part re-fetches the same ranges continuously and an uncacheable
+   * video is an unreviewable one. Media is not under `/api` either way — the
+   * prefix test and the existing-header test are two independent reasons this
+   * hook cannot touch it, and both are deliberate.
+   *
+   * ponytail: one hook, one prefix, no options. A route that wants something
+   * else sets it and this stays out of the way.
+   */
+  app.addHook('onSend', async (req, reply, payload) => {
+    if (req.url.startsWith('/api/') && reply.getHeader('cache-control') === undefined) {
+      reply.header('cache-control', 'private, no-store');
+    }
+    return payload;
+  });
+
+  /**
    * The token from a header, or failing that from the session cookie.
    *
    * The header is checked first so a machine client's explicit credential

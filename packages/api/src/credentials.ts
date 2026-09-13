@@ -9,38 +9,89 @@ import { promisify } from 'node:util';
  * and enough. HMAC-signed tokens rather than a JWT library: the payload is
  * three fields and a expiry, so a library buys parsing of a spec we do not use.
  *
- * ponytail: scrypt at N=2^15. Raise N if a password audit asks for it — the
- * cost parameter is stored in the hash, so old hashes keep verifying.
+ * ponytail: scrypt at N=2^15, and the cost is IN the hash, so raising it later
+ * is a one-line change and every existing hash keeps verifying at the cost it
+ * was made with.
  */
 
 const scrypt = promisify(scryptCb) as (
   pw: string | Buffer,
   salt: string | Buffer,
   len: number,
+  options: { N: number; r: number; p: number; maxmem: number },
 ) => Promise<Buffer>;
 
 const KEYLEN = 32;
 
-/** `scrypt$<saltHex>$<hashHex>`. */
+/**
+ * What a hash made today costs. N=2^15 — the comment above this file used to
+ * claim that and the code passed no options at all, so every hash in every
+ * database was made at Node's default N=2^14, at half the intended work.
+ */
+const COST = { N: 32768, r: 8, p: 1 } as const;
+
+/**
+ * scrypt's own memory guard, raised because `COST` exceeds the default.
+ *
+ * N=32768 with r=8 needs 128·N·r = 32 MiB of blocks, which is exactly Node's
+ * default `maxmem` before any overhead, so the call throws without this. 128
+ * MiB leaves room for a later raise and still bounds what one verification can
+ * allocate — a stored hash naming parameters past it verifies false rather
+ * than deciding how much memory this process takes.
+ */
+const MAXMEM = 128 * 1024 * 1024;
+
+/** The cost of every hash written before the parameters were recorded. */
+const LEGACY = { N: 16384, r: 8, p: 1 } as const;
+
+/** `scrypt$N=32768,r=8,p=1$<saltHex>$<hashHex>`. */
 export async function hashCredential(secret: string): Promise<string> {
   const salt = randomBytes(16);
-  const hash = await scrypt(secret, salt, KEYLEN);
-  return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
+  const hash = await scrypt(secret, salt, KEYLEN, { ...COST, maxmem: MAXMEM });
+  return `scrypt$N=${COST.N},r=${COST.r},p=${COST.p}$${salt.toString('hex')}$${hash.toString('hex')}`;
+}
+
+/**
+ * The parameters a stored hash names, bounded, or null.
+ *
+ * Bounded because they come out of the database and go into a memory
+ * allocation: N is what multiplies the work and the memory, so an unbounded one
+ * read off a row is a denial of service with a valid-looking hash in front of
+ * it. N must be a power of two (scrypt requires it), at most 2^20; r at most
+ * 32; p at most 16.
+ */
+function costOf(field: string): { N: number; r: number; p: number } | null {
+  const m = /^N=([1-9]\d*),r=([1-9]\d*),p=([1-9]\d*)$/.exec(field);
+  if (m === null) return null;
+  const N = Number(m[1]);
+  const r = Number(m[2]);
+  const p = Number(m[3]);
+  if (N < 2 || N > 2 ** 20 || (N & (N - 1)) !== 0) return null;
+  if (r > 32 || p > 16) return null;
+  return { N, r, p };
 }
 
 /** False for a malformed or absent hash, never a throw: a bad row must not be a 500. */
 export async function verifyCredential(secret: string, stored: string | null): Promise<boolean> {
   if (stored === null) return false;
-  const [scheme, saltHex, hashHex] = stored.split('$');
-  if (scheme !== 'scrypt' || !saltHex || !hashHex) return false;
-  let expected: Buffer;
+  const parts = stored.split('$');
+  if (parts[0] !== 'scrypt') return false;
+  // Four fields is a hash that records its cost; three is one from before that
+  // and is verified at the default it was made with.
+  const cost = parts.length === 4 ? costOf(parts[1]!) : parts.length === 3 ? LEGACY : null;
+  const saltHex = parts.length === 4 ? parts[2] : parts[1];
+  const hashHex = parts.length === 4 ? parts[3] : parts[2];
+  if (cost === null || !saltHex || !hashHex) return false;
+  const expected = Buffer.from(hashHex, 'hex');
+  if (expected.length !== KEYLEN) return false;
+  let actual: Buffer;
   try {
-    expected = Buffer.from(hashHex, 'hex');
+    // scrypt throws on parameters it will not run — the memory guard above is
+    // the second bound on `costOf`, and a row must not become a 500 either way.
+    actual = await scrypt(secret, Buffer.from(saltHex, 'hex'), KEYLEN, { ...cost, maxmem: MAXMEM });
   } catch {
     return false;
   }
-  if (expected.length !== KEYLEN) return false;
-  const actual = await scrypt(secret, Buffer.from(saltHex, 'hex'), KEYLEN);
   return timingSafeEqual(actual, expected);
 }
 

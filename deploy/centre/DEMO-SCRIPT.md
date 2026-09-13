@@ -196,29 +196,97 @@ than a Windows drive letter.
    more than one candidate partition without being certain which is the card —
    mounting the wrong block device risks the wrong data, not the card's.
 
-4. Mount it **read-only**. This is the hard rule from CLAUDE.md Rule 6: no TF
-   card is ever cleared, and nothing here may write to the card.
+4. Mount it **read-only, and with the journal left alone**. This is the hard
+   rule from CLAUDE.md Rule 6: no TF card is ever cleared, and nothing here
+   may write to the card.
 
    ```bash
    sudo mkdir -p /mnt/tfcard
-   sudo mount -o ro /dev/sdX1 /mnt/tfcard   # replace sdX1 with the device from lsblk
+   sudo mount -o ro,noload /dev/sdX1 /mnt/tfcard   # replace sdX1 with the device from lsblk
    ```
+
+   `-o ro` is not enough on its own, and this is the reason: a read-only ext4
+   mount still **replays the journal onto the device** if the filesystem was
+   not cleanly unmounted — which is exactly the state a card pulled out of a
+   camera is in. That replay is a write to the card. `noload` tells the kernel
+   not to load the journal at all.
+
+   **If that mount fails, stop.** `noload` refuses a filesystem that needs
+   recovery, and that refusal is the guard working rather than an obstacle to
+   get around. Read the reason before doing anything else:
+
+   ```bash
+   dmesg | tail -20
+   ```
+
+   Do **not** re-mount without `noload`, and do not run `e2fsck` against the
+   card. Recovery happens on a **copy**: image the partition to host storage
+   and recover the image, never the original.
+
+   ```bash
+   sudo dd if=/dev/sdX1 of=/mnt/c/PlayerOne/recovery/card.img bs=4M status=progress
+   sudo mount -o ro,loop /mnt/c/PlayerOne/recovery/card.img /mnt/tfcard
+   ```
+
+   The card then goes back in its envelope untouched, and the copy is what
+   anybody argues about.
 
 5. Copy the session directory to the centre inbox — the host path that
    becomes `PLAYERONE_MEDIA_ROOT` for the API — read-only from the card,
-   read-write only on the destination:
+   read-write only on the destination.
+
+   Run it as **one script**, not as four pasted lines: a pasted sequence
+   carries on after a step fails. Save this as `/tmp/copy-card.sh` in the WSL
+   shell and run `bash /tmp/copy-card.sh`.
 
    ```bash
-   sha256sum /mnt/tfcard/<ego_session_dir>/* > /tmp/before.sha256
-   cp -r --no-preserve=mode /mnt/tfcard/<ego_session_dir> /mnt/c/PlayerOne/media/
-   sha256sum /mnt/c/PlayerOne/media/<ego_session_dir>/* > /tmp/after.sha256
+   #!/usr/bin/env bash
+   set -euo pipefail
+
+   SESSION=<ego_session_dir>           # the directory name, not a path
+   CARD=/mnt/tfcard
+   INBOX=/mnt/c/PlayerOne/media        # the centre's actual PLAYERONE_MEDIA_ROOT
+                                       # (/mnt/c is how WSL2 reaches Windows)
+
+   # Both manifests are written OUTSIDE the directories being hashed, on
+   # writable host storage. The card is read-only so a manifest inside it is
+   # impossible anyway, and a manifest inside the copy would turn up in its own
+   # file list and hash itself.
+   manifest() {                        # manifest <directory> <absolute output file>
+     (
+       cd "$1"
+       # Not a session directory: a symlink, device node, socket or fifo. A
+       # symlink would make sha256sum hash whatever it points at on this
+       # machine, which is not the card's content.
+       test -z "$(find . ! -type f ! -type d -print -quit)"
+       # The inventory must be non-empty, checked explicitly. Without this,
+       # `xargs -r` quietly runs nothing and writes an EMPTY manifest — and two
+       # empty manifests diff clean, which would certify a copy of nothing.
+       test -n "$(find . -type f -print -quit)"
+       # Relative names on both sides, so the two manifests are comparable at
+       # all: absolute paths made the old `diff` impossible to satisfy, because
+       # `/mnt/tfcard/...` is never `/mnt/c/PlayerOne/media/...`. `-print0`
+       # with `sort -z` keeps every name safe and the order identical; `-r`
+       # means a vanished inventory cannot produce a manifest; `pipefail` means
+       # a failed hash aborts the run instead of writing a short one. `find`
+       # rather than `*`, so hidden files are included.
+       find . -type f -print0 | sort -z | xargs -0 -r sha256sum
+     ) > "$2"
+   }
+
+   manifest "$CARD/$SESSION" /tmp/before.sha256
+   cp -r --no-preserve=mode "$CARD/$SESSION" "$INBOX/"
+   manifest "$INBOX/$SESSION" /tmp/after.sha256
    diff /tmp/before.sha256 /tmp/after.sha256
+   echo "copy verified: $(wc -l < /tmp/before.sha256) files"
    ```
 
-   An empty `diff` is the proof the copy is byte-identical; a nonempty one
-   means stop and do not hand the copy to `counter.ts import`. `/mnt/c/...`
-   is how WSL2 reaches the Windows filesystem — adjust to the centre's actual
-   `PLAYERONE_MEDIA_ROOT`.
+   **The proof is both halves.** The script must exit 0 — that is what says
+   both directories were real session directories, both inventories were
+   non-empty and every hash succeeded — *and* the `diff` must print nothing.
+   If the script exits nonzero, stop and do not hand the copy to
+   `counter.ts import`: an empty `diff` after a run that failed earlier proves
+   nothing at all.
 
 6. Unmount and detach before removing the card:
 

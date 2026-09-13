@@ -112,10 +112,20 @@ Video segments at `video_segment_duration_sec: 3600`, so a two-hour session yiel
 
 ### 4.7 Integrity and identity
 
+> **Superseded on identity: read [`docs/episode-identity.md`](episode-identity.md).**
+> This draft is dated 19 Aug 2026 and described v0.3.1's rule, which was that
+> the episode id came from the content fingerprint. That was wrong and was
+> replaced: an id derived from the bytes changes when the bytes change, so a
+> file corrupted in transit arrives as a brand new episode instead of as
+> `CHECKSUM-MISMATCH` against the first one — the id has to be the thing that
+> stays still so the bytes can be seen moving against it. `episode-identity.md`
+> is the current rule and the code follows it; where the two disagree, that file
+> and `packages/contracts/src/identity.ts` are right and this section is history.
+
 | ID | Pri | Requirement | Source |
 |---|---|---|---|
 | ING-29 | P0 | SHA-256 is computed for every file during a single streaming pass and stored per file in the episode record. This is the checksum the cloud verifies against. ETag is never used — GreenNode's is not a plain digest. | `UPL-04` |
-| ING-30 | P0 | A **content fingerprint** is derived from device serial + session start + the sorted media hashes. Two deliveries of the same session by different paths resolve to one episode. | `UPL-15` |
+| ING-30 | P0 | A **content fingerprint** is the SHA-256 of every source file's `(relative_path, sha256_hex)` pair, sorted by path in byte order and joined as `{relative_path}` newline `{sha256_hex}` newline per entry. It covers source bytes only: no engine version, no hostname, no timestamp, no measured output, and **not the manifest** (ING-02). It is a column and never a key: an empty session (`072415`) fingerprints as the SHA-256 of nothing, so two different empty sessions share a value. What makes two deliveries of one session resolve to one episode is the **basename**, not this - see the note above and `docs/episode-identity.md`. | `UPL-15` |
 | ING-31 | P0 | The firmware version seen in the manifest is recorded on every episode. An unrecognised version ingests, flags, and raises a compatibility warning rather than parsing optimistically. | §5.3.9 |
 | ING-32 | P0 | Ingest is **idempotent**. Re-running over the same directory produces the same episode identity and creates no duplicate rows. | `UPL-16` |
 | ING-33 | P0 | An interrupted ingest resumes without duplication and without re-hashing completed files. | `UPL-16` |
@@ -137,7 +147,12 @@ One JSON document per episode. This is the contract every downstream component r
 ```jsonc
 {
   "schema_version": "1.0.0",
-  "episode_id": "<uuid v7, assigned at first ingest>",
+  // A UUID **v8**, derived from the session directory's BASENAME alone and
+  // therefore the same on every re-run and every delivery route. Not v7: v7 is
+  // time-ordered and partly random, so a re-run would mint a different id and
+  // break ING-32 and byte-identical output. Not the fingerprint either — see
+  // the note in §4.7. `docs/episode-identity.md` is the rule.
+  "episode_id": "<uuid v8, derived from the basename>",
   "content_fingerprint": "<sha256>",
   "state": "ok | flagged | quarantined",
 

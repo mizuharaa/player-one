@@ -27,7 +27,10 @@ native build or handset test.
 
 ## Demo
 
-Set `EXPO_PUBLIC_API_URL` to the real demo API origin (no trailing slash), and
+Set `EXPO_PUBLIC_API_URL` to the real demo API origin (no trailing slash) —
+for the centre kit that is Caddy's `PLAYERONE_PUBLIC_URL` on the LAN address,
+which is port 80 in the LAN template and never `:8080`, because the API itself
+binds `127.0.0.1:8080` and no handset can reach it — and
 `PLAYERONE_VERSION_CODE` to the next positive integer. Unset mock API flags.
 Run `pnpm apk` from this package. The wrapper selects the demo profile, validates
 configuration before native generation, and builds the release-variant APK.

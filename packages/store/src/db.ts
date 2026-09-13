@@ -47,7 +47,52 @@ export async function open(url = DATABASE_URL(), { max = 1 }: OpenOptions = {}):
     await db.close();
     throw new StoreUnreachableError(`cannot reach ${redact(url)}: ${(err as Error).message}`);
   }
+  await assertNotSuperuser(sql, db, url);
   return db;
+}
+
+/**
+ * The application may not be a superuser. Migration 0021's guarantee, checked
+ * at the connection instead of assumed.
+ *
+ * 0021 exists because a superuser bypasses every grant and owns every table,
+ * so the append-only audit trail is a courtesy rather than a rule — measured on
+ * that branch, connected exactly as the API connects: `TRUNCATE audit_events`
+ * succeeded, `ALTER TABLE … DISABLE TRIGGER` succeeded, and then the trail was
+ * rewritten. The migration creates `playerone_app`, which owns nothing and
+ * therefore cannot do any of it. Nothing checked that the process actually
+ * connected as it, and a deployment that quietly kept `postgres` in
+ * `DATABASE_URL` gets every audit guarantee this system claims, in name only.
+ *
+ * Both roles, which is the whole point. `current_user` alone accepts a
+ * superuser login with `?role=playerone_app` — the shape the test harness
+ * itself uses — and that session can `SET ROLE` straight back to the superuser
+ * it logged in as, so the restriction is a preference and not a fence.
+ *
+ * `PLAYERONE_ALLOW_SUPERUSER=1` is the one way past, and there is exactly one
+ * caller of it: the test harness, which creates databases, migrates them,
+ * truncates between tests and disables triggers to prove the triggers are what
+ * refuse a write. Those are the schema owner's jobs. `pnpm db:migrate` needs no
+ * exemption — drizzle-kit opens its own connection from
+ * `packages/store/drizzle.config.ts` and never reaches this function — and the
+ * centre deployment does not set it.
+ */
+async function assertNotSuperuser(sql: postgres.Sql, db: Db, url: string): Promise<void> {
+  if (process.env['PLAYERONE_ALLOW_SUPERUSER'] === '1') return;
+  const [row] = await sql<{ roles: string[] | null }[]>`
+    select array_agg(rolname order by rolname) as roles
+      from pg_roles
+     where rolname in (session_user, current_user) and rolsuper
+  `;
+  const roles = row?.roles ?? null;
+  if (roles === null) return;
+  await db.close();
+  throw new Error(
+    `db_superuser_refused: ${redact(url)} connects as a superuser (${roles.join(', ')}). ` +
+      'The application must connect as an unprivileged role — `playerone_app` (migration 0021) — ' +
+      'because a superuser owns every table, bypasses every grant and can disable the ' +
+      'append-only audit triggers. Set PLAYERONE_ALLOW_SUPERUSER=1 only for a schema-owner tool.',
+  );
 }
 
 /**

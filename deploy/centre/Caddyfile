@@ -3,6 +3,18 @@
 # heartbeat uses Fastify inject inside the API process. /episodes here belongs to the console SPA.
 {$PLAYERONE_PUBLIC_URL} {
 	bind {$PLAYERONE_BIND}
+	# The same four headers `deploy/http-server.mjs` sends for the Railway
+	# console, on every response this listener makes — the console SPA, the
+	# proxied API and the media stream. Caddy sent none of them, so the centre
+	# served the console with no CSP, no nosniff and no frame refusal, on a LAN
+	# the demo handset is also on. Verbatim from that file on purpose:
+	# `deploy/centre/check.test.ts` compares the two and fails if they drift.
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: https:; connect-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+	}
 	handle /api/* {
 		reverse_proxy 127.0.0.1:{$PORT}
 	}

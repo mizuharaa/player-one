@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -163,6 +163,51 @@ async function server(options: { brokenAsset?: boolean; fallback?: boolean; apiD
   });
   return { seen, origin: `http://127.0.0.1:${(app.address() as { port: number }).port}` };
 }
+
+/**
+ * The centre listener sends the same security headers the Railway console
+ * listener sends.
+ *
+ * It sent none of them. `deploy/http-server.mjs` sets a CSP, nosniff, a
+ * referrer policy and `X-Frame-Options: DENY` on every response; the centre's
+ * Caddyfile set nothing, so the console, the proxied API and the media stream
+ * all went out bare — on the same LAN the demo handset is on.
+ *
+ * Text comparison on purpose. Caddy is not installed on a development machine,
+ * so the running proof is `curl -I` against the centre origin on the centre PC;
+ * what this can prove here, and the thing most likely to rot, is that the two
+ * files still agree.
+ */
+describe('the centre listener and the console listener send the same headers', () => {
+  const read = (path: string) => readFile(join(import.meta.dirname, path), 'utf8');
+
+  it('carries the console CSP verbatim, and the other three headers', async () => {
+    const caddyfile = await read('Caddyfile');
+    const server = await read(join('..', 'http-server.mjs'));
+
+    const csp = /content-security-policy', "([^"]+)"/.exec(server)?.[1];
+    expect(csp, 'the console listener still sets a CSP').toBeTruthy();
+    expect(caddyfile).toContain(`Content-Security-Policy "${csp}"`);
+
+    for (const [header, value] of [
+      ['X-Content-Type-Options', 'nosniff'],
+      ['Referrer-Policy', 'strict-origin-when-cross-origin'],
+      ['X-Frame-Options', 'DENY'],
+    ] as const) {
+      expect(server.toLowerCase()).toContain(`'${header.toLowerCase()}', '${value.toLowerCase()}'`);
+      expect(caddyfile).toContain(`${header} ${value}`);
+    }
+  });
+
+  it('sends them site-wide, not inside one route', async () => {
+    const caddyfile = await read('Caddyfile');
+    // The block sits beside `bind`, before every `handle`, so a route added
+    // later inherits it instead of having to remember it.
+    const header = caddyfile.indexOf('header {');
+    expect(header).toBeGreaterThan(-1);
+    expect(header).toBeLessThan(caddyfile.indexOf('handle '));
+  });
+});
 
 describe('read-only deployment health over real HTTP', () => {
   it('proves routes/assets but explicitly leaves database health unproven without tokens', async () => {

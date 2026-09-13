@@ -31,6 +31,7 @@ import { refusalKey } from './refusal.ts';
 import { TaskAssign } from './TaskAssign.tsx';
 import { cn } from '../lib/cn.ts';
 import { uuid } from '../lib/uuid.ts';
+import { httpsLink } from '../lib/external-url.ts';
 import {
   ApiError,
   backOffice,
@@ -635,17 +636,31 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
                       -101 and -406 are the two answers a collector can act on,
                       and the page is the only way they can. Shown as a link
                       rather than opened: the operator decides when.
+
+                      And only when it is an `https:` URL. This string comes
+                      from the payment gateway and the API passes it through
+                      unchanged, which is right — it is not the API's string to
+                      rewrite — so this is where it stops being an `href`. See
+                      `lib/external-url.ts`. Anything else is shown as text, so
+                      an operator can still read what the gateway said.
                     */}
-                    {(declared.result.onboarding_url ?? declared.result.reform_url) !== null ? (
-                      <a
-                        className="mt-2 inline-block text-[0.875rem] font-semibold underline"
-                        href={(declared.result.onboarding_url ?? declared.result.reform_url)!}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                      >
-                        {t('bo.collector.payout.open')}
-                      </a>
-                    ) : null}
+                    {(() => {
+                      const sent = declared.result.onboarding_url ?? declared.result.reform_url;
+                      if (sent === null) return null;
+                      const link = httpsLink(sent);
+                      return link === null ? (
+                        <p className="mt-2 break-all text-[0.875rem]">{sent}</p>
+                      ) : (
+                        <a
+                          className="mt-2 inline-block text-[0.875rem] font-semibold underline"
+                          href={link}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                        >
+                          {t('bo.collector.payout.open')}
+                        </a>
+                      );
+                    })()}
                   </EditRow>
                 ) : null}
 
