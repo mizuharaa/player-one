@@ -34,6 +34,20 @@ another, or proved on an emulator:
   module built from source) and `seed-demo.mjs` seeded a scenario the app
   rejects.
 
+Later the same day, three more lanes merged: `deploy/emu/up.ps1` boots
+the emulator with the APK, MinIO and a seeded API in one command (the
+owner has no Android phone); the phone screens follow DESIGN.md (verdict
+marks, a real progress band, sign-out off the tab bar; 65 shots x 3
+languages before and after under `C:\build\mobile-ui-shots`); and the
+console's Engineering section has a flag-gated "Debug delivery" page
+(`PLAYERONE_DEBUG_DELIVERY=1`) that pushes a session directory through
+the real phone route from a browser, with `scripts/make-session.mjs` to
+wrap an ordinary mp4 into a session and `scripts/bucket-cors.mjs` for
+the CORS rule a browser PUT needs on the real bucket (untested on
+GreenNode). The pure delivery code now lives in `packages/delivery`.
+Final tree: database suite 1945 pass / 11 skip / 0 fail; engine-free
+1089 pass / 867 skip; three typechecks clean; console build clean.
+
 **Still parked on the owner:** Apple membership (TestFlight), ZaloPay
 sandbox keys and wallet type, the Ubuntu box's sudo password (BLE
 diagnostics), the physical card and reader on the centre PC (card
