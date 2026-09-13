@@ -452,6 +452,13 @@ function Delivery() {
           type="file"
           multiple
           data-testid="dbg-directory"
+          /*
+            The native control names itself "Choose Files", which says nothing
+            about what is being chosen. There is no visible `<label>`: the
+            section heading is the label a sighted reader uses, and this is the
+            same sentence for somebody who hears the control instead.
+          */
+          aria-label={c('dbgPickButton')}
           disabled={running}
           {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
           onChange={(event) => onPick(event.target.files)}
