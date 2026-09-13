@@ -62,7 +62,6 @@ const T = {
     uploads: 'Tải lên',
     income: 'Thu nhập',
     guide: 'Xem hướng dẫn',
-    perMinute: 'đ/phút hiệu quả',
     upload: 'Tải lên',
     forum: 'Diễn đàn',
     groups: 'Nhóm chat',
@@ -85,7 +84,6 @@ const T = {
     uploads: 'Uploads',
     income: 'Income',
     guide: 'Show me',
-    perMinute: 'VND/effective minute',
     upload: 'Upload',
     forum: 'Forum',
     groups: 'Group chats',
@@ -108,7 +106,6 @@ const T = {
     uploads: '上传',
     income: '收入',
     guide: '看指引',
-    perMinute: '越南盾/有效分钟',
     upload: '上传',
     forum: '论坛',
     groups: '群聊',
@@ -311,7 +308,12 @@ async function session(browser, lang) {
   await tapButton(page, t.hall);
   await shot(page, `taskhall-${lang}`);
 
-  await tap(page, t.perMinute);
+  // The first task card, by the mock's own title — task titles are data and
+  // are the same string in every catalogue, so this handle does not move when
+  // a label on the card is rewritten. It was `hall.perMinute`, a key the card
+  // stopped printing when the unit price grew its own full sentence, and the
+  // whole run died at the timeout.
+  await tapButton(page, 'Nấu ăn tại nhà');
   await shot(page, `taskdetail-${lang}`);
   // Two pops now, not one: the hall is pushed on top of Home rather than being
   // a root of its own, so the bar is only back when Home is.
