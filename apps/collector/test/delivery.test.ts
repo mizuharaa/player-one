@@ -350,6 +350,110 @@ describe('a delivery resumed after the app was killed', () => {
   });
 });
 
+describe('a delivery the server already failed', () => {
+  it('re-sends it rather than reporting the old verdict, on the resume path', async () => {
+    // UPL-04's retry. A read-back that did not match leaves the objects in the
+    // bucket with metadata that cannot be trusted, so the server answers a plan
+    // forced past its own "already there" shortcut — every file missing — and
+    // the phone is expected to send them again. Short-circuiting on `failed`
+    // made that unreachable: the delivery came back, said `failed` a second
+    // time without moving a byte, and no retry could ever change it.
+    const files = [file('camera_01.mp4', 4_096)];
+    const held = record(files);
+    const { fn, calls } = fakeFetch({
+      [`GET /api/me/uploads/${UPLOAD_ID}`]: {
+        status: 200,
+        body: {
+          upload_id: UPLOAD_ID,
+          state: 'failed',
+          episode_id: 'ep-1',
+          failed_reason: 'checksum_mismatch',
+          files: [wholeFile('camera_01.mp4')],
+        },
+      },
+      [`POST /api/me/uploads/${UPLOAD_ID}/complete`]: {
+        status: 200,
+        body: { upload_id: UPLOAD_ID, state: 'ingested', episode_id: 'ep-1' },
+      },
+    });
+    const { transport, sent } = fakeTransport();
+    const { store, peek } = memoryStore(held);
+
+    const outcome = await runDelivery({ api: api(fn), transport, store }, held, { resume: true });
+
+    expect(sent.map((s) => s.url)).toEqual(['https://store.test/camera_01.mp4?sig=1']);
+    expect(outcome.state).toBe('ingested');
+    // Still one delivery: the retry never mints a second upload id.
+    expect(calls.every((c) => c.path.includes(UPLOAD_ID) || c.path === '/api/me/uploads')).toBe(true);
+    expect(peek()).toBeNull();
+  });
+
+  it('re-sends it on the registration path too, under the same upload id', async () => {
+    // The other way in: the app was killed and reopened, the collector taps the
+    // upload again rather than the resume, and registration replays onto the
+    // failed row. The server answers `replayed` with the same forced plan, and
+    // the id in the body is the persisted one — which is what makes it a replay
+    // and not a second delivery of one recording.
+    const files = [file('camera_01.mp4', 4_096)];
+    const { fn, calls } = fakeFetch({
+      'POST /api/me/uploads': {
+        status: 200,
+        body: {
+          upload_id: UPLOAD_ID,
+          replayed: true,
+          state: 'failed',
+          episode_id: 'ep-1',
+          failed_reason: 'checksum_mismatch',
+          files: [wholeFile('camera_01.mp4')],
+        },
+      },
+      [`POST /api/me/uploads/${UPLOAD_ID}/complete`]: {
+        status: 200,
+        body: { upload_id: UPLOAD_ID, state: 'ingested', episode_id: 'ep-1' },
+      },
+    });
+    const { transport, sent } = fakeTransport();
+    const { store } = memoryStore();
+
+    const outcome = await runDelivery({ api: api(fn), transport, store }, record(files));
+
+    expect((calls[0]?.body as { id: string }).id).toBe(UPLOAD_ID);
+    expect(sent).toHaveLength(1);
+    expect(outcome.state).toBe('ingested');
+  });
+
+  it('still reports held without sending anything, because held is not a retry', async () => {
+    // `held` is a basename collision: another session of the same name is
+    // already on the server and a person has to look at it. Re-sending cannot
+    // resolve that, and the server answers an empty plan.
+    const held = record([file('camera_01.mp4', 4_096)]);
+    const { fn, calls } = fakeFetch({
+      [`GET /api/me/uploads/${UPLOAD_ID}`]: {
+        status: 200,
+        body: {
+          upload_id: UPLOAD_ID,
+          state: 'held',
+          episode_id: 'ep-1',
+          held_reason: 'basename_collision',
+          files: [],
+        },
+      },
+    });
+    const { transport, sent } = fakeTransport();
+    const { store, peek } = memoryStore(held);
+    const outcome = await runDelivery({ api: api(fn), transport, store }, held, { resume: true });
+    expect(sent).toEqual([]);
+    expect(calls.map((c) => c.method)).toEqual(['GET']);
+    expect(outcome).toEqual({
+      state: 'held',
+      episodeId: 'ep-1',
+      heldReason: 'basename_collision',
+      failedReason: null,
+    });
+    expect(peek()).not.toBeNull();
+  });
+});
+
 describe('a signed URL that expired while the phone was sending', () => {
   it('re-registers under the same id for a fresh signature and does not re-send what is up', async () => {
     const files = [file('camera_01.mp4', 5 * PART)];

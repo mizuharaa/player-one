@@ -16,10 +16,11 @@ const unavailable = (): never => {
 };
 
 export enum FileMode {
-  ReadOnly = 0,
-  WriteOnly = 1,
-  ReadWrite = 2,
-  Append = 3,
+  ReadWrite = 'rw',
+  ReadOnly = 'r',
+  WriteOnly = 'w',
+  Append = 'wa',
+  Truncate = 'wt',
 }
 
 export enum UploadType {
@@ -43,6 +44,10 @@ export class File {
   readonly uri = '';
   readonly size = 0;
 
+  create(): never {
+    return unavailable();
+  }
+
   open(): never {
     return unavailable();
   }
@@ -50,4 +55,17 @@ export class File {
   upload(): never {
     return unavailable();
   }
+
+  delete(): never {
+    return unavailable();
+  }
 }
+
+export const Paths = {
+  get cache(): Directory {
+    return unavailable();
+  },
+  get document(): Directory {
+    return unavailable();
+  },
+};

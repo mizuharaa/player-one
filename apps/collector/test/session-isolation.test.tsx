@@ -21,7 +21,7 @@ vi.mock('../src/api/token-store.ts', () => ({ secureTokenStore: {} }));
 // The uploads screen reaches `expo-file-system` through `upload/delivery-native.ts`,
 // and `expo-modules-core` wants a React Native `__DEV__` the moment it loads. Same
 // treatment as the keystore above: the shell mounts, the picker is never called.
-vi.mock('expo-file-system', () => ({ Directory: class {}, File: class {}, FileMode: {}, UploadType: {} }));
+vi.mock('expo-file-system', () => ({ Directory: class {}, File: class {}, FileMode: {}, UploadType: {}, Paths: {} }));
 // Only the two primitives this test reads are replaced; the rest of `ui.tsx`
 // stays real, because the shell now renders the tab bar and the guide through it.
 vi.mock('../src/ui.tsx', async (original) => ({

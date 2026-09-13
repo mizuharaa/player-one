@@ -153,9 +153,14 @@ export function Uploads() {
   /**
    * The delivery this phone was interrupted in the middle of, if any.
    *
-   * Read from the keystore, not from the server: the point of it is the
-   * inventory and its digests, which cost minutes of phone CPU to produce and
-   * which the server never receives a copy of.
+   * Read from the keystore, not from the server, because what it holds is the
+   * half of the inventory the server has no use for: the `content://` URI of
+   * every file, which is this phone's handle on its own storage and means
+   * nothing anywhere else, and the client-generated upload id that makes a
+   * resumed delivery the same delivery. The digests ARE on the server — the
+   * registration declared them and `GET /api/me/uploads/:id` echoes them back —
+   * so this record is not what protects them; it is what saves re-hashing a
+   * session to rediscover which local file each one belongs to.
    */
   const held = useQuery({ queryKey: ['delivery', 'held'], queryFn: () => nativeDeliveryStore.get() });
 
@@ -242,7 +247,18 @@ export function Uploads() {
                   disabled={running || pick.isPending}
                   onPress={() => pick.mutate()}
                 />
-                {pick.isError ? <Note text={tt('uploads.pickFailed')} /> : null}
+                {/* A folder that is not a session directory is refused by name,
+                    not as "no folder was chosen" — the collector has to know
+                    which of the two they are looking at. */}
+                {pick.isError ? (
+                  <Note
+                    text={
+                      pick.error instanceof ApiError
+                        ? reasonText(tt, pick.error.code)
+                        : tt('uploads.pickFailed')
+                    }
+                  />
+                ) : null}
 
                 {picked !== null ? (
                   <View style={{ gap: theme.space[2] }}>

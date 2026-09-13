@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
-import { Directory, File, FileMode, UploadType } from 'expo-file-system';
+import { Directory, File, FileMode, Paths, UploadType } from 'expo-file-system';
+import { ApiError } from '../api/types.ts';
 import { Sha256 } from './sha256.ts';
 import {
   looksLikeSessionDirectory,
@@ -53,8 +54,14 @@ export type PickedSession = {
 export async function pickSessionDirectory(): Promise<PickedSession> {
   const directory = await Directory.pickDirectoryAsync();
   const sessionBasename = nameFromUri(directory.uri);
+  /**
+   * The same refusal name the server raises for the same reason, so the screen
+   * can print `uploads.reasonBadName` — "that folder is not a recorded session,
+   * pick the right one" — instead of the generic "no folder was chosen". A bare
+   * `Error` here was indistinguishable from the collector cancelling the picker.
+   */
   if (!looksLikeSessionDirectory(sessionBasename)) {
-    throw new Error(`session_basename_unrecognised:${sessionBasename}`);
+    throw new ApiError('session_basename_unrecognised');
   }
   const files: PickedFile[] = [];
   for (const entry of directory.list()) {
@@ -66,13 +73,31 @@ export async function pickSessionDirectory(): Promise<PickedSession> {
 
 /**
  * How much of a file is held in memory at once while hashing, and while
- * sending one part.
+ * copying one part out to be sent.
  *
  * 1 MiB. The point of the whole exercise is that a 1.5 GB camera file is never
  * resident: `FileHandle.readBytes` hands back exactly this much at a time and
  * `Sha256` keeps 64 bytes of state between chunks.
  */
 const CHUNK = 1024 * 1024;
+
+/**
+ * Hand the JS thread back for one macrotask.
+ *
+ * `readBytes`, `Sha256.update` and `writeBytes` are all synchronous, so a hash
+ * or a part copy written as a plain loop never yields: React renders nothing,
+ * the progress the screen is being handed is invisible, and Android counts the
+ * whole file as an unresponsive main thread. `setTimeout(0)` and not
+ * `queueMicrotask` — a microtask runs before the renderer gets a turn, which is
+ * the bug rather than the fix.
+ *
+ * Per chunk, not per file. QA asked for one yield per progress report, which is
+ * per file here, and that is where the fix would have gone if a file were
+ * small; one 1.5 GB camera file is the case that produces the ANR and it is one
+ * report. A megabyte of hashing is tens of milliseconds, so a yield between
+ * chunks costs nothing measurable and bounds the block by one chunk.
+ */
+const yieldToUi = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 /**
  * Every file's sha256, read a megabyte at a time.
@@ -98,12 +123,14 @@ export async function hashSession(
         const chunk = handle.readBytes(CHUNK);
         if (chunk.length === 0) break;
         hash.update(chunk);
+        await yieldToUi();
       }
       declared.push({ ...file, sha256: hash.digest() });
     } finally {
       handle.close();
     }
     report(declared.length, files.length);
+    await yieldToUi();
   }
   return declared;
 }
@@ -126,26 +153,54 @@ export const nativeTransport: DeliveryTransport = {
   },
 
   /**
-   * One part of a large file.
+   * One part of a large file: copied out to a cache file, then sent by the same
+   * native uploader as a whole file.
    *
-   * ponytail: the part is read into memory and handed to `fetch`, so the peak
-   * is one PART_SIZE — 64 MiB — per part. `File.upload` cannot express a byte
-   * range, and the upgrade path is the Kotlin foreground-service uploader that
-   * Path A always owed (`App.tsx`); until then this is the only way a file over
-   * 64 MiB moves at all, and it is bounded rather than proportional to the
-   * session.
+   * `File.upload` cannot express a byte range, so the range has to become a
+   * file. It is NOT handed to `fetch` instead, and that was measured rather
+   * than assumed: React Native's `fetch` clones a typed-array body and then
+   * base64-encodes it to cross the bridge, so a 64 MiB part peaked at roughly
+   * 210 MiB of JS heap — the part, its clone, and an 85 MiB string. On the
+   * pilot's phones that is an out-of-memory kill, not a slow upload.
+   *
+   * ponytail: the real ceiling is now one PART_SIZE of temporary CACHE DISK —
+   * 64 MiB under `Paths.cache`, deleted as soon as the PUT answers — and one
+   * CHUNK of memory, because the copy is streamed a megabyte at a time. The
+   * upgrade path is unchanged and is the Kotlin foreground-service uploader
+   * that Path A always owed (`App.tsx`), which can seek the source directly.
    */
   async putRange(uri, url, start, end) {
-    const handle = new File(uri).open(FileMode.ReadOnly);
-    let body: Uint8Array;
+    const part = new File(Paths.cache, `playerone-part-${start}-${end}`);
+    part.create({ overwrite: true, intermediates: true });
+    const source = new File(uri).open(FileMode.ReadOnly);
+    const sink = part.open(FileMode.Truncate);
     try {
-      handle.offset = start;
-      body = handle.readBytes(end - start);
+      source.offset = start;
+      for (let copied = 0; copied < end - start; ) {
+        const chunk = source.readBytes(Math.min(CHUNK, end - start - copied));
+        if (chunk.length === 0) break;
+        sink.writeBytes(chunk);
+        copied += chunk.length;
+        await yieldToUi();
+      }
     } finally {
-      handle.close();
+      sink.close();
+      source.close();
     }
-    const response = await fetch(url, { method: 'PUT', body });
-    return response.status;
+    try {
+      const result = await part.upload(url, {
+        httpMethod: 'PUT',
+        uploadType: UploadType.BINARY_CONTENT,
+      });
+      return result.status;
+    } finally {
+      try {
+        part.delete();
+      } catch {
+        // A cache file the system will reclaim anyway. Losing the PUT's status
+        // to a failed cleanup would turn a successful part into a retry.
+      }
+    }
   },
 };
 

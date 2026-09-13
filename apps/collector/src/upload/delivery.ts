@@ -253,9 +253,25 @@ const outcomeOf = (plan: DeliveryPlan): DeliveryOutcome => ({
   failedReason: plan.failedReason,
 });
 
-/** Nothing left to ask the server about. */
+/**
+ * The server has recorded a verdict on these bytes. What `/complete` answered,
+ * or refused with, is final and is what the collector is shown.
+ */
 const settled = (state: DeliveryState): boolean =>
   state === 'ingested' || state === 'held' || state === 'failed';
+
+/**
+ * There is nothing left for the PHONE to do, which is not the same set.
+ *
+ * `failed` is settled and is still work: a delivery whose read-back did not
+ * match is the ordinary retry, and the server answers it with a plan forced
+ * past the "already there" shortcut precisely so the phone re-sends the objects
+ * whose metadata cannot be trusted (`planFor`'s `force`). Short-circuiting on
+ * `settled` here made that unreachable — a failed delivery came back, reported
+ * `failed` again without sending a byte, and no amount of retrying could ever
+ * change it.
+ */
+const resolved = (state: DeliveryState): boolean => state === 'ingested' || state === 'held';
 
 /**
  * Send everything the plan says is missing.
@@ -334,9 +350,10 @@ export async function runDelivery(
   /**
    * A delivery the server has already finished with. Its plan is empty, so
    * transferring would be a no-op and completing would be a second verdict
-   * request on bytes that already have one.
+   * request on bytes that already have one. `resolved` and not `settled`: a
+   * `failed` delivery arrives here with a full, forced plan and is the retry.
    */
-  if (settled(plan.state)) return await finish(deps, record, outcomeOf(plan), report);
+  if (resolved(plan.state)) return await finish(deps, record, outcomeOf(plan), report);
 
   for (let attempt = 1; ; attempt += 1) {
     report({ sentFiles: 0, totalFiles: plan.files.length, state: plan.state });
