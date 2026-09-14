@@ -26,6 +26,12 @@
         "EXPO_PUBLIC_API_URL": "$EXPO_PUBLIC_API_URL",
         "PLAYERONE_VERSION_CODE": "$PLAYERONE_VERSION_CODE"
       }
+    },
+    "simulator": {
+      "extends": "demo",
+      "ios": {
+        "simulator": true
+      }
     }
   },
   "submit": {
