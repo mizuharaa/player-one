@@ -143,6 +143,14 @@ describe('the Caddyfile, the compose file and the env template agree', () => {
 });
 
 describe('the template is the deployment this kit claims to be', () => {
+  it('runs owner migrations separately from the unprivileged server and includes CLI inputs', async () => {
+    expect(compose.services.migrate.build.target).toBe('migrate');
+    expect(compose.services.api.environment.OWNER_DATABASE_URL).toBe('');
+    const up = await read('up.sh');
+    for (const step of ['migrate', 'grant', 'bootstrap', 'seed-stakeholder.mjs', 'backup.sh', 'preflight']) expect(up).toContain(step);
+    const ignore = await read(join('..', '..', '.dockerignore'));
+    for (const file of ['bootstrap.ts', 'seed-stakeholder.mjs', 'seed-demo.mjs', 'seed-demo-work.mjs', 'e2e-loop.mjs', 'session-footage.mjs', 'card-intake.mjs', 'bucket-cors.mjs']) expect(ignore).toContain(file);
+  });
   /**
    * The centre kit's own preflight, run against this template with its
    * placeholders filled. Everything it demands of a centre it demands here,
