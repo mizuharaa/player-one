@@ -18,13 +18,19 @@ import { SessionReminder } from '../src/screens/SessionReminder.tsx';
 // navigation run unchanged; the browser harness separately checks real controls.
 vi.mock('react-native', () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  // §7 puts a 16/9 header still above the guidance. It is presentation and
+  // this file is about the flow, so it renders as nothing with its name kept.
+  Image: ({ accessibilityLabel }: { accessibilityLabel?: string }) => <img alt={accessibilityLabel ?? ''} />,
   BackHandler: { addEventListener: () => ({ remove() {} }) },
 }));
 vi.mock('../src/ui.tsx', () => ({
   Body: ({ children }: { children: ReactNode }) => <p>{children}</p>,
   Title: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
   Card: ({ children }: { children: ReactNode }) => <section>{children}</section>,
-  Screen: ({ title, children }: { title: string; children: ReactNode }) => <main><h1>{title}</h1>{children}</main>,
+  // `footer` is §7's pinned commit control; without it here the training
+  // screen has no button to press.
+  Screen: ({ title, footer, children }: { title: string; footer?: ReactNode; children: ReactNode }) =>
+    <main><h1>{title}</h1>{children}<footer>{footer}</footer></main>,
   Note: ({ text }: { text: string }) => <p role="status">{text}</p>,
   Loading: () => <p role="status">loading</p>,
   Row: ({ label, value }: { label: string; value: string }) => <p>{label}: {value}</p>,
@@ -118,8 +124,8 @@ describe('guidance in the collector flow', () => {
     const complete = vi.spyOn(api, 'completeTraining').mockImplementation(async () => { await pending; return original(); });
     await mount({ name: 'training' });
     await tap(MESSAGES.vi['training.done']);
-    await settle(() => expect(button(MESSAGES.vi['common.loading']).disabled).toBe(true));
-    await tap(MESSAGES.vi['common.loading']);
+    await settle(() => expect(button(MESSAGES.vi['common.saving']).disabled).toBe(true));
+    await tap(MESSAGES.vi['common.saving']);
     expect(complete).toHaveBeenCalledTimes(1);
     expect(container.querySelector('h1')?.textContent).toBe(MESSAGES.vi['training.title']);
     await act(async () => release());

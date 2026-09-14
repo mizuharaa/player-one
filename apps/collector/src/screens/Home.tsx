@@ -79,7 +79,9 @@ export function Home() {
     <View style={{ paddingTop: theme.space[4] }}>
       <Title>{tt('home.more')}</Title>
       <NavRow label={tt('home.incomeLink')} onPress={() => nav.selectTab('income')} />
-      <NavRow label={tt('forum.title')} onPress={() => nav.selectTab('forum')} />
+      {/* The forum is pushed now, not a tab root: §10 gave its bar slot to the
+          task hall, which is the money path. It is still one tap from here. */}
+      <NavRow label={tt('forum.title')} onPress={() => nav.push({ name: 'forum' })} />
       <NavRow label={tt('home.training')} onPress={() => nav.push({ name: 'training' })} />
       <NavRow label={tt('guide.open')} onPress={guide.accept} />
     </View>

@@ -221,7 +221,11 @@ function Header({
             color: theme.color.foreground,
             fontFamily: face(theme),
             fontSize: theme.fontSize.xl,
-            fontWeight: theme.fontWeight.bold,
+            // §0.3: `xl` at display weight is the screen title, and the line
+            // height is absolute and never below 1.15 — a ratio near 1.05
+            // clips the tone marks off a Vietnamese title that wraps.
+            lineHeight: Math.round(theme.fontSize.xl * 1.2),
+            fontWeight: theme.fontWeight.display,
             letterSpacing: -0.5,
             flexShrink: 1,
             flexGrow: 1,
@@ -240,31 +244,69 @@ export function Screen({
   title,
   right,
   onBack,
+  footer,
   children,
 }: {
   title: string;
   right?: ReactNode;
   onBack?: () => void;
+  /**
+   * A commit control pinned to the foot of the screen rather than sitting at
+   * the end of the list (§6, §7, §8).
+   *
+   * It exists because at 320x640 six agreement rows plus an intro do not fit,
+   * and a commit control a collector has to hunt for is the shape that
+   * produces accidental non-consent. The footer measures itself and the scroll
+   * content reserves exactly that height — the same discipline `measureTabBar`
+   * uses, and for the same reason: a guessed reserve draws the last row of a
+   * list under the control that acts on it.
+   */
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   const theme = useTheme();
   const nav = useNav();
   const reserve = useTabBarReserve();
+  const [footerHeight, setFooterHeight] = useState(0);
   return (
-    // `background` is the page — the lavender wash the glass above it needs.
+    // `background` is the page — the warm paper everything above it stands on.
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background }}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           padding: theme.space[4],
           paddingTop: 0,
-          paddingBottom: theme.space[4] + (nav.isTabRoot ? reserve : bottomInset(theme.space[6])),
+          paddingBottom:
+            theme.space[4] + footerHeight + (nav.isTabRoot ? reserve : bottomInset(theme.space[6])),
           gap: theme.space[3],
         }}
       >
         <Header title={title} right={right} onBack={onBack} />
         {children}
       </ScrollView>
+      {footer === undefined ? null : (
+        <View
+          onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: theme.color.background,
+            // One hairline, and it is the only rule on a `Screen`: it is the
+            // edge of a control strip over scrolling content, which is a
+            // boundary rather than the decorative bar the header deliberately
+            // does not draw.
+            borderTopWidth: 1,
+            borderTopColor: theme.color.border,
+            padding: theme.space[4],
+            paddingBottom: theme.space[4] + bottomInset(theme.space[6]),
+            gap: theme.space[3],
+          }}
+        >
+          {footer}
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
