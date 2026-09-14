@@ -11,23 +11,61 @@ Preconditions: the centre is up (`node deploy/centre/check.mjs health
 deploy/centre/centre.env` exits 0), `PLAYERONE_PAYOUT_MODE=manual`, and you
 have a card already handed in, or the real handset for step 1.
 
-## 1. Card in, session declared
+## 1-2. Card in, session declared, imported, uploaded, cloud verified
 
-**Screen:** the counter console, or `packages/api/bin/counter.ts import`
-(see [RUNNING.md](../../docs/RUNNING.md#the-operator-api)).
-**Evidence:** a `batch_id` printed to stderr before upload starts, and a
-`handover_id` from the same call. Say the batch id aloud; it is what step 2's
-evidence traces back to.
+**Command:** one, on the copy or straight off the mounted card:
 
-## 2. Import, upload, cloud verify
+```bash
+node packages/api/scripts/card-intake.mjs "$CARD/$SESSION" \
+  --card <tf card id> --collector <collector's phone> \
+  --others-in-frame yes|no --sensitive no
+```
 
-**Command:** the same `counter.ts import` call finishes with
-`cloud_verified: true` on stdout, or `counter.ts upload --batch <id>` if
-resuming.
-**Evidence:** `episode_id`, `verification_state: "verified"` (episodes table),
-and one `cloud_verifications` row per file with its own `sha256`. This is the
-byte read-back proof, not an ETag — do not accept a run that only shows
-`cloud_verified_at` set without the per-file verdict.
+The four credentials from [RUNNING.md](../../docs/RUNNING.md#the-operator-api)
+(`PLAYERONE_MACHINE_IDENTIFIER`, `PLAYERONE_MACHINE_SECRET`,
+`PLAYERONE_OPERATOR_REF`, `PLAYERONE_OPERATOR_SECRET`) and
+`PLAYERONE_MEDIA_ROOT` are in the environment. The two declarations are the
+APP-17b answers the collector gave at the counter and have no default. Given a
+path on the card, the command copies the session into `PLAYERONE_MEDIA_ROOT`
+and compares every file's sha256 across the two before importing the copy; it
+never imports in place and never writes to the card. Then it opens or reuses
+today's batch for this card, imports the session, submits the episode and
+uploads it with cloud read-back.
+
+**Evidence:** one table on stdout. Read the `batch` and `episode` rows aloud:
+
+```
+field         value
+------------  ---------------------------------------------------------------------------
+session       ego_AZER76400FE_20260813_072310
+copy          10 files, sha256 matched
+episode       3ed23c87-463e-8c3d-9a21-aca46c823f5c
+ingest        new
+verification  verified
+attribution   automatic_single -> session ccdd6862-e34d-52f4-8a35-3e6284983bfd (resolved)
+batch         ab174a59-d2fb-50cd-8c72-80ece51e98cf (opened, handover opened)
+```
+
+`verification  verified` is the byte read-back verdict, and there is one
+`cloud_verifications` row per file with its own `sha256` behind it — not an
+ETag. Do not accept a run that only shows `cloud_verified_at` set without the
+per-file verdict.
+
+**The retry, on purpose.** Run the identical command a second time in the
+room. It is the same batch, the same handover, the same episode and no second
+bill line — the ids are derived from the centre, the card, the collector and
+today's date, so a retry replays instead of importing again:
+
+```
+copy          10 files, sha256 matched
+ingest        duplicate
+verification  verified
+batch         ab174a59-d2fb-50cd-8c72-80ece51e98cf (reused, handover reused)
+```
+
+Exit 0 means the batch is cloud verified. Anything else prints the failed step
+on stderr and the table shows how far it got; `packages/api/bin/counter.ts
+upload --batch <id>` resumes the cloud leg alone from the batch id above.
 
 ## 3. Review
 
@@ -154,104 +192,60 @@ correctly generated and correctly unpayable until credentials exist.
 
 ---
 
-## Card procedure, Windows, ext4 TF card — UNTESTED
+## Card procedure — exFAT, auto-mounted, MEASURED
 
-**No card reader is attached today.** Nothing below has been run end to end;
-it is written from `usbipd`/WSL documentation and this machine's own tool
-versions (`usbipd 5.3.0`, WSL distros `Ubuntu` and `Ubuntu-22.04`, both
-present and stopped, checked with `wsl -l -v`), not from a completed transfer.
-Treat every step as a plan to rehearse, not a proven procedure. Windows
-cannot mount ext4 natively, which is why the card goes through WSL rather
-than a Windows drive letter.
+The card is **exFAT**, label `PlayerOne`, 240 GB. Measured on the hardware, not
+inferred. Both operating systems mount it natively and automatically:
 
-1. Plug in the reader with the card inserted. Find its bus id from an
-   elevated PowerShell (`usbipd` needs Administrator to bind/attach):
+- **Linux:** `/media/<user>/PlayerOne` (on the on-site laptop, `/media/alois/PlayerOne`)
+- **Windows:** a drive letter, e.g. `E:\`
+
+Everything the earlier version of this section described — `usbipd bind`,
+`usbipd attach --wsl`, `lsblk` hunting for a partition, `mount -o ro,noload`,
+`e2fsck`, WSL as the only way in — was written for an **ext4** card and is
+void. There is no journal to replay because exFAT has none, so the `noload`
+argument and the whole WSL detour have nothing left to protect.
+
+**The rule that does not change: never write to the card.** CLAUDE.md Rule 6 —
+no TF card is cleared, and no step here writes to it. On Linux the automount is
+read-write by default and on Windows the drive letter certainly is, so the
+protection is now procedural rather than mount-enforced: **copy off it, and
+issue no command that writes to it.** No delete, no move, no format, no
+`chkdsk /f`, no "reorganise the folders". If Windows offers to scan and fix the
+drive, decline.
+
+1. Insert the card. Confirm the mount and find the session:
+
+   ```bash
+   ls /media/$USER/PlayerOne                     # Linux
+   ```
 
    ```powershell
-   usbipd list
+   Get-ChildItem E:\                             # Windows
    ```
 
-   Identify the reader by its `DEVICE` name (not by guessing the busid — a
-   wrong bind can attach the wrong device to WSL). Note its `BUSID`, e.g. `2-3`.
+   Expect `ego_*` session directories. If the label is not `PlayerOne`, stop:
+   it is not this card.
 
-2. Bind it once (persists across reboots), then attach it to WSL for this
-   session:
-
-   ```powershell
-   usbipd bind --busid <busid>
-   usbipd attach --wsl --busid <busid>
-   ```
-
-   `--wsl` starts the default WSL distro if it is not already running. To
-   attach into a specific distro instead of the default one, add
-   `--wsl-distribution Ubuntu-22.04`.
-
-3. In the WSL shell, confirm the device arrived and identify its partition:
-
-   ```bash
-   lsblk -f
-   ```
-
-   Expect one `ext4` partition on the card. Do not proceed if `lsblk` shows
-   more than one candidate partition without being certain which is the card —
-   mounting the wrong block device risks the wrong data, not the card's.
-
-4. Mount it **read-only, and with the journal left alone**. This is the hard
-   rule from CLAUDE.md Rule 6: no TF card is ever cleared, and nothing here
-   may write to the card.
-
-   ```bash
-   sudo mkdir -p /mnt/tfcard
-   sudo mount -o ro,noload /dev/sdX1 /mnt/tfcard   # replace sdX1 with the device from lsblk
-   ```
-
-   `-o ro` is not enough on its own, and this is the reason: a read-only ext4
-   mount still **replays the journal onto the device** if the filesystem was
-   not cleanly unmounted — which is exactly the state a card pulled out of a
-   camera is in. That replay is a write to the card. `noload` tells the kernel
-   not to load the journal at all.
-
-   **If that mount fails, stop.** `noload` refuses a filesystem that needs
-   recovery, and that refusal is the guard working rather than an obstacle to
-   get around. Read the reason before doing anything else:
-
-   ```bash
-   dmesg | tail -20
-   ```
-
-   Do **not** re-mount without `noload`, and do not run `e2fsck` against the
-   card. Recovery happens on a **copy**: image the partition to host storage
-   and recover the image, never the original.
-
-   ```bash
-   sudo dd if=/dev/sdX1 of=/mnt/c/PlayerOne/recovery/card.img bs=4M status=progress
-   sudo mount -o ro,loop /mnt/c/PlayerOne/recovery/card.img /mnt/tfcard
-   ```
-
-   The card then goes back in its envelope untouched, and the copy is what
-   anybody argues about.
-
-5. Copy the session directory to the centre inbox — the host path that
-   becomes `PLAYERONE_MEDIA_ROOT` for the API — read-only from the card,
-   read-write only on the destination.
+2. Copy one session to the centre inbox — the host path that is
+   `PLAYERONE_MEDIA_ROOT` for the API — with a checksum manifest on each side.
+   Read-only from the card, read-write only on the destination.
 
    Run it as **one script**, not as four pasted lines: a pasted sequence
-   carries on after a step fails. Save this as `/tmp/copy-card.sh` in the WSL
-   shell and run `bash /tmp/copy-card.sh`.
+   carries on after a step fails. Save this as `/tmp/copy-card.sh` and run
+   `bash /tmp/copy-card.sh`.
 
    ```bash
    #!/usr/bin/env bash
    set -euo pipefail
 
    SESSION=<ego_session_dir>           # the directory name, not a path
-   CARD=/mnt/tfcard
-   INBOX=/mnt/c/PlayerOne/media        # the centre's actual PLAYERONE_MEDIA_ROOT
-                                       # (/mnt/c is how WSL2 reaches Windows)
+   CARD=/media/$USER/PlayerOne         # the automount; no sudo, no mount call
+   INBOX=/c/PlayerOne/media            # the centre's actual PLAYERONE_MEDIA_ROOT
 
-   # Both manifests are written OUTSIDE the directories being hashed, on
-   # writable host storage. The card is read-only so a manifest inside it is
-   # impossible anyway, and a manifest inside the copy would turn up in its own
-   # file list and hash itself.
+   # Both manifests are written OUTSIDE the directories being hashed. A
+   # manifest inside the copy would turn up in its own file list and hash
+   # itself; a manifest inside the card would be a write to the card.
    manifest() {                        # manifest <directory> <absolute output file>
      (
        cd "$1"
@@ -265,11 +259,11 @@ than a Windows drive letter.
        test -n "$(find . -type f -print -quit)"
        # Relative names on both sides, so the two manifests are comparable at
        # all: absolute paths made the old `diff` impossible to satisfy, because
-       # `/mnt/tfcard/...` is never `/mnt/c/PlayerOne/media/...`. `-print0`
-       # with `sort -z` keeps every name safe and the order identical; `-r`
-       # means a vanished inventory cannot produce a manifest; `pipefail` means
-       # a failed hash aborts the run instead of writing a short one. `find`
-       # rather than `*`, so hidden files are included.
+       # `/media/.../PlayerOne/...` is never `/c/PlayerOne/media/...`.
+       # `-print0` with `sort -z` keeps every name safe and the order
+       # identical; `-r` means a vanished inventory cannot produce a manifest;
+       # `pipefail` means a failed hash aborts the run instead of writing a
+       # short one. `find` rather than `*`, so hidden files are included.
        find . -type f -print0 | sort -z | xargs -0 -r sha256sum
      ) > "$2"
    }
@@ -285,24 +279,38 @@ than a Windows drive letter.
    both directories were real session directories, both inventories were
    non-empty and every hash succeeded — *and* the `diff` must print nothing.
    If the script exits nonzero, stop and do not hand the copy to
-   `counter.ts import`: an empty `diff` after a run that failed earlier proves
+   `card-intake.mjs`: an empty `diff` after a run that failed earlier proves
    nothing at all.
 
-6. Unmount and detach before removing the card:
+   `deploy/centre/hardware-check/card-check.sh --card-root
+   /media/$USER/PlayerOne` runs this same inventory and copy against an
+   already-mounted card, with the step-by-step PASS/FAIL report. It is the same
+   method, not a second one.
+
+3. Import the copy (steps 1-2 above):
 
    ```bash
-   sudo umount /mnt/tfcard
+   node packages/api/scripts/card-intake.mjs "$INBOX/$SESSION" \
+     --card <tf card id> --collector <phone> --others-in-frame yes|no --sensitive no
    ```
 
-   ```powershell
-   usbipd detach --busid <busid>
+   The command also accepts the path **on the card** — `"$CARD/$SESSION"` —
+   and then does the copy and the per-file sha256 comparison itself before
+   importing the copy, printing `copy  <n> files, sha256 matched`. It never
+   imports from the card in place. Use the shell script above when a stakeholder
+   should watch the manifests being compared; use the card path when the point
+   is one command.
+
+4. Eject and remove the card:
+
+   ```bash
+   udisksctl unmount -b /dev/disk/by-label/PlayerOne    # Linux
    ```
 
-7. Continue with the ordinary import (`counter.ts import --session-dir
-   <path under PLAYERONE_MEDIA_ROOT>`), per [RUNNING.md](../../docs/RUNNING.md).
+   On Windows use Safely Remove Hardware. Then the card goes back in its
+   envelope, still holding every byte it arrived with.
 
-What is not proven by this write-up: that `usbipd attach` reliably reaches a
-real card reader on this hardware, that the ext4 partition is `sdX1` and not
-some other number, that permissions survive the copy into `/mnt/c` cleanly,
-and how long a real multi-gigabyte session takes over this path. Rehearse
-with an actual card and reader before relying on this at the centre.
+What is still not measured on this path: how long a full multi-gigabyte session
+takes to copy off this card on this hardware, and whether the copy into a
+Windows path preserves every filename exactly on a session containing unusual
+characters. Rehearse with the real card before relying on the timings.
