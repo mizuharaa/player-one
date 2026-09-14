@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ambient, bamboo, dark, darkBrandTints, glass, lavender, light, lime, ring, stage, sun, tech, toCss, truc, verdict } from '../src/tokens.ts';
+import { ambient, bamboo, dark, darkBrandTints, discover, glass, lavender, light, lime, ring, stage, sun, tech, toCss, truc, verdict } from '../src/tokens.ts';
 import { nativeTheme } from '../src/native.ts';
 
 /**
@@ -493,6 +493,67 @@ describe('the sign-in wash costs no contrast', () => {
  * mascot was drawn black on black. He is the only figure on the sign-in screen
  * and he rendered as a grey ghost on the ground he was standing on.
  */
+/**
+ * The public story's paper, now that the collector app stands on it too.
+ *
+ * `discover` was a console-only table until the app's landing became the same
+ * page as `/discover` — same film, same sections, same copy — and
+ * `nativeTheme()` started handing these eight colours to a phone. A colour
+ * that only ever appeared in a stylesheet nobody measured is exactly how the
+ * verdict pills got under the floor, so the grounds and inks that meet on that
+ * page are measured here.
+ *
+ * They are the same in both schemes on purpose: the landing does not repaint
+ * for a phone in dark mode, because the photographs on it were lit for paper.
+ * So there is one set of numbers, not two.
+ */
+describe('the public story stands on daylight paper in both schemes', () => {
+  const grounds = [
+    ['paper', discover.warmPaper],
+    ['surface', discover.warmSurface],
+    ['soft', discover.warmSoft],
+  ] as const;
+
+  for (const [name, ground] of grounds) {
+    it(`body and muted ink clear AA on the ${name} ground`, () => {
+      atLeast(TEXT_AA, discover.warmInk, ground, `warm ink on ${name}`);
+      atLeast(TEXT_AA, discover.warmMuted, ground, `warm muted on ${name}`);
+    });
+  }
+
+  /**
+   * The introduction band is ink, not paper — two of the console's stylesheets
+   * disagree about it and the page renders the dark one. So the inks that land
+   * on `warmInk` are measured too: `warmMuted` is a warm brown made for paper
+   * and is NOT one of them, which is why `warmLine` does the muted job there.
+   */
+  it('the ink band takes surface and line, and not the paper muted', () => {
+    atLeast(TEXT_AA, discover.warmSurface, discover.warmInk, 'surface on ink');
+    atLeast(TEXT_AA, discover.warmLine, discover.warmInk, 'line on ink');
+    expect(contrast(discover.warmMuted, discover.warmInk)).toBeLessThan(TEXT_AA);
+  });
+
+  it('and the lavender panel the walkthrough sits on carries its own ink', () => {
+    atLeast(TEXT_AA, discover.lightInk, discover.light, 'light ink on the lavender panel');
+    atLeast(TEXT_AA, discover.warmInk, discover.light, 'warm ink on the lavender panel');
+  });
+
+  /**
+   * `warmLine` measures 1.48:1 on paper and is a separator, not a boundary —
+   * the same distinction `borderStrong` is held to below. It is asserted as
+   * under the control floor so that nobody later reaches for it to outline a
+   * control on this page.
+   */
+  it('the warm rule is a separator and is not asked to identify a control', () => {
+    expect(contrast(discover.warmLine, discover.warmPaper)).toBeLessThan(CONTROL_AA);
+  });
+
+  it('nativeTheme hands the app the same eight colours in both schemes', () => {
+    expect(nativeTheme('light').discover).toEqual(nativeTheme('dark').discover);
+    expect(nativeTheme('light').discover.paper).toBe(discover.warmPaper);
+  });
+});
+
 describe("Trúc's furs do not answer to the page", () => {
   it('his light furs read against his black in both schemes', () => {
     atLeast(TEXT_AA, truc.coat, stage.ground, 'coat on his ink');
