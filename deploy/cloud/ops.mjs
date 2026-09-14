@@ -115,6 +115,7 @@ async function main([command, name]) {
       await ownerJob(sql => sql`create database ${sql(target.pathname.slice(1))}`, admin.href);
       break;
     }
+    case 'restore-url': console.log(isolatedUrl(env.OWNER_DATABASE_URL, name, 'po_restore_').href); break;
     default: throw new Error(`Unknown operation: ${command}`);
   }
 }

@@ -1,218 +1,113 @@
-# One Linux VM in Vietnam: the whole loop, behind HTTPS
+# Cloud VM kit
 
-Railway runs the public showcase and cannot run the rest: no ffmpeg, no
-persistent media root, and nothing that may hold Vietnamese footage. This kit
-is one Ubuntu 22.04/24.04 VM with Docker — Caddy with automatic HTTPS, the API,
-a media volume, GreenNode object storage, `REVIEW_VERIFICATION_GATE=cloud`,
-`PLAYERONE_REVIEWER_MEDIA=0` and `PLAYERONE_PAYOUT_MODE=manual`. The Railway
-path (`deploy/showcase.mjs`, `railway.toml`) is untouched and still serves the
-public site.
+Run on Ubuntu 22.04/24.04 in Vietnam. This is the staff-assisted demo: cloud
+verification, metadata-only reviewers, manual payout, and sandbox gateways.
+ZNS and ZaloPay account verification still need real credentials. No successful
+simulation is a real transfer. Keep media, database and backups in Vietnam.
 
-It is not the upload centre. A centre is a Windows PC with card readers and its
-own API (`deploy/centre/README.md`); this VM is the platform the centre, the
-collector app and the reviewers reach over the internet.
+## Provision and start
 
-**Data residency.** Every byte stays in Vietnam: this VM, the Postgres it uses
-and the GreenNode bucket are all in-country, and nothing is mirrored abroad.
-PaXini's reviewers in China reach *this* origin over HTTPS — remote access, not
-data transfer, which is Part 7.3's Phase 1 arrangement. While
-`PLAYERONE_REVIEWER_MEDIA=0` a reviewer session receives review metadata and no
-footage at all, and D11 has to be answered by Legal before that changes. Leave
-it at `0`.
+See [the owner command sequence](../../docs/cloud-go-live.md). Clone the reviewed
+revision before provisioning. Point DNS at the VM first. Run `provision.sh` as
+root from that checkout; it copies the source to `/srv/playerone` and installs
+Docker from its [signed Ubuntu repository](https://docs.docker.com/engine/install/ubuntu/).
+It adds TCP 80/443 to ufw and preserves existing management rules. Docker publishes
+only those web ports; neither Postgres nor the API has a published port.
 
-## What the owner has to supply
+Required flags: `--domain`, `--acme-email`, `--storage-endpoint`,
+`--storage-bucket`, `--storage-key`, `--storage-secret`, `--quota-bytes`, and
+exactly one of `--local-db` or `--database-url`. The latter is an OWNER URL for
+an existing `po_demo*` or `playerone_demo*` database, with permission to migrate,
+administer roles and create the isolated verification/restore databases. Use
+`sslmode=require` for managed Postgres. The script derives the restricted
+`playerone_app` URL and generates its password. Use a dedicated demo cluster:
+`playerone_app` is a cluster-wide role. Never point this kit at production.
 
-| | |
-|---|---|
-| A domain or subdomain, and control of its DNS | `console.example.vn`. Caddy asks Let's Encrypt for the certificate itself; there is nothing to buy. |
-| The VM | Ubuntu 22.04 or 24.04, Docker Engine + compose plugin. 4 vCPU / 8 GB is enough for the pilot's review traffic; the disk is what matters — the media volume holds imported `ego_*` sessions, so size it against what the pilot will hold at once, not against the 640 TB total. |
-| An operations email address | Let's Encrypt expiry and revocation notices. |
-| GreenNode S3: endpoint, bucket, key, secret, and the allocation in bytes | The bucket needs its lifecycle rule set by hand **before the first upload** — [RUNNING.md](../../docs/RUNNING.md#the-bucket-needs-one-rule-set-on-it-by-hand). |
-| A database decision | Managed Postgres (its host and password, `?sslmode=require`), or `--profile db` to run Postgres on this VM with a named volume. |
-| Generated secrets | `PLAYERONE_TOKEN_SECRET`, the machine and operator secrets, the `playerone_app` password, and the owner password if Postgres runs here. |
-| ZNS, when VNG has issued the account | Until then sign-in codes are written to the API's container log and delivered to nobody, so **no real collector can sign in on this VM**. Staff can walk the loop; collectors cannot. |
-| ZaloPay's read-only Verify Account credential | Manual payout still refuses to record a payment to an account ZaloPay never confirmed — the G3 gate. |
+Generated credentials live in `deploy/cloud/cloud.env` (mode 600); printed only
+on creation. A second provision is refused. `--force` refreshes source while
+retaining that file and all secrets; it does not rotate logins or erase data.
+Do not source cloud.env as shell code. Compose parses it, including literal `$`.
 
-## Install
-
-1. **The VM.** Docker Engine and the compose plugin from Docker's own
-   repository. Open inbound TCP 80 and 443 and nothing else; the API is never
-   published, and Postgres — managed or local — is never on a public port.
-
-2. **DNS.** One `A` record for the hostname at the VM's public address (and
-   `AAAA` if it has IPv6). Let it propagate *before* the first
-   `docker compose up`: Caddy's first HTTP-01 challenge needs the name to
-   resolve, and a failed issuance counts against Let's Encrypt's rate limit.
-
-3. **The checkout and the environment.**
-
-   ```bash
-   git clone https://github.com/mizuharaa/player-one.git /srv/playerone
-   cd /srv/playerone/deploy/cloud
-   cp cloud.env.example cloud.env && chmod 600 cloud.env
-   $EDITOR cloud.env          # every REPLACE_ value
-   ```
-
-   `cloud.env` is git-ignored. Its paths are the *container's* — `/srv/console`,
-   `/data/media`, `/data/backups` are volumes, not VM directories.
-
-4. **The database, as its owner.** The application is not the owner: migration
-   `0021` created `playerone_app`, and `packages/store/src/db.ts` refuses to run
-   as a superuser at all. So migrate with the owner credential once, then never
-   use it again.
-
-   With the bundled Postgres (`--profile db`):
-
-   ```bash
-   docker compose --profile db up -d postgres
-   docker compose build api
-   docker compose run --rm \
-     -e DATABASE_URL='postgres://postgres:OWNER_PASSWORD@postgres:5432/playerone' \
-     api node_modules/.bin/drizzle-kit migrate --config packages/store/drizzle.config.ts
-   docker compose exec postgres psql -U postgres -d playerone \
-     -c "ALTER ROLE playerone_app LOGIN PASSWORD 'REPLACE_DATABASE_PASSWORD';"
-   ```
-
-   That is what `pnpm db:migrate` runs; pnpm itself is not in the runtime
-   image, and drizzle-kit opens its own connection and never meets the
-   superuser refusal. `0021` creates `playerone_app` as `NOLOGIN` — the
-   `ALTER ROLE` is what makes it usable, and `DATABASE_URL` in `cloud.env`
-   must name it with the password set here. With a managed database, run the
-   same command from anywhere that can reach it, with `?sslmode=require`.
-
-5. **Bootstrap the centre, machine and staff**, once, with the same role the API
-   uses (it inserts rows; it does not own tables):
-
-   ```bash
-   docker compose run --rm api node packages/api/bin/bootstrap.ts \
-     --centre-region HCM --centre-name 'Upload centre HCM-01' \
-     --machine REPLACE_MACHINE_IDENTIFIER --machine-secret 'REPLACE_MACHINE_SECRET' \
-     --operator 'op-1:administrator:REPLACE_ADMIN_SECRET' \
-     --operator 'fin-1:finance:REPLACE_FINANCE_SECRET' \
-     --operator 'clerk-1:centre_operator:REPLACE_CLERK_SECRET'
-   ```
-
-   The arguments and exit codes are the centre runbook's
-   ([step 4](../centre/README.md)); it is the same command.
-
-6. **Start it.**
-
-   ```bash
-   docker compose up -d --build                 # managed Postgres elsewhere
-   docker compose --profile db up -d --build    # Postgres on this VM too
-   docker compose ps                            # api must reach (healthy)
-   ```
+`bash up.sh` builds runtime and migrate images, waits for the optional local DB,
+migrates as owner, enables the app login, bootstraps, seeds the stakeholder demo,
+refreshes console assets, starts the API, backs up and runs preflight. Run again
+to upgrade. `bash up.sh --pull` pulls `PLAYERONE_IMAGE` and
+`PLAYERONE_MIGRATE_IMAGE` from cloud.env instead (both must be the same revision).
+A failed seed writes a protected temporary diagnostic whose path is printed;
+it can contain credentials. Do not paste it into a public report.
 
 ## Verify
 
-Run all four. The first three take seconds; the fourth is the loop itself.
+`bash verify.sh` writes `deploy/cloud/verify-<timestamp>.txt`. It checks the
+running image ID and source SHA, HTTP redirect, certificate trust/hostname and
+expiry, headers, health, machine/operator and reviewer authentication, nested
+SPA reload, real S3 PUT/body SHA-256/read-back/delete, and bucket CORS.
+The e2e money loop is explicitly SIMULATION, in a new `po_e2e_cloud_*` database
+with a filesystem bucket and fake rail. It checkpoints and drops only that DB;
+it compares demo table counts before and after. A failed cleanup is a failure.
+
+Optional real card proof (source mount is read-only; supply actual declarations):
 
 ```bash
-# 1. The deployment answers, and the answer means the API is up. /healthz asks
-#    the API for /whoami with no credentials and reads 401 as ready, which is
-#    what deploy/http-server.mjs does on Railway.
-curl -sS https://console.example.vn/healthz          # {"ready":true}
-
-# 2. The browser policy, on a static response and on a proxied one. Both must
-#    carry the CSP, nosniff, DENY, the referrer policy and exactly ONE
-#    Strict-Transport-Security line.
-curl -I https://console.example.vn/
-curl -I https://console.example.vn/whoami            # 401 is correct here
-
-# 3. GreenNode, from this VM, with this deployment's own keys and its own
-#    client: one small object up, then read back and hashed. It proves the
-#    endpoint, the bucket, the credentials and the read-back that QR-02's
-#    cloud gate depends on. Delete the probe key afterwards.
-docker compose exec api node --input-type=module -e "
-import { s3StoreFromEnv } from './packages/api/src/upload-worker.ts';
-import { writeFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
-const store = s3StoreFromEnv();
-if (!store) throw new Error('STORAGE_* is not configured in cloud.env');
-const bytes = Buffer.from('playerone-cloud-probe\n');
-const sha = createHash('sha256').update(bytes).digest('hex');
-await writeFile('/tmp/probe', bytes);
-const key = 'diagnostics/probe-' + Date.now();
-console.log('put:', JSON.stringify(await store.put(key, '/tmp/probe', sha)));
-const hash = createHash('sha256');
-for await (const chunk of await store.read(key)) hash.update(chunk);
-console.log('read-back matches:', hash.digest('hex') === sha);
-"
-
-# 4. The whole money path, in this image, on a THROWAWAY database. The script
-#    truncates every table first, so never point it at the deployment's
-#    database. It truncates as the schema owner, which playerone_app cannot do
-#    and must not be able to do (migration 0021), hence the two overrides.
-docker compose exec postgres createdb -U postgres playerone_e2e   # or on the managed server
-docker compose run --rm \
-  -e DATABASE_URL='postgres://postgres:OWNER_PASSWORD@postgres:5432/playerone_e2e' \
-  api node_modules/.bin/drizzle-kit migrate --config packages/store/drizzle.config.ts
-docker compose run --rm \
-  -e DATABASE_URL='postgres://postgres:OWNER_PASSWORD@postgres:5432/playerone_e2e' \
-  -e PLAYERONE_ALLOW_SUPERUSER=1 \
-  api node packages/api/scripts/e2e-loop.mjs      # ends with: all checks passed
+bash verify.sh --session /absolute/ego_SERIAL_DATE_TIME --card CARD_ID \
+  --collector COLLECTOR_REF --others-in-frame yes --sensitive no \
+  --task TASK_NAME --scenario home --device CAMERA_SERIAL
 ```
 
-The loop makes its own footage with the ffmpeg now in the image. With the five
-real sessions mounted and `PLAYERONE_SESSIONS` pointing at them it walks one of
-them too, which is the only version of this check that says anything about
-PaXini's encoder. Drop `playerone_e2e` when it passes.
+No supplied path means SKIPPED. A reachable reviewer token on the host is not
+proof of a remote reviewer's network: repeat sign-in from that location.
+Name and independently confirm the VN VM, DB and bucket before go-live.
+Per-bucket CORS replaces the whole rule set: use a bucket dedicated to this
+origin. For multiple approved origins, run `bucket-cors.mjs` with all of them.
 
-Then sign in through the console as the administrator from step 5, and reload a
-nested route such as `/episodes` to confirm the SPA fallback.
+## Backup and restore
 
-## Operating it
+`bash backup.sh` writes dated custom-format dumps and public-table row counts to
+`/srv/playerone/backups`, with a copy in the API backup volume for preflight.
+It refuses a mismatched manifest if table counts change during the dump; retry
+while the demo is idle. Schedule it and copy backups to separate storage in
+Vietnam. Local copies do not protect against losing the VM.
 
-- **Restarting Caddy means restarting the API.** The API deliberately shares
-  Caddy's network namespace (`network_mode: "service:caddy"`), which is how it
-  keeps `HOST=127.0.0.1` while still being reachable by the proxy — and
-  therefore how the forwarded client address stays trustworthy (see the "address
-  is the socket" section of `packages/api/src/ratelimit.ts`). The cost is that
-  `docker compose restart caddy` leaves the API with no network and every
-  request answering 502. Measured on this kit. Restart both, in order:
-  `docker compose restart caddy api`.
-- **A console rebuild needs the volume dropped.** The `console` volume is seeded
-  from the image the first time it is used and never again. After a console
-  change: `docker compose down && docker volume rm playerone_console && docker
-  compose up -d --build`.
-- **Certificates live in the `caddy_data` volume.** Losing it means a fresh
-  issuance on every start, which is how a deployment meets Let's Encrypt's rate
-  limit and then has no TLS at all. Back it up with the database.
-- **Backups.** `PLAYERONE_BACKUP_DIR` is a volume on this VM, which is not
-  off-site. `pg_dump` into it on a schedule and copy it somewhere else in
-  Vietnam. SEC-06 disk encryption is operations work and Alois owns it
-  ([ADR 0004](../../docs/adr/0004-sec06-is-disk-encryption-at-the-upload-centre.md)).
-- **Logs** are the containers': `docker compose logs -f api`. Sign-in codes
-  appear there while ZNS is unconfigured, which is one more reason this VM is
-  not a collector deployment yet.
-- **The alert and risk workers are not in this compose.** One VM, three
-  services, on purpose; `docs/RUNNING.md` has both workers and their
-  environment when this deployment wants them.
-- **The image carries ffmpeg**, pinned to bookworm's 5.1 series. It costs
-  472 MB uncompressed (`docker history`) — a runtime image of 269.7 MB → 444.3 MB
-  as `docker image inspect --format '{{.Size}}'` measures it. A static ffmpeg
-  build would be smaller and would not be the distro's package; the distro's is
-  what gets security updates without us noticing.
+```bash
+bash restore.sh /srv/playerone/backups/po_demo_cloud-TIMESTAMP.dump po_restore_rehearsal
+```
 
-- **A browser PUT into the bucket needs one CORS rule, applied once per
-  console origin.** Every other upload path in this platform is a server
-  process PUTting from Node, which no browser policy applies to; the console's
-  **Debug delivery** page (`PLAYERONE_DEBUG_DELIVERY=1`) is the exception, and
-  it sends a signed PUT from the operator's own browser. Run
-  `node packages/api/scripts/bucket-cors.mjs https://<this deployment's console
-  origin>` with the `STORAGE_*` variables loaded — it allows PUT/GET/HEAD from
-  exactly those origins, reads the configuration back to prove the store kept
-  it, and replaces the bucket's whole CORS configuration, so name every origin
-  in one run. Without it the page fails with `TypeError: Failed to fetch`, no
-  status and nothing in the API log, because the request never leaves the
-  browser. On GreenNode this is still to do: the rule has to be applied against
-  the real bucket with the real keys, and nothing local proves it.
+Restore creates a NEW database, never overwrites one, and prints expected/actual
+counts for every public table. The target remains for inspection. A retry after
+failure needs another fresh name. The demo URL is never changed automatically.
 
-## What only the VM can prove
+## Certificate re-issue rehearsal (real domain only)
 
-Everything above was run locally against Docker except these, which need the
-real host: certificate issuance and the HTTP→HTTPS redirect for a real name
-(locally Caddy was given `http://localhost`, which skips ACME); the GreenNode
-round-trip, which needs the real endpoint and keys; a reviewer in China reaching
-the origin at all; and disk sizing under real footage. `deploy/cloud/check.test.ts`
-proves only that these files still agree with each other.
+Use the VM console during recovery. Preserve the ACME account and other domains.
+Replace the domain below with the exact DNS hostname, without scheme or path.
+Back up first, stop both services, remove only that domain's certificate entries,
+then recreate Caddy and API together because they share a network namespace.
+
+```bash
+cd /srv/playerone/deploy/cloud
+DOMAIN=console.example.vn
+[[ $DOMAIN =~ ^[a-z0-9]+([.-][a-z0-9]+)*$ ]] || exit 1
+docker compose --env-file cloud.env run --rm --no-deps -T --entrypoint sh caddy \
+  -c 'tar czf - -C /data caddy' > ../../backups/caddy-before-reissue.tgz
+docker compose --env-file cloud.env stop api caddy
+docker compose --env-file cloud.env run --rm --no-deps -T --entrypoint sh -e DOMAIN="$DOMAIN" caddy \
+  -c 'for entry in /data/caddy/certificates/*/"$DOMAIN"; do [ ! -d "$entry" ] || rm -r -- "$entry"; done'
+docker compose --env-file cloud.env up -d --force-recreate caddy api
+docker compose --env-file cloud.env logs --since 5m -f caddy
+# After issuance appears, Ctrl-C the log follower, then:
+bash verify.sh
+```
+
+Do not delete the caddy_data volume. Repeated issuance is rate limited; rehearse
+once after DNS works. Keep the archive private (it contains certificate keys).
+
+## Docker Desktop proof
+
+Do not run provision.sh on Windows. Use Git Bash with `COMPOSE_PROJECT_NAME`
+set to an isolated project. Generate cloud.env with `node configure.mjs` and the
+same flags, plus `--domain localhost --http-local`; use a local MinIO bucket
+(`quay.io/minio/minio`) and its endpoint. Then run up.sh, verify.sh and restore.sh.
+HTTP certificate and redirect checks are SKIPPED. MinIO does not implement the
+per-bucket CORS API (exit 3); that check is SKIPPED only for `http://localhost`.
+GreenNode CORS, DNS/ACME, real residency and remote reviewer reachability remain
+open until tested on the real host. No local PASS closes those gates.

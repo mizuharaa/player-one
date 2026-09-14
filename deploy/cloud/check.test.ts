@@ -143,6 +143,15 @@ describe('the Caddyfile, the compose file and the env template agree', () => {
 });
 
 describe('the template is the deployment this kit claims to be', () => {
+  it('backs up before restoring into a new database and compares all public table counts', async () => {
+    const backup = await read('backup.sh'), restore = await read('restore.sh');
+    expect(backup).toContain('pg_dump');
+    expect(backup).toContain('counts.json');
+    expect(restore).toContain('create-restore');
+    expect(restore).toContain('pg_restore');
+    expect(restore).toContain('row counts');
+    expect(restore).not.toContain('--clean');
+  });
   it('runs owner migrations separately from the unprivileged server and includes CLI inputs', async () => {
     expect(compose.services.migrate.build.target).toBe('migrate');
     expect(compose.services.api.environment.OWNER_DATABASE_URL).toBe('');

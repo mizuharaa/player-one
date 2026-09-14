@@ -12,6 +12,11 @@ test('destructive jobs cannot select the demo or an arbitrary database', () => {
   }
   assert.equal(isolatedUrl(url, 'po_e2e_cloud_abc', 'po_e2e_cloud_').pathname, '/po_e2e_cloud_abc');
 });
+test('restore only accepts a separate, bounded database name', () => {
+  const url = 'postgres://owner:secret@postgres/po_demo_cloud';
+  for (const name of ['po_demo_cloud', 'postgres', 'po_restore_x;drop', 'po_restore_' + 'a'.repeat(64)]) assert.throws(() => isolatedUrl(url, name, 'po_restore_'));
+  assert.equal(isolatedUrl(url, 'po_restore_rehearsal', 'po_restore_').pathname, '/po_restore_rehearsal');
+});
 test('HTTP proof skips TLS, checks protected access and detects broken headers or SPA', async () => {
   let broken = false;
   const server = createServer((req, res) => {
