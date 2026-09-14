@@ -2876,3 +2876,79 @@ export const showcaseFootage = pgTable('showcase_footage', {
   check('showcase_review_state', sql`(${table.verdict} is null) = (${table.reviewedAt} is null)`),
   check('showcase_expiry', sql`${table.expiresAt} > ${table.createdAt} and ${table.expiresAt} <= ${table.createdAt} + interval '7 days'`),
 ]);
+
+/**
+ * What happened to a collector's own work, told to the collector.
+ *
+ * Every row is written inside the transaction of the event it describes, by
+ * `notify()` in `packages/api/src/notifications.ts`, so a notification cannot
+ * exist for a change that rolled back and a change cannot commit without its
+ * notification. `docs/notifications.md` is the catalogue — trigger, audience,
+ * payload and transport, per kind.
+ *
+ * Two invariants and both are in here rather than in TypeScript.
+ *
+ * `collector_notifications_kind_check` names every kind. A route that invents
+ * one is refused by Postgres, which is what makes the vocabulary a fact about
+ * the data and not a convention somebody has to review. A kind added later
+ * replaces this CHECK in a new migration, the way `0030_release_held_delivery`
+ * replaces the upload reason CHECK.
+ *
+ * `collector_notifications_source_key` is the idempotency, and it is what makes
+ * a retry free. `source_table` and `source_id` name the EVENT's row — the
+ * upload, the review, the bill, the attempt — never this row, so two
+ * notifications about one verdict are recognisably the same notification.
+ * `notify()` inserts `on conflict do nothing` against it.
+ *
+ * `payload` carries ids and the server's stored figures only. There is no field
+ * here that could hold a reason code, a reviewer, a note or an exception, which
+ * is the same structural argument `me.ts` makes: a leak would need a new
+ * column, not a mistake.
+ */
+export const collectorNotifications = pgTable(
+  'collector_notifications',
+  {
+    id: uuid('id').primaryKey(),
+    collectorId: uuid('collector_id')
+      .notNull()
+      .references(() => collectors.id),
+    kind: text('kind').notNull(),
+    payload: jsonb('payload').notNull().default(sql`'{}'::jsonb`),
+    /** The table and row of the event this is about. See the unique index. */
+    sourceTable: text('source_table').notNull(),
+    sourceId: text('source_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Set once, by `POST /api/me/notifications/:id/read`, and never restamped. */
+    readAt: timestamp('read_at', { withTimezone: true }),
+  },
+  (t) => [
+    /**
+     * The listing keyset: newest first, and `id` after `created_at` because two
+     * notifications written in one transaction share an instant and a cursor on
+     * a non-unique key loses rows.
+     */
+    index('collector_notifications_inbox_idx').on(t.collectorId, t.createdAt.desc(), t.id.desc()),
+    uniqueIndex('collector_notifications_source_key').on(
+      t.collectorId,
+      t.kind,
+      t.sourceTable,
+      t.sourceId,
+    ),
+    check(
+      'collector_notifications_kind_check',
+      sql`${t.kind} in (
+        'upload_verified', 'upload_ingested', 'upload_held', 'upload_failed',
+        'review_passed', 'review_partial', 'review_failed',
+        'bill_issued', 'payment_recorded',
+        'payout_account_verified', 'payout_account_refused',
+        'task_published', 'claim_accepted'
+      )`,
+    ),
+    check('collector_notifications_payload_check', sql`jsonb_typeof(${t.payload}) = 'object'`),
+    check(
+      'collector_notifications_source_check',
+      sql`length(trim(${t.sourceTable})) > 0 and length(trim(${t.sourceId})) > 0`,
+    ),
+    check('collector_notifications_read_check', sql`${t.readAt} is null or ${t.readAt} >= ${t.createdAt}`),
+  ],
+);
