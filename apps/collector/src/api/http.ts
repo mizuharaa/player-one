@@ -18,7 +18,9 @@ import {
   type CollectorProfile,
   type EpisodeState,
   type EpisodeUpload,
+  type IncomeCycle,
   type IncomeEntry,
+  type PayoutDestination,
   type Scenario,
   type SessionInput,
   type Task,
@@ -519,7 +521,44 @@ export class HttpCollectorApi implements CollectorApi {
       settlementState: e.state,
     }));
   }
+
+  /**
+   * §14.1. Server strings, copied across — nothing here adds or rounds.
+   *
+   * ponytail: a second GET of the same route rather than a cached half of
+   * `income()`. The income screen makes two calls where one would do; caching
+   * across methods would be state this client does not otherwise keep, and at
+   * pilot scale the extra read is a few tens of rows. Fold them together when
+   * one screen's latency actually says so.
+   */
+  async incomeCycle(): Promise<IncomeCycle | null> {
+    const res = (await this.req('GET', '/api/me/income')) as { cycle?: RawCycle };
+    const c = res.cycle;
+    if (c === undefined) return null;
+    return {
+      label: c.label,
+      confirmedVnd: c.confirmedVnd,
+      estimatedVnd: c.estimatedVnd,
+      totalVnd: c.totalVnd,
+    };
+  }
+
+  /**
+   * §14.2. A status this app does not know is a server it does not know, and
+   * the honest answer is `payout.unknown` rather than the nearest neighbour —
+   * the same rule `toDeliveryState` follows, and for a stronger reason: the
+   * neighbour of "refused" is "awaiting", and telling a collector to wait for
+   * a verification that already failed is the lie this screen exists to avoid.
+   */
+  async payout(): Promise<PayoutDestination | null> {
+    const res = (await this.req('GET', '/api/me/payout')) as RawPayout;
+    const status = PAYOUT_STATUSES.find((s) => s === res.status);
+    if (status === undefined) return null;
+    return { channel: 'zalopay', status, masked: res.masked ?? null };
+  }
 }
+
+const PAYOUT_STATUSES = ['verified', 'awaiting', 'none'] as const;
 
 // ---------------------------------------------------------------------------
 // Wire shapes and the mapping onto the app's types
@@ -563,6 +602,19 @@ interface RawIncome {
   amount: string | null;
   confirmed: boolean;
   state: string;
+}
+
+/** §14.1 on the wire. camelCase, because the spec names these fields itself. */
+interface RawCycle {
+  label: string;
+  confirmedVnd: string;
+  estimatedVnd: string;
+  totalVnd: string;
+}
+
+interface RawPayout {
+  status?: string;
+  masked?: string | null;
 }
 
 /**

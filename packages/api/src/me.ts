@@ -372,6 +372,34 @@ export type EpisodeRow = {
   reasons: { code: string; label: string }[];
 };
 
+/**
+ * §14.1, the current settlement cycle as one object beside the entries.
+ *
+ * Four strings, already quantised, because the app is forbidden from adding
+ * money up — the whole reason this field exists rather than the income screen
+ * summing the list it was given.
+ */
+export type IncomeCycle = {
+  /** The server's own words, e.g. `17/08 – 23/08`. Empty when there is no bill yet. */
+  label: string;
+  confirmedVnd: string;
+  estimatedVnd: string;
+  totalVnd: string;
+};
+
+/**
+ * §14.2, where the collector gets paid.
+ *
+ * `masked` is the server's own redaction. There is no field here that can hold
+ * a full account number or a phone number, which is the same absence-is-the-
+ * guarantee argument `IncomeRow` makes.
+ */
+export type PayoutDestination = {
+  channel: 'zalopay';
+  status: 'verified' | 'awaiting' | 'none';
+  masked: string | null;
+};
+
 // ---------------------------------------------------------------------------
 // The read
 
@@ -646,12 +674,103 @@ export function registerMe(
       MONEY_SCALE,
     );
 
+    /**
+     * §14.1: the cycle card, as four strings the app prints and adds nothing to.
+     *
+     * The cycle is the collector's LATEST bill period, and `confirmedVnd` is
+     * summed in SQL over that bill's lines — `sum(s.amount)` over
+     * `bill_lines → settlements`, the rows finance actually wrote.
+     * `bills_total_matches_lines` (0011) says that sum IS `bills.total`, so the
+     * two cannot disagree; summing the lines rather than reading the stored
+     * total keeps the figure anchored to the rows a dispute is checked against.
+     *
+     * `estimatedVnd` is `unbilled` — the SAME figure `not_yet_billed` carries,
+     * not a second query with its own WHERE clause. That is deliberate and is
+     * the note above repeated: reviewed-not-yet-billed money is "the list the
+     * collector is looking at, filtered to `approved`", and a SQL predicate
+     * reproducing `collectorStateOf`'s six conditions would be a second answer
+     * to one question — the defect this whole file exists to remove. One
+     * source, one answer, and the card can never contradict the list under it.
+     *
+     * Nothing rounds here. Both terms are already at `MONEY_SCALE`, so every
+     * `quantise` below is a formatter; the addition is exact rational
+     * arithmetic through the one module that is allowed to do it.
+     */
+    const cycleRows = (await db.execute(sql`
+      select to_char(b.period_start at time zone 'UTC', 'DD/MM') as starts,
+             to_char((b.period_end - interval '1 day') at time zone 'UTC', 'DD/MM') as ends,
+             coalesce(sum(s.amount), 0)::text as confirmed
+        from bills b
+        left join bill_lines l on l.bill_id = b.id
+        left join settlements s on s.id = l.settlement_id
+       where b.collector_id = ${me}
+       group by b.id, b.period_start, b.period_end
+       order by b.period_start desc
+       limit 1
+    `)) as unknown as { starts: string; ends: string; confirmed: string }[];
+
+    const cycleRow = cycleRows[0];
+    const confirmed = fromDecimal(cycleRow?.confirmed ?? '0');
+    const cycle: IncomeCycle = {
+      // The period is inclusive of its last day: a bill is [start, end) and
+      // "17/08 – 24/08" would read as eight days to the person being paid for
+      // seven. Empty when no bill has been generated yet — the collector has
+      // money in flight but no cycle the server can name, and inventing bounds
+      // for it would be the server guessing.
+      label: cycleRow === undefined ? '' : `${cycleRow.starts} – ${cycleRow.ends}`,
+      confirmedVnd: quantise(confirmed, MONEY_SCALE),
+      estimatedVnd: unbilled,
+      totalVnd: quantise(add(confirmed, fromDecimal(unbilled)), MONEY_SCALE),
+    };
+
     return {
       currency: 'VND',
       episodes,
       periods,
       not_yet_billed: { episodes: notBilled.length, amount: unbilled },
+      cycle,
     };
+  });
+
+  /**
+   * §14.2: where the money goes, and how far verification got.
+   *
+   * Read-only, the collector's own current account, and it leaves with three
+   * fields. `payout_accounts` holds a WALLET's phone number in full; the
+   * redaction is taken in SQL so the full value never enters this process, the
+   * same structural argument as the `exists(…)` booleans above — the app
+   * cannot leak an identifier it was never sent.
+   *
+   * Three statuses, because §14.2 names three. Everything ZaloPay can answer
+   * that is not `verified` — `name_mismatch`, `locked`, `kyc_limit`, `error` —
+   * is `awaiting` here: the collector's move is identical in every one of
+   * those cases (go to a support point and sort the account out), and naming
+   * which refusal it was would tell them what the provider said about their
+   * identity, which is not this endpoint's to relay.
+   */
+  app.get('/api/me/payout', read, async (req, reply) => {
+    const me = collectorId(req);
+    if (me === null) return reply.code(403).send({ error: 'collector session required' });
+
+    const accounts = (await db.execute(sql`
+      select a.verify_status,
+             case when a.method = 'WALLET' then right(a.phone, 4) else a.account_no_last4 end as last4
+        from payout_accounts a
+       where a.collector_id = ${me} and a.is_current
+       limit 1
+    `)) as unknown as { verify_status: string; last4: string | null }[];
+
+    const account = accounts[0];
+    const destination: PayoutDestination = {
+      channel: 'zalopay',
+      status:
+        account === undefined ? 'none' : account.verify_status === 'verified' ? 'verified' : 'awaiting',
+      masked:
+        account === undefined || account.last4 === null || account.last4 === ''
+          ? null
+          : `•••• ${account.last4}`,
+    };
+    return destination;
   });
 
   /**

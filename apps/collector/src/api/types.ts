@@ -156,6 +156,30 @@ export interface IncomeEntry {
 }
 
 /**
+ * SPEC §14.1. The current settlement cycle, already rounded by the server.
+ *
+ * Four strings, printed as they arrive. The app is forbidden from computing
+ * any of them: a cycle total the client adds up is a second arithmetic that
+ * can disagree with the bill, which is the one thing a money screen must not
+ * do.
+ */
+export interface IncomeCycle {
+  /** The server's own words, e.g. `17/08 – 23/08`. */
+  label: string;
+  confirmedVnd: string;
+  estimatedVnd: string;
+  totalVnd: string;
+}
+
+/** SPEC §14.2. Where the collector gets paid, and how far verification got. */
+export interface PayoutDestination {
+  channel: 'zalopay';
+  status: 'verified' | 'awaiting' | 'none';
+  /** The server's own redaction, e.g. `•••• 5678`. Never a full identifier. */
+  masked: string | null;
+}
+
+/**
  * The typed client every screen talks to. `MockCollectorApi` implements it for
  * development and the screen tests; `HttpCollectorApi` implements it against
  * the platform's `/api/me/*` routes.
@@ -230,4 +254,11 @@ export interface CollectorApi extends DeliveryApi {
   sessions(): Promise<CollectionSession[]>;
   episodes(): Promise<EpisodeUpload[]>;
   income(): Promise<IncomeEntry[]>;
+  /**
+   * §14.1. `null` when the server has not sent a cycle, which the screen
+   * renders as `home.cycleUnavailable` — never as a figure the app worked out.
+   */
+  incomeCycle(): Promise<IncomeCycle | null>;
+  /** §14.2. `null` when the server has not sent a status, rendered `payout.unknown`. */
+  payout(): Promise<PayoutDestination | null>;
 }
