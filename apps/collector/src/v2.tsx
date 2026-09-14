@@ -35,7 +35,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import type { NativeTheme } from '@playerone/design/native';
-import type { Scenario, Task } from './api/types.ts';
+import { SCENARIOS, type Scenario, type Task } from './api/types.ts';
 import { useT } from './locale.tsx';
 import { useTheme } from './theme.tsx';
 import { Button, bottomInset, face, topInset, useReducedMotion, useTabBarReserve } from './ui.tsx';
@@ -115,8 +115,27 @@ const SETTINGS: Record<Scenario, ImageSourcePropType> = {
   warehouse: warehouse,
 };
 
-export const taskImage = (scenario: Scenario | null): ImageSourcePropType =>
-  scenario === null ? detail : SETTINGS[scenario];
+/**
+ * The placeholder for one task, and the second half of why this map exists.
+ *
+ * `GET /api/me/tasks` does not send a scenario — `toTask` in `api/http.ts`
+ * sets `scenario: null` for every row, because `tasks` has no scenario column;
+ * what it does send is `tasks.type`, and the only values that column carries
+ * are the four codes in `SCENARIOS`. So a `null` scenario falls back to `type`
+ * when `type` IS one of those four, and to `work-detail` otherwise.
+ *
+ * That fallback is a read, not a guess: it matches the exact strings the
+ * platform's own scenario vocabulary defines, and anything else — a free-text
+ * type somebody typed — takes the neutral still. It lives here, in the
+ * placeholder chooser, rather than in the API client, because the API is
+ * reporting the truth (this task has no scenario) and only the placeholder
+ * needs an opinion about it. When `Task` grows an `imageUrl` the whole
+ * function goes, and this goes with it.
+ */
+export const taskImage = (scenario: Scenario | null, type?: string | null): ImageSourcePropType => {
+  const code = scenario ?? SCENARIOS.find((s) => s === type) ?? null;
+  return code === null ? detail : SETTINGS[code];
+};
 
 /** §10's next-step fallback, for a step that is not about one task. */
 export const workImage = portrait;
@@ -300,7 +319,7 @@ export function TaskCard({
         transform: [{ scale: pressed ? 0.98 : 1 }],
       })}
     >
-      <ImageBox source={taskImage(task.scenario)} ratio={variant === 'row' ? 16 / 9 : 4 / 5}>
+      <ImageBox source={taskImage(task.scenario, task.type)} ratio={variant === 'row' ? 16 / 9 : 4 / 5}>
         <View
           style={{
             ...FILL,

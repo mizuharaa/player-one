@@ -184,7 +184,7 @@ export function TaskDetail() {
             ],
           }}
         >
-          <ImageBox source={taskImage(data.scenario)} ratio={3 / 2}>
+          <ImageBox source={taskImage(data.scenario, data.type)} ratio={3 / 2}>
             <Scrim />
             <View
               style={{

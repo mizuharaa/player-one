@@ -108,7 +108,8 @@ export function Home() {
 
   /** The still beside the next step: the claimed task's, else work-portrait. */
   const claimedTask = (tasks.data ?? []).find((t) => t.claimedByMe);
-  const nextImage = claimedTask === undefined ? workImage : taskImage(claimedTask.scenario);
+  const nextImage =
+    claimedTask === undefined ? workImage : taskImage(claimedTask.scenario, claimedTask.type);
 
   const caption = { ...textStyle(theme, 'caption'), color: theme.color.discover.muted };
   const sectionHeading = {
