@@ -14,16 +14,18 @@ export function configuration(args) {
   }
   if (!/^(?=.{1,253}$)[a-z0-9]+(?:[.-][a-z0-9]+)*$/i.test(v.domain)) throw new Error('Supply a DNS hostname, without scheme or path');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v['acme-email'])) throw new Error('Invalid ACME email');
-  if (!/^[1-9][0-9]*$/.test(v['quota-bytes']) || !Number.isSafeInteger(Number(v['quota-bytes']))) throw new Error('Quota must be positive whole bytes');
+  // Same lower bound as API storageQuotaFromEnv; this dependency-free CLI runs before pnpm exists.
+  if (!/^[1-9][0-9]*$/.test(v['quota-bytes']) || !Number.isSafeInteger(Number(v['quota-bytes'])) || Number(v['quota-bytes']) < 1250000000) throw new Error('Quota must be whole bytes, at least 1250000000');
   if (Boolean(v['local-db']) === Boolean(v['database-url'])) throw new Error('Choose --local-db OR --database-url (migration owner URL)');
   if (v['http-local'] && v.domain !== 'localhost') throw new Error('--http-local is only for localhost Docker proof');
   if (!['https:', ...(v['http-local'] ? ['http:'] : [])].includes(new URL(v['storage-endpoint']).protocol)) throw new Error('Storage endpoint must use HTTPS outside local proof');
   const secret = () => randomBytes(32).toString('hex');
   const ownerPassword = secret(), appPassword = secret(), machine = secret(), admin = secret();
-  const owner = new URL(v['database-url'] ?? `postgres://postgres:${ownerPassword}@postgres:5432/po_demo_cloud`);
+  const owner = new URL(v['database-url'] ?? `postgres://postgres:${ownerPassword}@postgres:5432/po_demo_cloud?sslmode=disable`);
   if (!['postgres:', 'postgresql:'].includes(owner.protocol) || !owner.username || !owner.password ||
       !/^\/(?:po_demo|playerone_demo)[a-z0-9_]*$/.test(owner.pathname)) throw new Error('Owner URL must name a po_demo* or playerone_demo* database with credentials');
   if (owner.username === 'playerone_app') throw new Error('Migration URL must use the owner role');
+  if (!v['local-db'] && owner.searchParams.get('sslmode') !== 'require') throw new Error('Managed Postgres requires sslmode=require');
   const app = new URL(owner); app.username = 'playerone_app'; app.password = appPassword;
   return {
     PLAYERONE_PUBLIC_URL: `${v['http-local'] ? 'http' : 'https'}://${v.domain}`,

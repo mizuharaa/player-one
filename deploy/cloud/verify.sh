@@ -7,8 +7,8 @@ failed=0
 check() { if step "$@"; then :; else failed=1; fi; }
 echo "Cloud verification $(date -u +%FT%TZ)"
 echo "Origin: $(setting PLAYERONE_PUBLIC_URL)"
-echo "Source SHA: $(cat source-sha.txt 2>/dev/null || git rev-parse HEAD)"
 api_id=$(dc ps -q api)
+echo "Source SHA (running image): $(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$api_id")"
 check image-id docker inspect --format '{{.Image}}' "$api_id"
 echo "SKIPPED VN VM/DB/bucket residency: owner must name and verify their Vietnam locations; DB=$(setting POSTGRES_DB), bucket=$(setting STORAGE_BUCKET)"
 # probe.mjs: HTTPS redirect, certificate expiry, headers, /healthz,

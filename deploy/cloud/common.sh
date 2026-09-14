@@ -5,7 +5,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # No eval/source of credentials. Compose is the single dotenv parser.
 if python3 --version >/dev/null 2>&1; then python=python3; else python=python; fi
 dc() { docker compose --env-file cloud.env "$@"; }
-setting() { dc config --format json | "$python" -c 'import json,sys; print(json.load(sys.stdin)["services"]["ops"]["environment"][sys.argv[1]])' "$1"; }
+setting() { dc --profile tools config --format json | "$python" -c 'import json,sys; sys.stdout.write(str(json.load(sys.stdin)["services"]["ops"]["environment"][sys.argv[1]]))' "$1"; }
 ops() { dc run --rm --no-deps -T ops node deploy/cloud/ops.mjs "$@"; }
 step() {
   local label=$1; shift

@@ -55,13 +55,19 @@ export async function webChecks(env) {
     const operator = await signIn('/auth/operator', { external_ref: env.PLAYERONE_OPERATOR_REF, secret: env.PLAYERONE_OPERATOR_SECRET });
     for (const path of ['/whoami', '/api/episodes']) {
       const response = await request(path, { headers: { 'x-machine-token': machine, authorization: operator } });
-      assert.equal(response.status, 200, path); await response.json();
+      assert.equal(response.status, 200, path);
+      const body = await response.json();
+      if (path === '/whoami') assert.equal(body.role, 'operator');
     }
   });
   await check('reviewer role reaches origin', async () => {
-    const token = await signIn('/auth/operator', { external_ref: 'rev-1', secret: env.PLAYERONE_DEMO_REVIEWER_SECRET });
-    const response = await request('/whoami', { headers: { authorization: token } });
-    assert.equal(response.status, 200); await response.json();
+    const session = await request('/api/session', { method: 'POST', headers: { 'content-type': 'application/json', origin: origin.origin },
+      body: JSON.stringify({ role: 'reviewer', external_ref: 'rev-1', operator_secret: env.PLAYERONE_DEMO_REVIEWER_SECRET }) });
+    assert.equal(session.status, 200); assert.equal((await session.json()).role, 'reviewer');
+    const cookie = session.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
+    assert.ok(cookie);
+    const response = await request('/whoami', { headers: { cookie } });
+    assert.equal(response.status, 200); assert.equal((await response.json()).role, 'reviewer');
     return 'reviewer token accepted from this host; remote reviewer network still needs an owner check';
   });
   await check('nested GET /episodes SPA', async () => {
@@ -80,14 +86,15 @@ async function bucket(env) {
   const object = { Bucket: env.STORAGE_BUCKET, Key: `cloud-probe/${randomUUID()}` };
   const bytes = Buffer.from(`PlayerOne storage probe ${randomUUID()}`);
   const hash = b => createHash('sha256').update(b).digest('hex');
+  let version;
   try {
-    await client.send(new PutObjectCommand({ ...object, Body: bytes }));
+    version = (await client.send(new PutObjectCommand({ ...object, Body: bytes }))).VersionId;
     const response = await client.send(new GetObjectCommand(object));
     assert.equal(hash(await response.Body.transformToByteArray()), hash(bytes));
     console.log(`PASS bucket PUT + read-back SHA-256 ${hash(bytes)}`);
   } finally {
     try {
-      await client.send(new DeleteObjectCommand(object));
+      await client.send(new DeleteObjectCommand({ ...object, VersionId: version }));
       await assert.rejects(client.send(new HeadObjectCommand(object)), e => e.$metadata?.httpStatusCode === 404);
       console.log(`PASS probe cleanup ${object.Key}`);
     } finally { client.destroy(); }

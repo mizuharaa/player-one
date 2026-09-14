@@ -33,6 +33,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
       target: runtime
+      args:
+        PLAYERONE_SOURCE_SHA: ${PLAYERONE_SOURCE_SHA:-unknown}
     image: ${PLAYERONE_IMAGE:-playerone-api:local}
     restart: unless-stopped
     env_file:
@@ -90,6 +92,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
       target: migrate
+      args:
+        PLAYERONE_SOURCE_SHA: ${PLAYERONE_SOURCE_SHA:-unknown}
     image: ${PLAYERONE_MIGRATE_IMAGE:-playerone-migrate:local}
     env_file: [cloud.env]
     entrypoint: ["sh", "-c", "DATABASE_URL=\"$$OWNER_DATABASE_URL\" exec pnpm db:migrate"]

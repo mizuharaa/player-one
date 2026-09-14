@@ -10,7 +10,7 @@ target=/srv/playerone
 [[ ! -e $target/deploy/cloud/cloud.env || $force == 1 ]] || { echo 'FAIL already provisioned; --force reuses existing credentials'; exit 1; }
 source_root=$(cd "$(dirname "$0")/../.." && pwd)
 apt-get update -qq
-apt-get install -y ca-certificates curl rsync python3 ufw
+apt-get install -y ca-certificates curl git python3 ufw
 if ! docker info >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
   # Docker's signed apt repository: https://docs.docker.com/engine/install/ubuntu/
   install -m 0755 -d /etc/apt/keyrings
@@ -31,10 +31,11 @@ systemctl enable --now docker
 mkdir -p "$target/backups"
 chmod 700 "$target/backups"
 if [[ $source_root != "$target" ]]; then
-  rsync -a --exclude=.git --exclude=node_modules --exclude=cloud.env --exclude='.env*' \
-    --exclude=WORK-ORDER.md --exclude=scratchpad --exclude=backups "$source_root/" "$target/"
+  # Archive the reviewed revision only: no local credentials, recordings or work-order files.
+  git -C "$source_root" archive HEAD | tar -x -C "$target"
+  git -C "$source_root" rev-parse HEAD > "$target/deploy/cloud/source-sha.txt"
 fi
-git -C "$source_root" rev-parse HEAD > "$target/deploy/cloud/source-sha.txt"
+[[ -s $target/deploy/cloud/source-sha.txt ]] || git -C "$source_root" rev-parse HEAD > "$target/deploy/cloud/source-sha.txt"
 if [[ ! -e $target/deploy/cloud/cloud.env ]]; then
   docker run --rm -v "$target:/kit" -w /kit node:22-bookworm-slim \
     node deploy/cloud/configure.mjs "${args[@]}"

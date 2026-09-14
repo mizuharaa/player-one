@@ -19,16 +19,24 @@ test('restore only accepts a separate, bounded database name', () => {
 });
 test('HTTP proof skips TLS, checks protected access and detects broken headers or SPA', async () => {
   let broken = false;
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     res.setHeader('content-type', 'application/json');
     for (const [k, v] of Object.entries({ 'content-security-policy': "default-src 'self'; object-src 'none'; frame-ancestors 'none'",
       'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'strict-origin-when-cross-origin' })) res.setHeader(k, v);
     if (broken) res.removeHeader('x-frame-options');
     if (req.url === '/healthz') return res.end('{"ready":true}');
-    if (req.url.startsWith('/auth/')) return res.end('{"token":"test-token"}');
+    if (req.url.startsWith('/auth/')) {
+      let body = ''; for await (const chunk of req) body += chunk;
+      if (JSON.parse(body).external_ref === 'rev-1') { res.statusCode = 401; return res.end('{}'); }
+      return res.end('{"token":"test-token"}');
+    }
+    if (req.url === '/api/session') {
+      res.setHeader('set-cookie', 'po_operator=reviewer-token; HttpOnly; Path=/');
+      return res.end('{"role":"reviewer"}');
+    }
     if (req.url === '/whoami') {
-      if (!req.headers.authorization) { res.statusCode = 401; return res.end('{}'); }
-      return res.end('{"role":"administrator"}');
+      if (!req.headers.authorization && !req.headers.cookie) { res.statusCode = 401; return res.end('{}'); }
+      return res.end(JSON.stringify({ role: req.headers.cookie?.includes('po_operator=reviewer-token') ? 'reviewer' : 'operator' }));
     }
     if (req.url === '/api/episodes') return res.end('[]');
     res.setHeader('content-type', 'text/html');
