@@ -25,6 +25,7 @@ import {
   bamboo,
   dark,
   darkBrandTints,
+  discover,
   duration,
   fontSize,
   glass,
@@ -137,6 +138,28 @@ export function nativeTheme(scheme: ColorScheme) {
        */
       warn: isDark ? warn.fgDark : warn.fg,
       warnBg: isDark ? warn.bgDark : warn.bg,
+      /**
+       * SPEC §0.1: the warm paper ground the collector app v2 stands on.
+       *
+       * Every value is `discover` from `tokens.ts` under the role names the
+       * spec's table uses, so no new hex enters the system — `/discover` and
+       * the phone stand on one ground rather than two. It deliberately does
+       * NOT answer to the colour scheme: a page whose photographs were lit for
+       * paper is not repainted for a dark phone, which is the argument the
+       * `discover` block was written with and which v2 extends past the
+       * landing.
+       */
+      discover: {
+        paper: discover.warmPaper,
+        surface: discover.warmSurface,
+        ink: discover.warmInk,
+        muted: discover.warmMuted,
+        line: discover.warmLine,
+        soft: discover.warmSoft,
+        /** The plum tint. A field, not an accent — §0.2. */
+        light: discover.light,
+        lightInk: discover.lightInk,
+      },
       action: isDark ? dark.foreground : light.foreground,
       actionInk: isDark ? dark.background : light.background,
       stage,

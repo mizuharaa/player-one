@@ -975,11 +975,20 @@ export function Hatch({ text }: { text: string }) {
 export function RingChip({
   ring,
   label,
+  face: ringFace,
   onPress,
 }: {
   /** Both counts are rows the server returned; the app sums nothing. */
   ring?: { filled: number; total: number };
   label: string;
+  /**
+   * SPEC §10: the two counts printed inside the arc — `8/13`. Both are rows
+   * the server returned and the app divides them only to draw the sweep,
+   * which is allowed because a count is neither a currency nor a duration.
+   * Never a money fraction: a ring reading 62% beside a money figure gets read
+   * as "62% of your pay", which is not a sentence anyone can defend.
+   */
+  face?: string;
   onPress?: () => void;
 }) {
   const theme = useTheme();
@@ -1017,6 +1026,20 @@ export function RingChip({
           {Array.from({ length: lit }, (_, i) => (
             <View key={i} style={[seat(i), { backgroundColor: theme.color.lime[600] }]} />
           ))}
+          {ringFace === undefined ? null : (
+            <Text
+              numberOfLines={1}
+              style={{
+                color: theme.color.foreground,
+                fontFamily: face(theme),
+                fontSize: theme.fontSize.sm,
+                fontWeight: theme.fontWeight.bold,
+                fontVariant: ['tabular-nums'],
+              }}
+            >
+              {ringFace}
+            </Text>
+          )}
         </View>
       )}
       <Text

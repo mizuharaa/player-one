@@ -11,3 +11,13 @@ declare module '*.jpg' {
   const source: import('react-native').ImageSourcePropType;
   export default source;
 }
+
+/**
+ * The §21.1 bundle is WebP apart from one JPEG. Same bargain as `*.jpg`
+ * above: Metro hands back an asset reference, Vite hands back a URL, and
+ * `ImageSourcePropType` is the shape `<Image source>` takes on the target.
+ */
+declare module '*.webp' {
+  const source: import('react-native').ImageSourcePropType;
+  export default source;
+}

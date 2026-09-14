@@ -410,6 +410,29 @@ const vi = {
 
   'guide.forum.filters':
     'Lọc bài viết ở đây: tất cả, bài của bạn, hoặc bài đã có người trả lời.',
+
+  /* Collector app v2 — docs/design/mobile-v2/SPEC.md §9, §10, §13, §14, §21.2.
+     Appended at the end of the block on purpose: a Vietnamese copy pass is
+     rewriting the values above and must not meet this in a diff. */
+  'home.cycleTitle': 'Thu nhập kỳ này',
+  'home.cycleUnavailable': 'Chưa có tổng của kỳ này. Bạn vẫn xem được tiền của từng tập ở mục Thu nhập.',
+  'home.cycleWithEstimate': 'Kể cả ước tính: {amount}',
+  'home.uploadedCaption': 'tập đã tải lên',
+  'home.nextTitle': 'Bước tiếp theo',
+  'home.nextClaim': 'Nhận một nhiệm vụ để bắt đầu',
+  'home.nextPair': 'Liên kết thiết bị trước khi tạo phiên',
+  'home.nextUpload': 'Có {n} tập chờ tải lên',
+  'home.nextReview': 'Đang chờ người duyệt',
+  'hall.imageLabel': 'Ảnh minh họa bối cảnh',
+  'uploads.waitingReviewer': 'Đang chờ người duyệt',
+  'payout.title': 'Nơi nhận tiền',
+  'payout.zalopay': 'Ví ZaloPay',
+  'payout.verified': 'Đã xác minh',
+  'payout.awaiting': 'Chờ xác minh',
+  'payout.none': 'Chưa khai báo — liên hệ điểm hỗ trợ',
+  'payout.unknown': 'Chưa rõ bạn sẽ nhận tiền ở đâu. Hỏi điểm hỗ trợ giúp bạn.',
+  'guide.home.earnings': 'Đây là tiền của những tập đã được duyệt trong kỳ này. Người duyệt quyết định con số, không phải ứng dụng.',
+  'guide.home.next': 'Bước tiếp theo của bạn nằm ở đây — nhận việc, liên kết thiết bị, hay tải lên.',
 };
 
 export type MessageKey = keyof typeof vi;
@@ -770,6 +793,29 @@ const en: Record<MessageKey, string> = {
   'groups.operatorsOnly': 'Only operators post in this channel.',
 
   'guide.forum.filters': 'Filter posts here: all of them, your own, or the ones with a reply.',
+
+  /* Collector app v2 — docs/design/mobile-v2/SPEC.md §9, §10, §13, §14, §21.2.
+     Appended at the end of the block on purpose: a Vietnamese copy pass is
+     rewriting the values above and must not meet this in a diff. */
+  'home.cycleTitle': 'This cycle',
+  'home.cycleUnavailable': 'No total for this cycle yet. You can still see what each episode earned under Income.',
+  'home.cycleWithEstimate': 'Including estimates: {amount}',
+  'home.uploadedCaption': 'episodes uploaded',
+  'home.nextTitle': 'Your next step',
+  'home.nextClaim': 'Claim a task to begin',
+  'home.nextPair': 'Pair a device before creating a session',
+  'home.nextUpload': '{n} episodes waiting to upload',
+  'home.nextReview': 'Waiting on a human reviewer',
+  'hall.imageLabel': 'Illustrative setting photograph',
+  'uploads.waitingReviewer': 'Waiting on a reviewer',
+  'payout.title': 'Where you get paid',
+  'payout.zalopay': 'ZaloPay wallet',
+  'payout.verified': 'Verified',
+  'payout.awaiting': 'Awaiting verification',
+  'payout.none': 'Not set — contact a support point',
+  'payout.unknown': 'We do not yet know where to pay you. A support point can set it up.',
+  'guide.home.earnings': 'This is what your reviewed episodes earned this cycle. A reviewer decides the figure, not the app.',
+  'guide.home.next': 'Your next step sits here — claim work, pair a device, or upload.',
 };
 
 /**
@@ -1116,6 +1162,29 @@ const zh: Record<MessageKey, string> = {
   'groups.operatorsOnly': '此频道仅运营人员可发布。',
 
   'guide.forum.filters': '在这里筛选帖子：全部、我的帖子，或已有回复的帖子。',
+
+  /* Collector app v2 — docs/design/mobile-v2/SPEC.md §9, §10, §13, §14, §21.2.
+     Appended at the end of the block on purpose: a Vietnamese copy pass is
+     rewriting the values above and must not meet this in a diff. */
+  'home.cycleTitle': '本周期收入',
+  'home.cycleUnavailable': '本周期尚无合计。您仍可在收入中查看每个片段。',
+  'home.cycleWithEstimate': '含预估：{amount}',
+  'home.uploadedCaption': '个片段已上传',
+  'home.nextTitle': '下一步',
+  'home.nextClaim': '领取一个任务开始',
+  'home.nextPair': '创建会话前请绑定设备',
+  'home.nextUpload': '{n} 个片段待上传',
+  'home.nextReview': '等待人工审核',
+  'hall.imageLabel': '场景示意图',
+  'uploads.waitingReviewer': '等待审核员',
+  'payout.title': '收款方式',
+  'payout.zalopay': 'ZaloPay 钱包',
+  'payout.verified': '已验证',
+  'payout.awaiting': '待验证',
+  'payout.none': '未设置——请联系支持点',
+  'payout.unknown': '尚未确定您的收款方式，请联系支持点。',
+  'guide.home.earnings': '这是本周期已审核片段的收入。金额由审核员决定，而非应用。',
+  'guide.home.next': '您的下一步在这里——领取任务、绑定设备或上传。',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en, zh };
