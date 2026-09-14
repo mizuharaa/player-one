@@ -208,6 +208,19 @@ Commands below use PowerShell, except the explicitly labelled cmd block.
     Follow its import/upload/read-back verification through to a verified
     delivery and check the episode in the console. Never clear the source card.
 
+## On-site hardware check
+
+`hardware-check/` packages the TF card and Ego camera checks from
+[DEMO-SCRIPT.md](DEMO-SCRIPT.md)'s card procedure and
+[../../docs/hardware-checkout.md](../../docs/hardware-checkout.md)'s
+`probe.py` into one PowerShell command a non-agent can run at the centre
+laptop: `hardware-check.ps1` binds and attaches the TF reader to WSL, runs
+`card-check.sh` there (filesystem check, session inventory, a
+checksum-verified copy of one session, all read-only against the card),
+detaches, then runs `probe.py` against the Ego camera, and writes one
+`hardware-report-<timestamp>.txt` to send back. See
+`hardware-check/README.md` for the exact steps.
+
 ## A browser PUT needs a CORS rule on the bucket
 
 Only if this centre turns on `PLAYERONE_DEBUG_DELIVERY=1`, which
