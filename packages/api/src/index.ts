@@ -655,6 +655,7 @@ export function buildApi({
       const inScope =
         route.startsWith(REVIEW_SCOPE) ||
         route === IDENTITY_ROUTE ||
+        route === '/api/payout/environment' ||
         (reviewerMediaEnabled && route.startsWith(MEDIA_SCOPE));
       if (!inScope) return reply.code(403).send({ error: 'reviewer session is scoped to review' });
       if (!(await stillEmployed(person.reviewerId))) {
@@ -833,6 +834,7 @@ export function buildApi({
     mediaRoot: !!mediaRoot, verificationGate: verificationGate ?? 'local', reviewerMediaEnabled,
     signInDeliveryMode: sendSignInCode ? signInDeliveryMode ?? 'unknown' : 'unconfigured', payoutMode: payout.mode ?? 'manual',
     payoutClient: !!payout.client, riskEnabled: risk.engineEnabled, debugDelivery,
+    payoutEnvironment: payout.zaloPayEnv ?? 'sandbox',
   });
   registerSettle(app, db, requireActor, { currency, cycleDays: settlementCycleDays, objectStore });
   registerPayout(app, db, requireActor, {

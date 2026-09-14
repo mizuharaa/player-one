@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApi } from '../../src/index.ts';
 import { signToken } from '../../src/credentials.ts';
 import { outcomeOf } from '../../src/payout/domain/verify.ts';
+import { payoutOptionsFromEnv } from '../../src/payout/domain/config.ts';
 import { appDb, closeDb, db, hasDb, truncate, useDatabase, violates } from '../../../store/test/db.ts';
 import { P1, seedPayout, seedBill, seedAccount, auditRow, insertAttemptAs, uid } from './domain/fixture.ts';
 
@@ -16,7 +17,7 @@ describe.skipIf(!hasDb())('honest payout demo (SIMULATION, test database only)',
   async function setup() {
     const d = await db();
     const ids = await seedPayout(d);
-    app = buildApi({ db: await appDb(), tokenSecret: 'k', payout: { zaloPayEnv: 'sandbox' } });
+    app = buildApi({ db: await appDb(), tokenSecret: 'k', payout: payoutOptionsFromEnv({ PLAYERONE_ZALOPAY_ENV: 'sandbox' }) });
     await app.ready();
     const login = async (operator: string) => {
       const m = await app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: 'HCM-01', secret: 'pw' } });
@@ -113,6 +114,19 @@ describe.skipIf(!hasDb())('honest payout demo (SIMULATION, test database only)',
     expect(res.statusCode, res.body).toBe(409);
     expect(res.json().constraint).toBe('payout_attempts_account_unverified');
     expect(await h.snapshot()).toBe(before);
+  });
+
+  it('sandbox configuration is visible to the header and engineering status', async () => {
+    const h = await setup();
+    const header = await app.inject({ url: '/api/payout/environment', headers: h.finance });
+    expect(header.statusCode, header.body).toBe(200);
+    expect(header.json()).toEqual({ environment: 'sandbox', simulation: true });
+    const reviewer = { authorization: `Bearer ${signToken('k', { kind: 'reviewer', reviewerId: h.ids.opA })}` };
+    expect((await app.inject({ url: '/api/payout/environment', headers: reviewer })).statusCode).toBe(200);
+    await h.d.execute(sql`update operators set role = 'administrator' where id = ${h.ids.opA}`);
+    const status = await app.inject({ url: '/api/engineering/status', headers: h.operator });
+    expect(status.statusCode, status.body).toBe(200);
+    expect(status.json().payout_environment).toBe('sandbox');
   });
 
   it('wrong role cannot record a payment', async () => {

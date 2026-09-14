@@ -183,6 +183,12 @@ export function registerPayout(
    */
   const counter = { preHandler: requireActor };
 
+  app.get('/api/payout/environment', counter, async (_req, reply) => {
+    reply.header('Cache-Control', 'private, no-store');
+    const environment = options.zaloPayEnv ?? 'sandbox';
+    return { environment, simulation: environment === 'sandbox' };
+  });
+
   async function guarded<T>(
     run: () => Promise<T | undefined>,
   ): Promise<{ ok: true; value: T | undefined } | { ok: false; constraint: string }> {
