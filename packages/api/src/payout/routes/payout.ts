@@ -859,6 +859,12 @@ export function registerPayout(
     const body = MarkPaidBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
     const b = body.data;
+    const refusePayment = async (constraint: string) => {
+      await mutate(db, actorOf(req), {
+        action: 'bill.mark_paid.refused', targetTable: 'bills', targetId: id, reason: constraint,
+      }, async () => true);
+      return refused(reply, constraint);
+    };
 
     const [bill] = await db.select().from(schema.bills).where(eq(schema.bills.id, id));
     if (bill === undefined) return reply.code(404).send({ error: 'no such bill' });
@@ -874,7 +880,7 @@ export function registerPayout(
     const loaded = await loadBill(db, id, batchOptions);
     if (loaded === undefined) return reply.code(404).send({ error: 'no such bill' });
     const gate = await refusalFor(db, loaded, batchOptions);
-    if (gate !== null) return refused(reply, gate);
+    if (gate !== null) return refusePayment(gate);
     const account = loaded.account!;
 
     const attemptId = randomUUID();
@@ -938,7 +944,7 @@ export function registerPayout(
         },
       ),
     );
-    if (!attempt.ok) return refused(reply, attempt.constraint);
+    if (!attempt.ok) return refusePayment(attempt.constraint);
     const row = attempt.value!;
     return reply.code(201).send({
       bill_id: id,

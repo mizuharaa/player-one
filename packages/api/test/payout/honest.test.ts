@@ -35,6 +35,19 @@ describe.skipIf(!hasDb())('honest payout demo (SIMULATION, test database only)',
     return { d, ids, finance, operator, collector, bill, mark, snapshot };
   }
 
+  it('unverified mark-paid refuses by name, preserves every row byte-for-byte and audits refusal', async () => {
+    const h = await setup();
+    await seedAccount(h.d, h.ids, 1, { verifyStatus: 'unverified' });
+    const before = await h.snapshot();
+    const result = await h.mark();
+    expect(result.statusCode, result.body).toBe(409);
+    expect(result.json().constraint).toBe('payout_attempts_account_unverified');
+    expect(await h.snapshot()).toBe(before);
+    const audit = await h.d.execute(sql`select operator_id, reason from audit_events where action = 'bill.mark_paid.refused'`);
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({ operator_id: h.ids.finA, reason: 'payout_attempts_account_unverified' });
+  });
+
   it('finance declares a destination that collector and finance read as unverified', async () => {
     const h = await setup();
     const declared = await app.inject({ method: 'POST', url: '/api/payout/accounts', headers: h.finance,
