@@ -5,13 +5,12 @@ import { useApi } from '../api/context.tsx';
 import { useNav, useRoute } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Button, Row, bottomInset, topInset, useReducedMotion } from '../ui.tsx';
+import { Button, Row, Scrim, bottomInset, topInset, useReducedMotion } from '../ui.tsx';
 import {
   ImageBox,
   ImageLabel,
   LimeTrack,
   LoadFailed,
-  Scrim,
   Skeleton,
   taskImage,
   textStyle,
@@ -24,6 +23,29 @@ import type { MessageKey } from '../i18n.ts';
  * falls back to a generic message rather than showing an English error code
  * to a Vietnamese collector (LOC-01).
  */
+/**
+ * The falloff under the type on this screen's hero, as `Scrim` stops.
+ *
+ * Measured on the emulator at 390×844 against `pov-portrait`: four bands of
+ * 25 % stepped visibly across this hero — the boundaries read as lines. These
+ * eight points on the same curve do not, and `Scrim` interpolates them over
+ * its forty bands, so the ramp is smoother than the eight it was drawn from.
+ *
+ * Shallower than sign-in's `HERO_SCRIM` on purpose: that one carries a
+ * headline at AA over a moving film, this one carries a title and a price chip
+ * that each stand on their own ground, so the photograph is allowed through.
+ */
+const IMAGE_SCRIM = [
+  [0.0, 0.02],
+  [0.14, 0.05],
+  [0.28, 0.09],
+  [0.42, 0.15],
+  [0.57, 0.23],
+  [0.71, 0.34],
+  [0.85, 0.48],
+  [1.0, 0.66],
+] as const;
+
 const CLAIM_ERRORS: Record<string, MessageKey> = {
   exam_not_passed: 'detail.needExam',
   agreements_incomplete: 'detail.needAgreements',
@@ -185,7 +207,7 @@ export function TaskDetail() {
           }}
         >
           <ImageBox source={taskImage(data.scenario, data.type)} ratio={3 / 2}>
-            <Scrim />
+            <Scrim stops={IMAGE_SCRIM} />
             <View
               style={{
                 position: 'absolute',

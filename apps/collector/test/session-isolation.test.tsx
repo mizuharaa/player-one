@@ -17,6 +17,14 @@ import { useSignOut } from '../src/session.tsx';
 // complete DOM implementation of the same surface; use it rather than growing
 // a shim one missing export at a time.
 vi.mock('react-native', async () => ({ ...await import('react-native-web') }));
+/**
+ * `expo-video` reaches `expo-modules-core`, which asks the native runtime for
+ * its `EventEmitter` at module load and throws in node. Same reason
+ * `expo-secure-store` and `expo-file-system` are mocked in these files: this
+ * suite is about behaviour, not about a decoder. `ui.tsx` imports it for
+ * `Film`, and every file that reaches `ui.tsx` therefore reaches this.
+ */
+vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({ addListener: () => ({ remove: () => {} }), status: 'idle' }) }));
 vi.mock('expo-secure-store', () => ({ getItemAsync: async () => null, setItemAsync: async () => {}, deleteItemAsync: async () => {} }));
 vi.mock('../src/api/token-store.ts', () => ({ secureTokenStore: {} }));
 // The uploads screen reaches `expo-file-system` through `upload/delivery-native.ts`,

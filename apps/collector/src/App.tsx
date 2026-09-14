@@ -31,6 +31,7 @@ import { SessionReminder } from './screens/SessionReminder.tsx';
 import { TaskDetail } from './screens/TaskDetail.tsx';
 import { TaskHall } from './screens/TaskHall.tsx';
 import { Landing } from './screens/Landing.tsx';
+import { Splash } from './screens/Splash.tsx';
 import { SignIn } from './screens/SignIn.tsx';
 import { Training } from './screens/Training.tsx';
 import { Uploads } from './screens/Uploads.tsx';
@@ -267,11 +268,28 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
 
 const transport = USE_MOCK_API ? new MockDeviceTransport() : new UnavailableDeviceTransport();
 
+/**
+ * The splash (SPEC.md §1) is an overlay with a timer, not a gate.
+ *
+ * `CollectorSession` mounts underneath it on the same tick, so
+ * `restoreSession()` is already in flight while the wordmark is on screen —
+ * §1: "the splash renders before `restoreSession()` resolves and does not wait
+ * on it". Gating the app's mount on the splash would have added the splash's
+ * whole duration to every cold start, for nothing.
+ *
+ * It is removed from the tree rather than hidden. §0.5 rule 5: a full-screen
+ * overlay at `opacity: 0` still eats every touch on Android, and this is the
+ * largest overlay in the app.
+ */
 export function App() {
+  const [splash, setSplash] = useState(true);
   return (
     <ThemeProvider>
       <LocaleProvider>
-        <TransportProvider value={transport}><CollectorSession /></TransportProvider>
+        <View style={{ flex: 1 }}>
+          <TransportProvider value={transport}><CollectorSession /></TransportProvider>
+          {splash ? <Splash onDone={() => setSplash(false)} /> : null}
+        </View>
       </LocaleProvider>
     </ThemeProvider>
   );

@@ -46,13 +46,18 @@ export type RouteName = Route['name'];
  * not a place to sit. It is drawn as the centre button because preparing a
  * session is the thing a collector opens this app to do.
  *
- * **`taskHall` used to be the second of these and is not any more.** The
- * forum took that slot when the community screens landed; the hall is pushed
- * from Home's "Nơi khác trong ứng dụng" row instead, and Home already renders
- * every task it lists. The measurement that forced a swap rather than a fifth
- * destination is in `shell/TabBar.tsx`.
+ * **`taskHall` is the second of these again, and the forum is not.** SPEC.md
+ * §10: the forum is a preview with no service behind it, the hall is the money
+ * path, and the owner asked for task browsing to be prominent. The forum moves
+ * to Home's "Nơi khác trong ứng dụng" row, where the hall used to be — it is
+ * still reachable, it just stops holding a quarter of the bar. This is
+ * §22.4 and it is an owner sign-off item.
+ *
+ * Still four, not five. The measurement that forces a swap rather than a fifth
+ * destination is in `shell/TabBar.tsx`: at 320 dp the bar is 296 wide, the
+ * session slot takes 64, and the four remaining tabs get 58 pt each.
  */
-export const TAB_ROOTS = ['home', 'forum', 'uploads', 'income'] as const;
+export const TAB_ROOTS = ['home', 'taskHall', 'uploads', 'income'] as const;
 
 export type TabName = (typeof TAB_ROOTS)[number];
 

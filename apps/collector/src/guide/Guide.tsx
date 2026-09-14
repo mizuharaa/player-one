@@ -55,7 +55,12 @@ const STEPS: Record<TabName, Step[]> = {
     { target: 'home.next', copy: 'guide.home.next' },
     { target: 'shell.tabs', copy: 'guide.home.tabs' },
   ],
-  forum: [{ target: 'forum.filters', copy: 'guide.forum.filters' }],
+  // The hall took the forum's bar slot (SPEC.md §10), and this map is keyed by
+  // tab root. `TaskHall` already registers `hall.list` and `guide.tasks.list`
+  // already describes it, so the tour follows the bar rather than losing a
+  // step. The forum's own step is not deleted, it is unreachable from a tour
+  // that only runs on tab roots — the forum is a pushed screen now.
+  taskHall: [{ target: 'hall.list', copy: 'guide.tasks.list' }],
   uploads: [{ target: 'uploads.list', copy: 'guide.uploads.confirm' }],
   income: [{ target: 'income.list', copy: 'guide.income.split' }],
 };

@@ -121,6 +121,18 @@ node "$Root/packages/api/bin/bootstrap.ts" `
   --machine $MachineId --machine-secret $MachineSecret `
   --operator "$($OperatorRef):administrator:$OperatorSecret"
 if ($LASTEXITCODE -ne 0) { throw "bootstrap.ts failed" }
+
+# Work and money for the demo collector: three more published tasks, five
+# episodes on one session across four collector-facing states, and a bill over
+# the last cycle. Without it Home's cycle card, the hall, Uploads and Income
+# are all empty or zero, which is a true answer to a different question -- see
+# the script's own header. It runs here and not earlier because a handover row
+# needs the upload centre and operator bootstrap.ts just created, and it is
+# idempotent, so a re-run of this script adds nothing.
+Write-Host "==> Seeding the demo collector's work and money"
+node "$Root/packages/api/scripts/seed-demo-work.mjs"
+if ($LASTEXITCODE -ne 0) { throw "seed-demo-work.mjs failed" }
+
 Remove-Item Env:\PLAYERONE_ALLOW_SUPERUSER -ErrorAction SilentlyContinue
 
 Write-Host "==> Starting the API on port $ApiPort (new window)"

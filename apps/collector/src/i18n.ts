@@ -411,9 +411,20 @@ const vi = {
   'guide.forum.filters':
     'Lọc bài viết ở đây: tất cả, bài của bạn, hoặc bài đã có người trả lời.',
 
-  /* Collector app v2 — docs/design/mobile-v2/SPEC.md §9, §10, §13, §14, §21.2.
-     Appended at the end of the block on purpose: a Vietnamese copy pass is
-     rewriting the values above and must not meet this in a diff. */
+  /*
+   * v2, SPEC.md §1-§10 and §13, §14, §21.2. New keys only, appended at the end
+   * of the block so a concurrent Vietnamese rewrite of the strings above
+   * merges cleanly. `{s}`, `{phone}`, `{amount}` and `{n}` are substituted at
+   * the call site — there are a handful and a formatter would be machinery for
+   * a handful of `.replace()` calls.
+   */
+  'splash.caption': 'Thu thập dữ liệu đời thường',
+  'splash.partners': 'VNG × PaXini',
+  'signIn.resendIn': 'Gửi lại sau {s} giây',
+  'signIn.sentTo': 'Mã đã gửi tới {phone}',
+  'signIn.checking': 'Đang kiểm tra mã…',
+  'register.phoneVerified': 'đã xác minh',
+  'register.phoneLocked': 'Số này đã xác minh ở bước trước nên không sửa ở đây.',
   'home.cycleTitle': 'Thu nhập kỳ này',
   'home.cycleUnavailable': 'Chưa có tổng của kỳ này. Bạn vẫn xem được tiền của từng tập ở mục Thu nhập.',
   'home.cycleWithEstimate': 'Kể cả ước tính: {amount}',
@@ -794,9 +805,20 @@ const en: Record<MessageKey, string> = {
 
   'guide.forum.filters': 'Filter posts here: all of them, your own, or the ones with a reply.',
 
-  /* Collector app v2 — docs/design/mobile-v2/SPEC.md §9, §10, §13, §14, §21.2.
-     Appended at the end of the block on purpose: a Vietnamese copy pass is
-     rewriting the values above and must not meet this in a diff. */
+  /*
+   * v2, SPEC.md §1-§10 and §13, §14, §21.2. New keys only, appended at the end
+   * of the block so a concurrent Vietnamese rewrite of the strings above
+   * merges cleanly. `{s}`, `{phone}`, `{amount}` and `{n}` are substituted at
+   * the call site — there are a handful and a formatter would be machinery for
+   * a handful of `.replace()` calls.
+   */
+  'splash.caption': 'Everyday data collection',
+  'splash.partners': 'VNG × PaXini',
+  'signIn.resendIn': 'Resend in {s}s',
+  'signIn.sentTo': 'Code sent to {phone}',
+  'signIn.checking': 'Checking your code…',
+  'register.phoneVerified': 'verified',
+  'register.phoneLocked': 'This number was verified a step ago, so it is not editable here.',
   'home.cycleTitle': 'This cycle',
   'home.cycleUnavailable': 'No total for this cycle yet. You can still see what each episode earned under Income.',
   'home.cycleWithEstimate': 'Including estimates: {amount}',
@@ -1163,9 +1185,20 @@ const zh: Record<MessageKey, string> = {
 
   'guide.forum.filters': '在这里筛选帖子：全部、我的帖子，或已有回复的帖子。',
 
-  /* Collector app v2 — docs/design/mobile-v2/SPEC.md §9, §10, §13, §14, §21.2.
-     Appended at the end of the block on purpose: a Vietnamese copy pass is
-     rewriting the values above and must not meet this in a diff. */
+  /*
+   * v2, SPEC.md §1-§10 and §13, §14, §21.2. New keys only, appended at the end
+   * of the block so a concurrent Vietnamese rewrite of the strings above
+   * merges cleanly. `{s}`, `{phone}`, `{amount}` and `{n}` are substituted at
+   * the call site — there are a handful and a formatter would be machinery for
+   * a handful of `.replace()` calls.
+   */
+  'splash.caption': '日常数据采集',
+  'splash.partners': 'VNG × PaXini',
+  'signIn.resendIn': '{s} 秒后重新发送',
+  'signIn.sentTo': '验证码已发送至 {phone}',
+  'signIn.checking': '正在验证……',
+  'register.phoneVerified': '已验证',
+  'register.phoneLocked': '此号码已在上一步验证，此处不可修改。',
   'home.cycleTitle': '本周期收入',
   'home.cycleUnavailable': '本周期尚无合计。您仍可在收入中查看每个片段。',
   'home.cycleWithEstimate': '含预估：{amount}',

@@ -320,15 +320,13 @@ export function Home() {
         <View style={{ gap: theme.space[3] }}>
           <Text style={caption}>{tt('home.more')}</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2] }}>
-            {/* ponytail: this chip is temporary. §10 puts the hall on the tab
-                bar as `tab.tasks`, and that is Builder A's day-2 change; until
-                it lands the hall has no route in from Home at all, and an
-                unreachable screen is worse than one extra chip. Delete it with
-                the same commit that adds the tab. */}
-            <Chip label={tt('hall.title')} onPress={() => nav.push({ name: 'taskHall' })} />
+            {/* No hall chip: §10 put the hall on the bar (`TAB_ROOTS`), so the
+                chip that stood in for the missing route is gone with it. The
+                forum took the slot the hall gave up and is pushed, not
+                selected — it is no longer a tab root. */}
             <Chip label={tt('home.devices')} onPress={() => nav.push({ name: 'devices' })} />
             <Chip label={tt('home.myTasks')} onPress={() => nav.push({ name: 'myTasks' })} />
-            <Chip label={tt('forum.title')} onPress={() => nav.selectTab('forum')} />
+            <Chip label={tt('forum.title')} onPress={() => nav.push({ name: 'forum' })} />
             <Chip label={tt('groups.title')} onPress={() => nav.push({ name: 'groupChats' })} />
             <Chip label={tt('home.training')} onPress={() => nav.push({ name: 'training' })} />
             <Chip label={tt('guide.open')} onPress={guide.accept} />

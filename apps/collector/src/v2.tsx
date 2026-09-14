@@ -180,36 +180,6 @@ export function ImageBox({
   );
 }
 
-/**
- * The scrim under type that sits on a photograph.
- *
- * React Native has no CSS gradient and this repo adds no native module for
- * one, so the falloff is four stacked bands of `stage.ground` at rising
- * opacity — the same honest translation `native.ts` makes for the ambient
- * wash, where concentric discs stand in for a blur. Four is enough that the
- * steps are not readable as bands at these heights; three was.
- */
-export function Scrim() {
-  const theme = useTheme();
-  return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {SCRIM_STOPS.map((opacity) => (
-        <View
-          key={opacity}
-          style={{ flex: 1, backgroundColor: theme.color.stage.ground, opacity }}
-        />
-      ))}
-    </View>
-  );
-}
-/**
- * Eight stops, not four. Measured on the emulator at 390×844: four bands of
- * 25% height each stepped visibly across the task-detail hero — the boundaries
- * were readable as lines. Eight on the same curve are not, at the heights this
- * app uses, and eight Views is still nothing next to a native blur module.
- */
-const SCRIM_STOPS = [0.02, 0.05, 0.09, 0.15, 0.23, 0.34, 0.48, 0.66];
-
 // ---------------------------------------------------------------------------
 // §10 The two-line price chip — one of the four genuinely new components (§0.7)
 

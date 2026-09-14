@@ -19,8 +19,17 @@ const native = vi.hoisted(() => ({
   push: vi.fn(),
   reset: vi.fn(),
 }));
-vi.mock('react-native', () => ({
-  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+// `react-native` itself is Flow source that vitest cannot parse, and these two
+// screens reach past `View` now — §6 and §8 put the whole row behind a
+// `Pressable` with the switch as its indicator, and §8's verdict block is an
+// `Animated.View`. `react-native-web` is already a devDependency and
+// implements the same surface over the DOM, which is what
+// `signin-recovery.test.tsx` does for the same reason. Only `Switch` is
+// replaced, so that a callback can be captured and invoked twice in one turn:
+// that is what exercises the screens' own re-entrancy guards rather than a
+// mocked button's `disabled` attribute.
+vi.mock('react-native', async () => ({
+  ...await import('react-native-web'),
   Switch: ({ accessibilityLabel, value, disabled, onValueChange }: {
     accessibilityLabel: string; value: boolean; disabled?: boolean; onValueChange: (value: boolean) => void;
   }) => {
@@ -34,13 +43,19 @@ vi.mock('../src/ui.tsx', () => ({
   Body: ({ children }: { children: ReactNode }) => <p>{children}</p>,
   Title: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
   Card: ({ children }: { children: ReactNode }) => <section>{children}</section>,
-  Screen: ({ title, children }: { title: string; children: ReactNode }) => <main><h1>{title}</h1>{children}</main>,
+  // `footer` is where §6, §7 and §8 put their commit control now — pinned to
+  // the foot of the screen rather than at the end of a list six rows long. It
+  // is rendered here, or every submit button in this file disappears.
+  Screen: ({ title, footer, children }: { title: string; footer?: ReactNode; children: ReactNode }) =>
+    <main><h1>{title}</h1>{children}<footer>{footer}</footer></main>,
   Note: ({ text }: { text: string }) => <p role="status">{text}</p>,
   Tag: ({ label }: { label: string }) => <p>{label}</p>,
   Button: ({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) => {
     native.presses.set(label, onPress);
     return <button disabled={disabled} onClick={onPress}>{label}</button>;
   },
+  face: () => 'System',
+  useReducedMotion: () => true,
 }));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;

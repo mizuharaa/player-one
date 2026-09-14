@@ -52,7 +52,18 @@ const px = (rem: string): number => Math.round(Number.parseFloat(rem) * REM);
 export type NativeTheme = ReturnType<typeof nativeTheme>;
 
 export function nativeTheme(scheme: ColorScheme) {
-  const n = scheme === 'dark' ? dark : light;
+  /**
+   * The scheme's neutrals, widened to `string`.
+   *
+   * `light` and `dark` in `tokens.ts` are `as const`, so without this every
+   * neutral role reaches the app as a two-member literal union of the two
+   * hexes it happens to hold today. Nothing switches on a neutral's value —
+   * they are roles — and the narrow type only ever bit one caller: the
+   * collector app remaps its ground roles onto the warm `discover` paper
+   * (SPEC.md §0.1, `apps/collector/src/theme.tsx`) and could not, because
+   * `#F4EFE6` is not one of the two lavenders this union allows.
+   */
+  const n: Record<keyof typeof light, string> = scheme === 'dark' ? dark : light;
   const isDark = scheme === 'dark';
 
   return {
@@ -139,7 +150,21 @@ export function nativeTheme(scheme: ColorScheme) {
       warn: isDark ? warn.fgDark : warn.fg,
       warnBg: isDark ? warn.bgDark : warn.bg,
       /**
-       * SPEC §0.1: the warm paper ground the collector app v2 stands on.
+       * SPEC §0.1: the warm paper ground the collector app v2 stands on, and
+       * the one part of this theme that does not answer to the colour scheme.
+       *
+       * `discover` in `tokens.ts` is daylight paper: it is what the console
+       * paints `/discover` with, and it is deliberately independent of the
+       * operator theme because a public page is not somebody's workspace. The
+       * collector app's landing IS that page — same film, same sections, same
+       * copy — so it stands on the same ground rather than on a second one.
+       *
+       * Only the flat colours cross over. `scrim`, `wash` and `shadow` in the
+       * web table are CSS gradient and box-shadow strings, `font` names a web
+       * family, and the two radii it carries are already `radius.lg` and
+       * `radius.xl` on this scale — so none of them is repeated here.
+       *
+       * Measured in `test/contrast.test.ts`, not asserted here.
        *
        * Every value is `discover` from `tokens.ts` under the role names the
        * spec's table uses, so no new hex enters the system — `/discover` and

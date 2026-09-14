@@ -1,8 +1,10 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   AccessibilityInfo,
+  Animated,
   Dimensions,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,7 +15,9 @@ import {
   TextInput,
   View,
   useWindowDimensions,
+  type ImageSourcePropType,
 } from 'react-native';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import type { NativeTheme } from '@playerone/design/native';
 import { useNav } from './nav.tsx';
 import { useT } from './locale.tsx';
@@ -217,7 +221,11 @@ function Header({
             color: theme.color.foreground,
             fontFamily: face(theme),
             fontSize: theme.fontSize.xl,
-            fontWeight: theme.fontWeight.bold,
+            // §0.3: `xl` at display weight is the screen title, and the line
+            // height is absolute and never below 1.15 — a ratio near 1.05
+            // clips the tone marks off a Vietnamese title that wraps.
+            lineHeight: Math.round(theme.fontSize.xl * 1.2),
+            fontWeight: theme.fontWeight.display,
             letterSpacing: -0.5,
             flexShrink: 1,
             flexGrow: 1,
@@ -236,31 +244,69 @@ export function Screen({
   title,
   right,
   onBack,
+  footer,
   children,
 }: {
   title: string;
   right?: ReactNode;
   onBack?: () => void;
+  /**
+   * A commit control pinned to the foot of the screen rather than sitting at
+   * the end of the list (§6, §7, §8).
+   *
+   * It exists because at 320x640 six agreement rows plus an intro do not fit,
+   * and a commit control a collector has to hunt for is the shape that
+   * produces accidental non-consent. The footer measures itself and the scroll
+   * content reserves exactly that height — the same discipline `measureTabBar`
+   * uses, and for the same reason: a guessed reserve draws the last row of a
+   * list under the control that acts on it.
+   */
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   const theme = useTheme();
   const nav = useNav();
   const reserve = useTabBarReserve();
+  const [footerHeight, setFooterHeight] = useState(0);
   return (
-    // `background` is the page — the lavender wash the glass above it needs.
+    // `background` is the page — the warm paper everything above it stands on.
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background }}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           padding: theme.space[4],
           paddingTop: 0,
-          paddingBottom: theme.space[4] + (nav.isTabRoot ? reserve : bottomInset(theme.space[6])),
+          paddingBottom:
+            theme.space[4] + footerHeight + (nav.isTabRoot ? reserve : bottomInset(theme.space[6])),
           gap: theme.space[3],
         }}
       >
         <Header title={title} right={right} onBack={onBack} />
         {children}
       </ScrollView>
+      {footer === undefined ? null : (
+        <View
+          onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: theme.color.background,
+            // One hairline, and it is the only rule on a `Screen`: it is the
+            // edge of a control strip over scrolling content, which is a
+            // boundary rather than the decorative bar the header deliberately
+            // does not draw.
+            borderTopWidth: 1,
+            borderTopColor: theme.color.border,
+            padding: theme.space[4],
+            paddingBottom: theme.space[4] + bottomInset(theme.space[6]),
+            gap: theme.space[3],
+          }}
+        >
+          {footer}
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -648,7 +694,15 @@ export function Button({
   const surface = (pressed: boolean): string | undefined => {
     if (primary) {
       if (disabled) return theme.color.muted;
-      return theme.color.action;
+      // On footage the primary inverts: a near-black pill on a scrim that is
+      // already darkening toward near-black is a pill with no edge, so the
+      // one ink pill per screen becomes the one LIGHT pill per screen and
+      // takes ink type. That is the Future Pro / Oura arrangement §2 names,
+      // and it is still exactly one primary. `stage.ground` and `stage.fg`
+      // are the two neutrals the tokens define identically in both schemes —
+      // what a control over video needs, since the film does not get lighter
+      // because the phone is in dark mode.
+      return onDark ? theme.color.stage.fg : theme.color.action;
     }
     if (!pressed || disabled) return undefined;
     // `muted` is a pale lavender tint and flashing it over footage would be a
@@ -665,9 +719,13 @@ export function Button({
       : theme.color.faintForeground
     : // `actionInk` is the pair of `action` and both invert with the scheme, so
       // the label can never be the 2.61:1 white-on-sun this control shipped as
-      // once. Measured now: 15.78:1 light, 16.12:1 dark.
+      // once. Measured now: 15.78:1 light, 16.12:1 dark. On footage the pair
+      // is the other way up, and `stage.ground` on `stage.fg` is the same two
+      // neutrals measured against each other.
       primary
-      ? theme.color.actionInk
+      ? onDark
+        ? theme.color.stage.ground
+        : theme.color.actionInk
       : ink;
 
   return (
@@ -1475,9 +1533,17 @@ export function Timeline({
  * `Linking.openURL`. They are real controls with a role and a name now so the
  * line is reachable and announced rather than a pair of grey words.
  */
-export function LegalLine() {
+/**
+ * `onDark` puts this over the hero film (§2), where the ink it normally takes
+ * is invisible. `stage.fg` is the neutral the scrim was measured against, and
+ * §2's measurement puts the policy band at 9.79:1 — the most legible of the
+ * three text bands on that screen, which is the right way round for the line
+ * nobody is looking for.
+ */
+export function LegalLine({ onDark = false }: { onDark?: boolean } = {}) {
   const theme = useTheme();
   const tt = useT();
+  const ink = onDark ? theme.color.stage.fg : theme.color.foreground;
   const link = (key: MessageKey) => (
     <Pressable
       accessibilityRole="link"
@@ -1493,7 +1559,7 @@ export function LegalLine() {
           // `faintForeground` is the separator beside them, so ink is also
           // what makes the link the more prominent of the two. Measured:
           // 15.78:1 light, 16.12:1 dark, on the page it is drawn on.
-          color: theme.color.foreground,
+          color: ink,
           fontFamily: face(theme),
           fontSize: theme.fontSize.xs,
           textDecorationLine: 'underline',
@@ -1516,7 +1582,7 @@ export function LegalLine() {
       {link('legal.privacy')}
       <Text
         style={{
-          color: theme.color.faintForeground,
+          color: onDark ? theme.color.stage.mid : theme.color.faintForeground,
           fontFamily: face(theme),
           fontSize: theme.fontSize.xs,
         }}
@@ -1525,5 +1591,351 @@ export function LegalLine() {
       </Text>
       {link('legal.dataNotice')}
     </View>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * v2, and only what `SPEC.md` §0.7 says is genuinely new.
+ *
+ * That table names four additions for the whole redesign: the two-line price
+ * chip (§10), the welcome hero with its scrim (§2), the six-box code row (§4)
+ * and the splash player (§1). Three of them are here. The price chip is
+ * Builder B's, by §20.4's one hand-off — it is built with the task card it is
+ * burned into, and a second copy of it here would be the duplicate this table
+ * exists to prevent.
+ *
+ * The hero and the splash player collapsed into one component rather than two,
+ * because they are one component: a box that plays a film if it can and shows
+ * a still if it cannot, with the same 400 ms first-frame gate on both. §1 and
+ * §2 describe that gate in the same words.
+ * ------------------------------------------------------------------ */
+
+/**
+ * `#RRGGBB` as its three channels, so a scrim can be written at an alpha
+ * without a literal colour anywhere in a screen file.
+ *
+ * React Native has no `color-mix()` and no CSS gradient, so the one place a
+ * token has to be taken apart is here — once, on a value that came from
+ * `theme`, rather than at a call site where it would be a hex in a diff.
+ */
+const channels = (hex: string): [number, number, number] => [
+  Number.parseInt(hex.slice(1, 3), 16),
+  Number.parseInt(hex.slice(3, 5), 16),
+  Number.parseInt(hex.slice(5, 7), 16),
+];
+
+/** Linear interpolation between the stops, which are sorted by position. */
+function alphaAt(at: number, stops: readonly (readonly [number, number])[]): number {
+  let previous = stops[0] ?? ([0, 0] as const);
+  for (const stop of stops) {
+    if (at <= stop[0]) {
+      const span = stop[0] - previous[0];
+      const t = span === 0 ? 0 : (at - previous[0]) / span;
+      return previous[1] + (stop[1] - previous[1]) * t;
+    }
+    previous = stop;
+  }
+  return previous[1];
+}
+
+/**
+ * The measured scrim over the hero film (§2), as a stack of flat bands.
+ *
+ * There is no gradient in React Native core, and §20.1 refuses both modules
+ * that would give it one — `expo-linear-gradient` and `react-native-svg` — for
+ * a decoration. Forty `flex: 1` bands of one token at rising alpha is the
+ * whole of it: no dependency, no fixed heights, and it stretches to any box it
+ * is put in. The alpha step between neighbours at the steepest part of the
+ * ramp is about 0.016, which is under the 1/255 an 8-bit display can resolve,
+ * so there is no visible banding to trade against the forty views.
+ *
+ * The stops are §2's **measured** ones and they belong to the caller, because
+ * they belong to the clip: transparent, then .60 at 55 %, then .88 at 100 %
+ * was measured over `pov-portrait.mp4` sampled at 1 fps and cropped to what a
+ * 390 dp phone shows, and it puts the headline band at 5.24:1 where the
+ * drafted .35/.82 read 3.02:1 and failed AA. **A new film is a new worst
+ * frame and re-runs that measurement.**
+ *
+ * The colour is `discover.ink`, which IS rgb(53,39,31) — the scrim darkens
+ * toward the app's own ink rather than toward black, so the bottom of the hero
+ * and the top of the next screen are the same warmth.
+ */
+const SCRIM_BANDS = 40;
+export function Scrim({ stops }: { stops: readonly (readonly [number, number])[] }) {
+  const theme = useTheme();
+  const [r, g, b] = channels(theme.color.discover.ink);
+  return (
+    <View
+      pointerEvents="none"
+      importantForAccessibility="no-hide-descendants"
+      style={StyleSheet.absoluteFill}
+    >
+      {Array.from({ length: SCRIM_BANDS }, (_, i) => (
+        <View
+          key={i}
+          style={{
+            flex: 1,
+            backgroundColor: `rgba(${r},${g},${b},${alphaAt((i + 0.5) / SCRIM_BANDS, stops).toFixed(3)})`,
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * A film that falls back to its own still, with §1's 400 ms first-frame gate.
+ *
+ * Three things can mean "no video here", and §2 is explicit that they are one
+ * state and not three: the collector has "remove animations" on, `expo-video`
+ * reported an error, or no first frame arrived within 400 ms of mount. All
+ * three land on the poster, which is why the poster is not a fallback that
+ * gets swapped in — it is **always** the bottom layer, and the film fades in
+ * on top of it when it is ready. So there is never a warm rectangle waiting on
+ * a decoder, and never a flash between the two.
+ *
+ * The gate is the cheap half of "the app didn't start". A cold decoder, a
+ * codec the device refuses and a corrupt asset are indistinguishable from the
+ * app being broken, from the collector's side of the screen.
+ *
+ * §0.5 rule 2 — one video instance at a time, unmounted before the next screen
+ * paints — needs no prop here: there is exactly one film in the app, on a
+ * screen that is replaced rather than covered, so it unmounts with its screen.
+ * A visibility flag would be a knob with one possible value.
+ */
+function GatedFilm({
+  source,
+  label,
+  contentFit,
+  fade,
+  onFail,
+}: {
+  source: string | number;
+  label: string;
+  contentFit: 'cover' | 'contain';
+  fade: number;
+  onFail: () => void;
+}) {
+  const player = useVideoPlayer(source, (p) => {
+    p.muted = true;
+    p.loop = true;
+    p.play();
+  });
+  const shown = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    let done = false;
+    const arrive = () => {
+      if (done) return;
+      done = true;
+      Animated.timing(shown, { toValue: 1, duration: fade, useNativeDriver: true }).start();
+    };
+    const give = () => {
+      if (done) return;
+      done = true;
+      onFail();
+    };
+    // Four lines, and they remove the whole class of "the app didn't start".
+    const gate = setTimeout(give, 400);
+    const sub = player.addListener('statusChange', ({ status }) => {
+      if (status === 'readyToPlay') { clearTimeout(gate); arrive(); }
+      if (status === 'error') { clearTimeout(gate); give(); }
+    });
+    if (player.status === 'readyToPlay') { clearTimeout(gate); arrive(); }
+    return () => { clearTimeout(gate); sub.remove(); };
+  }, [player, fade, shown, onFail]);
+
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, { opacity: shown }]}>
+      <VideoView
+        player={player}
+        contentFit={contentFit}
+        nativeControls={false}
+        accessibilityLabel={label}
+        style={StyleSheet.absoluteFill}
+      />
+    </Animated.View>
+  );
+}
+
+export function Film({
+  source,
+  poster,
+  label,
+  contentFit = 'cover',
+  fade,
+}: {
+  source: string | number;
+  poster: ImageSourcePropType;
+  label: string;
+  contentFit?: 'cover' | 'contain';
+  fade: number;
+}) {
+  const reduced = useReducedMotion();
+  const [failed, setFailed] = useState(false);
+  const fail = useCallback(() => setFailed(true), []);
+  const live = !reduced && !failed;
+  return (
+    <>
+      <Image
+        source={poster}
+        resizeMode={contentFit}
+        accessibilityRole="image"
+        accessibilityLabel={label}
+        style={StyleSheet.absoluteFill}
+      />
+      {live ? (
+        <GatedFilm source={source} label={label} contentFit={contentFit} fade={fade} onFail={fail} />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The code row (§4): six boxes, one input.
+ *
+ * The boxes are presentation. A single hidden `TextInput` owns the value, so
+ * there is one thing to manage rather than six, and paste, autofill and
+ * `oneTimeCode` all work the way the platform already makes them work — six
+ * linked inputs get none of that and get a focus-stealing bug each.
+ *
+ * It is hidden by being transparent and exactly the size of the row, **not**
+ * by being an overlay that appears: a tap anywhere on the row lands on the
+ * input itself and focuses it, with no second pressable forwarding focus and
+ * nothing that can end up at `opacity: 0` and still eating touches (§0.5
+ * rule 5, the dead-button bug).
+ *
+ * `flex: 1` boxes with an `aspectRatio` is the whole responsive story — 44x59
+ * at 320 dp, 60x80 at 412 dp, and not one dimension written down.
+ *
+ * `errorAt` is a counter rather than a boolean, because the same wrong code
+ * twice has to shake twice; a boolean that is already true does not change and
+ * nothing runs. Reduced motion gets no shake — the error sentence the caller
+ * renders is the whole signal then.
+ */
+export function CodeBoxes({
+  length = 6,
+  value,
+  onChangeText,
+  label,
+  checking = false,
+  errorAt = 0,
+  editable = true,
+}: {
+  length?: number;
+  value: string;
+  onChangeText: (next: string) => void;
+  label: string;
+  /** The wait renders inside the last box, never as an overlay (§17). */
+  checking?: boolean;
+  errorAt?: number;
+  editable?: boolean;
+}) {
+  const theme = useTheme();
+  const reduced = useReducedMotion();
+  const sway = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (errorAt === 0 || reduced) return;
+    sway.setValue(0);
+    Animated.timing(sway, {
+      toValue: 1,
+      duration: theme.duration.slow,
+      useNativeDriver: true,
+    }).start();
+  }, [errorAt, reduced, sway, theme.duration.slow]);
+
+  useEffect(() => {
+    if (!checking || reduced) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.3, duration: theme.duration.base, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: theme.duration.base, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [checking, reduced, pulse, theme.duration.base]);
+
+  const dot = theme.space[2];
+  return (
+    <Animated.View
+      style={{
+        flexDirection: 'row',
+        gap: theme.space[2],
+        transform: [
+          {
+            translateX: sway.interpolate({
+              inputRange: [0, 0.15, 0.4, 0.65, 0.85, 1],
+              outputRange: [0, -6, 6, -6, 6, 0],
+            }),
+          },
+        ],
+      }}
+    >
+      {Array.from({ length }, (_, i) => {
+        const filled = i < value.length;
+        const last = i === length - 1;
+        return (
+          <View
+            key={i}
+            importantForAccessibility="no-hide-descendants"
+            style={{
+              flex: 1,
+              aspectRatio: 3 / 4,
+              borderRadius: theme.radius.base,
+              borderWidth: filled ? 2 : 1,
+              borderColor: filled ? theme.color.action : theme.color.border,
+              backgroundColor: theme.color.surface,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {checking && last ? (
+              <Animated.View
+                style={{
+                  width: dot,
+                  height: dot,
+                  borderRadius: theme.radius.pill,
+                  backgroundColor: theme.color.foreground,
+                  opacity: pulse,
+                }}
+              />
+            ) : (
+              <Text
+                style={{
+                  color: theme.color.foreground,
+                  fontFamily: face(theme),
+                  fontSize: theme.fontSize.xl,
+                  fontWeight: theme.fontWeight.display,
+                  fontVariant: ['tabular-nums'],
+                }}
+              >
+                {value[i] ?? ''}
+              </Text>
+            )}
+          </View>
+        );
+      })}
+      <TextInput
+        value={value}
+        onChangeText={(next) => onChangeText(next.replace(/[^0-9]/g, '').slice(0, length))}
+        keyboardType="number-pad"
+        textContentType="oneTimeCode"
+        autoComplete="sms-otp"
+        maxLength={length}
+        editable={editable}
+        caretHidden
+        autoFocus
+        accessibilityLabel={label}
+        style={[
+          StyleSheet.absoluteFill,
+          // Transparent, not invisible: it is the tap target for the whole
+          // row and it never stops being one.
+          { opacity: 0, color: 'transparent' },
+        ]}
+      />
+    </Animated.View>
   );
 }

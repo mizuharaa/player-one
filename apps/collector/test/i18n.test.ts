@@ -13,6 +13,14 @@ import {
  * than rendered: this file asserts about the catalogue, not about the UI.
  */
 vi.mock('react-native', () => ({ Text: () => null, View: () => null }));
+/**
+ * `expo-video` reaches `expo-modules-core`, which asks the native runtime for
+ * its `EventEmitter` at module load and throws in node. Same reason
+ * `expo-secure-store` and `expo-file-system` are mocked in these files: this
+ * suite is about behaviour, not about a decoder. `ui.tsx` imports it for
+ * `Film`, and every file that reaches `ui.tsx` therefore reaches this.
+ */
+vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({ addListener: () => ({ remove: () => {} }), status: 'idle' }) }));
 vi.mock('expo-secure-store', () => ({}));
 vi.mock('expo-file-system', () => ({
   Directory: class {},
@@ -41,10 +49,12 @@ describe('the collector message catalogue', () => {
   });
 
   it('has actually been translated, not copied', () => {
-    // `app.name` is the product name and `prov.rssi` a technical initialism,
-    // the same in both languages. Everything else byte-identical means the
-    // English was pasted in to pass the check above.
-    const sameOnPurpose = new Set<MessageKey>(['app.name', 'prov.rssi']);
+    // `app.name` is the product name, `prov.rssi` a technical initialism and
+    // `splash.partners` two company names joined by a multiplication sign —
+    // the same in all three languages, and SPEC.md §1 prints it that way in
+    // its own copy table. Everything else byte-identical means the English was
+    // pasted in to pass the check above.
+    const sameOnPurpose = new Set<MessageKey>(['app.name', 'prov.rssi', 'splash.partners']);
     const copied = (Object.keys(MESSAGES.vi) as MessageKey[]).filter(
       (key) => !sameOnPurpose.has(key) && MESSAGES.en[key] === MESSAGES.vi[key],
     );
