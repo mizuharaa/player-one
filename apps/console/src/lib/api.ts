@@ -508,6 +508,14 @@ export interface Reference {
     status: 'draft' | 'published' | 'taken_down';
   }[];
   scenarios: { id: string; code: string; privacyRiskLevel: 'low' | 'medium' | 'high' }[];
+  /** Live and released claims both; `releasedAt === null` is the live one. */
+  task_claims: {
+    id: string;
+    taskId: string;
+    collectorId: string;
+    claimedAt: string;
+    releasedAt: string | null;
+  }[];
 }
 
 /** What `POST /handovers` takes. Centre, operator and machine come from the tokens. */

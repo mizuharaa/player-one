@@ -17,12 +17,28 @@
  * What it adds over `counter.ts import`, and the only reason it exists: that
  * command mints a fresh handover, batch and session id on every run, so an
  * operator who ran it twice on one directory got a second batch and a second
- * declared session for one card. Here the three ids are DERIVED — from the
- * centre, the card, the collector and the machine's own calendar day — so a
- * second run replays into the same rows. `POST /handovers`, `/upload-batches`
- * and `/handovers/:id/sessions` are all `on conflict do nothing` and answer
- * `{ replayed: true }`, and `storeEpisode` already answers `duplicate`, so the
- * retry rule is the server's and not this script's.
+ * declared session for one card. Here all three ids are DERIVED from the same
+ * four facts — the centre, the collector, the card and the machine's own
+ * calendar day — so a second run replays into the same rows.
+ * `POST /handovers`, `/upload-batches` and `/handovers/:id/sessions` are all
+ * `on conflict do nothing` and answer `{ replayed: true }`, and `storeEpisode`
+ * already answers `duplicate`, so the retry rule is the server's and not this
+ * script's.
+ *
+ * ONE declared session per card per day, and that is the load-bearing part.
+ * The id deliberately does NOT include the session directory's name. It did,
+ * and the end-to-end smoke found what that costs: three recordings off one
+ * card became three handover-origin sessions on one handover, and the resolver
+ * then refused to choose between them and quarantined every episode after the
+ * first — correctly, because CLAUDE.md gives time matching to `app`-origin
+ * sessions only. With one candidate every episode on the card resolves
+ * `automatic_single` and no operator has to call `POST /episodes/:id/resolve`.
+ *
+ * The cost, stated: the APP-17b declarations belong to that one session, so
+ * the first intake of the day sets them and a later intake's flags do not
+ * move them. The command says `session reused` when that happens. Two
+ * recordings needing different declarations are two cards or an operator
+ * correction, not one intake.
  *
  * A path on the mounted card is accepted and is never imported in place: the
  * directory is copied into `PLAYERONE_MEDIA_ROOT` first and every file's
@@ -43,10 +59,11 @@ const usage = `Usage: node packages/api/scripts/card-intake.mjs <session-dir>
   --card <tf card id>
   --collector <phone | external_ref | uuid>
   --others-in-frame yes|no --sensitive yes|no
-  [--task <uuid | name>]        default: the only published task
+  [--task <uuid | name>]        default: the collector's live claim
   [--scenario <uuid | code>]    default: the only scenario
   [--device <uuid | serial>]    default: the device bound to this collector
   [--prepare-time <ISO>]        default: now
+  [--day YYYY-MM-DD]            default: this machine's local date
   [--api http://127.0.0.1:8080]
 
 Credentials, the same four bin/counter.ts reads:
@@ -66,8 +83,17 @@ Submitting the ingest record moves no bytes: the API must independently hold
 the same session at <its media root>/<basename>, which is what the copy above
 arranges when the API runs on this machine.
 
+--day names the operator's shift, which is what groups a card's recordings
+into one declared session. It defaults to this machine's LOCAL date, not UTC: a
+UTC boundary cuts a Vietnamese afternoon in half. Pass it for a card imported
+after midnight for the shift that has just ended, and pass it with care —
+naming yesterday puts today's recordings on yesterday's session.
+
 Idempotent. A second run on the same directory, card, collector and day prints
-duplicate and writes no second episode, ingest or bill line.`;
+duplicate and writes no second episode, ingest or bill line. Every recording
+intaken for one card on one day joins ONE declared session, so each resolves
+automatically; the declarations are that session's and the first intake of the
+day sets them.`;
 
 class UsageError extends Error {}
 class StepError extends Error {}
@@ -176,6 +202,7 @@ export function parseIntakeArgs(args) {
         scenario: { type: 'string' },
         device: { type: 'string' },
         'prepare-time': { type: 'string' },
+        day: { type: 'string' },
         api: { type: 'string', default: 'http://127.0.0.1:8080' },
       },
     });
@@ -204,6 +231,9 @@ export function parseIntakeArgs(args) {
   }
   const prepare = new Date(v['prepare-time'] ?? new Date().toISOString());
   if (Number.isNaN(prepare.getTime())) throw new UsageError('--prepare-time must be an ISO datetime');
+  const day = v.day ?? localDay();
+  // Strict, because a mistyped day silently merges two shifts into one session.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new UsageError('--day must be YYYY-MM-DD');
   return {
     sessionDir: resolve(parsed.positionals[0]),
     card: required('card'),
@@ -213,6 +243,7 @@ export function parseIntakeArgs(args) {
     task: v.task,
     scenario: v.scenario,
     device: v.device,
+    day,
     prepareTime: prepare.toISOString(),
     api: v.api,
   };
@@ -240,6 +271,7 @@ async function main() {
     verification: null,
     attribution: null,
     batch: null,
+    reuse: null,
   };
   let step = 'usage';
   try {
@@ -302,7 +334,14 @@ async function main() {
       const raw = await response.text();
       if (!response.ok) {
         note(raw);
-        throw new StepError(`HTTP ${response.status}`);
+        const failure = new StepError(`HTTP ${response.status}`);
+        // The refusal itself, for the one caller below that can act on it.
+        try {
+          failure.body = JSON.parse(raw);
+        } catch {
+          failure.body = null;
+        }
+        throw failure;
       }
       return raw === '' ? {} : JSON.parse(raw);
     };
@@ -332,20 +371,37 @@ async function main() {
             'device',
           )
         : pick(reference.devices, o.device, ['id', 'hardwareSerial'], 'device');
-    const published = reference.tasks.filter((t) => t.status === 'published');
+    /**
+     * The task the COLLECTOR holds a live claim on, not the first published
+     * one. `POST /handovers/:id/sessions` refuses `session_claim_missing`
+     * unless the claim exists, and the smoke run was refused on its very first
+     * command because the demo database's first published task was not the
+     * demo collector's claim. `task_claims_live_key` allows one live claim per
+     * collector per task, so a pilot collector has exactly one and there is
+     * nothing to choose between.
+     */
+    const claims = (reference.task_claims ?? []).filter(
+      (c) => c.collectorId === collector.id && c.releasedAt === null,
+    );
+    const claimed = reference.tasks.filter((t) => claims.some((c) => c.taskId === t.id));
     const task =
       o.task === undefined
-        ? pick(published, published[0]?.id ?? '', ['id'], 'task')
+        ? pick(claimed, claimed[0]?.id ?? '', ['id'], 'task')
         : pick(reference.tasks, o.task, ['id', 'name'], 'task');
     const scenario =
       o.scenario === undefined
         ? pick(reference.scenarios, reference.scenarios[0]?.id ?? '', ['id'], 'scenario')
         : pick(reference.scenarios, o.scenario, ['id', 'code'], 'scenario');
 
-    const key = `${signedIn.upload_centre_id}/${collector.id}/${o.card}/${localDay()}`;
+    const key = `${signedIn.upload_centre_id}/${collector.id}/${o.card}/${o.day}`;
     const handoverId = derivedId(`playerone/card-intake/handover/${key}`);
     const batchId = derivedId(`playerone/card-intake/batch/${handoverId}`);
-    const sessionId = derivedId(`playerone/card-intake/session/${handoverId}/${out.session}`);
+    /**
+     * The same key as the handover: one declared session per card per day, and
+     * not one per directory. See the header — one candidate is what lets the
+     * resolver answer `automatic_single` for every recording on the card.
+     */
+    const sessionId = derivedId(`playerone/card-intake/session/${key}`);
 
     step = 'handover';
     const handover = await post('/handovers', {
@@ -361,17 +417,43 @@ async function main() {
       handover_id: handoverId,
       import_started_at: new Date().toISOString(),
     });
-    out.batch = `${batchId} (${batch.replayed ? 'reused' : 'opened'}, handover ${handover.replayed ? 'reused' : 'opened'})`;
+    out.batch = batchId;
 
     step = 'session';
-    await post(`/handovers/${handoverId}/sessions`, {
+    const declared = await post(`/handovers/${handoverId}/sessions`, {
       id: sessionId,
       task_id: task.id,
       scenario_id: scenario.id,
       others_in_frame: o.othersInFrame,
       sensitive_info_present: o.sensitive,
       prepare_time: o.prepareTime,
+    }).catch((error) => {
+      /**
+       * The one refusal an operator can act on without help, so it gets the
+       * help: which task to pass. The claims come from the same reference
+       * cache, so this names the collector's own claims and not a list of
+       * everything published.
+       */
+      if (error instanceof StepError && error.body?.constraint === 'session_claim_missing') {
+        const named = (rows) =>
+          rows.length === 0 ? '  (none)' : rows.map((t) => `  --task "${t.name}"   # ${t.id}`).join('\n');
+        note(
+          `${collector.externalRef ?? collector.id} holds no live claim on "${task.name}".\n` +
+            `Live claims for this collector, pass one of these:\n${named(claimed)}\n` +
+            (claims.length === 0
+              ? 'There are none: an operator has to claim a task for this collector first ' +
+                '(POST /api/tasks/:id/claims), or the claim was released.\n'
+              : ''),
+        );
+      }
+      throw error;
     });
+    out.reuse = `handover ${handover.replayed ? 'reused' : 'opened'}` +
+      `, batch ${batch.replayed ? 'reused' : 'opened'}` +
+      `, session ${declared.replayed ? 'reused' : 'opened'}`;
+    if (declared.replayed === true) {
+      note('session reused: the APP-17b declarations recorded by the first intake of the day stand');
+    }
 
     step = 'ingest';
     const record = await ingest(sessionDir);
@@ -410,6 +492,7 @@ async function main() {
         ['verification', out.verification],
         ['attribution', out.attribution],
         ['batch', out.batch],
+        ['reuse', out.reuse],
       ])}\n`,
     );
   }

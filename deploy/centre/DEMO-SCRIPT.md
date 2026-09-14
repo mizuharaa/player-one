@@ -29,8 +29,9 @@ APP-17b answers the collector gave at the counter and have no default. Given a
 path on the card, the command copies the session into `PLAYERONE_MEDIA_ROOT`
 and compares every file's sha256 across the two before importing the copy; it
 never imports in place and never writes to the card. Then it opens or reuses
-today's batch for this card, imports the session, submits the episode and
-uploads it with cloud read-back.
+today's handover, batch and declared session for this card, imports the
+session, submits the episode and uploads it with cloud read-back. `--task` is
+not needed: it defaults to the task the collector holds a live claim on.
 
 **Evidence:** one table on stdout. Read the `batch` and `episode` rows aloud:
 
@@ -42,9 +43,20 @@ copy          10 files, sha256 matched
 episode       3ed23c87-463e-8c3d-9a21-aca46c823f5c
 ingest        new
 verification  verified
-attribution   automatic_single -> session ccdd6862-e34d-52f4-8a35-3e6284983bfd (resolved)
-batch         ab174a59-d2fb-50cd-8c72-80ece51e98cf (opened, handover opened)
+attribution   automatic_single -> session 57f60e3b-cce5-5bfa-8363-3bd1ab37fdcc (resolved)
+batch         ecd271f5-dc67-5495-9e31-190bf77ea462
+reuse         handover opened, batch opened, session opened
 ```
+
+`attribution automatic_single` is the row to watch on a card holding more than
+one recording. **Every recording intaken for this card today joins the same
+declared session**, so each one resolves by itself; the `reuse` row says
+`session reused` from the second onwards. It used to declare a session per
+recording, and then the resolver refused to choose between them — correctly,
+because time matching is for app-declared sessions only — and every recording
+after the first came back `unresolved -> session none (quarantined)` for an
+operator to fix by hand. If you see that row, stop and say so: it means
+something declared a second session for this card today.
 
 `verification  verified` is the byte read-back verdict, and there is one
 `cloud_verifications` row per file with its own `sha256` behind it — not an
@@ -60,7 +72,8 @@ today's date, so a retry replays instead of importing again:
 copy          10 files, sha256 matched
 ingest        duplicate
 verification  verified
-batch         ab174a59-d2fb-50cd-8c72-80ece51e98cf (reused, handover reused)
+attribution   automatic_single -> session 57f60e3b-cce5-5bfa-8363-3bd1ab37fdcc (resolved)
+reuse         handover reused, batch reused, session reused
 ```
 
 Exit 0 means the batch is cloud verified. Anything else prints the failed step
@@ -287,7 +300,8 @@ drive, decline.
    already-mounted card, with the step-by-step PASS/FAIL report. It is the same
    method, not a second one.
 
-3. Import the copy (steps 1-2 above):
+3. Import the copy (steps 1-2 above). Once per recording on the card; they all
+   join the one declared session for this card today:
 
    ```bash
    node packages/api/scripts/card-intake.mjs "$INBOX/$SESSION" \
