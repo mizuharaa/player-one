@@ -910,6 +910,10 @@ export function registerPayout(
     const loaded = await loadBill(db, id, batchOptions);
     if (loaded === undefined) return reply.code(404).send({ error: 'no such bill' });
     const gate = await refusalFor(db, loaded, batchOptions);
+    if (gate === 'payout_already_paid') {
+      const committed = await replay();
+      if (committed) return reply.send(committed);
+    }
     if (gate !== null) return refusePayment(gate);
     const account = loaded.account!;
 
