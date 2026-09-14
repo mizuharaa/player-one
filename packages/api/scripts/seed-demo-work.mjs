@@ -37,7 +37,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import { open } from '../../store/src/index.ts';
+import { open, seedCatalogues } from '../../store/src/index.ts';
 
 /** Fixed, so running this twice is the same demo rather than a second one. */
 const ID = {
@@ -73,6 +73,14 @@ if (phone === undefined || phone === '') {
 }
 
 const db = await open();
+/**
+ * The review standard's own catalogue, so the failed episode below can name a
+ * real reason code with PaXini's own Vietnamese rather than one invented here.
+ * `seedCatalogues` is idempotent and the API calls it on boot anyway; calling
+ * it first means this script does not depend on the API having been started.
+ */
+await seedCatalogues(db);
+
 const fail = (message) => {
   throw new Error(message);
 };
@@ -182,11 +190,7 @@ try {
                 ${review}, now(), ${randomUUID()})`);
       if (reason !== undefined) {
         await tx.execute(sql`
-          insert into review_reason_codes (code, label_en, label_vi)
-          values (${reason.code}, ${reason.en}, ${reason.vi})
-          on conflict (code) do nothing`);
-        await tx.execute(sql`
-          insert into episode_review_reasons (review_id, code) values (${reviewId}, ${reason.code})
+          insert into episode_review_reasons (review_id, code) values (${reviewId}, ${reason})
           on conflict do nothing`);
       }
       const settlementId = randomUUID();
@@ -215,11 +219,10 @@ try {
       minutes: '0.000000',
       amount: '0.0000',
       state: 'pending_settlement',
-      reason: {
-        code: 'CONT.OCCLUDED',
-        en: 'The frame is blocked for most of the recording. Check how the device is worn.',
-        vi: 'Khung hình bị che phần lớn thời gian. Kiểm tra cách đeo thiết bị.',
-      },
+      // A code out of `REVIEW_REASON_CATALOGUE`, with PaXini's own Vietnamese.
+      // The app prints `coalesce(label_vi, label_en)` verbatim and this
+      // repository does not own that sentence.
+      reason: 'VQ-OCCLUSION',
     });
     // `approved` → reviewed and worth money, not yet on a bill. This is what
     // `cycle.estimatedVnd` is made of, and it is the SAME list the collector

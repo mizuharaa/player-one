@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, type EpisodeState, type EpisodeUpload } from '../api/types.ts';
+import { ApiError, type EpisodeState } from '../api/types.ts';
 import { uuid } from '../api/http.ts';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
@@ -194,11 +194,6 @@ function reasonText(tt: (key: MessageKey) => string, reason: string): string {
   return key === undefined ? reason : tt(key);
 }
 
-/** One flat list, drawn as sections: a session heading, then its episodes. */
-type Line =
-  | { kind: 'session'; id: string; sessionId: string; scenario: string | null }
-  | { kind: 'episode'; id: string; episode: EpisodeUpload };
-
 export function Uploads() {
   const api = useApi();
   const tt = useT();
@@ -215,9 +210,6 @@ export function Uploads() {
 
   const episodes = useQuery({ queryKey: ['episodes'], queryFn: () => api.episodes() });
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: () => api.sessions(), enabled: open });
-  /** The declared sessions, for the section headings — read whether or not the
-      panel is open, because a heading is not part of the upload flow. */
-  const allSessions = useQuery({ queryKey: ['sessions', 'all'], queryFn: () => api.sessions() });
   /**
    * The delivery this phone was interrupted in the middle of, if any.
    *
@@ -279,38 +271,22 @@ export function Uploads() {
   const resumable = held.data ?? null;
 
   /**
-   * The rows, grouped by the session each episode belongs to.
-   *
-   * Grouping only — the order inside a session is the server's, and no episode
-   * is invented, dropped or re-attributed. An episode whose `sessionId` is
-   * empty falls into one unnamed group rather than disappearing.
+   * SPEC §13 asks for a section list, one section per `CollectionSession`.
+   * **It is not buildable against the API as it stands, so it is not faked.**
+   * `GET /api/me/episodes` carries no collection session id — `api/http.ts`
+   * sets `sessionId: ''` on every row and says why — so the only way to draw
+   * those headings would be to guess which session an episode belongs to, and
+   * a wrong attribution on an upload screen is a wrong attribution of work.
+   * The rows are therefore one flat list in the server's own order. The
+   * heading needs `collection_session_id` on that endpoint; nothing else here
+   * changes when it arrives.
    */
-  const scenarioOf = new Map(
-    (allSessions.data ?? []).map((s) => [s.id, s.scenario as string | null]),
-  );
-  const lines: Line[] = [];
-  let current: string | null = null;
-  for (const episode of episodes.data ?? []) {
-    if (episode.sessionId !== current) {
-      current = episode.sessionId;
-      if (episode.sessionId !== '') {
-        lines.push({
-          kind: 'session',
-          id: `s:${episode.sessionId}`,
-          sessionId: episode.sessionId,
-          scenario: scenarioOf.get(episode.sessionId) ?? null,
-        });
-      }
-    }
-    lines.push({ kind: 'episode', id: episode.episodeId, episode });
-  }
-
   const micro = { ...textStyle(theme, 'micro'), color: theme.color.discover.muted };
 
   return (
     <WarmList
-      data={lines}
-      keyOf={(line) => line.id}
+      data={episodes.data ?? []}
+      keyOf={(episode) => episode.episodeId}
       refresh={{
         refreshing: episodes.isFetching && !episodes.isPending,
         onRefresh: () => void episodes.refetch(),
@@ -473,17 +449,7 @@ export function Uploads() {
           <EmptyState text={tt('uploads.empty')} />
         )
       }
-      renderItem={(line) => {
-        if (line.kind === 'session') {
-          return (
-            <Text style={[micro, { paddingTop: theme.space[2] }]}>
-              {`${tt('uploads.session')} · ${line.sessionId}${
-                line.scenario === null ? '' : ` · ${line.scenario}`
-              }`}
-            </Text>
-          );
-        }
-        const episode = line.episode;
+      renderItem={(episode) => {
         const colors = stateColors(theme, episode.state);
         const uploading = episode.state === 'uploading';
         return (
