@@ -1,14 +1,41 @@
 import { useState } from 'react';
-import { View } from 'react-native';
+import { Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { useGuideTarget } from '../guide/Guide.tsx';
-import { Body, Button, CardLink, Chip, Field, Hatch, ListScreen, Loading, Note, Progress, Row, Tag, Title } from '../ui.tsx';
+import { Chip, Field } from '../ui.tsx';
+import {
+  EmptyState,
+  ImageLabel,
+  LoadFailed,
+  ScreenTitle,
+  Skeleton,
+  StaleStrip,
+  TaskCard,
+  WarmList,
+  textStyle,
+} from '../v2.tsx';
 
-/** APP-08: type, unit price, target, progress, claimable state. */
+/**
+ * SPEC §11. Browsing the work: image-first, two columns, the price legible on
+ * every tile at every width.
+ *
+ * **This screen has no lime at all, and that is correct.** §0.2 spends lime at
+ * most once per screen, on progress, and four tiles each with a lime track is
+ * four accents. So the claim track here is `discover.soft` with a
+ * `discover.muted` fill (drawn inside `TaskCard`) and the slot count beside it
+ * carries the meaning — one per screen is a ceiling, not a quota.
+ *
+ * Every tile is `flex: 1` inside a two-column wrapper and never a computed
+ * pixel width, which is what makes the grid survive 320dp and 412dp from one
+ * layout. `claimable`, `claimedByMe`, `remainingSlots`, `claimedMinutes` /
+ * `targetMinutes` and `unitPriceVndPerMinute` are rendered exactly as the
+ * server sent them; the app orders nothing and filters only on the words the
+ * collector typed.
+ */
 export function TaskHall() {
   const api = useApi();
   const nav = useNav();
@@ -18,84 +45,87 @@ export function TaskHall() {
   const listTarget = useGuideTarget('hall.list');
   const [search, setSearch] = useState('');
   const [availableOnly, setAvailableOnly] = useState(false);
+
   const needle = search.trim().toLocaleLowerCase();
   const visible = (tasks.data ?? []).filter((task) => {
     const scenario = task.scenario === null ? task.type : tt(`scenario.${task.scenario}`);
-    return (!availableOnly || task.claimable) && `${task.title} ${scenario}`.toLocaleLowerCase().includes(needle);
+    return (
+      (!availableOnly || task.claimable) &&
+      `${task.title} ${scenario ?? ''}`.toLocaleLowerCase().includes(needle)
+    );
   });
 
+  const stateOf = (claimable: boolean, claimedByMe: boolean, full: boolean): string =>
+    claimedByMe
+      ? tt('detail.claimed')
+      : claimable
+        ? tt('hall.open')
+        : full
+          ? tt('hall.full')
+          : tt('detail.unavailable');
+
   return (
-    <ListScreen
-      title={tt('hall.title')}
+    <WarmList
       data={visible}
+      numColumns={2}
       keyOf={(task) => task.id}
-      header={<View ref={listTarget} collapsable={false} style={{ gap: theme.space[3] }}>
-        <Field label={tt('hall.search')} value={search} onChangeText={setSearch} />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2] }}>
-          <Chip label={tt('hall.all')} selected={!availableOnly} onPress={() => setAvailableOnly(false)} />
-          <Chip label={tt('hall.availableOnly')} selected={availableOnly} onPress={() => setAvailableOnly(true)} />
+      refresh={{ refreshing: tasks.isFetching && !tasks.isPending, onRefresh: () => void tasks.refetch() }}
+      header={
+        <View ref={listTarget} collapsable={false} style={{ gap: theme.space[3] }}>
+          <ScreenTitle compact>{tt('hall.title')}</ScreenTitle>
+          <Field label={tt('hall.search')} value={search} onChangeText={setSearch} />
+          {/* Colour AND weight, never colour alone: `Chip`'s selected state is
+              already a fill plus a weight change, which is §18's rule. */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2] }}>
+            <Chip label={tt('hall.all')} selected={!availableOnly} onPress={() => setAvailableOnly(false)} />
+            <Chip
+              label={tt('hall.availableOnly')}
+              selected={availableOnly}
+              onPress={() => setAvailableOnly(true)}
+            />
+          </View>
+          <ImageLabel />
+          {/* §17: a failed refresh must not blank a screen that already had
+              data on it — the strip sits above content that is KEPT. */}
+          {tasks.isError && tasks.data !== undefined ? (
+            <StaleStrip text={tt('common.refreshFailed')} />
+          ) : null}
+          {tasks.isPending ? (
+            <View style={{ flexDirection: 'row', gap: theme.space[3] }}>
+              <View style={{ flex: 1 }}>
+                <Skeleton ratio={3 / 5} radius={theme.radius.xl} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Skeleton ratio={3 / 5} radius={theme.radius.xl} />
+              </View>
+            </View>
+          ) : null}
         </View>
-        {tasks.isError ? <><Note text={tt(tasks.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} /><Button label={tt('common.retry')} variant="secondary" disabled={tasks.isFetching} onPress={() => void tasks.refetch()} /></> : null}
-        {tasks.isPending || tasks.isFetching ? <Loading /> : null}
-      </View>}
+      }
       empty={
-        tasks.isError || tasks.isPending ? null : <Hatch text={tt(needle || availableOnly ? 'hall.noMatches' : 'home.claimableEmpty')} />
+        tasks.isPending ? null : tasks.isError && tasks.data === undefined ? (
+          <LoadFailed onRetry={() => void tasks.refetch()} />
+        ) : (
+          <EmptyState text={tt(needle !== '' || availableOnly ? 'hall.noMatches' : 'home.claimableEmpty')} />
+        )
       }
       renderItem={(task) => {
         const full = task.claimants >= task.maxClaimants;
-        const state = task.claimedByMe ? tt('detail.claimed') : task.claimable ? tt('hall.open') : full ? tt('hall.full') : tt('detail.unavailable');
-        const done =
-          task.targetMinutes <= 0 ? 0 : Math.min(1, task.claimedMinutes / task.targetMinutes);
         return (
-          <CardLink
-            label={task.title}
-            hint={state}
-            onPress={() => nav.push({ name: 'taskDetail', taskId: task.id })}
-          >
-            {/* Identity first, and tighter than the facts under it: the
-                card's subject is the task, not its unit price. The price used
-                to be an `Amount` — 24sp bold, the loudest thing on the card and
-                on every card below it — which put `TaskDetail`'s one allowed
-                ink figure in a list, three times over. `DESIGN.md`: one hero
-                per screen, and a figure that large earns it only beside its own
-                sentence and its own action, which is what the detail screen
-                gives it. Here it is a measured quantity in a column of them,
-                right-aligned and tabular, which is how a collector compares two
-                tasks. */}
-            <View style={{ gap: theme.space[1] }}>
-              <Title>{task.title}</Title>
-              <Body muted>{task.scenario === null ? (task.type || tt('detail.notSupplied')) : tt(`scenario.${task.scenario}`)}</Body>
-            </View>
-            <View style={{ gap: theme.space[2], paddingTop: theme.space[1] }}>
-              <Row label={tt('hall.pricePerMinute')} value={`${task.unitPriceVndPerMinute} ${task.currency}`} />
-              {/* Progress is lime — `DESIGN.md`'s one job for `lime-600` — and
-                  the bar with its own count is `Progress` now rather than a
-                  hand-built band in this file, so the hall and the delivery
-                  panel on Uploads draw the same shape from one place. */}
-              <Progress
-                label={tt('hall.progress')}
-                value={`${task.claimedMinutes}/${task.targetMinutes} ${tt('detail.minutes')}`}
-                fraction={done}
-              />
-              <Row label={tt('hall.slots')} value={`${task.claimants}/${task.maxClaimants}`} />
-            </View>
-            {/* Capacity is not a verdict. These two used to borrow the reject
-                and pass hues, which put the colour that means "this episode was
-                not paid for" on a task that is simply full. A task nobody can
-                join is muted, the same way a disabled control is; a task that
-                is open is the ink pill, which is where a collector's action is
-                everywhere else in this app (`Chip`, `Button`). It was
-                `tech[100]`, and tech is PaXini's mark now. */}
-            {!task.claimable ? (
-              <Tag
-                label={state}
-                fg={theme.color.mutedForeground}
-                bg={theme.color.muted}
-              />
-            ) : (
-              <Tag label={tt('hall.open')} fg={theme.color.actionInk} bg={theme.color.action} />
-            )}
-          </CardLink>
+          <View style={{ gap: theme.space[2] }}>
+            <TaskCard
+              task={task}
+              variant="tile"
+              hint={stateOf(task.claimable, task.claimedByMe, full)}
+              onPress={() => nav.push({ name: 'taskDetail', taskId: task.id })}
+            />
+            {/* The state as a word under the tile rather than as a coloured
+                pill on it: capacity is not a verdict, and the tile's own
+                corners are already spoken for by the price and the scenario. */}
+            <Text style={{ ...textStyle(theme, 'micro'), color: theme.color.discover.muted }}>
+              {`${tt('hall.progress')} · ${task.claimedMinutes}/${task.targetMinutes} ${tt('detail.minutes')}`}
+            </Text>
+          </View>
         );
       }}
     />
