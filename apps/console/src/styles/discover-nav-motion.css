@@ -1,0 +1,74 @@
+/*
+ * The dock contracts, and nothing inside it is re-laid-out to do so.
+ *
+ * Two properties written by `use-discover-nav.ts` onto `.discover-nav-wrap`
+ * drive every rule here: `--nav-open`, the spring's fraction, and
+ * `--nav-width`, the dock's expanded border-box width. Both are read at paint
+ * time only.
+ *
+ *   clip-path  contracts the pill. `inset(… round …)` keeps the caps true
+ *              circles at every fraction, which `scaleX` cannot — a pill
+ *              squeezed to a fifth of its width has 6px by 30px cap ellipses,
+ *              and you can see it. The clip also clips hit-testing, so the
+ *              hidden half cannot be clicked, and it costs no layout at all:
+ *              the dock's own box never changes size.
+ *   translate  re-centres the contracting pill on the same midpoint, so it
+ *              closes inward instead of sliding off to the left margin. The
+ *              brand rides with it.
+ *
+ * Astra's first version transitioned `width` and `padding` for 660ms on a
+ * bouncy cubic-bezier. Not kept, for two reasons: a width transition reflows
+ * the dock's subtree on every frame of it, and a CSS transition cannot follow
+ * the pointer-proximity target, which moves on every pointer event. The spring
+ * in the hook is the one mechanism for all four inputs, and it is also what
+ * answers reduced motion — under it the hook writes the end state and never
+ * starts a frame loop, so there is no transition here to switch off.
+ */
+.discover-nav-wrap{--nav-open:1}
+
+/*
+ * 14.5rem is not arbitrary. The collapsed pill has to hold the brand (128px
+ * plus 1.1rem of padding), a 2.75rem control and a gap — 204px — and then the
+ * spring's 4% undershoot clips about 28px past that on the way in. 232px is
+ * the first figure where the bounce cannot eat the reveal control, and
+ * `nav-screen-qa.mjs` samples the deepest frame to hold it.
+ */
+.discover-nav-wrap .discover-nav{
+  --nav-collapsed:14.5rem;
+  --nav-hidden:calc(max(0px,var(--nav-width,0px) - var(--nav-collapsed)) * (1 - var(--nav-open)));
+  position:relative;
+  clip-path:inset(0 var(--nav-hidden) 0 0 round var(--radius-pill));
+  translate:calc(var(--nav-hidden) / 2) 0;
+  will-change:clip-path,translate;
+}
+
+/* The three old direct children, grouped so one opacity covers all of them.
+   The gaps repeat `.discover-nav`'s own so the expanded dock measures exactly
+   what it measured before this file existed. */
+.discover-nav-expanded{display:flex;align-items:center;gap:2rem;min-width:0;white-space:nowrap;
+  /* Clear of the clip edge before the edge reaches it: full ink above .81,
+     gone by .19. Linear opacity left glyphs dissolving under the cap. */
+  opacity:calc(var(--nav-open) * 1.6 - .3);
+  translate:calc((1 - var(--nav-open)) * -1.25rem) 0;
+}
+
+.discover-nav-reveal{position:absolute;right:.5rem;top:50%;
+  display:grid;align-content:center;justify-items:center;gap:.35rem;
+  width:2.75rem;height:2.75rem;padding:0;
+  background:none;border:0;border-radius:var(--radius-pill);color:inherit;cursor:pointer;
+  opacity:calc(1 - var(--nav-open) * 1.6 + .3);
+  /* Rides the clip edge: the pill's own counter-translate is +hidden/2, so
+     -hidden leaves this control the same distance inside the visible cap at
+     every fraction, bounce included. */
+  translate:calc(var(--nav-hidden) * -1) -50%;
+  scale:calc(1 - var(--nav-open) * .3);
+  pointer-events:none;
+}
+.discover-nav-reveal span{width:1.15rem;height:1px;background:currentColor}
+.discover-nav-wrap[data-collapsed='true'] .discover-nav-reveal{pointer-events:auto}
+.discover-nav-reveal:focus-visible{outline:2px solid var(--ring);outline-offset:-.25rem}
+
+@media(max-width:1100px){.discover-nav-expanded{gap:1.5rem}}
+/* Destinations are gone below 900px and the tools below 767px, so the
+   expanded half is shorter and the collapsed footprint can be tighter. */
+@media(max-width:767px){.discover-nav-wrap .discover-nav{--nav-collapsed:12.5rem}.discover-nav-reveal{right:.35rem}}
