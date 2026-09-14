@@ -107,7 +107,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
   /** The support-desk explanation, which is what `landing.register` opens. */
   const [explaining, setExplaining] = useState(false);
   /** The ink the scrim was measured against. Fixed: the film is not themed. */
-  const onFilm = theme.discover.surface;
+  const onFilm = theme.color.discover.surface;
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.background }}>

@@ -13,11 +13,12 @@ declare module '*.jpg' {
 }
 
 /**
- * WebP, which is what the console's `/discover` stills are and therefore what
- * the landing's stills are. Android decodes WebP natively at every API level
- * this app supports (minSdk 28), Metro lists `webp` among its default
- * `assetExts`, and `@vitejs/plugin-react` serves it in the harness — so it
- * needs no loader on either side. iOS is the open one: see `DEVICE_DEPS.md`.
+ * WebP, which is what the console's `/discover` stills are, what the landing's
+ * stills are, and what the whole §21.1 bundle is apart from one JPEG. Android
+ * decodes WebP natively at every API level this app supports (minSdk 28),
+ * Metro lists `webp` among its default `assetExts`, and `@vitejs/plugin-react`
+ * serves it in the harness — so it needs no loader on either side. iOS is the
+ * open one: see `DEVICE_DEPS.md`.
  */
 declare module '*.webp' {
   const source: import('react-native').ImageSourcePropType;

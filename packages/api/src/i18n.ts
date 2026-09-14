@@ -3235,7 +3235,7 @@ const vi: Record<MessageKey, string> = {
 
   'bo.refused': 'Bị từ chối',
   'bo.refused.sign_in_rate_limited':
-    'Quá nhiều lần đăng nhập bị từ chối. Hãy đợi vài phút rồi thử lại — giới hạn tự hết hạn, không ai cần mở khóa.',
+    'Bạn thử đăng nhập sai quá nhiều lần. Đợi vài phút rồi thử lại, không cần ai mở khóa.',
   'bo.refused.task_claims_capacity': 'Nhiệm vụ đó đã đủ số người nhận cho phép.',
   'bo.refused.task_claims_exam_gate': 'Cộng tác viên đó chưa đạt bài kiểm tra nên không thể nhận nhiệm vụ.',
   'bo.refused.task_claims_published_gate': 'Chỉ nhiệm vụ đã đăng mới nhận được.',
@@ -3309,23 +3309,23 @@ const vi: Record<MessageKey, string> = {
   'bo.refused.review_verdict_id_taken':
     'Mã kết quả duyệt đó đã thuộc về một bản duyệt khác. Không có gì được ghi lại. Hãy tải lại màn hình và duyệt lại phân đoạn.',
   'bo.refused.upload_unknown_session':
-    'Phiên thu thập đó không tồn tại. Hãy gán phiên trong ứng dụng trước khi tải lên.',
+    'Không có phiên ghi hình này. Chọn phiên trong ứng dụng trước khi tải lên.',
   'bo.refused.upload_foreign_session':
-    'Phiên thu thập đó thuộc về người thu thập khác, nên không thể tải dữ liệu lên phiên đó.',
+    'Phiên ghi hình này của người khác nên bạn không tải lên được.',
   'bo.refused.upload_already_complete':
-    'Lần tải lên này đã hoàn tất và đã được kiểm tra. Gửi lại cũng không thay đổi gì.',
+    'Lần tải lên này đã xong và đã kiểm tra. Gửi lại cũng không thay đổi gì.',
   'bo.refused.upload_checksum_mismatch':
-    'Một tệp trên đám mây không khớp với giá trị kiểm tra mà điện thoại đã tính. Đoạn ghi hình này bị giữ lại, không vào duyệt, cho đến khi được gửi lại.',
+    'Có một tệp không khớp với bản trên điện thoại. Đoạn ghi hình này bị giữ lại, chưa vào duyệt, cho tới khi bạn gửi lại.',
   'bo.refused.upload_payload_too_large':
-    'Lần giao đó lớn hơn mức một lần tải lên được phép khai báo. Hãy gửi thành nhiều lần tải lên, hoặc nộp thẻ nhớ tại trung tâm tải lên.',
+    'Lần này nhiều dữ liệu hơn mức cho phép của một lần tải lên. Hãy chia làm nhiều lần, hoặc mang thẻ nhớ tới trung tâm tải lên.',
   'bo.refused.upload_superseded':
-    'Một lần giao mới hơn của đoạn ghi hình này đã đến trong khi các tệp đang được gửi, nên kết quả lần này không được ghi nhận. Hãy tải lên lại.',
+    'Trong lúc gửi, một bản mới hơn của đoạn ghi hình này đã tới nên lần này không được tính. Hãy tải lên lại.',
   'bo.refused.upload_basename_collision':
-    'Máy tải lên đã có một thư mục ghi hình cùng tên nhưng chứa các tệp khác. Không có gì bị thay đổi và không có gì bị ghi đè. Một nhân viên vận hành phải quyết định bản ghi nào mới là thật.',
+    'Đã có một thư mục ghi hình trùng tên nhưng chứa tệp khác. Không có gì bị ghi đè. Nhân viên vận hành sẽ xác định bản nào là thật.',
   'bo.refused.upload_ingest_failed':
-    'Mọi tệp đều đến nguyên vẹn, nhưng bộ máy đo không đọc được đoạn ghi hình. Các tệp vẫn được giữ. Hãy báo lần tải lên này cho nhân viên vận hành.',
+    'Tệp đã tới đủ nhưng chưa đo được đoạn ghi hình. Tệp vẫn được giữ. Hãy báo lần tải lên này cho nhân viên vận hành.',
   'bo.refused.session_basename_unrecognised':
-    'Thư mục đó không phải là thư mục ghi hình. Hãy chọn thư mục do máy ảnh tạo ra, tên của nó bắt đầu bằng thiết bị và số sê-ri.',
+    'Thư mục này không phải thư mục ghi hình. Hãy chọn thư mục do thiết bị tạo ra, tên bắt đầu bằng số sê-ri của máy.',
   'bo.refused.upload_not_held':
     'Không có lần giao nào đang bị giữ dưới mã đó, nên không có gì để giải phóng. Hãy xem lại lần giao đó: nó có thể vẫn đang truyền, đã hoàn tất, hoặc đã được người khác giải phóng.',
   'bo.refused.upload_released_by_operator':
@@ -3335,36 +3335,36 @@ const vi: Record<MessageKey, string> = {
    * Lời từ chối của chính ứng dụng người thu thập (`COLLECTOR_API_REFUSALS`).
    * LOC-01 đặt tiếng Việt trên điện thoại, nên đây là ngôn ngữ người đọc chúng.
    */
-  'bo.refused.task_not_found': 'Nhiệm vụ đó không còn nữa.',
+  'bo.refused.task_not_found': 'Nhiệm vụ này không còn nữa.',
   'bo.refused.task_not_claimable':
-    'Nhiệm vụ đó hiện không mở, nên không thể nhận và không thể ghi hình cho nhiệm vụ đó.',
+    'Nhiệm vụ này chưa mở nên chưa nhận và chưa ghi hình được.',
   'bo.refused.task_at_capacity':
-    'Nhiệm vụ đó đã đủ số người thu thập. Hãy chọn nhiệm vụ khác.',
+    'Nhiệm vụ này đã đủ người. Hãy chọn nhiệm vụ khác.',
   'bo.refused.already_claimed': 'Bạn đã nhận nhiệm vụ này rồi.',
   'bo.refused.exam_not_passed':
-    'Bạn phải đạt bài kiểm tra trước khi nhận nhiệm vụ. Hãy làm bài ở màn hình đào tạo.',
+    'Đạt bài kiểm tra rồi bạn mới nhận được nhiệm vụ. Bài nằm ở mục Đào tạo.',
   'bo.refused.not_qualified':
-    'Tài khoản này chưa được duyệt để thu thập. Trung tâm tải lên có thể cho biết tình trạng hiện tại.',
+    'Tài khoản của bạn chưa được duyệt để đi thu thập. Trung tâm tải lên sẽ cho bạn biết tình trạng hiện tại.',
   'bo.refused.agreements_incomplete':
-    'Bạn phải chấp nhận đủ sáu thỏa thuận trước khi nhận nhiệm vụ.',
+    'Bạn cần đồng ý đủ sáu thỏa thuận trước khi nhận nhiệm vụ.',
   'bo.refused.claim_id_reused':
-    'Mã đó đã thuộc về một nhiệm vụ khác. Hãy thử nhận nhiệm vụ lại.',
+    'Mã này đã thuộc về một nhiệm vụ khác. Hãy nhận lại nhiệm vụ.',
   'bo.refused.claim_released':
-    'Bạn đã trả lại nhiệm vụ này trước đó, nên mã đó không dùng lại được. Hãy nhận lại để có mã mới.',
+    'Bạn đã trả lại nhiệm vụ này nên mã cũ không dùng lại được. Nhận lại nhiệm vụ để có mã mới.',
   'bo.refused.agreement_version_unknown':
-    'Các thỏa thuận trên màn hình này đã cũ. Hãy tải lại và đọc trước khi chấp nhận.',
+    'Thỏa thuận trên màn hình này đã cũ. Tải lại và đọc bản mới trước khi đồng ý.',
   'bo.refused.device_not_found':
-    'Không có thiết bị nào mang số sê-ri đó. Hãy kiểm tra số in trên vỏ máy.',
+    'Không có thiết bị nào mang số sê-ri này. Kiểm tra số in trên vỏ máy.',
   'bo.refused.device_not_available':
-    'Thiết bị đó đã ngừng sử dụng, nên không thể ghép nối.',
-  'bo.refused.already_bound': 'Thiết bị đó đã được ghép nối với người khác.',
+    'Thiết bị này đã ngừng sử dụng nên không liên kết được.',
+  'bo.refused.already_bound': 'Thiết bị này đang liên kết với người khác.',
   'bo.refused.device_not_bound':
-    'Thiết bị đó chưa ghép nối với bạn. Hãy ghép nối trước khi bắt đầu phiên thu thập.',
+    'Thiết bị này chưa liên kết với bạn. Liên kết trước khi tạo phiên ghi hình.',
   'bo.refused.task_not_claimed':
-    'Bạn không giữ nhiệm vụ đó, nên không thể ghi hình cho nó. Hãy nhận nhiệm vụ trước.',
-  'bo.refused.scenario_not_found': 'Nền tảng không ghi nhận bối cảnh đó.',
+    'Bạn chưa nhận nhiệm vụ này nên chưa ghi hình được. Hãy nhận nhiệm vụ trước.',
+  'bo.refused.scenario_not_found': 'Không có bối cảnh này.',
   'bo.refused.session_id_reused':
-    'Mã đó đã thuộc về một phiên thu thập khác. Hãy tạo lại phiên.',
+    'Mã này đã thuộc về một phiên khác. Hãy tạo lại phiên.',
 
   'bo.refused.tasks_commitment_shape_check': 'Danh sách số giờ cam kết phải có ít nhất một giá trị, tất cả đều lớn hơn không và không được để trống.',
   'bo.refused.task_commitments_abandon_reason_check': 'Hãy nhập lý do không để trống khi từ bỏ cam kết.',

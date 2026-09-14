@@ -549,8 +549,8 @@ describe('the public story stands on daylight paper in both schemes', () => {
   });
 
   it('nativeTheme hands the app the same eight colours in both schemes', () => {
-    expect(nativeTheme('light').discover).toEqual(nativeTheme('dark').discover);
-    expect(nativeTheme('light').discover.paper).toBe(discover.warmPaper);
+    expect(nativeTheme('light').color.discover).toEqual(nativeTheme('dark').color.discover);
+    expect(nativeTheme('light').color.discover.paper).toBe(discover.warmPaper);
   });
 });
 

@@ -43,9 +43,16 @@ interface Step {
 }
 
 const STEPS: Record<TabName, Step[]> = {
+  /**
+   * SPEC §9's four steps, in this order. Step 1's target is the WHOLE earnings
+   * card and not the figure inside it: a hole around the figure alone
+   * spotlights a number while hiding the counts and the label that explain
+   * where it came from, which is the opposite of what the step says.
+   */
   home: [
-    { target: 'home.ring', copy: 'guide.home.ring' },
+    { target: 'home.earnings', copy: 'guide.home.earnings' },
     { target: 'home.tasks', copy: 'guide.home.tasks' },
+    { target: 'home.next', copy: 'guide.home.next' },
     { target: 'shell.tabs', copy: 'guide.home.tabs' },
   ],
   // The hall took the forum's bar slot (SPEC.md §10), and this map is keyed by

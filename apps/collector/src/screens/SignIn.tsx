@@ -505,7 +505,7 @@ export function SignIn({
               source={wordmark}
               style={{ width: '100%', height: '100%' }}
               resizeMode="contain"
-              tintColor={theme.discover.surface}
+              tintColor={theme.color.discover.surface}
               accessibilityRole="image"
               accessibilityLabel={tt('app.name')}
             />

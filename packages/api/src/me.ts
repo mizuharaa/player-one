@@ -156,11 +156,11 @@ export const STATE_SENTENCES: Record<CollectorState, { en: string; vi: string }>
   },
   approved: {
     en: 'Reviewed and approved. It will go on your next bill.',
-    vi: 'Đã duyệt. Khoản này sẽ vào hóa đơn kỳ tới của bạn.',
+    vi: 'Đã duyệt. Khoản này sẽ vào hóa đơn kỳ tới.',
   },
   not_paid: {
     en: 'Reviewed, and this recording was not accepted. It will not be paid.',
-    vi: 'Đã duyệt, và bản ghi này không được chấp nhận. Khoản này sẽ không được trả.',
+    vi: 'Duyệt không đạt. Bản ghi này sẽ không được trả tiền.',
   },
   on_a_bill: {
     en: 'On a bill and waiting to be paid.',
@@ -168,19 +168,19 @@ export const STATE_SENTENCES: Record<CollectorState, { en: string; vi: string }>
   },
   action_needed: {
     en: 'We cannot pay this yet. Your ZaloPay payout account is missing or not verified. Add or verify it in your profile and this will pay on the next run.',
-    vi: 'Chúng tôi chưa thể chi trả khoản này. Tài khoản nhận tiền ZaloPay của bạn chưa có hoặc chưa được xác minh. Hãy thêm hoặc xác minh trong hồ sơ của bạn; khoản này sẽ được trả ở lần chạy kế tiếp.',
+    vi: 'Khoản này chưa chi trả được: ví ZaloPay nhận tiền của bạn chưa có hoặc chưa xác minh. Thêm hoặc xác minh trong hồ sơ, khoản này sẽ trả ở lần chạy kế tiếp.',
   },
   waiting_on_us: {
     en: 'On a bill. Something on our side has to be finished before it can pay. You do not need to do anything.',
-    vi: 'Đã lên hóa đơn. Chúng tôi cần hoàn tất một việc phía mình trước khi chi trả. Bạn không cần làm gì.',
+    vi: 'Đã lên hóa đơn. Chúng tôi còn một việc phải xong trước khi chi trả. Bạn không cần làm gì.',
   },
   on_hold: {
     en: 'On hold while we check it. You do not need to do anything.',
-    vi: 'Đang tạm giữ để chúng tôi kiểm tra. Bạn không cần làm gì.',
+    vi: 'Chúng tôi đang tạm giữ để kiểm tra. Bạn không cần làm gì.',
   },
   being_rechecked: {
     en: 'Being reviewed a second time. The result may change.',
-    vi: 'Đang được duyệt lại lần hai. Kết quả có thể thay đổi.',
+    vi: 'Đang duyệt lại lần hai. Kết quả có thể thay đổi.',
   },
   paid: {
     en: 'Paid.',
@@ -188,11 +188,11 @@ export const STATE_SENTENCES: Record<CollectorState, { en: string; vi: string }>
   },
   cannot_be_paid: {
     en: 'This entry has been replaced and will not be paid. The replacement is listed separately.',
-    vi: 'Mục này đã được thay thế và sẽ không được chi trả. Mục thay thế được liệt kê riêng.',
+    vi: 'Mục này đã có mục khác thay thế nên sẽ không được trả tiền. Mục thay thế nằm riêng trong danh sách.',
   },
   unknown: {
     en: 'We are checking this one. Contact support if it does not change.',
-    vi: 'Chúng tôi đang kiểm tra mục này. Hãy liên hệ hỗ trợ nếu nó không thay đổi.',
+    vi: 'Chúng tôi đang kiểm tra mục này. Nếu mãi không đổi, hãy liên hệ hỗ trợ.',
   },
 };
 
