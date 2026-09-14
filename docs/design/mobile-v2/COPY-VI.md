@@ -389,6 +389,34 @@ nguyên.
 
 ---
 
+# `packages/api/src/me.ts`
+
+## Trạng thái tập (me.ts)
+
+`STATE_SENTENCES` là câu duy nhất nói cho người thu thập biết một tập đang ở
+đâu; máy chủ gửi nó xuống điện thoại trong `state_text` và ứng dụng hiện
+nguyên văn, nên nó là chữ của người dùng chứ không phải chữ nội bộ. Ở đây chỉ
+có tiếng Việt và tiếng Anh — màn hình này không có tiếng Trung, theo thiết kế.
+Ba câu không đổi vì đã tự nhiên rồi: `uploaded`, `on_a_bill`, `paid`.
+
+| trạng thái | trước | sau | vì sao |
+|---|---|---|---|
+| `approved` | Đã duyệt. Khoản này sẽ vào hóa đơn kỳ tới của bạn. | **Đã duyệt. Khoản này sẽ vào hóa đơn kỳ tới.** | ⚖️ Bỏ "của bạn" dịch từ "your next bill". |
+| `not_paid` | Đã duyệt, và bản ghi này không được chấp nhận. Khoản này sẽ không được trả. | **Duyệt không đạt. Bản ghi này sẽ không được trả tiền.** | ⚖️ Bỏ "và" nối sau dấu phẩy kiểu tiếng Anh; dùng đúng chữ "Duyệt không đạt" như trong ứng dụng. |
+| `action_needed` | Chúng tôi chưa thể chi trả khoản này. Tài khoản nhận tiền ZaloPay của bạn chưa có hoặc chưa được xác minh. Hãy thêm hoặc xác minh trong hồ sơ của bạn; khoản này sẽ được trả ở lần chạy kế tiếp. | **Khoản này chưa chi trả được: ví ZaloPay nhận tiền của bạn chưa có hoặc chưa xác minh. Thêm hoặc xác minh trong hồ sơ, khoản này sẽ trả ở lần chạy kế tiếp.** | ⚖️ Bỏ bị động "chưa được xác minh" và dấu chấm phẩy; "Tài khoản nhận tiền ZaloPay" → "ví ZaloPay" cho khớp payout.zalopay. |
+| `waiting_on_us` | Đã lên hóa đơn. Chúng tôi cần hoàn tất một việc phía mình trước khi chi trả. Bạn không cần làm gì. | **Đã lên hóa đơn. Chúng tôi còn một việc phải xong trước khi chi trả. Bạn không cần làm gì.** | ⚖️ "hoàn tất một việc phía mình" là dịch của "something on our side". |
+| `on_hold` | Đang tạm giữ để chúng tôi kiểm tra. Bạn không cần làm gì. | **Chúng tôi đang tạm giữ để kiểm tra. Bạn không cần làm gì.** | ⚖️ Đưa chủ ngữ ra trước, bỏ câu không có người làm. |
+| `being_rechecked` | Đang được duyệt lại lần hai. Kết quả có thể thay đổi. | **Đang duyệt lại lần hai. Kết quả có thể thay đổi.** | ⚖️ Bỏ bị động "được duyệt". |
+| `cannot_be_paid` | Mục này đã được thay thế và sẽ không được chi trả. Mục thay thế được liệt kê riêng. | **Mục này đã có mục khác thay thế nên sẽ không được trả tiền. Mục thay thế nằm riêng trong danh sách.** | ⚖️ Ba lần bị động trong hai câu; "được liệt kê riêng" là câu dịch. |
+| `unknown` | Chúng tôi đang kiểm tra mục này. Hãy liên hệ hỗ trợ nếu nó không thay đổi. | **Chúng tôi đang kiểm tra mục này. Nếu mãi không đổi, hãy liên hệ hỗ trợ.** | "nếu nó không thay đổi" — "nó" thay cho một mục là lối dịch; đảo mệnh đề điều kiện ra trước. |
+
+⚖️ = câu nói về tiền hoặc về kết quả duyệt. **Nghĩa giữ nguyên từng câu**, chỉ
+đổi cách nói. `action_needed` vẫn phải chứa chữ "ZaloPay" (một bài kiểm thử
+trong `me.test.ts` bắt điều đó) và vẫn nói đủ hai việc: thiếu ví, hoặc ví chưa
+xác minh.
+
+---
+
 ## Những gì KHÔNG đụng tới
 
 - Tên khóa: không thêm, không bớt, không đổi thứ tự (304 khóa trước và sau).
