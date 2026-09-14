@@ -60,6 +60,17 @@
   --discover-reveal: 720ms;
   --discover-opening: 1100ms;
   --discover-ambient: 14000ms;
+  --discover-hero-field-from: #241733;
+  --discover-hero-field-to: #0E0B14;
+  --discover-hero-on-field: #FFFFFF;
+  --discover-hero-on-field-muted: #C8BFD6;
+  --discover-hero-chrome: #EEF1F6;
+  --discover-hero-chrome-ink: #4A5567;
+  --discover-hero-chrome-line: #CFD6E2;
+  --discover-hero-accent: #1B52E3;
+  --discover-hero-accent-pressed: #123CAE;
+  --discover-hero-accent-ink: #1F4FB5;
+  --discover-hero-accent-wash: #E8EEFC;
 
   /*
    * The action, as a role rather than a colour. It is the ink pill this world
