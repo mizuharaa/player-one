@@ -6,7 +6,9 @@ import type {
   CollectorApi,
   CollectorProfile,
   EpisodeUpload,
+  IncomeCycle,
   IncomeEntry,
+  PayoutDestination,
   SessionInput,
   Task,
 } from './types.ts';
@@ -43,6 +45,18 @@ export class MockCollectorApi implements CollectorApi {
   private episodeRows: EpisodeUpload[];
   private taskRows: Task[];
   private incomeRows: IncomeEntry[];
+  /** §14.1 and §14.2, as the server sends them: strings, already rounded. */
+  private readonly cycleRow: IncomeCycle = {
+    label: '17/08 – 23/08',
+    confirmedVnd: '49800.0000',
+    estimatedVnd: '62400.0000',
+    totalVnd: '112200.0000',
+  };
+  private readonly payoutRow: PayoutDestination = {
+    channel: 'zalopay',
+    status: 'verified',
+    masked: '•••• 5678',
+  };
 
   constructor() {
     this.taskRows = [
@@ -358,5 +372,19 @@ export class MockCollectorApi implements CollectorApi {
 
   async income(): Promise<IncomeEntry[]> {
     return this.incomeRows.map((i) => ({ ...i }));
+  }
+
+  /**
+   * §14.1 and §14.2, as the server would send them. Fixed strings, not a sum
+   * over `incomeRows`: the mock exists to serve the screen the shape the
+   * server serves, and a mock that added the rows up would be the one thing
+   * the real client is forbidden to do.
+   */
+  async incomeCycle(): Promise<IncomeCycle> {
+    return { ...this.cycleRow };
+  }
+
+  async payout(): Promise<PayoutDestination> {
+    return { ...this.payoutRow };
   }
 }

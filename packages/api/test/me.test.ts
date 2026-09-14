@@ -193,7 +193,13 @@ async function signedIn() {
     return r.json();
   };
 
-  return { d, ids, app, asCollector, get, login, income, episodes };
+  const payout = async (collectorId: string) => {
+    const r = await get('/api/me/payout', asCollector(collectorId));
+    expect(r.statusCode, r.body).toBe(200);
+    return r.json();
+  };
+
+  return { d, ids, app, asCollector, get, login, income, episodes, payout };
 }
 
 /** A reviewed episode left in `pending_settlement` — reviewed, not yet billed. */
@@ -634,6 +640,173 @@ describe.skipIf(!hasDb())('GET /api/me/income and /api/me/episodes', () => {
           expect(e.state_text).toEqual(STATE_SENTENCES[e.state as CollectorState]);
         }
       }
+    } finally {
+      await h.app.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SPEC §14.1 and §14.2: the two fields the income screen was missing.
+
+describe.skipIf(!hasDb())('the cycle total and the payout destination', () => {
+  beforeEach(truncate);
+  afterAll(closeDb);
+
+  /**
+   * §14.1, the case the screen exists for: money finance has committed to, and
+   * money a reviewer has approved that no bill has picked up yet.
+   *
+   * The two figures must not be the same number twice and must not be the same
+   * rows counted twice. The bill's one line is 1,200; the reviewed-unbilled
+   * episode is 12,000; the total is their sum and nothing else.
+   *
+   * The bounds come from the bill's own period, inclusive of its last day. P1
+   * is `[17 Aug, 24 Aug)`, which is seven days ending on the 23rd — printing
+   * `24/08` would tell the collector they were paid for eight.
+   */
+  it('a confirmed bill and a reviewed-unbilled episode give both figures and the bounds', async () => {
+    const h = await signedIn();
+    try {
+      await seedBill(h.d, h.ids, 1, P1, ['1200.0000'], '1200.0000');
+      await reviewed(h.d, h.ids, { verdict: 'pass', effectiveS: '600.000000', minutes: '10.000000', amount: '12000.0000' });
+
+      const body = await h.income(h.ids.collector1);
+      expect(body.cycle).toEqual({
+        label: '17/08 – 23/08',
+        confirmedVnd: '1200.0000',
+        estimatedVnd: '12000.0000',
+        totalVnd: '13200.0000',
+      });
+      // The card cannot contradict the list under it: `estimatedVnd` IS
+      // `not_yet_billed.amount`, not a second query that agrees today.
+      expect(body.cycle.estimatedVnd).toBe(body.not_yet_billed.amount);
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  /**
+   * A collector who has recorded nothing. Zeros, not nulls and not an absent
+   * object: the app is forbidden from computing a cycle, so a server that has
+   * nothing to say still has to say zero in the server's own words.
+   *
+   * The label is empty because there is no bill, and there is therefore no
+   * period the server can name. Inventing bounds for it would be the server
+   * guessing at a cycle finance has not run.
+   */
+  it('a collector with nothing gets zeros, no bounds, and a payout status of none', async () => {
+    const h = await signedIn();
+    try {
+      const body = await h.income(h.ids.collector1);
+      expect(body.cycle).toEqual({
+        label: '',
+        confirmedVnd: '0.0000',
+        estimatedVnd: '0.0000',
+        totalVnd: '0.0000',
+      });
+      expect(await h.payout(h.ids.collector1)).toEqual({
+        channel: 'zalopay',
+        status: 'none',
+        masked: null,
+      });
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  /**
+   * §14.2's three statuses.
+   *
+   * NOTE ON THE WORD: the spec names `verified | awaiting | none`, and that is
+   * what this endpoint emits. A declared-but-unverified account is `awaiting`,
+   * not `declared`, and there is no `refused`: `name_mismatch`, `locked`,
+   * `kyc_limit` and `error` all reach the collector as `awaiting` too. The
+   * collector's move is identical in every one of those cases — go to a
+   * support point — and naming which refusal ZaloPay returned would relay what
+   * the provider said about their identity.
+   */
+  it('a declared but unverified account is awaiting, and a verified one is verified', async () => {
+    const h = await signedIn();
+    try {
+      const first = await seedAccount(h.d, h.ids, 1, { verifyStatus: 'unverified' });
+      expect(await h.payout(h.ids.collector1)).toEqual({
+        channel: 'zalopay',
+        status: 'awaiting',
+        // The redaction is the server's: a WALLET's phone is stored in full and
+        // only its last four digits are selected, so there is no full
+        // identifier in the response to leak.
+        masked: '•••• 5678',
+      });
+
+      // The account history is append-only, so verification is a new current row.
+      await h.d.execute(sql`update payout_accounts set is_current = false where id = ${first}`);
+      await seedAccount(h.d, h.ids, 1);
+      expect((await h.payout(h.ids.collector1)).status).toBe('verified');
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  it('every ZaloPay refusal is awaiting, never a word about what the provider said', async () => {
+    const h = await signedIn();
+    try {
+      for (const status of ['name_mismatch', 'no_wallet', 'locked', 'kyc_limit', 'error']) {
+        // `payout_accounts_append_only` refuses a delete — an account is
+        // evidence — so each refusal is a new current row, which is what a
+        // collector re-declaring their details actually produces.
+        await h.d.execute(
+          sql`update payout_accounts set is_current = false where collector_id = ${h.ids.collector1} and is_current`,
+        );
+        await seedAccount(h.d, h.ids, 1, { verifyStatus: status });
+        const body = await h.payout(h.ids.collector1);
+        expect(body.status, status).toBe('awaiting');
+        expect(JSON.stringify(body), status).not.toContain(status);
+      }
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  /**
+   * The scoping test, in the shape that would actually catch a missing WHERE:
+   * the other collector has everything and this one has nothing, so a query
+   * that forgot the token's id would read as a full, plausible cycle here.
+   */
+  it("another collector's bill, unbilled money and account reach neither field", async () => {
+    const h = await signedIn();
+    try {
+      await seedBill(h.d, h.ids, 2, P1, ['1200.0000'], '1200.0000');
+      await seedAccount(h.d, h.ids, 2);
+
+      const body = await h.income(h.ids.collector1);
+      expect(body.cycle).toEqual({
+        label: '',
+        confirmedVnd: '0.0000',
+        estimatedVnd: '0.0000',
+        totalVnd: '0.0000',
+      });
+      expect(await h.payout(h.ids.collector1)).toEqual({
+        channel: 'zalopay',
+        status: 'none',
+        masked: null,
+      });
+
+      // And the other collector still sees their own, so the scoping is a
+      // filter and not an endpoint that answers nothing.
+      expect((await h.income(h.ids.collector2)).cycle.confirmedVnd).toBe('1200.0000');
+      expect((await h.payout(h.ids.collector2)).status).toBe('verified');
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  it('refuses an operator token, like every other route under /api/me', async () => {
+    const h = await signedIn();
+    try {
+      const who = await h.login('HCM-01', 'fin-hcm');
+      const r = await h.get('/api/me/payout', who);
+      expect(r.statusCode).toBe(403);
     } finally {
       await h.app.close();
     }

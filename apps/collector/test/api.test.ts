@@ -383,6 +383,32 @@ describe('collector wire truth and cold-start recovery', () => {
     expect(store.value).toBe('stored-token');
   });
 
+  /**
+   * SPEC §14.1 and §14.2. The client copies four server strings across and
+   * refuses a payout status it does not know: the neighbour of "refused" is
+   * "awaiting", and telling a collector to wait for a verification that has
+   * already failed is exactly the lie the income screen exists to avoid. An
+   * unknown word renders `payout.unknown` instead.
+   */
+  it('copies the cycle strings across and refuses a payout status it does not know', async () => {
+    const cycle = { label: '17/08 – 23/08', confirmedVnd: '1200.0000', estimatedVnd: '12000.0000', totalVnd: '13200.0000' };
+    const { fn } = fakeFetch({
+      'GET /api/me/income': { status: 200, body: { episodes: [], cycle } },
+      'GET /api/me/payout': { status: 200, body: { channel: 'zalopay', status: 'awaiting', masked: '•••• 5678' } },
+    });
+    const api = new HttpCollectorApi(BASE, fakeStore(), () => {}, fn);
+    expect(await api.incomeCycle()).toEqual(cycle);
+    expect(await api.payout()).toEqual({ channel: 'zalopay', status: 'awaiting', masked: '•••• 5678' });
+
+    const older = fakeFetch({
+      'GET /api/me/income': { status: 200, body: { episodes: [] } },
+      'GET /api/me/payout': { status: 200, body: { status: 'declared', masked: '•••• 5678' } },
+    });
+    const stale = new HttpCollectorApi(BASE, fakeStore(), () => {}, older.fn);
+    expect(await stale.incomeCycle()).toBeNull();
+    expect(await stale.payout()).toBeNull();
+  });
+
   it('still signs out on a revoked token', async () => {
     const store = fakeStore('revoked');
     const { fn } = fakeFetch({ 'GET /api/me/profile': { status: 401 } });
