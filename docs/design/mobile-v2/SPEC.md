@@ -11,8 +11,10 @@ The reference research behind the patterns is [`REFERENCES.md`](REFERENCES.md).
 Nothing here invents a colour, a radius or a duration — every value is a token in
 `packages/design/src/tokens.ts`.
 
-Contents: §0 the decisions · §1–§16 the screens · §17 states · §18 accessibility ·
-§19 out of scope · §20 technical basis · §21 assets · §22 open questions.
+Contents: §0 the decisions (§0.6 copy is a key, §0.7 the `ui.tsx` reuse table,
+§0.8 what is never built) ·
+§1–§16 the screens · §17 states · §18 accessibility · §19 out of scope ·
+§20 technical basis (§20.4 the build order) · §21 assets · §22 open questions.
 
 ---
 
@@ -75,9 +77,16 @@ These reconcile because plum is a **tint**, not an accent:
   by **size** — a 3× jump over the label — while colour goes on the context line
   beside it. A boxed total reads as a crypto app. A *rate* on a photograph is the
   exception and gets a plum chip, because it needs a ground to be legible on.
-- **Lime** is spent **once per screen**, on progress and only progress — the
-  earnings arc on Home, the claim bar in the hall, the upload bar on Uploads.
-  A second lime on one screen is a bug.
+- **Lime** is spent **at most once per screen**, on progress and only
+  progress. It is a ceiling, not a quota: the task hall carries *no* lime,
+  because four tiles each with a lime track is four accents, and a repeating
+  list gets the neutral `discover.muted` fill instead. The three screens that
+  spend it: Home (the review ring), Task detail (the claim track), Uploads (the
+  one episode actually transferring). Two consequences that were got wrong in
+  the first draft and are now rules — **the `uploading` state pill is
+  `discover.soft`, not lime**, because the track beside it is already the
+  screen's lime; and **the coach-mark ring is `color.action`**, because step 1
+  rings the very card whose lime arc it is pointing at.
 - **Ink** is the primary action, and there is **one** per screen.
 - **Verdict colours** (`pass` `#0D763B`, `partial` `#613AFB`, `reject` `#C41C21`)
   appear only beside a verdict glyph, never as decoration.
@@ -187,7 +196,79 @@ Video decode is the jank. Therefore:
    `slow` 320. Anything longer is a named exception, and there are exactly three:
    splash 1600, welcome hero fade 600, skeleton pulse 900.
 
-### 0.6 What is NOT built, on every screen
+### 0.6 Every visible string is a key, and the mock proves it
+
+No screen in this spec renders a word that is not either an existing key in
+`apps/collector/src/i18n.ts` or a **new** key listed with its vi/en/zh values in
+that screen's own copy table. There is no third category, and "we will write the
+Vietnamese later" is not one — a screen laid out around words nobody has agreed
+is a screen that gets re-laid-out when they arrive.
+
+This is enforced rather than asked for. `mock/index.html` contains **no
+user-facing text at all**: every string is `data-t="<key>"`, the values live in
+`mock/copy.js`, and a key the catalogue does not have renders in red on the
+artboard instead of rendering as nothing. So a missing string cannot survive a
+screenshot review, and a Vietnamese rewrite touches exactly one file and moves no
+layout.
+
+The Vietnamese in `copy.js` marked `NEW` is **provisional**. A native-speaker
+copy pass owns the wording; this spec owns the keys, the lengths that fit
+(§0.3), and the stance (the three rewrites above). When that pass lands, the values
+change in `i18n.ts` and are copied into `copy.js`; nothing else moves.
+
+**Three strings were rewritten for stance, not for style.** Each was originally
+written in the system's voice — telling a collector about the server's plumbing —
+and a person owed money does not care which machine has not sent what:
+
+| key | was | is |
+|---|---|---|
+| `home.cycleUnavailable` | "Máy chủ chưa gửi tổng của kỳ…" | "Chưa có tổng của kỳ này. Bạn vẫn xem được tiền của từng tập ở mục Thu nhập." |
+| `payout.unknown` | "Máy chủ chưa gửi trạng thái nhận tiền." | "Chưa rõ bạn sẽ nhận tiền ở đâu. Hỏi điểm hỗ trợ giúp bạn." |
+| `guide.home.earnings` | "Con số này là của máy chủ… Ứng dụng không tự cộng." | "Đây là tiền của những tập đã được duyệt trong kỳ này. Người duyệt quyết định con số, không phải ứng dụng." |
+
+The rule they encode: **name what the collector can do or see, not what a
+component of ours did or did not do.** "Máy chủ" appears in no string this spec
+adds.
+
+### 0.7 Build from what `ui.tsx` already exports
+
+`apps/collector/src/ui.tsx` is 1,400 lines of components that already carry this
+app's spacing, type, targets and accessibility roles. **Every element in every
+screen below maps to one of them.** A builder who writes a new styled `View`
+where this table names a component is producing a second look for a solved
+problem, and that is the first thing to reject in review.
+
+| This spec says | Use | Notes |
+|---|---|---|
+| a screen shell, title, safe areas | `Screen`, `Title`, `topInset`, `bottomInset` | never a bare `SafeAreaView` |
+| a list screen with load/empty/error | `ListScreen<T>` | it already does all three states of §17 |
+| a card | `Card`, `CardLink` | `CardLink` is the tappable one, with its own 44 pt floor |
+| body and caption text | `Body`, `Body muted` | carries the §0.3 line heights |
+| the primary pill, ghost, disabled | `Button` | all three variants; do not restyle a `Pressable` |
+| a filter or destination chip | `Chip` | active state already = fill + weight |
+| the state pill (§13), settlement pill (§14) | `Tag` | takes `fg`, `bg`, `mark` — the glyph slot is the "never colour alone" half |
+| a progress track (§11, §12, §13) | `Progress` | takes `label`, `value`, `fraction`; renders the text beside the bar |
+| the review ring (§10) | `RingChip` | counts only, never money — §10 |
+| a money figure with its label (§14) | `Amount` | `value` + `label`, the size relationship is inside it |
+| a text field with its label (§3, §5, §15) | `Field` | label, focus border, error slot |
+| a yes/no or either/or control (§8, §APP-17b) | `Choice` | the two-declaration control is this |
+| the six agreement rows (§6) | `Choice` in a `Card` | the row is the target, not the switch |
+| a disclosure under a mocked control (§15) | `Note` | `devices.qrMock`, `training.placeholder`, `forum.notConnected` |
+| the legal line (§2, §3) | `LegalLine` | already positions and underlines the two links |
+| a skeleton / pending screen (§17) | `Loading` | skeletons, not a spinner |
+| the income stage row (§14) | `Timeline` | the four `income.step.*` nodes |
+| a key/value row (§14, §15) | `Row` | label left, value right, aligned |
+| a navigation row with a chevron (§10, §16) | `NavRow` | |
+| the glass bar behind the tabs | `GlassBar` | composites `fill`; RN has no blur |
+| every icon | `glyphs.tsx` | `GlyphPlus` for the raised action (§10) |
+| Trúc (§17) | `identity/Panda.tsx` | `Pose` = `idle` for empty states |
+
+**What is genuinely new**, and therefore the only new components this redesign
+adds: the two-line price chip (§10), the welcome hero with its scrim (§2), the
+six-box code row (§4), and the splash player (§1). Four. Everything else is a
+re-skin of an existing export, which is why §20.4 fits in two days.
+
+### 0.8 What is NOT built, on every screen
 
 Repeated per screen below, because these are the constraints a well-meaning
 implementation is most likely to violate:
@@ -230,12 +311,30 @@ originals — stems, bowls, bars, connectors, anchors, and the two lens discs.
 Nothing new is drawn.
 
 **How it plays on the phone — decided in §20.2:** a pre-rendered 1080×1920 H.264
-clip in `expo-video`, on a `discover.paper` field, ending on the exact final
-lockup. The clip's last frame and a static `Image` of the same wordmark are
-pixel-identical at the same size and position, so the handoff to Welcome is a
-600 ms cross-fade of two identical images plus a `translateY` on the static one.
-That is the "morphing into the mobile UI" the owner asked for, done with two
-native-driver properties and no layout animation.
+clip in `expo-video`. Four properties of that clip are contractual:
+
+1. **It carries the wordmark and nothing else** — no caption, no partner line,
+   no background furniture. Those are live `Text` on the screen underneath, so
+   they stay translatable and stay legible at any font scale. A clip with baked
+   text is a clip that cannot be localised.
+2. **`contentFit="contain"`**, never `cover`. A cover-fit clip on an aspect
+   ratio it was not rendered for crops a letter off the wordmark, and there is
+   no aspect ratio at which losing the `P` is acceptable.
+3. **The player box is locked to 62 % of the artboard width** with
+   `aspectRatio: 784/152` — the same box the static `Image` occupies. Because
+   the clip's last frame and that `Image` are then pixel-identical at the same
+   size and position, the handoff to Welcome is a 600 ms cross-fade of two
+   identical images plus a `translateY` on the static one. That is the
+   "morphing into the mobile UI" the owner asked for, with two native-driver
+   properties and no layout animation.
+4. **A 400 ms first-frame gate.** If `expo-video` has not produced a first
+   frame within 400 ms of mount — a cold decoder, a codec the device refuses, a
+   corrupted asset — the player is unmounted and the static wordmark renders
+   instead, running the reduced-motion path. The splash is the first thing a
+   collector ever sees and it must never be a blank warm rectangle waiting on a
+   decoder. The gate is a `setTimeout` cleared by the player's first
+   `readyToPlay`; it is four lines and it removes the whole class of "the app
+   didn't start" reports.
 
 **Motion.** 1600 ms total: 0–1500 the clip, 1500–1600 the cross-fade.
 **Reduced motion:** the clip never mounts; the static wordmark renders at final
@@ -290,11 +389,42 @@ This is the **only** full-bleed video in the app and this screen does not scroll
 so §0.5 rule 1 holds. `pov-portrait.mp4` is 720×1280 portrait — it fills a phone
 without the centre-slice crop a 1280×716 landscape film would force.
 
-The scrim is three stops (`rgba(53,39,31,0)` → `.35` at 55 % → `.82` at 100 %) so
-the headline sits on ≥4.5:1 whatever frame is behind it. That is also what "demo
-video at low opacity behind the first screens so text stays readable" means in
-practice: the film plays at full opacity and the **scrim** does the work, which
-is more readable than a faded film and identical in decode cost.
+**The scrim, measured rather than chosen.** The first draft said
+`rgba(53,39,31,0)` → `.35` at 55 % → `.82` at 100 % "so the headline sits on
+≥4.5:1". That claim was not measured and it was false.
+
+Method: `pov-portrait.mp4` sampled at 1 fps (12 frames, the whole clip),
+`scale=-1:844,crop=390:844` so the pixels are the ones a 390 dp phone actually
+shows, composited under the gradient in sRGB, then the relative luminance of
+every pixel under the text — the left 88 % of each line — against
+`#FFFCF6` (L = 0.9753). The script is `docs/design/mobile-v2/mock/` work and the
+numbers are reproducible from the asset in the repo.
+
+| stops | headline band 62–71 % | lead band 71–77 % | policy 93–98 % |
+|---|---|---|---|
+| drafted `.35 / .82` | **3.02:1** — fails AA | 4.06:1 | 7.94:1 |
+| **shipped `.60 / .88`** | **5.24:1** | 5.24:1 | 9.79:1 |
+
+The worst frame is at 8 s, where the film pans onto a sunlit wall, and the worst
+row is the top of the headline band at y = 62.3 %. The floor for the middle stop
+is `.55` (4.68:1 across the whole text band); `.60` is taken for margin, and at
+the 71 % probe the composited alpha is 0.700 and the ratio is **6.19:1**.
+
+So: `rgba(53,39,31,0)` 0 % → `rgba(53,39,31,.60)` 55 % → `rgba(53,39,31,.88)`
+100 %. Any change to the hero clip re-runs this measurement; a new film is a new
+worst frame.
+
+That is also what "demo video at low opacity behind the first screens so text
+stays readable" means in practice: the film plays at full opacity and the
+**scrim** does the work, which is more readable than a faded film and identical
+in decode cost.
+
+**When the video fails, the poster is the screen.** `expo-video` can fail to
+load or to decode, and a failed hero must not leave the headline on bare paper
+with a white pill on it. On `error`, or when the 400 ms first-frame gate of §1
+expires, the player unmounts and `pov-portrait.webp` renders in the same
+`position: absolute` box under the same scrim — the reduced-motion path,
+reached by a second route. There is no third state.
 
 **Motion.** On mount the video fades in over 600 ms; the wordmark arrives as the
 splash's cross-fade target and has no second animation; the headline and CTAs
@@ -362,6 +492,23 @@ without a single decorative shape.
 **Poster, not video.** The sheet scrolls when the keyboard opens, so §0.5 rule 1
 gives this screen the still — the film's own frame, without the decoder.
 
+**The sheet is a `KeyboardAvoidingView` wrapping a `ScrollView`**, not a plain
+`View`. `behavior` is `'padding'` on iOS and `'height'` on Android, the
+`ScrollView` carries `keyboardShouldPersistTaps="handled"` and
+`contentContainerStyle={{ flexGrow: 1 }}`, and the CTA sits at the end of that
+content with `marginTop: 'auto'`. Without this the Android keyboard covers the
+send control on a 640 dp-tall phone and the screen is unfinishable — which is
+one of the "nothing has functionality" reports. §4 gets the same treatment for
+the same reason: its six boxes plus the resend row must stay above a numeric
+keypad.
+
+**The +86 branch.** When the country chip is `signIn.country.cn`,
+`signIn.chinaNote` renders **directly under the country + number row**, inside
+the same `field` group, at `fontSize.sm` in `discover.muted` — not as a footnote
+at the bottom of the sheet, and not as a toast. It explains that row, so it sits
+against that row. It does not render for +84. Artboard `03b` in the mock is this
+state.
+
 **Motion.** Field focus raises the border from `discover.line` to `color.action`
 over `duration.fast` (a `TextInput` prop, not an animation). The sheet rises
 `translateY: 24 → 0` on mount over `duration.slow`. **Reduced motion:** no rise.
@@ -413,7 +560,14 @@ the value; the boxes are presentation. One input to manage, not six.
 (`duration.instant`). A wrong code shakes the row: `translateX` ±6 px over
 320 ms, native driver. **Reduced motion:** no shake, error text alone.
 Submission is automatic on the sixth digit — no submit button, because a keypad
-already ends in a commitment.
+already ends in a commitment. The wait renders **inside the last box** (a
+pulsing dot) rather than as an overlay, per §17.
+
+**The resend control while the timer runs** carries
+`accessibilityState={{ disabled: true }}` as well as its dimmed fill, and
+`onPress` is `undefined` rather than a no-op. A control that looks disabled and
+announces itself as enabled is worse than one that is plainly gone: TalkBack
+reads it as actionable, the collector double-taps, and nothing happens.
 
 **Data.** `api.signIn(phone, code)`. `ApiError('credentials')` covers a wrong
 number, a wrong code, an expired code and too many guesses — one refusal, because
@@ -428,6 +582,7 @@ the server answers one 401 for all four; render `signIn.badCode`.
 |---|---|---|---|
 | `signIn.resendIn` | Gửi lại sau {s} giây | Resend in {s}s | {s} 秒后重新发送 |
 | `signIn.sentTo` | Mã đã gửi tới {phone} | Code sent to {phone} | 验证码已发送至 {phone} |
+| `signIn.checking` | Đang kiểm tra mã… | Checking your code… | 正在验证…… |
 
 **Not built.** No "call me instead". No email fallback. No 4-digit variant. No
 auto-read of an SMS inbox — the code is not an SMS.
@@ -460,7 +615,12 @@ when the name is blank — validated on submit, not on blur, so the field does n
 turn red while the collector is still typing in it.
 
 **Copy.** Existing: `register.title`, `register.intro`, `register.name`,
-`register.phone`, `register.submit`, `register.missing`.
+`register.phone`, `register.submit`, `register.missing`. New:
+
+| key | vi | en | zh |
+|---|---|---|---|
+| `register.phoneVerified` | đã xác minh | verified | 已验证 |
+| `register.phoneLocked` | Số này đã xác minh ở bước trước nên không sửa ở đây. | This number was verified a step ago, so it is not editable here. | 此号码已在上一步验证，此处不可修改。 |
 
 **Not built.** No email, date of birth, address, ID upload, avatar, gender or
 referral code. The server takes a name and a phone.
@@ -575,7 +735,13 @@ one step.
 
 **Layout.** A scrim at `--scrim rgba(0,0,0,.72)` with a `radius.xl` hole over the
 measured target; the card sits on whichever side has more room (the existing
-comparison) and never overlaps the hole; inside it a step counter (`guide.step` +
+comparison) and never overlaps the hole. **Step 1's target is the whole earnings
+card**, not the figure inside it — `useGuideTarget('home.earnings')` goes on the
+card's outer `View`. A hole around the figure alone spotlights a number while
+hiding the counts and the label that explain where it came from, which is the
+opposite of what the step says. **The ring around the hole is `color.action`**,
+not lime: the card it surrounds already spends this screen's lime on its review
+ring, and two limes on one screen is the bug §0.2 exists to prevent. inside it a step counter (`guide.step` +
 "n/4"), the copy at `fontSize.base`, and a row of `common.next` / `common.done` /
 skip. The offer to run it (`guide.offerTitle` / `guide.offerBody` /
 `guide.offerYes` / `guide.offerNo`) is a bottom sheet on the first Home after the
@@ -598,7 +764,7 @@ step whose target has not been measured is **skipped**, not drawn over nothing.
 
 | key | vi | en | zh |
 |---|---|---|---|
-| `guide.home.earnings` | Con số này là của máy chủ, tính trên các tập đã duyệt trong kỳ. Ứng dụng không tự cộng. | This figure comes from the server, over the reviewed episodes in this cycle. The app adds nothing up. | 此数字来自服务器，基于本周期已审核的片段。应用不做任何汇总。 |
+| `guide.home.earnings` | Đây là tiền của những tập đã được duyệt trong kỳ này. Người duyệt quyết định con số, không phải ứng dụng. | This is what your reviewed episodes earned this cycle. A reviewer decides the figure, not the app. | 这是本周期已审核片段的收入。金额由审核员决定，而非应用。 |
 | `guide.home.next` | Bước tiếp theo của bạn nằm ở đây — nhận việc, liên kết thiết bị, hay tải lên. | Your next step sits here — claim work, pair a device, or upload. | 您的下一步在这里——领取任务、绑定设备或上传。 |
 
 **Not built.** No multi-screen tutorial carousel in front of the app. No mandatory
@@ -624,9 +790,9 @@ ScrollView  contentContainer:{paddingBottom: measuredTabBarHeight + space[6]}
 │  └─ Text shift.<shift>           fontSize.sm  discover.lightInk
 ├─ View  the earnings card         ← discover.surface, radius.xl, space[5]
 │  ├─ Text home.cycleTitle         fontSize.sm muted
-│  ├─ Text the cycle figure        fontSize.3xl weight.display   ← a server string + "đ"
-│  ├─ the lime arc + its caption   ← THE one lime moment on this screen
-│  ├─ Row: income.confirmed · income.estimated   ← two server strings
+│  ├─ Text cycle.confirmedVnd      fontSize.3xl weight.display   ← THE hero figure
+│  ├─ Text income.confirmed + home.cycleWithEstimate(totalVnd)   fontSize.sm muted
+│  ├─ RingChip + caption           ← reviewed ÷ uploaded COUNTS. The lime moment.
 │  └─ Pressable home.incomeLink    ← ghost row with a chevron, opens §14
 ├─ View  the next-step card        ← the single most important thing to do now
 │  ├─ Image 16/9 aspectRatio       ← the claimed task's still, else work-portrait
@@ -642,14 +808,38 @@ ScrollView  contentContainer:{paddingBottom: measuredTabBarHeight + space[6]}
 chosen from the device clock — the one number the client may compute, because it
 is neither money nor minutes.
 
-**The money figure, and the honest problem behind it.** The owner wants "earnings
-so far this cycle". `IncomeEntry` has no cycle field and no total, and the app is
-forbidden from summing — `income.intro` is a promise printed on the screen. So
-the cycle figure needs **a new server field**, specified in §14.1. Until it
-ships, Home renders the figure as `—` with `home.cycleUnavailable` beneath it, and
-the card still shows the confirmed/estimated split from the entries the server
-already labels. **The app must not sum `IncomeEntry.amountVnd` to fill the gap.**
-Any `reduce` over income is a rejected diff.
+**The hero figure is `confirmedVnd`, and the total is demoted.** The owner wants
+"earnings so far this cycle", and the honest answer to "how much have I earned"
+is the money a human has already approved. A total that folds in an estimate,
+set at 42 px, *is* an estimate presented as confirmed — which APP-34 forbids in
+so many words. So the hero is `cycle.confirmedVnd`, and the fuller number is one
+demoted line beneath it at `fontSize.sm`, **labelled inline**: `income.confirmed`
++ `home.cycleWithEstimate` → "Đã xác nhận · Kể cả ước tính: 1.284.000 đ". The
+estimate never appears as a bare figure anywhere on Home.
+
+**When the server sends no cycle, there is no money on this screen at all.**
+`IncomeEntry` has no cycle field and no total, and the app is forbidden from
+summing — `income.intro` is a promise printed on the Income screen. The cycle
+therefore needs **a new server field**, §14.1. Until it ships:
+
+- the figure is `—` with `home.cycleUnavailable` beneath it;
+- **no confirmed/estimated split is shown**, because a per-kind split is a
+  per-kind subtotal, and computing one on the client is the same forbidden
+  arithmetic as the total. An earlier draft of this section allowed it "from the
+  entries the server already labels". That was wrong and is struck;
+- what remains is what the server actually sent: the **counts** — episodes
+  reviewed over episodes uploaded — and the link into §14.
+
+Any `reduce`, `sum`, `+` or `parseFloat` over `IncomeEntry.amountVnd` or
+`effectiveMinutes` is a rejected diff, in either state. Artboard 18 of the mock
+is this screen with no cycle, and it is deliberately the emptiest in the set.
+
+**The ring counts episodes, never money.** It is `RingChip` from `ui.tsx`, fed
+`reviewed / uploaded` from `api.episodes()` — two integers the app may divide,
+because a count is neither a currency nor a duration. Its face reads `8/13` and
+its caption is `home.reviewedCaption` over `home.uploadedCaption`. It must never
+be given a money fraction: a ring reading 62 % beside a money figure gets read as
+"62 % of your pay", which is not a sentence anyone can defend.
 
 **The task card** (shared with §11, defined once):
 
@@ -658,15 +848,15 @@ Pressable  radius.xl  backgroundColor:discover.surface  overflow:'hidden'
 ├─ View    aspectRatio:16/9                        ← scenario → still, §21.2
 │  ├─ Image  resizeMode:'cover'  absolute inset:0
 │  ├─ View   THE PRICE CHIP   absolute bottom-left, inset space[3]
-│  │         discover.light fill, radius.pill, paddingH space[3], minHeight 32
-│  │         flexDirection:'row' alignItems:'baseline' gap:space[1]
+│  │         discover.light fill, radius.base, padding 6/space[3]
+│  │         flexDirection:'COLUMN'                ← two lines, never one
 │  │    ├─ Text unitPriceVndPerMinute  fontSize.md weight.display  discover.lightInk
 │  │    └─ Text hall.perMinute         fontSize.xs                 discover.lightInk
 │  └─ View   the scenario chip   absolute top-right   ← opposite corner, never collides
 └─ View    padding:space[4] gap:space[2]
    ├─ Text task.title            fontSize.lg  numberOfLines:2
-   ├─ (hall only) the claim progress track   ← the lime moment on §11
-   └─ Row: hall.slots · remainingSlots · hall.imageLabel
+   ├─ (hall only) the claim progress track   ← neutral fill; see §0.2
+   └─ Row: hall.slots · remainingSlots
 ```
 
 **The price is a chip burned into the photograph's bottom-left corner**, and the
@@ -677,20 +867,45 @@ it can appear on every card without breaking "one lime per screen", and it is on
 the image rather than under it because a rate on a photograph needs its own
 ground to stay legible.
 
-The figure and its unit sit on **one line** with `alignItems: 'baseline'` — the
-size split every rate in the reference pass uses (`From $25.65` beside `per
-person`), never two stacked lines. `hall.perMinute` is already "đ/phút hiệu quả"
-— *per effective minute* — and that word is load-bearing: it is not per minute
-recorded.
+**On the chip the two parts stack; they do not share a line.** The reference
+pass's inline size split (`From $25.65` beside `per person`) assumes a short
+unit. `hall.perMinute` is "đ/phút hiệu quả" — 15 characters — and a hall tile at
+320 dp is about 150 pt wide, so a one-line chip either overflows the tile or
+ellipsises the unit. **An ellipsised pay rate is not acceptable at any width**,
+so the chip is a two-line column: the figure, then the unit at `fontSize.xs`.
+Neither `Text` carries `numberOfLines`. The inline split survives where there is
+room for it — the detail screen, §12.
+
+"đ/phút hiệu quả" is *per effective minute*, and that word is load-bearing: it is
+not per minute recorded.
 
 **The floating pill tab bar.** Already built in `shell/TabBar.tsx`: a `GlassBar`
 inset `space[3]` from each edge, `bottom: bottomInset(space[6])`, a raised ink
 circle for session preparation breaking the bar's top edge, and a two-row form at
-`fontScale > 1.2`. **One change:** the Forum tab is replaced by **Nhiệm vụ**
-(`tab.tasks` → §11), and Forum moves to the `home.more` chip row. Forum has no
-service behind it; the task hall is the money path, and the owner asked for task
-browsing to be prominent. The bar becomes: Trang chính · Nhiệm vụ · [Phiên] ·
-Tải lên · Thu nhập.
+`fontScale > 1.2`. **Two changes.**
+
+*First*, the Forum tab is replaced by **Nhiệm vụ** (`tab.tasks` → §11), and Forum
+moves to the `home.more` chip row. Forum has no service behind it; the task hall
+is the money path, and the owner asked for task browsing to be prominent. The bar
+becomes: **Trang chủ · Nhiệm vụ · [Phiên] · Tải lên · Thu nhập**.
+
+*Second*, **the existing two-row form is triggered by width as well as by font
+scale.** Measured in the harness at 320 dp: the bar is 296 wide, the session slot
+takes 64, and the four remaining tabs get 58 pt each — while "Trang chủ" at
+`fontSize.xs` needs about 60. It wraps, that one tab grows taller than its four
+siblings, and the raised action collides with the bar. Shortening the word again
+is not the fix; the fix is already written. `shell/TabBar.tsx` renders a two-row
+form at `fontScale > 1.2` — four tabs in the bar, the session action as its own
+full-width control above them — so the trigger becomes
+`fontScale > 1.2 || width <= 320`. Content reserves the taller bar through the
+same `measureTabBar()` it already uses, and nothing else changes. Artboards
+`10/11/13/14-320x640` are this form.
+
+**The raised action's glyph is `GlyphPlus`, not a camera.** `glyphs.tsx` already
+exports it. A camera or record glyph on the one raised, highest-affordance
+control in the app promises a recording control that **cannot exist** (§0.8), and
+it is the most dangerous icon choice available on this screen.
+`tab.sessionHint` says so in words; the glyph must not contradict it.
 
 **Motion.** Cards rise `translateY: 12 → 0` and fade, staggered 60 ms, on first
 paint only — not on every refocus. The lime arc reveals over `duration.slow` as an
@@ -714,12 +929,14 @@ rise, the arc renders at its value.
 | key | vi | en | zh |
 |---|---|---|---|
 | `home.cycleTitle` | Thu nhập kỳ này | This cycle | 本周期收入 |
-| `home.cycleUnavailable` | Máy chủ chưa gửi tổng của kỳ. Xem từng tập ở mục Thu nhập. | The server has not sent a cycle total. See each episode under Income. | 服务器尚未提供周期合计。请在收入中逐条查看。 |
+| `home.cycleUnavailable` | Chưa có tổng của kỳ này. Bạn vẫn xem được tiền của từng tập ở mục Thu nhập. | No total for this cycle yet. You can still see what each episode earned under Income. | 本周期尚无合计。您仍可在收入中查看每个片段。 |
 | `home.nextTitle` | Bước tiếp theo | Your next step | 下一步 |
 | `home.nextClaim` | Nhận một nhiệm vụ để bắt đầu | Claim a task to begin | 领取一个任务开始 |
 | `home.nextPair` | Liên kết thiết bị trước khi tạo phiên | Pair a device before creating a session | 创建会话前请绑定设备 |
 | `home.nextUpload` | Có {n} tập chờ tải lên | {n} episodes waiting to upload | {n} 个片段待上传 |
 | `home.nextReview` | Đang chờ người duyệt | Waiting on a human reviewer | 等待人工审核 |
+| `home.cycleWithEstimate` | Kể cả ước tính: {amount} | Including estimates: {amount} | 含预估：{amount} |
+| `home.uploadedCaption` | tập đã tải lên | episodes uploaded | 个片段已上传 |
 
 **Not built.** No record button, and no "start session" that starts anything — the
 raised tab action opens the *preparation* form, and `tab.sessionHint` says so out
@@ -734,17 +951,22 @@ open.
 **Purpose.** "task collecting must be image based (AI or stock placeholders for
 now), clear price per minute". Replaces `screens/TaskHall.tsx`.
 
-**Layout (flex).** A sticky search + filter header on `discover.paper`, then a
-two-column grid: `FlatList numColumns={2}` with
+**Layout (flex).** The screen title is `fontSize.lg`, not `fontSize.xl` — a
+browse screen spends its vertical budget on the grid, not on its own name, and
+at 320×640 the `xl` title cost most of a tile row. Then a sticky search + filter
+header on `discover.paper`, and a two-column grid: `FlatList numColumns={2}` with
 `columnWrapperStyle={{ gap: space[3] }}` and
 `contentContainerStyle={{ gap: space[3] }}`. Each tile is `flex: 1` — **never** a
 computed pixel width — with a `4/5` image box on top and the title, price box and
 progress below. At 320dp the tiles are ~150 pt wide and the price box still fits,
 because it is a `flexDirection: 'row'` with `flexWrap: 'wrap'`.
 
-The claim progress bar is this screen's **one lime moment**: a `discover.soft`
-track with a `lime500` fill at `radius.pill`, 6 pt tall, with `hall.progress` and
-the slot count as text beside it. Colour never alone.
+**The claim progress bars here are not lime.** Four tiles each with a lime track
+is four accents, which breaks §0.2 outright. In a repeating list the track is
+`discover.soft` with a `discover.muted` fill at `radius.pill`, 6 pt tall, and
+`hall.progress` with the slot count as text beneath it — the number carries the
+meaning, the bar only shows its shape. **This screen has no lime at all**, and
+that is correct: one per screen is a ceiling, not a quota.
 
 Filters are two `radius.pill` chips, `hall.all` and `hall.availableOnly`; the
 active state is a `discover.light` fill plus a `lightInk` label plus
@@ -781,16 +1003,19 @@ View flex:1
 │  ├─ View  aspectRatio:3/2   ← the hero still, cover, with a bottom scrim
 │  │  ├─ Pressable back    absolute top-left, 44×44, surface circle
 │  │  └─ Text task.title   absolute bottom-left, fontSize.xl weight.display, on scrim
-│  ├─ View  THE PRICE FIELD  ← discover.light, radius.lg, padding space[4], full width
+│  ├─ View  THE PRICE CARD   ← discover.SURFACE, radius.lg, padding space[4]
 │  │  ├─ Row alignItems:'baseline' gap:space[2]     ← one line, the size split
-│  │  │  ├─ Text unitPriceVndPerMinute  fontSize.2xl weight.display lightInk
-│  │  │  └─ Text hall.perMinute         fontSize.sm               lightInk
+│  │  │  ├─ Text unitPriceVndPerMinute  fontSize.2xl weight.display  discover.ink
+│  │  │  └─ Text hall.perMinute         fontSize.sm                  discover.muted
 │  │  ├─ Text hall.pricePerMinute       fontSize.xs   ← the full sentence, below
+│  │  ├─ hairline
 │  │  └─ Text detail.target · targetMinutes · detail.minutes   fontSize.sm
+│  ├─ View  the claim progress, IN ITS OWN ROW    ← THE lime moment on this screen
+│  │  ├─ Row: hall.progress · hall.slots · remainingSlots   fontSize.sm muted
+│  │  └─ track: discover.soft + lime500 fill
 │  ├─ Section detail.instructions   ← task.instructions, else detail.notSupplied
 │  ├─ Section detail.privacy        ← task.privacyNotice
-│  ├─ Section detail.payment        ← task.paymentRule
-│  └─ Row: scenario chip · hall.slots · the claim progress (the lime moment)
+│  └─ Section detail.payment        ← task.paymentRule
 └─ View footer  absolute bottom, discover.paper, top hairline, paddingBottom:bottomInset
    ├─ Text the refusal, when there is one
    └─ Pressable detail.claim   ← the one ink pill, alignSelf:'stretch', minHeight 52
@@ -798,6 +1023,15 @@ View flex:1
 
 **Aspect ratio, not height.** The hero is `3/2` rather than `16/9` so that at
 320×640 the price field is above the fold without letterboxing the image.
+
+**The price sits on the card's own ground, in ink — not on plum.** §0.2's rule
+is that a money figure is anchored by size and never by a coloured box, and
+`unitPriceVndPerMinute` at `fontSize.2xl` is the largest figure on this screen.
+Plum is for a rate chip that has to survive being laid over a photograph (§10);
+here there is no photograph under it and no legibility problem to solve, so the
+tint would be decoration. The progress track then moves out of the price card
+into a row of its own, so the lime is read as *the task filling up* and not as
+part of the price.
 
 **The inline unit beside the figure is the short one.** `hall.pricePerMinute`
 ("Đơn giá mỗi phút hiệu quả được duyệt") is 36 characters; sharing a baseline row
@@ -840,19 +1074,28 @@ as it is, and only the surface changes.
 
 ```
 Episode row  ← discover.surface, radius.lg, padding space[4], gap space[2]
-├─ the state pill                    ← state.<EpisodeState>, mapped below
-├─ Text uploads.size / sizeUnknown   fontSize.sm muted
+├─ Row: the state pill · uploads.size / sizeUnknown
 ├─ (uploading) the progress track    ← THE one lime moment on this screen
+├─ (uploading) Text uploads.sending + the percentage   fontSize.xs muted
+├─ (under_review) Text uploads.waitingReviewer         fontSize.xs muted
 ├─ (review_failed) uploads.reason + the server's rejectReason, on reject-bg
 └─ (pending_upload) Pressable uploads.upload  ← opens the confirmation sheet
 ```
+
+**A passed episode says nothing about minutes or money here.** A first draft put
+"18 phút hiệu quả được duyệt" on the `review_passed` row. That is removed:
+effective minutes are the multiplicand of a payment, they belong beside the
+amount they produced, and §14 is the one screen that shows both together. Two
+places showing minutes is two places to disagree, and the one a collector will
+quote in a dispute must be the one with the money next to it. The row here shows
+the state and the size, and that is all it knows.
 
 **The six states, each with a shape as well as a colour** (never colour alone):
 
 | `EpisodeState` | copy key | fill | glyph |
 |---|---|---|---|
 | `pending_upload` | `state.pending_upload` | `discover.soft` | up-arrow outline |
-| `uploading` | `state.uploading` | `lime500` (the lime moment) | up-arrow filled |
+| `uploading` | `state.uploading` | `discover.soft` — **not lime** | up-arrow filled |
 | `uploaded` | `state.uploaded` | `discover.soft` | check outline |
 | `under_review` | `state.under_review` | `warn-bg #FFF4E0` | eye |
 | `review_passed` | `state.review_passed` | `pass-bg #E8F8EE` | check filled |
@@ -869,6 +1112,11 @@ thirteen `uploads.reason*` strings carry over verbatim.
 **Motion.** The progress fill animates `transform: scaleX` on the native driver —
 **not** `width`, which would run on the JS thread and is the exact shape of the
 laggy build. **Reduced motion:** the fill jumps to each value.
+
+**Copy.** One new key, for the row that is waiting on a person:
+`uploads.waitingReviewer` — vi "Đang chờ người duyệt", en "Waiting on a
+reviewer", zh "等待审核员". Every other string on this screen is carried over
+verbatim.
 
 **Data.** `api.sessions()`, `api.episodes()`, and the `DeliveryApi` methods the
 state machine in `upload/delivery.ts` drives.
@@ -890,10 +1138,10 @@ the screen and the two fields it needs.
 ```
 ScrollView
 ├─ View the cycle card     ← discover.surface, radius.xl, space[5]
-│  ├─ Text home.cycleTitle          fontSize.sm  muted        ← the 13 pt label
-│  ├─ Text the cycle total          fontSize.3xl weight.display  discover.ink
+│  ├─ Text home.cycleTitle + cycle.label   fontSize.sm  muted   ← "· 01/09 – 15/09"
+│  ├─ Text cycle.confirmedVnd       fontSize.3xl weight.display  discover.ink
 │  │                                 ← plain ink on the card's own ground, NOT boxed
-│  ├─ Row: income.confirmed · income.estimated  ← the context line; plum lives HERE
+│  ├─ Text income.confirmed + home.cycleWithEstimate(totalVnd)   fontSize.sm muted
 │  └─ Text income.estimatedHint     fontSize.xs
 ├─ View the payout card    ← discover.surface, radius.lg
 │  ├─ Row: ZaloPay mark · payout.zalopay · the status pill
@@ -913,9 +1161,18 @@ as confirmed, and `guide.income.split` already explains the dash to the collecto
 A `null` `effectiveMinutes` or `amountVnd` renders as `—`, never as `0`: the
 server having nothing to say is not the same as a zero.
 
-**The two missing fields** are specified in §14.1 and §14.2. Until they land, the
-cycle card renders `home.cycleUnavailable` and the payout card renders
-`payout.unknown`. **Neither is faked client-side.**
+**The hero is the confirmed figure**, exactly as on Home (§10), and for the same
+APP-34 reason. `estimatedVnd` never appears as a bare figure; it reaches the
+screen only inside `home.cycleWithEstimate`, which names it in the same sentence.
+
+**The two missing fields** are specified in §14.1 and §14.2. Until they land the
+cycle card renders `home.cycleUnavailable` with no money and no split (§10), and
+**the payout card defaults to `status: 'unknown'`** — the pill reads
+`payout.awaiting` and the body reads `payout.unknown`. `verified` is rendered
+only when the server has actually sent it. A mock or a fixture that seeds
+`verified` teaches everyone who reviews it a state the platform has never
+produced, and the first real collector to see "Chờ xác minh" will read it as a
+regression. **Neither field is faked client-side.**
 
 **Motion.** None beyond the list fade-in. A money screen that animates its numbers
 is a money screen people distrust.
@@ -931,7 +1188,7 @@ is a money screen people distrust.
 | `payout.verified` | Đã xác minh | Verified | 已验证 |
 | `payout.awaiting` | Chờ xác minh | Awaiting verification | 待验证 |
 | `payout.none` | Chưa khai báo — liên hệ điểm hỗ trợ | Not set — contact a support point | 未设置——请联系支持点 |
-| `payout.unknown` | Máy chủ chưa gửi trạng thái nhận tiền. | The server has not sent a payout status. | 服务器尚未提供收款状态。 |
+| `payout.unknown` | Chưa rõ bạn sẽ nhận tiền ở đâu. Hỏi điểm hỗ trợ giúp bạn. | We do not yet know where to pay you. A support point can set it up. | 尚未确定您的收款方式，请联系支持点。 |
 
 **Not built.** **No cash-out button** — settlement is manual and offline, which is
 the sixth agreement the collector signed. No bank-account entry, no wallet-linking
@@ -974,8 +1231,15 @@ mocked. A real build gets `UnavailableDeviceTransport` today, and
 with a glyph). Below it the bind form: `devices.scanQr` as a secondary control
 that opens the mock scanner and prints `devices.qrMock` on its own face,
 `devices.typed` as the manual field, and `devices.bind` as the ink pill.
-`devices.provision` opens the Wi-Fi-over-Bluetooth screen, which keeps every
-`prov.*` string as it is.
+`devices.provision` **is disabled**, not merely a link into a screen that cannot
+work: `UnavailableDeviceTransport` is what a real build gets, so the control
+renders at `opacity: 0.55` with `accessibilityState={{ disabled: true }}` and no
+`onPress`, and `devices.unavailable` sits **inside the same card, directly under
+it**. The same applies to `devices.scanQr`, with `devices.qrMock` under it. When
+the Bluetooth transport lands, both controls enable and both sentences go; until
+then a collector must not be able to walk into a dead screen and conclude the app
+is broken. The `prov.*` strings and the provisioning screen stay exactly as they
+are, behind that gate.
 
 **The mock-labelling rule.** Anything that does not do what it appears to do
 carries its disclosure **inside the same card**, at `fontSize.sm` in
@@ -1042,9 +1306,11 @@ ever: it is the shape that produces the dead-button bug (§0.5 rule 5) and it
 hides the thing the collector is waiting on. `common.saving` ("Đang gửi…") is the
 label for a pill in flight.
 
-**Empty.** A centred block with `space[8]` vertical padding: Trúc at 96 pt
-(`identity/Panda.tsx`, already in the app) or a `discover.soft` disc, the existing
-sentence, and — where an action exists — one ghost control. Per screen:
+**Empty.** A centred block with `space[8]` vertical padding: **Trúc, rendered by
+`identity/Panda.tsx`** at 96 pt — the real component that is already in the app,
+never a grey disc, never an emoji and never a new illustration. It takes a
+`Pose` (`idle` | `wave` | `point`); empty states use `idle`. Beneath it the
+existing sentence, and — where an action exists — one ghost control. Per screen:
 `home.claimableEmpty`, `hall.noMatches`, `mine.empty`, `devices.empty`,
 `uploads.empty`, `income.empty`, `forum.empty`, `uploads.noSessions`,
 `session.noRecord`.
@@ -1054,7 +1320,7 @@ sentence, and — where an action exists — one ghost control. Per screen:
 | kind | shape | copy |
 |---|---|---|
 | **Load failed, nothing to show** | full-screen block + retry pill | `common.loadFailed` |
-| **Refresh failed, stale data on screen** | a `warn-bg` strip pinned above content that is **kept** | `common.refreshFailed`; `income.stale` on §14 |
+| **Refresh failed, stale data on screen** | a strip pinned above content that is **kept**: `--warn-bg #FFF4E0` fill with **`--warn #7E5200`** as its ink (`color.warn` in `native.ts`; never `discover.ink` on that fill, and never the fill without that ink) | `common.refreshFailed`; `income.stale` on §14 |
 | **Action failed** | inline, under the control that failed, in `reject` ink | `common.actionFailed`, or the specific refusal |
 
 The second is the one usually got wrong: **a failed refresh must not blank a
@@ -1176,6 +1442,67 @@ otherwise:
   insets, the system typeface, TalkBack order or on-device animation timing —
   those are checked on the emulator, not argued from a screenshot.
 
+### 20.4 The build order: two builders, two days
+
+Two builders working in parallel worktrees off `lane/mobile-v2`. The split is by
+**shared surface**, not by screen count: A owns everything that is not signed in
+plus the shell, B owns everything behind the sign-in gate. They touch one file in
+common — `i18n.ts` — and they add keys to different blocks of it.
+
+| | Builder A — the door and the shell | Builder B — the work and the money |
+|---|---|---|
+| **Day 1** | §0 tokens applied to `theme.tsx` and `ui.tsx`; §1 Splash (still path first); §2 Welcome; §3 sign-in; §4 verification | §10 Home; §11 Task hall; §12 Task detail; the shared task card and price chip |
+| **Day 2** | §5 Registration; §6 Agreements; §7 Training; §8 Exam; §10's tab bar including the ≤320 two-row trigger | §13 Uploads; §14 Income; §17 states across both halves; §9 coach marks |
+
+**The one hand-off:** the task card and its price chip (§10) are built by B on
+day 1 morning and land in `ui.tsx` before A needs them for nothing — A does not
+need them at all, which is why this split works. The tab bar is A's because it is
+shell; B's screens consume it through `useTabBarReserve()` and never style it.
+
+**Definition of done — per screen, not per day.** A screen is done when all five
+hold, and the evidence is attached to the commit:
+
+1. **Three emulator screenshots**: 360×780, 390×844, 412×915, in **Vietnamese**.
+   Not the browser harness — the harness cannot show Android elevation, real
+   insets or the system typeface (§20.3), and those are three of the things the
+   owner called horrendous.
+2. **Every tap proven.** Each control on the screen is pressed on the emulator
+   and does what §1–§17 says it does. A screen whose buttons have not been
+   pressed is the "nothing has functionality" report, restated.
+3. **`adb shell dumpsys gfxinfo <pkg> framestats` under 10 % janky frames** over
+   a 10 s scroll of that screen. The previous lane measured 38 % with the film
+   playing and 4 % without; 10 % is the line between those, and any screen over
+   it gets its video or its JS-thread animation removed before it is called done
+   (§0.5).
+4. **320×640 in Vietnamese** for any screen carrying the tab bar — the case that
+   fails first (§0.4).
+5. **No literal colour, size or radius in the diff.** `grep -nE "#[0-9a-fA-F]{3,6}|fontSize: [0-9]|borderRadius: [0-9]" src/` returns nothing new.
+
+**If the two days run short, cut in this order.** Each line says what the app
+still does without it, so the cut is a decision and not a casualty:
+
+1. **The splash clip.** Ship §1's reduced-motion still instead — the static
+   wordmark, held 400 ms, then the same cross-fade. The app opens correctly and
+   nobody is blocked; §20.2's Playwright render is a separate afternoon. *This
+   is the first cut because it is the only item with a whole build pipeline
+   behind it.*
+2. **Coach marks (§9).** The machinery exists and works today; it can ship with
+   its current styling and be re-skinned later. `guide.offerNo` is a real answer,
+   so a collector who never sees them loses nothing they need.
+3. **The Devices restyle (§15).** It keeps its current layout with only the §0
+   ground and radii. It is a screen a collector visits once, at a support desk,
+   with a person beside them.
+4. **Profile and the legal reader (§16).** The legal documents are reachable
+   from §2 and §3's policy lines either way, which is where the law needs them.
+5. **The task-detail parallax (§12).** Delete the `Animated.event`; the hero is
+   then a static image. Nobody has ever asked for a parallax.
+6. **The income list restyle (§14).** Keep the existing rows; the cycle card and
+   the payout card are the new parts and they are the part the owner asked for.
+
+**What is never cut**, in any order, because each is a promise rather than a
+finish: the two-declaration flow (§APP-17b), the six agreements (§6), the upload
+confirmation (§13), the estimate/confirmed distinction (§14), and every "not
+built" line in §0.8.
 ---
 
 ## 21. Assets
