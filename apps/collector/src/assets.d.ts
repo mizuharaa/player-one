@@ -36,3 +36,13 @@ declare module '*.mp4' {
   const source: string | number;
   export default source;
 }
+
+/**
+ * PNG, which is what the wordmark is: `scripts/render-wordmark.mjs` rasterises
+ * the console's monochrome SVG because `react-native-svg` is not a dependency
+ * and §20.1 does not add one for a single static shape.
+ */
+declare module '*.png' {
+  const source: import('react-native').ImageSourcePropType;
+  export default source;
+}

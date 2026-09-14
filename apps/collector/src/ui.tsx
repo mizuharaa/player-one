@@ -652,7 +652,15 @@ export function Button({
   const surface = (pressed: boolean): string | undefined => {
     if (primary) {
       if (disabled) return theme.color.muted;
-      return theme.color.action;
+      // On footage the primary inverts: a near-black pill on a scrim that is
+      // already darkening toward near-black is a pill with no edge, so the
+      // one ink pill per screen becomes the one LIGHT pill per screen and
+      // takes ink type. That is the Future Pro / Oura arrangement §2 names,
+      // and it is still exactly one primary. `stage.ground` and `stage.fg`
+      // are the two neutrals the tokens define identically in both schemes —
+      // what a control over video needs, since the film does not get lighter
+      // because the phone is in dark mode.
+      return onDark ? theme.color.stage.fg : theme.color.action;
     }
     if (!pressed || disabled) return undefined;
     // `muted` is a pale lavender tint and flashing it over footage would be a
@@ -669,9 +677,13 @@ export function Button({
       : theme.color.faintForeground
     : // `actionInk` is the pair of `action` and both invert with the scheme, so
       // the label can never be the 2.61:1 white-on-sun this control shipped as
-      // once. Measured now: 15.78:1 light, 16.12:1 dark.
+      // once. Measured now: 15.78:1 light, 16.12:1 dark. On footage the pair
+      // is the other way up, and `stage.ground` on `stage.fg` is the same two
+      // neutrals measured against each other.
       primary
-      ? theme.color.actionInk
+      ? onDark
+        ? theme.color.stage.ground
+        : theme.color.actionInk
       : ink;
 
   return (
@@ -1450,9 +1462,17 @@ export function Timeline({
  * `Linking.openURL`. They are real controls with a role and a name now so the
  * line is reachable and announced rather than a pair of grey words.
  */
-export function LegalLine() {
+/**
+ * `onDark` puts this over the hero film (§2), where the ink it normally takes
+ * is invisible. `stage.fg` is the neutral the scrim was measured against, and
+ * §2's measurement puts the policy band at 9.79:1 — the most legible of the
+ * three text bands on that screen, which is the right way round for the line
+ * nobody is looking for.
+ */
+export function LegalLine({ onDark = false }: { onDark?: boolean } = {}) {
   const theme = useTheme();
   const tt = useT();
+  const ink = onDark ? theme.color.stage.fg : theme.color.foreground;
   const link = (key: MessageKey) => (
     <Pressable
       accessibilityRole="link"
@@ -1468,7 +1488,7 @@ export function LegalLine() {
           // `faintForeground` is the separator beside them, so ink is also
           // what makes the link the more prominent of the two. Measured:
           // 15.78:1 light, 16.12:1 dark, on the page it is drawn on.
-          color: theme.color.foreground,
+          color: ink,
           fontFamily: face(theme),
           fontSize: theme.fontSize.xs,
           textDecorationLine: 'underline',
@@ -1491,7 +1511,7 @@ export function LegalLine() {
       {link('legal.privacy')}
       <Text
         style={{
-          color: theme.color.faintForeground,
+          color: onDark ? theme.color.stage.mid : theme.color.faintForeground,
           fontFamily: face(theme),
           fontSize: theme.fontSize.xs,
         }}
@@ -1607,9 +1627,10 @@ export function Scrim({ stops }: { stops: readonly (readonly [number, number])[]
  * codec the device refuses and a corrupt asset are indistinguishable from the
  * app being broken, from the collector's side of the screen.
  *
- * `active` is §0.5 rule 2: one video instance at a time, mounting gated on
- * visibility. Pass `false` while navigating away and the player unmounts
- * before the next screen paints, instead of decoding behind it.
+ * §0.5 rule 2 — one video instance at a time, unmounted before the next screen
+ * paints — needs no prop here: there is exactly one film in the app, on a
+ * screen that is replaced rather than covered, so it unmounts with its screen.
+ * A visibility flag would be a knob with one possible value.
  */
 function GatedFilm({
   source,
@@ -1671,20 +1692,18 @@ export function Film({
   poster,
   label,
   contentFit = 'cover',
-  active = true,
   fade,
 }: {
   source: string | number;
   poster: ImageSourcePropType;
   label: string;
   contentFit?: 'cover' | 'contain';
-  active?: boolean;
   fade: number;
 }) {
   const reduced = useReducedMotion();
   const [failed, setFailed] = useState(false);
   const fail = useCallback(() => setFailed(true), []);
-  const live = active && !reduced && !failed;
+  const live = !reduced && !failed;
   return (
     <>
       <Image
