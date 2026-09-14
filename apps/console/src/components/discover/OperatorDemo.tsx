@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {useTranslation} from 'react-i18next';
+import {DEMO_EFFECTIVE_SECONDS,DEMO_RATE_VND_PER_MINUTE,demoAmount,demoVnd} from '../../lib/discover-demo-data';
 import {useDemoCursor,type Scene} from '../../lib/use-demo-cursor';
 import {IconArrow,IconCamera,IconEpisodes,IconPass,IconReview,IconSettle,IconTick} from '../icons';
 import {AssemblyLogo} from '../logo-animation/AssemblyLogo';
@@ -33,6 +34,12 @@ const SCENES:readonly Scene[]=[
 
 /** Reduced motion has no hand, so the states change on this instead. */
 const REDUCED_DWELL=4200;
+
+/* The receipt's figure is computed, not typed. It read `+ 12.000 ₫` against an
+   effective time of 00:18, which is 40,000 ₫ a minute — the captions promise
+   payment per effective minute, and this is the one number on the page a
+   visitor can check. See `lib/discover-demo-data.ts`. */
+const DEMO_AMOUNT=demoVnd(demoAmount(DEMO_EFFECTIVE_SECONDS));
 
 export function OperatorDemo({motionPaused,reducedMotion}:{motionPaused:boolean;reducedMotion:boolean}){
   const {t,i18n}=useTranslation();const c=(key:string)=>t(`discoverV2.${key}`);
@@ -91,7 +98,7 @@ export function OperatorDemo({motionPaused,reducedMotion}:{motionPaused:boolean;
               </div>
               <div className="operator-payment operator-receipt operator-screen" data-active={step===4} inert={step!==4} aria-hidden={step!==4}>
                 <div className="operator-payment-brand"><img className="operator-zalo" src={`${assets}zalopay.png`} alt="ZaloPay"/><span>{w.receipt}</span></div>
-                <span className="operator-settled-check"><IconTick size={19}/></span><h4>{w.done}</h4><strong className="operator-amount">+ 12.000 ₫</strong><small>{w.amount}</small><dl><div><dt>{w.wallet}</dt><dd>{w.collector}</dd></div><div><dt>{w.reference}</dt><dd>DEMO-0024</dd></div><div><dt>ZaloPay</dt><dd className="operator-paid">{w.steps[4]}<IconTick size={13}/></dd></div></dl>
+                <span className="operator-settled-check"><IconTick size={19}/></span><h4>{w.done}</h4><strong className="operator-amount">+ {DEMO_AMOUNT}</strong><small>{w.amount} · {w.time} × {demoVnd(DEMO_RATE_VND_PER_MINUTE)}</small><dl><div><dt>{w.wallet}</dt><dd>{w.collector}</dd></div><div><dt>{w.reference}</dt><dd>DEMO-0024</dd></div><div><dt>ZaloPay</dt><dd className="operator-paid">{w.steps[4]}<IconTick size={13}/></dd></div></dl>
               </div>
             </div>
             <footer><span>EGO-003357 · {step===4?w.balance:w.collector}</span><button data-demo-target="next" onClick={()=>{if(step===4)restart();else setStep(step+1);}}>{action}<span aria-hidden="true">{step===4?'↺':'→'}</span></button></footer>
