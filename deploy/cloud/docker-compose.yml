@@ -33,10 +33,20 @@ services:
       context: ../..
       dockerfile: Dockerfile
       target: runtime
-    image: playerone-api:local
+      args:
+        PLAYERONE_SOURCE_SHA: ${PLAYERONE_SOURCE_SHA:-unknown}
+    image: ${PLAYERONE_IMAGE:-playerone-api:local}
     restart: unless-stopped
     env_file:
       - cloud.env
+    environment:
+      OWNER_DATABASE_URL: ""
+      POSTGRES_PASSWORD: ""
+      PLAYERONE_APP_PASSWORD: ""
+      PLAYERONE_DEMO_MACHINE_SECRET: ""
+      PLAYERONE_DEMO_ADMIN_SECRET: ""
+      PLAYERONE_DEMO_FINANCE_SECRET: ""
+      PLAYERONE_DEMO_REVIEWER_SECRET: ""
     # The image's own entrypoint is `deploy/showcase.mjs`, which serves the
     # console and proxies the API for Railway, where there is no Caddy. Here
     # Caddy does both, so this runs the API alone.
@@ -65,6 +75,34 @@ services:
       timeout: 4s
       start_period: 30s
       retries: 3
+
+  # One-off tools, never started by compose up.
+  ops:
+    profiles: ["tools"]
+    image: ${PLAYERONE_IMAGE:-playerone-api:local}
+    env_file: [cloud.env]
+    network_mode: "service:caddy"
+    volumes:
+      - media:/data/media
+      - backups:/data/backups
+      - console:/console
+  migrate:
+    profiles: ["tools"]
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: migrate
+      args:
+        PLAYERONE_SOURCE_SHA: ${PLAYERONE_SOURCE_SHA:-unknown}
+    image: ${PLAYERONE_MIGRATE_IMAGE:-playerone-migrate:local}
+    env_file: [cloud.env]
+    entrypoint: ["sh", "-c", "DATABASE_URL=\"$$OWNER_DATABASE_URL\" exec pnpm db:migrate"]
+  db-tools:
+    profiles: ["tools"]
+    image: postgres:16
+    env_file: [cloud.env]
+    volumes:
+      - backups:/data/backups
 
   # Only with `--profile db`. A managed Postgres (DATABASE_URL pointing off the
   # VM, with sslmode=require) leaves this service unstarted and the `db` volume

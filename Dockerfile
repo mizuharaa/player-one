@@ -22,15 +22,18 @@ ENV COREPACK_HOME=/opt/corepack CI=true
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches ./patches
 COPY packages ./packages
 COPY apps/console ./apps/console
 COPY tools/analysers ./tools/analysers
-COPY deploy ./deploy
 RUN pnpm install --frozen-lockfile --filter . --filter @playerone/console... --filter @playerone/api...
 RUN pnpm -F @playerone/design build:css && pnpm -F @playerone/console build
+COPY deploy ./deploy
 
 # Explicit one-off owner credential job. Never used as the web start command.
 FROM build AS migrate
+ARG PLAYERONE_SOURCE_SHA=unknown
+LABEL org.opencontainers.image.revision=$PLAYERONE_SOURCE_SHA
 USER node
 CMD ["pnpm", "db:migrate"]
 
@@ -58,6 +61,8 @@ COPY --from=build --chown=node:node /app/deploy ./deploy
 # cannot write a byte into its own media root. `deploy/cloud/cloud.env.example`
 # points PLAYERONE_MEDIA_ROOT and PLAYERONE_BACKUP_DIR at them.
 RUN mkdir -p /data/media /data/backups && chown node:node /data/media /data/backups
+ARG PLAYERONE_SOURCE_SHA=unknown
+LABEL org.opencontainers.image.revision=$PLAYERONE_SOURCE_SHA
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=4s --start-period=30s --retries=3 CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

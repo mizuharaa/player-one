@@ -4,6 +4,8 @@
 !package.json
 !pnpm-lock.yaml
 !pnpm-workspace.yaml
+!patches/
+!patches/*.patch
 !packages/
 !packages/api/
 !packages/api/package.json
@@ -11,6 +13,15 @@
 !packages/api/src/**
 !packages/api/bin/
 !packages/api/bin/serve.ts
+!packages/api/bin/bootstrap.ts
+!packages/api/scripts/
+!packages/api/scripts/seed-stakeholder.mjs
+!packages/api/scripts/seed-demo.mjs
+!packages/api/scripts/seed-demo-work.mjs
+!packages/api/scripts/e2e-loop.mjs
+!packages/api/scripts/session-footage.mjs
+!packages/api/scripts/card-intake.mjs
+!packages/api/scripts/bucket-cors.mjs
 !packages/contracts/
 !packages/contracts/package.json
 !packages/contracts/src/
@@ -52,6 +63,8 @@
 !tools/analysers/**
 !deploy/
 !deploy/*.mjs
+!deploy/cloud/
+!deploy/cloud/*.mjs
 **/.env
 **/.env.*
 **/node_modules

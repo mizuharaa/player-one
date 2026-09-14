@@ -26,6 +26,9 @@
 import { readdir, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
+// These are API dependencies, not root devDependencies (pnpm isolates them in the image).
+const apiRequire = createRequire(new URL('../packages/api/package.json', import.meta.url));
 
 /* ------------------------------------------------------------ pure helpers */
 
@@ -130,7 +133,7 @@ export async function databaseChecks(env) {
       (error instanceof Error ? error.message : String(error)))];
   }
   try {
-    const { sql } = await import('drizzle-orm');
+    const { sql } = apiRequire('drizzle-orm');
     const [row] = await db.execute(sql`
       select (select count(*) from collectors
                where id = '00000000-0000-4000-8000-00000000d001'
@@ -262,7 +265,7 @@ export async function storageCheck(env) {
     .filter((name) => !env[name]);
   if (missing.length > 0) return [fail('storage', 'not configured: ' + missing.join(', ') + '.')];
   try {
-    const { S3Client, HeadBucketCommand } = await import('@aws-sdk/client-s3');
+    const { S3Client, HeadBucketCommand } = apiRequire('@aws-sdk/client-s3');
     const client = new S3Client({
       endpoint: env.STORAGE_ENDPOINT,
       region: 'auto',
