@@ -15,9 +15,13 @@ export function useScrollScene(root:RefObject<HTMLElement|null>,enabled=true){
       shown+=(target-shown)*(1-Math.exp(-dt/95));
       if(Math.abs(target-shown)<.0005)shown=target;
       node.style.setProperty('--scene-progress',shown.toFixed(5));
-      node.style.setProperty('--phone-turn',`${(1-Math.min(1,shown*5))*14}deg`);
-      node.style.setProperty('--phone-lean',`${(1-Math.min(1,shown*5))*-5}deg`);
-      setStep(Math.min(3,Math.floor(shown*4)));
+      // Each chapter holds for reading, then hands its surface to the next.
+      // Paint one continuous position: reversing scroll reverses the same seam.
+      const chapter=shown*4, base=Math.floor(chapter);
+      const blend=Math.max(0,Math.min(1,(chapter-base-.68)/.32));
+      const position=Math.min(3,base+blend*blend*(3-2*blend));
+      node.style.setProperty('--screen-position',position.toFixed(5));
+      setStep(Math.min(3,Math.round(position)));
       if(shown!==target)frame=requestAnimationFrame(draw);else last=0;
     };
     const measure=()=>{
@@ -29,7 +33,7 @@ export function useScrollScene(root:RefObject<HTMLElement|null>,enabled=true){
     const sync=()=>{
       active=enabled&&space.matches&&!motion.matches;setPinned(active);
       node.dataset.scenePinned=String(active);
-      if(!active){cancelAnimationFrame(frame);frame=0;node.style.removeProperty('--phone-turn');node.style.removeProperty('--phone-lean');}
+      if(!active){cancelAnimationFrame(frame);frame=0;node.style.removeProperty('--screen-position');}
       else measure();
     };
     sync();window.addEventListener('scroll',measure,{passive:true});window.addEventListener('resize',sync);motion.addEventListener('change',sync);space.addEventListener('change',sync);document.addEventListener('visibilitychange',measure);

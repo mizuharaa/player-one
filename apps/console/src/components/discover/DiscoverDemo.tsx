@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState,type ReactNode} from 'react';
+import {useEffect,useRef,useState,type ReactNode,type CSSProperties} from 'react';
 import {ScanMotif} from './ScanMotif.tsx';
 import {useTranslation} from 'react-i18next';
 import {AssemblyLogo} from '../logo-animation/AssemblyLogo.tsx';
@@ -6,22 +6,24 @@ import {AssemblyLogo} from '../logo-animation/AssemblyLogo.tsx';
 const tasks=[{key:'taskKitchen',scenario:'home',image:'20260909/pov-landscape.webp',generated:true},{key:'taskDesk',scenario:'office',image:'setting-workspace.webp',generated:false},{key:'taskShelf',scenario:'shop',image:'setting-warehouse.webp',generated:false}] as const;
 type Step='browse'|'details'|'prepare'|'ready';
 
-function DemoCursor(){return <span className="discover-demo-cursor" aria-hidden="true"><svg width="38" height="44" viewBox="0 0 38 44"><path d="M6 3 31 25 20 27 14 38Z" fill="#8bbcff" stroke="#14396a" strokeWidth="2.5" strokeLinejoin="round"/></svg><i/></span>;}
+function DemoCursor(){return <span className="discover-demo-cursor" aria-hidden="true"><svg width="22" height="28" viewBox="0 0 24 30"><path d="M3 2v23l6-6 4 9 4-2-4-9h9Z" fill="currentColor" stroke="var(--walk-surface)" strokeWidth="1.8" strokeLinejoin="round"/></svg></span>;}
+
+const stages:Step[]=['browse','details','prepare','ready'];
 
 /** TaskHall/TaskDetail/SessionCreate anatomy, with local illustrative state only. */
 export function DiscoverDemo({motionControl,guidedStage}:{motionControl?:ReactNode;guidedStage?:Step}={}){
   const {t}=useTranslation();const c=(key:string)=>t(`discoverV2.${key}`);
-  const [manualStep,setStep]=useState<Step>('browse');const step=guidedStage??manualStep;const [selected,setSelected]=useState(0);
+  const [manualStep,setStep]=useState<Step>('browse');const activeStep=guidedStage??manualStep;const [selected,setSelected]=useState(0);
   const [search,setSearch]=useState('');const [filter,setFilter]=useState('all');
   const [others,setOthers]=useState('');const [sensitive,setSensitive]=useState('');
   const heading=useRef<HTMLHeadingElement>(null);const changed=useRef(false);
   const task=tasks[selected]??tasks[0];
   const go=(next:Step)=>{changed.current=true;setStep(next);};
-  useEffect(()=>{if(!guidedStage&&changed.current)heading.current?.focus({preventScroll:true});},[step,guidedStage]);
+  useEffect(()=>{if(!guidedStage&&changed.current)heading.current?.focus({preventScroll:true});},[activeStep,guidedStage]);
   const reset=()=>{setOthers('');setSensitive('');setSearch('');setFilter('all');go('browse');};
   const visible=tasks.filter(item=>(filter==='all'||item.scenario===filter)&&c(item.key).toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
   return <div className="discover-demo-scene discover-shell" data-guided={Boolean(guidedStage)} data-illustration-region="">
-    {!guidedStage&&<><div className="discover-demo-optics" data-kinetic-pan=""><ScanMotif/></div><aside className="discover-demo-context" data-kinetic-entry=""><p className="discover-eyebrow">{c('example')}</p><h3>{c('appGuide')}</h3><p>{c('appGuideBody')}</p><ol>{['taskStage','preparationStage','deviceStage'].map((key,index)=><li key={key} aria-current={index===(step==='browse'||step==='details'?0:step==='prepare'?1:2)?'step':undefined} data-current={index===(step==='browse'||step==='details'?0:step==='prepare'?1:2)}><span aria-hidden="true">{String(index+1).padStart(2,'0')}</span><div><strong>{c(key)}</strong><p>{c(['demoGuidance','prepareAction','physicalBody'][index]!)}</p></div></li>)}</ol><p className="discover-demo-footnote">{c('exampleNote')}</p>{motionControl}</aside></>}
+    {!guidedStage&&<><div className="discover-demo-optics" data-kinetic-pan=""><ScanMotif/></div><aside className="discover-demo-context" data-kinetic-entry=""><p className="discover-eyebrow">{c('example')}</p><h3>{c('appGuide')}</h3><p>{c('appGuideBody')}</p><ol>{['taskStage','preparationStage','deviceStage'].map((key,index)=><li key={key} aria-current={index===(activeStep==='browse'||activeStep==='details'?0:activeStep==='prepare'?1:2)?'step':undefined} data-current={index===(activeStep==='browse'||activeStep==='details'?0:activeStep==='prepare'?1:2)}><span aria-hidden="true">{String(index+1).padStart(2,'0')}</span><div><strong>{c(key)}</strong><p>{c(['demoGuidance','prepareAction','physicalBody'][index]!)}</p></div></li>)}</ol><p className="discover-demo-footnote">{c('exampleNote')}</p>{motionControl}</aside></>}
     <div className="discover-phone-stage" data-kinetic-entry={guidedStage?undefined:"side"} aria-hidden={guidedStage?true:undefined} inert={Boolean(guidedStage)}><span className="discover-phone-keys" aria-hidden="true"/><div className="discover-demo-frame discover-demo-phone">
       <div className="discover-phone-hardware" aria-hidden="true"><span>9:41</span><i/><span className="discover-phone-status">
         <svg viewBox="0 0 18 14" width="16" height="13" fill="currentColor"><rect x="0" y="9" width="3" height="5" rx=".7"/><rect x="5" y="6" width="3" height="8" rx=".7"/><rect x="10" y="3" width="3" height="11" rx=".7"/><rect x="15" width="3" height="14" rx=".7"/></svg>
@@ -30,9 +32,10 @@ export function DiscoverDemo({motionControl,guidedStage}:{motionControl?:ReactNo
         <svg viewBox="0 0 27 14" width="24" height="13" fill="none"><rect x="1" y="1" width="22" height="12" rx="3" stroke="currentColor" strokeWidth="1.5"/><rect x="3.5" y="3.5" width="17" height="7" rx="1" fill="currentColor"/><path d="M25 5v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
       </span></div>
       <div className="discover-demo-top"><AssemblyLogo className="discover-assembly-logo" title="PlayerOne"/><span className="discover-demo-badge">{c('preview')}</span></div>
-      <div className="discover-demo-content" key={step} data-phone-screen={step}>
+      <div className="discover-phone-screens">
+      {(guidedStage?stages:[activeStep]).map(step=>{const active=step===activeStep;return <div className="discover-demo-content" key={step} data-phone-screen={step} data-screen-active={active} aria-hidden={!active} inert={!active} style={guidedStage?{'--screen-index':stages.indexOf(step),'--selected-screen':stages.indexOf(guidedStage)} as CSSProperties:undefined}>
         {step!=='browse'&&<button className="discover-demo-back" onClick={()=>go(step==='details'?'browse':step==='prepare'?'details':'prepare')}>&larr; {c('back')}</button>}
-        <h3 ref={heading} tabIndex={-1}>{c(step)}</h3>
+        <h3 ref={active?heading:undefined} tabIndex={-1}>{c(step)}</h3>
         {step==='browse'&&<>
           {!guidedStage&&<><label className="discover-demo-search">{c('appSearch')}<input type="search" value={search} onChange={event=>setSearch(event.target.value)}/></label>
           <div className="discover-demo-filters" role="group" aria-label={c('scenario')}>{['all','home','office','shop'].map(key=><button key={key} type="button" aria-pressed={filter===key} onClick={()=>setFilter(key)}>{c(key==='all'?'allTasks':key)}</button>)}</div>
@@ -43,6 +46,7 @@ export function DiscoverDemo({motionControl,guidedStage}:{motionControl?:ReactNo
         {step==='prepare'&&<><p className="discover-demo-confirmation">{c('claimed')}</p><div className="discover-demo-device"><small>{c('device')}</small><strong>{c('deviceExample')}</strong></div><p className="discover-demo-scenario">{c('scenario')}: <strong>{c(task.scenario)}</strong></p>{guidedStage?<div className="discover-guided-checks"><p><span>✓</span>{c('natural')}</p><p><span>✓</span>{c('boundaries')}</p></div>:[{key:'others',value:others,set:setOthers},{key:'sensitive',value:sensitive,set:setSensitive}].map(choice=><fieldset className="discover-demo-choice" key={choice.key}><legend>{c(choice.key)}</legend><div>{['yes','no'].map(answer=><label key={answer}><input type="radio" name={`demo-${choice.key}`} checked={choice.value===answer} onChange={()=>choice.set(answer)}/>{c(answer)}</label>)}</div></fieldset>)}<button className="discover-button" disabled={!guidedStage&&(!others||!sensitive)} onClick={()=>go('ready')}>{c('prepareAction')} <span aria-hidden="true">&rarr;</span>{guidedStage&&<DemoCursor/>}</button></>}
         {step==='ready'&&<><p className="discover-demo-task-name">{c('physical')}</p><p>{c('physicalBody')}</p>{guidedStage&&<><div className="discover-demo-device"><small>{c('device')}</small><strong>{c('deviceExample')}</strong></div><p className="discover-demo-scenario">{c('scenario')}: <strong>{c(task.scenario)}</strong></p></>}<button className="discover-button" onClick={reset}>{c('restart')} <span aria-hidden="true">&larr;</span></button></>}
         <p className="discover-demo-footnote">{c('exampleNote')}</p>
+      </div>;})}
       </div>
     </div></div>
   </div>;

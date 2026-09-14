@@ -609,6 +609,27 @@ slowed down under it — `PandaStage` switches its render loop to `demand` and t
 scene holds one drawn frame, which is a still pose rather than a crawling one.
 The loop also stops dead when the tab is hidden.
 
+## Discover operator demonstration ? 13 September 2026
+
+The introduction uses the supplied Mews split composition: an ink (#141519)
+copy panel and a cool paper (#e9edf5) operator workspace. Supplied VNG and
+PaXini marks replace the text lockup; a narrow multiplication mark separates
+them. Archivo remains the landing display face. This replaces the introduction's
+large POV image and lime circle only; other landing sections keep their identity.
+
+The five selectable demonstration states are upload, human review, verdict,
+QR preview, and a ZaloPay example receipt. The real sample clip depicts drink
+preparation. Verdict, duration and amount are illustrative, with explicit copy;
+the QR encodes demo text and cannot initiate payment. The workspace reserves its
+height across states. Playback pauses outside its viewport, in hidden tabs, on
+request, and under reduced motion. Manual navigation remains available.
+
+The collector walkthrough has a centered heading and introduction, with saturated
+orange/coral and blue/cyan forms that morph and overlap behind the phone. A
+perspective transform, metallic edge and offset shadow give the guided phone
+weight. The interactive manual phone stays still. Reduced motion keeps the
+composition static, and existing scroll chapters and locale support remain.
+
 ## Browser surfaces
 
 Selection, caret, scrollbars, focus ring, link underline offset and autofill are

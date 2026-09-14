@@ -1,0 +1,28 @@
+/* Cobalt answers and a warm, distinct home for Trúc. */
+.discover-page .discover-questions.discover-shell{background:#edf1ff;color:#152d69;gap:clamp(40px,6vw,96px);padding-block:100px}
+.discover-questions .discover-faq-intro>.discover-eyebrow{color:#2854b3}
+.discover-page .discover-questions .discover-heading{color:#1748c6;font-size:clamp(3.5rem,5.7vw,5.6rem);line-height:1.02;letter-spacing:-.035em}
+.discover-page .discover-faq-intro .discover-truc{background:#ffdabd;border:0;border-radius:14px;padding:28px;box-shadow:none}
+.discover-page .discover-faq-intro .discover-truc-copy h3{color:#5a2b1d}
+.discover-page .discover-faq-intro .discover-truc-copy>.discover-eyebrow,.discover-page .discover-faq-intro .discover-truc-copy>p:not(.discover-eyebrow),.discover-page .discover-faq-intro .discover-truc-pause{color:#653721}
+.discover-page .discover-faq-intro .discover-truc-copy>.discover-button{background:#71331d;color:#fff7ee;border-color:#71331d}
+.discover-page .discover-faq-intro .discover-truc-copy>.discover-button:hover{background:#4e2213}
+.discover-page .discover-faq-intro .discover-truc-answers{background:#fff5e9;color:#512c20;border-radius:9px;padding:18px}
+.discover-page .discover-truc-options button{border-color:#c68862;color:#613a28;background:#ffeddb}
+.discover-page .discover-truc-options button[aria-pressed='true']{background:#71331d;color:#fff7ee}
+.discover-page .discover-faq-rows{border-color:#acbde8}
+.discover-page .discover-questions .discover-faq-rows details{color:#17306b;border-bottom-color:#acbde8!important}
+.discover-page .discover-questions .discover-faq-rows summary{padding-inline:18px}
+.discover-page .discover-questions .discover-faq-number{color:#3c5a98}
+.discover-page .discover-questions .discover-faq-rows summary>span{background:#d1dcff;color:#1748c6}
+.discover-page .discover-questions .discover-faq-rows details:nth-child(3n+2) summary>span{background:#ffd9bb;color:#7b371c}
+.discover-page .discover-questions .discover-faq-rows details:nth-child(3n) summary>span{background:#ddd0ff;color:#59359e}
+.discover-page .discover-questions .discover-faq-rows details:not([open]):hover{background:#e0e8ff}
+.discover-page .discover-questions .discover-faq-rows details[open]{background:#d5e1ff}
+.discover-page .discover-questions .discover-faq-rows details[open] summary>span{background:#1748c6;color:#fff}
+.discover-page .discover-questions .discover-faq-rows details p{color:#223e7d}
+.discover-page .discover-questions .discover-faq-rows summary:focus-visible{outline-color:#1649c7}
+.discover-page .discover-faq-motion .discover-faq-optics{color:#345bcc}
+.discover-page .discover-faq-motion .discover-illustration-toggle{background:#f8faff;color:#234aab;border-color:#92a8df}
+.discover-page .discover-faq-motion .discover-illustration-toggle:hover{background:#dce5ff}
+@media(max-width:767px){.discover-page .discover-questions.discover-shell{padding:64px 20px;gap:36px}.discover-page .discover-questions .discover-heading{font-size:clamp(2.9rem,11vw,4rem)}.discover-page .discover-faq-intro .discover-truc{padding:24px}.discover-page .discover-questions .discover-faq-rows summary{padding-inline:10px}.discover-page .discover-faq-motion{gap:10px}.discover-page .discover-faq-motion .discover-illustration-toggle{font-size:.6875rem}}

@@ -12,15 +12,16 @@ import {useTranslation} from 'react-i18next';
 import {Link} from '@tanstack/react-router';
 import {LocaleSwitch} from '../components/shell/LocaleSwitch.tsx';
 import {IconPass,IconPartial,IconReject} from '../components/icons.tsx';
-import {PerspectiveTitle} from '../components/discover/PerspectiveTitle.tsx';
+import {OperatorDemo} from '../components/discover/OperatorDemo.tsx';
 import {ScanMotif} from '../components/discover/ScanMotif.tsx';
 import {ScrollDemo} from '../components/discover/ScrollDemo.tsx';
 import {useDiscoverNav} from '../lib/use-discover-nav.ts';
+import {DownloadApp} from '../components/discover/DownloadApp.tsx';
 import {useScrollScene} from '../lib/use-scroll-scene.ts';
 import {useScrollStoryCopy} from '../lib/scroll-story-copy.ts';
 import {DiscoverHelp} from '../components/discover/DiscoverHelp.tsx';
 import {DiscoverPrivacy} from '../components/discover/DiscoverPrivacy.tsx';
-import {DISCOVER_MEDIA,DiscoverVideo,PovPicture} from '../components/discover/DiscoverMedia.tsx';
+import {DISCOVER_MEDIA,DiscoverVideo} from '../components/discover/DiscoverMedia.tsx';
 import {AssemblyLogo} from '../components/logo-animation/AssemblyLogo.tsx';
 import {HeroLetterShuffle} from '../components/logo-animation/HeroLetterShuffle.tsx';
 import {WhiteLogoIntro} from '../components/logo-animation/WhiteLogoIntro.tsx';
@@ -31,6 +32,9 @@ import '../styles/discover-warm.css';
 import '../styles/discover-kinetics.css';
 import '../styles/discover-scroll-story.css';
 import '../styles/discover-nav-motion.css';
+import '../styles/discover-walkthrough.css';
+import '../styles/discover-download.css';
+import '../styles/discover-faq-color.css';
 import {useDiscoverKinetics} from '../lib/discover-kinetics.ts';
 
 const destinations=['demo','work','camera','review','questions'] as const;
@@ -64,12 +68,9 @@ export function DiscoverScreen(){
         </div>
       </section>
 
-      <section className="discover-aperture-section discover-wide-intro" id="introduction" data-perspective-scroll="">
-        <div className="discover-aperture-copy"><p className="discover-eyebrow">VNG PT Lab × PaXini</p><h2 className="discover-heading" data-discover-heading=""><PerspectiveTitle text={c('introTitle')}/></h2><p className="discover-lead">{c('introBody')}</p><div className="discover-product-callouts">{['Tasks','Review'].map(key=><div key={key}><h3>{c(`product${key}`)}</h3><p>{c(`product${key}Body`)}</p></div>)}</div></div>
-        <div className="discover-product-specimen"><span className="discover-product-circle" aria-hidden="true"/><figure><PovPicture/><span className="discover-frame-corners" aria-hidden="true"/><figcaption>{c('povLabel')}</figcaption></figure></div>
-      </section>
+      <OperatorDemo motionPaused={paused||reduced} reducedMotion={reduced}/>
 
-      <ScrollDemo/>
+      <ScrollDemo motionPaused={paused||reduced} reducedMotion={reduced} onToggleMotion={toggle}/>
 
       <section className="discover-work" id="work">
         <div className="discover-section-heading discover-shell"><h2 className="discover-heading" data-discover-heading=""><TitleInk>{c('workTitle')}</TitleInk></h2><div><p className="discover-lead">{c('workBody')}</p><p className="discover-image-label">{c('imageLabel')}</p></div></div>
@@ -102,6 +103,7 @@ export function DiscoverScreen(){
         <h2 className="discover-heading" data-discover-heading=""><TitleInk>{c('closeTitle')}</TitleInk></h2>
         <div className="discover-close-action"><div className="discover-actions">{apk?<a className="discover-button" href={apk} download>{c('apkDownload')} ↓</a>:<a className="discover-button" href="#demo">{c('explore')} ↗</a>}<Link to="/login" className="discover-text-link">{c('console')} ↗</Link></div>{!apk&&<p>{c('apkMissing')}</p>}</div>
       </section>
+      <DownloadApp/>
     </main>
     <footer className="discover-footer">
       <div className="discover-footer-top discover-shell"><div className="discover-footer-identity"><a href="#top" className="discover-brand" aria-label="PlayerOne"><AssemblyLogo className="discover-assembly-logo" surface="dark" title="PlayerOne"/></a><p>{c('partners')}</p></div><nav aria-label={c('footerExplore')}><h3>{c('footerExplore')}</h3>{destinations.map(destination=><a href={`#${destination}`} key={destination}>{c(destination)}</a>)}</nav><nav aria-label={c('footerStart')}><h3>{c('footerStart')}</h3><a href="#demo">{c('explore')}</a><Link to="/login">{c('console')}</Link><Link to="/privacy">{c('footerPrivacy')}</Link></nav></div>
