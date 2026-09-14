@@ -8,7 +8,9 @@ check() { if step "$@"; then :; else failed=1; fi; }
 echo "Cloud verification $(date -u +%FT%TZ)"
 echo "Origin: $(setting PLAYERONE_PUBLIC_URL)"
 api_id=$(dc ps -q api)
-echo "Source SHA (running image): $(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$api_id")"
+revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$api_id")
+if [[ $revision =~ ^[a-f0-9]{40}$ ]]; then echo "PASS Source SHA (running image): $revision";
+else echo "FAIL Source SHA: image must identify a committed revision, got $revision"; failed=1; fi
 check image-id docker inspect --format '{{.Image}}' "$api_id"
 echo "SKIPPED VN VM/DB/bucket residency: owner must name and verify their Vietnam locations; DB=$(setting POSTGRES_DB), bucket=$(setting STORAGE_BUCKET)"
 # probe.mjs: HTTPS redirect, certificate expiry, headers, /healthz,

@@ -18,10 +18,11 @@ Required flags: `--domain`, `--acme-email`, `--storage-endpoint`,
 `--storage-bucket`, `--storage-key`, `--storage-secret`, `--quota-bytes`, and
 exactly one of `--local-db` or `--database-url`. The latter is an OWNER URL for
 an existing `po_demo*` or `playerone_demo*` database, with permission to migrate,
-administer roles and create the isolated verification/restore databases. Use
+administer roles, checkpoint, and create the isolated verification/restore databases. Use
 `sslmode=require` for managed Postgres. The script derives the restricted
 `playerone_app` URL and generates its password. Use a dedicated demo cluster:
 `playerone_app` is a cluster-wide role. Never point this kit at production.
+Quota must be at least 1,250,000,000 bytes, matching the API's validation.
 
 Generated credentials live in `deploy/cloud/cloud.env` (mode 600); printed only
 on creation. A second provision is refused. `--force` refreshes source while
