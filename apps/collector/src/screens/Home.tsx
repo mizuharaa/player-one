@@ -320,6 +320,12 @@ export function Home() {
         <View style={{ gap: theme.space[3] }}>
           <Text style={caption}>{tt('home.more')}</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2] }}>
+            {/* ponytail: this chip is temporary. §10 puts the hall on the tab
+                bar as `tab.tasks`, and that is Builder A's day-2 change; until
+                it lands the hall has no route in from Home at all, and an
+                unreachable screen is worse than one extra chip. Delete it with
+                the same commit that adds the tab. */}
+            <Chip label={tt('hall.title')} onPress={() => nav.push({ name: 'taskHall' })} />
             <Chip label={tt('home.devices')} onPress={() => nav.push({ name: 'devices' })} />
             <Chip label={tt('home.myTasks')} onPress={() => nav.push({ name: 'myTasks' })} />
             <Chip label={tt('forum.title')} onPress={() => nav.selectTab('forum')} />

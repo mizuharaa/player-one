@@ -202,7 +202,13 @@ export function Scrim() {
     </View>
   );
 }
-const SCRIM_STOPS = [0.08, 0.18, 0.34, 0.58];
+/**
+ * Eight stops, not four. Measured on the emulator at 390×844: four bands of
+ * 25% height each stepped visibly across the task-detail hero — the boundaries
+ * were readable as lines. Eight on the same curve are not, at the heights this
+ * app uses, and eight Views is still nothing next to a native blur module.
+ */
+const SCRIM_STOPS = [0.02, 0.05, 0.09, 0.15, 0.23, 0.34, 0.48, 0.66];
 
 // ---------------------------------------------------------------------------
 // §10 The two-line price chip — one of the four genuinely new components (§0.7)
@@ -301,7 +307,15 @@ export function TaskCard({
 }) {
   const theme = useTheme();
   const tt = useT();
-  const scenario = task.scenario === null ? (task.type ?? '') : tt(`scenario.${task.scenario}`);
+  /**
+   * The scenario's own word, not the raw column. `/api/me/tasks` sends no
+   * scenario and `tasks.type` carries the code, so the chip printed "office"
+   * at a Vietnamese collector until this resolved it the same way `taskImage`
+   * does. A type that is not one of the four codes is printed as it stands —
+   * it is somebody's own word for the work and translating it is not ours.
+   */
+  const code = task.scenario ?? SCENARIOS.find((s) => s === task.type) ?? null;
+  const scenario = code === null ? (task.type ?? '') : tt(`scenario.${code}`);
   const done =
     task.targetMinutes <= 0 ? 0 : Math.min(1, Math.max(0, task.claimedMinutes / task.targetMinutes));
   return (

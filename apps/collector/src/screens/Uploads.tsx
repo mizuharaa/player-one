@@ -28,6 +28,7 @@ import {
   pickSessionDirectory,
   type PickedSession,
 } from '../upload/delivery-native.ts';
+import { shortId } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -461,6 +462,12 @@ export function Uploads() {
               gap: theme.space[2],
             }}
           >
+            {/* The episode's own name. SPEC §13's row tree does not list it,
+                because the mock's rows sit under a session heading that carries
+                the identity — and that heading is not buildable (see above). So
+                the id stays: five anonymous rows is not a screen a collector can
+                quote from in a dispute, and §14 names the same episode. */}
+            <Text style={micro}>{shortId(episode.episodeId)}</Text>
             <View
               style={{
                 flexDirection: 'row',

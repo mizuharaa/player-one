@@ -16,7 +16,7 @@ import {
   WarmList,
   textStyle,
 } from '../v2.tsx';
-import { dong } from '../money.ts';
+import { dong, quantity, shortId } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -305,10 +305,12 @@ export function Income() {
                     fontWeight: theme.fontWeight.semibold,
                   }}
                 >
-                  {entry.episodeId}
+                  {shortId(entry.episodeId)}
                 </Text>
                 <Text style={caption}>
-                  {`${tt('income.minutes')} · ${entry.effectiveMinutes ?? NOTHING}`}
+                  {`${tt('income.minutes')} · ${
+                    entry.effectiveMinutes === null ? NOTHING : quantity(entry.effectiveMinutes)
+                  }`}
                 </Text>
                 {entry.settlementState === null ? null : (
                   <Text style={caption}>

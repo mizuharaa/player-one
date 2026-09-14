@@ -992,7 +992,13 @@ export function RingChip({
   onPress?: () => void;
 }) {
   const theme = useTheme();
-  const size = theme.space[5];
+  /**
+   * 20dp with nothing in it, 40dp when it carries `face`. Measured on the
+   * emulator at 390×844: `8/13` at `fontSize.sm` inside the 20dp ring painted
+   * straight over the arc, because the ring was drawn for a chip that had its
+   * label beside it and never inside.
+   */
+  const size = ringFace === undefined ? theme.space[5] : theme.space[10];
   const stroke = theme.space[0.5];
   const segments = 24;
   const sweep = 330;

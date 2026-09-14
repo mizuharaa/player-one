@@ -180,6 +180,19 @@ try {
                 '0.3.1', 'seed-demo-work', now(), '{}'::jsonb)`);
       await tx.execute(sql`
         update episodes set latest_ingest_id = ${ingestId} where episode_id = ${episodeId}`);
+      /*
+       * The files, so the upload screen prints a size and not "0.0 GB".
+       * `GET /api/me/episodes` sums `episode_files.size_bytes` over the latest
+       * ingest, and with no rows that sum is a real zero — which reads on the
+       * phone as a measured zero-byte recording rather than as "not supplied".
+       * One video and one IMU log per episode, roughly the shape a real Ego
+       * session has, scaled off the measured duration.
+       */
+      const mb = (n) => Math.round(n * 1024 * 1024);
+      await tx.execute(sql`
+        insert into episode_files (ingest_id, relative_path, size_bytes, sha256) values
+          (${ingestId}, 'video.mp4', ${mb(Number(seconds) * 0.9)}, ${'e'.repeat(63) + String(n)}),
+          (${ingestId}, 'imu.csv', ${mb(Number(seconds) * 0.02)}, ${'f'.repeat(63) + String(n)})`);
       if (review === null) return { episodeId, settlementId: null };
 
       const reviewId = randomUUID();

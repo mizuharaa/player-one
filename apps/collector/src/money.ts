@@ -37,3 +37,28 @@ export function vnd(value: string): string {
 /** The same figure with the currency glyph the app prints beside it. */
 export const dong = (value: string): string => `${vnd(value)} ₫`;
 
+
+/**
+ * A measured quantity the server sent, printed without its trailing zeros.
+ *
+ * `effective_minutes` arrives at the column's scale — `27.000000` — and
+ * "Phút hiệu quả · 27.000000" is six digits of false precision on the one
+ * figure a collector multiplies in their head to check a payment. Same two
+ * string rules as `vnd` and the same guarantee: a fraction that is all zeros
+ * is dropped and nothing else is touched. No grouping, because a minute count
+ * is small and a thousands separator on it would read as a decimal point.
+ */
+export function quantity(value: string): string {
+  const [whole = '', fraction] = value.split('.');
+  return fraction === undefined || /^0*$/.test(fraction) ? whole : `${whole},${fraction}`;
+}
+
+/**
+ * An episode id, shortened for a row (SPEC §14).
+ *
+ * Display only, and the tail rather than the head: these are UUIDs whose first
+ * four groups are identical across a seeded demo, so the front is the half
+ * that identifies nothing. A shorter id is never sent anywhere and never
+ * compared — every request carries the whole one.
+ */
+export const shortId = (id: string): string => (id.length <= 12 ? id : `…${id.slice(-8)}`);
