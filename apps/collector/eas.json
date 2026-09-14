@@ -9,7 +9,8 @@
       "distribution": "internal",
       "env": {
         "PLAYERONE_BUILD_PROFILE": "development"
-      }
+      },
+      "pnpm": "9.15.9"
     },
     "demo": {
       "distribution": "internal",
@@ -17,7 +18,8 @@
         "PLAYERONE_BUILD_PROFILE": "demo",
         "EXPO_PUBLIC_API_URL": "https://demo.playerone.invalid",
         "PLAYERONE_VERSION_CODE": "41"
-      }
+      },
+      "pnpm": "9.15.9"
     },
     "store": {
       "distribution": "store",
@@ -25,17 +27,20 @@
         "PLAYERONE_BUILD_PROFILE": "play",
         "EXPO_PUBLIC_API_URL": "https://api.playerone.vng.com.vn",
         "PLAYERONE_VERSION_CODE": "41"
-      }
+      },
+      "pnpm": "9.15.9"
     },
     "simulator": {
       "extends": "demo",
       "ios": {
         "simulator": true
-      }
+      },
+      "pnpm": "9.15.9"
     },
     "testflight": {
       "extends": "demo",
-      "distribution": "store"
+      "distribution": "store",
+      "pnpm": "9.15.9"
     }
   },
   "submit": {

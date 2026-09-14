@@ -1,5 +1,6 @@
 {
   "name": "playerone",
+  "packageManager": "pnpm@9.15.9",
   "private": true,
   "type": "module",
   "engines": {
