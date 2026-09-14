@@ -22,6 +22,7 @@
  */
 import {
   ambient,
+  collector,
   bamboo,
   dark,
   darkBrandTints,
@@ -67,6 +68,7 @@ export function nativeTheme(scheme: ColorScheme) {
   const isDark = scheme === 'dark';
 
   return {
+    collector,
     scheme,
     color: {
       ...n,
@@ -185,8 +187,8 @@ export function nativeTheme(scheme: ColorScheme) {
         light: discover.light,
         lightInk: discover.lightInk,
       },
-      action: isDark ? dark.foreground : light.foreground,
-      actionInk: isDark ? dark.background : light.background,
+      action: (isDark ? dark.foreground : light.foreground) as string,
+      actionInk: (isDark ? dark.background : light.background) as string,
       stage,
     },
     /**
@@ -206,7 +208,7 @@ export function nativeTheme(scheme: ColorScheme) {
      * `mono` is the same bargain: `JetBrainsMono-Regular.ttf` links alongside
      * it and replaces `'monospace'`.
      */
-    font: { sans: 'System', mono: 'monospace' },
+    font: { sans: 'System' as string, mono: 'monospace' },
     /**
      * sp-equivalent sizes. RN scales these by the system font setting on its
      * own, which is why they are plain numbers and not a clamped scale.
