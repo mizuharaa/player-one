@@ -491,8 +491,8 @@ export function SignIn({
             accessibilityLabel={tt('landing.videoLabel')}
           />
           <Scrim stops={HERO_SCRIM} />
-          <Image
-            source={wordmark}
+          {/* The ratio is on the box, never on the `Image` — see §2's note. */}
+          <View
             style={{
               position: 'absolute',
               left: theme.space[5],
@@ -500,11 +500,16 @@ export function SignIn({
               width: '40%',
               aspectRatio: 784 / 152,
             }}
-            resizeMode="contain"
-            tintColor={theme.discover.surface}
-            accessibilityRole="image"
-            accessibilityLabel={tt('app.name')}
-          />
+          >
+            <Image
+              source={wordmark}
+              style={{ width: '100%', height: '100%' }}
+              resizeMode="contain"
+              tintColor={theme.discover.surface}
+              accessibilityRole="image"
+              accessibilityLabel={tt('app.name')}
+            />
+          </View>
           {onBack === undefined ? null : (
             <View style={{ position: 'absolute', top: topInset(theme.space[6]), left: theme.space[5] }}>
               {back(tt('common.back'), onBack, true)}

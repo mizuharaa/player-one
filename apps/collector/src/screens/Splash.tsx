@@ -110,17 +110,25 @@ export function Splash({ onDone }: { onDone: () => void }) {
             gap: theme.space[6],
           }}
         >
-          <Image
-            source={wordmark}
-            // Never a width/height pair: the box is a percentage and a ratio,
-            // so it is the same box at 320 dp and at 412 dp — and it is the
-            // box the clip will be authored for (§1, property 3).
-            style={{ width: '62%', aspectRatio: 784 / 152 }}
-            resizeMode="contain"
-            tintColor={theme.color.foreground}
-            accessibilityRole="image"
-            accessibilityLabel={tt('app.name')}
-          />
+          {/*
+            Never a width/height pair: the box is a percentage and a ratio, so
+            it is the same box at 320 dp and at 412 dp — and it is the box the
+            clip will be authored for (§1, property 3).
+
+            The ratio is on the `View`, not on the `Image`. Measured on
+            `playerone34`: an `<Image>` given both `width: '62%'` and
+            `aspectRatio` ignored them and took the asset's intrinsic size.
+          */}
+          <View style={{ width: '62%', aspectRatio: 784 / 152 }}>
+            <Image
+              source={wordmark}
+              style={{ width: '100%', height: '100%' }}
+              resizeMode="contain"
+              tintColor={theme.color.foreground}
+              accessibilityRole="image"
+              accessibilityLabel={tt('app.name')}
+            />
+          </View>
           <Text
             style={{
               color: theme.color.mutedForeground,

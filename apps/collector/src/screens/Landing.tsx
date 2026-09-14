@@ -128,14 +128,26 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
         }}
       >
         <View style={{ alignItems: 'center', paddingTop: topInset(theme.space[6]) + theme.space[4], gap: theme.space[3] }}>
-          <Image
-            source={wordmark}
-            style={{ width: '46%', aspectRatio: 784 / 152 }}
-            resizeMode="contain"
-            tintColor={onFilm}
-            accessibilityRole="image"
-            accessibilityLabel={tt('app.name')}
-          />
+          {/*
+            The ratio lives on a wrapper `View` and the `Image` fills it.
+            §0.4's rule is "every image lives in an `aspectRatio` box", and on
+            Android that is load-bearing rather than stylistic: measured on
+            `playerone34`, an `<Image>` carrying `width: '46%'` and
+            `aspectRatio` *itself* ignored both and laid out at the asset's
+            intrinsic 1568 dp, which put three letters of the wordmark across
+            the whole screen. A `View` has no intrinsic size to fall back to,
+            so the box is the box.
+          */}
+          <View style={{ width: '46%', aspectRatio: 784 / 152 }}>
+            <Image
+              source={wordmark}
+              style={{ width: '100%', height: '100%' }}
+              resizeMode="contain"
+              tintColor={onFilm}
+              accessibilityRole="image"
+              accessibilityLabel={tt('app.name')}
+            />
+          </View>
           {LANDING_CENTRE_CODE === '' ? null : (
             <Text
               style={{
