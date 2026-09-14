@@ -202,25 +202,40 @@ node packages/api/scripts/card-intake.mjs <session-dir> \
   --card <tf card id> --collector <phone | external_ref | uuid> \
   --others-in-frame yes|no --sensitive yes|no \
   [--task <uuid|name>] [--scenario <uuid|code>] [--device <uuid|serial>] \
-  [--prepare-time <ISO>] [--api http://127.0.0.1:8080]
+  [--prepare-time <ISO>] [--day YYYY-MM-DD] [--api http://127.0.0.1:8080]
 ```
 
 which reads the same four credentials, needs no `DATABASE_URL`, and does the
 whole counter step: copy the session off the mounted card into
 `PLAYERONE_MEDIA_ROOT` comparing every file's sha256 across the two, open or
-reuse today's batch for this card, import, submit the episode, and upload with
-cloud read-back. A `<session-dir>` already inside `PLAYERONE_MEDIA_ROOT` is
+reuse today's handover, batch and declared session for this card, import,
+submit the episode, and upload with cloud read-back. A `<session-dir>` already inside `PLAYERONE_MEDIA_ROOT` is
 taken as the copy and is not copied again; the card is only ever read.
 
-Task, scenario and device default to the only published task, the only
-scenario, and the device bound to this collector, resolved through
-`GET /reference/sync`. The collector may be named by phone, which is why the
-lookup is that route: `GET /api/collectors` carries no phone. The two APP-17b
-declarations are required and have no default.
+Task, scenario and device default to **the task this collector holds a live
+claim on**, the only scenario, and the device bound to this collector, all
+resolved through `GET /reference/sync`. The task default is the claim and not
+the first published task because `POST /handovers/:id/sessions` refuses
+`session_claim_missing` without one, and on a database with two published
+tasks the first one is a coin toss; the refusal path prints the collector's
+live claims and the `--task` to pass. The collector may be named by phone,
+which is why the lookup is that route: `GET /api/collectors` carries no phone.
+The two APP-17b declarations are required and have no default.
+
+**One declared session per card per day.** The handover, batch and session ids
+are all derived from the centre, the collector, the card and `--day` (default:
+this machine's local date, never UTC), so every recording intaken off one card
+on one day joins one session and each resolves `automatic_single`. Declaring a
+session per recording is what made the resolver quarantine everything after
+the first: several handover-origin candidates and no rule to choose between
+them, because time matching belongs to app-origin sessions. The cost is that
+the APP-17b declarations are the session's — the first intake of the day sets
+them, later intakes print `session reused` and do not move them.
 
 It prints one table on stdout — session, copy, episode, ingest outcome
-(`new`/`duplicate`), verification state, attribution, batch — and exits 0 only
-when the batch came back cloud verified. **Running it twice on the same
+(`new`/`duplicate`), verification state, attribution, batch, and which of the
+handover, batch and session were reused — and exits 0 only when the batch came
+back cloud verified. **Running it twice on the same
 directory, card, collector and day is safe**: the handover, batch and session
 ids are derived from those four, all three routes are `on conflict do nothing`,
 and the second run prints `duplicate` with no second episode, ingest or bill

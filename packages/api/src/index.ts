@@ -765,11 +765,29 @@ export function buildApi({
     if (centreId && centreId !== actor.operator.uploadCentreId) {
       return reply.code(403).send({ error: 'not your centre' });
     }
-    const [collectors, devices, tasks, scenarios] = await Promise.all([
+    const [collectors, devices, tasks, scenarios, taskClaims] = await Promise.all([
       db.select().from(schema.collectors),
       db.select().from(schema.devices),
       db.select().from(schema.tasks),
       db.select().from(schema.scenarios),
+      /**
+       * The claims, because without them this cache cannot answer the one
+       * question the counter has to answer before it may declare a session.
+       *
+       * `POST /handovers/:id/sessions` refuses `session_claim_missing` unless
+       * the collector holds a live claim on the task named in the body, and
+       * nothing else on the wire says which task that is: `GET /api/tasks`
+       * carries a claimant COUNT and not the claimants. So a counter picking a
+       * task had to guess, and `card-intake.mjs` guessed the first published
+       * one and was refused on a demo database whose first published task was
+       * not the demo collector's. Four rows of ids fix that at the source.
+       *
+       * Released claims travel too, rather than being filtered here. A
+       * released claim is a different conversation at the counter — the
+       * refusal is `session_claim_released`, and the footage on the card may be
+       * real and unpayable — so the client needs to tell the two apart.
+       */
+      db.select().from(schema.taskClaims),
     ]);
     return {
       fetched_at: new Date().toISOString(),
@@ -779,6 +797,7 @@ export function buildApi({
       devices,
       tasks,
       scenarios,
+      task_claims: taskClaims,
     };
   });
 
