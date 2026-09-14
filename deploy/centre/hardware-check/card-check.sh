@@ -1,38 +1,55 @@
 #!/usr/bin/env bash
-# card-check.sh -- WSL half of the on-site hardware check.
+# card-check.sh -- the on-site TF card check.
 #
-# Inventories the TF card (lsblk -f, session listing, 4 GiB check) and proves
-# one checksum-verified copy off it, per the "Card procedure" section of
+# Inventories the card (session listing, 4 GiB check) and proves one
+# checksum-verified copy off it, per the "Card procedure" section of
 # ../DEMO-SCRIPT.md. The copy-and-diff step below is that section's own
 # script text, reused verbatim (only CARD/INBOX/SESSION come from arguments
 # instead of being hand-edited) -- this is deliberately not a second method.
 #
-# Usage:
-#   card-check.sh --device /dev/sdX [--session NAME] [--dest DIR]
-#   card-check.sh --dry-run [--device /dev/sdX] [--session NAME] [--dest DIR]
-#   card-check.sh --card-root DIR [--session NAME] [--dest DIR]
+# The card is exFAT and both Linux and Windows automount it, so by default
+# this script mounts NOTHING: it finds the mount that is already there.
+# Measured on the hardware: label PlayerOne, 240 GB, Linux
+# /media/<user>/PlayerOne, Windows a drive letter.
 #
-# --device    whole-disk device of the attached TF reader, e.g. /dev/sdb.
-#             Its first partition is mounted. Required unless --dry-run or
-#             --card-root.
+# Usage:
+#   card-check.sh [--session NAME] [--dest DIR]              # the ordinary path
+#   card-check.sh --card-root DIR [--session NAME] [--dest DIR]
+#   card-check.sh --device /dev/sdX [--session NAME] [--dest DIR]
+#   card-check.sh --dry-run [...]
+#
+# (no flag)   find the already-mounted card: /media/*/PlayerOne,
+#             /run/media/*/PlayerOne, /Volumes/PlayerOne, or a drive letter
+#             holding ego_* directories at its root. Exactly one candidate is
+#             required -- two is a FAIL asking for --card-root, because
+#             guessing which mount is the card risks the wrong data.
+# --card-root DIR   use DIR as the already-mounted card. Says which mount when
+#             detection finds more than one, and is the test hook that proves
+#             the inventory and checksum-copy logic against a fixture.
+# --device    NOT NEEDED FOR THIS CARD, and mounts only when asked for by
+#             name. Whole-disk device of the reader, e.g. /dev/sdb; its first
+#             partition is mounted read-only. For a card that does not
+#             automount, or one that is not exFAT.
 # --session   session directory name to copy. Default: newest ego_* by mtime.
-# --dest      copy destination. Default: /mnt/c/PlayerOne/media (the doc's
+# --dest      copy destination. Default: /mnt/c/PlayerOne/media (the doc
 #             INBOX, PLAYERONE_MEDIA_ROOT).
 # --dry-run   print the commands this script would run; mount, copy and
 #             umount nothing.
-# --card-root DIR   test hook: skip usbipd/mount entirely and treat DIR as
-#             the already-mounted card. Used to prove the inventory and
-#             checksum-copy logic against a fixture, off real hardware.
 #
-# Never mounts anything but read-only (-o ro,noload), and never writes to
-# $CARD. Every step below prints its own PASS/FAIL and the script keeps
-# going, EXCEPT the copy-and-diff block, which runs as the doc's own single
-# atomic script and is one PASS/FAIL step -- that block's whole point is
-# that a pasted, step-by-step version of it hides a failed step behind an
-# empty-looking diff.
+# Nothing here writes to $CARD, on any path. That is now procedural rather
+# than mount-enforced: an automounted exFAT card is read-write on both
+# systems, so the protection is that no step below writes to it. The --device
+# path still mounts read-only, and adds ext4 noload only on ext4 -- it means
+# "do not replay the journal", which on an unclean ext4 card would itself be a
+# write, and exFAT has no journal and refuses the option.
 #
-# Exit: 0 if every step passed, 1 if any step failed or was skipped for lack
-# of a device, 2 for a bad argument.
+# Every step prints its own PASS/FAIL and the script keeps going, EXCEPT the
+# copy-and-diff block, which runs as the doc own single atomic script and is
+# one PASS/FAIL step -- that block whole point is that a pasted,
+# step-by-step version of it hides a failed step behind an empty-looking diff.
+#
+# Exit: 0 if every step passed, 1 if any step failed or no card was found,
+# 2 for a bad argument.
 
 set -uo pipefail
 
@@ -68,10 +85,10 @@ write_copy_script() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Both manifests are written OUTSIDE the directories being hashed, on
-# writable host storage. The card is read-only so a manifest inside it is
-# impossible anyway, and a manifest inside the copy would turn up in its own
-# file list and hash itself.
+# Both manifests are written OUTSIDE the directories being hashed. A manifest
+# inside the copy would turn up in its own file list and hash itself; a
+# manifest inside the card would be a write to the card, which the automounted
+# exFAT card would now allow and which nothing here may do.
 manifest() {                        # manifest <directory> <absolute output file>
   (
     cd "$1"
@@ -100,11 +117,37 @@ echo "copy verified: $(wc -l < /tmp/before.sha256) files"
 COPYSCRIPT
 }
 
+# Every already-mounted card this machine could be showing. exFAT automounts
+# on both systems, so this is the ordinary path: no sudo, no mount, no usbipd.
+detect_card() {
+  local found=() p d
+  for p in /media/*/PlayerOne /run/media/*/PlayerOne /Volumes/PlayerOne; do
+    [ -d "$p" ] && found+=("$p")
+  done
+  # Git Bash on Windows mounts a drive letter and puts no label in the path, so
+  # the card is recognised by holding ego_* session directories at its root.
+  # /c is the system disk and is never the card.
+  for d in /d /e /f /g /h /i /j /k /l /m /n /o /p /q /r /s /t /u /v /w /x /y /z; do
+    [ -d "$d" ] && compgen -G "$d/ego_*" > /dev/null 2>&1 && found+=("$d")
+  done
+  printf '%s\n' ${found[@]+"${found[@]}"}
+}
+
 if [ "$DRY_RUN" = 1 ]; then
   echo "-- dry run: printing commands only, nothing mounted, copied or unmounted --"
-  echo "lsblk -f ${DEVICE:-<device>}"
-  echo "sudo mkdir -p $CARD"
-  echo "sudo mount -o ro,noload ${DEVICE:-<device>}1 $CARD"
+  if [ -n "$CARD_ROOT" ]; then
+    CARD="$CARD_ROOT"
+    echo "# --card-root given: $CARD used as the already-mounted card"
+  elif [ -n "$DEVICE" ]; then
+    echo "lsblk -f $DEVICE"
+    echo "sudo mkdir -p $CARD"
+    echo "sudo mount -o ro[,noload on ext4] ${DEVICE}1 $CARD"
+  else
+    echo "# default: nothing is mounted. Already-mounted card(s) detected:"
+    CARD="$(detect_card | head -1)"
+    if [ -n "$CARD" ]; then detect_card | sed "s/^/#   /"; else echo "#   none"; fi
+    CARD="${CARD:-<no card mounted>}"
+  fi
   echo "find $CARD -maxdepth 1 -mindepth 1 -type d -name 'ego_*'   # inventory: files, bytes, largest file"
   echo "find $CARD -type f -size +4G                               # 4 GiB check"
   echo "CARD=$CARD SESSION=${SESSION:-<newest ego_*>} INBOX=$DEST bash /tmp/copy-card.sh"
@@ -113,17 +156,20 @@ if [ "$DRY_RUN" = 1 ]; then
   echo "-- /tmp/copy-card.sh (the DEMO-SCRIPT text this step runs) --"
   cat "$TMP_COPY"
   rm -f "$TMP_COPY"
-  echo "sudo umount $CARD"
-  step "dry run" PASS "no usbipd, mount, copy or umount executed"
+  [ -n "$DEVICE" ] && echo "sudo umount $CARD"
+  step "dry run" PASS "nothing mounted, copied or unmounted"
   exit 0
 fi
 
 MOUNTED=0
 if [ -n "$CARD_ROOT" ]; then
-  # Test hook: treat CARD_ROOT as already mounted, read-only.
+  # The named mount: the operator saying which, or a fixture standing in for a
+  # card. Already mounted either way, and only ever read from.
   CARD="$CARD_ROOT"
-  step "card root (test fixture)" PASS "$CARD"
+  step "card root (given)" PASS "$CARD"
 elif [ -n "$DEVICE" ]; then
+  # Asked for by name. Not needed for the exFAT card, which automounts.
+  step "explicit --device mount" PASS "$DEVICE (not needed for an automounting exFAT card)"
   LSBLK_OUT=$(lsblk -f "$DEVICE" 2>&1)
   LSBLK_RC=$?
   echo "$LSBLK_OUT"
@@ -147,19 +193,40 @@ elif [ -n "$DEVICE" ]; then
   done < <(lsblk -no NAME,FSTYPE "$DEVICE" | tail -n +2)
 
   PART="${DEVICE}1"
+  # noload is an ext4 option: it stops the kernel replaying the journal, which
+  # on a card pulled out of a camera would itself be a write. exFAT has no
+  # journal and refuses the option, so it is passed only where it exists.
+  case "$(lsblk -no FSTYPE "$PART" 2>/dev/null | head -1)" in
+    ext4) OPTS=ro,noload ;;
+    *) OPTS=ro ;;
+  esac
   sudo mkdir -p "$CARD"
-  if sudo mount -o ro,noload "$PART" "$CARD" 2>/tmp/mount-err.$$; then
-    step "mount ro,noload $PART -> $CARD" PASS
+  if sudo mount -o "$OPTS" "$PART" "$CARD" 2>/tmp/mount-err.$$; then
+    step "mount $OPTS $PART -> $CARD" PASS
     MOUNTED=1
   else
-    step "mount ro,noload $PART -> $CARD" FAIL "$(cat /tmp/mount-err.$$)"
+    step "mount $OPTS $PART -> $CARD" FAIL "$(cat /tmp/mount-err.$$)"
     rm -f /tmp/mount-err.$$
     exit 1
   fi
   rm -f /tmp/mount-err.$$
 else
-  step "device given" FAIL "no --device, --dry-run or --card-root"
-  exit 1
+  # The ordinary path: the card is already mounted, and nothing is mounted here.
+  CANDIDATES=()
+  while IFS= read -r line; do [ -n "$line" ] && CANDIDATES+=("$line"); done < <(detect_card)
+  if [ "${#CANDIDATES[@]}" -eq 1 ]; then
+    CARD="${CANDIDATES[0]}"
+    step "card already mounted" PASS "$CARD"
+  elif [ "${#CANDIDATES[@]}" -eq 0 ]; then
+    step "card already mounted" FAIL \
+      "no PlayerOne mount and no drive holding ego_* at its root; insert the card, or give --card-root DIR (or --device for a card that does not automount)"
+    exit 1
+  else
+    # Never guess. Reading from the wrong volume risks the wrong data, which is
+    # the same rule the old lsblk step carried.
+    step "card already mounted" FAIL "more than one candidate (${CANDIDATES[*]}); say which with --card-root"
+    exit 1
+  fi
 fi
 
 # Session inventory: file counts, total bytes, largest file, per ego_* dir.
