@@ -7,7 +7,7 @@ It **supersedes steps 1–10 and the payment runbook of
 [`centre/DEMO-SCRIPT.md`](centre/DEMO-SCRIPT.md)**, which was written for a
 centre-PC-only walkthrough with no timing, no named owner per step and no
 recovery. That file keeps the long-form
-**[card procedure](centre/DEMO-SCRIPT.md#card-procedure-windows-ext4-tf-card--untested)**,
+**[card procedure](centre/DEMO-SCRIPT.md#card-procedure--exfat-auto-mounted-measured)**,
 and this one does not repeat it — but read the next paragraph first, because
 the measured card is not the card that procedure was written for.
 
@@ -16,8 +16,8 @@ the measured card is not the card that procedure was written for.
 `/media/<user>/PlayerOne` on Linux. So **there is no WSL step, no `usbipd`
 bind/attach, and no ext4 `ro,noload` mount** — the whole `usbipd`/ext4
 procedure in `DEMO-SCRIPT.md` was written from documentation for an ext4 card
-and does not apply to this one. It is kept there for the day a different card
-appears, and it is still marked UNTESTED. What applies on Thursday: insert the
+and does not apply to this one; DEMO-SCRIPT.md now records that route as void
+and holds the measured exFAT procedure instead. What applies on Thursday: insert the
 reader, let the card mount, and run the card-intake command (being written on
 `lane/card-path`) against the session directory on the card. It copies with
 checksums first and imports the copy. **The card is never written to and never
@@ -172,17 +172,18 @@ replays into the same rows instead of opening a second batch.
 **Expected:** a `handover_id` and a session on screen; the batch reads
 **`importing`**. Say the batch id aloud.
 
-**Recovery:** if the console refuses, the CLI is the same code path —
-`node packages/api/bin/counter.ts import --session-dir <path>` (see
-[RUNNING.md](../docs/RUNNING.md#the-operator-api)). If the resolver answers
+**Recovery:** re-run the same `card-intake.mjs` line from 0:03; it is
+idempotent (measured: the second run prints `duplicate`, reuses the handover,
+batch and session, and creates nothing). `counter.ts import` is not a
+substitute: it wants five uuids, not a phone and a card. If the resolver answers
 **`operator_confirmation_required`**, that is the platform refusing to guess
 between two handover-origin sessions: confirm the session on the `/episodes`
 screen and say why it asked.
 
 ### 0:08 — upload and cloud verify · operator
 
-The same `counter.ts import` call finishes the upload, or
-`counter.ts upload --batch <id>` resumes one.
+The `card-intake.mjs` run from 0:03 already uploaded the batch and read it
+back; `counter.ts upload --batch <id>` resumes an upload that stopped.
 
 **Expected:** `cloud_verified: true` on stdout, the episode reads
 **`verified`**, and there is one `cloud_verifications` row **per file, each with
