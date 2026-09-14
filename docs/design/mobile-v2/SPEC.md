@@ -222,9 +222,9 @@ and a person owed money does not care which machine has not sent what:
 
 | key | was | is |
 |---|---|---|
-| `home.cycleUnavailable` | "Máy chủ chưa gửi tổng của kỳ…" | "Chưa có tổng của kỳ này. Bạn vẫn xem được tiền của từng tập ở mục Thu nhập." |
-| `payout.unknown` | "Máy chủ chưa gửi trạng thái nhận tiền." | "Chưa rõ bạn sẽ nhận tiền ở đâu. Hỏi điểm hỗ trợ giúp bạn." |
-| `guide.home.earnings` | "Con số này là của máy chủ… Ứng dụng không tự cộng." | "Đây là tiền của những tập đã được duyệt trong kỳ này. Người duyệt quyết định con số, không phải ứng dụng." |
+| `home.cycleUnavailable` | "Máy chủ chưa gửi tổng của kỳ…" | "Chưa có tổng của kỳ này. Bạn vẫn xem được tiền từng tập ở mục Thu nhập." |
+| `payout.unknown` | "Máy chủ chưa gửi trạng thái nhận tiền." | "Chưa rõ bạn nhận tiền ở đâu. Điểm hỗ trợ sẽ cài giúp bạn." |
+| `guide.home.earnings` | "Con số này là của máy chủ… Ứng dụng không tự cộng." | "Đây là tiền của các tập đã duyệt trong kỳ này. Người duyệt quyết định con số, không phải ứng dụng." |
 
 The rule they encode: **name what the collector can do or see, not what a
 component of ours did or did not do.** "Máy chủ" appears in no string this spec
@@ -581,7 +581,7 @@ the server answers one 401 for all four; render `signIn.badCode`.
 | key | vi | en | zh |
 |---|---|---|---|
 | `signIn.resendIn` | Gửi lại sau {s} giây | Resend in {s}s | {s} 秒后重新发送 |
-| `signIn.sentTo` | Mã đã gửi tới {phone} | Code sent to {phone} | 验证码已发送至 {phone} |
+| `signIn.sentTo` | Đã gửi mã tới {phone} | Code sent to {phone} | 验证码已发送至 {phone} |
 | `signIn.checking` | Đang kiểm tra mã… | Checking your code… | 正在验证…… |
 
 **Not built.** No "call me instead". No email fallback. No 4-digit variant. No
@@ -620,7 +620,7 @@ turn red while the collector is still typing in it.
 | key | vi | en | zh |
 |---|---|---|---|
 | `register.phoneVerified` | đã xác minh | verified | 已验证 |
-| `register.phoneLocked` | Số này đã xác minh ở bước trước nên không sửa ở đây. | This number was verified a step ago, so it is not editable here. | 此号码已在上一步验证，此处不可修改。 |
+| `register.phoneLocked` | Số này đã xác minh ở bước trước, không sửa ở đây được. | This number was verified a step ago, so it is not editable here. | 此号码已在上一步验证，此处不可修改。 |
 
 **Not built.** No email, date of birth, address, ID upload, avatar, gender or
 referral code. The server takes a name and a phone.
@@ -764,8 +764,8 @@ step whose target has not been measured is **skipped**, not drawn over nothing.
 
 | key | vi | en | zh |
 |---|---|---|---|
-| `guide.home.earnings` | Đây là tiền của những tập đã được duyệt trong kỳ này. Người duyệt quyết định con số, không phải ứng dụng. | This is what your reviewed episodes earned this cycle. A reviewer decides the figure, not the app. | 这是本周期已审核片段的收入。金额由审核员决定，而非应用。 |
-| `guide.home.next` | Bước tiếp theo của bạn nằm ở đây — nhận việc, liên kết thiết bị, hay tải lên. | Your next step sits here — claim work, pair a device, or upload. | 您的下一步在这里——领取任务、绑定设备或上传。 |
+| `guide.home.earnings` | Đây là tiền của các tập đã duyệt trong kỳ này. Người duyệt quyết định con số, không phải ứng dụng. | This is what your reviewed episodes earned this cycle. A reviewer decides the figure, not the app. | 这是本周期已审核片段的收入。金额由审核员决定，而非应用。 |
+| `guide.home.next` | Bước tiếp theo của bạn nằm ở đây: nhận việc, liên kết thiết bị hoặc tải lên. | Your next step sits here — claim work, pair a device, or upload. | 您的下一步在这里——领取任务、绑定设备或上传。 |
 
 **Not built.** No multi-screen tutorial carousel in front of the app. No mandatory
 walkthrough — `guide.offerNo` is a real answer and the app opens anyway.
@@ -929,13 +929,13 @@ rise, the arc renders at its value.
 | key | vi | en | zh |
 |---|---|---|---|
 | `home.cycleTitle` | Thu nhập kỳ này | This cycle | 本周期收入 |
-| `home.cycleUnavailable` | Chưa có tổng của kỳ này. Bạn vẫn xem được tiền của từng tập ở mục Thu nhập. | No total for this cycle yet. You can still see what each episode earned under Income. | 本周期尚无合计。您仍可在收入中查看每个片段。 |
+| `home.cycleUnavailable` | Chưa có tổng của kỳ này. Bạn vẫn xem được tiền từng tập ở mục Thu nhập. | No total for this cycle yet. You can still see what each episode earned under Income. | 本周期尚无合计。您仍可在收入中查看每个片段。 |
 | `home.nextTitle` | Bước tiếp theo | Your next step | 下一步 |
 | `home.nextClaim` | Nhận một nhiệm vụ để bắt đầu | Claim a task to begin | 领取一个任务开始 |
 | `home.nextPair` | Liên kết thiết bị trước khi tạo phiên | Pair a device before creating a session | 创建会话前请绑定设备 |
 | `home.nextUpload` | Có {n} tập chờ tải lên | {n} episodes waiting to upload | {n} 个片段待上传 |
 | `home.nextReview` | Đang chờ người duyệt | Waiting on a human reviewer | 等待人工审核 |
-| `home.cycleWithEstimate` | Kể cả ước tính: {amount} | Including estimates: {amount} | 含预估：{amount} |
+| `home.cycleWithEstimate` | Tính cả ước tính: {amount} | Including estimates: {amount} | 含预估：{amount} |
 | `home.uploadedCaption` | tập đã tải lên | episodes uploaded | 个片段已上传 |
 
 **Not built.** No record button, and no "start session" that starts anything — the
@@ -1187,8 +1187,8 @@ is a money screen people distrust.
 | `payout.zalopay` | Ví ZaloPay | ZaloPay wallet | ZaloPay 钱包 |
 | `payout.verified` | Đã xác minh | Verified | 已验证 |
 | `payout.awaiting` | Chờ xác minh | Awaiting verification | 待验证 |
-| `payout.none` | Chưa khai báo — liên hệ điểm hỗ trợ | Not set — contact a support point | 未设置——请联系支持点 |
-| `payout.unknown` | Chưa rõ bạn sẽ nhận tiền ở đâu. Hỏi điểm hỗ trợ giúp bạn. | We do not yet know where to pay you. A support point can set it up. | 尚未确定您的收款方式，请联系支持点。 |
+| `payout.none` | Chưa khai báo. Hỏi điểm hỗ trợ. | Not set — contact a support point | 未设置——请联系支持点 |
+| `payout.unknown` | Chưa rõ bạn nhận tiền ở đâu. Điểm hỗ trợ sẽ cài giúp bạn. | We do not yet know where to pay you. A support point can set it up. | 尚未确定您的收款方式，请联系支持点。 |
 
 **Not built.** **No cash-out button** — settlement is manual and offline, which is
 the sixth agreement the collector signed. No bank-account entry, no wallet-linking
