@@ -1,0 +1,1067 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PlayerOne collector v2 — mock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;800&display=swap" rel="stylesheet">
+<style>
+/* ------------------------------------------------------------------
+   Tokens, copied verbatim from packages/design/generated/tokens.css.
+   Nothing below invents a value. If one of these disagrees with the
+   generated file, the generated file is right and this is stale.
+   ------------------------------------------------------------------ */
+:root{
+  --paper:#F4EFE6; --surface:#FFFCF6; --ink:#35271F; --muted:#705D4D;
+  --line:#D3C5B3; --soft:#E8DFD1; --plum:#DED8F3; --plum-ink:#4E4368;
+  --action:#14151A; --action-ink:#EDEEF7;
+  --lime-500:#B8F04A; --lime-600:#63851C; --lime-700:#566F17;
+  --sun-500:#FF7A1A; --tech-600:#0F55CC;
+  --pass:#0D763B; --pass-bg:#E8F8EE; --reject:#C41C21; --reject-bg:#FDECEC;
+  --warn:#7E5200; --warn-bg:#FFF4E0;
+  --r-sm:8px; --r-base:12px; --r-lg:18px; --r-xl:26px; --r-pill:999px;
+  --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp5:20px; --sp6:24px; --sp8:32px;
+  --shadow:0 4px 16px rgba(23,21,15,.07),0 1px 3px rgba(23,21,15,.05);
+  --shadow-lg:0 18px 48px rgba(23,21,15,.13),0 4px 12px rgba(23,21,15,.06);
+  --ease:cubic-bezier(.22,.61,.36,1);
+  /* Type scale: rem values from tokens.ts, resolved at a 16px root. */
+  --t-xs:12px; --t-sm:13px; --t-base:15px; --t-md:17px;
+  --t-lg:21px; --t-xl:26px; --t-2xl:33px; --t-3xl:42px;
+  /* The artboard. Overridden per-board by ?w= and ?h= for the responsive
+     shots; never read by the layouts, which are all flex and percentage. */
+  --w:390px; --h:844px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#20211E;font-family:"Be Vietnam Pro",system-ui,sans-serif;color:#EDE9E2;padding:40px 0 80px}
+h1.doc{font-size:20px;font-weight:800;padding:0 40px 4px}
+p.doc{font-size:13px;color:#9A948B;padding:0 40px 28px;max-width:900px;line-height:1.6}
+.strip{display:flex;gap:48px;padding:0 40px;align-items:flex-start;overflow-x:auto}
+.board{flex:0 0 auto}
+.cap{font-size:12px;color:#9A948B;padding-bottom:10px;display:flex;gap:8px;align-items:baseline}
+.cap b{color:#EDE9E2;font-weight:600;font-size:13px}
+/* Exactly --w by --h, no radius, so a Playwright element clip is exactly
+   the phone and nothing else. */
+.screen{width:var(--w);height:var(--h);background:var(--paper);color:var(--ink);
+  position:relative;overflow:hidden;font-size:var(--t-base);line-height:1.45;
+  display:flex;flex-direction:column;box-shadow:var(--shadow-lg)}
+
+/* --- chrome ------------------------------------------------------- */
+.status{flex:0 0 auto;height:44px;position:relative;display:flex;align-items:center;
+  justify-content:space-between;padding:0 var(--sp5);font-size:var(--t-xs);
+  font-weight:600;letter-spacing:.2px;z-index:20}
+.status .r{display:flex;gap:5px;align-items:center}
+.status i{display:block;width:16px;height:9px;border:1px solid currentColor;border-radius:2px;opacity:.75}
+.status.over{color:#fff;position:absolute;inset:0 0 auto 0}
+.scroll{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:var(--sp4);padding:0 var(--sp5)}
+/* A floating bar is 90px of bar plus a 24px inset, and content that does not
+   reserve both is content whose last row can never be reached. In the app
+   this number is measured by measureTabBar(), never written down. */
+.scroll.pad{padding-bottom:130px}
+/* The two-row narrow bar is 60px taller, and the same rule applies to it. */
+@media (max-width:340px){.scroll.pad{padding-bottom:196px}}
+
+/* --- type --------------------------------------------------------- */
+.t3xl{font-size:var(--t-3xl);line-height:1.15;font-weight:800;letter-spacing:-1px}
+.t2xl{font-size:var(--t-2xl);line-height:1.18;font-weight:800;letter-spacing:-.6px}
+.txl{font-size:var(--t-xl);line-height:1.2;font-weight:800;letter-spacing:-.5px}
+.tlg{font-size:var(--t-lg);line-height:1.3;font-weight:600}
+.tmd{font-size:var(--t-md);line-height:1.4}
+.tsm{font-size:var(--t-sm);line-height:1.4}
+.txs{font-size:var(--t-xs);line-height:1.4}
+.mu{color:var(--muted)}
+.wd{font-weight:800}.w6{font-weight:600}
+
+/* --- surfaces ----------------------------------------------------- */
+.card{background:var(--surface);border-radius:var(--r-xl);padding:var(--sp5);box-shadow:var(--shadow)}
+.card.lg{border-radius:var(--r-lg);padding:var(--sp4)}
+.plum{background:var(--plum);color:var(--plum-ink)}
+.inset{background:var(--soft);border-radius:var(--r-base);padding:var(--sp3)}
+.row{display:flex;align-items:center;gap:var(--sp3)}
+.col{display:flex;flex-direction:column}
+.g1{gap:var(--sp1)}.g2{gap:var(--sp2)}.g3{gap:var(--sp3)}.g4{gap:var(--sp4)}.g5{gap:var(--sp5)}
+.sb{justify-content:space-between}.ac{align-items:center}.ab{align-items:baseline}
+.f1{flex:1}
+.hair{height:1px;background:var(--line);opacity:.7}
+
+/* --- controls ----------------------------------------------------- */
+.pill{display:flex;align-items:center;justify-content:center;gap:var(--sp2);
+  min-height:52px;border-radius:var(--r-pill);background:var(--action);color:var(--action-ink);
+  font-weight:600;font-size:var(--t-md);text-decoration:none;padding:0 var(--sp5)}
+.pill.light{background:var(--surface);color:var(--ink)}
+.pill.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);min-height:48px;font-size:var(--t-base)}
+.pill.off{background:var(--soft);color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 var(--sp3);
+  border-radius:var(--r-pill);background:var(--surface);border:1px solid var(--line);
+  font-size:var(--t-sm);color:var(--ink);text-decoration:none;white-space:nowrap}
+.chip.on{background:var(--plum);border-color:transparent;color:var(--plum-ink);font-weight:600}
+.chip.dis{opacity:.45}
+.field{display:flex;flex-direction:column;gap:5px}
+.inp{min-height:52px;border-radius:var(--r-base);background:var(--surface);
+  border:1px solid var(--line);display:flex;align-items:center;padding:0 var(--sp4);font-size:var(--t-md)}
+.inp.focus{border-color:var(--action);border-width:2px}
+.inp.lock{background:var(--soft);color:var(--muted);border-style:dashed}
+.sw{width:48px;height:29px;border-radius:var(--r-pill);background:var(--soft);flex:0 0 auto;position:relative}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:25px;height:25px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.sw.on{background:var(--action)}.sw.on::after{left:21px}
+.footer{flex:0 0 auto;padding:var(--sp4) var(--sp5) var(--sp6);background:var(--paper);
+  border-top:1px solid var(--line);display:flex;flex-direction:column;gap:var(--sp2);z-index:4}
+
+/* --- images: every one is an aspect-ratio box with cover ----------- */
+.ph{position:relative;width:100%;overflow:hidden;background:var(--soft);border-radius:var(--r-lg)}
+.ph>img,.ph>video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.r169{aspect-ratio:16/9}.r45{aspect-ratio:4/5}.r32{aspect-ratio:3/2}.r1611{aspect-ratio:16/11}
+/* Measured, not chosen: 12 frames of pov-portrait.mp4 at 1 fps, cover-cropped
+   to 390x844, composited under this gradient. The drafted .35/.82 left the
+   headline band at 3.02:1 against #FFFCF6 on the brightest frame. .60/.88
+   holds 5.24:1 across the whole 62-77% text band. See SPEC 2. */
+.scrim{position:absolute;inset:0;background:linear-gradient(180deg,
+  rgba(53,39,31,0) 0%,rgba(53,39,31,.60) 55%,rgba(53,39,31,.88) 100%)}
+.scrim.soft{background:linear-gradient(180deg,rgba(53,39,31,.18) 0%,rgba(53,39,31,.55) 100%)}
+
+/* --- the price chip: two lines, so it can never truncate ----------- */
+.price{position:absolute;left:var(--sp3);bottom:var(--sp3);display:flex;flex-direction:column;
+  padding:6px var(--sp3);border-radius:var(--r-base);background:var(--plum);color:var(--plum-ink)}
+.price b{font-size:var(--t-md);font-weight:800;line-height:1.15}
+.price span{font-size:var(--t-xs);line-height:1.3}
+.onimg{position:absolute;right:var(--sp3);top:var(--sp3);background:rgba(255,252,246,.92);
+  border-radius:var(--r-pill);padding:4px var(--sp3);font-size:var(--t-xs);color:var(--ink);font-weight:600}
+
+/* --- progress ----------------------------------------------------- */
+.track{height:6px;border-radius:var(--r-pill);background:var(--soft);overflow:hidden}
+.track i{display:block;height:100%;background:var(--muted);border-radius:var(--r-pill)}
+/* The one lime moment. A screen carries at most one element with this class. */
+.track.lime i{background:var(--lime-500)}
+.arc{position:relative;width:56px;height:56px;flex:0 0 auto;border-radius:50%;
+  background:conic-gradient(var(--lime-500) 0 62%,var(--soft) 62% 100%)}
+.arc::after{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--surface)}
+.arc b{position:absolute;inset:0;display:grid;place-items:center;font-size:var(--t-sm);font-weight:800;z-index:1;color:var(--lime-700)}
+
+/* --- state pills: a colour AND a word AND a glyph ------------------ */
+.st{display:inline-flex;align-items:center;gap:6px;padding:4px var(--sp3);border-radius:var(--r-pill);
+  font-size:var(--t-xs);font-weight:600;background:var(--soft);color:var(--ink)}
+.st.rev{background:var(--warn-bg);color:var(--warn)}
+.st.ok{background:var(--pass-bg);color:var(--pass)}
+.st.no{background:var(--reject-bg);color:var(--reject)}
+
+/* --- the floating pill tab bar ------------------------------------ */
+.tabs{position:absolute;left:var(--sp3);right:var(--sp3);bottom:24px;z-index:6}
+.bar{display:flex;align-items:flex-start;background:rgba(255,252,246,.94);border-radius:var(--r-xl);
+  box-shadow:var(--shadow-lg);padding:var(--sp2) var(--sp1);border:1px solid rgba(211,197,179,.6)}
+.tab{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;
+  text-decoration:none;color:var(--muted);min-height:44px;justify-content:flex-start}
+.tab span{font-size:var(--t-xs);color:var(--ink);text-align:center;line-height:1.25}
+.tab .ic{padding:5px var(--sp3);border-radius:var(--r-pill);display:block}
+.tab.on .ic{background:var(--action)}
+.tab.on span{font-weight:600}
+.tab svg{display:block;width:18px;height:18px;fill:none;stroke:var(--muted);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tab.on svg{stroke:var(--action-ink)}
+.raise{position:absolute;left:0;right:0;top:-26px;display:flex;justify-content:center;pointer-events:none}
+.raise a{pointer-events:auto;width:56px;height:56px;border-radius:50%;background:var(--action);
+  display:grid;place-items:center;border:3px solid var(--paper);box-shadow:var(--shadow-lg)}
+.raise svg{width:22px;height:22px;fill:none;stroke:var(--action-ink);stroke-width:2;stroke-linecap:round}
+.tabslot{width:64px;flex:0 0 auto;display:flex;align-items:flex-end;justify-content:center;min-height:44px}
+.tabslot span{font-size:var(--t-xs)}
+
+/* --- the splash, assembling the real 32 fragments ----------------- */
+.splash{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--sp6);padding:var(--sp5)}
+/* Locked at 62% of the artboard width, contain-fit: the clip carries the
+   wordmark and nothing else, so it can never crop a letter. */
+.mark{width:62%}
+.mark svg{width:100%;height:auto;display:block}
+.mark g{transform-box:fill-box;transform-origin:center;
+  animation:assemble 1500ms var(--ease) both;animation-delay:var(--d,0ms)}
+@keyframes assemble{
+  0%{transform:translate(var(--x,0),var(--y,0)) rotate(var(--r,0deg)) scale(.46);opacity:0}
+  18%{opacity:1}
+  46%{transform:translate(calc(var(--x,0px)*.34),calc(var(--y,0px)*-.4)) rotate(calc(var(--r,0deg)*.3)) scale(.88)}
+  72%{transform:translate(calc(var(--x,0px)*-.1),0) rotate(0deg) scale(1.02)}
+  100%{transform:none;opacity:1}
+}
+/* Black fragments first, brand colour once they lock — the console's
+   "exact lock at 0.9s, color by 1.1s" beat, done with one filter. */
+.mark svg{animation:ink 1500ms linear both}
+@keyframes ink{0%,55%{filter:grayscale(1) brightness(.16)}80%,100%{filter:none}}
+.mark.still svg,.mark.still g{animation:none;filter:none;transform:none}
+/* The two lens discs the mark already owns, panned in as the only other
+   shape on the screen. Not particles. */
+.orbit{position:absolute;width:250px;height:250px;border-radius:50%;
+  border:1.5px solid var(--line);opacity:.65;margin-right:120px;
+  animation:pan 1500ms var(--ease) both}
+.orbit.b{margin-right:0;margin-left:120px;border-color:var(--plum);animation-delay:90ms}
+@keyframes pan{0%{transform:scale(.6) translateY(24px);opacity:0}60%{opacity:.65}100%{transform:none;opacity:.4}}
+
+/* --- coach marks --------------------------------------------------- */
+.coach{position:absolute;inset:0;z-index:10}
+/* The ring is the action colour, not lime: lime is spent on the arc inside
+   the very card this ring surrounds. */
+.hole{position:absolute;border-radius:var(--r-xl);
+  box-shadow:0 0 0 9999px rgba(0,0,0,.72);border:2px solid var(--action-ink)}
+.ccard{position:absolute;left:var(--sp5);right:var(--sp5);background:var(--surface);
+  border-radius:var(--r-lg);padding:var(--sp4);display:flex;flex-direction:column;gap:var(--sp3)}
+
+/* --- skeletons ----------------------------------------------------- */
+.sk{background:var(--soft);border-radius:var(--r-base);animation:pulse 900ms ease-in-out infinite alternate}
+@keyframes pulse{from{opacity:.6}to{opacity:1}}
+
+/* --- misc ---------------------------------------------------------- */
+.dash{border:1px dashed var(--line)}
+.solid{border:1px solid var(--line)}
+.warnstrip{background:var(--warn-bg);color:var(--warn);border-radius:var(--r-base);padding:var(--sp3);font-size:var(--t-sm)}
+.errstrip{color:var(--reject);font-size:var(--t-sm)}
+a{color:inherit}
+.lnk{text-decoration:underline;text-underline-offset:2px}
+.zalo{width:18px;height:18px;border-radius:5px;background:var(--tech-600);flex:0 0 auto}
+.avatar{width:52px;height:52px;border-radius:50%;background:var(--plum);color:var(--plum-ink);
+  display:grid;place-items:center;font-size:var(--t-lg);font-weight:800;flex:0 0 auto}
+.chev{color:var(--muted);font-size:var(--t-md)}
+.hcards{display:flex;gap:var(--sp3);overflow:hidden}
+.hcards>*{flex:0 0 78%}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp3)}
+/* A key the catalogue does not have must be impossible to miss. */
+.missing{background:var(--reject);color:#fff;padding:0 4px}
+@media (prefers-reduced-motion:reduce){
+  .mark g,.mark svg,.orbit,.sk{animation:none!important;filter:none!important;transform:none!important;opacity:1!important}
+}
+</style>
+</head>
+<body>
+<h1 class="doc">PlayerOne collector — v2 mock</h1>
+<p class="doc">Nineteen artboards at 390×844. <b>Every user-facing string is a key</b> — the HTML carries
+<code>data-t="&lt;key&gt;"</code> and nothing else, and the words live in <code>copy.js</code>, so a Vietnamese rewrite
+changes one file and nothing re-lays-out. Assets come from <code>apps/collector/assets/discover/</code>; every colour,
+radius and type size is from <code>packages/design/generated/tokens.css</code>. Tap a control to move between screens.
+Add <code>?w=320&amp;h=640</code> to check the narrowest phone the pilot ships to.
+Specification: <a class="lnk" href="../SPEC.md">SPEC.md</a>.</p>
+
+<div class="strip">
+
+<!-- ============================ 01 SPLASH ============================ -->
+<div class="board"><div class="cap"><b>01</b> Splash</div>
+<a href="#b02" style="text-decoration:none"><div class="screen" id="b01">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="splash" style="position:relative">
+    <div class="orbit"></div><div class="orbit b"></div>
+    <div class="mark" id="mark01"></div>
+    <div class="tsm mu" style="z-index:1" data-t="splash.caption"></div>
+  </div>
+  <div style="padding:0 var(--sp5) 34px;text-align:center" class="txs mu" data-t="splash.partners"></div>
+</div></a></div>
+
+<!-- ============================ 02 WELCOME =========================== -->
+<div class="board"><div class="cap"><b>02</b> Welcome · hero</div>
+<div class="screen" id="b02">
+  <div class="ph" style="position:absolute;inset:0;border-radius:0">
+    <video src="../../../../apps/collector/assets/discover/pov-portrait.mp4"
+           poster="../../../../apps/collector/assets/discover/pov-portrait.webp"
+           autoplay muted loop playsinline></video>
+    <div class="scrim"></div>
+  </div>
+  <div class="status over"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="col sb f1" style="position:relative;z-index:2;padding:var(--sp5);padding-top:56px">
+    <div class="row" style="justify-content:center">
+      <div class="mark still" style="width:46%;color:#FFFCF6" id="mark02"></div>
+    </div>
+    <div class="col g4">
+      <div class="col g2">
+        <!-- 2xl, not 3xl: at 390dp a 42px display face fits about 16
+             Vietnamese characters and slogan2 is 18. -->
+        <div class="t2xl" style="color:#FFFCF6">
+          <span data-t="landing.slogan1"></span><br><span data-t="landing.slogan2"></span></div>
+        <div class="tmd" style="color:rgba(255,252,246,.94)" data-t="landing.slogan3"></div>
+      </div>
+      <a class="pill light" href="#b03" data-t="landing.signIn"></a>
+      <a class="pill ghost" href="#b03" style="color:#FFFCF6;border-color:rgba(255,252,246,.45)" data-t="landing.register"></a>
+      <div class="txs" style="color:rgba(255,252,246,.88);text-align:center">
+        <span data-t="landing.registerNote"></span>
+        <a class="lnk" href="#b16" data-t="legal.privacy"></a> ·
+        <a class="lnk" href="#b16" data-t="legal.dataNotice"></a>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- ============================ 03 SIGN-IN =========================== -->
+<div class="board"><div class="cap"><b>03</b> Phone sign-in</div>
+<div class="screen" id="b03">
+  <div class="ph r1611" style="border-radius:0;flex:0 0 auto">
+    <img src="../../../../apps/collector/assets/discover/pov-portrait.webp" alt="">
+    <div class="scrim soft"></div>
+    <div class="mark still" style="position:absolute;left:var(--sp5);bottom:52px;width:40%;color:#FFFCF6" id="mark03"></div>
+  </div>
+  <div class="status over"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="col g4 f1" style="background:var(--surface);border-radius:var(--r-xl) var(--r-xl) 0 0;margin-top:-24px;padding:var(--sp5);z-index:2">
+    <div class="col g2">
+      <div class="txl" data-t="signIn.title"></div>
+      <div class="tsm mu" data-t="signIn.intro"></div>
+    </div>
+    <div class="field">
+      <label class="tsm mu" data-t="signIn.phone"></label>
+      <div class="row g2">
+        <div class="inp" style="flex:0 0 auto;padding:0 var(--sp3)">+84</div>
+        <div class="inp focus f1">090 000 0001</div>
+      </div>
+    </div>
+    <div class="row g2" style="align-items:flex-start">
+      <div class="zalo" style="margin-top:2px"></div>
+      <div class="tsm mu f1" data-t="signIn.codeSent"></div>
+    </div>
+    <div class="txs mu">
+      <a class="lnk" href="#b16" data-t="legal.privacy"></a> ·
+      <a class="lnk" href="#b16" data-t="legal.dataNotice"></a>
+    </div>
+    <a class="pill" href="#b04" style="margin-top:auto;margin-bottom:var(--sp6)" data-t="signIn.sendCode"></a>
+  </div>
+</div></div>
+
+<!-- ====================== 03b SIGN-IN, +86 chosen ==================== -->
+<div class="board"><div class="cap"><b>03b</b> Sign-in · +86 chosen</div>
+<div class="screen" id="b03b">
+  <div class="ph r1611" style="border-radius:0;flex:0 0 auto">
+    <img src="../../../../apps/collector/assets/discover/pov-portrait.webp" alt="">
+    <div class="scrim soft"></div>
+    <div class="mark still" style="position:absolute;left:var(--sp5);bottom:52px;width:40%;color:#FFFCF6" id="mark03b"></div>
+  </div>
+  <div class="status over"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="col g4 f1" style="background:var(--surface);border-radius:var(--r-xl) var(--r-xl) 0 0;margin-top:-24px;padding:var(--sp5);z-index:2">
+    <div class="col g2">
+      <div class="txl" data-t="signIn.title"></div>
+      <div class="tsm mu" data-t="signIn.intro"></div>
+    </div>
+    <div class="field">
+      <label class="tsm mu" data-t="signIn.phone"></label>
+      <div class="row g2">
+        <div class="inp focus" style="flex:0 0 auto;padding:0 var(--sp3)">+86</div>
+        <div class="inp f1">138 0000 0001</div>
+      </div>
+      <!-- S13: the note belongs directly under the row it explains, not in a
+           footnote and not in a toast. It renders only for +86. -->
+      <div class="tsm mu" data-t="signIn.chinaNote" style="padding-top:var(--sp1)"></div>
+    </div>
+    <div class="row g2" style="align-items:flex-start">
+      <div class="zalo" style="margin-top:2px"></div>
+      <div class="tsm mu f1" data-t="signIn.codeSent"></div>
+    </div>
+    <a class="pill" href="#b04" style="margin-top:auto;margin-bottom:var(--sp6)" data-t="signIn.sendCode"></a>
+  </div>
+</div></div>
+
+<!-- ============================ 04 VERIFY ============================ -->
+<div class="board"><div class="cap"><b>04</b> Code verification</div>
+<div class="screen" id="b04">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g5">
+    <a href="#b03" class="row g1 tsm" style="text-decoration:none;min-height:44px;align-items:center">
+      <span>←</span><span data-t="common.back"></span></a>
+    <div class="col g2">
+      <div class="txl" data-t="signIn.code"></div>
+      <div class="tsm mu" data-t="signIn.sentTo" data-v='{"phone":"+84 90 000 0001"}'></div>
+    </div>
+    <!-- Six flex boxes with an aspect ratio: 44 wide at 320dp, 60 at 412,
+         nothing written in pixels. No submit button — the sixth digit
+         commits, and the wait shows inside the last box. -->
+    <a href="#b05" class="row g2" style="text-decoration:none">
+      <div class="inp focus" style="flex:1;aspect-ratio:3/4;justify-content:center;min-height:0;font-weight:800">4</div>
+      <div class="inp focus" style="flex:1;aspect-ratio:3/4;justify-content:center;min-height:0;font-weight:800">1</div>
+      <div class="inp focus" style="flex:1;aspect-ratio:3/4;justify-content:center;min-height:0;font-weight:800">9</div>
+      <div class="inp focus" style="flex:1;aspect-ratio:3/4;justify-content:center;min-height:0;font-weight:800">2</div>
+      <div class="inp focus" style="flex:1;aspect-ratio:3/4;justify-content:center;min-height:0;font-weight:800">0</div>
+      <div class="inp focus" style="flex:1;aspect-ratio:3/4;justify-content:center;min-height:0">
+        <span class="sk" style="width:12px;height:12px;border-radius:50%"></span></div>
+    </a>
+    <div class="tsm mu" style="min-height:19px" data-t="signIn.checking"></div>
+    <div class="row sb">
+      <div class="tsm mu" data-t="signIn.resendIn" data-v='{"s":"42"}'></div>
+      <!-- Disabled while counting, and it says so to a screen reader too. -->
+      <div class="chip dis" data-t="signIn.resendCode"></div>
+    </div>
+    <div class="row g2" style="align-items:flex-start">
+      <div class="zalo" style="margin-top:2px"></div>
+      <div class="tsm mu f1" data-t="signIn.codeSent"></div>
+    </div>
+  </div>
+</div></div>
+
+<!-- ============================ 05 REGISTER ========================== -->
+<div class="board"><div class="cap"><b>05</b> Registration</div>
+<div class="screen" id="b05">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g5">
+    <div class="col g2" style="padding-top:var(--sp4)">
+      <div class="txl" data-t="register.title"></div>
+      <div class="tsm mu" data-t="register.intro"></div>
+    </div>
+    <div class="card lg col g3">
+      <div class="field">
+        <label class="tsm mu" data-t="register.phone"></label>
+        <div class="inp lock"><span>+84 90 000 0001 · </span><span data-t="register.phoneVerified"></span></div>
+      </div>
+      <div class="field">
+        <label class="tsm mu" data-t="register.name"></label>
+        <div class="inp focus" id="reg-name"></div>
+      </div>
+    </div>
+    <div class="txs mu" data-t="register.phoneLocked"></div>
+  </div>
+  <div class="footer"><a class="pill" href="#b06" data-t="register.submit"></a></div>
+</div></div>
+
+<!-- ============================ 06 AGREEMENTS ======================== -->
+<div class="board"><div class="cap"><b>06</b> Agreements</div>
+<div class="screen" id="b06">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g3">
+    <div class="col g2" style="padding-top:var(--sp2)">
+      <div class="txl" data-t="agreements.title"></div>
+      <div class="tsm mu" data-t="agreements.intro"></div>
+    </div>
+    <div id="agreement-rows" class="col g3"></div>
+  </div>
+  <div class="footer">
+    <div class="tsm errstrip" data-t="agreements.incomplete"></div>
+    <a class="pill off" href="#b07" data-t="agreements.submit"></a>
+  </div>
+</div></div>
+
+<!-- ============================ 07 TRAINING ========================== -->
+<div class="board"><div class="cap"><b>07</b> Training</div>
+<div class="screen" id="b07">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g4">
+    <div class="ph r169"><img src="../../../../apps/collector/assets/discover/work-wide.webp" alt=""></div>
+    <div class="txl" data-t="training.title"></div>
+    <div class="tsm mu" data-t="training.body"></div>
+    <div class="inset tsm mu" data-t="training.placeholder"></div>
+  </div>
+  <div class="footer"><a class="pill" href="#b08" data-t="training.done"></a></div>
+</div></div>
+
+<!-- ============================ 08 EXAM ============================== -->
+<div class="board"><div class="cap"><b>08</b> Exam</div>
+<div class="screen" id="b08">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g3">
+    <div class="col g2" style="padding-top:var(--sp2)">
+      <div class="txl" data-t="exam.title"></div>
+      <div class="tsm mu" data-t="exam.intro"></div>
+    </div>
+    <div class="card lg row"><div class="f1" data-t="exam.q1"></div><div class="sw on"></div></div>
+    <div class="card lg row"><div class="f1" data-t="exam.q2"></div><div class="sw on"></div></div>
+    <div class="card lg row"><div class="f1" data-t="exam.q3"></div><div class="sw on"></div></div>
+    <div class="card lg row g2" style="background:var(--pass-bg)">
+      <span style="color:var(--pass);font-size:18px">✓</span>
+      <div class="f1 tsm" style="color:var(--pass)" data-t="exam.passed"></div>
+    </div>
+  </div>
+  <div class="footer"><a class="pill" href="#b09" data-t="exam.submit"></a></div>
+</div></div>
+
+<!-- ============================ 09 COACH MARKS ======================= -->
+<div class="board"><div class="cap"><b>09</b> Coach marks · step 1 of 4</div>
+<div class="screen" id="b09">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g4 pad">
+    <div class="card plum col g1" style="box-shadow:none">
+      <div class="tlg" data-t="greeting.earlyBird"></div>
+      <div class="t2xl" id="coach-name"></div>
+      <div class="tsm" data-t="shift.earlyBird"></div>
+    </div>
+    <div class="card col g3" id="coach-earnings"></div>
+  </div>
+  <div class="coach">
+    <!-- S20: the hole covers the WHOLE earnings card. A hole over the figure
+         alone points at a number and hides the counts that explain it. -->
+    <div class="hole" style="left:14px;right:14px;top:190px;height:266px"></div>
+    <div class="ccard" style="top:474px">
+      <div class="txs mu"><span data-t="guide.step"></span> 1/4</div>
+      <div class="tsm" data-t="guide.home.earnings"></div>
+      <div class="row sb">
+        <a href="#b10" class="tsm mu" style="min-height:44px;display:flex;align-items:center" data-t="guide.offerNo"></a>
+        <a href="#b10" class="pill" style="min-height:44px;font-size:var(--t-base);padding:0 var(--sp6)" data-t="common.next"></a>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- ============================ 10 HOME ============================== -->
+<div class="board"><div class="cap"><b>10</b> Home</div>
+<div class="screen" id="b10">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g4 pad" style="overflow-y:auto">
+    <div class="card plum col g1" style="box-shadow:none">
+      <div class="tlg" data-t="greeting.earlyBird"></div>
+      <div class="t2xl" id="home-name"></div>
+      <div class="tsm" data-t="shift.earlyBird"></div>
+    </div>
+
+    <div class="card col g3" id="home-earnings"></div>
+
+    <div class="col g2">
+      <div class="tsm mu" data-t="home.nextTitle"></div>
+      <div class="card lg col g3" style="padding:0;overflow:hidden">
+        <div class="ph r169" style="border-radius:0">
+          <img src="../../../../apps/collector/assets/discover/setting-kitchen.jpg" alt="">
+          <div class="onimg" data-t="hall.imageLabel"></div>
+        </div>
+        <div class="col g3" style="padding:var(--sp4)">
+          <div class="tlg" id="home-next-task"></div>
+          <div class="tsm mu" data-t="home.nextUpload" data-v='{"n":"2"}'></div>
+          <a class="pill" href="#b13" style="min-height:48px" data-t="uploads.upload"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="row sb ab">
+      <div class="tlg" data-t="home.claimable"></div>
+      <a href="#b11" class="tsm mu" style="text-decoration:none"><span data-t="hall.title"></span> ›</a>
+    </div>
+    <div class="hcards" id="home-cards"></div>
+
+    <div class="tsm mu" data-t="home.more"></div>
+    <div class="row g2" style="flex-wrap:wrap">
+      <a class="chip" href="#b15" data-t="home.devices"></a>
+      <a class="chip" href="#b13" data-t="home.myTasks"></a>
+      <a class="chip" href="#b17" data-t="forum.title"></a>
+      <a class="chip" href="#b17" data-t="groups.title"></a>
+      <a class="chip" href="#b07" data-t="home.training"></a>
+      <a class="chip" href="#b09" data-t="guide.open"></a>
+    </div>
+  </div>
+  <div class="tabs" data-tabs="home"></div>
+</div></div>
+
+<!-- ============================ 11 TASK HALL ========================= -->
+<div class="board"><div class="cap"><b>11</b> Task hall</div>
+<div class="screen" id="b11">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g3 pad">
+    <!-- tlg, not txl: a browse screen spends its vertical budget on the grid,
+         not on its own name. -->
+    <div class="tlg" data-t="hall.title"></div>
+    <div class="inp mu tsm" data-t="hall.search"></div>
+    <div class="row g2">
+      <div class="chip on" data-t="hall.all"></div>
+      <div class="chip" data-t="hall.availableOnly"></div>
+    </div>
+    <div class="txs mu" data-t="hall.imageLabel"></div>
+    <div class="grid" id="hall-grid"></div>
+  </div>
+  <div class="tabs" data-tabs="tasks"></div>
+</div></div>
+
+<!-- ============================ 12 TASK DETAIL ======================= -->
+<div class="board"><div class="cap"><b>12</b> Task detail</div>
+<div class="screen" id="b12">
+  <div class="status over"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g4" style="padding:0;overflow-y:auto">
+    <div class="ph r32" style="border-radius:0;flex:0 0 auto">
+      <img src="../../../../apps/collector/assets/discover/setting-kitchen.jpg" alt="">
+      <div class="scrim"></div>
+      <a href="#b11" style="position:absolute;left:14px;top:52px;width:44px;height:44px;border-radius:50%;background:rgba(255,252,246,.92);display:grid;place-items:center;text-decoration:none;font-size:18px">←</a>
+      <div class="onimg" style="top:58px" data-t="hall.imageLabel"></div>
+      <div class="txl" style="position:absolute;left:var(--sp5);bottom:var(--sp5);right:var(--sp5);color:#FFFCF6" id="detail-title"></div>
+    </div>
+    <div class="col g4" style="padding:0 var(--sp5) 120px">
+      <!-- S21: the price is a figure, so it sits on the card's own ground in
+           ink. Plum is for a rate chip on a photograph, not for this. -->
+      <div class="card lg col g2">
+        <div class="row ab g2" style="flex-wrap:wrap">
+          <div class="t2xl" style="white-space:nowrap">4.500 đ</div>
+          <div class="tsm mu" style="white-space:nowrap" data-t="hall.perMinute"></div>
+        </div>
+        <div class="txs mu" data-t="hall.pricePerMinute"></div>
+        <div class="hair"></div>
+        <div class="tsm mu"><span data-t="detail.target"></span> 240 <span data-t="detail.minutes"></span></div>
+      </div>
+      <!-- The one lime moment on this screen, in its own row so it is read as
+           the task's progress and not as part of the price. -->
+      <div class="col g2">
+        <div class="row sb tsm mu">
+          <span data-t="hall.progress"></span>
+          <span><span data-t="hall.slots"></span> · 2</span>
+        </div>
+        <div class="track lime"><i style="width:64%"></i></div>
+      </div>
+      <div class="col g2">
+        <div class="tsm mu" data-t="detail.instructions"></div>
+        <div id="detail-instructions"></div>
+      </div>
+      <div class="col g2">
+        <div class="tsm mu" data-t="detail.privacy"></div>
+        <div id="detail-privacy"></div>
+      </div>
+      <div class="col g2">
+        <div class="tsm mu" data-t="detail.payment"></div>
+        <div id="detail-payment"></div>
+      </div>
+    </div>
+  </div>
+  <div class="footer" style="position:absolute;left:0;right:0;bottom:0">
+    <a class="pill" href="#b13" data-t="detail.claim"></a></div>
+</div></div>
+
+<!-- ============================ 13 UPLOADS =========================== -->
+<div class="board"><div class="cap"><b>13</b> My sessions · Uploads</div>
+<div class="screen" id="b13">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g3 pad" style="overflow-y:auto">
+    <div class="txl" data-t="uploads.title"></div>
+    <div class="tsm mu"><span data-t="uploads.session"></span> · s_8f2a41</div>
+
+    <!-- S5: the pill is discover.soft. The lime on this screen is the one
+         progress track below it, and nothing else. -->
+    <div class="card lg col g2">
+      <div class="row sb"><div class="st" data-t="state.uploading"></div><div class="txs mu">1,2 GB</div></div>
+      <div class="track lime"><i style="width:43%"></i></div>
+      <div class="txs mu"><span data-t="uploads.sending"></span> · 43%</div>
+    </div>
+
+    <div class="card lg col g2">
+      <div class="row sb"><div class="st" data-t="state.pending_upload"></div><div class="txs mu">940 MB</div></div>
+      <a class="pill ghost" href="#b13" data-t="uploads.upload"></a>
+    </div>
+
+    <div class="card lg col g2">
+      <div class="row sb"><div class="st rev" data-t="state.under_review"></div><div class="txs mu">1,1 GB</div></div>
+      <div class="txs mu" data-t="uploads.waitingReviewer"></div>
+    </div>
+
+    <div class="tsm mu" style="padding-top:var(--sp2)"><span data-t="uploads.session"></span> · s_71bd09</div>
+
+    <!-- S18: no minutes line here. Minutes are money, money is Income. -->
+    <div class="card lg col g2">
+      <div class="row sb"><div class="st ok" data-t="state.review_passed"></div><div class="txs mu">1,4 GB</div></div>
+    </div>
+
+    <div class="card lg col g2">
+      <div class="row sb"><div class="st no" data-t="state.review_failed"></div><div class="txs mu">760 MB</div></div>
+      <div class="card lg col g1" style="background:var(--reject-bg);box-shadow:none;padding:var(--sp3)">
+        <div class="txs w6" style="color:var(--reject)" data-t="uploads.reason"></div>
+        <div class="tsm" style="color:var(--reject)" id="reject-reason"></div>
+      </div>
+    </div>
+  </div>
+  <div class="tabs" data-tabs="up"></div>
+</div></div>
+
+<!-- ============================ 14 INCOME ============================ -->
+<div class="board"><div class="cap"><b>14</b> Income</div>
+<div class="screen" id="b14">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g3 pad" style="overflow-y:auto">
+    <div class="txl" data-t="income.title"></div>
+    <div class="card col g3" id="income-cycle"></div>
+
+    <!-- S9: the payout status defaults to unknown. A mock that seeds
+         "verified" teaches the owner a state the server has never sent. -->
+    <div class="card lg col g2">
+      <div class="row sb">
+        <div class="row g2"><div class="zalo"></div><div class="tsm w6" data-t="payout.title"></div></div>
+        <div class="st" data-t="payout.awaiting"></div>
+      </div>
+      <div class="txs mu" data-t="payout.unknown"></div>
+    </div>
+
+    <div class="tsm mu" data-t="income.intro"></div>
+    <div class="col g3" id="income-rows"></div>
+  </div>
+  <div class="tabs" data-tabs="inc"></div>
+</div></div>
+
+<!-- ============================ 15 DEVICES =========================== -->
+<div class="board"><div class="cap"><b>15</b> Devices &amp; pairing</div>
+<div class="screen" id="b15">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g4 pad">
+    <div class="row g3" style="padding-top:var(--sp2)">
+      <a href="#b10" style="text-decoration:none;font-size:18px;min-height:44px;display:flex;align-items:center">←</a>
+      <div class="txl" data-t="devices.title"></div>
+    </div>
+    <div class="card lg col g2">
+      <div class="row sb"><div class="tmd w6">PX-A7-004821</div><div class="st ok" data-t="devices.active"></div></div>
+      <div class="txs mu"><span data-t="devices.boundAt"></span> 08/09/2026 09:20</div>
+      <!-- S8: the control that cannot work is disabled, and the sentence
+           saying why sits in the same card, not in a toast. -->
+      <div class="pill ghost off" style="opacity:.55" data-t="devices.provision"></div>
+      <div class="txs mu" data-t="devices.unavailable"></div>
+    </div>
+    <div class="card col g3">
+      <div class="pill ghost off" style="opacity:.55" data-t="devices.scanQr"></div>
+      <div class="txs mu" data-t="devices.qrMock"></div>
+      <div class="field">
+        <label class="tsm mu" data-t="devices.typed"></label>
+        <div class="inp mu">PX-A7-______</div>
+      </div>
+      <a class="pill" href="#b15" data-t="devices.bind"></a>
+    </div>
+  </div>
+  <div class="tabs" data-tabs="home"></div>
+</div></div>
+
+<!-- ============================ 16 PROFILE =========================== -->
+<div class="board"><div class="cap"><b>16</b> Profile &amp; legal</div>
+<div class="screen" id="b16">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g4 pad" style="overflow-y:auto">
+    <div class="row g3" style="padding-top:var(--sp2)">
+      <div class="avatar">N</div>
+      <div class="col f1"><div class="tlg" id="profile-name"></div><div class="tsm mu" id="profile-phone"></div></div>
+    </div>
+    <div class="card lg row sb"><div class="tsm" data-t="profile.language"></div><div class="chip on" data-t="common.language"></div></div>
+    <div class="card lg col" style="padding:0" id="legal-rows"></div>
+    <div class="tsm mu" data-t="home.more"></div>
+    <div class="row g2" style="flex-wrap:wrap">
+      <a class="chip" href="#b07" data-t="home.training"></a>
+      <a class="chip" href="#b17" data-t="forum.title"></a>
+      <a class="chip" href="#b09" data-t="guide.open"></a>
+    </div>
+    <a class="pill ghost" href="#b02" data-t="signIn.signOut"></a>
+  </div>
+  <div class="tabs" data-tabs="home"></div>
+</div></div>
+
+<!-- ============================ 17 STATES ============================ -->
+<div class="board"><div class="cap"><b>17</b> Loading · empty · error</div>
+<div class="screen" id="b17">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g4 pad">
+    <div class="txs mu" data-t="states.loading"></div>
+    <div class="col g2">
+      <div class="sk" style="height:96px;border-radius:var(--r-xl)"></div>
+      <div class="sk" style="height:150px;border-radius:var(--r-xl)"></div>
+      <div class="row g3"><div class="sk" style="flex:1;aspect-ratio:16/9;border-radius:var(--r-lg)"></div><div class="sk" style="flex:1;aspect-ratio:16/9;border-radius:var(--r-lg)"></div></div>
+    </div>
+    <div class="hair"></div>
+    <div class="txs mu" data-t="states.empty"></div>
+    <div class="col ac g3" style="padding:var(--sp4) 0">
+      <div id="panda"></div>
+      <div class="tsm mu" style="text-align:center" data-t="home.claimableEmpty"></div>
+      <a class="chip" href="#b11" data-t="hall.title"></a>
+    </div>
+    <div class="hair"></div>
+    <div class="txs mu" data-t="states.error"></div>
+    <div class="warnstrip" data-t="common.refreshFailed"></div>
+    <div class="card lg col ac g3">
+      <div class="tsm mu" style="text-align:center" data-t="common.loadFailed"></div>
+      <a class="pill" href="#b10" style="align-self:stretch" data-t="common.retry"></a>
+    </div>
+    <div class="col g1">
+      <div class="pill off" data-t="common.saving"></div>
+      <div class="errstrip" data-t="common.actionFailed"></div>
+    </div>
+  </div>
+</div></div>
+
+<!-- ==================== 18 HOME, NO CYCLE FROM SERVER ================ -->
+<div class="board"><div class="cap"><b>18</b> Home · server sent no cycle</div>
+<div class="screen" id="b18">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="scroll g4 pad">
+    <div class="card plum col g1" style="box-shadow:none">
+      <div class="tlg" data-t="greeting.earlyBird"></div>
+      <div class="t2xl" id="nc-name"></div>
+      <div class="tsm" data-t="shift.earlyBird"></div>
+    </div>
+    <!-- S1: no IncomeCycle means NO money figure at all. Not a zero, not a
+         client-side sum, not a per-kind split. The counts the server did
+         send, and the sentence saying where the money is. -->
+    <div class="card col g3">
+      <div class="tsm mu" data-t="home.cycleTitle"></div>
+      <div class="t3xl mu">—</div>
+      <div class="tsm mu" data-t="home.cycleUnavailable"></div>
+      <div class="hair"></div>
+      <div class="row g3" id="nc-ring"></div>
+      <a href="#b14" class="row sb tsm" style="text-decoration:none;min-height:44px">
+        <span data-t="home.incomeLink"></span><span class="chev">›</span></a>
+    </div>
+  </div>
+  <div class="tabs" data-tabs="home"></div>
+</div></div>
+
+<!-- ============================ 19 SPLASH STILL ====================== -->
+<div class="board"><div class="cap"><b>19</b> Splash · reduced motion</div>
+<div class="screen" id="b19">
+  <div class="status"><span>9:41</span><span class="r"><i></i></span></div>
+  <div class="splash">
+    <div class="mark still" id="mark19"></div>
+    <div class="tsm mu" data-t="splash.caption"></div>
+  </div>
+  <div style="padding:0 var(--sp5) 34px;text-align:center" class="txs mu" data-t="splash.partners"></div>
+</div></div>
+
+</div><!-- /strip -->
+
+<script type="module">
+import { vi, NEW, DATA } from './copy.js';
+
+/* The 32 fragments from apps/collector/assets/discover/playerone-wordmark.svg,
+   inlined so the splash can move each one. The path data is never touched —
+   only the transform, which is what logoChoreography.ts does too. */
+const WORDMARK = `<svg viewBox="0 0 784 152" fill="currentColor" role="img" aria-label="PlayerOne">
+<g fill="#FF7A1A"><path d="M108 24h17v48.3h-17Z"/></g>
+<g fill="#FF7A1A"><path d="M108 72h17v48h-17Z"/></g>
+<g fill="#FF7A1A"><path d="M125 24h19c43 0 43 36 43 36h-17c0-18-10-20-26-20h-19ZM124.7 24h0.6v16h-0.6Z"/></g>
+<g fill="#FF7A1A"><path d="M187 59c0 24-17 35-43 35h-19V78h19c15 0 26-3 26-19ZM124.7 78h0.6v16h-0.6Z"/></g>
+<g fill="#FF7A1A"><path d="M200 24h17v48.3h-17Z"/></g>
+<g fill="#FF7A1A"><path d="M200 72h17v48h-17Z"/></g>
+<g fill="#FF7A1A"><path d="M260 56a32 32 0 0 0 0 64v-16a16 16 0 0 1 0-32ZM259.7 56v16h0.6v-16ZM259.7 104v16h0.6v-16Z"/></g>
+<g fill="#FF7A1A"><path d="M260 56a32 32 0 0 1 0 64v-16a16 16 0 0 0 0-32Z"/></g>
+<g fill="#FF7A1A"><path d="M278 58h16v31.3h-16Z"/></g>
+<g fill="#FF7A1A"><path d="M278 89h16v31h-16Z"/></g>
+<g fill="#FF7A1A"><path d="M306 58h18l20 43-9 20Z"/></g>
+<g fill="#FF7A1A"><path d="M353 58h18l-26.511628 60h-18Z"/></g>
+<g fill="#FF7A1A"><path d="M332.674419 104h18L333 144h-18Z"/></g>
+<g fill="#FF7A1A"><path d="M386 88c0-43 62-43 62 0h-16c0-23-30-23-30 0Z"/></g>
+<g fill="#FF7A1A"><path d="M386 88h16c0 20 25 23 36 10l11 11c-20 24-63 11-63-21ZM386 87.7h16v0.6h-16Z"/></g>
+<g fill="#FF7A1A"><path d="M401 80h47v16h-47Z"/></g>
+<g fill="#FF7A1A"><path d="M464 58h16v31.3h-16Z"/></g>
+<g fill="#FF7A1A"><path d="M464 89h16v31h-16Z"/></g>
+<g fill="#FF7A1A"><path d="M480 72c6-14 16-18 32-15v17c-21-5-32 6-32 20ZM479.7 72h0.3v22h-0.3Z"/></g>
+<g fill="#0F55CC"><path d="M569 24c-25 0-38 17-38 48h17c0-21 7-32 21-32ZM568.7 24v16h0.6v-16ZM531 71.7v0.6h17v-0.6Z"/></g>
+<g fill="#0F55CC"><path d="M569 24c25 0 38 17 38 48h-17c0-21-7-32-21-32ZM590 71.7h17v0.6h-17Z"/></g>
+<g fill="#0F55CC"><path d="M531 72c0 31 13 48 38 48v-16c-14 0-21-11-21-32ZM568.7 104v16h0.6v-16Z"/></g>
+<g fill="#0F55CC"><path d="M607 72c0 31-13 48-38 48v-16c14 0 21-11 21-32Z"/></g>
+<g fill="#0F55CC"><path d="M627 58h16v31.3h-16Z"/></g>
+<g fill="#0F55CC"><path d="M627 89h16v31h-16Z"/></g>
+<g fill="#0F55CC"><path d="M643 67c19-23 48-9 48 15h-16c0-19-32-16-32 6ZM675 81.7h16v0.6h-16ZM642.7 67h0.3v21h-0.3Z"/></g>
+<g fill="#0F55CC"><path d="M675 81h16v39h-16Z"/></g>
+<g fill="#0F55CC"><path d="M710 88c0-43 62-43 62 0h-16c0-23-30-23-30 0Z"/></g>
+<g fill="#0F55CC"><path d="M710 88h16c0 20 25 23 36 10l11 11c-20 24-63 11-63-21ZM710 87.7h16v0.6h-16Z"/></g>
+<g fill="#0F55CC"><path d="M725 80h47v16h-47Z"/></g>
+<g fill="#FF7A1A"><path d="M7 73a23 23 0 1 0 46 0a23 23 0 1 0-46 0Z"/></g>
+<g fill="#0F55CC"><path d="M32 73a23 23 0 1 0 46 0a23 23 0 1 0-46 0Z"/></g>
+</svg>`;
+
+/* Deterministic waypoints, the same idea as logoChoreography.ts: every
+   fragment starts inside the wordmark's own bounds and travels a bounded
+   distance. No randomness, so the splash is identical on every reload. */
+const WAY = [[-160,-22,0],[104,22,90],[-48,-22,-45],[152,22,45],[16,-22,90],[-104,22,0],
+[64,-22,45],[-152,22,90],[128,-22,0],[-16,22,45],[-80,-22,-12],[48,22,12],[176,-22,12],
+[-120,-22,30],[88,22,-30],[24,-22,0],[-64,22,60],[140,-22,-60],[-32,22,15],[112,-22,-15],
+[-144,22,45],[72,-22,-45],[-96,22,20],[160,-22,-20],[40,22,75],[-112,-22,-75],[96,22,10],
+[-56,-22,-10],[128,22,50],[-136,-22,-50],[0,-30,180],[0,30,-180]];
+
+function mountMark(el, animate){
+  if (!el) return;
+  el.innerHTML = WORDMARK;
+  if (!animate) return;
+  el.querySelectorAll('g').forEach((g,i)=>{
+    const [x,y,r] = WAY[i % WAY.length];
+    g.style.setProperty('--x', x+'px');
+    g.style.setProperty('--y', y+'px');
+    g.style.setProperty('--r', r+'deg');
+    g.style.setProperty('--d', (i*14)+'ms');
+  });
+}
+
+/* ---- content built from the catalogue, never from literals -------- */
+const t = (k) => vi[k] ?? null;
+const el = (html) => { const d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstElementChild; };
+
+/** The ring: reviewed over uploaded EPISODE COUNTS. Never money. */
+const ring = (done, total) => `
+  <div class="arc" style="background:conic-gradient(var(--lime-500) 0 ${Math.round(done/total*100)}%,var(--soft) ${Math.round(done/total*100)}% 100%)">
+    <b>${done}/${total}</b></div>
+  <div class="col f1 g1">
+    <div class="tsm">${done} ${t('home.reviewedCaption')}</div>
+    <div class="txs mu">${total} ${t('home.uploadedCaption')}</div>
+  </div>`;
+
+/* Home's earnings card. S2: the hero figure is confirmedVnd. The total that
+   includes an estimate is demoted to a line and labelled inline, because an
+   estimate presented at hero size is an estimate presented as confirmed. */
+const CYCLE = { confirmedVnd: '960.000 đ', totalVnd: '1.284.000 đ', reviewed: 8, uploaded: 13 };
+const earningsCard = () => `
+  <div class="tsm mu">${t('home.cycleTitle')}</div>
+  <div class="t3xl">${CYCLE.confirmedVnd}</div>
+  <div class="tsm mu">${t('income.confirmed')} · ${t('home.cycleWithEstimate').replace('{amount}', CYCLE.totalVnd)}</div>
+  <div class="hair"></div>
+  <div class="row g3">${ring(CYCLE.reviewed, CYCLE.uploaded)}</div>
+  <a href="#b14" class="row sb tsm" style="text-decoration:none;min-height:44px">
+    <span>${t('home.incomeLink')}</span><span class="chev">›</span></a>`;
+
+/* The task card, defined once and used by Home and the hall. The price chip
+   is two lines so the unit can never be truncated on a narrow tile. */
+const priceChip = (p) => `<div class="price"><b>${p} đ</b><span>${t('hall.perMinute')}</span></div>`;
+const homeCard = (k) => `
+  <a href="#b12" class="card lg col" style="padding:0;overflow:hidden;text-decoration:none">
+    <div class="ph r169" style="border-radius:0">
+      <img src="../../../../apps/collector/assets/discover/${k.img}" alt="">
+      <div class="onimg">${t('scenario.' + k.scenario)}</div>
+      ${priceChip(k.price)}
+    </div>
+    <div class="col g2" style="padding:var(--sp4)">
+      <div class="tlg">${k.title}</div>
+      <div class="txs mu">${t('hall.slots')} · ${k.slots}</div>
+    </div></a>`;
+const hallTile = (k) => `
+  <a href="#b12" class="card lg col" style="padding:0;overflow:hidden;text-decoration:none${k.slots===0?';opacity:.6':''}">
+    <div class="ph r45" style="border-radius:0">
+      <img src="../../../../apps/collector/assets/discover/${k.img}" alt="">
+      ${priceChip(k.price)}
+    </div>
+    <div class="col g2" style="padding:var(--sp3)">
+      <div class="tsm w6">${k.title}</div>
+      <div class="track"><i style="width:${k.pct}%"></i></div>
+      <div class="txs mu">${k.slots===0 ? t('hall.full') : `${t('hall.progress')} ${k.pct}% · ${t('hall.slots')} ${k.slots}`}</div>
+    </div></a>`;
+
+/* Income rows: a solid border when confirmed, dashed when estimated, and a
+   labelled pill either way. Colour is never the only carrier. */
+const INCOME = [
+  { id: 'ep_4a19', min: '18', amt: '312.000 đ', kind: 'confirmed', set: 'settlement.on_a_bill' },
+  { id: 'ep_4a02', min: '36', amt: '648.000 đ', kind: 'confirmed', set: 'settlement.paid' },
+  { id: 'ep_4b77', min: '18', amt: '324.000 đ', kind: 'estimated', set: 'settlement.pending_review' },
+  { id: 'ep_4b81', min: '—', amt: '—', kind: 'estimated', set: 'settlement.uploaded' },
+];
+const incomeRow = (r) => {
+  const est = r.kind === 'estimated';
+  return `<div class="card lg ${est ? 'dash' : 'solid'} col g2" style="box-shadow:none;background:${est ? 'transparent' : 'var(--surface)'}">
+    <div class="row sb ab"><div class="tsm w6 ${est?'mu':''}">${r.id}</div><div class="tlg wd ${est?'mu':''}">${r.amt}</div></div>
+    <div class="row sb"><div class="txs mu">${t('income.minutes')} · ${r.min}</div>
+      <div class="st ${est?'':'ok'}">${est ? t('income.estimated') : '✓ ' + t('income.confirmed')}</div></div>
+    <div class="txs mu">${t('income.settlement')} · ${t(r.set)}</div></div>`;
+};
+
+const AGREEMENTS = ['user','privacy','data_collection','commercial_use','manual_review','offline_settlement'];
+const agreementRow = (id, on) => `
+  <div class="card lg row"><div class="col f1">
+    <div>${t('agreement.' + id)}</div>
+    <div class="txs mu">${t('agreements.version')} 1.0</div></div>
+  <div class="sw ${on ? 'on' : ''}"></div></div>`;
+
+const legalRow = (key, sub) => `
+  <a class="row sb" href="#b16" style="padding:var(--sp4);text-decoration:none;min-height:56px">
+    <div class="col"><div class="tsm">${t(key)}</div><div class="txs mu">${sub}</div></div>
+    <span class="chev">›</span></a>`;
+
+/* A stand-in for identity/Panda.tsx, which is a real component in the app and
+   is what the empty state actually renders. Geometric, no emoji. */
+const PANDA = `<svg viewBox="0 0 96 96" width="96" height="96" aria-hidden="true">
+  <circle cx="22" cy="24" r="13" fill="#35271F"/><circle cx="74" cy="24" r="13" fill="#35271F"/>
+  <circle cx="48" cy="52" r="34" fill="#FFFCF6" stroke="#D3C5B3"/>
+  <ellipse cx="35" cy="46" rx="9" ry="11" fill="#35271F"/><ellipse cx="61" cy="46" rx="9" ry="11" fill="#35271F"/>
+  <circle cx="35" cy="44" r="3" fill="#FFFCF6"/><circle cx="61" cy="44" r="3" fill="#FFFCF6"/>
+  <ellipse cx="48" cy="64" rx="5" ry="4" fill="#35271F"/>
+  <rect x="84" y="30" width="4" height="40" rx="2" fill="#9BD11C"/></svg>`;
+
+/* ---- the tab bar, one definition --------------------------------- */
+const IC = {
+  home:'<path d="M3 9.5 10 3l7 6.5V16a1 1 0 0 1-1 1h-3v-5H7v5H4a1 1 0 0 1-1-1Z"/>',
+  tasks:'<rect x="3" y="3" width="14" height="14" rx="3"/><path d="M6.5 10h7M6.5 7h7M6.5 13h4"/>',
+  up:'<path d="M10 15V5M10 5 6 9M10 5l4 4M4 16h12"/>',
+  inc:'<path d="M4 14V8M8 14V4M12 14v-4M16 14V6"/>',
+  // S7: a plus, not a camera. The raised action opens the preparation form;
+  // a camera glyph promises a recording control this app does not have.
+  plus:'<path d="M10 4v12M4 10h12"/>'
+};
+/**
+ * Measured at 320dp: the bar is 296 wide, the session slot takes 64, and the
+ * four remaining tabs get 58 each. 'Trang chu' at 12px needs about 60, so it
+ * wraps and that one tab becomes taller than its four siblings.
+ *
+ * The fix is not a shorter word — it is the two-row form `shell/TabBar.tsx`
+ * ALREADY renders at `fontScale > 1.2`: four tabs in the bar, and the session
+ * action as its own full-width control above it. Trigger it on width as well
+ * as on font scale and nothing new is built.
+ */
+function tabbar(host, active, narrow){
+  const tab = (k, href, key, icon) => `<a class="tab ${active===k?'on':''}" href="${href}">
+      <span class="ic"><svg viewBox="0 0 20 20">${IC[icon]}</svg></span><span>${t(key)}</span></a>`;
+  const four = tab('home','#b10','tab.home','home') + tab('tasks','#b11','tab.tasks','tasks')
+    + tab('up','#b13','tab.uploads','up') + tab('inc','#b14','tab.income','inc');
+  host.innerHTML = narrow
+    ? `<div class="col g2">
+         <div class="bar">${four}</div>
+         <a class="pill" href="#b13" style="min-height:48px;font-size:var(--t-base)">
+           <svg viewBox="0 0 20 20" style="width:18px;height:18px;fill:none;stroke:var(--action-ink);stroke-width:2;stroke-linecap:round">${IC.plus}</svg>
+           <span>${t('tab.session')}</span></a>
+       </div>`
+    : `<div style="position:relative">
+    <div class="raise"><a href="#b13"><svg viewBox="0 0 20 20">${IC.plus}</svg></a></div>
+    <div class="bar">
+      ${tab('home','#b10','tab.home','home')}
+      ${tab('tasks','#b11','tab.tasks','tasks')}
+      <div class="tabslot"><span>${t('tab.session')}</span></div>
+      ${tab('up','#b13','tab.uploads','up')}
+      ${tab('inc','#b14','tab.income','inc')}
+    </div></div>`;
+}
+
+/* ---- build ------------------------------------------------------- */
+['mark01'].forEach(id => mountMark(document.getElementById(id), true));
+['mark02','mark03','mark03b','mark19'].forEach(id => mountMark(document.getElementById(id), false));
+
+document.getElementById('agreement-rows').innerHTML =
+  AGREEMENTS.map((id,i) => agreementRow(id, i < 5)).join('');
+document.getElementById('home-earnings').innerHTML = earningsCard();
+document.getElementById('coach-earnings').innerHTML = earningsCard();
+document.getElementById('nc-ring').innerHTML = ring(CYCLE.reviewed, CYCLE.uploaded);
+/* Income's cycle card: the same S2 shape as Home's. The hero is what the
+   server has CONFIRMED; the total that folds in an estimate is a demoted
+   line with the word "estimate" in it, because an estimate at hero size is
+   an estimate presented as confirmed. */
+document.getElementById('income-cycle').innerHTML = `
+  <div class="tsm mu">${t('home.cycleTitle')} · 01/09 – 15/09</div>
+  <div class="t3xl">${CYCLE.confirmedVnd}</div>
+  <div class="tsm mu">${t('income.confirmed')} · ${t('home.cycleWithEstimate').replace('{amount}', CYCLE.totalVnd)}</div>
+  <div class="txs mu">${t('income.estimatedHint')}</div>`;
+document.getElementById('home-cards').innerHTML = DATA.tasks.slice(0,2).map(homeCard).join('');
+document.getElementById('hall-grid').innerHTML = DATA.tasks.map(hallTile).join('');
+document.getElementById('income-rows').innerHTML = INCOME.map(incomeRow).join('');
+document.getElementById('panda').innerHTML = PANDA;
+document.getElementById('legal-rows').innerHTML =
+  legalRow('legal.privacy', t('agreements.version') + ' 1.0')
+  + '<div class="hair"></div>' + legalRow('legal.dataNotice', '—')
+  + '<div class="hair"></div>' + legalRow('agreement.user', '1.0 · 08/09/2026')
+  + '<div class="hair"></div>' + legalRow('agreement.data_collection', '1.0 · 08/09/2026')
+  + '<div class="hair"></div>' + legalRow('agreement.offline_settlement', '1.0 · 08/09/2026');
+
+for (const k of ['home-name','coach-name','nc-name','profile-name']) document.getElementById(k).textContent = DATA.name;
+document.getElementById('profile-phone').textContent = DATA.phone;
+document.getElementById('reg-name').textContent = DATA.name;
+document.getElementById('home-next-task').textContent = DATA.tasks[0].title;
+document.getElementById('detail-title').textContent = DATA.tasks[0].title;
+document.getElementById('detail-instructions').textContent =
+  'Ghi lại một buổi nấu ăn bình thường trong bếp nhà bạn. Không cần dàn dựng.';
+document.getElementById('detail-privacy').textContent =
+  'Xin phép mọi người có thể xuất hiện trong khung hình. Che hoặc tránh giấy tờ và thông tin cá nhân.';
+document.getElementById('detail-payment').textContent =
+  'Chỉ những phút được người duyệt chấp nhận mới được tính.';
+document.getElementById('reject-reason').textContent =
+  'Khung hình bị che phần lớn thời gian. Kiểm tra cách đeo thiết bị.';
+
+const width = Number(new URLSearchParams(location.search).get('w') ?? 390);
+document.querySelectorAll('[data-tabs]').forEach(h => tabbar(h, h.dataset.tabs, width <= 320));
+
+/* The fill pass. A key with no catalogue entry renders in red rather than
+   rendering as nothing, so a missing string cannot pass a screenshot review. */
+const missing = [];
+for (const node of document.querySelectorAll('[data-t]')) {
+  const key = node.dataset.t;
+  let s = vi[key];
+  if (s === undefined) { missing.push(key); node.className += ' missing'; node.textContent = `?${key}`; continue; }
+  const vars = node.dataset.v ? JSON.parse(node.dataset.v) : null;
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, v);
+  node.textContent = s;
+}
+if (missing.length) console.error('missing copy keys:', missing.join(', '));
+console.log(`copy: ${Object.keys(vi).length} keys, ${NEW.size} of them new`);
+
+/* ?w= / ?h= resize every artboard, ?only=b10 isolates one. Nothing in the
+   layouts reads these — that is the point of the check. */
+const q = new URLSearchParams(location.search);
+if (q.get('w')) document.documentElement.style.setProperty('--w', q.get('w')+'px');
+if (q.get('h')) document.documentElement.style.setProperty('--h', q.get('h')+'px');
+if (q.get('only')) {
+  document.querySelectorAll('.board').forEach(b => {
+    if (!b.querySelector('#'+q.get('only'))) b.remove();
+  });
+  document.querySelectorAll('h1.doc,p.doc,.cap').forEach(e => e.remove());
+  document.body.style.padding='0';
+  document.querySelector('.strip').style.padding='0';
+}
+</script>
+</body>
+</html>
