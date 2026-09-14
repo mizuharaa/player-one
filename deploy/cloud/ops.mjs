@@ -1,8 +1,11 @@
-import postgres from '../../../packages/store/node_modules/postgres/src/index.js';
-import { bootstrap } from '../../../packages/api/bin/bootstrap.ts';
-import { open } from '../../../packages/store/src/index.ts';
+import { createRequire } from 'node:module';
+import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { bootstrap } from '../../packages/api/bin/bootstrap.ts';
+import { open } from '../../packages/store/src/index.ts';
 import { preflight } from '../demo-preflight.mjs';
 import { pathToFileURL } from 'node:url';
+const postgres = createRequire(new URL('../../packages/store/package.json', import.meta.url))('postgres');
 
 export function demoUrl(value) {
   const url = new URL(value);
@@ -58,6 +61,31 @@ async function main([command, name]) {
       break;
     }
     case 'health': await health(); break;
+    case 'e2e': {
+      const name = `po_e2e_cloud_${Date.now()}_${randomBytes(6).toString('hex')}`;
+      const target = isolatedUrl(env.OWNER_DATABASE_URL, name, 'po_e2e_cloud_');
+      const admin = new URL(env.OWNER_DATABASE_URL); admin.pathname = '/postgres';
+      await ownerJob(sql => sql`create database ${sql(name)}`, admin.href);
+      console.log(`SIMULATION e2e database ${name}; demo ${demoUrl(env.DATABASE_URL).pathname} is excluded`);
+      try {
+        const childEnv = { ...env, DATABASE_URL: target.href, PLAYERONE_ALLOW_SUPERUSER: '1',
+          STORAGE_ENDPOINT: '', STORAGE_BUCKET: '', STORAGE_KEY: '', STORAGE_SECRET: '' };
+        // The loop's fake rail and filesystem bucket stay inside this throwaway process/database.
+        for (const args of [['node_modules/drizzle-kit/bin.cjs', 'migrate', '--config', 'packages/store/drizzle.config.ts'],
+          ['packages/api/scripts/e2e-loop.mjs']]) {
+          const child = spawnSync(process.execPath, args, { env: childEnv, encoding: 'utf8', timeout: 600000, maxBuffer: 16 * 1024 * 1024 });
+          for (const line of `${child.stdout ?? ''}\n${child.stderr ?? ''}`.split(/\r?\n/).filter(Boolean)) console.log(`SIMULATION ${line}`);
+          if (child.error || child.status !== 0) throw new Error(`Isolated e2e command failed (${child.status})`);
+        }
+      } finally {
+        await ownerJob(async sql => {
+          await sql`checkpoint`;
+          await sql`drop database ${sql(name)}`;
+        }, admin.href);
+        console.log(`PASS isolated database cleanup ${name}`);
+      }
+      break;
+    }
     case 'preflight': {
       const findings = await preflight(env);
       for (const f of findings) {

@@ -48,3 +48,6 @@ CODEX_BRIDGE.md
 
 # Session scratch: local demo Postgres data, QA captures, release snapshots — never repo content.
 scratchpad/
+deploy/cloud/verify-*.txt
+deploy/cloud/source-sha.txt
+backups/
