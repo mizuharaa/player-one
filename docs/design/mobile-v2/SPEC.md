@@ -101,7 +101,7 @@ third. Display weight is `fontWeight.display` (800), `letterSpacing: -0.5` at
 
 | Role | Token | px | lineHeight | Used for |
 |---|---|---|---|---|
-| Hero | `fontSize.3xl` | 42 | 1.15 | Welcome headline, the money figure |
+| Hero | `fontSize.3xl` | 42 | 1.15 | the money figure, and only that |
 | Display | `fontSize.2xl` | 33 | 1.18 | screen money totals, the greeting name |
 | Title | `fontSize.xl` | 26 | 1.2 | screen titles |
 | Section | `fontSize.lg` | 21 | 1.3 | card titles, sheet titles |
@@ -115,6 +115,26 @@ Vietnamese tone marks in React Native (measured on the emulator by the previous
 lane). Body and below are **never** below 1.3; display and hero never below 1.15.
 RN wants absolute px, so write `Math.round(size * ratio)` — a bare multiplier is
 a rejected diff.
+
+**Two ceilings measured in the mock, not guessed.** Both are Vietnamese-specific
+and both bit on the first render:
+
+- **`fontSize.3xl` fits about 16 Vietnamese characters on a 390dp line.** The
+  Welcome headline was drafted at 3xl and "Sống như mọi ngày." (18) wrapped
+  mid-sentence. The hero headline is therefore **`fontSize.2xl`**, and 3xl is
+  reserved for the money figure, which is short by construction. §2 carries the
+  consequence: the third slogan drops to `fontSize.md` as a lead rather than
+  becoming a wrapped third line.
+- **A tab label must fit one line at 320dp**, which is about 10 characters at
+  `fontSize.xs`. `tab.home` is currently "Trang chính" (11) and wraps to two
+  lines at 360dp, which makes that one tab taller than its four siblings and
+  pushes the raised action into the bar. Change the Vietnamese to **"Trang chủ"**
+  — shorter, and the more idiomatic Vietnamese label for a home tab anyway. The
+  `en` and `zh` values are unchanged.
+
+| key | vi (was) | vi (now) |
+|---|---|---|
+| `tab.home` | Trang chính | Trang chủ |
 
 ### 0.4 The responsive rule, since "nothing is responsive" was the complaint
 
@@ -259,7 +279,8 @@ View flex:1                                  ← no ScrollView; this screen does
    ├─ View    alignItems:'center' paddingTop:statusBar+space[4]
    │  └─ Image wordmark  width:'46%' aspectRatio:784/152   ← monochrome, tinted surface
    └─ View    gap:space[4]
-      ├─ Text  three slogan lines   fontSize.3xl weight.display, left-aligned
+      ├─ Text  slogan1 + slogan2    fontSize.2xl weight.display, left-aligned
+      ├─ Text  slogan3              fontSize.md  ← the payoff, as a lead
       ├─ Pressable landing.signIn   ← surface fill, ink label, radius.pill, minHeight 52
       ├─ Pressable landing.register ← ghost; opens the support-desk explanation
       └─ Text  policy line          fontSize.xs, two links into §16
@@ -763,7 +784,8 @@ View flex:1
 │  ├─ View  THE PRICE FIELD  ← discover.light, radius.lg, padding space[4], full width
 │  │  ├─ Row alignItems:'baseline' gap:space[2]     ← one line, the size split
 │  │  │  ├─ Text unitPriceVndPerMinute  fontSize.2xl weight.display lightInk
-│  │  │  └─ Text hall.pricePerMinute    fontSize.sm               lightInk
+│  │  │  └─ Text hall.perMinute         fontSize.sm               lightInk
+│  │  ├─ Text hall.pricePerMinute       fontSize.xs   ← the full sentence, below
 │  │  └─ Text detail.target · targetMinutes · detail.minutes   fontSize.sm
 │  ├─ Section detail.instructions   ← task.instructions, else detail.notSupplied
 │  ├─ Section detail.privacy        ← task.privacyNotice
@@ -775,7 +797,13 @@ View flex:1
 ```
 
 **Aspect ratio, not height.** The hero is `3/2` rather than `16/9` so that at
-320×640 the price box is above the fold without letterboxing the image.
+320×640 the price field is above the fold without letterboxing the image.
+
+**The inline unit beside the figure is the short one.** `hall.pricePerMinute`
+("Đơn giá mỗi phút hiệu quả được duyệt") is 36 characters; sharing a baseline row
+with a 33 px figure, it broke "4.500 đ" across two lines in the mock. So the row
+carries `hall.perMinute` ("đ/phút hiệu quả") and the full sentence sits
+underneath at `fontSize.xs`. Both strings already exist; neither is reworded.
 
 **One primary action, and its refusals.** The pill reads `detail.claim`, and is
 **replaced** — not merely disabled — by the reason it cannot be pressed:
