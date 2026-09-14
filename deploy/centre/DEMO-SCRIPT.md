@@ -1,5 +1,19 @@
 # Demo acceptance script
 
+> **Superseded for the Thursday 2026-09-17 stakeholder demo by
+> [`../DEMO-RUNBOOK.md`](../DEMO-RUNBOOK.md).** That file is what the room is
+> run from: it has the clock, the person responsible for each step, the state
+> word each step must produce, and the recovery when it does not. Steps 1-10
+> and the payment runbook below are the same story without any of that, and are
+> kept as the reference for the evidence field each step produces.
+>
+> The **card procedure** at the end of this file is still the long-form
+> reference and is NOT superseded - but read the runbook's card paragraph
+> first: the measured card is **exFAT** and automounts (a drive letter on
+> Windows, `/media/<user>/PlayerOne` on Linux), so the `usbipd`/WSL/ext4 route
+> below does not apply to it.
+
+
 Read this aloud in the room. It is the short path through the same story
 [REHEARSAL.md](REHEARSAL.md) proves in depth; that file is what you rehearse
 against beforehand, this one is what you say and press during the meeting.
@@ -156,7 +170,9 @@ correctly generated and correctly unpayable until credentials exist.
 
 ## Card procedure, Windows, ext4 TF card — UNTESTED
 
-**No card reader is attached today.** Nothing below has been run end to end;
+**This procedure is for an ext4 card, and the measured card is not one.** The real TF card is exFAT, label `PlayerOne`, 240 GB, and it automounts on both Windows and Linux: no `usbipd`, no WSL, no `ro,noload` mount. Keep this section for the day an ext4 card appears; for Thursday follow [`../DEMO-RUNBOOK.md`](../DEMO-RUNBOOK.md).
+
+**No card reader was attached when this was written.** Nothing below has been run end to end;
 it is written from `usbipd`/WSL documentation and this machine's own tool
 versions (`usbipd 5.3.0`, WSL distros `Ubuntu` and `Ubuntu-22.04`, both
 present and stopped, checked with `wsl -l -v`), not from a completed transfer.
