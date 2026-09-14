@@ -191,6 +191,42 @@ expiry:
   whole platform**, not per centre, because neither login has a centre to
   narrow by. Two centres cannot both call their clerk `counter-1`.
 
+### Card intake, one command
+
+`counter.ts import` is the low-level call: it mints a fresh handover, batch and
+session id on every run, so a retry on the same directory leaves a second batch
+and a second declared session behind. For a card at the counter use
+
+```bash
+node packages/api/scripts/card-intake.mjs <session-dir> \
+  --card <tf card id> --collector <phone | external_ref | uuid> \
+  --others-in-frame yes|no --sensitive yes|no \
+  [--task <uuid|name>] [--scenario <uuid|code>] [--device <uuid|serial>] \
+  [--prepare-time <ISO>] [--api http://127.0.0.1:8080]
+```
+
+which reads the same four credentials, needs no `DATABASE_URL`, and does the
+whole counter step: copy the session off the mounted card into
+`PLAYERONE_MEDIA_ROOT` comparing every file's sha256 across the two, open or
+reuse today's batch for this card, import, submit the episode, and upload with
+cloud read-back. A `<session-dir>` already inside `PLAYERONE_MEDIA_ROOT` is
+taken as the copy and is not copied again; the card is only ever read.
+
+Task, scenario and device default to the only published task, the only
+scenario, and the device bound to this collector, resolved through
+`GET /reference/sync`. The collector may be named by phone, which is why the
+lookup is that route: `GET /api/collectors` carries no phone. The two APP-17b
+declarations are required and have no default.
+
+It prints one table on stdout — session, copy, episode, ingest outcome
+(`new`/`duplicate`), verification state, attribution, batch — and exits 0 only
+when the batch came back cloud verified. **Running it twice on the same
+directory, card, collector and day is safe**: the handover, batch and session
+ids are derived from those four, all three routes are `on conflict do nothing`,
+and the second run prints `duplicate` with no second episode, ingest or bill
+line. `counter.ts upload --batch <id>` still resumes the cloud leg alone from
+the batch id in the table.
+
 ## Running it
 
 For a real LAN centre on Windows, follow the [centre deployment runbook](../deploy/centre/README.md):
