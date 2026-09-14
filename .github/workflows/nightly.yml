@@ -38,7 +38,6 @@ jobs:
       # The runner image ships neither.
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - uses: pnpm/action-setup@v6
-        with: { version: 9 }
       - uses: actions/setup-node@v7
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
