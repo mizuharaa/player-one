@@ -22,7 +22,15 @@ const ID = {
   claim: '00000000-0000-4000-8000-00000000d006',
 };
 const REF = 'demo-collector';
-const SERIAL = 'EGO-DEMO-0001';
+/**
+ * The bound device's serial. A parameter, because a real recording's basename
+ * carries the real unit's serial and a mismatch against the handover's device
+ * raises the `SERIAL-CONFLICT` defect on every episode off that card (measured
+ * 2026-09-14: "episode says AZER76400HV, handover says EGO-DEMO-0001"). Set it
+ * to the unit that will actually be used; `seed-stakeholder.mjs` defaults it to
+ * the owner's unit.
+ */
+const SERIAL = process.env['PLAYERONE_DEMO_DEVICE_SERIAL'] ?? 'EGO-DEMO-0001';
 /** What marks each fixed row as this script's rather than somebody's real data. */
 const TASK_NAME = 'Demo housework';
 /**

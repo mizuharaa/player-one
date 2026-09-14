@@ -65,6 +65,41 @@ export function newestDump(entries) {
 const line = (level, check, message) => ({ level, check, message });
 export const pass = (check, message) => line('PASS', check, message);
 export const fail = (check, message) => line('FAIL', check, message);
+export const skip = (check, message) => line('SKIP', check, message);
+
+/**
+ * Which demo is being checked, because two of these checks are only faults on
+ * one of them.
+ *
+ * The cloud variant is fronted by Caddy and dumps into a backup volume, so a
+ * missing `/healthz` or a missing dump is a real fault. The centre-PC LAN
+ * variant has neither by design: `/healthz` belongs to `deploy/http-server.mjs`
+ * and the cloud Caddyfile, and `serve.ts` answers it 404 (measured 2026-09-14),
+ * and the LAN demo is not the deployment being backed up.
+ *
+ * Explicit `PLAYERONE_DEMO_VARIANT=lan` wins; otherwise a plain-HTTP origin is
+ * the LAN signal, which is the same signal the certificate check reads.
+ */
+export function variantOf(env) {
+  if (env.PLAYERONE_DEMO_VARIANT === 'lan' || env.PLAYERONE_DEMO_VARIANT === 'cloud') {
+    return env.PLAYERONE_DEMO_VARIANT;
+  }
+  try {
+    return new URL(env.PLAYERONE_PUBLIC_URL).protocol === 'http:' ? 'lan' : 'cloud';
+  } catch {
+    return 'cloud';
+  }
+}
+
+/**
+ * On the LAN variant a FAIL from these two checks is not a fault, so it is
+ * reported SKIP with the reason rather than PASS (which would claim something
+ * was proved) or FAIL (which would send somebody fixing nothing).
+ */
+export const softenForLan = (findings, variant, why) =>
+  variant !== 'lan'
+    ? findings
+    : findings.map((f) => (f.level === 'FAIL' ? skip(f.check, why + ' Original: ' + f.message) : f));
 
 /* ----------------------------------------------------------------- checks */
 
@@ -140,6 +175,16 @@ export async function databaseChecks(env) {
 
 /** The API answers, through whatever proxy is in front of it. */
 export async function healthCheck(env, { timeoutMs = 5000 } = {}) {
+  return softenForLan(
+    await healthOfOrigin(env, { timeoutMs }),
+    variantOf(env),
+    'LAN variant: there is no front server in front of the API, and /healthz is the ' +
+      "front server's route - serve.ts answers it 404. Check the API directly: a GET of " +
+      '/whoami must answer 401.',
+  );
+}
+
+async function healthOfOrigin(env, { timeoutMs }) {
   let origin;
   try {
     origin = new URL(env.PLAYERONE_PUBLIC_URL);
@@ -236,6 +281,15 @@ export async function storageCheck(env) {
 
 /** A dump newer than a day, in the directory the deployment dumps into. */
 export async function backupCheck(env, { now = new Date() } = {}) {
+  return softenForLan(
+    await backupOfDir(env, { now }),
+    variantOf(env),
+    'LAN variant: the centre PC is not the deployment being dumped. Take a dump anyway ' +
+      'before the demo if this database is the one being shown.',
+  );
+}
+
+async function backupOfDir(env, { now }) {
   const dir = env.PLAYERONE_BACKUP_DIR;
   if (!dir) {
     return [fail('backup', 'set PLAYERONE_BACKUP_DIR to the directory pg_dump writes into.')];
@@ -284,9 +338,11 @@ async function main() {
     console.log(finding.level + ' ' + finding.check + ': ' + finding.message);
   }
   const failed = findings.filter((f) => f.level === 'FAIL').length;
+  const skipped = findings.filter((f) => f.level === 'SKIP').length;
+  const tail = skipped === 0 ? '' : ', ' + skipped + ' skipped (' + variantOf(process.env) + ' variant)';
   console.log(failed === 0
-    ? 'PASS preflight: ' + findings.length + ' checks, none failed.'
-    : 'FAIL preflight: ' + failed + ' of ' + findings.length + ' checks failed.');
+    ? 'PASS preflight: ' + findings.length + ' checks, none failed' + tail + '.'
+    : 'FAIL preflight: ' + failed + ' of ' + findings.length + ' checks failed' + tail + '.');
   process.exitCode = failed === 0 ? 0 : 1;
 }
 

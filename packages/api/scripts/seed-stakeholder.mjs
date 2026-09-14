@@ -53,6 +53,22 @@ const FINANCE = 'fin-1';
 const REVIEWER = 'rev-1';
 const PHONE = process.env['PLAYERONE_DEMO_PHONE'] ?? '+84900000001';
 /**
+ * The serial of the unit that will actually record, because the handover's
+ * device and the recording's basename have to agree. They did not on
+ * 2026-09-14: the seed bound `EGO-DEMO-0001`, the owner's unit writes
+ * `Orbbec_Ego_AZER76400HV_*`, and every episode off that card carried the
+ * `SERIAL-CONFLICT` defect ("episode says AZER76400HV, handover says
+ * EGO-DEMO-0001"). Default is the owner's unit.
+ *
+ * A second unit is added the same way: seed a second demo database with
+ * `PLAYERONE_DEMO_DEVICE_SERIAL=<the other serial>`, or bind the second device
+ * through the console's device screens, which is what a real centre does.
+ * Note that changing this against an ALREADY-seeded database is refused rather
+ * than rewritten - `seed-demo.mjs` checks that it owns the device row by its
+ * serial - so a serial change means a fresh demo database.
+ */
+const DEVICE_SERIAL = process.env['PLAYERONE_DEMO_DEVICE_SERIAL'] ?? 'AZER76400HV';
+/**
  * The wallet as `AccountBody` wants it: ten digits starting with 0
  * (payout/routes/payout.ts). Same subscriber number as PHONE, national form.
  */
@@ -121,7 +137,11 @@ const run = (script) => {
   console.log('\n== ' + script);
   const out = spawnSync(process.execPath, [join(import.meta.dirname, script)], {
     stdio: 'inherit',
-    env: { ...process.env, PLAYERONE_DEMO_PHONE: PHONE },
+    env: {
+      ...process.env,
+      PLAYERONE_DEMO_PHONE: PHONE,
+      PLAYERONE_DEMO_DEVICE_SERIAL: DEVICE_SERIAL,
+    },
   });
   if (out.status !== 0) {
     const how = out.status ?? 'on signal ' + out.signal;
@@ -261,6 +281,8 @@ try {
       '   finance             ' + FINANCE,
       '   reviewer            ' + REVIEWER + '   (no centre, by role)',
       '   collector           ' + PHONE + '   qualified, exam pass',
+      '   device serial       ' + DEVICE_SERIAL +
+        '   (must match the recording basename, or SERIAL-CONFLICT)',
       '   collection sessions ' + sessions.n,
       '   published tasks     ' + tasks.n,
       '   ' + declared,
@@ -273,8 +295,8 @@ try {
       note,
       " The payout destination is unverified, and that is the demo's honest ending:",
       ' no ZaloPay verification credential exists, so no account can be verified',
-      ' and the database itself refuses a payment',
-      ' (payout_attempts_account_unverified).',
+      ' and the API refuses a payment by name: payout_account_unverified',
+      ' (with the database trigger payout_attempts_account_unverified behind it).',
       '=====================================================================',
     ].join('\n'),
   );
