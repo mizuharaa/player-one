@@ -32,6 +32,10 @@
       "ios": {
         "simulator": true
       }
+    },
+    "testflight": {
+      "extends": "demo",
+      "distribution": "store"
     }
   },
   "submit": {
@@ -39,6 +43,13 @@
       "ios": {
         "ascAppId": "$EAS_SUBMIT_ASC_APP_ID",
         "appleId": "$EAS_SUBMIT_APPLE_ID",
+        "appleTeamId": "$EAS_SUBMIT_APPLE_TEAM_ID"
+      }
+    },
+    "testflight": {
+      "ios": {
+        "appleId": "$EAS_SUBMIT_APPLE_ID",
+        "ascAppId": "$EAS_SUBMIT_ASC_APP_ID",
         "appleTeamId": "$EAS_SUBMIT_APPLE_TEAM_ID"
       }
     }
