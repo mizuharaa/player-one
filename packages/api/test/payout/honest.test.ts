@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApi } from '../../src/index.ts';
 import { signToken } from '../../src/credentials.ts';
+import { outcomeOf } from '../../src/payout/domain/verify.ts';
 import { appDb, closeDb, db, hasDb, truncate, useDatabase, violates } from '../../../store/test/db.ts';
 import { P1, seedPayout, seedBill, seedAccount, auditRow, insertAttemptAs, uid } from './domain/fixture.ts';
 
@@ -100,6 +101,18 @@ describe.skipIf(!hasDb())('honest payout demo (SIMULATION, test database only)',
       expect(response.body).not.toContain('5678');
       expect(response.body).not.toContain('SIMULATION-REF-X');
     }
+  });
+
+  it('IDENT.NAME_UNCONFIRMED cannot make a wallet eligible for payment', async () => {
+    const h = await setup();
+    const outcome = outcomeOf('Nguyen Van A', { kind: 'verified', verifiedName: null, mUId: 'mu-unnamed' });
+    expect(outcome.event).toBe('IDENT.NAME_UNCONFIRMED');
+    await seedAccount(h.d, h.ids, 1, { verifyStatus: outcome.status, verifiedName: outcome.verifiedName, mUId: outcome.mUId });
+    const before = await h.snapshot();
+    const res = await h.mark();
+    expect(res.statusCode, res.body).toBe(409);
+    expect(res.json().constraint).toBe('payout_attempts_account_unverified');
+    expect(await h.snapshot()).toBe(before);
   });
 
   it('wrong role cannot record a payment', async () => {
