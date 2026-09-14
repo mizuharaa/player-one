@@ -4,8 +4,8 @@ import { mkdtemp, writeFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  backupCheck, certificateCheck, databaseChecks, databaseName, hoursBetween,
-  isDemoDatabase, newestDump,
+  backupCheck, certificateCheck, databaseChecks, databaseName, healthCheck, hoursBetween,
+  isDemoDatabase, newestDump, variantOf,
 } from './demo-preflight.mjs';
 
 test('only a demo database name is accepted', () => {
@@ -68,4 +68,25 @@ test('a plain-HTTP origin has no certificate to check, and says so', async () =>
   assert.equal(out.length, 1);
   assert.equal(out[0].level, 'PASS');
   assert.match(out[0].message, /centre-PC LAN variant only/);
+});
+
+test('the variant decides whether a missing front server or dump is a fault', async () => {
+  assert.equal(variantOf({ PLAYERONE_PUBLIC_URL: 'https://console.example.vn' }), 'cloud');
+  assert.equal(variantOf({ PLAYERONE_PUBLIC_URL: 'http://192.168.1.50' }), 'lan');
+  assert.equal(variantOf({}), 'cloud');
+  // Explicit wins over the origin's protocol, both ways.
+  assert.equal(variantOf({ PLAYERONE_DEMO_VARIANT: 'lan', PLAYERONE_PUBLIC_URL: 'https://x.vn' }), 'lan');
+  assert.equal(variantOf({ PLAYERONE_DEMO_VARIANT: 'cloud', PLAYERONE_PUBLIC_URL: 'http://x' }), 'cloud');
+
+  // No backup directory: a fault on the cloud, a stated skip on the LAN.
+  const cloud = await backupCheck({ PLAYERONE_PUBLIC_URL: 'https://console.example.vn' });
+  assert.equal(cloud[0].level, 'FAIL');
+  const lan = await backupCheck({ PLAYERONE_PUBLIC_URL: 'http://192.168.1.50' });
+  assert.equal(lan[0].level, 'SKIP');
+  assert.match(lan[0].message, /LAN variant/);
+
+  // And a front server that is not there: same rule.
+  const front = await healthCheck({ PLAYERONE_PUBLIC_URL: 'http://127.0.0.1:1' }, { timeoutMs: 500 });
+  assert.equal(front[0].level, 'SKIP');
+  assert.match(front[0].message, /serve.ts answers it 404/);
 });

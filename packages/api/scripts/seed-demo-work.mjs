@@ -52,6 +52,8 @@ const ID = {
 const EPISODE = (n) => `00000000-0000-4000-8000-0000000f000${n}`;
 const TASK = (n) => `00000000-0000-4000-8000-0000000a000${n}`;
 const CARD = 'TF-DEMO-0001';
+/** Same parameter as seed-demo.mjs, and it has to hold the same value. */
+const SERIAL = process.env['PLAYERONE_DEMO_DEVICE_SERIAL'] ?? 'EGO-DEMO-0001';
 const UNIT_PRICE = '1200.0000';
 
 /**
@@ -170,13 +172,13 @@ try {
       await tx.execute(sql`
         insert into episodes (episode_id, device_serial, session_started_at, first_seen_at, last_seen_at,
                               ingest_count, collection_session_id, resolution_state, upload_path)
-        values (${episodeId}, 'EGO-DEMO-0001', ${startedAt}, now(), now(), 1, ${ID.session}, 'resolved', 'A')`);
+        values (${episodeId}, ${SERIAL}, ${startedAt}, now(), now(), 1, ${ID.session}, 'resolved', 'A')`);
       await tx.execute(sql`
         insert into episode_ingests (ingest_id, episode_id, content_fingerprint, state, source_basename,
                                      measured_duration_s, timing_source, timing_confidence, manifest_present,
                                      engine_version, host, ingested_at, record_json)
         values (${ingestId}, ${episodeId}, ${'d'.repeat(63) + String(n)}, 'ok',
-                ${`ego_EGO-DEMO-0001_${startedAt}`}, ${seconds}, 'pts_sidecar', 'exact', true,
+                ${`ego_${SERIAL}_${startedAt}`}, ${seconds}, 'pts_sidecar', 'exact', true,
                 '0.3.1', 'seed-demo-work', now(), '{}'::jsonb)`);
       await tx.execute(sql`
         update episodes set latest_ingest_id = ${ingestId} where episode_id = ${episodeId}`);

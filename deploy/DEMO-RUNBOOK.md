@@ -32,8 +32,9 @@ Say this, in these words, before anything is shown:
 > card, a real upload, a real human review, a real bill computed by the server.
 > Three things are not ready and we will point at each one when we reach it:
 > collectors cannot yet receive their own sign-in codes, so staff sign in for
-> them; reviewers see review metadata and no video, because remote footage
-> playback is not legally cleared; and no payment can be recorded, because
+> them; the remote reviewer seat is disabled until Legal signs the playback
+> architecture, so a VNG operator inside Vietnam does the review today; and no
+> payment can be recorded, because
 > ZaloPay has not confirmed the destination account. That last one is the
 > platform refusing to send money to an unconfirmed account, and it is
 > deliberate.
@@ -48,7 +49,7 @@ completed payment.
 | **narrator** | — | says the framing above and the honest lines; presses nothing |
 | **operator** | — | the console, signed in as `op-1` (administrator) + the machine token; holds the card |
 | **finance** | — | a *second* browser profile, signed in as `fin-1`; never signs in as `op-1` |
-| **reviewer** | — | a *third* browser profile, signed in as `rev-1`; no centre, no media |
+| **reviewer** | — | a *third* browser profile, signed in as `rev-1`; no centre. On the default build this seat can sign in but **cannot claim or judge** (HTTP 451) — see [0:19](#019--human-review--operator-variant-a-or-reviewer-variant-b). Keep the profile: signing in is itself worth showing. |
 | **collector-phone** | — | the Android handset with the collector app, signed in as `+84900000001` |
 
 Separation of duty is not a presentation device: `settle_generate_by_finance`
@@ -70,9 +71,25 @@ PLAYERONE_BACKUP_DIR=/data/backups \
 node deploy/demo-preflight.mjs
 ```
 
-Every line must read `PASS`. It is read-only — SELECTs, one GET, one TLS
-handshake, one HEAD, one directory stat — so it can be re-run as often as you
-like, including during the demo.
+Take the dump **before** running it, or the `backup` check has nothing to find:
+
+```bash
+docker compose exec postgres pg_dump --format=custom -U postgres \
+  -d po_demo_thursday > /data/backups/po_demo_thursday-$(date +%Y%m%d-%H%M).dump
+```
+
+Every line must read `PASS` or `SKIP`. It is read-only — SELECTs, one GET, one
+TLS handshake, one HEAD, one directory stat — so it can be re-run as often as
+you like, including during the demo.
+
+**Two variants, and it matters which.** `/healthz` is **not an API route**:
+`serve.ts` answers it 404, and the route belongs to `deploy/http-server.mjs`
+and the cloud Caddyfile, which rewrite it to `/whoami`. On the cloud variant
+the front server and a fresh dump are both required, so either one missing is a
+`FAIL`. On the centre-PC LAN variant neither exists by design, and both checks
+report **`SKIP` with the reason** instead. The variant is taken from
+`PLAYERONE_DEMO_VARIANT=lan|cloud`, or inferred from the origin — plain HTTP
+means LAN. A `SKIP` never fails the run; a `FAIL` always does.
 
 A `FAIL` on `certificate-expiry`, `healthz` or `storage` is a **cloud-loss
 decision point**, not something to fix at T-10. Go to
@@ -86,6 +103,15 @@ PLAYERONE_DEMO_MACHINE_SECRET=... PLAYERONE_DEMO_ADMIN_SECRET=... \
 PLAYERONE_DEMO_FINANCE_SECRET=... PLAYERONE_DEMO_REVIEWER_SECRET=... \
 node packages/api/scripts/seed-stakeholder.mjs
 ```
+
+Add `PLAYERONE_DEMO_DEVICE_SERIAL=<the unit that will record>` if it is not the
+default `AZER76400HV`. **This one matters on the day:** the handover's device
+and the recording's basename have to agree, and on 2026-09-14 they did not —
+the seed bound `EGO-DEMO-0001`, the unit writes
+`Orbbec_Ego_AZER76400HV_*`, and every episode off that card carried the
+`SERIAL-CONFLICT` defect. A second unit is added the same way, with its own
+serial; changing the serial against an already-seeded database is refused
+rather than rewritten, so it means a fresh demo database.
 
 It refuses any database whose name does not start `po_demo` or
 `playerone_demo`, it truncates nothing, and a second run adds nothing. Pass the
@@ -115,6 +141,34 @@ large; the import is what the room watches. In the console: **Counter → new
 handover**, pick the collector, the device and the card id, declare the
 session.
 
+The exact command, and it is exact for a reason — without `--task` it is
+refused `session_claim_missing` (measured 2026-09-14: the default is the first
+published task, "Một buổi làm việc", and the demo collector's only live claim is
+"Demo housework"):
+
+```bash
+export PLAYERONE_MACHINE_IDENTIFIER=demo-machine-1
+export PLAYERONE_MACHINE_SECRET=...      # the seed printed these four
+export PLAYERONE_OPERATOR_REF=op-1
+export PLAYERONE_OPERATOR_SECRET=...
+export PLAYERONE_MEDIA_ROOT=/data/media  # the API's own media root
+
+node packages/api/scripts/card-intake.mjs \
+  "/media/<user>/PlayerOne/Orbbec_Ego_AZER76400HV_<stamp>" \
+  --card TF-DEMO-0001 \
+  --collector +84900000001 \
+  --task "Demo housework" \
+  --others-in-frame no --sensitive no
+```
+
+`--task` takes a name or a uuid. The two declarations have no default on
+purpose: they are the APP-17b answers the collector gave at the counter, and a
+default would be filing a consent answer nobody made. `bin/counter.ts import`
+is the older path and takes **uuids** for `--task`, `--collector`, `--device`
+and `--scenario`; `card-intake.mjs` derives the handover, batch and session ids
+from the centre, the card, the collector and the day, so running it twice
+replays into the same rows instead of opening a second batch.
+
 **Expected:** a `handover_id` and a session on screen; the batch reads
 **`importing`**. Say the batch id aloud.
 
@@ -142,6 +196,46 @@ If the bucket itself is gone, go to
 [Fallback A](#fallback-a--cloud-loss-the-centre-pc-variant). **The card is
 never cleared, in any recovery, for any reason** (CLAUDE.md rule 6).
 
+### Broken recording beat — shown ONLY if announced first
+
+A card can carry a session the platform will not send to a human. The owner's
+two recordings on 2026-09-14 were exactly that: the left camera wrote a
+24-byte file, so both sessions carry `MEDIA-UNREADABLE` at severity
+`quarantine`, plus `PTS-EMPTY`, `STREAM-SKEW-HIGH` (≈3998 ms) and, until the
+seed's serial was fixed, `SERIAL-CONFLICT`. The ingest state is `quarantined`,
+the episode resolves to no session, and the review queue cannot offer it:
+`eligible` needs `resolution_state = 'resolved'` **and** a non-quarantined
+ingest, and it fails both. Verified: `GET /api/review/next` answers 204.
+
+**Announce it before it appears, in these words:** "one camera on this unit
+failed — watch what the platform does with it." Then the quarantine reads as
+the safety catch it is: the bytes were copied off the card with matching
+checksums, uploaded, re-read in storage and confirmed, and then the platform
+refused to ask a person to judge a recording with a dead camera, and refused to
+pay anybody for it. The card was never written to and never cleared; both
+recordings are still on it, whole. Unannounced, the same screen reads as a
+broken demo.
+
+**Where the operator finds them:** console **Episodes → "Episodes needing
+attention"** (`/episodes`), panel **"Blocking, this batch"**, Needs column **"A
+session to attribute it to"** — from `GET /upload-batches/:id/exceptions`. Not
+`/episodes/stuck`, which is parked/held only and answers with an empty list.
+
+**Two things the narrator must expect on that screen.** First, the browse rows
+show **blank task, collector and device columns** — a quarantined episode is
+attached to no session, so there is nothing to name there; it is not a rendering
+fault. Second, **the defect sentences are not on that screen**: the `bo.flag.*`
+sentences ("A container exists but cannot be decoded.") render in `Review.tsx`
+only, and these episodes can never reach a review screen. They live in
+`episode_defects` and in the intake command's own stderr, which is where to
+read them from if the room asks why.
+
+**The paid path needs a different recording.** Use a session with both cameras
+— the corpus session `ego_AZER76400FE_20260813_072310` went the whole way
+(partial verdict, 5.0 s payable of 8.5 s measured, a 99.9996 VND line) — or,
+better, a fresh good recording made before Thursday, because it is the owner's
+own footage.
+
 ### 0:14 — the handset · collector-phone
 
 On the phone: sign in with `+84900000001`, **Uploads → Tải lên → Chọn thư mục
@@ -154,33 +248,58 @@ real collector could not do this today.**
 
 **Recovery:** [Fallback B](#fallback-b--handset-upload-failure-the-debug-delivery-page).
 
-### 0:19 — human review · reviewer
+### 0:19 — human review · operator (variant A) or reviewer (variant B)
 
-The reviewer signs in on their own profile and opens `/review`, claims the
-episode, and decides it.
+**Read this before the rehearsal: the reviewer seat is disabled on the default
+build, and not merely deprived of video.** With `PLAYERONE_REVIEWER_MEDIA=0` a
+`role = 'reviewer'` session is refused **on claim and on verdict**, HTTP 451
+`playback_unauthorised`, detail `D11 / Part 7.3` (`review.ts`, asserted by
+`packages/api/test/reviewer.test.ts` around line 543). Measured 2026-09-14:
+`rev-1` signs in fine — at `POST /api/session` with `role: reviewer`, **not**
+`/auth/operator`, which excludes reviewers by design — then `GET
+/api/review/next` answers 204 and `POST /api/review/claim` answers 451. There is no residency field and no in-country
+marker to set — one flag decides it, and the operator role is exempt because a
+VNG counter operator is inside Vietnam at the machine holding the files.
+
+So there are two honest variants. **A is the default.**
+
+**Variant A — reviewer media off (Legal has not signed).** The **operator**
+profile performs the review: signs in with both tokens, opens `/review`, claims
+the episode and decides it. The narrator says:
+
+> The reviewer seat is disabled on this build until Legal signs the playback
+> architecture. Remote playback of raw Vietnamese footage is not authorised, and
+> the platform refuses a remote reviewer's claim outright rather than showing
+> them a verdict button they cannot honestly press. A reviewer in Shenzhen can
+> sign in and can see nothing to judge. Today a VNG operator, inside Vietnam, at
+> the machine holding the files, does the review — which is the arrangement the
+> pilot was designed for and what §7.2 moves to permanently.
+
+**Variant B — reviewer media on (an owner decision, not a workaround).**
+`PLAYERONE_REVIEWER_MEDIA=1` in the demo environment, which also requires
+`PLAYERONE_SECURE_COOKIES=1` (the service refuses to boot otherwise, so it
+cannot be done on the plain-HTTP LAN variant). The `rev-1` profile then claims
+and judges with playback, and the narrator says that remote playback is switched
+on deliberately for this demonstration. **Do not switch to B in the room, and do
+not switch to it to rescue a failed step.** It is a decision taken before
+Wednesday's rehearsal or not at all.
+
+Whichever variant, the acting reviewer opens `/review`, claims the episode, and
+decides it.
 
 **Expected:** the review reads **`pass`**, with `measured_duration_s` and
 `effective_duration_s` both on screen. Read both aloud: the gap is the answer
 to "why isn't the whole clip paid" — payable time is the *intersection* of
 stream coverage, not the union.
 
-**Honest line, said by the narrator at this step, not skipped:**
-
-> The reviewer is seeing review metadata and no video. `PLAYERONE_REVIEWER_MEDIA`
-> is `0` on this deployment, which means raw footage is never streamed to a
-> remote reviewer session. PaXini's reviewers are in Shenzhen; whether video may
-> leave Vietnam for them is a legal question that has not been answered, so the
-> switch stays off and the review lane works without it. What a reviewer cannot
-> do today is watch the clip.
-
 **Recovery:** if the queue is empty, the episode is not eligible — a quarantined
 ingest, a zero measurement, or a defect whose catalogue entry says
 `blocks_review` (two of the five real sample sessions carry `MEDIA-TRUNCATED`
 and cannot be reviewed at all). Say which, from the `/episodes` screen, and
 review the seeded episode instead. Do **not** flip
-`PLAYERONE_REVIEWER_MEDIA=1` to "make review work": it is a different
-authorisation, it requires `PLAYERONE_SECURE_COOKIES=1`, and nothing in this
-demo needs it.
+`PLAYERONE_REVIEWER_MEDIA=1` in the room to "make review work" — that is
+variant B, it is a decision taken beforehand, and variant A needs no flag at
+all.
 
 ### 0:24 — settlement and the bill · operator (NOT finance)
 
@@ -202,11 +321,18 @@ Finance opens `/settle/bills/<bill id>` and tries `POST
 /api/payout/bills/:id/mark-paid` with the bill's whole-dong total.
 
 **Expected — and this is the ending, not a failure:** the destination reads
-**`unverified`**, and the call is refused by name
-**`payout_attempts_account_unverified`**. The refusal comes from the database's
-own trigger (`payout_attempts_guard`, migration `0012`, replayed in `0016`), not
-from application logic that could drift from it. Nothing about the bill, the
-settlement or the attempt state changes.
+**`unverified`**, and the call is refused with HTTP 409 and the constraint name
+**`payout_account_unverified`**. Say that name, because it is the one the API
+sends (measured 2026-09-14:
+`{"error":"refused","constraint":"payout_account_unverified"}`). There are two
+gates with two names and the room only ever sees the first: the application
+gate `payout_account_unverified` (`payout/routes/payout.ts`) fires before the
+insert, and the database trigger `payout_attempts_account_unverified`
+(`payout_attempts_guard`, migration `0012`, replayed in `0016`) is the second
+one behind it, which is what makes the refusal impossible to drift past in
+application logic. After the refusal: `payout_attempts` has **0 rows**, the
+settlement is still `bill_generated`, the account is still `unverified`.
+Nothing moved.
 
 **The line the narrator says, verbatim:**
 
@@ -357,10 +483,11 @@ temporary choice; remove it afterwards.
 Triggered by: the queue is empty, or somebody asks the reviewer to play the
 video.
 
-There is nothing to switch on. `PLAYERONE_REVIEWER_MEDIA=0` means a reviewer
-session receives review metadata and no footage at all, and that is the
-deployed, intended state — see the honest line at
-[0:19](#019--human-review--reviewer). If the queue is empty, name the reason
+There is nothing to switch on in the room. `PLAYERONE_REVIEWER_MEDIA=0` refuses
+a reviewer's **claim and verdict** outright, HTTP 451 `playback_unauthorised` —
+not a reviewer working without pictures — and that is the deployed, intended
+state. Variant A (the operator reviews) is the answer; see
+[0:19](#019--human-review--operator-variant-a-or-reviewer-variant-b). If the queue is empty, name the reason
 from `/episodes` (quarantined ingest, zero measurement, or a `blocks_review`
 defect) and review the seeded episode instead. If the room asks to see the
 footage, the operator can play it **locally on the centre PC**, where media
