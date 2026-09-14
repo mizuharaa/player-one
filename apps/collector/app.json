@@ -38,6 +38,12 @@
         }
       ]
     ],
-    "icon": "./assets/icon.png"
+    "icon": "./assets/icon.png",
+    "extra": {
+      "eas": {
+        "projectId": "8b41f363-bb73-49cc-8111-cff31171f29b"
+      }
+    },
+    "owner": "trkang"
   }
 }
