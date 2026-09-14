@@ -44,15 +44,24 @@
   color:var(--op-on-field);scroll-margin-top:76px;font-family:var(--discover-font);overflow:clip;
 }
 
-.operator-intro{width:min(100%,900px);text-align:center;display:flex;flex-direction:column;align-items:center;margin-bottom:clamp(28px,3vw,44px)}
-.operator-partners{--cap:26px;display:flex;align-items:center;gap:18px;margin-bottom:clamp(20px,2vw,30px)}
-.operator-vng,.operator-paxini{display:flex;align-items:center;flex-shrink:0;filter:brightness(0) invert(1);opacity:.85}
+/* Vertical gaps are scale steps, not `clamp()`.
+   `rhythm.mjs` measures the computed gap between siblings against the `space`
+   scale, and a fluid margin lands between two steps at almost every width:
+   clamp(28px,3vw,44px) measured 43px at 1440, 38px at 1280 and 28px at 390,
+   and only the last of those is a number the system owns. Four gaps in this
+   file were fluid and all four were findings. */
+.operator-intro{width:min(100%,900px);text-align:center;display:flex;flex-direction:column;align-items:center;margin-bottom:40px}
+.operator-partners{--cap:26px;display:flex;align-items:center;gap:18px;margin-bottom:24px}
+/* The negative margins below crop the PNGs' transparent padding to
+   cap-top..baseline, which means the image is deliberately larger than its box.
+   `overflow:clip` is what makes that a crop rather than an overflow. */
+.operator-vng,.operator-paxini{display:flex;align-items:center;flex-shrink:0;overflow:clip;filter:brightness(0) invert(1);opacity:.85}
 .operator-vng img,.operator-paxini img{display:block;width:auto;max-width:none}
 /* The PNGs carry transparent padding; these margins crop to cap-top..baseline. */
 .operator-vng img{height:calc(var(--cap)*2.7586);margin:calc(var(--cap)*-.6983) calc(var(--cap)*-.1379) calc(var(--cap)*-1.069)}
 .operator-paxini img{height:calc(var(--cap)*2.9735);margin:calc(var(--cap)*-.8938) calc(var(--cap)*-.3805) calc(var(--cap)*-1.0796)}
 .operator-partner-cross{font:300 1.25rem/1 var(--discover-font);color:#ffffff5c}
-.discover-page .operator-intro h2{font-size:clamp(2.5rem,5.2vw,4.5rem);line-height:.96;letter-spacing:-.04em;font-weight:800;color:var(--op-on-field);margin:0 0 18px;text-wrap:balance}
+.discover-page .operator-intro h2{font-size:clamp(2.5rem,5.2vw,4.5rem);line-height:.96;letter-spacing:-.04em;font-weight:800;color:var(--op-on-field);margin:0 0 16px;text-wrap:balance}
 .operator-intro>p{font-size:clamp(1rem,1.15vw,1.125rem);line-height:1.55;color:var(--op-on-field-muted);max-width:56ch;margin:0;text-wrap:pretty}
 
 /* ── The window ─────────────────────────────────────────────────────────── */
@@ -75,10 +84,17 @@
 .operator-url-pill{justify-self:center;display:flex;align-items:baseline;gap:10px;max-width:100%;padding:6px 14px;background:#fff;border:1px solid var(--op-chrome-line);border-radius:var(--radius-pill);font-size:.75rem;color:var(--op-chrome-ink);overflow:hidden}
 .operator-url{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .operator-url-note{flex:none;font-size:.6875rem;color:var(--op-blue-ink)}
-.operator-window-toggle{display:grid;place-items:center;width:30px;height:30px;border:1px solid var(--op-chrome-line);background:#fff;border-radius:50%;color:var(--op-chrome-ink);font-size:.5625rem;cursor:pointer;transition:background 160ms}
+/* The toggle's ring is the chrome INK, not the chrome line.
+   `--op-chrome-line` is a divider colour — it is #CFD6E2 on a #EEF1F6 bar, and
+   `contrast.mjs`'s boundary probe scored this control at 2.07:1 (1440) and
+   1.46:1 (390), under the 3:1 WCAG 1.4.11 asks of a control's boundary. The
+   URL pill beside it keeps the line colour: it is a text container, not a
+   control, and nobody has to find its edge to press it. Disabled holds at .7
+   for the same reason — .45 put the ring back under the floor. */
+.operator-window-toggle{display:grid;place-items:center;width:30px;height:30px;border:2px solid var(--op-chrome-ink);background:#fff;border-radius:50%;color:var(--op-chrome-ink);font-size:.5625rem;cursor:pointer;transition:background 160ms}
 .operator-window-toggle:hover{background:var(--op-blue-wash)}
 .operator-window-toggle:active{background:var(--op-blue-wash);transform:scale(.94)}
-.operator-window-toggle:disabled{opacity:.45;cursor:default}
+.operator-window-toggle:disabled{opacity:.7;cursor:default}
 
 /* The pan and the zoom the cursor hook integrates. Both default to rest, so the
    window is correct with JavaScript idle, disabled or reduced. */
@@ -89,7 +105,7 @@
 .operator-avatar{margin-left:auto;display:grid;place-items:center;width:28px;height:28px;flex-shrink:0;border-radius:50%;background:var(--op-blue-wash);color:var(--op-blue-ink);font-size:.625rem;font-weight:650}
 
 .operator-workspace-body{display:flex;min-width:0}
-.operator-rail{width:60px;flex-shrink:0;background:#f3f6fb;border-right:1px solid #e4e9f0;display:flex;align-items:center;flex-direction:column;gap:10px;padding-top:18px;color:#5b6a84}
+.operator-rail{width:60px;flex-shrink:0;background:#f3f6fb;border-right:1px solid #e4e9f0;display:flex;align-items:center;flex-direction:column;gap:12px;padding-top:16px;color:#5b6a84}
 .operator-rail>span{display:grid;place-items:center;width:40px;height:40px;border-radius:8px}
 .operator-rail .selected{background:var(--op-blue-wash);color:var(--op-blue-ink)}
 
@@ -97,7 +113,7 @@
 /* The status pill sits on the title's baseline, not the block's centre: the
    pill used to be vertically centred against a two-line stack, which read as a
    few pixels of drift nobody could name. */
-.operator-desk-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:12px;margin-bottom:18px}
+.operator-desk-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:12px;margin-bottom:16px}
 .operator-desk-heading>div>span{display:block;color:var(--op-muted);font-size:.6875rem;margin-bottom:5px}
 .discover-page .operator-desk-heading h3{font-size:1.25rem;line-height:1.2;font-weight:680;letter-spacing:-.025em;margin:0;color:var(--op-ink)}
 .operator-status{font-size:.6875rem;font-weight:600;background:var(--op-blue-wash);padding:5px 10px;border-radius:5px;color:var(--op-blue-ink);white-space:nowrap}
@@ -112,7 +128,7 @@
    to be centred on the desk while the desk had asymmetric padding, so the icon
    and the copy sat a gutter's width left of where they looked like they should. */
 .operator-inbox{display:flex;flex-direction:column;justify-content:center;width:min(100%,560px);margin-inline:auto}
-.operator-inbox-title{display:grid;justify-items:center;gap:8px;margin-bottom:26px}
+.operator-inbox-title{display:grid;justify-items:center;gap:8px;margin-bottom:24px}
 .operator-upload-symbol{display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--op-blue-wash);color:var(--op-blue-ink)}
 .discover-page .operator-inbox-title h4{font-size:1.25rem;font-weight:650;letter-spacing:-.02em;margin:0;text-align:center}
 .operator-inbox-title>span:last-child{font-size:.75rem;color:var(--op-muted)}
@@ -124,7 +140,7 @@
 .operator-file-row strong{font-size:.9375rem;font-weight:650}
 .operator-file-row small{font-size:.6875rem;color:var(--op-muted)}
 .operator-file-row>b{margin-left:auto;display:grid;place-items:center;color:var(--op-blue-ink)}
-.operator-file-meta{display:flex;justify-content:space-between;gap:12px;margin:10px 0 26px;font-size:.6875rem;color:var(--op-muted)}
+.operator-file-meta{display:flex;justify-content:space-between;gap:12px;margin:12px 0 24px;font-size:.6875rem;color:var(--op-muted)}
 .operator-transfer{display:flex;flex-wrap:wrap;gap:9px;justify-content:space-between;font-size:.6875rem;color:var(--op-muted)}
 .operator-transfer i{height:4px;width:100%;background:var(--op-blue);border-radius:2px}
 
@@ -192,7 +208,7 @@
    blur reach past the nav, and it was painting the current step's white pill
    down to #909090 — measured, and the reason the nav's own label came out at
    5.53:1 when the colours say 15.9:1. */
-.operator-step-nav{position:relative;z-index:1;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:22px}
+.operator-step-nav{position:relative;z-index:1;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:24px}
 .operator-step-nav button{display:flex;align-items:center;gap:7px;min-height:40px;padding:8px 14px;border:1px solid #ffffff2e;background:transparent;color:var(--op-on-field-muted);border-radius:var(--radius-pill);cursor:pointer;font-size:.75rem;white-space:nowrap;transition:background 160ms,color 160ms,border-color 160ms}
 .operator-step-nav button>span{font-size:.625rem;font-variant-numeric:tabular-nums;opacity:.75}
 .operator-step-nav button:hover{background:#ffffff1a;color:var(--op-on-field)}
@@ -200,13 +216,13 @@
 .operator-step-nav button[aria-current='step']{background:var(--op-on-field);border-color:var(--op-on-field);color:#1b1226;font-weight:600}
 
 /* Daylight's caption row: three lines, no card, no tray. */
-.operator-captions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(20px,2.6vw,44px);width:min(100%,1120px);margin:clamp(30px,3.4vw,52px) 0 0;padding:0;list-style:none}
+.operator-captions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(20px,2.6vw,44px);width:min(100%,1120px);margin:40px 0 0;padding:0;list-style:none}
 .operator-captions li{display:grid;gap:6px;border-top:1px solid #ffffff2e;padding-top:14px;color:var(--op-on-field-muted)}
 .operator-captions svg{color:var(--op-on-field)}
 .operator-captions strong{font-size:.9375rem;font-weight:650;color:var(--op-on-field)}
 .operator-captions p{font-size:.8125rem;line-height:1.5;margin:0;color:var(--op-on-field-muted);text-wrap:pretty}
 
-.operator-disclosure{width:min(100%,1120px);margin:clamp(24px,2.6vw,38px) 0 0!important;padding:0!important;color:var(--op-on-field-muted);font-size:.75rem!important;line-height:1.6!important;max-width:min(100%,72ch)}
+.operator-disclosure{width:min(100%,1120px);margin:32px 0 0!important;padding:0!important;color:var(--op-on-field-muted);font-size:.75rem!important;line-height:1.6!important;max-width:min(100%,72ch)}
 .operator-hero :focus-visible{outline:2px solid #a9c6ff;outline-offset:3px}
 .operator-window :focus-visible{outline-color:var(--op-blue);outline-offset:2px}
 .operator-video-error{position:absolute;inset:0;display:grid;place-content:center;gap:8px;background:#172238;color:#fff;font-size:.75rem;text-align:center}
@@ -223,7 +239,12 @@
   .operator-partners{--cap:22px;gap:14px}
   .discover-page .operator-intro h2{font-size:clamp(2rem,9vw,3rem)}
   .operator-window{border-radius:12px}
-  .operator-window-bar{height:42px;padding-inline:10px;gap:8px}
+  /* The toggle needs clearance from the window's rounded corner. At 10px of
+     bar padding it sat 10px from a 12px radius, and the boundary probe's ring
+     caught the plum field showing through the curve: 2.29:1 against a ground
+     that is outside the window entirely. 16px of padding puts the ring back on
+     the bar, where the control's edge actually has to be found. */
+  .operator-window-bar{height:44px;padding-inline:16px;gap:8px}
   .operator-url-pill{padding:5px 10px;font-size:.6875rem}
   .operator-url-note{display:none}
   .operator-rail{display:none}
