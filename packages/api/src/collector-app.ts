@@ -6,6 +6,7 @@ import type { CollectorActor } from './actor.ts';
 import { mutate } from './audit.ts';
 import { bindCustody, constraintOf, writeAgreements } from './backoffice.ts';
 import { claimForSession } from './counter.ts';
+import { notify } from './notifications.ts';
 
 /**
  * The fourteen routes the collector app has and the platform did not.
@@ -681,6 +682,23 @@ export function registerCollectorApp(
             .values({ id: b.id, taskId: taskId.data, collectorId: me })
             .onConflictDoNothing({ target: schema.taskClaims.id })
             .returning();
+          if (row === undefined) return undefined;
+          /**
+           * The claim the five gates in `task_claims_guard` allowed through.
+           * A claim that any of them refused never reaches this line — the
+           * trigger raises and the whole transaction, notification included,
+           * is gone — which is the accepted half of "claim accepted/refused".
+           *
+           * The refused half is not built and cannot be built this way: a
+           * refusal IS a rolled-back transaction, so there is no commit to
+           * attach a row to. `docs/notifications.md` records that; the phone
+           * already gets the refusal synchronously, in the 409 below, which is
+           * the same information sooner.
+           */
+          await notify(tx, me, 'claim_accepted', { claim_id: b.id, task_id: taskId.data }, {
+            table: 'task_claims',
+            id: b.id,
+          });
           return row;
         },
       ),

@@ -75,9 +75,9 @@ column that goes wrong quietly.
 | `review_partial` | same write, `decision = 'partial'` | the session's collector | `notif.review_partial` | **yes** | high |
 | `review_failed` | same write, `REVIEW_STATE = 'fail'` | the session's collector | `notif.review_failed` | **yes** (a `0.0000` amount is still a figure) | high |
 | `bill_issued` | `bill.generate` inserts the `bills` row — `settle.ts` | the bill's collector | `notif.bill_issued` | **yes** — `total` | high |
-| `payment_recorded` | `bill.mark_paid` inserts the manual attempt, and `payout_attempt.resolve` moves an attempt to `succeeded` — `payout/routes/payout.ts` | the bill's collector | `notif.payment_recorded` | **yes** — `amount_vnd`, plus the reference | high |
+| `payment_recorded` | an attempt reaches `succeeded`: `bill.mark_paid` inserts one that way (`payout/routes/payout.ts`), and on the API rail `applyEvent` moves one there (`payout/domain/attempts.ts`) | the bill's collector | `notif.payment_recorded` | **yes** — `amount_vnd`, plus the reference | high |
 | `payout_account_verified` | `payout_account.declare` stores `verify_status = 'verified'` — `payout/routes/payout.ts` | the account's collector | `notif.payout_account_verified` | no | normal |
-| `payout_account_refused` | the same write, any other `verify_status` | the account's collector | `notif.payout_account_refused` | no | high |
+| `payout_account_refused` | the same write, any other status **that ZaloPay actually answered** — see below | the account's collector | `notif.payout_account_refused` | no | high |
 | `task_published` | `task.published` on `PATCH /api/tasks/:id` — `backoffice.ts` | **every collector whose status is not `suspended`** — see below | `notif.task_published` | **yes** — `unit_price` | normal |
 | `claim_accepted` | `collector.claim` inserts the `task_claims` row — `collector-app.ts` | the claiming collector | `notif.claim_accepted` | no | low |
 
@@ -94,9 +94,16 @@ bill_issued              { bill_id, total, currency, period_start, period_end }
 payment_recorded         { attempt_id, bill_id, amount_vnd, reference }
 payout_account_verified  { payout_account_id, method }
 payout_account_refused   { payout_account_id, method }
-task_published           { task_id, task_name, unit_price, currency }
+task_published           { task_id, task_name, unit_price }
 claim_accepted           { claim_id, task_id }
 ```
+
+`task_published` carries no currency because `tasks` has no currency column —
+it is on `bills` and on the session's price snapshot, and quoting one here would
+be inventing it. The app prints dong, as every other price surface does.
+
+`payment_recorded`'s `reference` is what finance typed on the manual rail and
+ZaloPay's `zp_trans_id` on the API rail. It is null until there is one.
 
 Ids and stored figures. No reason code, no reviewer, no note, no risk signal, no
 exception reason, no dispute text, no constraint name. The same structural rule
@@ -128,6 +135,18 @@ at one now.
 
 The honest upgrade is a `collector_scenarios` table the app writes from a
 preferences screen. That is a lane of its own and it is not this one.
+
+#### `payout_account_refused` is only sent when ZaloPay answered
+
+`verify_status` is `unverified` in two cases that are not a refusal: a pilot
+running with no payout credentials at all, where no verify call is made, and a
+transport failure, which stores `error` with no sub code. In both, ZaloPay was
+never asked about this person, and "your payout account was refused" would be a
+sentence about a question nobody put. So the notification is sent only when the
+outcome carries a risk event or a sub code — which is exactly the set where
+ZaloPay said something about the account — and `verified` is sent on its own
+status. A declaration stored `unverified` because the pilot has no credentials
+notifies nobody, which is correct: nothing happened to tell them about.
 
 ### Not built, and why
 

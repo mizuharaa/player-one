@@ -5,6 +5,7 @@ import { schema, type Db } from '@playerone/store';
 import { z } from 'zod';
 import { mutate } from './audit.ts';
 import { ADMIN_REFUSAL, adminGuard, type Actor } from './actor.ts';
+import { notifyActiveCollectors } from './notifications.ts';
 import { maskPhone } from './payout/domain/names.ts';
 
 /**
@@ -565,6 +566,38 @@ export function registerBackOffice(
             })
             .where(eq(schema.tasks.id, id))
             .returning();
+          if (row === undefined) return undefined;
+          /**
+           * New work, announced in the transaction that published it. The
+           * transition is the trigger, not the state: `held.status` was read
+           * under `for update` above, so a second PATCH that sets `published`
+           * on an already-published task announces nothing, and a task
+           * withdrawn and published again is the same announcement (the
+           * source key is the task) and not a second one.
+           *
+           * The audience is everybody who is not suspended, which is NOT what
+           * was asked for. The brief wanted the collectors whose declared
+           * scenarios match this task; no collector has ever declared a
+           * scenario to this platform — there is no column, no preference
+           * table and no interest list — so there is nothing to match on.
+           * `docs/notifications.md` records the fallback and what would narrow
+           * it. `notifyActiveCollectors` explains why suspension is the line.
+           *
+           * The price quoted is `row.unitPrice`, the stored figure as stored,
+           * which is also the figure `tasks_price_frozen` stops anybody
+           * changing once a claim exists. The currency is not a column on
+           * `tasks` yet (it is on `bills` and on the session snapshot), so it
+           * is not claimed here; the app prints dong, as every other price
+           * screen does.
+           */
+          if (b.status === 'published' && held.status !== 'published') {
+            await notifyActiveCollectors(
+              tx,
+              'task_published',
+              { task_id: id, task_name: row.name, unit_price: row.unitPrice },
+              { table: 'tasks', id },
+            );
+          }
           return row;
         },
       ),

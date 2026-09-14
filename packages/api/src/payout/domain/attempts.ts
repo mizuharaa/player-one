@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { Db } from '@playerone/store';
 import { fromDecimal, quantise } from '../../money.ts';
+import { notify } from '../../notifications.ts';
 import { emitEvent } from './events.ts';
 import { next, type AttemptEvent, type AttemptStatus, IllegalTransition } from './state.ts';
 
@@ -214,7 +215,49 @@ export async function applyEvent(
       zlp_order_id: after.zlpOrderId,
     },
   });
+  if (after.status === 'succeeded') await notifyPayment(tx, after);
   return { from: attempt.status, to: after.status, event, attempt: after };
+}
+
+/**
+ * The collector is told about a payment here, in the transaction that made the
+ * attempt terminal, and not at any one route.
+ *
+ * Three paths reach `succeeded` on the API rail and they are deliberately not
+ * three call sites: `payBill` applying ZaloPay's accepted answer, the poller
+ * applying a polled status 1, and an operator resolving a `pending_zlp` or
+ * `unknown` attempt. All three go through `applyEvent`, so one call covers
+ * them, and a fourth caller added later gets it without remembering to. The
+ * manual rail does not pass through here at all — `insertAttempt` writes
+ * `succeeded` directly — so `mark-paid` keeps its own `notify`.
+ *
+ * The figure is `amount_vnd`, the attempt's own whole-dong column, which is the
+ * money that actually moved. `zp_trans_id` is ZaloPay's reference for it, the
+ * thing a collector can quote when a transfer is not in their wallet; it is
+ * null until ZaloPay names one.
+ *
+ * The collector comes from the bill because the attempt only names the bill,
+ * and the read is inside the same transaction, so it sees the row this
+ * transaction is working on.
+ */
+async function notifyPayment(tx: Tx, attempt: AttemptRow): Promise<void> {
+  const rows = (await tx.execute(sql`
+    select collector_id from bills where id = ${attempt.billId}
+  `)) as unknown as { collector_id: string }[];
+  const collectorId = rows[0]?.collector_id;
+  if (collectorId === undefined) return;
+  await notify(
+    tx,
+    collectorId,
+    'payment_recorded',
+    {
+      attempt_id: attempt.id,
+      bill_id: attempt.billId,
+      amount_vnd: attempt.amountVnd,
+      reference: attempt.zpTransId,
+    },
+    { table: 'payout_attempts', id: attempt.id },
+  );
 }
 
 /**

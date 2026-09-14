@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from '../../audit.ts';
 import { financeGuard, type Actor, type CounterActor } from '../../actor.ts';
+import { notify } from '../../notifications.ts';
 import { attemptById, applyEvent, insertAttempt, latestAttemptOf } from '../domain/attempts.ts';
 import type { VerifyReceiver } from '../domain/client-contract.ts';
 import { assertPayoutBootInvariants, type PayoutOptions } from '../domain/config.ts';
@@ -472,6 +473,37 @@ export function registerPayout(
               },
             });
           }
+          /**
+           * Where the collector's money goes is the collector's business, so
+           * both answers are told to them — in the transaction that stored the
+           * account, which `payout_accounts_append_only` makes the only one
+           * that will ever store it.
+           *
+           * Only when ZaloPay actually answered about this account. A pilot
+           * with no payout credentials stores every declaration `unverified`
+           * with no event and no sub code, and a transport failure stores
+           * `error` the same way; neither is ZaloPay refusing anybody, and
+           * "your account was refused" would be a sentence about a question
+           * nobody asked. `event` and `subCode` are both null exactly in those
+           * two cases, so they are the test.
+           *
+           * The payload carries the account and its method and NOT the sub
+           * code, the verified name or the redirect url. Why it was refused is
+           * ZaloPay's language about a person's identity; the app sends them to
+           * the payout screen, which already knows how to say it and holds the
+           * link to fix it.
+           */
+          if (outcome.status === 'verified') {
+            await notify(tx, b.collector_id, 'payout_account_verified', { payout_account_id: b.id, method: b.method }, {
+              table: 'payout_accounts',
+              id: b.id,
+            });
+          } else if (outcome.event !== null || outcome.subCode !== null) {
+            await notify(tx, b.collector_id, 'payout_account_refused', { payout_account_id: b.id, method: b.method }, {
+              table: 'payout_accounts',
+              id: b.id,
+            });
+          }
           return row;
         },
       ),
@@ -934,6 +966,30 @@ export function registerPayout(
           if (moved.length !== lines.length) {
             throw new Error('a settlement on this bill is no longer bill_generated');
           }
+          /**
+           * The payment, told to the collector, in the transaction that
+           * recorded it. `amount_vnd` is the attempt's own column — the whole
+           * dong figure, floored in `wholeVnd`, which is the only figure that
+           * was actually paid; the bill's exact total is not it and must not be
+           * quoted here. The reference is what finance typed, so a collector
+           * can match the inbox row against their bank.
+           *
+           * Keyed on the attempt and not the bill: a first attempt that failed
+           * and a second that succeeded are two events, and only the ones that
+           * reach this code have paid anybody.
+           */
+          await notify(
+            tx,
+            bill.collectorId,
+            'payment_recorded',
+            {
+              attempt_id: attemptId,
+              bill_id: id,
+              amount_vnd: row.amountVnd,
+              reference: row.manualReference,
+            },
+            { table: 'payout_attempts', id: attemptId },
+          );
           return row;
         },
       ),
