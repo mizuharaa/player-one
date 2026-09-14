@@ -257,6 +257,7 @@ export function Income() {
             </Text>
           </View>
 
+          {status === 'awaiting' ? <Text style={caption}>{tt('payout.awaitingPayment')}</Text> : null}
           {payout.data?.payment ? <Text style={caption}>{tt('payout.paidReference').replace('{reference}', payout.data.payment.reference)}</Text> : null}
 
           {/* The promise this screen is built around, printed where a collector
