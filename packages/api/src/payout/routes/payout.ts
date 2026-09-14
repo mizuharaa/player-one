@@ -654,6 +654,7 @@ export function registerPayout(
         withheld: '0',
         net: b.total,
         status: paid ? 'paid' : held ? 'on_hold' : 'approved',
+        payment_reference: paid ? attempt?.manualReference ?? attempt?.zpTransId ?? null : null,
       });
     }
 
@@ -681,7 +682,7 @@ export function registerPayout(
         status: 'pending_review',
       });
     }
-    return { collector_id: id, currency: 'VND', periods };
+    return { collector_id: id, currency: 'VND', simulation: (options.zaloPayEnv ?? 'sandbox') === 'sandbox', periods };
   });
 
   app.get('/api/payout/collectors/:id/accounts', finance, async (req, reply) => {

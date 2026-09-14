@@ -729,6 +729,7 @@ export function registerMe(
 
     return {
       currency: 'VND',
+      simulation: options.simulation === true,
       episodes,
       periods,
       not_yet_billed: { episodes: notBilled.length, amount: unbilled },

@@ -49,7 +49,11 @@ describe.skipIf(!hasDb())('honest payout demo (SIMULATION, test database only)',
     const payout = await app.inject({ url: '/api/me/payout', headers: h.collector() });
     expect(payout.json()).toMatchObject({ status: 'verified', simulation: true, payment: { reference: 'SIMULATION-REF-X', amount_vnd: 679 } });
     const income = await app.inject({ url: '/api/me/income', headers: h.collector() });
+    expect(income.json().simulation).toBe(true);
     expect(income.json().episodes[0]).toMatchObject({ state: 'paid', payment_reference: 'SIMULATION-REF-X' });
+    const financeIncome = await app.inject({ url: `/api/payout/collectors/${h.ids.collector1}/income`, headers: h.finance });
+    expect(financeIncome.json().simulation).toBe(true);
+    expect(financeIncome.json().periods[0]).toMatchObject({ status: 'paid', payment_reference: 'SIMULATION-REF-X' });
     const finance = await app.inject({ url: `/api/payout/batches/${P1.start.toISOString()}`, headers: h.finance });
     expect(finance.json().bills[0]).toMatchObject({ paid: true, simulation: true, attempt: { manual_reference: 'SIMULATION-REF-X' } });
   });

@@ -164,8 +164,8 @@ export function Income() {
       data={income.data ?? []}
       keyOf={(entry) => entry.episodeId}
       refresh={{
-        refreshing: income.isFetching && !income.isPending,
-        onRefresh: () => void income.refetch(),
+        refreshing: (income.isFetching && !income.isPending) || (payout.isFetching && !payout.isPending),
+        onRefresh: () => void Promise.all([income.refetch(), cycle.refetch(), payout.refetch()]),
       }}
       header={
         <View ref={listTarget} collapsable={false} style={{ gap: theme.space[3] }}>
