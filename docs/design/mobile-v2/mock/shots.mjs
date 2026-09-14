@@ -18,7 +18,7 @@
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, readdir, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { extname, join, normalize } from 'node:path';
 import { chromium } from 'playwright';
@@ -54,22 +54,34 @@ const BASE = `http://127.0.0.1:${server.address().port}`;
 /** id → filename, in the order the owner reads them. */
 const BOARDS = [
   ['b01', '01-splash'], ['b02', '02-welcome'], ['b03', '03-signin'],
-  ['b04', '04-verify'], ['b05', '05-register'], ['b06', '06-agreements'],
-  ['b07', '07-training'], ['b08', '08-exam'], ['b09', '09-coach-marks'],
-  ['b10', '10-home'], ['b11', '11-task-hall'], ['b12', '12-task-detail'],
-  ['b13', '13-uploads'], ['b14', '14-income'], ['b15', '15-devices'],
-  ['b16', '16-profile'], ['b17', '17-states'], ['b18', '18-splash-reduced'],
+  ['b03b', '03b-signin-cn'], ['b04', '04-verify'], ['b05', '05-register'],
+  ['b06', '06-agreements'], ['b07', '07-training'], ['b08', '08-exam'],
+  ['b09', '09-coach-marks'], ['b10', '10-home'], ['b11', '11-task-hall'],
+  ['b12', '12-task-detail'], ['b13', '13-uploads'], ['b14', '14-income'],
+  ['b15', '15-devices'], ['b16', '16-profile'], ['b17', '17-states'],
+  ['b18', '18-home-no-cycle'], ['b19', '19-splash-reduced'],
 ];
 
-/** The two screens the owner will actually resize in front of you. */
+/** The screens the owner will actually resize in front of you. */
 const RESPONSIVE = [['b02', '02-welcome'], ['b10', '10-home']];
 const SIZES = [[360, 780], [412, 915]];
+/**
+ * 320x640 in Vietnamese is where a tab label decides whether it fits, and it
+ * is the case this lane has already been caught by once: 'Trang chinh' wrapped
+ * to two lines at 360 and made one tab taller than its four siblings. Every
+ * screen that carries the bar gets a picture here.
+ */
+const NARROW = [['b10', '10-home'], ['b11', '11-task-hall'],
+                ['b13', '13-uploads'], ['b14', '14-income']];
 
 const problems = [];
 const shots = [];
 
-await rm(OUT, { recursive: true, force: true });
+/* Empty the directory rather than removing it. On Windows a shell or an
+   indexer sitting in `shots/` makes rmdir fail with EBUSY, and the run dies
+   before it has taken a single picture. */
 await mkdir(OUT, { recursive: true });
+for (const f of await readdir(OUT)) if (f.endsWith('.png')) await unlink(OUT + f);
 
 const browser = await chromium.launch();
 
@@ -98,7 +110,7 @@ async function shot(page, id, name) {
 
 console.log('390x844');
 for (const [id, name] of BOARDS) {
-  const page = await open(390, 844, id, id === 'b18');
+  const page = await open(390, 844, id, id === 'b19');
   await shot(page, id, name);
   await page.close();
 }
@@ -110,6 +122,13 @@ for (const [w, h] of SIZES) {
     await shot(page, id, `${name}-${w}x${h}`);
     await page.close();
   }
+}
+
+console.log('320x640 (vi, the case that fails first)');
+for (const [id, name] of NARROW) {
+  const page = await open(320, 640, id);
+  await shot(page, id, `${name}-320x640`);
+  await page.close();
 }
 
 await browser.close();
