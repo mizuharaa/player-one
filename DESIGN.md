@@ -563,6 +563,30 @@ Authored motion is a closed list, and `/review` is not on it:
   page-load sequence, and nothing here has one. The demo film carries native
   `controls`, which is WCAG 2.2 SC 2.2.2 answered with the browser's own
   mechanism instead of a bespoke glyph in three languages.
+- **`/discover`'s navigation dock** — the one spring in the system, and the
+  only motion here that is not on `--ease`. It contracts to a brand-width pill
+  after downward scrolling or after the pointer leaves the top region, and
+  expands on upward scrolling, on keyboard focus inside it, while the mobile
+  menu is open, and — the reason it is a spring — *proportionally* as a pointer
+  approaches. The last 140px above the dock map onto the open fraction and
+  saturate at 28px, so the dock has finished moving before the cursor arrives
+  rather than snapping when it lands. A CSS transition cannot do that: its
+  target moves on every pointer event and each one would restart it. So
+  `use-discover-nav.ts` integrates one damped spring (stiffness 280, damping
+  24, mass 1 — ζ≈0.72, about 4% overshoot, at rest inside 440ms) and writes the
+  fraction to a custom property; the stylesheet is a function of that property
+  and the loop stops dead when the spring settles.
+
+  **The contraction is a clip, not a width.** `clip-path: inset(… round …)`
+  with a counter-`translate` keeps the pill centred, keeps its caps true
+  circles at every fraction — a `scaleX`'d pill has elliptical caps and you can
+  see it — clips hit-testing with the paint, and changes no layout at all: the
+  dock's box is the same size open and shut. Measured at 1440 and 390, both
+  directions and the focus path: 16.7ms median frame, 16.8ms worst, no long
+  task. Collapsed links are `inert`, the reveal control carries the keyboard
+  into the links it uncovers, and reduced motion takes the end state in one
+  step because the hook never starts a frame loop under it.
+
 - **`/login` does not move at all.** No GSAP import, no observer, no entrance.
   It is a form, and a form that performs before it can be typed into is a form
   that is slower than it looks.
