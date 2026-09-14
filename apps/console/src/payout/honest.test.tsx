@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -15,17 +15,18 @@ vi.mock('../components/shell/AppShell.tsx', () => ({ AppShell: ({ children }: { 
 vi.mock('../components/ui/ResponsiveSheet.tsx', () => ({ useCompactSheet: () => false, ResponsiveSheet: () => null }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-it('finance bill shows the declared destination and unverified status', async () => {
+it.each([false, true])('finance bill shows destination and payment state (paid=%s)', async (paid) => {
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
-  client.setQueryData(keys.batch('2026-08-17'), { mode: 'manual', bills: [{ id: 'demo', collector_ref: 'SIMULATION', period_start: '2026-08-17', period_end: '2026-08-24', currency: 'VND', total: '679.9992', amount_vnd: 679, lines: 1, paid: false, account: { method: 'WALLET', declared_name: 'Nguyen Van A', verified_name: null, phone_masked: 'â€¢â€¢â€¢â€¢ 5678', verify_status: 'unverified' }, attempt: null, issues: ['account_unverified'], risk: { band: 'clear', flags: [] } }] });
+  client.setQueryData(keys.batch('2026-08-17'), { mode: 'manual', bills: [{ id: 'demo', collector_ref: 'SIMULATION', period_start: '2026-08-17', period_end: '2026-08-24', currency: 'VND', total: '679.9992', amount_vnd: 679, lines: 1, paid, simulation: true, account: { method: 'WALLET', declared_name: 'Nguyen Van A', verified_name: null, phone_masked: '•••• 5678', verify_status: paid ? 'verified' : 'unverified' }, attempt: paid ? { status: 'succeeded', mode: 'manual', manual_reference: 'SIMULATION-REF-X', created_at: '2026-08-18', poll_count: 0 } : null, issues: paid ? [] : ['account_unverified'], risk: { band: 'clear', flags: [] } }] });
   client.setQueryData(keys.bill('demo'), { lines: [] });
   const node = document.createElement('div');
   const root = createRoot(node);
   try {
     await act(async () => root.render(<QueryClientProvider client={client}><BillScreen /></QueryClientProvider>));
     expect(node.textContent).toContain('Nguyen Van A');
-    expect(node.textContent).toContain('â€¢â€¢â€¢â€¢ 5678');
-    expect(node.textContent?.toLowerCase()).toContain('not verified');
+    expect(node.textContent).toContain('•••• 5678');
+    if (!paid) expect(node.textContent?.toLowerCase()).toContain('not verified');
+    else { expect(node.textContent).toContain('SIMULATION-REF-X'); expect(node.textContent).toContain('Simulation'); }
   } finally { await act(async () => root.unmount()); client.clear(); }
 });
 

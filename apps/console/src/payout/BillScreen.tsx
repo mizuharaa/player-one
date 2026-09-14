@@ -90,6 +90,8 @@ export function BillScreen() {
       ) : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <div className="space-y-6">
+            {bill.simulation ? <p role="status">{t('settle.simulation')}</p> : null}
+            {bill.paid && bill.attempt?.manual_reference ? <p>{t('settle.paidReference', { reference: bill.attempt.manual_reference })}</p> : null}
             <div>
               <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-[var(--foreground)] pb-3">
                 <h2 className="num text-[1.5rem] font-extrabold tracking-[-0.02em]">{bill.collector_ref}</h2>

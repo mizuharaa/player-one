@@ -170,6 +170,7 @@ export function Income() {
       header={
         <View ref={listTarget} collapsable={false} style={{ gap: theme.space[3] }}>
           <ScreenTitle>{tt('income.title')}</ScreenTitle>
+          {payout.data?.simulation ? <Text style={caption}>{tt('payout.simulation')}</Text> : null}
 
           {/* The cycle card. Plain ink on the card's own ground, NOT boxed:
               §0.2's one rule the reference pass overruled a draft on — a
@@ -255,6 +256,8 @@ export function Income() {
                   : `${tt('payout.zalopay')} · ${payout.data.masked}`}
             </Text>
           </View>
+
+          {payout.data?.payment ? <Text style={caption}>{tt('payout.paidReference').replace('{reference}', payout.data.payment.reference)}</Text> : null}
 
           {/* The promise this screen is built around, printed where a collector
               reads it before the rows: one episode at a time, no totalling. */}

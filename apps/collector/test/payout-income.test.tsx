@@ -18,9 +18,9 @@ vi.mock('../src/v2.tsx', () => ({
 }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-it('Income renders the declared unverified destination from its payout read', async () => {
+it.each([false, true])('Income renders a fresh payout read (paid=%s)', async (paid) => {
   const api = new MockCollectorApi();
-  vi.spyOn(api, 'payout').mockResolvedValue({ channel: 'zalopay', status: 'awaiting', masked: '•••• 5678' });
+  vi.spyOn(api, 'payout').mockResolvedValue({ channel: 'zalopay', status: paid ? 'verified' : 'awaiting', masked: '•••• 5678', ...(paid ? { simulation: true, payment: { reference: 'SIMULATION-REF-X', amount_vnd: 679 } } : {}) });
   vi.spyOn(api, 'income').mockResolvedValue([]);
   vi.spyOn(api, 'incomeCycle').mockResolvedValue(null);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -31,7 +31,8 @@ it('Income renders the declared unverified destination from its payout read', as
     await vi.waitFor(async () => {
       await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
       expect(node.textContent).toContain('•••• 5678');
-      expect(node.textContent).toContain(t('vi', 'payout.awaiting'));
+      expect(node.textContent).toContain(t('vi', paid ? 'payout.verified' : 'payout.awaiting'));
+      if (paid) { expect(node.textContent).toContain('SIMULATION-REF-X'); expect(node.textContent).toContain('Mô phỏng'); }
     });
   } finally { await act(async () => root.unmount()); client.clear(); }
 });

@@ -755,6 +755,7 @@ export interface PayoutAttempt {
 
 /** One bill of a payout batch, `shapeBill` in `payout/routes/payout.ts`. */
 export interface PayoutBill {
+  simulation?: boolean;
   id: string;
   collector_id: string;
   collector_ref: string;
