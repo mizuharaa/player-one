@@ -15,11 +15,14 @@ Resolved by `npx expo install` for Expo 57.0.20 / React Native 0.86.3:
 | expo-image | 57.0.5 |
 | expo-dev-client | 57.0.19 |
 | expo-font | 57.0.4 |
+| expo-battery | 57.0.3 |
 | react-native-safe-area-context | 5.7.0 |
 
 The Expo Babel preset installs the worklets plugin automatically. No separate
 Reanimated Babel plugin is needed. `app.json` registers expo-image and embeds
 the full Be Vietnam Pro TTFs (400–800, OFL) through expo-font for both platforms.
+expo-battery supplies the OS low-power signal required for the login poster
+fallback. It was added after the first native build and requires a fresh client.
 
 The `expo-file-system@57.0.7` patch still applies: the installed Kotlin handle
 retains and closes its ParcelFileDescriptor. Android `buildFromSource` still
