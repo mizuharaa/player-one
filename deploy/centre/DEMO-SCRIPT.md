@@ -1,5 +1,19 @@
 # Demo acceptance script
 
+> **Superseded for the Thursday 2026-09-17 stakeholder demo by
+> [`../DEMO-RUNBOOK.md`](../DEMO-RUNBOOK.md).** That file is what the room is
+> run from: it has the clock, the person responsible for each step, the state
+> word each step must produce, and the recovery when it does not. Steps 1-10
+> and the payment runbook below are the same story without any of that, and are
+> kept as the reference for the evidence field each step produces.
+>
+> The **card procedure** at the end of this file is still the long-form
+> reference and is NOT superseded - but read the runbook's card paragraph
+> first: the measured card is **exFAT** and automounts (a drive letter on
+> Windows, `/media/<user>/PlayerOne` on Linux), so the `usbipd`/WSL/ext4 route
+> below does not apply to it.
+
+
 Read this aloud in the room. It is the short path through the same story
 [REHEARSAL.md](REHEARSAL.md) proves in depth; that file is what you rehearse
 against beforehand, this one is what you say and press during the meeting.
