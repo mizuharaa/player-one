@@ -1,14 +1,24 @@
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, type EpisodeState } from '../api/types.ts';
+import { ApiError, type EpisodeState, type EpisodeUpload } from '../api/types.ts';
 import { uuid } from '../api/http.ts';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import type { NativeTheme } from '@playerone/design/native';
 import { useGuideTarget } from '../guide/Guide.tsx';
-import { Body, Button, Card, Choice, Hatch, ListScreen, Loading, Note, Progress, Row, Tag, Title, face } from '../ui.tsx';
+import { Body, Button, Card, Choice, Note, Progress, Row, Tag, Title } from '../ui.tsx';
+import {
+  EmptyState,
+  LimeTrack,
+  LoadFailed,
+  ScreenTitle,
+  Skeleton,
+  StaleStrip,
+  WarmList,
+  textStyle,
+} from '../v2.tsx';
 import type { DeliveryRecord, DeliveryState, DeliveryStep } from '@playerone/delivery';
 import { runDelivery } from '@playerone/delivery';
 import {
@@ -37,6 +47,25 @@ import type { MessageKey } from '../i18n.ts';
  * row it belongs to. It is never summarised, never translated here, and never
  * replaced with a generic sentence — a collector who was not paid for an
  * episode is owed the actual reason.
+ *
+ * ---------------------------------------------------------------------------
+ * SPEC §13 restyles this screen and changes **nothing** about what it does.
+ * This is the screen where a restyle is most likely to break something that
+ * matters, so every state word, every refusal reason and every confirmation
+ * step below is the one that was here before: `uploads.confirmTitle` /
+ * `confirmBody` / `confirmCancel` stay a deliberate two-tap commitment, the
+ * directory-picker flow is untouched, and all thirteen `uploads.reason*`
+ * strings carry over verbatim.
+ *
+ * Two things did change, and both are §13's words:
+ *
+ * - **A passed episode says nothing about minutes or money here.** Effective
+ *   minutes are the multiplicand of a payment and belong beside the amount
+ *   they produced; §14 is the one screen that shows both together. Two places
+ *   showing minutes is two places to disagree, and the one a collector quotes
+ *   in a dispute must be the one with the money next to it.
+ * - **The `uploading` pill is `discover.soft`, not lime.** The track beside it
+ *   is already this screen's one lime moment, and §0.2 spends lime once.
  */
 const stateColors = (theme: NativeTheme, state: EpisodeState): { fg: string; bg: string } => {
   switch (state) {
@@ -51,48 +80,44 @@ const stateColors = (theme: NativeTheme, state: EpisodeState): { fg: string; bg:
        * that violet said the episode had already been half judged.
        *
        * `warn`, which is the token for exactly this: a human has it and no
-       * outcome is recorded yet. It was `tech[50]`, and tech is PaXini's mark
-       * now rather than a system colour. The console reached the same place
-       * from the other side — its risk band `review` and its `pending_zlp`
-       * attempt are both `--warn-bg`/`--warn` — so an episode waiting on a
-       * reviewer and a payment waiting on a gateway read alike, which is what
-       * they are. It is not one of the three verdict hues and cannot be
-       * mistaken for one.
+       * outcome is recorded yet. The console reached the same place from the
+       * other side — its risk band `review` and its `pending_zlp` attempt are
+       * both `--warn-bg`/`--warn` — so an episode waiting on a reviewer and a
+       * payment waiting on a gateway read alike, which is what they are. It is
+       * not one of the three verdict hues and cannot be mistaken for one.
        */
       return { fg: theme.color.warn, bg: theme.color.warnBg };
     case 'uploading':
     case 'uploaded':
-      /*
-       * The ink pill: the episode has left the phone, or is leaving it. This
-       * is the console's `succeeded` and `hold` mark — `--foreground` on
-       * `--background` — and it is the one non-verdict tone in the system
-       * that reads as a settled machine state without borrowing a hue that
-       * means something about money. It was `tech[100]`.
-       */
-      return { fg: theme.color.actionInk, bg: theme.color.action };
     case 'pending_upload':
-      // Nothing has happened to it yet, so it wears the neutral.
-      return { fg: theme.color.mutedForeground, bg: theme.color.muted };
+      /*
+       * The three machine states share one neutral, and `uploading` is
+       * deliberately not louder than its siblings: §13 names `discover.soft`
+       * for all three and bars lime here by name. Nothing has been judged yet,
+       * so nothing wears a hue that means something about money. They are told
+       * apart by their word and their glyph, which is §0.2's "never colour
+       * alone" and is the half that survives colour blindness.
+       */
+      return { fg: theme.color.discover.ink, bg: theme.color.discover.soft };
   }
 };
 
 /**
- * The shape a verdict carries as well as its hue.
+ * The shape each state carries as well as its fill.
  *
  * `DESIGN.md`: "never colour alone — every verdict carries a shape too, because
  * red/green colour blindness is common and this axis decides whether somebody is
- * paid". The two pills on this screen that mean a human decided — passed and
- * failed — were separated by hue alone, on the one screen in this app where the
- * decision is about money. The console answers the same rule with `IconPass` /
- * `IconReject`; this app draws its icons out of Views and has no verdict pair,
- * so the mark is the character `Choice` and `Timeline` already tick with.
- *
- * Only a verdict gets one. `under_review` is a human holding it and `uploading`
- * is the bytes moving: neither is an outcome, and giving those a tick too is how
- * a mark stops meaning anything.
+ * paid". §13 goes further and gives all six states a glyph, because three of
+ * them now share one fill: an arrow for the bytes not yet moved and the bytes
+ * moving, a light tick for arrived, an eye for a human holding it, a heavy tick
+ * for passed and a cross for failed.
  */
-const stateMarks: Partial<Record<EpisodeState, string>> = {
-  review_passed: '✓',
+const stateMarks: Record<EpisodeState, string> = {
+  pending_upload: '↑',
+  uploading: '⬆',
+  uploaded: '✓',
+  under_review: '◉',
+  review_passed: '✔',
   review_failed: '✕',
 };
 
@@ -112,7 +137,7 @@ const deliveryColors = (theme: NativeTheme, state: DeliveryState): { fg: string;
     case 'failed':
       return theme.color.verdict.reject;
     case 'registered':
-      return { fg: theme.color.mutedForeground, bg: theme.color.muted };
+      return { fg: theme.color.discover.muted, bg: theme.color.discover.soft };
     default:
       return { fg: theme.color.actionInk, bg: theme.color.action };
   }
@@ -169,6 +194,11 @@ function reasonText(tt: (key: MessageKey) => string, reason: string): string {
   return key === undefined ? reason : tt(key);
 }
 
+/** One flat list, drawn as sections: a session heading, then its episodes. */
+type Line =
+  | { kind: 'session'; id: string; sessionId: string; scenario: string | null }
+  | { kind: 'episode'; id: string; episode: EpisodeUpload };
+
 export function Uploads() {
   const api = useApi();
   const tt = useT();
@@ -185,6 +215,9 @@ export function Uploads() {
 
   const episodes = useQuery({ queryKey: ['episodes'], queryFn: () => api.episodes() });
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: () => api.sessions(), enabled: open });
+  /** The declared sessions, for the section headings — read whether or not the
+      panel is open, because a heading is not part of the upload flow. */
+  const allSessions = useQuery({ queryKey: ['sessions', 'all'], queryFn: () => api.sessions() });
   /**
    * The delivery this phone was interrupted in the middle of, if any.
    *
@@ -245,13 +278,46 @@ export function Uploads() {
   const running = deliver.isPending;
   const resumable = held.data ?? null;
 
+  /**
+   * The rows, grouped by the session each episode belongs to.
+   *
+   * Grouping only — the order inside a session is the server's, and no episode
+   * is invented, dropped or re-attributed. An episode whose `sessionId` is
+   * empty falls into one unnamed group rather than disappearing.
+   */
+  const scenarioOf = new Map(
+    (allSessions.data ?? []).map((s) => [s.id, s.scenario as string | null]),
+  );
+  const lines: Line[] = [];
+  let current: string | null = null;
+  for (const episode of episodes.data ?? []) {
+    if (episode.sessionId !== current) {
+      current = episode.sessionId;
+      if (episode.sessionId !== '') {
+        lines.push({
+          kind: 'session',
+          id: `s:${episode.sessionId}`,
+          sessionId: episode.sessionId,
+          scenario: scenarioOf.get(episode.sessionId) ?? null,
+        });
+      }
+    }
+    lines.push({ kind: 'episode', id: episode.episodeId, episode });
+  }
+
+  const micro = { ...textStyle(theme, 'micro'), color: theme.color.discover.muted };
+
   return (
-    <ListScreen
-      title={tt('uploads.title')}
-      data={episodes.data ?? []}
-      keyOf={(episode) => episode.episodeId}
+    <WarmList
+      data={lines}
+      keyOf={(line) => line.id}
+      refresh={{
+        refreshing: episodes.isFetching && !episodes.isPending,
+        onRefresh: () => void episodes.refetch(),
+      }}
       header={
         <View ref={listTarget} collapsable={false} style={{ gap: theme.space[3] }}>
+          <ScreenTitle>{tt('uploads.title')}</ScreenTitle>
           <Note text={tt('uploads.confirmBody')} />
           <Card>
             <Title>{tt('uploads.deliverTitle')}</Title>
@@ -327,13 +393,8 @@ export function Uploads() {
                 ) : null}
 
                 {/* The two slow phases, as the measured fractions they are.
-                    They were a muted sentence each — the faintest type on the
-                    screen carrying the one thing the collector is waiting on,
-                    while a task in the hall got a bar for its claimed minutes.
-                    `Progress` is that bar, lime as `DESIGN.md` assigns it, with
-                    the count still printed beside it because a band alone is
-                    never how a quantity is read here. Both counts come from the
-                    delivery's own callbacks; neither is interpolated. */}
+                    Both counts come from the delivery's own callbacks; neither
+                    is interpolated. */}
                 {hashed !== null ? (
                   <Progress
                     label={tt('uploads.hashing')}
@@ -397,37 +458,80 @@ export function Uploads() {
               </View>
             )}
           </Card>
-          {episodes.isError ? (
-            <>
-              <Note text={tt(episodes.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} />
-              <Button
-                variant="secondary"
-                label={tt('common.retry')}
-                disabled={episodes.isFetching}
-                onPress={() => void episodes.refetch()}
-              />
-            </>
+          {/* §17: a failed refresh keeps what is on screen; a failed load does
+              not pretend there is anything to keep. */}
+          {episodes.isError && episodes.data !== undefined ? (
+            <StaleStrip text={tt('common.refreshFailed')} />
           ) : null}
-          {episodes.isPending || episodes.isFetching ? (
-            <Loading />
-          ) : null}
+          {episodes.isPending ? <Skeleton lines={4} /> : null}
         </View>
       }
       empty={
-        episodes.isError || episodes.isPending ? null : (
-          <Hatch text={tt('uploads.empty')} />
+        episodes.isPending ? null : episodes.isError ? (
+          <LoadFailed onRetry={() => void episodes.refetch()} />
+        ) : (
+          <EmptyState text={tt('uploads.empty')} />
         )
       }
-      renderItem={(episode) => {
+      renderItem={(line) => {
+        if (line.kind === 'session') {
+          return (
+            <Text style={[micro, { paddingTop: theme.space[2] }]}>
+              {`${tt('uploads.session')} · ${line.sessionId}${
+                line.scenario === null ? '' : ` · ${line.scenario}`
+              }`}
+            </Text>
+          );
+        }
+        const episode = line.episode;
         const colors = stateColors(theme, episode.state);
+        const uploading = episode.state === 'uploading';
         return (
-          <Card>
-            <Title>{episode.episodeId}</Title>
-            <Tag label={tt(`state.${episode.state}`)} fg={colors.fg} bg={colors.bg} mark={stateMarks[episode.state]} />
-            <Row label={tt('uploads.size')} value={episode.sizeBytes === null ? tt('uploads.sizeUnknown') : gb(episode.sizeBytes)} />
-            {episode.sessionId === '' ? null : (
-              <Row label={tt('uploads.session')} value={episode.sessionId} />
-            )}
+          <View
+            style={{
+              backgroundColor: theme.color.discover.surface,
+              borderRadius: theme.radius.lg,
+              padding: theme.space[4],
+              gap: theme.space[2],
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: theme.space[2],
+              }}
+            >
+              <Tag
+                label={tt(`state.${episode.state}`)}
+                fg={colors.fg}
+                bg={colors.bg}
+                mark={stateMarks[episode.state]}
+              />
+              <Text style={{ ...textStyle(theme, 'caption'), color: theme.color.discover.muted }}>
+                {episode.sizeBytes === null ? tt('uploads.sizeUnknown') : gb(episode.sizeBytes)}
+              </Text>
+            </View>
+
+            {/* THE one lime moment on this screen: the episode actually
+                transferring. The fill animates `transform: scaleX` on the
+                native driver — never `width`, which would run on the JS thread
+                and is the exact shape of the build the owner called laggy. */}
+            {uploading && step !== null ? (
+              <>
+                <LimeTrack fraction={step.totalFiles <= 0 ? 0 : step.sentFiles / step.totalFiles} />
+                <Text style={micro}>
+                  {`${tt('uploads.sending')} · ${step.sentFiles}/${step.totalFiles}`}
+                </Text>
+              </>
+            ) : null}
+
+            {episode.state === 'under_review' ? (
+              <Text style={micro}>{tt('uploads.waitingReviewer')}</Text>
+            ) : null}
+
             {/* APP-27. It stays on the row, beside the state that caused it.
                 Stacked and not a `Row`: the reason is a sentence the reviewer
                 wrote, and a label/value line squeezed "Lý do" onto two lines to
@@ -444,27 +548,29 @@ export function Uploads() {
               >
                 <Text
                   style={{
+                    ...textStyle(theme, 'micro'),
                     color: theme.color.verdict.reject.fg,
-                    fontFamily: face(theme),
-                    fontSize: theme.fontSize.xs,
                     fontWeight: theme.fontWeight.semibold,
                   }}
                 >
                   {tt('uploads.reason')}
                 </Text>
-                <Text
-                  style={{
-                    color: theme.color.foreground,
-                    fontFamily: face(theme),
-                    fontSize: theme.fontSize.sm,
-                    lineHeight: theme.fontSize.sm * 1.5,
-                  }}
-                >
+                <Text style={{ ...textStyle(theme, 'caption'), color: theme.color.discover.ink }}>
                   {episode.rejectReason}
                 </Text>
               </View>
             ) : null}
-          </Card>
+
+            {/* The two-tap commitment, from the row that needs it. It opens the
+                same panel and starts nothing on its own (APP-25). */}
+            {episode.state === 'pending_upload' && !open ? (
+              <Button
+                label={tt('uploads.upload')}
+                variant="secondary"
+                onPress={() => setOpen(true)}
+              />
+            ) : null}
+          </View>
         );
       }}
     />
