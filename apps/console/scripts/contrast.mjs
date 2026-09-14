@@ -149,7 +149,7 @@ async function inkRatio(page, selector, index = 0) {
   /* Centre it, rather than merely bring it into view: `scrollIntoViewIfNeeded`
      is happy to leave an element tucked under the sticky bar, and a clip that
      includes the bar measures the bar. */
-  await handle.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await handle.evaluate(centre);
   await page.waitForTimeout(200);
   const box = await handle.boundingBox();
   if (box === null || box.width < 2 || box.height < 2) return null;
@@ -217,6 +217,29 @@ async function inkRatio(page, selector, index = 0) {
 }
 
 /**
+ * Centre the element — unless it is fixed, in which case put the document at
+ * the top instead.
+ *
+ * `scrollIntoView` is a no-op on a `position: fixed` element, so a fixed
+ * control used to be measured at whatever scroll offset the *previous*
+ * selector happened to leave behind. That was always wrong and it was always
+ * invisible: `/discover`'s sign-in pill scored 3.23:1 against a ground of
+ * #847568 that is a blend of nothing in particular, and once the navigation
+ * dock learned to contract on downward scroll the same latent fault reported
+ * 1.00:1 — it was measuring a control that had been clipped away 700px up the
+ * page. A fixed control's ground is whatever is behind it at the top of the
+ * document, so go there and measure that.
+ */
+function centre(el) {
+  for (let node = el; node instanceof Element; node = node.parentElement)
+    if (getComputedStyle(node).position === 'fixed') {
+      window.scrollTo(0, 0);
+      return;
+    }
+  el.scrollIntoView({ block: 'center' });
+}
+
+/**
  * Technique 2. The ring is the ground the control touches; the interior is
  * every part of the control. Colours are quantised to 8 levels per channel so
  * this is a few hundred comparisons rather than a few million, which does not
@@ -224,7 +247,7 @@ async function inkRatio(page, selector, index = 0) {
  */
 async function boundaryRatio(page, selector, index = 0) {
   const handle = page.locator(selector).nth(index);
-  await handle.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await handle.evaluate(centre);
   await page.waitForTimeout(200);
   const box = await handle.boundingBox();
   if (box === null || box.width < 4 || box.height < 4) return null;

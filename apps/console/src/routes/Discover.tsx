@@ -15,6 +15,7 @@ import {IconPass,IconPartial,IconReject} from '../components/icons.tsx';
 import {PerspectiveTitle} from '../components/discover/PerspectiveTitle.tsx';
 import {ScanMotif} from '../components/discover/ScanMotif.tsx';
 import {ScrollDemo} from '../components/discover/ScrollDemo.tsx';
+import {useDiscoverNav} from '../lib/use-discover-nav.ts';
 import {useScrollScene} from '../lib/use-scroll-scene.ts';
 import {useScrollStoryCopy} from '../lib/scroll-story-copy.ts';
 import {DiscoverHelp} from '../components/discover/DiscoverHelp.tsx';
@@ -29,6 +30,7 @@ import '../styles/discover.css';
 import '../styles/discover-warm.css';
 import '../styles/discover-kinetics.css';
 import '../styles/discover-scroll-story.css';
+import '../styles/discover-nav-motion.css';
 import {useDiscoverKinetics} from '../lib/discover-kinetics.ts';
 
 const destinations=['demo','work','camera','review','questions'] as const;
@@ -119,14 +121,18 @@ function DiscoverNav({logoRef}:{logoRef:RefObject<SVGSVGElement|null>}){
   const {t}=useTranslation();const c=(key:string)=>t(`discoverV2.${key}`);
   const [open,setOpen]=useState(false);const dialog=useRef<HTMLDialogElement>(null);const button=useRef<HTMLButtonElement>(null);
   const [solid,setSolid]=useState(false);
+  const navRoot=useRef<HTMLElement>(null);const {collapsed,expand}=useDiscoverNav(navRoot,open);
   useEffect(()=>{const opening=document.querySelector('.discover-opening');if(!opening)return;const observer=new IntersectionObserver(([entry])=>setSolid(!entry?.isIntersecting));observer.observe(opening);return()=>observer.disconnect();},[]);
   useEffect(()=>{const el=dialog.current;if(!el)return;if(open&&!el.open)el.showModal();if(!open&&el.open)el.close();},[open]);
   const close=()=>{setOpen(false);button.current?.focus({preventScroll:true});};
-  return <header className="discover-nav-wrap" data-discover-nav="" data-solid={solid}>
+  return <header ref={navRoot} className="discover-nav-wrap" data-discover-nav="" data-solid={solid} data-collapsed={collapsed}>
     <nav className="discover-nav" aria-label={c('navigation')}><a href="#top" className="discover-brand" aria-label="PlayerOne"><AssemblyLogo ref={logoRef} className="discover-assembly-logo" surface="dark" aria-hidden="true"/></a>
-      <div className="discover-nav-destinations">{destinations.slice(0,4).map(destination=><a key={destination} href={`#${destination}`}>{c(destination)}</a>)}</div>
-      <div className="discover-nav-tools"><LocaleSwitch/><Link className="discover-nav-login" to="/login">{c('console')} ↗</Link></div>
-      <button ref={button} className="discover-menu-button" onClick={()=>setOpen(true)} aria-label={c('menu')} aria-expanded={open} aria-controls="discover-menu"><span/><span/></button>
+      <div className="discover-nav-expanded" id="discover-nav-expanded" inert={collapsed} aria-hidden={collapsed}>
+        <div className="discover-nav-destinations">{destinations.slice(0,4).map(destination=><a key={destination} href={`#${destination}`}>{c(destination)}</a>)}</div>
+        <div className="discover-nav-tools"><LocaleSwitch/><Link className="discover-nav-login" to="/login">{c('console')} ↗</Link></div>
+        <button ref={button} className="discover-menu-button" onClick={()=>setOpen(true)} aria-label={c('menu')} aria-expanded={open} aria-controls="discover-menu"><span/><span/></button>
+      </div>
+      <button className="discover-nav-reveal" type="button" onClick={expand} tabIndex={collapsed?0:-1} aria-hidden={!collapsed} aria-label={c('menu')} aria-expanded={!collapsed} aria-controls="discover-nav-expanded"><span/><span/></button>
     </nav>
     <dialog id="discover-menu" className="discover-menu" ref={dialog} onCancel={()=>setOpen(false)} onClose={()=>setOpen(false)} onClick={event=>{if(event.target===dialog.current)close();}} aria-label={c('navigation')}>
       <div className="discover-menu-panel"><div className="discover-menu-top"><span className="discover-brand"><AssemblyLogo className="discover-assembly-logo" title="PlayerOne"/></span><button onClick={close} aria-label={c('close')}>×</button></div>
