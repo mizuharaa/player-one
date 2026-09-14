@@ -15,16 +15,16 @@
       "distribution": "internal",
       "env": {
         "PLAYERONE_BUILD_PROFILE": "demo",
-        "EXPO_PUBLIC_API_URL": "$EXPO_PUBLIC_API_URL",
-        "PLAYERONE_VERSION_CODE": "$PLAYERONE_VERSION_CODE"
+        "EXPO_PUBLIC_API_URL": "https://demo.playerone.invalid",
+        "PLAYERONE_VERSION_CODE": "41"
       }
     },
     "store": {
       "distribution": "store",
       "env": {
         "PLAYERONE_BUILD_PROFILE": "play",
-        "EXPO_PUBLIC_API_URL": "$EXPO_PUBLIC_API_URL",
-        "PLAYERONE_VERSION_CODE": "$PLAYERONE_VERSION_CODE"
+        "EXPO_PUBLIC_API_URL": "https://api.playerone.vng.com.vn",
+        "PLAYERONE_VERSION_CODE": "41"
       }
     },
     "simulator": {
