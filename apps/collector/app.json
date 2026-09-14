@@ -7,7 +7,11 @@
     "version": "0.0.1",
     "orientation": "portrait",
     "android": {
-      "package": "vn.vng.playerone.collector"
+      "package": "vn.vng.playerone.collector",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4E4368"
+      }
     },
     "ios": {
       "bundleIdentifier": "vn.vng.playerone.collector",
@@ -33,6 +37,7 @@
           }
         }
       ]
-    ]
+    ],
+    "icon": "./assets/icon.png"
   }
 }
