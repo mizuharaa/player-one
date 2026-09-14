@@ -124,6 +124,7 @@ describe('the Caddyfile, the compose file and the env template agree', () => {
   });
 
   it("builds the API from this repository's Dockerfile, which carries ffmpeg", () => {
+    expect(dockerfile).toContain('COPY patches ./patches');
     expect(compose.services.api.build).toMatchObject({ context: '../..', dockerfile: 'Dockerfile', target: 'runtime' });
     // The API needs ffprobe itself (`risk/media.ts`, and the ingest engine it
     // imports). Pinned to bookworm's series, not to one point release.
@@ -143,6 +144,24 @@ describe('the Caddyfile, the compose file and the env template agree', () => {
 });
 
 describe('the template is the deployment this kit claims to be', () => {
+  it('uses the template environment names in every cloud script', async () => {
+    const sources = await Promise.all(['configure.mjs', 'ops.mjs', 'probe.mjs', 'common.sh', 'up.sh', 'verify.sh', 'backup.sh', 'restore.sh'].map(read));
+    for (const source of sources) {
+      for (const match of source.matchAll(/(?:\benv\.|\bsetting )([A-Z][A-Z0-9_]+)/g)) expect(env, match[1]).toHaveProperty(match[1]!);
+    }
+    for (const match of (await read('docker-compose.yml')).matchAll(/\$\{([A-Z][A-Z0-9_]+)/g)) expect(env, match[1]).toHaveProperty(match[1]!);
+    expect(new URL(env.DATABASE_URL!).pathname).toBe('/' + env.POSTGRES_DB);
+    expect(new URL(env.OWNER_DATABASE_URL!).pathname).toBe('/' + env.POSTGRES_DB);
+  });
+  it('names every binding P0-1 check in the verifier', async () => {
+    const verify = await read('verify.sh');
+    for (const acceptance of ['Source SHA', 'image-id', 'VN VM/DB/bucket', 'HTTPS redirect', 'certificate expiry',
+      'headers', '/healthz', 'authenticated console', 'machine + operator tokens', 'nested GET /episodes SPA',
+      'PUT + read-back SHA-256', 'probe cleanup', 'bucket-cors.mjs', 'e2e-loop.mjs',
+      'separately named throwaway DB', 'demo row counts unchanged', 'real Ego session', 'card-intake.mjs', 'reviewer role reaches origin']) expect(verify).toContain(acceptance);
+    expect(verify).toContain('SKIPPED');
+    expect(verify).toContain('verify-');
+  });
   it('backs up before restoring into a new database and compares all public table counts', async () => {
     const backup = await read('backup.sh'), restore = await read('restore.sh');
     expect(backup).toContain('pg_dump');
