@@ -5,10 +5,11 @@ import { ApiError } from '../api/types.ts';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { e164 } from '../phone.ts';
-import { Button, Choice, CodeBoxes, Field, LegalLine, Note, Scrim, face, topInset } from '../ui.tsx';
+import { Button, Film, Choice, CodeBoxes, Field, LegalLine, Note, Scrim, face, topInset } from '../ui.tsx';
 import { useTheme } from '../theme.tsx';
 import type { MessageKey } from '../i18n.ts';
-import poster from '../../assets/discover/pov-portrait.webp';
+import poster from '../../assets/hero/login-poster.jpg';
+import loginFilm from '../../assets/hero/login.mp4';
 import wordmark from '../../assets/discover/playerone-wordmark.png';
 
 /**
@@ -79,11 +80,7 @@ const CN = { code: '+86', label: 'signIn.country.cn' as MessageKey };
  * `pov-portrait.mp4` hold here. A different still would re-run §2's
  * measurement, not reuse this constant.
  */
-const HERO_SCRIM = [
-  [0, 0],
-  [0.55, 0.6],
-  [1, 0.88],
-] as const;
+const HERO_SCRIM = [[0, 0.2], [1, 0.55]] as const;
 
 /** §4: the resend timer counts from arrival. */
 const RESEND_SECONDS = 60;
@@ -174,6 +171,7 @@ export function SignIn({
   /** Back to the landing. Sign-in is not a route, so it cannot use the stack. */
   onBack?: () => void;
 }) {
+  const [heroVisible, setHeroVisible] = useState(true);
   const api = useApi();
   const tt = useT();
   const theme = useTheme();
@@ -312,7 +310,7 @@ export function SignIn({
         // wall. The pill gives it a ground the film cannot change.
         ...(onDark
           ? {
-              backgroundColor: theme.color.action,
+              backgroundColor: theme.collector.nightSurface,
               borderRadius: theme.radius.pill,
               paddingHorizontal: theme.space[4],
             }
@@ -321,7 +319,7 @@ export function SignIn({
     >
       <Text
         style={{
-          color: onDark ? theme.color.actionInk : theme.color.foreground,
+          color: onDark ? theme.collector.glow : theme.color.foreground,
           fontFamily: face(theme),
           fontSize: theme.fontSize.sm,
           fontWeight: theme.fontWeight.medium,
@@ -472,25 +470,16 @@ export function SignIn({
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1, backgroundColor: theme.color.background }}
     >
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, aspectRatio: 16 / 11 }}>
+        <Film source={loginFilm} poster={poster} label={tt('landing.videoLabel')} fade={theme.duration.base} active={heroVisible} />
+        <Scrim stops={HERO_SCRIM} />
+      </View>
       <ScrollView
+        onScroll={event => setHeroVisible(event.nativeEvent.contentOffset.y <= 0)} scrollEventThrottle={32}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ flexGrow: 1 }}
       >
-        {/*
-          The poster, not the film. §0.5 rule 1: this sheet scrolls when the
-          keyboard opens, so the screen gets the still — the film's own frame,
-          without the decoder. `aspectRatio` and never a width/height pair,
-          which is exactly how the previous build stretched things.
-        */}
         <View style={{ aspectRatio: 16 / 11 }}>
-          <Image
-            source={poster}
-            resizeMode="cover"
-            style={StyleSheet.absoluteFill}
-            accessibilityRole="image"
-            accessibilityLabel={tt('landing.videoLabel')}
-          />
-          <Scrim stops={HERO_SCRIM} />
           {/* The ratio is on the box, never on the `Image` — see §2's note. */}
           <View
             style={{
