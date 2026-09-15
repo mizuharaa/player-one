@@ -25,6 +25,10 @@ vi.mock('expo-file-system', () => ({
   Paths: {},
   UploadType: {},
 }));
+// Profile reaches `expo-image` through the preferences sheet, which lives with
+// Explore. It wants a React Native `__DEV__` at module load; no photograph is
+// read on this screen.
+vi.mock('expo-image', () => ({ Image: () => null }));
 vi.mock('react-native-svg', () => {
   const Stub = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
   return { default: Stub, Svg: Stub, Circle: Stub, Rect: Stub, Path: Stub, Line: Stub, G: Stub };

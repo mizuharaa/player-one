@@ -1,0 +1,221 @@
+// @vitest-environment jsdom
+import { act, type ReactNode } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { ApiProvider } from '../src/api/context.tsx';
+import { MockCollectorApi } from '../src/api/mock.ts';
+import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
+import { LocaleProvider } from '../src/locale.tsx';
+import { NavProvider } from '../src/nav.tsx';
+import { ThemeProvider } from '../src/theme.tsx';
+import { dong } from '../src/money.ts';
+
+vi.mock('react-native', async () => ({ ...(await import('react-native-web')) }));
+vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({}) }));
+vi.mock('expo-image', () => ({ Image: () => null }));
+vi.mock('react-native-svg', () => {
+  const Stub = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
+  return { default: Stub, Svg: Stub, Circle: Stub, Rect: Stub, Path: Stub, Line: Stub, G: Stub };
+});
+
+/**
+ * The keystore, in memory.
+ *
+ * Preferences and recent searches are the only things this screen persists, and
+ * asserting that they are written is the point of two of the tests below — so
+ * this stub is a real map rather than a no-op.
+ */
+const store = new Map<string, string>();
+vi.mock('expo-secure-store', () => ({
+  getItemAsync: async (key: string) => store.get(key) ?? null,
+  setItemAsync: async (key: string, value: string) => { store.set(key, value); },
+  deleteItemAsync: async (key: string) => { store.delete(key); },
+}));
+
+const { TaskHall } = await import('../src/screens/TaskHall.tsx');
+const { GuideProvider } = await import('../src/guide/Guide.tsx');
+
+declare global {
+  var IS_REACT_ACT_ENVIRONMENT: boolean;
+}
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+/** The catalogue this screen will actually print; see onboarding-cards.test.tsx. */
+const m = MESSAGES[DEFAULT_LOCALE];
+
+let host: HTMLDivElement;
+let root: Root;
+let client: QueryClient;
+let api: MockCollectorApi;
+
+const page = (): string => document.body.textContent ?? '';
+
+const controls = (): HTMLElement[] => [
+  ...document.body.querySelectorAll<HTMLElement>(
+    '[role="button"], [role="radio"], [role="switch"], [role="checkbox"], [role="search"], [role="slider"]',
+  ),
+];
+
+const named = (name: string): HTMLElement | undefined =>
+  controls().find((node) => (node.getAttribute('aria-label') ?? '').trim() === name);
+
+const input = (): HTMLInputElement => {
+  const field = document.body.querySelector<HTMLInputElement>('input');
+  if (field === null) throw new Error('no text input on screen');
+  return field;
+};
+
+/**
+ * Type into the overlay's field.
+ *
+ * The value goes in through `HTMLInputElement`'s own setter before the event is
+ * dispatched: React tracks the last value it wrote on a controlled input and
+ * skips the change when the DOM property is assigned directly, so setting
+ * `.value` alone looks like typing and changes nothing.
+ */
+async function type(text: string) {
+  const field = input();
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  await act(async () => {
+    setter?.call(field, text);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+async function mount() {
+  // Preferences and recents are keyed per collector, and `MockCollectorApi`
+  // has no profile until somebody registers — so a screen mounted without this
+  // would persist nothing and the two keystore assertions below would be
+  // asserting the mock's emptiness rather than this screen's behaviour. On a
+  // phone the profile is always there: the session was restored to reach here.
+  await api.register('Nguyễn Thị Mai', '0901234567');
+
+  await act(async () =>
+    root.render(
+      <ThemeProvider>
+        <LocaleProvider>
+          <ApiProvider value={api}>
+            <QueryClientProvider client={client}>
+              <NavProvider initial={{ name: 'taskHall' }}>
+                <GuideProvider>
+                  <TaskHall />
+                </GuideProvider>
+              </NavProvider>
+            </QueryClientProvider>
+          </ApiProvider>
+        </LocaleProvider>
+      </ThemeProvider>,
+    ),
+  );
+  // Let the task and profile queries settle, then the keystore reads they gate.
+  await act(async () => { await Promise.resolve(); });
+  await act(async () => { await Promise.resolve(); });
+}
+
+beforeEach(() => {
+  store.clear();
+  host = document.createElement('div');
+  document.body.append(host);
+  root = createRoot(host);
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  api = new MockCollectorApi();
+});
+
+afterEach(async () => {
+  await act(async () => root.unmount());
+  host.remove();
+  client.clear();
+});
+
+it('prints the rate the server sent and never a total', async () => {
+  await mount();
+
+  // The three seeded tasks, each with its own unit price, rendered from the
+  // server's own decimal string through `dong` and nothing else.
+  expect(page()).toContain(dong('1200'));
+  expect(page()).toContain(dong('1000'));
+  expect(page()).toContain(dong('1500'));
+  expect(page()).toContain(m['hall.perMinute']);
+
+  // 1200 x 3000 = 3,600,000 — the projection this screen must never show.
+  // Nor the other two tasks' products.
+  for (const projection of [dong('3600000'), dong('6000000'), dong('13500000')]) {
+    expect(page()).not.toContain(projection);
+  }
+});
+
+it('bands a task by the target the server sent, not by a session length', async () => {
+  await mount();
+
+  // 3,000 minutes is Medium and 6,000 and 9,000 are Large under the bands at
+  // 1,000 and 5,000. An earlier draft banded at 30 and 90 minutes, which put
+  // all three in the same band — so this asserts two different bands appear.
+  expect(page()).toContain(m['explore.effortMedium']);
+  expect(page()).toContain(m['explore.effortLong']);
+  expect(page()).not.toContain(m['explore.effortShort']);
+
+  // And the figure itself is the server's, printed with its own unit.
+  expect(page()).toContain(`${m['detail.target']} · 3000 ${m['detail.minutes']}`);
+});
+
+it('opens the search overlay, filters on what was typed, and remembers the term', async () => {
+  await mount();
+
+  await act(async () => named(m['explore.searchOpen'])!.click());
+  await type('kho');
+  // "Sắp xếp kho hàng" matches; the other two do not.
+  expect(page()).toContain('Sắp xếp kho hàng');
+  expect(page()).not.toContain('Nấu ăn tại nhà');
+
+  // Submitting records the term, and it comes back as a recent search.
+  await act(async () => {
+    // `keydown`, which is what `react-native-web` turns into
+    // `onSubmitEditing`; a `keypress` reaches nothing.
+    input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  });
+  await act(async () => { await Promise.resolve(); });
+  const recents = [...store.entries()].find(([key]) => key.endsWith('.recents'));
+  expect(recents?.[1]).toContain('kho');
+});
+
+it('filters on a saved preference and writes it to the keystore', async () => {
+  await mount();
+
+  await act(async () => named(m['explore.filters'])!.click());
+  await act(async () => named(m['explore.prefsTitle'])!.click());
+
+  // Pick one place to record, then save. The slider is not driven here:
+  // `onAccessibilityAction` is a native trait and `react-native-web` does not
+  // implement it, so a drag or an increment is Fable's device pass. The chip
+  // grid is a plain pressable and is the half this harness can prove.
+  await act(async () => named(m['scenario.warehouse'])!.click());
+  await act(async () => named(m['explore.savePrefs'])!.click());
+  await act(async () => { await Promise.resolve(); });
+
+  // On disk, under this collector's own key — not only in the screen's state.
+  const saved = [...store.entries()].find(([key]) => !key.endsWith('.recents'));
+  expect(saved?.[0]).toContain('playerone.collector.prefs.');
+  expect(saved?.[1]).toContain('warehouse');
+
+  // And the list obeys it: only the warehouse task survives.
+  expect(page()).toContain('Sắp xếp kho hàng');
+  expect(page()).not.toContain('Nấu ăn tại nhà');
+});
+
+it('offers a way out of a filter that matches nothing', async () => {
+  await mount();
+
+  await act(async () => named(m['explore.searchOpen'])!.click());
+  await type('zzzz');
+  expect(page()).toContain(m['hall.noMatches']);
+
+  await act(async () => named(m['common.cancel'])!.click());
+  // Back on the grid, with the same term still applied: the empty state is the
+  // bold headline, the line, and one CTA that clears what caused it.
+  expect(page()).toContain(m['explore.emptyTitle']);
+  const clear = named(m['explore.emptyAction']);
+  expect(clear).toBeDefined();
+  await act(async () => clear!.click());
+  expect(page()).toContain('Nấu ăn tại nhà');
+});

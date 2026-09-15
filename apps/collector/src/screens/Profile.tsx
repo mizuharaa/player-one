@@ -6,8 +6,12 @@ import { useNav } from '../nav.tsx';
 import { useLocale, useT } from '../locale.tsx';
 import { useSignOut } from '../session.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Loading, NavRow, Note, bottomInset, face, topInset, useTabBarReserve } from '../ui.tsx';
+import { Body, Button, Loading, NavRow, Note, face, topInset, useTabBarReserve } from '../ui.tsx';
 import { AvatarMark, initialsOf } from '../ui/illustrations/index.tsx';
+// The sheet shell and the preferences sheet live with Explore, which has three
+// sheets to this screen's two. Fable: both want to move into Astra's `ui.tsx`
+// once the kit grows a sheet — they are the shared parts of this lane.
+import { PreferencesSheet, Sheet, usePreferences } from './TaskHall.tsx';
 import type { MessageKey } from '../i18n.ts';
 import { LOCALES, type Locale } from '../i18n.ts';
 import app from '../../app.json';
@@ -45,10 +49,19 @@ export function Profile() {
   const reserve = useTabBarReserve();
   const { fontScale } = useWindowDimensions();
   /** Which sheet is open, or the row that has no screen yet. */
-  const [sheet, setSheet] = useState<'logOut' | 'language' | null>(null);
+  const [sheet, setSheet] = useState<'logOut' | 'language' | 'prefs' | null>(null);
   const [pending, setPending] = useState<MessageKey | null>(null);
+  const { prefs, save: savePrefs } = usePreferences();
 
   const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
+  /**
+   * The task list, for the preferences sheet's histogram.
+   *
+   * Same query key as Explore's, so on a phone that has already been to
+   * Explore this is a cache read and no request at all — and the histogram is
+   * drawn from the rows the server actually sent either way.
+   */
+  const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => api.tasks() });
   const name = profile.data?.name ?? '';
 
   /** A Tier B row: answer in words rather than navigate nowhere. */
@@ -108,7 +121,7 @@ export function Profile() {
         {pending === null ? null : <Note text={`${tt(pending)} — ${tt('profile.notInBuild')}`} />}
 
         {group('profile.account', [
-          { key: 'explore.prefsTitle', sub: 'profile.preferencesSub', onPress: notYet('explore.prefsTitle') },
+          { key: 'explore.prefsTitle', sub: 'profile.preferencesSub', onPress: () => setSheet('prefs') },
           { key: 'devices.title', sub: 'profile.devicesSub', onPress: () => nav.push({ name: 'devices' }) },
         ])}
         {group('profile.settings', [
@@ -151,6 +164,17 @@ export function Profile() {
       <Sheet open={sheet === 'language'} onClose={() => setSheet(null)} title={tt('profile.language')}>
         <LanguageChoices onPicked={() => setSheet(null)} stacked={fontScale > 1.2} />
       </Sheet>
+
+      {/* The same sheet Explore opens, over the same per-account store, so the
+          two screens cannot disagree about what the collector chose. Explore
+          re-reads the store when it mounts. */}
+      <PreferencesSheet
+        open={sheet === 'prefs'}
+        value={prefs}
+        tasks={tasks.data ?? []}
+        onClose={() => setSheet(null)}
+        onSave={(next) => { savePrefs(next); setSheet(null); }}
+      />
     </View>
   );
 }
@@ -260,76 +284,5 @@ function LanguageChoices({ onPicked, stacked }: { onPicked: () => void; stacked:
         );
       })}
     </View>
-  );
-}
-
-/**
- * A bottom sheet, copying `18-sheets-and-toggles` / klarna-333: drag affordance,
- * a heading, the content, and a scrim that dismisses.
- *
- * `Modal` from react-native core rather than a gesture-driven sheet: it is the
- * only thing in core that actually takes the Android back button and the iOS
- * accessibility focus trap with it, and drag-to-dismiss is motion work that
- * belongs in Astra's kit rather than duplicated per screen.
- *
- * ponytail: `animationType="none"`. The kit owns motion (work order §3) and a
- * sheet that springs in two different ways on two screens is worse than one
- * that appears. It also means the sheet leaves the tree the moment it closes
- * rather than waiting on an animation event, which is what a reader and a
- * test both need.
- */
-function Sheet({
-  open,
-  onClose,
-  title,
-  children,
-}: {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  children: ReactNode;
-}) {
-  const theme = useTheme();
-  const c = theme.collector;
-  const tt = useT();
-  return (
-    <Modal visible={open} transparent animationType="none" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(20,17,38,0.55)' }}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={tt('common.close')}
-          onPress={onClose}
-          style={{ flex: 1 }}
-        />
-        <View
-          style={{
-            backgroundColor: c.surface,
-            borderTopLeftRadius: c.radius.card * 1.5,
-            borderTopRightRadius: c.radius.card * 1.5,
-            padding: c.gutter,
-            paddingBottom: c.gutter + bottomInset(theme.space[6]),
-            gap: theme.space[3],
-          }}
-        >
-          <View
-            importantForAccessibility="no"
-            style={{
-              alignSelf: 'center',
-              width: theme.space[10],
-              height: theme.space[1],
-              borderRadius: c.radius.pill,
-              backgroundColor: c.line,
-            }}
-          />
-          <Text
-            accessibilityRole="header"
-            style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme) }}
-          >
-            {title}
-          </Text>
-          {children}
-        </View>
-      </View>
-    </Modal>
   );
 }

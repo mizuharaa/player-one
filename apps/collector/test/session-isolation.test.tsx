@@ -31,6 +31,16 @@ vi.mock('../src/api/token-store.ts', () => ({ secureTokenStore: {} }));
 // and `expo-modules-core` wants a React Native `__DEV__` the moment it loads. Same
 // treatment as the keystore above: the shell mounts, the picker is never called.
 vi.mock('expo-file-system', () => ({ Directory: class {}, File: class {}, FileMode: {}, UploadType: {}, Paths: {} }));
+// The v3 Explore screen's task cards are `expo-image`, and Profile's avatar is
+// `react-native-svg`. Both reach `expo-modules-core` at module load and want
+// the same `__DEV__` as the file system above, and `App.tsx` imports both
+// screens through `SCREENS` — so the shell cannot mount without them. Nothing
+// in this file looks at a photograph.
+vi.mock('expo-image', () => ({ Image: () => null }));
+vi.mock('react-native-svg', () => {
+  const Stub = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
+  return { default: Stub, Svg: Stub, Circle: Stub, Rect: Stub, Path: Stub, Line: Stub, G: Stub };
+});
 // Only the two primitives this test reads are replaced; the rest of `ui.tsx`
 // stays real, because the shell now renders the tab bar and the guide through it.
 vi.mock('../src/ui.tsx', async (original) => ({
