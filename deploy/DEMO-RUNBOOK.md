@@ -500,10 +500,10 @@ not just the route. The seeded bill owns `01/09–14/09`, so a bare call with no
 period, or one whose dates overlap the seeded bill's own, is blocked by
 `bills_collector_period_key` and answers `created: 0` with the new money
 pushed into `deferred_to_next_period` instead — the room sees no new bill.
-Run it with the period the seed prints, `2026-09-15` → `2026-09-17`:
+Run it with the period the seed prints, `2026-09-15` → `2026-09-18`:
 
 ```bash
-POST /api/settle/bills {"period_start":"2026-09-15","period_end":"2026-09-17"}
+POST /api/settle/bills {"period_start":"2026-09-15","period_end":"2026-09-18"}
 ```
 
 **Expected:** the settlement reads **`pending_settlement`** and then
@@ -515,7 +515,7 @@ signed in on this screen — swap to the operator profile; that refusal is the
 separation of duty working. A bill worth under one dong is refused as
 `payout_attempts_amount_positive_check`; use the seeded bill. A `created: 0`
 with `deferred_to_next_period` means the period given overlaps the seeded
-bill's `01/09–14/09` — use the printed `2026-09-15` → `2026-09-17` period
+bill's `01/09–14/09` — use the printed `2026-09-15` → `2026-09-18` period
 instead.
 
 ### 0:28 — the payment, and the honest ending · finance
