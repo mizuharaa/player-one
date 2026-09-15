@@ -290,6 +290,30 @@ DATABASE_URL=...  PLAYERONE_TOKEN_SECRET=... pnpm serve
 The API serves JSON and media only. The back office is the SPA; see
 [`The back-office console`](#the-back-office-console) below.
 
+### Anybody may sign up; only a centre may let them work
+
+Since migration `0034` a phone number that no `collectors` row carries still
+gets a sign-in code, and presenting it creates the collector — on `verify`, not
+on `request-code`, so an unauthenticated caller cannot fill the table with
+numbers nobody answers. The code waits in `sign_up_codes` until then. Both
+routes answer exactly what they always did: 204 for every number that parses,
+and one 401 for a wrong, expired or spent code. The new collector is
+`status = 'prospect'` with `external_ref = app:<id>`, no name, and
+`GET /api/me/profile` reports `onboarded: false` for them and for nobody else.
+They can read the task board — `/api/me/tasks` and one task's detail — and they
+cannot take work: `POST /api/me/tasks/:id/claims` answers 409
+**`collector_not_onboarded`**, which is `task_claims_onboarding_gate` in the
+database translated for the phone. Declaring a session and registering an
+upload were already refused, by APP-15's `device_not_bound` and by
+`upload_unknown_session`, and no gate was added for them. An operator lifts the
+prospect with `PATCH /api/collectors/:id` the way they qualify anybody else; a
+prospect shows as one in `GET /api/collectors`, so "who is waiting for me at
+the counter" stays answerable. The code still reaches the phone however this
+deployment is configured to send it, which with no ZNS credentials means the
+server log (`NOT SENT`, above) — and the `PLAYERONE_DEMO_PHONE` echo is
+deliberately not widened to a sign-up, so a demo of this path reads the code
+off the log.
+
 
 ### Demo sign-in
 
