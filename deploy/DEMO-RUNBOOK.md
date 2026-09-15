@@ -466,11 +466,11 @@ Finance opens `/settle/bills/<bill id>` and tries `POST
 
 **Expected — and this is the ending, not a failure:** the destination reads
 **`unverified`**, and the call is refused with HTTP 409 and the constraint name
-**`payout_account_unverified`**. Say that name, because it is the one the API
+**`payout_attempts_account_unverified`**. Say that name, because it is the one the API
 sends (measured 2026-09-14:
-`{"error":"refused","constraint":"payout_account_unverified"}`). There are two
+`{"error":"refused","constraint":"payout_attempts_account_unverified"}`). There are two
 gates with two names and the room only ever sees the first: the application
-gate `payout_account_unverified` (`payout/routes/payout.ts`) fires before the
+gate `payout_attempts_account_unverified` (`payout/routes/payout.ts`) fires before the
 insert, and the database trigger `payout_attempts_account_unverified`
 (`payout_attempts_guard`, migration `0012`, replayed in `0016`) is the second
 one behind it, which is what makes the refusal impossible to drift past in

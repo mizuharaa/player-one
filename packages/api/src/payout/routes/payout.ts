@@ -4,7 +4,6 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from '../../audit.ts';
-import { financeGuard, type Actor, type CounterActor } from '../../actor.ts';
 import { notify } from '../../notifications.ts';
 import { financeGuard, financeReadGuard, type Actor, type CounterActor } from '../../actor.ts';
 import { attemptById, applyEvent, insertAttempt, latestAttemptOf } from '../domain/attempts.ts';
