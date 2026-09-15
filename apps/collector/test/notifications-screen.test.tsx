@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { NOTIFICATION_PREVIEW } from '../web/notification-preview.ts';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -39,13 +40,13 @@ const named = (name: string): HTMLElement | undefined =>
     (node) => (node.getAttribute('aria-label') ?? '').trim() === name,
   );
 
-async function mount() {
+async function mount(preview = true) {
   await act(async () =>
     root.render(
       <ThemeProvider>
         <LocaleProvider>
           <NavProvider initial={{ name: 'home' }}>
-            <Notifications />
+            <Notifications previewItems={preview ? NOTIFICATION_PREVIEW : undefined} />
           </NavProvider>
         </LocaleProvider>
       </ThemeProvider>,
@@ -115,4 +116,26 @@ it('states no amount on a payment notification', async () => {
   // A figure on a payment message would be money this app invented; every
   // amount comes from the server and lives on Income.
   expect(page()).not.toMatch(/\d[\d.]*\s*₫/);
+});
+
+vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
+vi.mock('react-native-safe-area-context', async () => ({ initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null) }));
+
+it('keeps sample events and enabled channels out of the live screen', async () => {
+  await mount(false);
+  expect(page()).toContain(m['notif.emptyTitle']);
+  expect(named(m['notif.markAllRead'])).toBeUndefined();
+  for (const row of NOTIFICATION_PREVIEW) expect(page()).not.toContain(row.title);
+  await act(async () => named(m['notif.settings'])!.click());
+  const push = named(`${m['notif.groupReview']} — ${m['notif.push']}`)!;
+  expect(push.getAttribute('aria-disabled')).toBe('true');
+  await act(async () => push.click());
+  expect(push.getAttribute('aria-checked')).toBe('false');
+});
+
+it('labels sample inbox and settings as a simulation', async () => {
+  await mount();
+  expect(page()).toContain(m['common.simulation']);
+  await act(async () => named(m['notif.settings'])!.click());
+  expect(page()).toContain(m['common.simulation']);
 });

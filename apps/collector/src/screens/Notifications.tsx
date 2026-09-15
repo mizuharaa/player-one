@@ -6,25 +6,8 @@ import { Body, Button, Screen, face } from '../ui.tsx';
 import { EmptySessions } from '../ui/illustrations/index.tsx';
 import type { MessageKey } from '../i18n.ts';
 
-/**
- * Work order §4.11 — the inbox and its settings.
- *
- * The list copies klarna-288 and wise-613: a circled category glyph, a title,
- * one line of body, the date on the right, grouped under Today and Earlier,
- * with an unread dot on the rows that have not been read. The settings
- * sub-screen copies wise-670..673: one explanatory sentence per group, then
- * the Email and Push toggles for that group.
- *
- * **There is no push transport, and this screen does not pretend there is.**
- * The work order's "Not built" list names it. `useNotifications` below is a
- * typed fixture behind the shape the real hook will have, so the screen can be
- * designed, shot and reviewed now and swapped to a query later without a
- * single change above the hook. The settings toggles are the same: they are
- * local state over that fixture, and the screen says plainly that nothing is
- * sent yet rather than implying a preference was saved on a server.
- */
-
-/* ── The data this screen needs, and the fixture standing in for it ─────── */
+/** Live inbox is empty until a transport exists. Only the browser preview
+ * supplies sample events; inbox and settings visibly label that simulation. */
 
 /** What a notification is about. Decides the glyph, never the wording. */
 export type NotificationKind = 'review' | 'payment' | 'session' | 'device';
@@ -40,71 +23,6 @@ export interface CollectorNotification {
   read: boolean;
 }
 
-/**
- * Four rows that exercise every state this screen has: unread and read, all
- * four kinds, and both date groups.
- *
- * Fixture numbers are real shapes rather than lorem (§2's anti-slop law), and
- * no row states an amount — a payment notification that named a figure would
- * be a money number this app invented.
- */
-const FIXTURE: readonly CollectorNotification[] = [
-  {
-    id: 'n-1',
-    kind: 'review',
-    title: 'Một video đã được duyệt',
-    body: 'Buổi ghi ngày 12/09 đã qua duyệt. Số phút hiệu quả nằm trong mục Thu nhập.',
-    at: new Date().toISOString(),
-    read: false,
-  },
-  {
-    id: 'n-2',
-    kind: 'session',
-    title: 'Nhớ mang thẻ nhớ tới quầy',
-    body: 'Buổi ghi hôm nay đã xong. Mang thẻ tới quầy để nhân viên nhận.',
-    at: new Date().toISOString(),
-    read: false,
-  },
-  {
-    id: 'n-3',
-    kind: 'payment',
-    title: 'Kỳ thanh toán đã chốt',
-    body: 'Kỳ 01/09 – 07/09 đã chốt. Xem chi tiết trong mục Thu nhập.',
-    at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
-    read: true,
-  },
-  {
-    id: 'n-4',
-    kind: 'device',
-    title: 'Thiết bị cần sạc',
-    body: 'Máy EGO1-PILOT-0007 báo pin yếu ở lần bàn giao trước.',
-    at: new Date(Date.now() - 6 * 86_400_000).toISOString(),
-    read: true,
-  },
-];
-
-/**
- * The inbox.
- *
- * ponytail: a fixture behind a hook, not a fake API client. The seam that has
- * to be right is this function's return type — `{ items, unread, markAllRead }`
- * — and that is what the notifications lane replaces with a `useQuery`. Writing
- * a second mock transport for a channel that does not exist yet would be
- * building the thing the work order says is not built.
- */
-export function useNotifications(): {
-  items: readonly CollectorNotification[];
-  unread: number;
-  markAllRead: () => void;
-} {
-  const [items, setItems] = useState(FIXTURE);
-  return {
-    items,
-    unread: items.filter((item) => !item.read).length,
-    markAllRead: () => setItems((rows) => rows.map((row) => ({ ...row, read: true }))),
-  };
-}
-
 /* ── The screen ─────────────────────────────────────────────────────────── */
 
 const KIND_GLYPH: Record<NotificationKind, string> = {
@@ -114,14 +32,17 @@ const KIND_GLYPH: Record<NotificationKind, string> = {
   device: '⌁',
 };
 
-export function Notifications() {
+export function Notifications({ previewItems }: { previewItems?: readonly CollectorNotification[] } = {}) {
   const tt = useT();
   const theme = useTheme();
   const c = theme.collector;
-  const { items, unread, markAllRead } = useNotifications();
+  const simulation = previewItems !== undefined;
+  const [items, setItems] = useState<readonly CollectorNotification[]>(previewItems ?? []);
+  const unread = items.filter(item => !item.read).length;
+  const markAllRead = () => setItems(rows => rows.map(row => ({ ...row, read: true })));
   const [settings, setSettings] = useState(false);
 
-  if (settings) return <NotificationSettings onBack={() => setSettings(false)} />;
+  if (settings) return <NotificationSettings simulation={simulation} onBack={() => setSettings(false)} />;
 
   const today = new Date().toDateString();
   const groups: readonly { key: MessageKey; rows: readonly CollectorNotification[] }[] = [
@@ -146,6 +67,7 @@ export function Notifications() {
         </Pressable>
       }
     >
+      {simulation ? <Body>{tt('common.simulation')}</Body> : null}
       <Body muted>{tt('notif.noPush')}</Body>
 
       {items.length === 0 ? (
@@ -267,12 +189,12 @@ const GROUPS: readonly { key: MessageKey; why: MessageKey }[] = [
 
 type Channels = { email: boolean; push: boolean };
 
-function NotificationSettings({ onBack }: { onBack: () => void }) {
+function NotificationSettings({ onBack, simulation }: { onBack: () => void; simulation: boolean }) {
   const tt = useT();
   const theme = useTheme();
   const c = theme.collector;
   const [state, setState] = useState<Record<string, Channels>>(() =>
-    Object.fromEntries(GROUPS.map((group) => [group.key, { email: true, push: false }])),
+    Object.fromEntries(GROUPS.map((group) => [group.key, { email: false, push: false }])),
   );
 
   const set = (key: string, channel: keyof Channels, value: boolean) =>
@@ -281,9 +203,10 @@ function NotificationSettings({ onBack }: { onBack: () => void }) {
   return (
     <Screen title={tt('notif.settings')} onBack={onBack}>
       {/* The honest sentence first: nothing here reaches a server yet. */}
+      {simulation ? <Body>{tt('common.simulation')}</Body> : null}
       <Body muted>{tt('notif.settingsIntro')}</Body>
       {GROUPS.map(({ key, why }) => {
-        const channels = state[key] ?? { email: true, push: false };
+        const channels = state[key] ?? { email: false, push: false };
         return (
           <View key={key} style={{ gap: theme.space[2], marginTop: c.sectionGap }}>
             <Text
@@ -293,13 +216,13 @@ function NotificationSettings({ onBack }: { onBack: () => void }) {
               {tt(key)}
             </Text>
             <Body muted>{tt(why)}</Body>
-            <Toggle
+            <Toggle disabled={!simulation}
               label={`${tt(key)} — ${tt('notif.email')}`}
               printed={tt('notif.email')}
               value={channels.email}
               onChange={(v) => set(key, 'email', v)}
             />
-            <Toggle
+            <Toggle disabled={!simulation}
               label={`${tt(key)} — ${tt('notif.push')}`}
               printed={tt('notif.push')}
               value={channels.push}
@@ -324,11 +247,13 @@ function Toggle({
   printed,
   value,
   onChange,
+  disabled,
 }: {
   label: string;
   printed: string;
   value: boolean;
   onChange: (v: boolean) => void;
+  disabled: boolean;
 }) {
   const theme = useTheme();
   const c = theme.collector;
@@ -336,7 +261,8 @@ function Toggle({
     <Pressable
       accessibilityRole="switch"
       accessibilityLabel={label}
-      accessibilityState={{ checked: value }}
+      accessibilityState={{ checked: value, disabled }}
+      disabled={disabled}
       // React Native forwards `aria-checked` on its own since 0.71, and
       // `react-native-web` needs it: it does not map a switch's
       // `accessibilityState.checked` onto the DOM attribute.
