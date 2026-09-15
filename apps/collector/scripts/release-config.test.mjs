@@ -96,6 +96,12 @@ test('every installable profile in eas.json names a non-placeholder origin', () 
 });
 
 test('the TestFlight profile is a store-distributed demo at version 44', () => {
+  // The three installable profiles ship the same build and must carry the
+  // same Play/App Store version code, or one of them ships stale.
+  for (const name of ['demo', 'store', 'testflight']) {
+    assert.equal(profileEnv(name).PLAYERONE_VERSION_CODE, '44', `${name} must be at version 44`);
+  }
+
   assert.equal(eas.build.testflight.distribution, 'store');
   assert.equal(eas.build.testflight.pnpm, eas.build.demo.pnpm);
   const env = profileEnv('testflight');
