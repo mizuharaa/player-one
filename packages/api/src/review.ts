@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from './audit.ts';
+import { notify } from './notifications.ts';
 import { type Actor } from './actor.ts';
 import { REFUSALS, constraintOf } from './backoffice.ts';
 import {
@@ -1685,6 +1686,14 @@ export function registerReview(
         taskClaimId: schema.collectionSessions.taskClaimId,
         unitPrice: schema.collectionSessions.unitPrice,
         currency: schema.collectionSessions.currency,
+        /**
+         * Who gets told. The session is already the authority on whose
+         * recording this is — it is where the price and the claim come from —
+         * so the collector is read from the same row rather than looked up
+         * again from the episode, which could answer about a different
+         * attribution if one were resolved between the two reads.
+         */
+        collectorId: schema.collectionSessions.collectorId,
       })
       .from(schema.episodes)
       .innerJoin(
@@ -1835,6 +1844,40 @@ export function registerReview(
             )
             .returning({ id: schema.episodeReviews.id });
           if (row === undefined) return undefined;
+
+          /**
+           * The verdict, told to the collector, inside the transaction that
+           * recorded it. A notification that a reviewer passed footage which
+           * then rolled back would be a payment promised and not made, so this
+           * commits with the verdict or not at all.
+           *
+           * The figures are the ones this route just wrote: `bill.amount` and
+           * `bill.effectiveMinutes` are what `settlementFor` produced from the
+           * price on the session and the seconds the reviewer marked, and the
+           * settlement row a few lines below carries the same two values. The
+           * app quotes them; it never recomputes one from the other.
+           *
+           * Keyed on the review row, so a dispute's second verdict — which is a
+           * second `episode_reviews` row — is a second notification, and a
+           * replayed verdict on one row is not.
+           */
+          await notify(
+            tx,
+            ownership.collectorId,
+            decision === 'good'
+              ? 'review_passed'
+              : decision === 'partial'
+                ? 'review_partial'
+                : 'review_failed',
+            {
+              review_id: review.id,
+              episode_id: body.episode_id,
+              effective_minutes: bill.effectiveMinutes,
+              amount: bill.amount,
+              currency,
+            },
+            { table: 'episode_reviews', id: review.id },
+          );
 
           if (spans.length > 0) {
             await tx.insert(schema.episodeReviewSpans).values(

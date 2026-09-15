@@ -23,6 +23,7 @@ import { schema, storeEpisode, type Db } from '@playerone/store';
 import { ingest } from '../../ingest/src/ingest.ts';
 import { sha256File } from '../../ingest/src/hash.ts';
 import { mutate } from './audit.ts';
+import { notify } from './notifications.ts';
 import type { CollectorActor } from './actor.ts';
 import { safeJoin } from './media.ts';
 import {
@@ -1550,6 +1551,18 @@ export function registerCollectorUpload(
               ),
             )
             .returning();
+          /**
+           * Inside the transaction that failed the delivery, and only when the
+           * update actually moved the row. No `failed_reason` in the payload:
+           * the phone already has the refusal code from this request's own
+           * reply, and the inbox is the record that it happened.
+           */
+          if (updated !== undefined) {
+            await notify(tx, row.collectorId, 'upload_failed', { upload_id: row.id }, {
+              table: 'collector_uploads',
+              id: row.id,
+            });
+          }
           return updated;
         },
       );
@@ -1589,6 +1602,12 @@ export function registerCollectorUpload(
             ),
           )
           .returning();
+        if (updated !== undefined) {
+          await notify(tx, row.collectorId, 'upload_verified', { upload_id: row.id }, {
+            table: 'collector_uploads',
+            id: row.id,
+          });
+        }
         return updated;
       },
     );
@@ -1668,6 +1687,21 @@ export function registerCollectorUpload(
               ),
             )
             .returning();
+          /**
+           * The same kind as the read-back failure above, and deliberately so:
+           * from a collector's side the recording could not be turned into
+           * work, and which of the two ways it failed is a detail only this
+           * service can act on. `upload_failed` is emitted at most once per
+           * delivery whichever path reaches it — the unique key sees to that —
+           * so a row that failed read-back, was retried and then failed
+           * ingestion does not say so twice.
+           */
+          if (updated !== undefined) {
+            await notify(tx, row.collectorId, 'upload_failed', { upload_id: row.id }, {
+              table: 'collector_uploads',
+              id: row.id,
+            });
+          }
           return updated;
         },
       );
@@ -1724,6 +1758,18 @@ export function registerCollectorUpload(
               ),
             )
             .returning();
+          /**
+           * A held delivery is the one upload state a collector can do nothing
+           * about and an operator has to adjudicate, so it is its own kind
+           * rather than a failure. `held_reason` stays out for the same reason
+           * `failed_reason` does.
+           */
+          if (updated !== undefined) {
+            await notify(tx, row.collectorId, 'upload_held', { upload_id: row.id }, {
+              table: 'collector_uploads',
+              id: row.id,
+            });
+          }
           return updated;
         },
       );
@@ -1876,6 +1922,22 @@ export function registerCollectorUpload(
             ),
           )
           .returning();
+        /**
+         * The recording is now an episode, which is the first moment there is
+         * something a reviewer can look at and therefore something that can be
+         * paid. The episode id goes in the payload so the inbox row can tap
+         * through to it; no figure does, because nothing has been measured into
+         * money yet.
+         */
+        if (updated !== undefined) {
+          await notify(
+            tx,
+            row.collectorId,
+            'upload_ingested',
+            { upload_id: row.id, episode_id: stored.episodeId },
+            { table: 'collector_uploads', id: row.id },
+          );
+        }
         return updated;
       },
     );
@@ -1999,6 +2061,22 @@ export function registerCollectorUpload(
             ),
           )
           .returning();
+        /**
+         * The measured path's verdict on the bytes, notified from inside the
+         * same transaction that recorded it. A delivery that fails read-back
+         * and is then retried successfully writes both kinds against one
+         * upload id, which is correct: they are two different facts, and the
+         * per-kind unique key is what keeps each of them to one row.
+         */
+        if (updated !== undefined) {
+          await notify(
+            tx,
+            row.collectorId,
+            ok ? 'upload_verified' : 'upload_failed',
+            { upload_id: row.id },
+            { table: 'collector_uploads', id: row.id },
+          );
+        }
         return updated;
       },
     );

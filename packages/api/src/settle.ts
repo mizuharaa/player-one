@@ -6,6 +6,7 @@ import { schema, type Db } from '@playerone/store';
 import { adminGuard, financeGuard, roleOf } from './actor.ts';
 import { mutate } from './audit.ts';
 import { MONEY_SCALE, ZERO, add, fromDecimal, quantise } from './money.ts';
+import { notify } from './notifications.ts';
 import { withTagDeadline, type ObjectStore } from './upload-worker.ts';
 
 /**
@@ -618,6 +619,31 @@ export function registerSettle(
             await tx
               .insert(schema.billLines)
               .values(lines.map((l) => ({ billId, settlementId: l.settlementId })));
+            /**
+             * The collector is told their cycle was billed, in the transaction
+             * that billed it. `total` is the string that just went into
+             * `bills.total` — the same exact sum the lines add to, quoted and
+             * not recomputed, because `bills_total_matches_lines` makes that
+             * column the authority and a second arithmetic here could only
+             * ever disagree with it.
+             *
+             * Below the line insert, not above it, so a run that loses the
+             * settlements to another generator throws `BilledElsewhere` first
+             * and this notification rolls back with the bill.
+             */
+            await notify(
+              tx,
+              collectorId,
+              'bill_issued',
+              {
+                bill_id: billId,
+                total,
+                currency,
+                period_start: start.toISOString(),
+                period_end: end.toISOString(),
+              },
+              { table: 'bills', id: billId },
+            );
             return bill;
           },
         );
