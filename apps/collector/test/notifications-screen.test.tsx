@@ -22,6 +22,12 @@ vi.mock('react-native-svg', () => {
 });
 
 const { Notifications } = await import('../src/screens/Notifications.tsx');
+const { ApiProvider } = await import('../src/api/context.tsx');
+const { MockCollectorApi } = await import('../src/api/mock.ts');
+const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+const { dong, quantity } = await import('../src/money.ts');
+const { ApiError } = await import('../src/api/types.ts');
+type Api = InstanceType<typeof MockCollectorApi>;
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -40,18 +46,47 @@ const named = (name: string): HTMLElement | undefined =>
     (node) => (node.getAttribute('aria-label') ?? '').trim() === name,
   );
 
-async function mount(preview = true) {
+/**
+ * The live screen reads through the api context, so both paths are mounted
+ * inside it — the preview path too, because `useApi` is a hook and a hook does
+ * not get to be conditional. Retries off: a test that asserts the unavailable
+ * state must not wait out three backoffs first.
+ */
+async function mount(preview = true, api: Api = new MockCollectorApi()) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () =>
     root.render(
-      <ThemeProvider>
-        <LocaleProvider>
-          <NavProvider initial={{ name: 'home' }}>
-            <Notifications previewItems={preview ? NOTIFICATION_PREVIEW : undefined} />
-          </NavProvider>
-        </LocaleProvider>
-      </ThemeProvider>,
+      <QueryClientProvider client={client}>
+        <ApiProvider value={api}>
+          <ThemeProvider>
+            <LocaleProvider>
+              <NavProvider initial={{ name: 'home' }}>
+                <Notifications previewItems={preview ? NOTIFICATION_PREVIEW : undefined} />
+              </NavProvider>
+            </LocaleProvider>
+          </ThemeProvider>
+        </ApiProvider>
+      </QueryClientProvider>,
     ),
   );
+  await settle();
+}
+
+/**
+ * Let the first read land.
+ *
+ * react-query resolves through more than one microtask turn — the query
+ * function, then the cache write, then the re-render — so a single
+ * `await Promise.resolve()` leaves the screen on `Loading…` and a test asserting
+ * about the empty state passes or fails on timing. A handful of macrotask turns
+ * is what actually settles it; ten is generous and costs nothing.
+ */
+async function settle() {
+  for (let n = 0; n < 10; n += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
 }
 
 beforeEach(() => {
@@ -123,14 +158,71 @@ vi.mock('react-native-safe-area-context', async () => ({ initialWindowMetrics: n
 
 it('keeps sample events and enabled channels out of the live screen', async () => {
   await mount(false);
-  expect(page()).toContain(m['notif.emptyTitle']);
-  expect(named(m['notif.markAllRead'])).toBeUndefined();
+  // The live screen shows the SERVER's rows. None of them is a fixture row,
+  // and the simulation label is not printed over real events.
   for (const row of NOTIFICATION_PREVIEW) expect(page()).not.toContain(row.title);
+  expect(page()).not.toContain(m['common.simulation']);
   await act(async () => named(m['notif.settings'])!.click());
   const push = named(`${m['notif.groupReview']} — ${m['notif.push']}`)!;
   expect(push.getAttribute('aria-disabled')).toBe('true');
   await act(async () => push.click());
   expect(push.getAttribute('aria-checked')).toBe('false');
+});
+
+/* ── The live read ──────────────────────────────────────────────────────── */
+
+it("renders the server's rows, and every figure on them is the server's own string", async () => {
+  const api = new MockCollectorApi();
+  const rows = await api.notifications();
+  await mount(false, api);
+
+  for (const row of rows) expect(page()).toContain(m[`notif.${row.kind}` as keyof typeof m]);
+
+  /**
+   * The two money-bearing rows in the fixture. Both figures are printed from
+   * the payload string — `49800` and `32400.0000` — so a screen that had
+   * started doing arithmetic would print something else here.
+   */
+  expect(page()).toContain(dong('49800'));
+  expect(page()).toContain('ZP-772140');
+  expect(page()).toContain(dong('32400.0000'));
+  expect(page()).toContain(`${m['income.minutes']} ${quantity('27.000000')}`);
+
+  // Two of the four are unread, so the control that clears them is offered,
+  // and clearing them goes to the server rather than to local state.
+  expect(named(m['notif.markAllRead'])).toBeDefined();
+  await act(async () => named(m['notif.markAllRead'])!.click());
+  await settle();
+  expect((await api.notifications()).filter((n) => n.readAt === null)).toEqual([]);
+  expect(named(m['notif.markAllRead'])).toBeUndefined();
+});
+
+it('says "nothing yet" only when the server answered with nothing', async () => {
+  class Empty extends MockCollectorApi {
+    override async notifications() {
+      return [];
+    }
+  }
+  await mount(false, new Empty());
+  expect(page()).toContain(m['notif.emptyTitle']);
+  expect(page()).toContain(m['notif.emptyBody']);
+  expect(named(m['notif.markAllRead'])).toBeUndefined();
+});
+
+it('says it could not load rather than claiming the inbox is empty', async () => {
+  class Broken extends MockCollectorApi {
+    override async notifications(): Promise<never> {
+      throw new ApiError('server_error');
+    }
+  }
+  await mount(false, new Broken());
+  // The distinction is the point: "nothing yet" is a claim about what the
+  // server said, and the server said nothing at all.
+  expect(page()).toContain(m['common.loadFailed']);
+  expect(page()).not.toContain(m['notif.emptyTitle']);
+  expect(named(m['common.retry'])).toBeDefined();
+  // And the honest sentence about push is still there underneath.
+  expect(page()).toContain(m['notif.noPush']);
 });
 
 it('labels sample inbox and settings as a simulation', async () => {

@@ -1,16 +1,32 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Screen, face } from '../ui.tsx';
+import { dong, quantity, vnd } from '../money.ts';
+import { Body, Button, Loading, Note, Screen, face } from '../ui.tsx';
 import { EmptySessions } from '../ui/illustrations/index.tsx';
 import type { MessageKey } from '../i18n.ts';
+import type { CollectorNotificationRow, NotificationKind as ServerKind } from '../api/types.ts';
 
-/** Live inbox is empty until a transport exists. Only the browser preview
- * supplies sample events; inbox and settings visibly label that simulation. */
+/**
+ * The inbox reads `GET /api/me/notifications` — rows `notify()` wrote inside
+ * the transaction of the event they describe (`docs/notifications.md`).
+ *
+ * There is still **no transport**: push needs an FCM project and an APNs key,
+ * ZNS needs an approved template per message, and none of those credentials
+ * exist. So `notif.noPush` stays on the screen and stays true — a collector who
+ * does not open the app does not find out. What changed is that opening it now
+ * shows what actually happened instead of an empty list.
+ *
+ * `previewItems` is the browser harness and the screen tests, which need rows
+ * without a server; it is labelled as a simulation on the screen and is never
+ * mounted by the live route.
+ */
 
 /** What a notification is about. Decides the glyph, never the wording. */
-export type NotificationKind = 'review' | 'payment' | 'session' | 'device';
+export type NotificationKind = 'review' | 'payment' | 'session' | 'device' | 'task';
 
 export interface CollectorNotification {
   id: string;
@@ -30,16 +46,150 @@ const KIND_GLYPH: Record<NotificationKind, string> = {
   payment: '₫',
   session: '▣',
   device: '⌁',
+  task: '▤',
 };
+
+/**
+ * The server's kind → the glyph group. A `Record` over the closed union, so a
+ * fourteenth kind added to `NOTIFICATION_KINDS` does not compile until somebody
+ * has decided which glyph it wears and written its sentence.
+ */
+const KIND_GROUP: Record<ServerKind, NotificationKind> = {
+  upload_verified: 'session',
+  upload_ingested: 'session',
+  upload_held: 'session',
+  upload_failed: 'session',
+  review_passed: 'review',
+  review_partial: 'review',
+  review_failed: 'review',
+  bill_issued: 'payment',
+  payment_recorded: 'payment',
+  payout_account_verified: 'payment',
+  payout_account_refused: 'payment',
+  task_published: 'task',
+  claim_accepted: 'task',
+  unknown: 'session',
+};
+
+/** The sentence per kind. Carries no figure; see `figuresOf`. */
+const KIND_TITLE: Record<ServerKind, MessageKey> = {
+  upload_verified: 'notif.upload_verified',
+  upload_ingested: 'notif.upload_ingested',
+  upload_held: 'notif.upload_held',
+  upload_failed: 'notif.upload_failed',
+  review_passed: 'notif.review_passed',
+  review_partial: 'notif.review_partial',
+  review_failed: 'notif.review_failed',
+  bill_issued: 'notif.bill_issued',
+  payment_recorded: 'notif.payment_recorded',
+  payout_account_verified: 'notif.payout_account_verified',
+  payout_account_refused: 'notif.payout_account_refused',
+  task_published: 'notif.task_published',
+  claim_accepted: 'notif.claim_accepted',
+  unknown: 'notif.update',
+};
+
+/**
+ * The row's second line: the server's stored figures, printed and nothing else.
+ *
+ * Every string here comes out of `payload` and goes through `vnd`, `dong` or
+ * `quantity`, which do two string operations and no arithmetic. This function
+ * adds nothing, divides nothing and rounds nothing — APP-34 is why, and
+ * `quantise` on the server is the one place a figure is ever rounded.
+ *
+ * A kind with no figure returns the empty string. That is a row with one line,
+ * not a row with a blank second line to fill.
+ */
+export function figuresOf(
+  kind: ServerKind,
+  payload: Record<string, string | null>,
+  tt: (key: MessageKey) => string,
+): string {
+  const at = (key: string): string | null => {
+    const v = payload[key];
+    return typeof v === 'string' && v.trim() !== '' ? v : null;
+  };
+  const join = (parts: (string | null)[]): string => parts.filter((p) => p !== null).join(' · ');
+
+  switch (kind) {
+    case 'review_passed':
+    case 'review_partial':
+    case 'review_failed': {
+      const minutes = at('effective_minutes');
+      const amount = at('amount');
+      return join([
+        minutes === null ? null : `${tt('income.minutes')} ${quantity(minutes)}`,
+        amount === null ? null : dong(amount),
+      ]);
+    }
+    case 'bill_issued': {
+      const total = at('total');
+      return total === null ? '' : dong(total);
+    }
+    case 'payment_recorded': {
+      const amount = at('amount_vnd');
+      return join([amount === null ? null : dong(amount), at('reference')]);
+    }
+    case 'task_published': {
+      const price = at('unit_price');
+      return join([at('task_name'), price === null ? null : `${vnd(price)} ${tt('hall.perMinute')}`]);
+    }
+    default:
+      return '';
+  }
+}
+
+/** A server row as the screen's own shape. */
+const toItem = (
+  row: CollectorNotificationRow,
+  tt: (key: MessageKey) => string,
+): CollectorNotification => ({
+  id: row.id,
+  kind: KIND_GROUP[row.kind],
+  title: tt(KIND_TITLE[row.kind]),
+  body: figuresOf(row.kind, row.payload, tt),
+  at: row.createdAt,
+  read: row.readAt !== null,
+});
 
 export function Notifications({ previewItems }: { previewItems?: readonly CollectorNotification[] } = {}) {
   const tt = useT();
   const theme = useTheme();
   const c = theme.collector;
+  const api = useApi();
   const simulation = previewItems !== undefined;
-  const [items, setItems] = useState<readonly CollectorNotification[]>(previewItems ?? []);
+  const inbox = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => api.notifications(),
+    enabled: !simulation,
+  });
+  const [preview, setPreview] = useState<readonly CollectorNotification[]>(previewItems ?? []);
+  const [marking, setMarking] = useState(false);
+  const items: readonly CollectorNotification[] = simulation
+    ? preview
+    : (inbox.data ?? []).map((row) => toItem(row, tt));
   const unread = items.filter(item => !item.read).length;
-  const markAllRead = () => setItems(rows => rows.map(row => ({ ...row, read: true })));
+  /**
+   * One POST per unread row, then a refetch.
+   *
+   * ponytail: the server has no mark-all route and this does not add one — the
+   * read stamp is per notification because `read_at` is the record that a
+   * person saw THAT thing. At pilot scale an inbox holds tens of rows. Add a
+   * bulk route the first time somebody's unread count is in the hundreds.
+   */
+  const markAllRead = async () => {
+    if (simulation) {
+      setPreview(rows => rows.map(row => ({ ...row, read: true })));
+      return;
+    }
+    setMarking(true);
+    try {
+      for (const item of items.filter((row) => !row.read)) await api.markNotificationRead(item.id);
+      await inbox.refetch();
+    } finally {
+      setMarking(false);
+    }
+  };
   const [settings, setSettings] = useState(false);
 
   if (settings) return <NotificationSettings simulation={simulation} onBack={() => setSettings(false)} />;
@@ -70,7 +220,27 @@ export function Notifications({ previewItems }: { previewItems?: readonly Collec
       {simulation ? <Body>{tt('common.simulation')}</Body> : null}
       <Body muted>{tt('notif.noPush')}</Body>
 
-      {items.length === 0 ? (
+      {/**
+       * The unavailable state. `loadFailed` when there is nothing on screen and
+       * `refreshFailed` when the rows below are the previous load — the same
+       * two sentences every other list in this app uses, and the distinction
+       * matters because one of them means "what you are reading is stale" and
+       * the other means "there is nothing to read".
+       */}
+      {inbox.isError ? (
+        <Note
+          tone="error"
+          text={tt(inbox.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')}
+          busy={inbox.isFetching}
+          onRetry={() => void inbox.refetch()}
+        />
+      ) : null}
+
+      {/* Never the empty state while the first read is still out: "nothing yet"
+          is a claim about the server's answer, not about a pending request. */}
+      {!simulation && inbox.isPending ? <Loading /> : null}
+
+      {items.length === 0 && !inbox.isError && !(!simulation && inbox.isPending) ? (
         <View style={{ alignItems: 'center', gap: theme.space[3], paddingVertical: theme.space[8] }}>
           <EmptySessions size={120} />
           <Text
@@ -101,7 +271,7 @@ export function Notifications({ previewItems }: { previewItems?: readonly Collec
 
       {unread > 0 ? (
         <View style={{ marginTop: c.sectionGap }}>
-          <Button label={tt('notif.markAllRead')} variant="secondary" onPress={markAllRead} />
+          <Button label={tt('notif.markAllRead')} variant="secondary" busy={marking} onPress={() => void markAllRead()} />
         </View>
       ) : null}
     </Screen>
@@ -124,7 +294,7 @@ function NotificationRow({ item }: { item: CollectorNotification }) {
   return (
     <View
       accessible
-      accessibilityLabel={`${item.read ? '' : `${tt('notif.unread')}. `}${item.title}. ${item.body}`}
+      accessibilityLabel={`${item.read ? '' : `${tt('notif.unread')}. `}${item.title}${item.body === '' ? '' : `. ${item.body}`}`}
       style={{
         flexDirection: 'row',
         alignItems: 'flex-start',
@@ -167,7 +337,10 @@ function NotificationRow({ item }: { item: CollectorNotification }) {
             {new Date(item.at).toLocaleDateString()}
           </Text>
         </View>
-        <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{item.body}</Text>
+        {/* A kind with no figure is a one-line row, not a row with a gap. */}
+        {item.body === '' ? null : (
+          <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{item.body}</Text>
+        )}
       </View>
       {item.read ? null : (
         <View

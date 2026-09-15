@@ -409,6 +409,60 @@ describe('collector wire truth and cold-start recovery', () => {
     expect(await stale.payout()).toBeNull();
   });
 
+  /**
+   * The inbox wire shape.
+   *
+   * Two rules, both of them the same rule `toEpisodeState` and `payout()`
+   * follow: a word this build does not know becomes the honest `unknown` rather
+   * than the nearest neighbour, and a value the app has no sentence for is left
+   * out rather than coerced into one. A signed APK meets whatever server is
+   * deployed that week, so a kind added on the server next month is the ordinary
+   * case and not a crash.
+   */
+  it('maps the inbox across, and a kind this build does not know becomes unknown', async () => {
+    const { fn, calls } = fakeFetch({
+      'GET /api/me/notifications': {
+        status: 200,
+        body: {
+          notifications: [
+            {
+              id: 'n-1',
+              kind: 'payment_recorded',
+              payload: { attempt_id: 'a-1', amount_vnd: '49800', reference: null, retries: 2 },
+              created_at: '2026-09-14T02:00:00.000Z',
+              read_at: null,
+            },
+            {
+              id: 'n-2',
+              kind: 'achievement_first_payment',
+              payload: {},
+              created_at: '2026-09-13T02:00:00.000Z',
+              read_at: '2026-09-13T03:00:00.000Z',
+            },
+          ],
+          next: null,
+        },
+      },
+      'POST /api/me/notifications/n-1/read': { status: 200, body: { id: 'n-1', read_at: '2026-09-14T04:00:00.000Z' } },
+    });
+    const api = new HttpCollectorApi(BASE, fakeStore(), () => {}, fn);
+
+    const rows = await api.notifications();
+    expect(rows[0]).toEqual({
+      id: 'n-1',
+      kind: 'payment_recorded',
+      // `retries: 2` is dropped: the payload's contract is strings and nulls,
+      // and `String(…)` on anything else puts a shape in front of a collector.
+      payload: { attempt_id: 'a-1', amount_vnd: '49800', reference: null },
+      createdAt: '2026-09-14T02:00:00.000Z',
+      readAt: null,
+    });
+    expect(rows[1]).toMatchObject({ id: 'n-2', kind: 'unknown', readAt: '2026-09-13T03:00:00.000Z' });
+
+    await api.markNotificationRead('n-1');
+    expect(calls.at(-1)).toMatchObject({ method: 'POST', url: '/api/me/notifications/n-1/read' });
+  });
+
   it('still signs out on a revoked token', async () => {
     const store = fakeStore('revoked');
     const { fn } = fakeFetch({ 'GET /api/me/profile': { status: 401 } });

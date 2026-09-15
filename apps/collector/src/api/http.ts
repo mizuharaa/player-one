@@ -9,12 +9,14 @@ import {
 } from '@playerone/delivery';
 import {
   ApiError,
+  NOTIFICATION_KINDS,
   SCENARIOS,
   type AgreementId,
   type BoundDevice,
   type Claim,
   type CollectionSession,
   type CollectorApi,
+  type CollectorNotificationRow,
   type CollectorProfile,
   type EpisodeState,
   type EpisodeUpload,
@@ -556,6 +558,44 @@ export class HttpCollectorApi implements CollectorApi {
     if (status === undefined) return null;
     return { channel: 'zalopay', status, masked: res.masked ?? null };
   }
+
+  // -- the inbox -----------------------------------------------------------
+
+  /**
+   * One page, newest first.
+   *
+   * ponytail: no paging. The route takes `after` and answers `next`, and this
+   * client asks for neither: a pilot collector accumulates a notification per
+   * upload, verdict, bill and payment, which is tens of rows over twenty
+   * devices, and the route's default page is thirty. Follow `next` the first
+   * time an inbox actually runs off the end of one — the cursor is already there
+   * and tested.
+   *
+   * A value in `payload` that is not a string or null is dropped rather than
+   * coerced. The server writes ids and stored figures as strings; anything else
+   * arriving would be a shape this app has no sentence for, and `String(…)` on
+   * it would put "[object Object]" in front of a collector.
+   */
+  async notifications(): Promise<CollectorNotificationRow[]> {
+    const res = (await this.req('GET', '/api/me/notifications')) as {
+      notifications?: RawNotification[];
+    };
+    return (res.notifications ?? []).map((n) => ({
+      id: n.id,
+      kind: NOTIFICATION_KINDS.find((k) => k === n.kind) ?? 'unknown',
+      payload: Object.fromEntries(
+        Object.entries(n.payload ?? {}).filter(
+          (e): e is [string, string | null] => typeof e[1] === 'string' || e[1] === null,
+        ),
+      ),
+      createdAt: String(n.created_at),
+      readAt: n.read_at === null || n.read_at === undefined ? null : String(n.read_at),
+    }));
+  }
+
+  async markNotificationRead(id: string): Promise<void> {
+    await this.req('POST', `/api/me/notifications/${encodeURIComponent(id)}/read`, {});
+  }
 }
 
 const PAYOUT_STATUSES = ['verified', 'awaiting', 'none'] as const;
@@ -587,6 +627,14 @@ interface RawSession {
   others_in_frame: boolean;
   sensitive_info_present: boolean;
   created_at: string;
+}
+
+interface RawNotification {
+  id: string;
+  kind: string;
+  payload?: Record<string, unknown>;
+  created_at: string;
+  read_at?: string | null;
 }
 
 interface RawEpisode {

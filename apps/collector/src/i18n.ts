@@ -551,6 +551,31 @@ const vi = {
   'notif.groupPaymentWhy': 'Khi một kỳ thanh toán chốt hoặc tiền được chuyển.',
   'notif.groupSession': 'Nhắc buổi ghi',
   'notif.groupSessionWhy': 'Trước buổi ghi bạn đã đặt, và khi cần mang thẻ tới quầy.',
+  /**
+   * One sentence per kind in `collector_notifications_kind_check`, keyed
+   * `notif.<kind>` exactly as `docs/notifications.md` names them.
+   *
+   * The sentence carries NO figure. The money-bearing kinds put the server's
+   * stored string on the row's second line, straight out of `payload` and
+   * through `vnd`/`quantity` — so a sentence can be reworded in three
+   * languages without anybody touching a number, and there is no place in this
+   * file for a figure to be invented.
+   */
+  'notif.upload_verified': 'Đã kiểm tra xong bản tải lên.',
+  'notif.upload_ingested': 'Đã nhận và đo xong video. Đang chờ duyệt.',
+  'notif.upload_held': 'Bản tải lên đang chờ nhân viên xem lại.',
+  'notif.upload_failed': 'Bản tải lên chưa thành công. Thử tải lại.',
+  'notif.review_passed': 'Video của bạn đã qua duyệt.',
+  'notif.review_partial': 'Video của bạn qua duyệt một phần.',
+  'notif.review_failed': 'Video của bạn không qua duyệt.',
+  'notif.bill_issued': 'Kỳ thanh toán đã chốt.',
+  'notif.payment_recorded': 'Đã chi trả cho bạn.',
+  'notif.payout_account_verified': 'Đã xác nhận tài khoản nhận tiền của bạn.',
+  'notif.payout_account_refused': 'Tài khoản nhận tiền chưa dùng được. Kiểm tra lại thông tin.',
+  'notif.task_published': 'Có nhiệm vụ mới.',
+  'notif.claim_accepted': 'Bạn đã nhận nhiệm vụ.',
+  /** A kind this build has no sentence for — an older app against a newer server. */
+  'notif.update': 'Có thông báo mới. Cập nhật ứng dụng để xem chi tiết.',
   'about.what': 'Ứng dụng này để làm gì',
   'about.whatBody': 'Player One trả tiền cho người ghi lại hoạt động thường ngày bằng máy ghi gắn trên đầu. Nhân viên duyệt sẽ xem video, và bạn được trả theo từng phút hiệu quả đã duyệt.',
   'about.who': 'Ai làm',
@@ -1075,6 +1100,20 @@ const en: Record<MessageKey, string> = {
   'notif.groupPaymentWhy': 'When a settlement cycle closes or money is sent.',
   'notif.groupSession': 'Session reminders',
   'notif.groupSessionWhy': 'Before a session you booked, and when a card is due at the desk.',
+  'notif.upload_verified': 'Your upload checked out.',
+  'notif.upload_ingested': 'Your footage is in the system, waiting for review.',
+  'notif.upload_held': 'Your upload is on hold. Staff will look at it.',
+  'notif.upload_failed': 'Your upload did not go through. Try again.',
+  'notif.review_passed': 'Your footage passed review.',
+  'notif.review_partial': 'Part of your footage passed review.',
+  'notif.review_failed': 'Your footage did not pass review.',
+  'notif.bill_issued': 'Your settlement for the cycle is ready.',
+  'notif.payment_recorded': 'A payment to you was recorded.',
+  'notif.payout_account_verified': 'Your payout account is verified.',
+  'notif.payout_account_refused': 'Your payout account was not accepted. Check the details.',
+  'notif.task_published': 'A new task is open.',
+  'notif.claim_accepted': 'You claimed a task.',
+  'notif.update': 'There is a new notification. Update the app to see the details.',
   'about.what': 'What this app is for',
   'about.whatBody': 'Player One pays people to record everyday activity with a head-worn camera. A reviewer watches the footage, and you are paid for every reviewed effective minute.',
   'about.who': 'Who builds it',
@@ -1585,6 +1624,20 @@ const zh: Record<MessageKey, string> = {
   'notif.groupPaymentWhy': '当结算周期结束或款项发出。',
   'notif.groupSession': '录制提醒',
   'notif.groupSessionWhy': '在你预约的录制之前，以及需要把卡送到柜台时。',
+  'notif.upload_verified': '上传已校验完成。',
+  'notif.upload_ingested': '视频已入库，等待审核。',
+  'notif.upload_held': '上传被暂存，工作人员会查看。',
+  'notif.upload_failed': '上传未成功，请重试。',
+  'notif.review_passed': '视频审核通过。',
+  'notif.review_partial': '视频部分通过审核。',
+  'notif.review_failed': '视频未通过审核。',
+  'notif.bill_issued': '本周期的结算单已生成。',
+  'notif.payment_recorded': '已记录一笔给你的付款。',
+  'notif.payout_account_verified': '收款账户已验证。',
+  'notif.payout_account_refused': '收款账户未通过，请检查信息。',
+  'notif.task_published': '有新任务。',
+  'notif.claim_accepted': '你已领取任务。',
+  'notif.update': '有新通知。请更新应用查看详情。',
   'about.what': '这个应用是做什么的',
   'about.whatBody': 'Player One 付钱给用头戴相机记录日常活动的人。审核人员看视频，你按审核通过的每一个有效分钟得到报酬。',
   'about.who': '谁做的',

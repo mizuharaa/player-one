@@ -4,6 +4,7 @@ import type {
   Claim,
   CollectionSession,
   CollectorApi,
+  CollectorNotificationRow,
   CollectorProfile,
   EpisodeUpload,
   IncomeCycle,
@@ -57,6 +58,43 @@ export class MockCollectorApi implements CollectorApi {
     status: 'verified',
     masked: '•••• 5678',
   };
+  /** Newest first, two unread, spread over two days. See `notifications()`. */
+  private notificationRows: CollectorNotificationRow[] = [
+    {
+      id: 'notif-0001',
+      kind: 'payment_recorded',
+      payload: { attempt_id: 'att-0001', bill_id: 'bill-0001', amount_vnd: '49800', reference: 'ZP-772140' },
+      createdAt: new Date().toISOString(),
+      readAt: null,
+    },
+    {
+      id: 'notif-0002',
+      kind: 'review_passed',
+      payload: {
+        review_id: 'rev-0001',
+        episode_id: 'ep-0001',
+        effective_minutes: '27.000000',
+        amount: '32400.0000',
+        currency: 'VND',
+      },
+      createdAt: new Date().toISOString(),
+      readAt: null,
+    },
+    {
+      id: 'notif-0003',
+      kind: 'upload_ingested',
+      payload: { upload_id: 'up-0001', episode_id: 'ep-0001' },
+      createdAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+      readAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+    },
+    {
+      id: 'notif-0004',
+      kind: 'claim_accepted',
+      payload: { claim_id: 'claim-0001', task_id: 'task-cook' },
+      createdAt: new Date(Date.now() - 6 * 86_400_000).toISOString(),
+      readAt: new Date(Date.now() - 6 * 86_400_000).toISOString(),
+    },
+  ];
 
   constructor() {
     this.taskRows = [
@@ -386,5 +424,29 @@ export class MockCollectorApi implements CollectorApi {
 
   async payout(): Promise<PayoutDestination> {
     return { ...this.payoutRow };
+  }
+
+  /**
+   * The inbox, newest first, as `GET /api/me/notifications` serves it.
+   *
+   * Four rows and not one: the screen groups by day, marks unread separately
+   * from read, and prints a figure only for the money-bearing kinds, so a
+   * single-row fixture leaves three of those paths unexercised. The figures are
+   * strings in the columns' own scale because that is what the server sends —
+   * a mock that wrote `1200` where the server writes `1200.0000` would hide the
+   * one thing `vnd()` has to get right.
+   */
+  async notifications(): Promise<CollectorNotificationRow[]> {
+    return this.notificationRows.map((n) => ({ ...n, payload: { ...n.payload } }));
+  }
+
+  /**
+   * The read stamp, once. `read_at is null` is in the server's WHERE, so a
+   * second tap keeps the first instant; this keeps the same promise.
+   */
+  async markNotificationRead(id: string): Promise<void> {
+    this.notificationRows = this.notificationRows.map((n) =>
+      n.id === id && n.readAt === null ? { ...n, readAt: new Date().toISOString() } : n,
+    );
   }
 }

@@ -180,6 +180,52 @@ export interface PayoutDestination {
 }
 
 /**
+ * The thirteen kinds `collector_notifications_kind_check` admits, in the order
+ * `docs/notifications.md` lists them.
+ *
+ * The same closed set as the database CHECK and the `NotificationKind` union in
+ * `packages/api/src/notifications.ts`, and this copy exists because the app is
+ * shipped separately from the server: a signed APK on a phone meets whatever
+ * server is deployed that week. So a kind this list does not know is the
+ * ordinary case of an old app against a new server, not a bug — `'unknown'` is
+ * where it lands, and the inbox prints `notif.update` for it rather than a blank
+ * row or a crash. Same rule as `toEpisodeState` and `toDeliveryState`.
+ */
+export const NOTIFICATION_KINDS = [
+  'upload_verified',
+  'upload_ingested',
+  'upload_held',
+  'upload_failed',
+  'review_passed',
+  'review_partial',
+  'review_failed',
+  'bill_issued',
+  'payment_recorded',
+  'payout_account_verified',
+  'payout_account_refused',
+  'task_published',
+  'claim_accepted',
+] as const;
+
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number] | 'unknown';
+
+/**
+ * One row of `GET /api/me/notifications`.
+ *
+ * `payload` carries ids and the server's stored figures as the strings they are
+ * stored as. The app inserts them into a sentence and does no arithmetic on
+ * them — APP-34 on a new surface — so nothing here is a number.
+ */
+export interface CollectorNotificationRow {
+  id: string;
+  kind: NotificationKind;
+  payload: Record<string, string | null>;
+  /** ISO 8601, as every other timestamp in this app arrives. */
+  createdAt: string;
+  readAt: string | null;
+}
+
+/**
  * The typed client every screen talks to. `MockCollectorApi` implements it for
  * development and the screen tests; `HttpCollectorApi` implements it against
  * the platform's `/api/me/*` routes.
@@ -261,4 +307,11 @@ export interface CollectorApi extends DeliveryApi {
   incomeCycle(): Promise<IncomeCycle | null>;
   /** §14.2. `null` when the server has not sent a status, rendered `payout.unknown`. */
   payout(): Promise<PayoutDestination | null>;
+  /** The inbox, newest first. One page is every notification the pilot produces. */
+  notifications(): Promise<CollectorNotificationRow[]>;
+  /**
+   * Stamp one as read. Idempotent on the server — `read_at is null` is in the
+   * WHERE — so a second tap keeps the first instant and this resolves either way.
+   */
+  markNotificationRead(id: string): Promise<void>;
 }
