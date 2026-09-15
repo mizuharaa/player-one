@@ -22,7 +22,7 @@ changed wallet "awaiting payment — destination unverified" and "paid, referenc
 card. A collector with no current account gets no payment line at all.
 
 **"Simulation. No live transfer." is about one outcome, not about the deployment.**
-Verification and API-attempt provenance is recorded in the existing immutable audit event when the outcome is created. Readers use `storedSimulation`; changing server credentials later cannot relabel an old sandbox outcome as production. Missing historical provenance stays Simulation. A manual payment with its actual transfer reference remains real, while its destination retains a separate verification label. Verification/payment notifications also retain their own Simulation label.
+Verification and API-attempt provenance is recorded in the existing immutable audit event when the outcome is created. Persisted account and payment reads use `storedSimulation`; the two mark-paid replies use the current manual-mode flag with the required real transfer reference (also yielding false); changing server credentials later cannot relabel an old sandbox outcome as production. Missing historical provenance stays Simulation. A manual payment with its actual transfer reference remains real, while its destination retains a separate verification label. Verification/payment notifications also retain their own Simulation label.
 
 The provider environment in the console header and aggregate income responses describes configuration, not proof that a transfer occurred.
 
