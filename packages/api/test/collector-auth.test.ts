@@ -263,8 +263,16 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
     expect(unknown.statusCode).toBe(204);
     expect(enrolled.body).toBe(unknown.body);
     expect(enrolled.body).toBe('');
-    // One code went out, and it went to the number that exists.
-    expect(outbox.map((m) => m.phone)).toEqual([PHONE_A]);
+    /**
+     * Both numbers got a code, and since open sign-up (0034) that is the
+     * stronger property rather than a weaker one. The delivery used to happen
+     * on the enrolled path alone, so anybody watching the ZNS account — or
+     * holding the unknown number themselves — could tell the two apart however
+     * identical the HTTP answer was. Now the work is the same on both: a code
+     * is generated, hashed, stored and sent either way, and what differs is
+     * only where it was stored.
+     */
+    expect(outbox.map((m) => m.phone).sort()).toEqual([PHONE_A, '+84900000999']);
   });
 
   it('takes at least the latency floor on both paths', async () => {
@@ -632,7 +640,10 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
       }
       await recorded(ids.collectorA);
       await recorded(ids.collectorB);
-      expect(outbox.map((m) => m.phone).sort()).toEqual([PHONE_A, PHONE_B]);
+      // All three, one each: the third number has no collector row and since
+      // 0034 it gets a code all the same — that is a sign-up, and the cooldown
+      // is scoped to the number either way, which is what this test is about.
+      expect(outbox.map((m) => m.phone).sort()).toEqual([PHONE_A, PHONE_B, '+84900000777']);
     } finally {
       await app.close();
     }
@@ -918,6 +929,223 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
       expect(row['operator_id']).toBeNull();
     }
     expect(rows[0]!['target_id']).toBe(ids.collectorA);
+  });
+
+  // -- open sign-up (owner's decision 2026-09-15, migration 0034) ----------
+
+  /** A number nobody has ever seen. Not one `seed()` writes. */
+  const STRANGER = '+84900000555';
+
+  const count = async (q: ReturnType<typeof sql>): Promise<number> =>
+    ((await (await db()).execute(q)) as unknown as { n: number }[])[0]!.n;
+
+  /** One published task, which is all the hall needs to have something in it. */
+  const publishTask = async (): Promise<string> => {
+    const id = uid();
+    await (await db()).execute(sql`
+      insert into tasks (id, name, type, unit_price, target_effective_duration_s,
+                         max_concurrent_claimants, status)
+        values (${id}, 'housework', 'home_cooking', 1200.0000, 180000.000000, 5, 'published')`);
+    return id;
+  };
+
+  const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
+
+  /**
+   * The whole journey the decision asks for: a stranger signs in, looks at the
+   * board, and is refused the one thing a collection centre has to grant.
+   *
+   * The two halves that matter are in one test on purpose — a row that appears
+   * on `request-code` and a row that appears on `verify` are the same row from
+   * the outside, and only the assertion between the two requests tells them
+   * apart.
+   */
+  it('creates the collector when the code comes back, and not when it is asked for', async () => {
+    await seed();
+    const taskId = await publishTask();
+    outbox.length = 0;
+    const app = await api();
+    nextCode();
+
+    const asked = await request(app, STRANGER);
+    // The same silent 204 an unknown number always answered, and the same
+    // empty body: the route still says nothing about who is enrolled.
+    expect(asked.statusCode, asked.body).toBe(204);
+    expect(asked.body).toBe('');
+    expect(outbox.at(-1)?.phone).toBe(STRANGER);
+    const code = outbox.at(-1)!.code;
+
+    // Asking created nobody. The code is waiting where nothing joins to it.
+    expect(await count(sql`select count(*)::int as n from collectors where phone = ${STRANGER}`)).toBe(0);
+    expect(await count(sql`select count(*)::int as n from sign_up_codes where phone = ${STRANGER}`)).toBe(1);
+
+    const signedIn = await verify(app, STRANGER, code);
+    expect(signedIn.statusCode, signedIn.body).toBe(200);
+    const token = signedIn.json().token as string;
+    expect(verifyToken(SECRET, token)).toMatchObject({ kind: 'collector' });
+
+    // Now there is a person: a prospect, with no name and a reference that says
+    // where they came from rather than one an operator issued.
+    const made = (await (await db()).execute(sql`
+      select id, status, external_ref, name from collectors where phone = ${STRANGER}`)) as unknown as {
+      id: string;
+      status: string;
+      external_ref: string;
+      name: string | null;
+    }[];
+    expect(made).toHaveLength(1);
+    expect(made[0]!.status).toBe('prospect');
+    expect(made[0]!.external_ref).toBe(`app:${made[0]!.id}`);
+    expect(made[0]!.name).toBeNull();
+    // The code is spent by an UPDATE, because the application has no DELETE here.
+    expect(await count(
+      sql`select count(*)::int as n from sign_up_codes where phone = ${STRANGER} and consumed_at is not null`,
+    )).toBe(1);
+
+    const profile = await app.inject({ method: 'GET', url: '/api/me/profile', headers: bearer(token) });
+    expect(profile.statusCode, profile.body).toBe(200);
+    expect(profile.json().onboarded).toBe(false);
+    expect(profile.json().name).toBeNull();
+
+    // Browsing is the point of the decision, and it is read-only.
+    const hall = await app.inject({ method: 'GET', url: '/api/me/tasks', headers: bearer(token) });
+    expect(hall.statusCode, hall.body).toBe(200);
+    expect(hall.json().tasks.map((t: { id: string }) => t.id)).toEqual([taskId]);
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/me/tasks/${taskId}`,
+      headers: bearer(token),
+    });
+    expect(detail.statusCode, detail.body).toBe(200);
+
+    // And taking work is not. One name, from the gate in 0034, and not a
+    // constraint name: `task_claims_onboarding_gate` is for a console.
+    const claim = await app.inject({
+      method: 'POST',
+      url: `/api/me/tasks/${taskId}/claims`,
+      payload: { id: uid() },
+      headers: bearer(token),
+    });
+    expect(claim.statusCode, claim.body).toBe(409);
+    expect(claim.json()).toEqual({ error: 'refused', constraint: 'collector_not_onboarded' });
+    expect(await count(sql`select count(*)::int as n from task_claims`)).toBe(0);
+
+    /**
+     * Declaring a session and registering a delivery are refused by the gates
+     * that were already there, which is why no new ones were added: a prospect
+     * has bound no camera, so APP-15 answers first, and with no session there
+     * is nothing for an upload to name.
+     */
+    const session = await app.inject({
+      method: 'POST',
+      url: '/api/me/sessions',
+      payload: {
+        id: uid(),
+        task_id: taskId,
+        device_serial: 'AZER76400FE',
+        scenario: 'home',
+        others_in_frame: false,
+        sensitive_info_present: false,
+      },
+      headers: bearer(token),
+    });
+    expect(session.statusCode, session.body).toBe(409);
+    expect(session.json().constraint).toBe('device_not_found');
+
+    /**
+     * A delivery names a session, and this collector has none — so the gate
+     * `upload_unknown_session` in collector-upload.ts is what answers, and
+     * collector-upload.test.ts already holds it for every caller. Asserting it
+     * here would need an object store fixture to get past the 503 this
+     * deployment answers with no bucket, which would be a second copy of that
+     * file's harness to re-prove its own rule.
+     */
+    const sessions = await app.inject({ method: 'GET', url: '/api/me/sessions', headers: bearer(token) });
+    expect(sessions.statusCode, sessions.body).toBe(200);
+    expect(sessions.json().sessions).toEqual([]);
+
+    outbox.length = 0;
+  });
+
+  it('spends a sign-up code once, and dies after the same handful of guesses', async () => {
+    await seed();
+    outbox.length = 0;
+    const app = await api();
+    nextCode();
+
+    await request(app, STRANGER);
+    const code = outbox.at(-1)!.code;
+    expect((await verify(app, STRANGER, code)).statusCode).toBe(200);
+    // A replay of the same six digits finds a consumed row and is refused like
+    // any other wrong code, and it does NOT make a second collector.
+    expect((await verify(app, STRANGER, code)).statusCode).toBe(401);
+    expect(await count(sql`select count(*)::int as n from collectors where phone = ${STRANGER}`)).toBe(1);
+
+    // A fresh code for a number that is a collector's now takes the enrolled
+    // path: it lands on the row, not in `sign_up_codes`.
+    nextCode();
+    await request(app, STRANGER);
+    expect(await count(
+      sql`select count(*)::int as n from collectors
+           where phone = ${STRANGER} and sign_in_code_hash is not null`,
+    )).toBe(1);
+    expect((await verify(app, STRANGER, outbox.at(-1)!.code)).statusCode).toBe(200);
+
+    // The cap, on a number that has no collector row at all.
+    const OTHER = '+84900000556';
+    nextCode();
+    await request(app, OTHER);
+    const good = outbox.at(-1)!.code;
+    for (let i = 0; i <= CODE_ATTEMPTS; i += 1) {
+      expect((await verify(app, OTHER, '000000')).statusCode).toBe(401);
+    }
+    expect((await verify(app, OTHER, good)).statusCode).toBe(401);
+    expect(await count(sql`select count(*)::int as n from collectors where phone = ${OTHER}`)).toBe(0);
+    outbox.length = 0;
+  });
+
+  it('changes nothing for a collector an operator enrolled, or for an operator', async () => {
+    await seed();
+    const taskId = await publishTask();
+    outbox.length = 0;
+    const app = await api();
+
+    // PHONE_A is 'qualified' in `seed()`. Their sign-in still runs on their own
+    // row and writes nothing to `sign_up_codes`.
+    const token = await signIn(app, PHONE_A);
+    expect(await count(sql`select count(*)::int as n from sign_up_codes`)).toBe(0);
+    const profile = await app.inject({ method: 'GET', url: '/api/me/profile', headers: bearer(token) });
+    expect(profile.json().onboarded).toBe(true);
+
+    // Their claim is refused by the gate it was always refused by — the six
+    // agreements — and not by the new one.
+    const claim = await app.inject({
+      method: 'POST',
+      url: `/api/me/tasks/${taskId}/claims`,
+      payload: { id: uid() },
+      headers: bearer(token),
+    });
+    expect(claim.statusCode, claim.body).toBe(409);
+    expect(claim.json().constraint).toBe('exam_not_passed');
+
+    // The back office still works, and a prospect is visible there as one:
+    // "who is waiting for me to qualify them" is an operator's question and
+    // 'prospect' is what keeps it answerable.
+    nextCode();
+    await request(app, STRANGER);
+    await verify(app, STRANGER, outbox.at(-1)!.code);
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/api/collectors',
+      headers: await operatorTokens(app),
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    const statuses = (listed.json().collectors as { phone_masked?: string; status: string }[]).map(
+      (c) => c.status,
+    );
+    expect(statuses).toContain('prospect');
+    expect(statuses).toContain('qualified');
+    outbox.length = 0;
   });
 
   // -- the schema ----------------------------------------------------------

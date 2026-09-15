@@ -153,6 +153,17 @@ export const COLLECTOR_API_REFUSALS = new Set([
   'already_claimed',
   /** APP-05, the P0 gate: no exam pass, no claiming. */
   'exam_not_passed',
+  /**
+   * Open sign-up, 0034. This person signed up in the app and no operator has
+   * enrolled them, so `collectors.status` is 'prospect' and
+   * `task_claims_onboarding_gate` refuses the claim. It is its own name and not
+   * `not_qualified` because the two are different conversations: 'pending' is a
+   * person a centre has met and has not qualified yet, and this is somebody the
+   * platform has never seen. What unlocks it is a visit to a collection centre,
+   * which is also where the Ego device is issued — the sentence in `i18n.ts`
+   * says so, and nothing the phone can do on its own changes the answer.
+   */
+  'collector_not_onboarded',
   /** The collector is `pending` or `suspended`, so no claim is allowed. */
   'not_qualified',
   /** Fewer than the six agreements are on record (APP-02 / PRV-01). */
@@ -195,6 +206,7 @@ export const COLLECTOR_API_REFUSALS = new Set([
  */
 const CLAIM_REFUSALS: Record<string, string> = {
   task_claims_published_gate: 'task_not_claimable',
+  task_claims_onboarding_gate: 'collector_not_onboarded',
   task_claims_exam_gate: 'exam_not_passed',
   task_claims_qualified_gate: 'not_qualified',
   task_claims_consent_gate: 'agreements_incomplete',
@@ -213,6 +225,18 @@ type Profile = {
   agreements: { agreement: string; version: string; accepted_at: string }[];
   training_done: boolean;
   exam_passed: boolean;
+  /**
+   * Whether a collection centre has enrolled this person (0034). False for
+   * exactly one state, 'prospect' — somebody who signed up in the app and has
+   * never been to a centre — and the app uses it to say so on the one screen
+   * where it matters, rather than offering an Accept the server will refuse.
+   *
+   * Server-computed and a boolean, not the status string: 'pending' against
+   * 'qualified' against 'suspended' is an operator's vocabulary and `me.ts`
+   * keeps it off this surface. What a collector is told is whether they may
+   * take work, which is the question they have.
+   */
+  onboarded: boolean;
 };
 
 type TaskRow = {
@@ -283,6 +307,7 @@ export function registerCollectorApp(
         id: schema.collectors.id,
         name: schema.collectors.name,
         phone: schema.collectors.phone,
+        status: schema.collectors.status,
         trainingCompletedAt: schema.collectors.trainingCompletedAt,
         examResult: schema.collectors.examResult,
       })
@@ -315,6 +340,12 @@ export function registerCollectorApp(
        * operator reads it.
        */
       exam_passed: row.examResult === 'pass',
+      /**
+       * The status leaves the query and does not leave the server: only
+       * "is this person a prospect" crosses to the phone. 0034 is the only
+       * migration that can make this false.
+       */
+      onboarded: row.status !== 'prospect',
     };
   }
 
