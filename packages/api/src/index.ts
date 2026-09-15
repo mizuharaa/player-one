@@ -49,7 +49,7 @@ import { registerReview } from './review.ts';
 import { registerSessionRoutes } from './session.ts';
 import { registerSettle } from './settle.ts';
 import { registerUpload } from './upload.ts';
-import type { DirectUploadStore, ObjectStore, UploadProgress } from './upload-worker.ts';
+import { StorageUnavailable, type DirectUploadStore, type ObjectStore, type UploadProgress } from './upload-worker.ts';
 import { authenticateMachine, authenticateOperator } from './session.ts';
 import type { Actor, CounterActor } from './actor.ts';
 import {
@@ -72,11 +72,13 @@ export {
   objectKey,
   planOpenUploads,
   planParts,
+  storageUnreachable,
   verifyReadBack,
   PART_SIZE,
   PRESIGN_TTL_S,
   READBACK_STALLS,
   S3ObjectStore,
+  StorageUnavailable,
   s3StoreFromEnv,
   transportInventory,
   uploadEpisode,
@@ -462,6 +464,29 @@ export function buildApi({
     const status = err.statusCode ?? 500;
     if (status < 500) {
       return reply.code(status).send({ error: err.code ?? 'bad_request', message: err.message });
+    }
+    /**
+     * The object store did not answer, and that is not an internal fault.
+     *
+     * The operator's own path has said this honestly for a while — card intake
+     * with the store down prints `failed_step: upload` and exits 1 — while the
+     * phone's `POST /api/me/uploads` answered HTTP 500 `{"error":"internal"}`
+     * and left `ECONNREFUSED` in a log a collector cannot read. So this is 503
+     * with a name the phone already knows how to render: `req()` in the
+     * collector's client reads `constraint` off any non-2xx body, and
+     * `REASON_KEYS` turns it into a sentence in the collector's language.
+     *
+     * The class is raised in exactly one place (`planFor`) and only after
+     * `storageUnreachable` has said the store never answered, so no other 500
+     * can reach this branch. `err` still goes to the log with its address and
+     * its syscall on `cause`.
+     */
+    if (err instanceof StorageUnavailable) {
+      req.log.error(
+        { err, ref: req.id, route: req.routeOptions?.url, method: req.method },
+        'storage unavailable',
+      );
+      return reply.code(503).send({ error: 'refused', constraint: 'storage_unavailable' });
     }
     /**
      * drizzle wraps the driver error and hangs the original on `cause`; a

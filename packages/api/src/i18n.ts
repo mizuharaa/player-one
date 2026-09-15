@@ -596,6 +596,13 @@ const en = {
     'Every file arrived intact, and then the measuring engine could not read the recording. The files are kept. Report this upload to an operator.',
   'bo.refused.session_basename_unrecognised':
     'That folder is not a recording folder. Pick the folder the camera made, whose name starts with the device and its serial number.',
+  /**
+   * Answered 503, and the only name in this namespace that is about the
+   * platform rather than about the request. It says so: nothing to change, and
+   * nothing lost.
+   */
+  'bo.refused.storage_unavailable':
+    'The platform storage is not answering right now, so this upload could not be started. Nothing was sent and nothing was lost. Try again in a few minutes, and tell an operator if it keeps happening.',
   'bo.refused.upload_not_held':
     'No delivery is being held under that id, so there is nothing to release. Look at the delivery again — it may still be transferring, it may have finished, or somebody may have released it already.',
   /**
@@ -2128,6 +2135,8 @@ const zh: Record<MessageKey, string> = {
     '所有文件都完整到达，但测量引擎无法读取该录制。文件已保留。请将本次上传报告给操作员。',
   'bo.refused.session_basename_unrecognised':
     '该文件夹不是录制文件夹。请选择相机生成的文件夹，其名称以设备名和序列号开头。',
+  'bo.refused.storage_unavailable':
+    '平台存储暂时没有响应，因此本次上传无法开始。没有发送任何文件，也没有丢失任何内容。请几分钟后重试；如果一直如此，请告知操作员。',
   'bo.refused.upload_not_held':
     '该编号下没有被挂起的交付，因此没有可以解除的内容。请再查看该交付：它可能仍在传输、已经完成，或者已被他人解除。',
   'bo.refused.upload_released_by_operator':
@@ -3366,6 +3375,8 @@ const vi: Record<MessageKey, string> = {
     'Tệp đã tới đủ nhưng chưa đo được đoạn ghi hình. Tệp vẫn được giữ. Hãy báo lần tải lên này cho nhân viên vận hành.',
   'bo.refused.session_basename_unrecognised':
     'Thư mục này không phải thư mục ghi hình. Hãy chọn thư mục do thiết bị tạo ra, tên bắt đầu bằng số sê-ri của máy.',
+  'bo.refused.storage_unavailable':
+    'Kho lưu trữ của hệ thống đang không phản hồi nên chưa bắt đầu tải lên được. Chưa gửi tệp nào và không mất gì. Vài phút nữa bạn thử lại; nếu vẫn vậy thì báo cho nhân viên.',
   'bo.refused.upload_not_held':
     'Không có lần giao nào đang bị giữ dưới mã đó, nên không có gì để giải phóng. Hãy xem lại lần giao đó: nó có thể vẫn đang truyền, đã hoàn tất, hoặc đã được người khác giải phóng.',
   'bo.refused.upload_released_by_operator':

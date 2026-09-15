@@ -145,6 +145,12 @@ export const REASON_KEYS: Record<string, MessageKey> = {
   upload_urls_expired: 'uploads.reasonExpired',
   upload_plan_mismatch: 'uploads.reasonPlanMismatch',
   upload_not_ready: 'uploads.reasonNotReady',
+  /**
+   * The one refusal here that is not about this delivery: the platform's object
+   * store did not answer, so no plan was signed and nothing was registered.
+   * Answered 503 by the server, and read out of `constraint` like the rest.
+   */
+  storage_unavailable: 'uploads.reasonStorageDown',
 };
 
 function reasonText(tt: (key: MessageKey) => string, reason: string): string {

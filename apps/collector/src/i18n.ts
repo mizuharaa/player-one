@@ -332,6 +332,8 @@ const vi = {
     'Chọn thư mục và chọn phiên ghi hình trước khi tải lên.',
   'uploads.reasonReleased':
     'Nhân viên đã đóng lần tải lên này. Không tệp nào bị xóa. Bạn gửi lại phiên này như một lần mới.',
+  'uploads.reasonStorageDown':
+    'Kho lưu trữ đang không phản hồi. Chưa gửi tệp nào và không mất gì. Vài phút nữa thử lại.',
 
   'delivery.registered': 'Đã ghi nhận',
   'delivery.transferring': 'Đang truyền',
@@ -912,6 +914,8 @@ const en: Record<MessageKey, string> = {
   'uploads.reasonNotReady': 'Pick the session folder and the collection session before uploading.',
   'uploads.reasonReleased':
     'An operator ended this upload. Nothing was deleted. You can send this session again as a new upload.',
+  'uploads.reasonStorageDown':
+    'The platform storage is not answering. Nothing was sent and nothing was lost. Try again in a few minutes.',
 
   'delivery.registered': 'Registered',
   'delivery.transferring': 'Transferring',
@@ -1453,6 +1457,7 @@ const zh: Record<MessageKey, string> = {
     '服务器的文件清单与手机上的不一致。请重新选择文件夹。',
   'uploads.reasonNotReady': '上传前请先选择场次文件夹和采集场次。',
   'uploads.reasonReleased': '运营人员已结束本次上传。没有文件被删除。你可以将该场次作为一次新的上传重新发送。',
+  'uploads.reasonStorageDown': '平台存储暂时没有响应。没有发送任何文件，也没有丢失任何内容。请几分钟后重试。',
 
   'delivery.registered': '已登记',
   'delivery.transferring': '正在传输',

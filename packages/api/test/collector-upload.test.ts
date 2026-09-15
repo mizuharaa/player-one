@@ -12,6 +12,8 @@ import {
   objectKey,
   signToken,
   s3StoreFromEnv,
+  storageUnreachable,
+  S3ObjectStore,
   MAX_DELIVERY_BYTES,
   MAX_UNMEASURED_DELIVERY_BYTES,
   PART_SIZE,
@@ -234,6 +236,33 @@ class SpoilingStore extends MemoryStore {
       yield body.subarray(0, 1);
       throw new Error('object transfer deadline reached');
     })();
+  }
+}
+
+/**
+ * The store with nothing behind it.
+ *
+ * `head` is the first real network call the registration makes — presigning is
+ * local signing and cannot fail on a dead endpoint — so this is where a stopped
+ * MinIO surfaces. The error is shaped the way the AWS SDK actually shapes one,
+ * measured against `@aws-sdk/client-s3` on Node 24: the Node syscall fields,
+ * and `$metadata` with no `httpStatusCode` because nothing answered. That
+ * second half is load-bearing — it is what tells a dead store apart from a
+ * Postgres socket that died — and `sdkTransportFailure` below proves the shape
+ * against a real client rather than trusting this fake.
+ */
+class DeadStore extends MemoryStore {
+  /** Flipped mid-test, so a delivery can be registered and then stranded. */
+  down = true;
+
+  override async head(key: string): Promise<{ bytes: number; sha256: string | null } | null> {
+    if (!this.down) return super.head(key);
+    throw Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:9000'), {
+      code: 'ECONNREFUSED',
+      errno: -4078,
+      syscall: 'connect',
+      $metadata: { attempts: 1, totalRetryDelay: 0 },
+    });
   }
 }
 
@@ -554,6 +583,48 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     const store = await db();
     const rows = (await store.execute(sql`select count(*)::int as n from episodes`)) as unknown as { n: number }[];
     expect(rows[0]!.n).toBe(0);
+  });
+
+  /**
+   * A storage outage, answered honestly.
+   *
+   * Measured at the demo rehearsal with MinIO stopped: the operator's card
+   * intake printed `failed_step: upload` and exited 1, and `POST
+   * /api/me/uploads` answered HTTP 500 `{"error":"internal","ref":"req-d"}` —
+   * so the phone showed a generic failure and only the API log held
+   * `ECONNREFUSED`. The status matters as much as the name: 500 tells a client
+   * the platform is broken, 503 tells it to come back.
+   */
+  it('names a storage outage rather than answering an unnamed 500', async () => {
+    const h = await harness(new DeadStore());
+    const res = await register(h, delivery(), h.ids.session);
+
+    expect(res.statusCode, res.body).toBe(503);
+    expect(res.json()).toMatchObject({ error: 'refused', constraint: 'storage_unavailable' });
+    // The body the collector's client reads a name out of, and the one it used
+    // to get instead.
+    expect(res.json().error).not.toBe('internal');
+
+    // A sentence in every language, because the phone renders the name inline.
+    for (const locale of LOCALES) {
+      expect(MESSAGES[locale]['bo.refused.storage_unavailable']).toBeTruthy();
+    }
+  });
+
+  it('answers the same name on a resume that started before the outage', async () => {
+    // The plan is re-signed on every resume (APP-26), so a phone that
+    // registered while storage was up and asks again after it went away hits
+    // the same call. It must read "come back" and not "the platform is broken".
+    const store = new DeadStore();
+    store.down = false;
+    const h = await harness(store);
+    const id = uid();
+    expect((await register(h, delivery(), h.ids.session, id)).statusCode).toBe(200);
+
+    store.down = true;
+    const res = await h.get(`/api/me/uploads/${id}`);
+    expect(res.statusCode, res.body).toBe(503);
+    expect(res.json().constraint).toBe('storage_unavailable');
   });
 
   it('refuses to take an upload that is already complete, by name', async () => {
@@ -2235,5 +2306,79 @@ describe.skipIf(!hasDb() || !hasStore())('Path A against a real S3 endpoint', ()
     });
     expect(retried.statusCode).toBe(200);
     expect(retried.json().verification_state).toBe('verified');
+  });
+});
+
+/**
+ * The predicate, against the real client rather than against the fake.
+ *
+ * `DeadStore` above asserts what the route does with a transport failure; this
+ * asserts that what the AWS SDK really throws IS one. Both halves are needed:
+ * a fake returning a shape the SDK never produces would keep the route test
+ * green while a live MinIO outage went on answering 500.
+ *
+ * No database, no MinIO, no network out: `127.0.0.1:1` is refused immediately,
+ * so this runs everywhere and in milliseconds.
+ */
+describe('a transport failure from the real S3 client', () => {
+  it('is recognised as the store never having answered', async () => {
+    const store = new S3ObjectStore({
+      endpoint: 'http://127.0.0.1:1',
+      bucket: 'b',
+      key: 'k',
+      secret: 's',
+    });
+    const err = await store
+      .head('any/key')
+      .then(() => null)
+      .catch((e: unknown) => e);
+
+    expect(err, 'a refused port answered instead of throwing').not.toBeNull();
+    // The fields the predicate reads, as the SDK itself sets them.
+    expect((err as { code?: string }).code).toBe('ECONNREFUSED');
+    expect((err as { $metadata?: object }).$metadata).toBeDefined();
+    expect(
+      (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode,
+    ).toBeUndefined();
+    expect(storageUnreachable(err)).toBe(true);
+  });
+
+  /**
+   * And what it must NOT claim, which is the whole reason it is narrower than
+   * `retryableTransport`. A store that answered — even badly — is a store that
+   * is there, and a Postgres socket that died is not this service's storage at
+   * all. Saying `storage_unavailable` about either would be a lie a collector
+   * acts on.
+   */
+  it('does not claim an answer from the store, or a failure somewhere else', () => {
+    const answered = (httpStatusCode: number) => ({
+      name: 'InternalError',
+      $metadata: { httpStatusCode, attempts: 1 },
+    });
+    expect(storageUnreachable(answered(500))).toBe(false);
+    expect(storageUnreachable(answered(403))).toBe(false);
+    expect(storageUnreachable(answered(404))).toBe(false);
+
+    // Postgres refusing a connection: the same Node code, and no `$metadata`.
+    expect(
+      storageUnreachable(
+        Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5433'), {
+          code: 'ECONNREFUSED',
+          syscall: 'connect',
+        }),
+      ),
+    ).toBe(false);
+
+    expect(storageUnreachable(new Error('something else'))).toBe(false);
+    expect(storageUnreachable(null)).toBe(false);
+    expect(storageUnreachable(undefined)).toBe(false);
+  });
+
+  it('recognises a connection that timed out, which carries no Node code', () => {
+    // What `connectionTimeout` produces: `@smithy/node-http-handler`'s
+    // TimeoutError, with `$metadata`, no status, and no `code` at all.
+    expect(
+      storageUnreachable({ name: 'TimeoutError', $metadata: { attempts: 1, totalRetryDelay: 0 } }),
+    ).toBe(true);
   });
 });
