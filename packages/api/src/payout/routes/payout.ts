@@ -4,11 +4,11 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from '../../audit.ts';
-import { financeGuard, type Actor, type CounterActor } from '../../actor.ts';
 import { notify } from '../../notifications.ts';
+import { financeGuard, financeReadGuard, type Actor, type CounterActor } from '../../actor.ts';
 import { attemptById, applyEvent, insertAttempt, latestAttemptOf } from '../domain/attempts.ts';
 import type { VerifyReceiver } from '../domain/client-contract.ts';
-import { assertPayoutBootInvariants, type PayoutOptions } from '../domain/config.ts';
+import { assertPayoutBootInvariants, isSimulation, type PayoutOptions } from '../domain/config.ts';
 import { emitEvent } from '../domain/events.ts';
 import { buildExport, type ExportRow } from '../domain/export.ts';
 import { maskPhone } from '../domain/names.ts';
@@ -110,6 +110,7 @@ export const PAYOUT_REFUSALS = new Set([
   // payout_finance_in_transaction (0013)
   'payout_finance_required',
   'payout_separation_of_duty',
+  'payout_reviewer_separation_of_duty',
   // payout_accounts
   'payout_accounts_current_key',
   'payout_accounts_append_only',
@@ -175,6 +176,13 @@ export function registerPayout(
    */
   const finance = { preHandler: [requireActor, requireFinance] };
   /**
+   * The same reads, for finance or the administrator. Reading a bill is not
+   * paying one: the demo runs on one administrator credential and it has to be
+   * able to see what it is debugging. Every route that writes keeps `finance`,
+   * and so do the two exports.
+   */
+  const financeRead = { preHandler: [requireActor, financeReadGuard(db)] };
+  /**
    * The counter operator's own guard: any operator session, no finance role.
    * Exactly one route uses it — declaring a collector's payout account at the
    * counter — and that route scopes itself to the operator's centre and hands
@@ -182,6 +190,12 @@ export function registerPayout(
    * everything else on this lane.
    */
   const counter = { preHandler: requireActor };
+
+  app.get('/api/payout/environment', counter, async (_req, reply) => {
+    reply.header('Cache-Control', 'private, no-store');
+    const environment = options.zaloPayEnv ?? 'sandbox';
+    return { environment, simulation: environment === 'sandbox' };
+  });
 
   async function guarded<T>(
     run: () => Promise<T | undefined>,
@@ -234,8 +248,15 @@ export function registerPayout(
     return { start, end };
   };
 
+  const sandbox = (options.zaloPayEnv ?? 'sandbox') === 'sandbox';
+
   const shapeBill = (b: BatchBill) => ({
     id: b.id,
+    // The bill's own latest outcome decides this, not the environment alone:
+    // a bill paid on the manual rail with a reference is a real transfer.
+    simulation: isSimulation(sandbox, b.latestAttempt === null
+      ? null
+      : { mode: b.latestAttempt.mode, reference: b.latestAttempt.manualReference }),
     collector_id: b.collectorId,
     collector_ref: b.collectorRef,
     period_start: b.periodStart.toISOString(),
@@ -640,7 +661,7 @@ export function registerPayout(
    * on PaXini), so this is addressed by collector id under the operator
    * session; the app's server-side proxy maps `GET /api/payout/income` onto it.
    */
-  app.get('/api/payout/collectors/:id/income', finance, async (req, reply) => {
+  app.get('/api/payout/collectors/:id/income', financeRead, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     const [collector] = await db.select({ id: schema.collectors.id }).from(schema.collectors).where(eq(schema.collectors.id, id));
@@ -678,6 +699,7 @@ export function registerPayout(
         withheld: '0',
         net: b.total,
         status: paid ? 'paid' : held ? 'on_hold' : 'approved',
+        payment_reference: paid ? attempt?.manualReference ?? attempt?.zpTransId ?? null : null,
       });
     }
 
@@ -705,10 +727,12 @@ export function registerPayout(
         status: 'pending_review',
       });
     }
-    return { collector_id: id, currency: 'VND', periods };
+    // A list of periods is not one outcome, so this one stays the environment
+    // word: `isSimulation(sandbox, null)`, said out loud rather than implied.
+    return { collector_id: id, currency: 'VND', simulation: isSimulation(sandbox, null), periods };
   });
 
-  app.get('/api/payout/collectors/:id/accounts', finance, async (req, reply) => {
+  app.get('/api/payout/collectors/:id/accounts', financeRead, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     const rows = await db
@@ -739,7 +763,7 @@ export function registerPayout(
   // -------------------------------------------------------------------------
   // Batches: the period's bills, and the preflight
 
-  app.get('/api/payout/batches/:period', finance, async (req, reply) => {
+  app.get('/api/payout/batches/:period', financeRead, async (req, reply) => {
     const period = periodOf(req);
     if (typeof period === 'string') return reply.code(422).send({ error: period });
     const bills = await loadBatch(db, period, batchOptions);
@@ -891,6 +915,22 @@ export function registerPayout(
     const body = MarkPaidBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
     const b = body.data;
+    const refusePayment = async (constraint: string) => {
+      await mutate(db, actorOf(req), {
+        action: 'bill.mark_paid.refused', targetTable: 'bills', targetId: id, reason: constraint,
+      }, async () => true);
+      return refused(reply, constraint);
+    };
+
+    const [verdict] = await db.execute(sql`
+      select 1 from audit_events v
+      join settlements s on v.target_id = s.episode_review_id::text
+      join bill_lines l on l.settlement_id = s.id
+      where l.bill_id = ${id} and v.target_table = 'episode_reviews'
+        and v.action = 'episode.review' and v.operator_id = ${actorOf(req).operator!.operatorId}
+      limit 1
+    `);
+    if (verdict) return refusePayment('payout_reviewer_separation_of_duty');
 
     const [bill] = await db.select().from(schema.bills).where(eq(schema.bills.id, id));
     if (bill === undefined) return reply.code(404).send({ error: 'no such bill' });
@@ -903,10 +943,26 @@ export function registerPayout(
      * questions `payBill` asks. `refusalFor` is those questions, in one
      * place; the trigger asks the verification one again in SQL.
      */
+    const replay = async () => {
+      const previous = await latestAttemptOf(db, id);
+      return previous?.status === 'succeeded' && previous.mode === 'manual'
+        && previous.amountVnd === b.amount_vnd && previous.manualReference === b.manual_reference
+        ? { bill_id: id, attempt_id: previous.id, status: previous.status,
+            amount_vnd: previous.amountVnd, manual_reference: previous.manualReference,
+            simulation: isSimulation(sandbox, { mode: previous.mode, reference: previous.manualReference }),
+            replayed: true }
+        : null;
+    };
+    const prior = await replay();
+    if (prior) return reply.send(prior);
     const loaded = await loadBill(db, id, batchOptions);
     if (loaded === undefined) return reply.code(404).send({ error: 'no such bill' });
     const gate = await refusalFor(db, loaded, batchOptions);
-    if (gate !== null) return refused(reply, gate);
+    if (gate === 'payout_already_paid') {
+      const committed = await replay();
+      if (committed) return reply.send(committed);
+    }
+    if (gate !== null) return refusePayment(gate);
     const account = loaded.account!;
 
     const attemptId = randomUUID();
@@ -994,9 +1050,17 @@ export function registerPayout(
         },
       ),
     );
-    if (!attempt.ok) return refused(reply, attempt.constraint);
+    if (!attempt.ok) {
+      // The database serializes concurrent inserts; the loser reads the winner.
+      if (attempt.constraint === 'payout_attempts_previous_not_failed') {
+        const prior = await replay();
+        if (prior) return reply.send(prior);
+      }
+      return refusePayment(attempt.constraint);
+    }
     const row = attempt.value!;
     return reply.code(201).send({
+      simulation: isSimulation(sandbox, { mode: row.mode, reference: row.manualReference }),
       bill_id: id,
       attempt_id: row.id,
       partner_order_id: row.partnerOrderId,
@@ -1062,7 +1126,7 @@ export function registerPayout(
     });
   });
 
-  app.get('/api/payout/attempts/:id', finance, async (req, reply) => {
+  app.get('/api/payout/attempts/:id', financeRead, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     const row = await attemptById(db, id);

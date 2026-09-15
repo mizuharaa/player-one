@@ -17,6 +17,7 @@ export type EngineeringCapabilities = {
   reviewerMediaEnabled: boolean;
   signInDeliveryMode: 'zns' | 'dev_log' | 'unconfigured' | 'unknown';
   payoutMode: 'manual' | 'api';
+  payoutEnvironment?: 'sandbox' | 'production';
   payoutClient: boolean;
   riskEnabled: boolean;
   /** `PLAYERONE_DEBUG_DELIVERY=1`: the console may show its debug-delivery page. */
@@ -114,6 +115,7 @@ export function registerEngineering(
     return {
       checked_at: new Date().toISOString(),
       read_only: true,
+      payout_environment: cap.payoutEnvironment ?? 'sandbox',
       security,
       /**
        * The one field on this read-only route that a screen switches on rather

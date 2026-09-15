@@ -311,7 +311,7 @@ export type PayRefusal =
   | 'payout_mode_manual'
   | 'payout_no_client'
   | 'payout_account_missing'
-  | 'payout_account_unverified'
+  | 'payout_attempts_account_unverified'
   | 'payout_bank_details_unavailable'
   | 'payout_attempts_bank_ceiling'
   | 'payout_attempts_bank_minimum'
@@ -346,9 +346,9 @@ export class PayRefused extends Error {
  */
 function receiverOf(bill: BatchBill): TransferReceiver | PayRefusal {
   if (bill.account === null) return 'payout_account_missing';
-  if (bill.account.verifyStatus !== 'verified') return 'payout_account_unverified';
+  if (bill.account.verifyStatus !== 'verified') return 'payout_attempts_account_unverified';
   if (bill.account.method === 'WALLET') {
-    if (!bill.account.hasMUId) return 'payout_account_unverified';
+    if (!bill.account.hasMUId) return 'payout_attempts_account_unverified';
     return { method: 'WALLET', mUId: '' };
   }
   return 'payout_bank_details_unavailable';
@@ -377,7 +377,7 @@ export async function refusalFor(
       case 'no_account':
         return 'payout_account_missing';
       case 'account_unverified':
-        return 'payout_account_unverified';
+        return 'payout_attempts_account_unverified';
       case 'over_bank_ceiling':
         return 'payout_attempts_bank_ceiling';
       case 'under_bank_minimum':
@@ -532,7 +532,7 @@ export function constraintForIssues(issues: readonly Issue[]): PayRefusal | null
       case 'no_account':
         return 'payout_account_missing';
       case 'account_unverified':
-        return 'payout_account_unverified';
+        return 'payout_attempts_account_unverified';
       case 'over_bank_ceiling':
         return 'payout_attempts_bank_ceiling';
       case 'under_bank_minimum':

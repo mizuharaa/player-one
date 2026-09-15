@@ -29,7 +29,12 @@ vi.mock('react-native', async () => ({ ...await import('react-native-web') }));
  */
 vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({ addListener: () => ({ remove: () => {} }), status: 'idle' }) }));
 vi.mock('expo-secure-store', () => ({ getItemAsync: async () => null, setItemAsync: async () => {}, deleteItemAsync: async () => {} }));
-vi.mock('../src/api/token-store.ts', () => ({ secureTokenStore: {} }));
+// `secureOriginStore` is read on the same boot as the token; `App.tsx` awaits
+// it before the first client is built, so it has to answer here.
+vi.mock('../src/api/token-store.ts', () => ({
+  secureTokenStore: {},
+  secureOriginStore: { get: async () => null, set: async () => {}, clear: async () => {} },
+}));
 // The uploads screen reaches `expo-file-system` through `upload/delivery-native.ts`,
 // and `expo-modules-core` wants a React Native `__DEV__` the moment it loads. Same
 // treatment as the keystore above: the shell mounts, the picker is never called.
@@ -73,6 +78,8 @@ vi.mock('../src/screens/Home.tsx', () => ({
     return <>
       <p>Private: {profile.data?.name} {income.data?.[0]?.amountVnd}</p>
       <button onClick={signOut}>{MESSAGES.vi['signIn.signOut']}</button>
+      {/* What Profile's Server sheet does after it stores a new origin. */}
+      <button onClick={() => signOut({ landing: true })}>Change server</button>
     </>;
   },
 }));
@@ -140,6 +147,33 @@ it('switches clients and private caches, rejects late data and ignores the old u
   expect(host.textContent).not.toContain('First collector');
   expect(host.textContent).not.toContain('987654321');
   expect(observed.clients[1]).not.toBe(oldCache);
+});
+
+/**
+ * A server change is not a sign-out, even though it ends the session the same
+ * way.
+ *
+ * Log out hands the phone to the next collector, who has already been shown
+ * what the product is, so it opens on the form. A server change leaves the app
+ * knowing nothing about the server it is now pointed at — the token it held
+ * was issued by a different one — so it opens on the landing door, which is
+ * what a cold start opens on.
+ */
+it('clears the session and comes back to the landing door after a server change', async () => {
+  const first = await user('First collector');
+  const cleared = vi.spyOn(first, 'signOut');
+  await act(async () => root.render(<LocaleProvider initialLocale="vi"><CollectorSession factory={() => first} /></LocaleProvider>));
+  await settle(() => expect(host.textContent).toContain('First collector'));
+
+  // The real client reads the keystore the change just cleared, and a token
+  // issued by the old server is not presented to the new one. The mock is
+  // always signed in (see `mock.ts`), so that is what this stands in for.
+  vi.spyOn(first, 'restoreSession').mockResolvedValue(false);
+  await tap('Change server');
+  await settle(() => expect(host.textContent).toContain(MESSAGES.vi['landing.signIn']));
+  expect(cleared).toHaveBeenCalled();
+  expect(host.textContent).not.toContain('Sign in test');
+  expect(host.textContent).not.toContain('First collector');
 });
 
 it('keeps private screens hidden and asks to retry when local sign-out fails', async () => {

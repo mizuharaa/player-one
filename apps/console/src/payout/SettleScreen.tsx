@@ -44,7 +44,7 @@ import {
   Td,
   Th,
 } from './pieces.tsx';
-import { readOnlyReason, useFinanceRole } from './role.ts';
+import { canReadFinance, readOnlyReason, useFinanceRole } from './role.ts';
 
 type Row = { bill: PayoutBill; income: IncomePeriod | null };
 
@@ -67,11 +67,11 @@ export function SettleScreen() {
   const { role } = useFinanceRole();
   const readOnly = readOnlyReason(role);
 
-  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: role === 'finance' });
-  const bills = role === 'finance' ? batch.data?.bills ?? EMPTY_BILLS : EMPTY_BILLS;
+  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: canReadFinance(role) });
+  const bills = canReadFinance(role) ? batch.data?.bills ?? EMPTY_BILLS : EMPTY_BILLS;
   const collectors = useMemo(() => [...new Set(bills.map((b) => b.collector_id))], [bills]);
   const incomes = useQueries({
-    queries: collectors.map((id) => ({ queryKey: keys.income(id), queryFn: () => payout.income(id), enabled: role === 'finance' })),
+    queries: collectors.map((id) => ({ queryKey: keys.income(id), queryFn: () => payout.income(id), enabled: canReadFinance(role) })),
     // useQueries' result array changes on render. Its structurally shared
     // combined data keeps table rows stable, avoiding an auto-reset loop.
     combine: (results) => results.map((result) => result.data),

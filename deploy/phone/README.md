@@ -11,6 +11,10 @@ runs on". A real phone has never heard of that address. So the phone needs an
 APK built against this laptop's Wi-Fi address, for example
 `http://172.31.147.135:8080`. `serve-lan.ps1` prints the exact address to use.
 
+**On an iPhone there is no APK.** Use Expo Go instead, which has no baked-in
+address and no build step at all — see "Expo Go on an iPhone over a hotspot" at
+the end of this file, and `hotspot-go.ps1` rather than `serve-lan.ps1`.
+
 ## What you need
 
 - Docker Desktop, running.
@@ -172,3 +176,70 @@ env -u NoDefaultCurrentDirectoryInExePath pnpm apk
 `cmd.exe` from finding `gradlew.bat` by name; unsetting it for the build is
 what `env -u` does. The new APK lands where `serve-lan.ps1` serves from, so
 step 1 picks it up with no change.
+
+## Expo Go on an iPhone over a hotspot
+
+Everything above assumes an APK, which means Android and a Gradle build for
+every new address. An iPhone cannot install one. **Expo Go** is the way round
+it: Metro bundles the app on this laptop and the phone loads it over the
+hotspot, so the API address is a Metro environment variable and not something
+baked into a binary. No build, and no rebuild when the address changes.
+
+Join the iPhone's **Personal Hotspot** on this laptop first. Then, in this
+folder (`deploy/phone`), in PowerShell — **as administrator the first time**,
+for the firewall rules:
+
+```powershell
+.\hotspot-go.ps1
+```
+
+It refuses a network the phone cannot use rather than printing an address that
+will be ignored: a hotspot hands out a /24 or smaller subnet, while a
+`169.254.*` address is an adapter with no network and a /16 is a campus or
+office scope whose clients are isolated from each other. If it refuses a
+network you know works, pass `-Ip <this laptop's address on it>`.
+
+Then it starts Postgres (**and waits** for it, which `deploy/emu/up.ps1` does
+not), MinIO, the demo database `po_demo_hotspot`, the seed, the API on
+`0.0.0.0:8080` and Metro on 8081 in its own window. It ends by printing the API
+origin, the Expo URL and the five steps below.
+
+1. **Install Expo Go** from the App Store, and keep the phone on the hotspot.
+2. **Scan the QR code** in the Metro window with the Camera app. It encodes
+   `exp://<hotspot-ip>:8081`, and the app opens in Expo Go.
+3. **Only if the app shows a different server**: Profile ▸ the **Server** row
+   under About ▸ type `<hotspot-ip>:8080` ▸ Save. Metro bakes
+   `EXPO_PUBLIC_API_URL` into the bundle, so the default should already be
+   right; the row exists because one TestFlight build has to reach a laptop
+   today and the cloud later.
+4. **Sign in**: country **Vietnam (+84)**, number **900000001**. For this one
+   seeded number the API returns the six-digit code in its reply and the app
+   fills it in. Staff-assisted, not real sign-in: a real collector gets the
+   code over Zalo, which needs ZNS credentials that do not exist yet.
+5. **Upload**: Uploads ▸ **Tải lên** ▸ **Chọn thư mục phiên** ▸ pick a session
+   folder on the phone (put one there over USB — step 4 of the runbook above).
+
+To watch it land, on this laptop:
+
+```powershell
+$env:PLAYERONE_API = "http://127.0.0.1:8080"
+pnpm --filter @playerone/console dev -- --host
+```
+
+Then `http://<hotspot-ip>:5173`, or `http://localhost:5173` on the laptop
+itself. Sign in as **Operator** with machine `demo-machine-1` and reference
+`op-1`. Their secrets are the values of `PLAYERONE_DEMO_MACHINE_SECRET` and
+`PLAYERONE_DEMO_ADMIN_SECRET`; `hotspot-go.ps1` never prints a secret, but
+`seed-stakeholder.mjs` does print any it had to generate, **once** — save them
+from that run, because a rerun presenting different values is refused rather
+than overwriting a sign-in.
+
+Stop with:
+
+```powershell
+.\hotspot-go.ps1 -Down
+```
+
+That stops the API, Metro and MinIO and leaves Postgres and the demo database
+running, so the next run skips the seed. The firewall rules are left in place,
+so the next run needs no elevation.

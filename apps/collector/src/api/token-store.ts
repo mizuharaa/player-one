@@ -19,6 +19,10 @@ import * as SecureStore from 'expo-secure-store';
  *
  * **Nothing but `App.tsx` imports this file.** Anything a vitest test reaches
  * transitively must not pull a native module in.
+ *
+ * The interface is "one string in the keystore", so the runtime API origin
+ * (`origin.ts`) uses the same shape under its own key. Two keys, one
+ * accessor; not a storage layer.
  */
 export interface TokenStore {
   get(): Promise<string | null>;
@@ -32,4 +36,16 @@ export const secureTokenStore: TokenStore = {
   get: () => SecureStore.getItemAsync(KEY),
   set: (token) => SecureStore.setItemAsync(KEY, token),
   clear: () => SecureStore.deleteItemAsync(KEY),
+};
+
+/**
+ * The runtime API origin override; see `origin.ts` for why it exists. Its own
+ * key, so clearing a session never clears the server and vice versa.
+ */
+const ORIGIN_KEY = 'playerone.collector.origin';
+
+export const secureOriginStore: TokenStore = {
+  get: () => SecureStore.getItemAsync(ORIGIN_KEY),
+  set: (origin) => SecureStore.setItemAsync(ORIGIN_KEY, origin),
+  clear: () => SecureStore.deleteItemAsync(ORIGIN_KEY),
 };

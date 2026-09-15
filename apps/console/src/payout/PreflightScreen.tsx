@@ -37,7 +37,7 @@ import { batchFingerprint, gateReasonKey, preflightGate, PREFLIGHT_WINDOW_MS, ty
 import { keys } from './period.ts';
 import { BandPill, FeatureBlock, Field, Fig, LoadFailed, Reason, Section, SettleShell, TableSkeleton } from './pieces.tsx';
 import { constraintKey, isNotOnServer, refusalKey } from './refusals.ts';
-import { readOnlyReason, useFinanceRole } from './role.ts';
+import { canReadFinance, readOnlyReason, useFinanceRole } from './role.ts';
 
 const BANDS: RiskBand[] = ['clear', 'notice', 'review', 'hold'];
 
@@ -55,7 +55,7 @@ export function usePreflight(period: string, enabled = true) {
       if (pre === null) return null;
       return { ...pre, fingerprint: batchFingerprint(batch?.bills ?? []) };
     },
-    enabled: enabled && role === 'finance',
+    enabled: enabled && canReadFinance(role),
     /**
      * Valid for the window, and gone from the cache at the window: a snapshot
      * older than five minutes is not authorisation material and is not kept
@@ -95,7 +95,7 @@ export function PreflightScreen() {
   const { period } = useSearch({ strict: false }) as { period: string };
   const pre = usePreflight(period);
   const { role } = useFinanceRole();
-  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: role === 'finance' });
+  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: canReadFinance(role) });
   const mode = batch.data?.mode ?? pre.data?.mode;
 
   if (pre.error || batch.error) {

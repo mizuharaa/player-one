@@ -38,7 +38,7 @@ import {
   TableSkeleton,
 } from '../payout/pieces.tsx';
 import { isNotOnServer } from '../payout/refusals.ts';
-import { readOnlyReason, useFinanceRole } from '../payout/role.ts';
+import { canReadFinance, readOnlyReason, useFinanceRole } from '../payout/role.ts';
 import { FlagCard } from './pieces.tsx';
 
 const VERDICTS: ClearVerdict[] = ['false_positive', 'accepted', 'resolved'];
@@ -51,7 +51,7 @@ export function RiskScreen() {
   const [open, setOpen] = useState<string | null>(search.bill ?? null);
   const [refused, setRefused] = useState<unknown>(null);
   const { role } = useFinanceRole();
-  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: role === 'finance' });
+  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: canReadFinance(role) });
 
   const ranked = [...(batch.data?.bills ?? [])].sort((a, b) => b.risk.score - a.risk.score);
   const flagged = ranked.filter((b) => b.risk.flags.length > 0 || b.risk.band !== 'clear' || b.id === open);

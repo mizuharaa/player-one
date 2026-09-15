@@ -409,6 +409,12 @@ describe('collector wire truth and cold-start recovery', () => {
     expect(await stale.payout()).toBeNull();
   });
 
+  it('a fresh HTTP client retains the paid reference and simulation label', async () => {
+    const body = { channel: 'zalopay', status: 'verified', masked: '•••• 5678', simulation: true, payment: { reference: 'SIMULATION-REF-X', amount_vnd: 679 } };
+    const { fn } = fakeFetch({ 'GET /api/me/payout': { status: 200, body } });
+    expect(await new HttpCollectorApi(BASE, fakeStore(), () => {}, fn).payout()).toEqual(body);
+  });
+
   /**
    * The inbox wire shape.
    *

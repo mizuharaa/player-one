@@ -52,12 +52,11 @@ export function outcomeOf(declaredName: string, result: VerifyAccountResult): Ve
         /**
          * The account exists (a wallet with an m_u_id, typically) and ZaloPay
          * returned no holder name to compare against. The name check is the
-         * point of verification, so this is recorded as verified-but-unnamed
-         * and flagged for the engine rather than treated as a match. Whether
-         * such a wallet may be paid without a name check is an escalation.
+         * point of verification. Keep it unverified and flag the missing name;
+         * an existing wallet alone does not establish an eligible destination.
          */
         return {
-          status: 'verified',
+          status: 'unverified',
           verifiedName: null,
           mUId: result.mUId,
           subCode: null,

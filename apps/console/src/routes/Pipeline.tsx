@@ -60,7 +60,7 @@ const STAGES: { n: string; name: string; state: State }[] = [
   { n: '07', name: 'Cloud upload', state: 'blocked' },
 ];
 
-const ROWS: Row[] = [
+export const ROWS: Row[] = [
   { capability: 'Duration measurement', requirement: 'UPL-14 · §5.3.3', state: 'built', surface: 'Engine — no screen' },
   { capability: 'Episode identity and quarantine', requirement: 'UPL-06 · UPL-08', state: 'built', surface: 'Engine — no screen' },
   { capability: 'Session attribution', requirement: 'PLT-05 · SET-08', state: 'built', surface: 'Counter' },
@@ -71,15 +71,15 @@ const ROWS: Row[] = [
   { capability: 'Reject reasons, localised', requirement: 'QR-04 · LOC-04', state: 'built', surface: 'Review' },
   { capability: 'Tasks, collectors and devices', requirement: 'BO-01 → BO-04', state: 'built', surface: 'Back office' },
   { capability: 'Settlement row', requirement: 'SET-02 · SET-04', state: 'partial', surface: 'Settle' },
-  { capability: 'Bill export and mark paid', requirement: 'SET-05 · BO-14', state: 'buildable', surface: 'Settle' },
+  { capability: 'Bill export and mark paid', requirement: 'SET-03 · SET-06', state: 'built', surface: 'Settle' },
   // BO-09 is the ADR 0003 cut — centres, machines and operators stay seeded.
   // It is a different requirement from the intake row above, on the same surface.
   { capability: 'Upload-centre management', requirement: 'BO-09', state: 'buildable', surface: 'Counter' },
-  { capability: 'Scoped remote reviewer role', requirement: 'PLT-10', state: 'buildable', surface: 'All' },
+  { capability: 'Scoped remote reviewer role', requirement: 'PLT-10', state: 'built', surface: 'All' },
   // APP-05's gate is enforced in the database; the training and the exam itself are not built.
   { capability: 'Training and exam', requirement: 'APP-03 → APP-05', state: 'partial', surface: 'Android app' },
-  { capability: 'Task hall and claiming', requirement: 'APP-08 → APP-13', state: 'buildable', surface: 'Android app' },
-  { capability: 'Cloud verification', requirement: 'UPL-04 → UPL-06', state: 'blocked', surface: 'Services', blocker: 'D2' },
+  { capability: 'Task hall and claiming', requirement: 'APP-08 → APP-11', state: 'built', surface: 'Android app' },
+  { capability: 'Cloud verification', requirement: 'UPL-04 → UPL-06', state: 'built', surface: 'Services' },
   { capability: 'Device binding', requirement: 'APP-14 · APP-15', state: 'blocked', surface: 'Android app', blocker: 'D5' },
   { capability: 'Pre-collection checks', requirement: 'APP-19 · APP-22', state: 'blocked', surface: 'Android app', blocker: 'D5' },
   { capability: 'Path A upload', requirement: 'UPL-02 · APP-26', state: 'blocked', surface: 'Android app', blocker: 'D1' },

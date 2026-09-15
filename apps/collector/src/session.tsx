@@ -21,10 +21,20 @@ import { createContext, use, type ReactNode } from 'react';
  * The default is a no-op: a screen rendered outside a session — the browser
  * harness's `?screen=` entry points — has no session to leave.
  */
-const SignOutContext = createContext<() => void>(() => {});
+/**
+ * `landing` is the one option, and it is not configuration: the Profile
+ * screen's Server sheet ends the session for a different reason than Log out
+ * does, and the app comes back to a different door. An options object rather
+ * than a positional flag because `Button` forwards its press event to
+ * `onPress`, so `onPress={signOut}` would hand a truthy event to a boolean
+ * parameter and every log-out would take the server-change path.
+ */
+export type SignOut = (options?: { landing?: boolean }) => void;
 
-export function SignOutProvider({ signOut, children }: { signOut: () => void; children: ReactNode }) {
+const SignOutContext = createContext<SignOut>(() => {});
+
+export function SignOutProvider({ signOut, children }: { signOut: SignOut; children: ReactNode }) {
   return <SignOutContext value={signOut}>{children}</SignOutContext>;
 }
 
-export const useSignOut = (): (() => void) => use(SignOutContext);
+export const useSignOut = (): SignOut => use(SignOutContext);

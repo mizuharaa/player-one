@@ -2,8 +2,13 @@
  * The two values that decide which platform this build talks to.
  *
  * ponytail: two constants, not a configuration system. The bundler inlines
- * these reads at build time, so they are the deployment knobs and there is
- * nothing to read at runtime, nothing to parse and nothing to validate.
+ * these reads at build time, so they are the deployment knobs.
+ *
+ * `API_BASE_URL` is the DEFAULT origin, not the only one: `origin.ts` may
+ * override it from the keystore so that one TestFlight build reaches a laptop
+ * today and the Vietnam cloud later. Every request site reads
+ * `getApiOrigin()`; this constant is what that returns with nothing stored,
+ * and what the tests measure the fallback against.
  *
  * Read `process.env.EXPO_PUBLIC_*` by **dot access**, and only that prefix.
  * That is the whole of Expo's substitution mechanism: babel-preset-expo
