@@ -4,7 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { closeDb, db, hasDb, truncate, violates, useDatabase } from './db.ts';
 
 /**
- * `collector_notifications` (0031), in raw SQL with no application in the path.
+ * `collector_notifications` (0032), in raw SQL with no application in the path.
  *
  * Two invariants carry the design and both are asserted here rather than in
  * TypeScript, because both are the kind that a route could bypass:
@@ -43,7 +43,7 @@ const insert = (
   insert into collector_notifications (id, collector_id, kind, payload, source_table, source_id)
   values (${id}, ${collectorId}, ${kind}, ${sql.raw(payload)}::jsonb, ${source[0]}, ${source[1]})`;
 
-describe.skipIf(!hasDb())('collector_notifications (0031)', () => {
+describe.skipIf(!hasDb())('collector_notifications (0032)', () => {
   beforeEach(truncate);
   afterAll(closeDb);
 

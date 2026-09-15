@@ -29,7 +29,7 @@ import { schema, type Db } from '@playerone/store';
  * idempotency mean anything: two notifications about one verdict are the same
  * notification.
  *
- * `Kind` is a union here AND a CHECK in the database (0031), deliberately in
+ * `Kind` is a union here AND a CHECK in the database (0032), deliberately in
  * both places. The union is what makes a typo a compile error at the call site;
  * the CHECK is what makes an invented kind impossible whatever writes the row.
  * Adding one means a migration, this union, and a sentence in three languages

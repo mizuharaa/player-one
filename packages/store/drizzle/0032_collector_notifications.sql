@@ -1,4 +1,4 @@
--- 0031: what happened to a collector's own work, told to the collector.
+-- 0032: what happened to a collector's own work, told to the collector.
 --
 -- HAND-WRITTEN, because the grant block at the bottom is and drizzle would not
 -- have produced it. The table itself is what `collectorNotifications` in
