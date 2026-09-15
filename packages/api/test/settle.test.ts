@@ -961,13 +961,46 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       return rows[0]!.n;
     };
 
+    /**
+     * F5: exception and release move settlement money exactly like a read
+     * shows it, and carried no role check at all — a plain counter operator
+     * at any centre, or an administrator, could park a settlement in
+     * exception or release one. Same guard as the reads.
+     */
+    it('refuses exception and release to a counter operator and an administrator, and finance still succeeds', async () => {
+      const h = await harness({ each: 1 });
+      const [first] = await settlements(h);
+      await h.d.execute(sql`update operators set role = 'administrator' where id = ${h.ids.operatorB}`);
+      const body = { reason: 'disputed', note: 'checking the card' };
+      const exceptionUrl = `/api/settle/settlements/${first!.id}/exception`;
+      for (const who of [h.headersA, h.headersB]) {
+        const res = await h.send('POST', exceptionUrl, body, who);
+        expect(res.statusCode, res.body).toBe(403);
+        expect(res.json()).toEqual({ error: 'finance role required' });
+      }
+      const parked = await h.send('POST', exceptionUrl, body, h.headersF);
+      expect(parked.statusCode, parked.body).toBe(200);
+
+      const releaseUrl = `/api/settle/settlements/${first!.id}/release`;
+      for (const who of [h.headersA, h.headersB]) {
+        const res = await h.send('POST', releaseUrl, {}, who);
+        expect(res.statusCode, res.body).toBe(403);
+        expect(res.json()).toEqual({ error: 'finance role required' });
+      }
+      const released = await h.send('POST', releaseUrl, {}, h.headersF);
+      expect(released.statusCode, released.body).toBe(200);
+      // Nothing written by the refused attempts: one park, one release, no more.
+      expect(await events(h, 'settlement.exception')).toBe(1);
+      expect(await events(h, 'settlement.release')).toBe(1);
+    });
+
     it('parks a queued settlement with a reason, and generating the cycle leaves it out and counts it', async () => {
       const h = await harness();
       const [first] = await settlements(h);
       const parked = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, {
         reason: 'wrong_collector',
         note: 'card CARD-1 was carried by c-0002 that week',
-      });
+      }, h.headersF);
       expect(parked.statusCode, parked.body).toBe(200);
       expect(parked.json()).toEqual({
         id: first!.id,
@@ -991,7 +1024,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       const [event] = (await h.d.execute(sql`
         select operator_id::text as operator_id, reason, before, after from audit_events where action = 'settlement.exception'
       `)) as unknown as { operator_id: string; reason: string; before: unknown; after: unknown }[];
-      expect(event!.operator_id).toBe(h.ids.operatorA);
+      expect(event!.operator_id).toBe(h.ids.financeA);
       expect(event!.reason).toBe('wrong_collector');
       expect(event!.before).toEqual({ settlement_state: 'pending_settlement' });
       expect(event!.after).toMatchObject({ settlement_state: 'exception', exception_from_state: 'pending_settlement' });
@@ -1001,18 +1034,18 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       const h = await harness({ each: 1 });
       const [first] = await settlements(h);
       const body = { reason: 'disputed', note: 'PaXini disputed the effective minutes' };
-      const once = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, body);
-      const twice = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, body);
+      const once = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, body, h.headersF);
+      const twice = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, body, h.headersF);
       expect(once.statusCode).toBe(200);
       expect(twice.statusCode).toBe(200);
       expect(twice.json()).toEqual(once.json());
       expect(await events(h, 'settlement.exception')).toBe(1);
       // A different reason on a parked row does not overwrite the first one.
-      const other = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, { reason: 'duplicate', note: 'second thoughts' });
+      const other = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, { reason: 'duplicate', note: 'second thoughts' }, h.headersF);
       expect(other.json().exception_reason).toBe('disputed');
       expect(await events(h, 'settlement.exception')).toBe(1);
 
-      const released = await h.send('POST', `/api/settle/settlements/${first!.id}/release`, { note: 'resolved with PaXini' });
+      const released = await h.send('POST', `/api/settle/settlements/${first!.id}/release`, { note: 'resolved with PaXini' }, h.headersF);
       expect(released.statusCode, released.body).toBe(200);
       expect(released.json()).toEqual({
         id: first!.id,
@@ -1022,7 +1055,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
         exception_reason: null,
         exception_note: null,
       });
-      const again = await h.send('POST', `/api/settle/settlements/${first!.id}/release`);
+      const again = await h.send('POST', `/api/settle/settlements/${first!.id}/release`, undefined, h.headersF);
       expect(again.statusCode).toBe(409);
       expect(again.json().constraint).toBe('settlements_not_in_exception');
       expect(await events(h, 'settlement.release')).toBe(1);
@@ -1032,28 +1065,29 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       const h = await harness({ each: 1 });
       const [first] = await settlements(h);
       const url = `/api/settle/settlements/${first!.id}/exception`;
-      expect((await h.send('POST', url, {})).statusCode).toBe(400);
-      expect((await h.send('POST', url, { reason: 'because', note: 'n' })).statusCode).toBe(400);
+      expect((await h.send('POST', url, {}, h.headersF)).statusCode).toBe(400);
+      expect((await h.send('POST', url, { reason: 'because', note: 'n' }, h.headersF)).statusCode).toBe(400);
       // The reason code AND the sentence are both required: SET-05's slice asks
       // for a code to count on and free text for whoever has to undo this.
-      expect((await h.send('POST', url, { reason: 'disputed' })).statusCode).toBe(400);
+      expect((await h.send('POST', url, { reason: 'disputed' }, h.headersF)).statusCode).toBe(400);
       // `superseded` is reserved for the dispute lane's own SQL and no route
       // may write it: a row parked under it can never be released.
-      expect((await h.send('POST', url, { reason: 'superseded', note: 'n' })).statusCode).toBe(400);
-      expect((await h.send('POST', url, { reason: 'disputed', note: '   ' })).statusCode).toBe(400);
-      expect((await h.send('POST', url, { reason: 'disputed', note: 'x'.repeat(2001) })).statusCode).toBe(400);
-      expect((await h.send('POST', '/api/settle/settlements/not-a-uuid/exception', { reason: 'disputed', note: 'n' })).statusCode).toBe(400);
-      expect((await h.send('POST', `/api/settle/settlements/${uid()}/exception`, { reason: 'disputed', note: 'n' })).statusCode).toBe(404);
-      expect((await h.send('POST', `/api/settle/settlements/${uid()}/release`)).statusCode).toBe(404);
+      expect((await h.send('POST', url, { reason: 'superseded', note: 'n' }, h.headersF)).statusCode).toBe(400);
+      expect((await h.send('POST', url, { reason: 'disputed', note: '   ' }, h.headersF)).statusCode).toBe(400);
+      expect((await h.send('POST', url, { reason: 'disputed', note: 'x'.repeat(2001) }, h.headersF)).statusCode).toBe(400);
+      expect((await h.send('POST', '/api/settle/settlements/not-a-uuid/exception', { reason: 'disputed', note: 'n' }, h.headersF)).statusCode).toBe(400);
+      expect((await h.send('POST', `/api/settle/settlements/${uid()}/exception`, { reason: 'disputed', note: 'n' }, h.headersF)).statusCode).toBe(404);
+      expect((await h.send('POST', `/api/settle/settlements/${uid()}/release`, undefined, h.headersF)).statusCode).toBe(404);
       // A reviewer session is scoped to review (PLT-10) and never reaches settlement.
       expect((await h.send('POST', url, { reason: 'disputed', note: 'n' }, h.headersR)).statusCode).toBe(403);
       expect((await h.send('POST', `/api/settle/settlements/${first!.id}/release`, {}, h.headersR)).statusCode).toBe(403);
       // Nothing above moved the row or wrote an event.
       expect((await settlements(h))[0]!.settlement_state).toBe('pending_settlement');
       expect(await events(h, 'settlement.exception')).toBe(0);
-      // Finance may park too; a centre operator at the other centre may as well.
+      // Finance may park and release; a counter operator, even at the other
+      // centre, no longer may — the guard F5 added.
       expect((await h.send('POST', url, { reason: 'manual_hold', note: 'finance hold pending the ZaloPay reconciliation' }, h.headersF)).statusCode).toBe(200);
-      expect((await h.send('POST', `/api/settle/settlements/${first!.id}/release`, {}, h.headersB)).statusCode).toBe(200);
+      expect((await h.send('POST', `/api/settle/settlements/${first!.id}/release`, {}, h.headersF)).statusCode).toBe(200);
     });
 
     it('parks a billed line: the bill keeps it, shows it, and cannot be paid until it is released', async () => {
@@ -1062,7 +1096,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       const bill = (generated.json().bills as { id: string; collector_ref: string; total: string }[]).find((b) => b.collector_ref === 'c-0001')!;
       const [line] = (await h.read(`/api/settle/bills/${bill.id}`)).json().lines as { settlement_id: string }[];
 
-      const parked = await h.send('POST', `/api/settle/settlements/${line!.settlement_id}/exception`, { reason: 'duplicate', note: 'same footage already paid on last week’s bill' });
+      const parked = await h.send('POST', `/api/settle/settlements/${line!.settlement_id}/exception`, { reason: 'duplicate', note: 'same footage already paid on last week’s bill' }, h.headersF);
       expect(parked.statusCode, parked.body).toBe(200);
       expect(parked.json().exception_from_state).toBe('bill_generated');
 
@@ -1121,7 +1155,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       expect((preflight.json().exceptions as { id: string; issues: string[] }[]).find((b) => b.id === bill.id)!.issues).toContain('line_in_exception');
 
       // Released: back onto the bill, not into the queue, and the cycle does not re-bill it.
-      const released = await h.send('POST', `/api/settle/settlements/${line!.settlement_id}/release`);
+      const released = await h.send('POST', `/api/settle/settlements/${line!.settlement_id}/release`, undefined, h.headersF);
       expect(released.json().settlement_state).toBe('bill_generated');
       expect((await h.send('POST', '/api/settle/bills', period())).json().created).toBe(0);
       expect((await h.read(`/api/settle/bills/${bill.id}`)).json().exceptions).toBe(0);
@@ -1167,7 +1201,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       const parked = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, {
         reason: 'wrong_collector',
         note: 'checking whose card this was before it goes on a bill',
-      });
+      }, h.headersF);
       expect(parked.statusCode, parked.body).toBe(200);
       expect(parked.json().exception_from_state).toBe('pending_settlement');
 
@@ -1178,7 +1212,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
       const short = (generated.json().bills as { id: string; collector_ref: string; lines: number }[]).find((b) => b.lines === 1)!;
       expect(short).toBeDefined();
 
-      const released = await h.send('POST', `/api/settle/settlements/${first!.id}/release`, { note: 'it was the right collector after all' });
+      const released = await h.send('POST', `/api/settle/settlements/${first!.id}/release`, { note: 'it was the right collector after all' }, h.headersF);
       expect(released.json().settlement_state).toBe('pending_settlement');
 
       const again = await h.send('POST', '/api/settle/bills', period());
@@ -1248,7 +1282,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
             values ('bill.pay', 'bills', ${bill!.bill_id}, 'operator', ${h.ids.financeA}, ${h.ids.machineA}, ${h.ids.centreA})
         `);
       });
-      const res = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, { reason: 'disputed', note: 'too late, it is paid' });
+      const res = await h.send('POST', `/api/settle/settlements/${first!.id}/exception`, { reason: 'disputed', note: 'too late, it is paid' }, h.headersF);
       expect(res.statusCode).toBe(409);
       expect(res.json().constraint).toBe('settlements_transition_check');
       expect((await settlements(h)).find((s) => s.id === first!.id)!.settlement_state).toBe('manually_paid');
