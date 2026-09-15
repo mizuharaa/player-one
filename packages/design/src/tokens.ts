@@ -668,6 +668,45 @@ export const discover = {
   reveal: '720ms',
   opening: '1100ms',
   ambient: '14000ms',
+  /**
+   * The hero field, 2026-09-14. A deep plum falling to ink, behind the browser
+   * window that holds the review workspace.
+   *
+   * It replaces a cobalt stage whose light end (`#4d8bf2`) could not host the
+   * small white text sitting on it — the window title read 4.17:1 and the
+   * caption row had to be given its own dark tray to survive. The field is
+   * dark at BOTH ends here, so anything set on it clears AA wherever it lands
+   * rather than only over the dark corner: white on `heroFieldTo` is 19.51:1
+   * and on `heroFieldFrom`, the lightest point, 16.86:1.
+   *
+   * Plum rather than another blue because the window's own chrome is blue and
+   * a blue window on a blue ground has no edge; the hue separation is what
+   * makes the mockup read as an object sitting on a surface.
+   */
+  heroFieldFrom: '#241733',
+  heroFieldTo: '#0E0B14',
+  /** Type on the field. `heroOnField` is 16.86:1 at the field's lightest. */
+  heroOnField: '#FFFFFF',
+  /** The caption row and the URL pill's text: 9.54:1 at the field's lightest. */
+  heroOnFieldMuted: '#C8BFD6',
+  /**
+   * The window's own surfaces. The title bar was `#e8ecf2` with `#6a7688` type
+   * on it — the one body failure in the demo at 4.17:1. The bar is lighter and
+   * the type is darker now: `heroChromeInk` on `heroChrome` is 6.66:1.
+   */
+  heroChrome: '#EEF1F6',
+  heroChromeInk: '#4A5567',
+  heroChromeLine: '#CFD6E2',
+  /**
+   * The demo's blue, one ramp rather than the nine hand-mixed hexes the
+   * stylesheet carried. `heroAccent` is the fill under white (6.24:1);
+   * `heroAccentInk` is blue type on white (7.38:1) and on the pale tint
+   * `heroAccentWash` (6.35:1) — the "Ready for review" tier reads on that pair.
+   */
+  heroAccent: '#1B52E3',
+  heroAccentPressed: '#123CAE',
+  heroAccentInk: '#1F4FB5',
+  heroAccentWash: '#E8EEFC',
 } as const;
 
 /**

@@ -395,6 +395,35 @@ const TEXT = {
     ['faq answer', 'details p', 0],
     ['footer destination', 'footer nav a'],
     ['footer legal line', 'footer > div:last-of-type p'],
+    /* -------------------------------------------------------------------
+       The hero mockup, 2026-09-14. Only the chrome that is present in every
+       one of the demo's five states is here — the window bar, the desk
+       heading and footer, the caption row, the step nav.
+
+       Text INSIDE `.operator-display` is deliberately absent. Those four
+       screens cross-fade, three of them are `visibility: hidden` at any
+       moment, and a hidden element has no box to clip. This probe renders
+       under `reducedMotion: reduce`, where the demo holds at step 0, so it
+       could only ever reach one of the five anyway.
+       `apps/console/scripts/hero-probe.mjs` drives the step nav and measures
+       all five; it uses these same two techniques, copied rather than
+       imported, and says so at the top.
+
+       `.operator-url-note` is not here either: it is `display: none` below
+       640px, and a row that ERRs at 390 on every run trains people to ignore
+       the output. hero-probe carries it.
+       ---------------------------------------------------------------- */
+    ['hero headline', '.operator-intro h2'],
+    ['hero lead', '.operator-intro>p'],
+    ['hero url', '.operator-url'],
+    ['hero queue label', '.operator-desk-heading>div>span'],
+    ['hero desk title', '.operator-desk-heading h3'],
+    ['hero status pill', '.operator-status'],
+    ['hero footer identity', '.operator-desk>footer>span'],
+    ['hero caption title', '.operator-captions strong', 0],
+    ['hero caption body', '.operator-captions p', 0],
+    ['hero step (current)', '.operator-step-nav button', 0],
+    ['hero disclosure', '.operator-disclosure'],
   ],
   /* The not-found route. Three rows, because it has three pieces of text and
      the falling field is `aria-hidden` decoration with no type in it. */
@@ -422,13 +451,28 @@ const CONTROLS = {
      * identifiable against its ground under WCAG 1.4.11, and an earlier
      * build's faded `primary` read as *more* available than the live sign-in
      * in dark mode.
+     *
+     * **Both rows are addressed by class now, not by `button[disabled]`.**
+     * That ordinal was stale and quietly measuring the wrong controls. With
+     * `VITE_COLLECTOR_APK_URL` unset — which is every dev run — the APK
+     * control renders as an `<a href="#demo">` and is not a disabled button at
+     * all, so index 0 was the hero's own pause toggle and index 1 was the
+     * walkthrough's. Two rows measured, neither of them the control it named.
+     * A selector that still matches *something* after the DOM moves is worse
+     * than one that throws.
      */
-    ['apk CTA (disabled)', 'button[disabled]', 0],
+    ['motion toggle (disabled)', '.discover-illustration-toggle'],
     ['console CTA', 'a[href="/login"]', 0],
     ['film pause control', '.discover-video-control'],
     ['faq row (glass)', 'details', 0],
     ['closing sign-in', 'a[href="/login"]', 1],
-    ['closing apk (disabled)', 'button[disabled]', 1],
+    ['closing CTA', '.discover-close-action .discover-button'],
+    /* The hero's three real controls, the ones the scripted hand presses. The
+       criteria are omitted for the same reason as the screen text above: they
+       are inside a state this probe cannot reach. */
+    ['hero primary', '.operator-desk>footer button'],
+    ['hero step nav', '.operator-step-nav button', 1],
+    ['hero window toggle', '.operator-window-toggle'],
   ],
   '/nope': [['back to product page', 'main a[href="/discover"]']],
 };

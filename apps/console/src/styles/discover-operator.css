@@ -1,236 +1,272 @@
-/* A lit cobalt stage, a macOS window and oversized white typography. */
+/**
+ * The hero: one browser window, quiet, on a plum field that falls to ink.
+ *
+ * What this replaced, and why. The old stage was a cobalt gradient running from
+ * #0b2483 to #4d8bf2 — light at one end — so every caption on it needed its own
+ * dark tray to stay legible, and the blue window sitting on blue ground had no
+ * edge. The field is now dark at BOTH ends (`--discover-hero-field-from/to`),
+ * which is what lets the captions and the step nav sit straight on it with no
+ * trays at all, and the plum gives the white window a border without a stroke.
+ *
+ * Every screen change was a 560ms spring with a ±6-8% slide. Five of them in a
+ * loop is the "too much morphing" the owner named. There is one transition on a
+ * screen now: opacity, 200ms, on the house ease. Nothing translates, nothing
+ * scales, nothing springs. The only sprung motion in the hero is the cursor,
+ * the pan and the zoom, and all three are integrated in JavaScript
+ * (`use-demo-cursor.ts`) rather than authored here.
+ *
+ * Colour comes from the `discover` token export and nowhere else — the greys,
+ * the one blue, the one green. A second palette is how a demo stops looking
+ * like the product it is demonstrating.
+ */
 .operator-hero{
-  --op-ink:#141d30;--op-muted:#55637b;--op-blue:#1b52e3;
-  --op-ease:cubic-bezier(.16,1,.3,1);
-  --op-spring:cubic-bezier(.2,.9,.25,1.1);
-  --op-spring:linear(0,.0703,.2267,.4093,.5827,.7292,.8424,.9234,.9766,1.0083,1.0242,1.0297,1.0288,1.0247,1.0193,1.014,1.0093,1.0056,1.0029,1.0011,1,.9994,.9991,.9991,1);
-  --op-grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
-  --op-gap:clamp(24px,2.4vw,56px);
+  --op-field-from:var(--discover-hero-field-from);
+  --op-field-to:var(--discover-hero-field-to);
+  --op-on-field:var(--discover-hero-on-field);
+  --op-on-field-muted:var(--discover-hero-on-field-muted);
+  --op-chrome:var(--discover-hero-chrome);
+  --op-chrome-ink:var(--discover-hero-chrome-ink);
+  --op-chrome-line:var(--discover-hero-chrome-line);
+  --op-blue:var(--discover-hero-accent);
+  --op-blue-pressed:var(--discover-hero-accent-pressed);
+  --op-blue-ink:var(--discover-hero-accent-ink);
+  --op-blue-wash:var(--discover-hero-accent-wash);
+  --op-ink:#141d30;--op-muted:#55637b;--op-green:#136440;
+  --op-ease:var(--ease,cubic-bezier(.22,.61,.36,1));
+  /* The inner gutter. One number, used by the desk, the footer and the
+     heading — the old file set 20/18/14 independently and the queue label,
+     the title and the footer identity each started on a different pixel. */
+  --op-gutter:24px;
   position:relative;isolation:isolate;
-  display:grid;grid-template-columns:minmax(0,.88fr) minmax(0,1.12fr);gap:var(--op-gap);
-  padding:clamp(56px,6.4vw,104px) clamp(20px,2.4vw,72px) clamp(64px,6.8vw,112px);
-  background:linear-gradient(160deg,#0a0d13 0%,#0f1a34 48%,#0c1428 100%);
-  color:#fff;scroll-margin-top:76px;font-family:var(--discover-font);overflow:clip;
+  display:flex;flex-direction:column;align-items:center;
+  padding:clamp(56px,6.4vw,104px) clamp(20px,3vw,48px) clamp(56px,6vw,96px);
+  background:linear-gradient(168deg,var(--op-field-from) 0%,var(--op-field-to) 100%);
+  color:var(--op-on-field);scroll-margin-top:76px;font-family:var(--discover-font);overflow:clip;
 }
-/* One hard-edged light plane, then grain. No blobs, no hue rotation. */
-.operator-hero::before{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(104deg,transparent 0 41%,#ffffff14 41% 60%,transparent 60% 100%)}
-.operator-hero::after{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:.06;mix-blend-mode:overlay;background-image:var(--op-grain)}
 
-.operator-pitch{container-type:inline-size;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;min-width:0;padding:8px 0}
-
-/* VNG x PaXini: two monochrome white marks at one cap height, no strip. */
-.operator-partners{--cap:30px;display:flex;align-items:center;gap:20px;background:transparent;padding:0;margin:0 0 clamp(22px,2vw,34px);height:auto;flex-shrink:0}
-.operator-vng,.operator-paxini{display:flex;align-items:center;flex-shrink:0;filter:brightness(0) invert(1);opacity:.9;transition:opacity 200ms}
-.operator-partners:hover .operator-vng,.operator-partners:hover .operator-paxini{opacity:1}
-.operator-vng img,.operator-paxini img{display:block;width:auto;max-width:none;position:static}
+/* Vertical gaps are scale steps, not `clamp()`.
+   `rhythm.mjs` measures the computed gap between siblings against the `space`
+   scale, and a fluid margin lands between two steps at almost every width:
+   clamp(28px,3vw,44px) measured 43px at 1440, 38px at 1280 and 28px at 390,
+   and only the last of those is a number the system owns. Four gaps in this
+   file were fluid and all four were findings. */
+.operator-intro{width:min(100%,900px);text-align:center;display:flex;flex-direction:column;align-items:center;margin-bottom:40px}
+.operator-partners{--cap:26px;display:flex;align-items:center;gap:18px;margin-bottom:24px}
+/* The negative margins below crop the PNGs' transparent padding to
+   cap-top..baseline, which means the image is deliberately larger than its box.
+   `overflow:clip` is what makes that a crop rather than an overflow. */
+.operator-vng,.operator-paxini{display:flex;align-items:center;flex-shrink:0;overflow:clip;filter:brightness(0) invert(1);opacity:.85}
+.operator-vng img,.operator-paxini img{display:block;width:auto;max-width:none}
 /* The PNGs carry transparent padding; these margins crop to cap-top..baseline. */
 .operator-vng img{height:calc(var(--cap)*2.7586);margin:calc(var(--cap)*-.6983) calc(var(--cap)*-.1379) calc(var(--cap)*-1.069)}
 .operator-paxini img{height:calc(var(--cap)*2.9735);margin:calc(var(--cap)*-.8938) calc(var(--cap)*-.3805) calc(var(--cap)*-1.0796)}
-.operator-partner-cross{font:300 1.375rem/1 var(--discover-font);color:#ffffff5c}
+.operator-partner-cross{font:300 1.25rem/1 var(--discover-font);color:#ffffff5c}
+.discover-page .operator-intro h2{font-size:clamp(2.5rem,5.2vw,4.5rem);line-height:.96;letter-spacing:-.04em;font-weight:800;color:var(--op-on-field);margin:0 0 16px;text-wrap:balance}
+.operator-intro>p{font-size:clamp(1rem,1.15vw,1.125rem);line-height:1.55;color:var(--op-on-field-muted);max-width:56ch;margin:0;text-wrap:pretty}
 
-.discover-page .operator-pitch h2{font-size:clamp(3rem,6.9vw,7.7rem);line-height:.9;letter-spacing:-.045em;font-weight:800;color:#fff;max-width:100%;margin:0 0 clamp(20px,1.9vw,30px);text-wrap:balance}
-.operator-pitch>p{font-size:clamp(1.125rem,1.35vw,1.25rem);line-height:1.55;color:#ffffffc7;max-width:42ch;margin:0}
+/* ── The window ─────────────────────────────────────────────────────────── */
+.operator-window{
+  position:relative;width:min(100%,1120px);
+  background:var(--op-chrome);border-radius:14px;overflow:hidden;
+  box-shadow:0 0 0 1px #ffffff1f,0 32px 64px -24px #000000b3,0 90px 140px -60px #000000d9;
+}
+.operator-window-bar{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;
+  height:46px;padding:0 14px;background:var(--op-chrome);
+  border-bottom:1px solid var(--op-chrome-line);color:var(--op-chrome-ink);
+}
+.operator-window-dots{display:flex;gap:8px}
+.operator-window-dots i{width:12px;height:12px;border-radius:50%;background:#ff5f57;box-shadow:inset 0 0 0 1px #00000026}
+.operator-window-dots i:nth-child(2){background:#febc2e}
+.operator-window-dots i:nth-child(3){background:#28c840}
+/* The "sample values" tag used to float loose above the window. It lives in the
+   URL pill now, which is where a caveat about what you are looking at belongs. */
+.operator-url-pill{justify-self:center;display:flex;align-items:baseline;gap:10px;max-width:100%;padding:6px 14px;background:#fff;border:1px solid var(--op-chrome-line);border-radius:var(--radius-pill);font-size:.75rem;color:var(--op-chrome-ink);overflow:hidden}
+.operator-url{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.operator-url-note{flex:none;font-size:.6875rem;color:var(--op-blue-ink)}
+/* The toggle's ring is the chrome INK, not the chrome line.
+   `--op-chrome-line` is a divider colour — it is #CFD6E2 on a #EEF1F6 bar, and
+   `contrast.mjs`'s boundary probe scored this control at 2.07:1 (1440) and
+   1.46:1 (390), under the 3:1 WCAG 1.4.11 asks of a control's boundary. The
+   URL pill beside it keeps the line colour: it is a text container, not a
+   control, and nobody has to find its edge to press it. Disabled holds at .7
+   for the same reason — .45 put the ring back under the floor. */
+.operator-window-toggle{display:grid;place-items:center;width:30px;height:30px;border:2px solid var(--op-chrome-ink);background:#fff;border-radius:50%;color:var(--op-chrome-ink);font-size:.5625rem;cursor:pointer;transition:background 160ms}
+.operator-window-toggle:hover{background:var(--op-blue-wash)}
+.operator-window-toggle:active{background:var(--op-blue-wash);transform:scale(.94)}
+.operator-window-toggle:disabled{opacity:.7;cursor:default}
 
-/* The site button idiom: pill, 3.4rem, white fill, ink text. */
-.operator-watch{display:inline-flex;align-items:center;justify-content:center;gap:2rem;min-height:3.4rem;padding:.9rem 1.6rem;border:0;border-radius:var(--radius-pill);background:#fff;color:var(--op-ink);font-size:.9rem;font-weight:600;line-height:1.45;cursor:pointer;margin-top:clamp(24px,2.4vw,36px);box-shadow:0 1px 0 #ffffff40;transition:background 180ms,transform 200ms var(--op-ease),box-shadow 200ms var(--op-ease)}
-.operator-watch:hover{background:#fff;transform:translateY(-2px);box-shadow:0 14px 28px -14px #000000a6}
-.operator-watch:active{transform:translateY(1px);box-shadow:0 4px 10px -6px #0000008c}
-.operator-watch span{font-size:1.1rem;line-height:1}
+/* The pan and the zoom the cursor hook integrates. Both default to rest, so the
+   window is correct with JavaScript idle, disabled or reduced. */
+.operator-window-content{position:relative;background:#fff;color:var(--op-ink);transform:scale(var(--zoom,1));transform-origin:50% 42%;will-change:transform}
 
-.operator-principles{display:grid;grid-template-columns:1fr 1fr;gap:clamp(20px,2vw,32px);margin-top:clamp(32px,3.4vw,52px);width:100%}
-.operator-principles>div{border-top:1px solid #ffffff2e;padding-top:16px}
-.operator-principles h3{font-size:.9375rem;font-weight:650;letter-spacing:-.01em;color:#fff;margin:0 0 8px}
-.operator-principles p{font-size:.875rem;line-height:1.55;color:#ffffffb8;margin:0}
-
-.operator-stage{position:relative;isolation:isolate;min-width:0;display:flex;flex-direction:column;justify-content:center;padding:14px 12px 16px;margin-right:-6%;background:linear-gradient(150deg,#0b2483 0%,#1b52e3 48%,#4d8bf2 100%);border-radius:20px;align-self:center;box-shadow:inset 0 1px 0 #ffffff40,0 44px 88px -36px #00061fa6}
-.operator-stage::before{content:'';position:absolute;z-index:-1;pointer-events:none;inset:0;border-radius:inherit;background:linear-gradient(112deg,transparent 0 39%,#ffffff1f 39% 57%,transparent 57% 100%)}
-.operator-stage::after{content:'';position:absolute;z-index:-1;pointer-events:none;inset:0;border-radius:inherit;opacity:.07;mix-blend-mode:overlay;background-image:var(--op-grain)}
-.operator-stage-caption{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.6875rem;color:#ffffffe0;margin-bottom:12px;padding-inline:6px}
-.operator-stage-caption button{display:grid;place-items:center;min-width:44px;height:44px;border:1px solid #dce9ff66;background:#0d2d8266;border-radius:50%;color:#fff;cursor:pointer;transition:background 180ms,transform 180ms var(--op-ease)}
-.operator-stage-caption button:hover{background:#102754;transform:translateY(-1px)}
-.operator-stage-caption button:disabled{opacity:.5;cursor:default;transform:none}
-
-/* The window. macOS proportions, macOS shadow stack. */
-.operator-workspace{position:relative;min-width:0;background:#fff;color:var(--op-ink);border-radius:12px;box-shadow:0 0 0 1px #00000026,inset 0 1px 0 #ffffffb3,0 24px 48px -16px #00000099,0 80px 120px -40px #000000cc;overflow:hidden;transform:translateZ(0)}
-.operator-workspace>header{height:44px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;padding:0 14px;background:linear-gradient(#fbfcfe,#e8ecf2);border-bottom:1px solid #ccd4e0;color:#6a7688;font-size:.6875rem}
-.operator-traffic-lights{display:flex;gap:8px;flex:none}
-.operator-traffic-lights i{width:12px;height:12px;border-radius:50%;background:#ff5f57;box-shadow:inset 0 0 0 1px #d9483f}
-.operator-traffic-lights i:nth-child(2){background:#febc2e;box-shadow:inset 0 0 0 1px #d99e1e}
-.operator-traffic-lights i:nth-child(3){background:#28c840;box-shadow:inset 0 0 0 1px #1da82f}
-.operator-window-title{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-align:center;font-weight:550}
-.operator-window-tool{justify-self:end;display:grid;place-items:center;color:#8c98ab}
-
-.operator-appbar{height:50px;display:flex;align-items:center;gap:18px;padding:0 18px;border-bottom:1px solid #e4e9f0;font-size:.625rem;color:var(--op-muted)}
-.operator-appbar .assembly-logo{width:112px;height:auto;flex-shrink:0}
-.operator-avatar{margin-left:auto;display:grid;place-items:center;width:28px;height:28px;flex-shrink:0;border-radius:50%;background:#e5ecfa;color:#385985;font-size:.5625rem;font-weight:650}
+.operator-appbar{height:48px;display:flex;align-items:center;gap:18px;padding:0 var(--op-gutter);border-bottom:1px solid #e4e9f0;color:var(--op-muted)}
+.operator-appbar .assembly-logo{width:104px;height:auto;flex-shrink:0}
+.operator-avatar{margin-left:auto;display:grid;place-items:center;width:28px;height:28px;flex-shrink:0;border-radius:50%;background:var(--op-blue-wash);color:var(--op-blue-ink);font-size:.625rem;font-weight:650}
 
 .operator-workspace-body{display:flex;min-width:0}
-.operator-rail{width:65px;flex-shrink:0;background:#f3f6fb;border-right:1px solid #e4e9f0;display:flex;align-items:center;flex-direction:column;gap:16px;padding-top:18px;color:#64758f}
-.operator-rail>span{display:grid;place-items:center;gap:5px;width:49px;min-height:40px;border-radius:6px}
-.operator-rail small{font-size:.5rem}
-.operator-rail .selected{background:#dce7ff;color:#1b4ac2}
+.operator-rail{width:60px;flex-shrink:0;background:#f3f6fb;border-right:1px solid #e4e9f0;display:flex;align-items:center;flex-direction:column;gap:12px;padding-top:16px;color:#5b6a84}
+.operator-rail>span{display:grid;place-items:center;width:40px;height:40px;border-radius:8px}
+.operator-rail .selected{background:var(--op-blue-wash);color:var(--op-blue-ink)}
 
-.operator-desk{container-type:inline-size;min-width:0;flex:1;padding:20px 18px 0}
-.operator-desk-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;height:46px;margin-bottom:16px}
-.operator-desk-heading>div>span{color:var(--op-muted);font-size:.6875rem}
-.discover-page .operator-desk-heading h3{font-size:1.25rem;line-height:1.2;font-weight:680;letter-spacing:-.025em;margin:5px 0 0;color:var(--op-ink)}
-.operator-status{font-size:.625rem;font-weight:600;background:#e9f0ff;padding:6px 9px;border-radius:5px;color:#274f9c;white-space:nowrap}
+.operator-desk{container-type:inline-size;min-width:0;flex:1;padding:20px var(--op-gutter) 0}
+/* The status pill sits on the title's baseline, not the block's centre: the
+   pill used to be vertically centred against a two-line stack, which read as a
+   few pixels of drift nobody could name. */
+.operator-desk-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:12px;margin-bottom:16px}
+.operator-desk-heading>div>span{display:block;color:var(--op-muted);font-size:.6875rem;margin-bottom:5px}
+.discover-page .operator-desk-heading h3{font-size:1.25rem;line-height:1.2;font-weight:680;letter-spacing:-.025em;margin:0;color:var(--op-ink)}
+.operator-status{font-size:.6875rem;font-weight:600;background:var(--op-blue-wash);padding:5px 10px;border-radius:5px;color:var(--op-blue-ink);white-space:nowrap}
 
-.operator-display{position:relative;isolation:isolate;height:clamp(440px,calc(100cqw / 1.72 + 92px),580px)}
+.operator-display{position:relative;isolation:isolate;height:clamp(380px,calc(100cqw / 2.6 + 92px),470px);transform:translateY(var(--pan,0px))}
 
-/* Screen handoff: transform and opacity only, no blur, nothing on layout. */
-.operator-screen{position:absolute;inset:0;background:#fff;opacity:0;visibility:hidden;pointer-events:none;transform:translate3d(8%,0,0) scale(.97);transform-origin:50% 55%;transition:transform 240ms cubic-bezier(.4,0,.9,1),opacity 240ms ease-out,visibility 240ms}
-.operator-screen[data-active='true']{opacity:1;visibility:visible;pointer-events:auto;transform:none;z-index:1;transition:transform 560ms var(--op-spring),opacity 240ms ease-out,visibility 0s}
-.operator-display[data-view='1'] .operator-inbox,
-.operator-display[data-view='2'] .operator-inbox,
-.operator-display[data-view='3'] .operator-inbox,
-.operator-display[data-view='3'] .operator-review-stage,
-.operator-display[data-view='4'] .operator-review-stage,
-.operator-display[data-view='4'] .operator-payment:not(.operator-receipt),
-.operator-display[data-view='0'] .operator-receipt{transform:translate3d(-6%,0,0) scale(1)}
+/* One cross-fade. Nothing slides, nothing scales, nothing springs. */
+.operator-screen{position:absolute;inset:0;background:#fff;opacity:0;visibility:hidden;pointer-events:none;transition:opacity 200ms var(--op-ease),visibility 200ms}
+.operator-screen[data-active='true']{opacity:1;visibility:visible;pointer-events:auto;z-index:1;transition:opacity 200ms var(--op-ease),visibility 0s}
 
-.operator-inbox{display:flex;flex-direction:column;justify-content:center;padding:22px 12px}
-.operator-inbox-title{display:grid;justify-items:center;gap:10px;margin-bottom:30px}
-.operator-upload-symbol{display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:#e8efff;color:#1c50c7}
-.discover-page .operator-inbox-title h4{font-size:1.375rem;font-weight:650;letter-spacing:-.02em;margin:0}
-.operator-inbox-title>span:last-child{font-size:.6875rem;color:var(--op-muted)}
-.operator-file-row{display:flex;align-items:center;gap:12px;width:100%;padding:12px;background:#f0f5ff;border:1px solid #bfd0ee;border-radius:9px;text-align:left;color:var(--op-ink);cursor:pointer;transition:transform 160ms var(--op-ease),background 180ms,border-color 180ms,box-shadow 180ms}
-.operator-file-row:hover,.operator-file-row[data-demo-hover='true']{background:#e2ecff;border-color:#9cb9ea;transform:translateY(-1px);box-shadow:0 8px 18px -12px #0b204d80}
-.operator-file-row[data-demo-clicked='true']{background:#cddfff;transform:translateY(-1px) scale(.97);box-shadow:none}
-.operator-file-row>img{width:66px;height:52px;object-fit:cover;border-radius:5px}
-.operator-file-row>span{min-width:0;display:grid;gap:6px}
+/* The empty state centres on the card, which is what it is centred in. It used
+   to be centred on the desk while the desk had asymmetric padding, so the icon
+   and the copy sat a gutter's width left of where they looked like they should. */
+.operator-inbox{display:flex;flex-direction:column;justify-content:center;width:min(100%,560px);margin-inline:auto}
+.operator-inbox-title{display:grid;justify-items:center;gap:8px;margin-bottom:24px}
+.operator-upload-symbol{display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--op-blue-wash);color:var(--op-blue-ink)}
+.discover-page .operator-inbox-title h4{font-size:1.25rem;font-weight:650;letter-spacing:-.02em;margin:0;text-align:center}
+.operator-inbox-title>span:last-child{font-size:.75rem;color:var(--op-muted)}
+.operator-file-row{display:flex;align-items:center;gap:12px;width:100%;padding:12px;background:#f0f5ff;border:1px solid #bfd0ee;border-radius:9px;text-align:left;color:var(--op-ink);cursor:pointer;transition:background 160ms,border-color 160ms,transform 120ms var(--op-ease)}
+.operator-file-row:hover{background:#e2ecff;border-color:#9cb9ea}
+.operator-file-row:active,.operator-file-row[data-demo-press='true']{background:#cddfff;border-color:#8fb0e6;transform:scale(.99)}
+.operator-file-row>img{width:64px;height:50px;object-fit:cover;border-radius:5px}
+.operator-file-row>span{min-width:0;display:grid;gap:5px}
 .operator-file-row strong{font-size:.9375rem;font-weight:650}
-.operator-file-row small{font-size:.625rem;color:var(--op-muted)}
-.operator-file-row>b{margin-left:auto;display:grid;place-items:center;color:#2057c2}
-.operator-file-meta{display:flex;justify-content:space-between;gap:12px;margin:10px 0 30px;font-size:.625rem;color:var(--op-muted)}
+.operator-file-row small{font-size:.6875rem;color:var(--op-muted)}
+.operator-file-row>b{margin-left:auto;display:grid;place-items:center;color:var(--op-blue-ink)}
+.operator-file-meta{display:flex;justify-content:space-between;gap:12px;margin:12px 0 24px;font-size:.6875rem;color:var(--op-muted)}
 .operator-transfer{display:flex;flex-wrap:wrap;gap:9px;justify-content:space-between;font-size:.6875rem;color:var(--op-muted)}
-.operator-transfer i{height:4px;width:100%;background:#326ce1;border-radius:2px}
+.operator-transfer i{height:4px;width:100%;background:var(--op-blue);border-radius:2px}
 
 .operator-review-stage{display:flex;flex-direction:column}
 .operator-footage{position:relative;flex:1;min-height:0;background:#16243d;overflow:hidden;border-radius:8px}
 .operator-footage video{display:block;width:100%;height:100%;object-fit:cover}
-.operator-footage-label,.operator-time{position:absolute;background:#101a2ce6;color:#fff;font-size:.625rem;border-radius:4px;padding:5px 8px}
+.operator-footage-label,.operator-time{position:absolute;background:#101a2ce6;color:#fff;font-size:.6875rem;border-radius:4px;padding:5px 8px}
 .operator-footage-label{left:10px;top:10px;display:flex;align-items:center;gap:5px}
 .operator-footage-label i{width:5px;height:5px;background:#72d6ff;border-radius:50%}
 .operator-time{right:10px;bottom:10px;font-variant-numeric:tabular-nums}
 .operator-hero[data-running='false'] .operator-time{bottom:42px}
-.operator-review-panel{height:118px;flex-shrink:0;position:relative;font-size:.75rem}
-.operator-review-checklist,.operator-verdict-panel{position:absolute;inset:0;display:flex;justify-content:center;flex-direction:column;gap:10px;transition:opacity 200ms,transform 500ms var(--op-spring)}
-.operator-review-checklist{opacity:1;transform:none}
-.operator-verdict-panel{opacity:0;transform:translateY(12px);pointer-events:none}
-.operator-review-panel[data-verdict='true'] .operator-review-checklist{opacity:0;transform:translateY(-10px);pointer-events:none}
-.operator-review-panel[data-verdict='true'] .operator-verdict-panel{opacity:1;transform:none}
-.operator-criteria{display:flex;flex-wrap:wrap;gap:7px 10px;font-size:.6875rem;color:var(--op-muted)}
-.operator-criteria>span{display:flex;align-items:center;gap:6px;padding:6px 8px;background:#f2f5fa;border-radius:6px;transition:background 180ms,color 180ms,transform 180ms var(--op-ease)}
-.operator-criteria>span>svg{flex:none;color:#9aa8bd;transition:color 180ms}
-.operator-criteria>span[data-demo-hover='true']{background:#e6edfa;transform:translateY(-1px)}
-.operator-criteria>span[data-demo-clicked='true']{background:#d6e2f7;transform:translateY(-1px) scale(.97)}
-.operator-criteria>span[data-demo-done='true']{background:#d8f2e4;color:#0f5c3c}
-.operator-criteria>span[data-demo-done='true']>svg{color:#127a4e;animation:operator-pop 220ms var(--op-spring) both}
+.operator-review-panel{height:116px;flex-shrink:0;position:relative;font-size:.75rem}
+.operator-review-checklist,.operator-verdict-panel{position:absolute;inset:0;display:flex;justify-content:center;flex-direction:column;gap:10px;transition:opacity 200ms var(--op-ease)}
+.operator-verdict-panel{opacity:0;pointer-events:none}
+.operator-review-panel[data-verdict='true'] .operator-review-checklist{opacity:0;pointer-events:none}
+.operator-review-panel[data-verdict='true'] .operator-verdict-panel{opacity:1}
+.operator-criteria{display:flex;flex-wrap:wrap;gap:7px 10px;font-size:.75rem}
+/* Real buttons: they press under a thumb and under the scripted hand alike. */
+.operator-criteria>button{display:flex;align-items:center;gap:6px;padding:7px 10px;min-height:32px;border:1px solid transparent;background:#f2f5fa;border-radius:6px;color:var(--op-muted);font:inherit;cursor:pointer;transition:background 160ms,color 160ms}
+.operator-criteria>button>svg{flex:none;color:#8996ab;transition:color 160ms}
+.operator-criteria>button:hover{background:#e6edfa}
+.operator-criteria>button:active,.operator-criteria>button[data-demo-press='true']{background:#d6e2f7;transform:scale(.97)}
+.operator-criteria>button[aria-pressed='true']{background:#d8f2e4;color:var(--op-green)}
+.operator-criteria>button[aria-pressed='true']>svg{color:var(--op-green)}
 .operator-verdict{display:flex;align-items:center;gap:10px}
-.operator-check{display:grid;place-items:center;width:30px;height:30px;flex-shrink:0;border-radius:50%;background:#dff3e9;color:#166b45}
-.operator-verdict>span:last-child{margin-left:auto;text-align:right;font-size:.625rem;max-width:140px;color:var(--op-muted)}
+.operator-check{display:grid;place-items:center;width:30px;height:30px;flex-shrink:0;border-radius:50%;background:#dff3e9;color:var(--op-green)}
+.operator-verdict>span:last-child{margin-left:auto;text-align:right;font-size:.6875rem;max-width:150px;color:var(--op-muted)}
 .operator-verdict b{display:block;font-size:1rem;color:var(--op-ink);margin-top:4px}
-.operator-verdict-panel>p{font-size:.6875rem;line-height:1.5;margin:0;color:var(--op-muted)}
+.operator-verdict-panel>p{font-size:.75rem;line-height:1.5;margin:0;color:var(--op-muted)}
 
 .operator-payment{display:flex;align-items:center;justify-content:center;flex-direction:column}
 .operator-payment-brand{display:flex;align-items:center;gap:8px;font-size:.75rem;font-weight:600;color:var(--op-muted);margin-bottom:12px}
-.operator-zalo{width:40px;height:40px;object-fit:contain}
-.discover-page .operator-payment h4{font-size:1.5rem;font-weight:680;letter-spacing:-.03em;margin:4px 0 14px;text-align:center;color:var(--op-ink)}
-.operator-payment>p,.operator-payment>small{font-size:.6875rem;color:var(--op-muted);margin:0}
-.operator-qr{position:relative;background:#fff;margin:0 0 12px;width:140px;height:140px;border-radius:6px;transition:transform 180ms var(--op-ease),box-shadow 180ms}
-.operator-qr[data-demo-hover='true']{transform:translateY(-1px);box-shadow:0 0 0 4px #e3ecff,0 10px 22px -14px #0b204d80}
+.operator-zalo{width:38px;height:38px;object-fit:contain}
+.discover-page .operator-payment h4{font-size:1.375rem;font-weight:680;letter-spacing:-.03em;margin:4px 0 14px;text-align:center;color:var(--op-ink)}
+.operator-payment>p,.operator-payment>small{font-size:.75rem;color:var(--op-muted);margin:0}
+.operator-qr{position:relative;background:#fff;margin:0 0 12px;width:132px;height:132px;border-radius:6px}
 .operator-qr img{width:100%;height:100%;display:block}
-.operator-qr i{position:absolute;inset:8% 0 auto;height:2px;background:#1661e1;box-shadow:0 5px 16px #0959df66;animation:operator-scan 1.1s ease-in-out infinite alternate paused}
+.operator-qr i{position:absolute;inset:8% 0 auto;height:2px;background:var(--op-blue);animation:operator-scan 1.1s ease-in-out infinite alternate paused}
 .operator-hero[data-running='true'] .operator-qr i{animation-play-state:running}
-.operator-payment>button{margin-top:18px;display:flex;align-items:center;gap:24px;border:0;border-radius:var(--radius-pill);background:var(--op-blue);color:#fff;padding:12px 20px;min-height:44px;cursor:pointer;font-size:.75rem;font-weight:600;transition:transform 160ms var(--op-ease),background 160ms,box-shadow 180ms}
-.operator-settled-check{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;background:#d6f3e4;color:#136440;margin-bottom:10px}
-.operator-payment .operator-amount{font-size:2.75rem;line-height:1.15;letter-spacing:-.035em;font-variant-numeric:tabular-nums;margin:4px 0 7px;color:#136440;font-weight:720}
-.operator-payment dl{width:100%;max-width:320px;font-size:.6875rem;margin:22px 0 0}
-.operator-payment dl>div{display:flex;justify-content:space-between;gap:12px;border-top:1px solid #e4eaf2;padding:10px 0}
+.operator-payment>button{margin-top:16px;display:flex;align-items:center;gap:20px;border:0;border-radius:var(--radius-pill);background:var(--op-blue);color:#fff;padding:12px 20px;min-height:44px;cursor:pointer;font-size:.75rem;font-weight:600;transition:background 160ms}
+.operator-settled-check{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;background:#d6f3e4;color:var(--op-green);margin-bottom:10px}
+.operator-payment .operator-amount{font-size:2.5rem;line-height:1.15;letter-spacing:-.035em;font-variant-numeric:tabular-nums;margin:4px 0 7px;color:var(--op-green);font-weight:720}
+.operator-payment dl{width:100%;max-width:320px;font-size:.75rem;margin:20px 0 0}
+.operator-payment dl>div{display:flex;justify-content:space-between;gap:12px;border-top:1px solid #e4eaf2;padding:9px 0}
 .operator-payment dt{color:var(--op-muted)}
 .operator-payment dd{margin:0;font-weight:600}
-.operator-paid{color:#136440;display:flex;align-items:center;gap:5px}
+.operator-paid{color:var(--op-green);display:flex;align-items:center;gap:5px}
 
-.operator-desk>footer{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid #e4e9f0;min-height:64px;font-size:.625rem;color:var(--op-muted)}
-.operator-desk>footer button{display:flex;align-items:center;gap:16px;min-height:40px;padding:10px 16px;color:#fff;background:var(--op-blue);border:0;border-radius:var(--radius-pill);cursor:pointer;font-size:.6875rem;font-weight:650;transition:transform 160ms var(--op-ease),background 160ms,box-shadow 180ms}
-.operator-desk>footer button:hover,.operator-payment>button:hover,
-.operator-desk>footer button[data-demo-hover='true'],.operator-payment>button[data-demo-hover='true']{background:#1039a4;transform:translateY(-1px);box-shadow:0 10px 20px -12px #0b204dcc}
-.operator-desk>footer button[data-demo-clicked='true'],.operator-payment>button[data-demo-clicked='true']{background:#092776;transform:translateY(-1px) scale(.97);box-shadow:none}
-.operator-desk>footer button:active,.operator-payment>button:active{transform:translateY(1px) scale(.98)}
+/* The identity line and the button share one baseline; the footer keeps the
+   desk's gutter rather than inventing its own. */
+.operator-desk>footer{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid #e4e9f0;min-height:64px;font-size:.6875rem;color:var(--op-muted)}
+.operator-desk>footer button{display:flex;align-items:center;gap:16px;min-height:40px;padding:10px 16px;color:#fff;background:var(--op-blue);border:0;border-radius:var(--radius-pill);cursor:pointer;font-size:.75rem;font-weight:650;transition:background 160ms}
+.operator-desk>footer button:hover,.operator-payment>button:hover{background:#1745c4}
+.operator-desk>footer button:active,.operator-payment>button:active,
+.operator-desk>footer button[data-demo-press='true'],.operator-payment>button[data-demo-press='true']{background:var(--op-blue-pressed);transform:scale(.97)}
 
-/* The pointer: real macOS silhouette, spring travel, one click ring. */
-.operator-cursor{position:absolute;left:0;top:0;transform:translate3d(var(--cursor-x,78%),var(--cursor-y,62%),0);transition:transform var(--cursor-travel,520ms) var(--op-spring),opacity 160ms;pointer-events:none;z-index:10;opacity:0;filter:drop-shadow(0 2px 3px #0006)}
+/* The pointer. Position and press scale come from the hook; nothing here
+   transitions, or the spring would be filtered through an easing curve. */
+.operator-cursor{position:absolute;left:0;top:0;translate:var(--cursor-x,62%) var(--cursor-y,50%);pointer-events:none;z-index:10;opacity:0;filter:drop-shadow(0 2px 3px #0006)}
 .operator-hero[data-running='true'] .operator-cursor{opacity:1}
-.operator-cursor svg{position:relative;z-index:1;display:block;transform-origin:3px 2px;transition:transform 120ms ease-out}
-.operator-cursor[data-pressing='true'] svg{transform:scale(.82)}
-.operator-cursor i{position:absolute;left:-11px;top:-10px;width:26px;height:26px;border:2px solid #16409bb3;background:#2f6bff26;border-radius:50%;opacity:0;transform:scale(.25)}
-.operator-cursor[data-pressing='true'] i{animation:operator-ring 260ms ease-out}
+.operator-cursor svg{display:block;transform-origin:3px 2px;transition:scale 120ms var(--op-ease)}
+.operator-cursor[data-pressing='true'] svg{scale:.92}
 
-/* A dark control tray: the stage gradient's light end cannot host small text. */
-.operator-step-nav{display:flex;gap:2px;justify-content:space-between;margin-top:18px;padding:4px 4px 0;background:#05102ba8;border-radius:12px 12px 0 0}
-.operator-step-nav button{position:relative;display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;flex:1;padding:8px 5px;border:0;background:transparent;color:#ffffffd4;border-radius:8px;cursor:pointer;font-size:.6875rem;white-space:nowrap;overflow:hidden;transition:background 180ms,color 180ms,transform 180ms var(--op-ease),box-shadow 180ms}
-.operator-step-nav button>span{font-size:.5rem;font-variant-numeric:tabular-nums;opacity:.7}
-.operator-step-nav button:hover{background:#ffffff1f;color:#fff;transform:translateY(-1px)}
-.operator-step-nav button[aria-current='step'],.operator-step-nav button[aria-current='step']:hover{background:#1b3d8f;color:#fff;box-shadow:inset 0 1px 0 #ffffff4d,inset 0 0 0 1px #ffffff1f}
-.operator-step-nav button[aria-current='step']::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:#a2ddff;transform:scaleX(var(--operator-progress,0));transform-origin:left}
-.operator-disclosure{margin:0!important;padding:8px 12px 12px!important;background:#05102ba8;border-radius:0 0 12px 12px;color:#ffffffcf;font-size:.6875rem!important;line-height:1.6!important;max-width:none}
-.operator-hero :focus-visible{outline:2px solid #73caff;outline-offset:4px}
-.operator-workspace :focus-visible{outline-color:var(--op-blue)}
+/* Above the window's shadow, not under it. The shadow's 90px offset and 140px
+   blur reach past the nav, and it was painting the current step's white pill
+   down to #909090 — measured, and the reason the nav's own label came out at
+   5.53:1 when the colours say 15.9:1. */
+.operator-step-nav{position:relative;z-index:1;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:24px}
+.operator-step-nav button{display:flex;align-items:center;gap:7px;min-height:40px;padding:8px 14px;border:1px solid #ffffff2e;background:transparent;color:var(--op-on-field-muted);border-radius:var(--radius-pill);cursor:pointer;font-size:.75rem;white-space:nowrap;transition:background 160ms,color 160ms,border-color 160ms}
+.operator-step-nav button>span{font-size:.625rem;font-variant-numeric:tabular-nums;opacity:.75}
+.operator-step-nav button:hover{background:#ffffff1a;color:var(--op-on-field)}
+.operator-step-nav button:active{background:#ffffff26}
+.operator-step-nav button[aria-current='step']{background:var(--op-on-field);border-color:var(--op-on-field);color:#1b1226;font-weight:600}
+
+/* Daylight's caption row: three lines, no card, no tray. */
+.operator-captions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(20px,2.6vw,44px);width:min(100%,1120px);margin:40px 0 0;padding:0;list-style:none}
+.operator-captions li{display:grid;gap:6px;border-top:1px solid #ffffff2e;padding-top:14px;color:var(--op-on-field-muted)}
+.operator-captions svg{color:var(--op-on-field)}
+.operator-captions strong{font-size:.9375rem;font-weight:650;color:var(--op-on-field)}
+.operator-captions p{font-size:.8125rem;line-height:1.5;margin:0;color:var(--op-on-field-muted);text-wrap:pretty}
+
+.operator-disclosure{width:min(100%,1120px);margin:32px 0 0!important;padding:0!important;color:var(--op-on-field-muted);font-size:.75rem!important;line-height:1.6!important;max-width:min(100%,72ch)}
+.operator-hero :focus-visible{outline:2px solid #a9c6ff;outline-offset:3px}
+.operator-window :focus-visible{outline-color:var(--op-blue);outline-offset:2px}
 .operator-video-error{position:absolute;inset:0;display:grid;place-content:center;gap:8px;background:#172238;color:#fff;font-size:.75rem;text-align:center}
-.operator-video-error button{min-height:44px;background:#fff;color:#172238;border:0;border-radius:4px;cursor:pointer}
+.operator-video-error button{min-height:44px;padding-inline:16px;background:#fff;color:#172238;border:0;border-radius:4px;cursor:pointer}
 
-@keyframes operator-scan{to{transform:translateY(112px)}}
-@keyframes operator-pop{from{transform:scale(.6)}to{transform:scale(1)}}
-@keyframes operator-ring{from{transform:scale(.25);opacity:1}to{transform:scale(1.9);opacity:0}}
+@keyframes operator-scan{to{transform:translateY(106px)}}
 
-@media(min-width:1700px){.operator-hero{padding-inline:max(2.4vw,calc((100vw - 1720px)/2))}}
-@media(max-width:1200px){
-  .operator-rail{width:40px}.operator-rail>span{width:32px}.operator-rail small{display:none}
-  .operator-desk{padding-inline:14px}.operator-appbar>span:not(.operator-avatar){display:none}.operator-desk>footer>span{max-width:45%}
-}
 @media(max-width:1000px){
-  .operator-hero{grid-template-columns:1fr;padding:clamp(48px,6vw,72px) 28px clamp(56px,6vw,80px);gap:40px}
-  .operator-pitch{padding:0}
-  .discover-page .operator-pitch h2{font-size:clamp(2.75rem,11vw,7rem)}
-  .operator-stage{width:100%;max-width:860px;justify-self:center;margin-right:0;padding:16px 18px 18px}
-  .operator-rail{width:65px}.operator-rail>span{width:49px}.operator-rail small{display:block}
-  .operator-desk{padding-inline:18px}.operator-step-nav button{font-size:.6875rem}
+  .operator-desk{--op-gutter:18px}
+  .operator-captions{grid-template-columns:1fr;gap:16px}
 }
 @media(max-width:600px){
-  .operator-hero{padding:40px 20px 48px;gap:32px}
-  .operator-partners{--cap:24px;gap:16px;margin-bottom:24px}
-  .operator-partner-cross{font-size:1.125rem}
-  .discover-page .operator-pitch h2{font-size:clamp(2.75rem,13.6vw,5.25rem)}
-  .operator-pitch>p{font-size:1.0625rem;line-height:1.6}
-  .operator-principles{grid-template-columns:1fr 1fr;gap:16px;margin-top:30px}
-  .operator-principles h3{font-size:.875rem}.operator-principles p{font-size:.8125rem}
-  .operator-stage{padding:12px 10px 14px;border-radius:14px}
-  .operator-stage-caption{font-size:.625rem;margin-bottom:10px}
-  .operator-appbar{padding-inline:12px}
+  .operator-hero{padding:40px 16px 48px}
+  .operator-partners{--cap:22px;gap:14px}
+  .discover-page .operator-intro h2{font-size:clamp(2rem,9vw,3rem)}
+  .operator-window{border-radius:12px}
+  /* The toggle needs clearance from the window's rounded corner. At 10px of
+     bar padding it sat 10px from a 12px radius, and the boundary probe's ring
+     caught the plum field showing through the curve: 2.29:1 against a ground
+     that is outside the window entirely. 16px of padding puts the ring back on
+     the bar, where the control's edge actually has to be found. */
+  .operator-window-bar{height:44px;padding-inline:16px;gap:8px}
+  .operator-url-pill{padding:5px 10px;font-size:.6875rem}
+  .operator-url-note{display:none}
   .operator-rail{display:none}
-  .operator-desk{padding:16px 12px 0}
-  .operator-criteria{font-size:.625rem;gap:6px}.operator-criteria>span{padding:5px 6px}
-  .operator-payment .operator-amount{font-size:2.25rem}
-  .operator-inbox{padding:12px 0}
-  .operator-file-row{gap:8px;padding:10px}.operator-file-row>img{width:52px;height:48px}.operator-file-row strong{font-size:.8125rem}
-  .operator-file-meta{font-size:.5625rem}
-  .operator-step-nav{margin-top:14px;gap:0;padding:3px 3px 0}.operator-step-nav button{font-size:.5625rem;padding-inline:2px}.operator-step-nav button>span{display:none}
-  .operator-disclosure{font-size:.625rem!important}
+  .operator-desk{--op-gutter:14px;padding-top:16px}
+  .operator-appbar{padding-inline:14px}
+  .operator-display{height:clamp(380px,calc(100cqw / 1.3 + 92px),460px)}
+  .operator-payment .operator-amount{font-size:2rem}
+  .operator-step-nav button{font-size:.6875rem;padding-inline:11px}
+  .operator-step-nav button>span{display:none}
   .operator-desk>footer{min-height:58px}
-  .operator-desk>footer button{font-size:.5625rem;min-height:44px;padding-inline:12px;gap:10px}
-  .operator-desk>footer>span{max-width:48%;font-size:.5rem}
-  .operator-payment-brand{font-size:.6875rem}.operator-zalo{width:34px;height:34px}
+  .operator-desk>footer button{font-size:.6875rem;padding-inline:13px;gap:10px}
 }
-@media(max-width:350px){
-  .operator-hero{padding-inline:12px}
-  .operator-partners{--cap:21px;gap:14px}
-  .operator-stage{padding-inline:8px}
-  .operator-desk{padding-inline:10px}
-  .operator-window-title{font-size:.5625rem}
-}
+/* No hand, no scan line, no fade. The states still turn over — on a timer, in
+   the component — because a hero that never shows the other four screens is a
+   picture, not a demo. */
 @media(prefers-reduced-motion:reduce){
   .operator-hero *{animation:none!important;transition:none!important}
   .operator-cursor{display:none}
-  .operator-screen{transform:none}
+  .operator-window-content{transform:none}
+  .operator-display{transform:none}
+  /* The one exception: a state that swapped instantly would be a flash, which
+     is worse for the same reader than the fade it replaced. */
+  .operator-screen{transition:opacity 200ms var(--op-ease),visibility 200ms!important}
+  .operator-screen[data-active='true']{transition:opacity 200ms var(--op-ease),visibility 0s!important}
 }
