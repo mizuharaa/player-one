@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -45,4 +46,53 @@ test('version codes must be explicit valid Play integers', () => {
   for (const version of ['', '0', '-1', '1.5', '2100000001']) {
     assert.throws(() => config({ ...demo, PLAYERONE_VERSION_CODE: version }), /PLAYERONE_VERSION_CODE/);
   }
+});
+
+/**
+ * The profiles EAS will actually build, read out of `eas.json` and put through
+ * the same config loader.
+ *
+ * This is here because the two halves drifted: `testflight` inherited
+ * `demo`'s `https://demo.playerone.invalid`, which `app.config.cjs` accepts
+ * for a demo build and which no phone can resolve — so the one build the
+ * owner installs on his iPhone would have shipped pointed at nothing. The
+ * runtime override (`src/api/origin.ts`) is how a build reaches a laptop or
+ * the cloud, but its default has to be a real host, because a build whose
+ * default is unresolvable is unusable until somebody finds the Server row.
+ *
+ * `extends` merges env in EAS, child keys winning; `profileEnv` reproduces
+ * that so the assertions are about what the build gets, not about one JSON
+ * object.
+ */
+const eas = JSON.parse(readFileSync(new URL('../eas.json', import.meta.url), 'utf8'));
+function profileEnv(name) {
+  const profile = eas.build[name];
+  assert.ok(profile, `eas.json has no ${name} profile`);
+  return { ...(profile.extends ? profileEnv(profile.extends) : {}), ...profile.env };
+}
+const CLOUD = 'https://api.playerone.vng.com.vn';
+
+test('every installable profile in eas.json names a resolvable origin', () => {
+  for (const name of ['demo', 'store', 'testflight']) {
+    const origin = profileEnv(name).EXPO_PUBLIC_API_URL;
+    assert.equal(origin, CLOUD, `${name} must default to the Vietnam cloud domain`);
+    assert.doesNotMatch(new URL(origin).hostname, /\.(invalid|test|local|localhost|example)$/i);
+  }
+});
+
+test('the TestFlight profile is a store-distributed demo at version 43', () => {
+  assert.equal(eas.build.testflight.distribution, 'store');
+  assert.equal(eas.build.testflight.pnpm, eas.build.demo.pnpm);
+  const env = profileEnv('testflight');
+  assert.equal(env.PLAYERONE_BUILD_PROFILE, 'demo');
+  assert.equal(env.PLAYERONE_VERSION_CODE, '43');
+  // What Expo hands the native build: iOS reads the build number, Android the
+  // version code, and both come from the one variable.
+  const value = config(env);
+  assert.equal(value.ios.buildNumber, '43');
+  assert.equal(value.android.versionCode, 43);
+  assert.equal(value.ios.bundleIdentifier, 'vn.vng.playerone.collector.demo');
+  // A demo build talks to a laptop over plain HTTP once the origin is
+  // overridden at runtime, so it keeps arbitrary loads and cleartext.
+  assert.equal(value.ios.infoPlist.NSAppTransportSecurity.NSAllowsArbitraryLoads, true);
 });
