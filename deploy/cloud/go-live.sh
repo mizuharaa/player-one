@@ -4,16 +4,18 @@
 # on the VM over SSH. See docs/cloud-go-live.md "From the laptop with one IP".
 set -euo pipefail
 
-usage() { echo "Usage: bash deploy/cloud/go-live.sh <ip> [--domain D] [--bucket B] [--acme-email E] [--ssh-port N] [--quota-bytes N] [--dry-run|--plan]" >&2; exit 2; }
+usage() { echo "Usage: bash deploy/cloud/go-live.sh <ip> [--domain D] [--bucket B] [--acme-email E] [--ssh-port N] [--ssh-user U] [--quota-bytes N] [--force] [--dry-run|--plan]" >&2; exit 2; }
 [[ $# -ge 1 ]] || usage
 ip=$1; shift
-domain=; bucket=; acme_email=luong.alois@gmail.com; ssh_port=234; quota=1250000000; dry_run=0
+domain=; bucket=; acme_email=luong.alois@gmail.com; ssh_port=234; ssh_user=ubuntu; quota=1250000000; dry_run=0; force=
 while [[ $# -gt 0 ]]; do
   case $1 in
     --domain) domain=$2; shift 2 ;;
     --bucket) bucket=$2; shift 2 ;;
     --acme-email) acme_email=$2; shift 2 ;;
     --ssh-port) ssh_port=$2; shift 2 ;;
+    --ssh-user) ssh_user=$2; shift 2 ;;
+    --force) force=--force; shift ;;   # provision.sh refuses a re-run without it
     --quota-bytes) quota=$2; shift 2 ;;
     --dry-run|--plan) dry_run=1; shift ;;
     *) usage ;;
@@ -24,13 +26,14 @@ echo "Domain: $domain (sslip.io needs no DNS record; Caddy's ACME resolves it di
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 ssh_key=~/.ssh/id_ed25519         # fable-playerone-vm
-# GreenNode's Ubuntu 22.04 image logs in as a sudo-capable "ubuntu" user, not
-# root directly — docs/cloud-go-live.md's own recipe opens with `sudo -i`.
-ssh_user=ubuntu
+# The login user is an assumption (Ubuntu cloud images: "ubuntu", passwordless
+# sudo); the first real run tests it. --ssh-user overrides.
 remote_src=/root/playerone-src
 ssh_opts=(-p "$ssh_port" -i "$ssh_key" -o StrictHostKeyChecking=accept-new)
 scp_opts=(-P "$ssh_port" -i "$ssh_key" -o StrictHostKeyChecking=accept-new)  # scp's port flag is capital P, ssh's is lowercase
 [[ -n $bucket ]] || bucket="playerone-demo-$(date -u +%Y%m%d)"
+provision_script=; bundle_file=
+trap 'rm -f "$provision_script" "$bundle_file"' EXIT   # the provision script carries the storage secret
 
 # --- storage credentials: never printed, only masked ---
 env_file="C:/Users/Khang/OneDrive/Documents/player-one/.env.local"
@@ -75,15 +78,16 @@ step_stdin() {
 
 # 1. GreenNode bucket: the exact S3 client call deploy/emu/ensure-bucket.mjs
 # uses (forcePathStyle, region auto), reused rather than reimplemented.
-step bucket env STORAGE_ENDPOINT="$STORAGE_ENDPOINT" STORAGE_BUCKET="$bucket" \
+[[ -n ${GO_LIVE_BUNDLE_ONLY:-} ]] || step bucket env STORAGE_ENDPOINT="$STORAGE_ENDPOINT" STORAGE_BUCKET="$bucket" \
   STORAGE_KEY="$STORAGE_KEY" STORAGE_SECRET="$STORAGE_SECRET" \
   node "$repo_root/deploy/emu/ensure-bucket.mjs"
 
 # 2. Bundle the reviewed checkout (git archive would lose history git-clone
 # needs; bundle+clone is what docs/cloud-go-live.md's own recipe uses).
-bundle_branch=go-live
 bundle_file=$(mktemp -u).bundle   # -u: name only, git bundle create makes the file
-step bundle git -C "$repo_root" bundle create "$bundle_file" "HEAD:refs/heads/$bundle_branch"
+step bundle git -C "$repo_root" bundle create "$bundle_file" HEAD
+# GO_LIVE_BUNDLE_ONLY=<path>: stop here and keep the bundle there (the test clones it).
+if [[ -n ${GO_LIVE_BUNDLE_ONLY:-} ]]; then mv "$bundle_file" "$GO_LIVE_BUNDLE_ONLY"; bundle_file=; exit 0; fi
 step copy-bundle scp "${scp_opts[@]}" "$bundle_file" "$ssh_user@$ip:/tmp/cloud-provision.bundle"
 
 # 3. provision.sh, over SSH, via stdin so the storage secret never sits in a
@@ -94,13 +98,12 @@ provision_script=$(mktemp)
   echo 'umask 077'
   echo 'apt-get update -qq && apt-get install -y git >/dev/null'
   printf 'rm -rf %q\n' "$remote_src"
-  printf 'git clone --branch %q /tmp/cloud-provision.bundle %q\n' "$bundle_branch" "$remote_src"
+  printf 'git clone /tmp/cloud-provision.bundle %q\n' "$remote_src"
   printf 'cd %q\n' "$remote_src"
-  printf 'bash deploy/cloud/provision.sh --domain %q --acme-email %q --local-db --storage-endpoint %q --storage-bucket %q --storage-key %q --storage-secret %q --quota-bytes %q\n' \
-    "$domain" "$acme_email" "$STORAGE_ENDPOINT" "$bucket" "$STORAGE_KEY" "$STORAGE_SECRET" "$quota"
+  printf 'bash deploy/cloud/provision.sh --domain %q --acme-email %q --local-db --storage-endpoint %q --storage-bucket %q --storage-key %q --storage-secret %q --quota-bytes %q %s\n' \
+    "$domain" "$acme_email" "$STORAGE_ENDPOINT" "$bucket" "$STORAGE_KEY" "$STORAGE_SECRET" "$quota" "$force"
 } > "$provision_script"
 step_stdin provision "$provision_script" ssh "${ssh_opts[@]}" "$ssh_user@$ip" sudo bash -s
-rm -f "$provision_script" "$bundle_file"
 
 # 4. up.sh, then verify.sh — no secrets in either command line.
 step up ssh "${ssh_opts[@]}" "$ssh_user@$ip" "sudo bash -c 'cd /srv/playerone/deploy/cloud && bash up.sh'"
@@ -110,7 +113,7 @@ echo
 if [[ $dry_run == 1 ]]; then
   echo "DRY-RUN complete; nothing was run."
 else
-  echo "PASS go-live"
+  echo "PASS go-live (verify.sh's own PASS/SKIPPED lines above are the evidence)"
 fi
 echo "URL:     https://$domain"
 echo "Console: https://$domain (sign in as Operator: machine 'demo-machine-1', reference 'op-1')"

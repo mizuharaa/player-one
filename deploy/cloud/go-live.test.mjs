@@ -59,6 +59,26 @@ test('never prints the storage key or secret, and masks them with ***', () => {
   assert.match(out, /--storage-secret \*\*\*/);
 });
 
+test('the bundle it ships clones into a checkout provision.sh can run from', () => {
+  // The only step that runs for real here: everything after it needs the VM.
+  const scratch = mkdtempSync(join(tmpdir(), 'playerone-go-live-bundle-'));
+  const bundle = join(scratch, 'ship.bundle');
+  const made = spawnSync('bash', [join(repoRoot, 'deploy/cloud/go-live.sh'), '203.0.113.7'],
+    { cwd: repoRoot, env: { ...env, GO_LIVE_BUNDLE_ONLY: bundle }, encoding: 'utf8' });
+  assert.equal(made.status, 0, made.stdout + made.stderr);
+  const clone = join(scratch, 'src');
+  const cloned = spawnSync('git', ['clone', '-q', bundle, clone], { encoding: 'utf8' });
+  assert.equal(cloned.status, 0, cloned.stderr);
+  assert.ok(existsSync(join(clone, 'deploy/cloud/provision.sh')), 'provision.sh is in the clone');
+  assert.ok(!existsSync(join(clone, '.env.local')), 'secrets do not travel in the bundle');
+});
+
+test('--force reaches provision.sh and --ssh-user changes the login', () => {
+  const out = dryRun(['203.0.113.7', '--force', '--ssh-user', 'root']);
+  assert.match(out, /--quota-bytes 1250000000 --force/);
+  assert.match(out, /root@203\.0\.113\.7/);
+});
+
 test('runs the steps in order: bucket, bundle, copy, provision, up, verify', () => {
   const out = dryRun(['203.0.113.7']);
   const at = (label) => out.indexOf(`DRY-RUN ${label}:`);

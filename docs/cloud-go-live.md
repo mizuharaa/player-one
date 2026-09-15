@@ -43,7 +43,7 @@ That derives `--domain` as `api.14-225-1-2.sslip.io` (dots to dashes; override
 with `--domain`) — **sslip.io needs no DNS record**, it resolves any
 `<anything>.<ip-with-dashes>.sslip.io` back to that IP, and Caddy's ACME
 (HTTP-01) works against it exactly as it would against a real hostname. It then:
-reads the four GreenNode storage values from `.env.local` on this machine or
+reads the three GreenNode storage values (endpoint, key, secret) from `.env.local` on this machine or
 `~/.playerone/greennode.env`, and creates `--bucket` (default
 `playerone-demo-<yyyymmdd>`) if it does not already exist, using the same S3
 client call as `deploy/emu/ensure-bucket.mjs`; bundles this checkout
