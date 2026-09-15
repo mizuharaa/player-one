@@ -304,8 +304,11 @@ They can read the task board — `/api/me/tasks` and one task's detail — and t
 cannot take work: `POST /api/me/tasks/:id/claims` answers 409
 **`collector_not_onboarded`**, which is `task_claims_onboarding_gate` in the
 database translated for the phone. Declaring a session and registering an
-upload were already refused, by APP-15's `device_not_bound` and by
-`upload_unknown_session`, and no gate was added for them. An operator lifts the
+upload were already refused, and no gate was added for them: a prospect has
+bound no camera, so `POST /api/me/sessions` answers `device_not_found` on the
+serial it was given (`device_not_bound` is the other branch — a camera that
+exists and belongs to somebody else), and an upload has to name a session this
+collector owns, so it answers `upload_unknown_session`. An operator lifts the
 prospect with `PATCH /api/collectors/:id` the way they qualify anybody else; a
 prospect shows as one in `GET /api/collectors`, so "who is waiting for me at
 the counter" stays answerable. The code still reaches the phone however this
