@@ -39,3 +39,73 @@ describe('the demo seed against the app it seeds for', () => {
     }
   });
 });
+
+/**
+ * The seed and the demo cannot want the same billing period.
+ *
+ * At the rehearsal the 0:24 bill request for the demo period answered
+ * `created: 0` with `deferred_to_next_period: {settlements: 2}`, because the
+ * seeded bill already held that exact period and
+ * `bills_collector_period_key` has nowhere to put a second one. The room
+ * watched a review become money and then saw no bill.
+ *
+ * Read as text for the same reason the scenario check above is: both scripts
+ * open a database at module scope, so importing one runs it.
+ */
+describe('the period the seeded bill owns, against the one the demo asks for', () => {
+  const period = (file: string, name: string): { start: Date; end: Date } => {
+    const text = source('packages', 'api', 'scripts', file);
+    const found = new RegExp(
+      `const ${name} = \\{ start: '([^']+)', end: '([^']+)' \\};`,
+    ).exec(text);
+    expect(found, `${file} still declares ${name} as one object literal`).not.toBeNull();
+    // A zone on both, because `'2026-09-01'::timestamptz` is midnight in
+    // whatever TimeZone the session carries and this seed runs in two of them.
+    expect(found![1], `${name}.start carries an explicit zone`).toMatch(/Z$/);
+    expect(found![2], `${name}.end carries an explicit zone`).toMatch(/Z$/);
+    return { start: new Date(found![1]!), end: new Date(found![2]!) };
+  };
+
+  const seeded = period('seed-demo-work.mjs', 'BILL_PERIOD');
+  const demo = period('seed-stakeholder.mjs', 'DEMO_BILL_PERIOD');
+
+  it('seeds a bill that closes before the demo day', () => {
+    expect(seeded.start.toISOString()).toBe('2026-09-01T00:00:00.000Z');
+    expect(seeded.end.toISOString()).toBe('2026-09-14T00:00:00.000Z');
+  });
+
+  it('prints a period that does not collide with the seeded one', () => {
+    // Identical on either bound is enough to make it a different row; the test
+    // is on the pair, because that is what the unique index is on.
+    expect(
+      seeded.start.getTime() !== demo.start.getTime() ||
+        seeded.end.getTime() !== demo.end.getTime(),
+    ).toBe(true);
+    // And it starts after the seeded cycle closed, so the collector's "This
+    // cycle" label is not a period they were already paid for.
+    expect(demo.start.getTime()).toBeGreaterThanOrEqual(seeded.end.getTime());
+    expect(demo.end.getTime()).toBeGreaterThan(demo.start.getTime());
+  });
+
+  /**
+   * `settleable()` in settle.ts bounds the cycle with `settlements.created_at <
+   * period_end` and has no lower bound, so an end on the demo day's own
+   * midnight excludes everything reviewed that day — which is all of the money
+   * 0:24 exists to bill.
+   */
+  it('ends after the demo day, not on it', () => {
+    const thursday = new Date('2026-09-17T00:00:00Z');
+    expect(demo.end.getTime()).toBeGreaterThan(thursday.getTime());
+  });
+
+  it('is printed as the body an operator can paste', () => {
+    const script = source('packages', 'api', 'scripts', 'seed-stakeholder.mjs');
+    // Both bounds, from the constant rather than retyped into the message.
+    expect(script).toMatch(/period_start[\s\S]{0,40}DEMO_BILL_PERIOD\.start/);
+    expect(script).toMatch(/period_end[\s\S]{0,40}DEMO_BILL_PERIOD\.end/);
+    // And the seeded period is read back from the row it wrote, never restated
+    // here — a second copy is the thing that drifted in the first place.
+    expect(script).toContain('select period_start, period_end from bills');
+    expect(script).not.toContain('2026-09-01');
+  });
+});

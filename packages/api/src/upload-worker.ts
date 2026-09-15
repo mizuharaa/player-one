@@ -372,6 +372,80 @@ const retryableTransport = (err: unknown): boolean => {
 };
 
 /**
+ * The Node syscall failures a storage endpoint that is not there produces.
+ *
+ * Measured against `@aws-sdk/client-s3` 3.x on Node 24: a refused port throws
+ * an `Error` with `code: 'ECONNREFUSED'`, `syscall: 'connect'`; an unresolvable
+ * host throws `code: 'ENOTFOUND'`, `syscall: 'getaddrinfo'`; and a black-holed
+ * address throws `@smithy/node-http-handler`'s `TimeoutError` after
+ * `connectionTimeout`. The rest of this set is the same class of fault on a
+ * link that came up and then went away mid-request.
+ */
+const UNREACHABLE = new Set([
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ECONNRESET',
+  'ECONNABORTED',
+  'EPIPE',
+  'ETIMEDOUT',
+]);
+
+/**
+ * "The object store never answered", as distinct from "it answered no".
+ *
+ * `retryableTransport` above is the wrong question for a route: it says true
+ * for a 500 and a 429, which are a store that IS there. This one is narrower on
+ * purpose, and the narrowness is the point — it decides whether a collector is
+ * told the platform's storage is down, which must not be said about a signature
+ * that was rejected or a bucket that does not exist.
+ *
+ * Two guards keep it from over-claiming. `$metadata` is stamped on every error
+ * the AWS SDK throws, transport failures included — measured
+ * `{"attempts":1,"totalRetryDelay":0}` on all three faults above — and nothing
+ * else in this service stamps it, which is what keeps a Postgres
+ * `ECONNREFUSED` from being reported as a storage outage. And an
+ * `httpStatusCode` means the store did answer, so whatever went wrong after
+ * that is not this.
+ *
+ * ponytail: `cause` is walked one level because the SDK does not nest these
+ * today and a deeper walk would be code for a shape nobody has seen.
+ */
+export const storageUnreachable = (err: unknown): boolean => {
+  const e = err as {
+    name?: string;
+    code?: unknown;
+    cause?: unknown;
+    $metadata?: { httpStatusCode?: number };
+  };
+  if (e === null || typeof e !== 'object') return false;
+  if (e.$metadata === undefined) return false;
+  if (e.$metadata.httpStatusCode !== undefined) return false;
+  if (e.name === 'TimeoutError') return true;
+  if (typeof e.code === 'string' && UNREACHABLE.has(e.code)) return true;
+  const inner = e.cause as { code?: unknown } | undefined;
+  return typeof inner?.code === 'string' && UNREACHABLE.has(inner.code);
+};
+
+/**
+ * A storage call that got no answer at all, raised where a route can name it.
+ *
+ * It exists so the refusal cannot be reached by accident: only a caller that
+ * asked `storageUnreachable` throws one, so a handler that maps this class onto
+ * `storage_unavailable` is not also mapping every other 500 onto it. The
+ * original is kept on `cause`, because the log line is where the address and
+ * the syscall have to survive.
+ */
+export class StorageUnavailable extends Error {
+  constructor(cause: unknown) {
+    super('the object store did not answer', { cause });
+    this.name = 'StorageUnavailable';
+  }
+}
+
+/**
  * How long a signed URL a phone is handed stays valid.
  *
  * One hour, and short on purpose: the resume route re-issues them, so a link

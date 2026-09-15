@@ -451,8 +451,24 @@ export function registerEpisodes(
         collectionSessionId: schema.episodes.collectionSessionId,
         sessionStartedAt: schema.episodes.sessionStartedAt,
         parkedParkId: schema.episodes.parkedParkId,
+        /**
+         * The OTHER half of reviewability, and the one nothing on this screen
+         * used to read. `eligible` in review.ts refuses an episode on two
+         * independent facts: `episodes.resolution_state`, which is whether
+         * anybody owns it, and `episode_ingests.state`, which is whether the
+         * recording can be judged at all. A card-intake session key of
+         * centre+collector+card+day means a recording the engine could not
+         * read still resolves `automatic_single` — attributed, unpayable, and
+         * invisible.
+         */
+        latestIngestId: schema.episodes.latestIngestId,
+        ingestState: schema.episodeIngests.state,
       })
       .from(schema.episodes)
+      .leftJoin(
+        schema.episodeIngests,
+        eq(schema.episodes.latestIngestId, schema.episodeIngests.ingestId),
+      )
       .where(eq(schema.episodes.uploadBatchId, batchId));
 
     /**
@@ -473,6 +489,41 @@ export function registerEpisodes(
         e.parkedParkId === null,
     );
 
+    /**
+     * A recording the engine could not read. Not a `blocking` row: batch close
+     * is about attribution, and this episode has an owner — what it does not
+     * have is footage anybody can judge. Parked episodes are out for the same
+     * reason they are out of `blocking` (0018): parking IS the answer.
+     */
+    const unusable = episodes.filter(
+      (e) => e.ingestState === 'quarantined' && e.parkedParkId === null,
+    );
+    /**
+     * Why the defects and not just the state: "quarantined" is a verdict and
+     * `MEDIA-UNREADABLE, PTS-EMPTY, STREAM-SKEW-HIGH` is the evidence for it,
+     * and an operator holding the card has to know which one to say out loud.
+     * They come back in the order `writeIngest` stored them — by code — so the
+     * sentence is the same on every read.
+     */
+    const defects =
+      unusable.length === 0
+        ? []
+        : await db
+            .select({
+              ingestId: schema.episodeDefects.ingestId,
+              code: schema.episodeDefects.code,
+            })
+            .from(schema.episodeDefects)
+            .where(
+              inArray(
+                schema.episodeDefects.ingestId,
+                unusable.map((e) => e.latestIngestId!),
+              ),
+            )
+            .orderBy(asc(schema.episodeDefects.code), asc(schema.episodeDefects.id));
+    const defectsOf = (ingestId: string | null): string[] =>
+      defects.filter((d) => d.ingestId === ingestId).map((d) => d.code);
+
     return reply.send({
       batch_id: batchId,
       summary: {
@@ -481,6 +532,7 @@ export function registerEpisodes(
         quarantined: quarantined.length,
         awaiting_confirmation: unconfirmed.length,
         parked: parked.length,
+        unusable: unusable.length,
         // The one an operator should look at even when nothing is wrong.
         episodes_per_session:
           ctx.sessions.length === 0 ? null : +(episodes.length / ctx.sessions.length).toFixed(2),
@@ -491,6 +543,20 @@ export function registerEpisodes(
         session_started_at: e.sessionStartedAt,
         resolution_state: e.resolutionState,
         needs: e.resolutionState === 'quarantined' ? 'assignment' : 'confirmation',
+      })),
+      /**
+       * Attributed, and still not judgeable. Separate from `blocking` because
+       * the two need different things from a person: an unattributed episode
+       * needs a session named, and this one needs somebody to decide what
+       * happens to a recording that cannot be reviewed. Nothing here closes or
+       * holds the batch — that semantics belongs to `blocking` alone.
+       */
+      unusable: unusable.map((e) => ({
+        episode_id: e.episodeId,
+        session_started_at: e.sessionStartedAt,
+        resolution_state: e.resolutionState,
+        ingest_state: e.ingestState,
+        defects: defectsOf(e.latestIngestId),
       })),
       sessions: ctx.sessions,
     });

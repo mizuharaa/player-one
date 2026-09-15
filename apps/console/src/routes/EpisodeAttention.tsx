@@ -117,6 +117,38 @@ const shortId = (id: string) => (id.length > 14 ? `…${id.slice(-12)}` : id);
 export const holdKey = (r: Pick<StuckEpisode, 'park' | 'held'>): string =>
   `${r.park ? 'parked' : ''}${r.held ? 'held' : ''}`;
 
+/**
+ * One row of the first panel, from either of the server's two populations.
+ *
+ * They share the panel because an operator holding a card wants one list of
+ * what to deal with, and they share nothing else: `blocking` is an episode
+ * nobody owns and `unusable` is a recording nobody can judge. The `needs`
+ * column is what keeps them apart, and `defects` is why the unusable case says
+ * something an operator can repeat rather than just "quarantined".
+ */
+export type AttentionRow = BatchExceptions['blocking'][number] & {
+  needs: 'assignment' | 'confirmation' | 'unusable';
+  defects?: string[];
+};
+
+/**
+ * Both lists as rows, `blocking` first.
+ *
+ * Exported because the mapping IS the fix: the server answers two arrays and
+ * the screen used to read one, so what has to stay true is that an unusable
+ * episode becomes a row with its own `needs` and its own defect codes.
+ */
+export const attentionRows = (data: BatchExceptions | undefined): AttentionRow[] => [
+  ...(data?.blocking ?? []),
+  ...(data?.unusable ?? []).map((u) => ({
+    episode_id: u.episode_id,
+    session_started_at: u.session_started_at,
+    resolution_state: u.resolution_state,
+    needs: 'unusable' as const,
+    defects: u.defects,
+  })),
+];
+
 export function EpisodeAttentionScreen() {
   const { t } = useTranslation();
   const client = useQueryClient();
@@ -235,7 +267,7 @@ export function EpisodeAttentionScreen() {
           />
         ) : (
           <BlockingTable
-            rows={exceptions.data?.blocking ?? []}
+            rows={attentionRows(exceptions.data)}
             onOutcome={setOutcomeFor}
             onResolve={setResolveFor}
           />
@@ -313,6 +345,10 @@ function Scope({
           <Tally label={t('episodes.summary.quarantined')} value={summary.quarantined} />
           <Tally label={t('episodes.summary.awaiting')} value={summary.awaiting_confirmation} />
           <Tally label={t('episodes.summary.parked')} value={summary.parked} />
+          {/* Next to the attribution counts, and deliberately not folded into
+              `quarantined`: that one counts episodes with no session, this one
+              counts recordings that cannot be reviewed. */}
+          <Tally label={t('episodes.summary.unusable')} value={summary.unusable} />
           <Tally
             label={t('episodes.summary.perSession')}
             value={summary.episodes_per_session ?? '—'}
@@ -393,14 +429,14 @@ function TableSkeleton() {
    control.
    ---------------------------------------------------------------------- */
 
-const blocking = createColumnHelper<BatchExceptions['blocking'][number]>();
+const blocking = createColumnHelper<AttentionRow>();
 
 function BlockingTable({
   rows,
   onOutcome,
   onResolve,
 }: {
-  rows: BatchExceptions['blocking'];
+  rows: AttentionRow[];
   onOutcome: (id: string) => void;
   onResolve: (id: string) => void;
 }) {
@@ -426,10 +462,23 @@ function BlockingTable({
       }),
       blocking.accessor('needs', {
         header: () => t('episodes.col.needs'),
+        /*
+         * The defect codes go in this cell, after the sentence, because the
+         * sentence alone is not actionable: "Recording unusable" tells an
+         * operator to look, and "MEDIA-UNREADABLE, PTS-EMPTY,
+         * STREAM-SKEW-HIGH" tells them what to say when they do. They are
+         * printed as the engine spells them — the same argument as the reject
+         * reason codes, which are shown verbatim and never translated.
+         */
         cell: (c) => (
           <span className="inline-flex items-center gap-1.5">
             <IconAlert size={15} className="shrink-0 text-[var(--warn)]" />
-            {t(`episodes.needs.${c.getValue()}`)}
+            <span>
+              {t(`episodes.needs.${c.getValue()}`)}
+              {c.row.original.defects?.length ? (
+                <span className="num">{`: ${c.row.original.defects.join(', ')}`}</span>
+              ) : null}
+            </span>
           </span>
         ),
         filterFn: 'equalsString',
@@ -460,6 +509,7 @@ function BlockingTable({
           options={[
             { value: 'assignment', label: t('episodes.needs.assignment') },
             { value: 'confirmation', label: t('episodes.needs.confirmation') },
+            { value: 'unusable', label: t('episodes.needs.unusable') },
           ]}
         />
 

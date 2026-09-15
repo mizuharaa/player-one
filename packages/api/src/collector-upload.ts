@@ -30,9 +30,11 @@ import {
   objectBudget,
   objectKey,
   planParts,
+  storageUnreachable,
   verifyReadBack,
   PART_SIZE,
   PRESIGN_TTL_S,
+  StorageUnavailable,
   type DirectUploadStore,
   type Mismatch,
   type ObjectStore,
@@ -152,6 +154,19 @@ export const UPLOAD_API_REFUSALS = new Set([
    * three languages, which is what the i18n test over this set asserts.
    */
   'session_basename_unrecognised',
+  /**
+   * The object store did not answer at all, so no plan could be signed and
+   * nothing was registered. Answered **503**, not 409: nothing the collector
+   * did is wrong and the same request will work once storage is back, which is
+   * the opposite of every other name in this set.
+   *
+   * It is in the set because of what the set is for — a name the phone renders
+   * to the collector — and because the operator path has answered honestly
+   * here for a while (`failed_step: upload`) while this route answered HTTP 500
+   * `{"error":"internal"}` and left `ECONNREFUSED` in the API log where no
+   * collector can see it.
+   */
+  'storage_unavailable',
 ]);
 
 /**
@@ -393,6 +408,35 @@ export function registerCollectorUpload(
     files: readonly TransportFile[],
     sizes: ReadonlyMap<string, number>,
     force = false,
+  ): Promise<FilePlan[]> {
+    try {
+      return await signedPlan(s, episodeId, ingestId, files, sizes, force);
+    } catch (err) {
+      /**
+       * The one fault in here that is not about this delivery.
+       *
+       * Planning is where the route touches storage: `head` asks what is
+       * already up and `beginMultipart` opens a large file, and both are real
+       * network calls (presigning is local signing and cannot fail on a dead
+       * endpoint). So when the store is down, this is the function that throws,
+       * and it is the only place the distinction has to be made — every caller
+       * of it, registration in both body shapes and the resume read, then
+       * answers the collector a named 503 instead of an unnamed 500. The
+       * mapping onto the name and the status is in `setErrorHandler`.
+       */
+      if (storageUnreachable(err)) throw new StorageUnavailable(err);
+      throw err;
+    }
+  }
+
+  /** The plan itself. Split out only so the classification above reads as one line. */
+  async function signedPlan(
+    s: DirectUploadStore,
+    episodeId: string,
+    ingestId: string,
+    files: readonly TransportFile[],
+    sizes: ReadonlyMap<string, number>,
+    force: boolean,
   ): Promise<FilePlan[]> {
     const plan: FilePlan[] = [];
     for (const f of files) {
