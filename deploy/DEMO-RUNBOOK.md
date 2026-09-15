@@ -230,7 +230,9 @@ still resolves to the day's session — the same as any other recording on this
 card, with task, collector and device populated — because attribution is not
 what marks it unusable. What marks it unusable is the **ingest state**,
 `quarantined`, plus those defects: `eligible` needs a non-quarantined ingest,
-and this one fails that half. Verified: `GET /api/review/next` answers 204.
+and this one fails that half. Verified: the quarantined episode is not in the
+review queue — `GET /api/review/next` serves the next reviewable episode, never
+this one.
 
 **Announce it before it appears, in these words:** "one camera on this unit
 failed — watch what the platform does with it." Then the quarantine reads as
@@ -242,11 +244,12 @@ recordings are still on it, whole. Unannounced, the same screen reads as a
 broken demo.
 
 **Where the operator finds them:** console **Episodes → "Episodes needing
-attention"** (`/episodes`) is the panel to point at. A lane in progress is
-adding an "unusable" list there, keyed by the defect names
-**`MEDIA-UNREADABLE`, `PTS-EMPTY` and `STREAM-SKEW-HIGH`** — the panel's own
-read of `GET /upload-batches/:id/exceptions` does not yet count a quarantined
-ingest as blocking, since the episode itself resolved. Not `/episodes/stuck`,
+attention"** (`/episodes`) is the panel to point at. Its **Unusable** rows list
+the quarantined episode with its defect names
+**`MEDIA-UNREADABLE`, `PTS-EMPTY` and `STREAM-SKEW-HIGH`**; point at that row.
+The panel's read of `GET /upload-batches/:id/exceptions` does not count a
+quarantined ingest as blocking, since the episode itself resolved — the row
+offers Outcome, not Resolve, because it already has an owner. Not `/episodes/stuck`,
 which is parked/held only and answers with an empty list.
 
 **Two things the narrator must expect on that screen.** First, the browse rows
@@ -426,10 +429,10 @@ minutes`, Minutes taken so far `81 minutes`, Places left `4`.
 If the upload itself is refused the panel prints the server's own reason in the
 collector's language — a checksum mismatch, a name collision, an unrecognised
 folder name — so read the sentence on screen rather than guessing. **If
-storage itself is down**, a lane in progress is adding a named refusal,
-`storage_unavailable` (HTTP 503), with its own sentence for the panel — until
-that lands, a storage outage on the phone path answers a bare HTTP 500 with no
-named reason, and closing that gap is exactly what the lane does. If the app
+storage itself is down**, the upload answers the named refusal
+`storage_unavailable` (HTTP 503) and the panel prints its sentence — only a
+store that never answered maps there; a database fault or an answered 500 does
+not. If the app
 cannot reach the server at all: **Profile › About › Server** → type the
 laptop's origin, **Save**; the app signs you out and returns to Landing.
 

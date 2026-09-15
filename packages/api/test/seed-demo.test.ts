@@ -108,4 +108,11 @@ describe('the period the seeded bill owns, against the one the demo asks for', (
     expect(script).toContain('select period_start, period_end from bills');
     expect(script).not.toContain('2026-09-01');
   });
+
+  it('is the period the runbook tells the host to paste', () => {
+    // The runbook's date is a hand edit; this is what drifted to 09-16 once.
+    const runbook = source('deploy', 'DEMO-RUNBOOK.md');
+    const day = (d: Date) => d.toISOString().slice(0, 10);
+    expect(runbook).toContain(`"period_start":"${day(demo.start)}","period_end":"${day(demo.end)}"`);
+  });
 });
