@@ -7,6 +7,7 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -1160,13 +1161,15 @@ export function Timeline({
  */
 export function LegalLine({ onDark = false }: { onDark?: boolean } = {}) {
   const theme = useTheme();
+  const insets = useInsets();
+  const [document, setDocument] = useState<MessageKey | null>(null);
   const tt = useT();
   const ink = onDark ? theme.color.stage.fg : theme.color.foreground;
   const link = (key: MessageKey) => (
     <Pressable
       accessibilityRole="link"
       accessibilityLabel={tt(key)}
-      onPress={() => {}}
+      onPress={() => setDocument(key)}
       style={{ minHeight: 48, minWidth: 48, justifyContent: 'center' }}
     >
       <Text
@@ -1189,7 +1192,7 @@ export function LegalLine({ onDark = false }: { onDark?: boolean } = {}) {
     </Pressable>
   );
   return (
-    <View
+    <><View
       style={{
         flexDirection: 'row',
         flexWrap: 'wrap',
@@ -1211,6 +1214,16 @@ export function LegalLine({ onDark = false }: { onDark?: boolean } = {}) {
       </Text>
       {link('legal.dataNotice')}
     </View>
+      <Modal visible={document !== null} animationType="none" onRequestClose={() => setDocument(null)}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: theme.collector.paper,
+          paddingHorizontal: theme.collector.gutter, paddingTop: insets.top + theme.space[6],
+          paddingBottom: insets.bottom + theme.space[6], gap: theme.space[4] }}>
+          <Button label={tt('common.close')} variant="secondary" onPress={() => setDocument(null)} />
+          <Title>{document === null ? '' : tt(document)}</Title>
+          <Body>{tt('detail.notSupplied')}</Body>
+        </ScrollView>
+      </Modal>
+    </>
   );
 }
 

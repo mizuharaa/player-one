@@ -5,7 +5,7 @@ import { expect, it, vi } from 'vitest';
 import { AccessibilityInfo } from 'react-native';
 import { ToastProvider, useToast } from '../src/ui/Toast.tsx';
 import { Splash } from '../src/screens/Splash.tsx';
-import { Button, Film, Note } from '../src/ui.tsx';
+import { Button, Film, LegalLine, Note } from '../src/ui.tsx';
 import { useVideoPlayer } from 'expo-video';
 import { isLowPowerModeEnabledAsync } from 'expo-battery';
 
@@ -125,4 +125,18 @@ it('keeps a slow decoder mounted over the poster and removes it on an actual err
     await act(async () => statusChanged({ status: 'error' }));
     expect(remove).toHaveBeenCalledTimes(1);
   } finally { await act(async () => root.unmount()); host.remove(); vi.useRealTimers(); }
+});
+
+it('opens and dismisses the honest unavailable-document state from a login legal link', async () => {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<LegalLine />));
+    await act(async () => host.querySelector<HTMLElement>('[role="link"]')!.click());
+    const dialog = document.body.querySelector('[aria-modal="true"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain('PaXini has not supplied this content yet.');
+    await act(async () => dialog!.querySelector<HTMLElement>('[role="button"]')!.click());
+    expect(document.body.querySelector('[aria-modal="true"]')).toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
 });
