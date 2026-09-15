@@ -73,15 +73,22 @@ export function getApiOrigin(): string {
  * Validated here as well as in the screen that calls it: the screen's check is
  * there to print a message, this one is there because this is what writes the
  * keystore.
+ *
+ * The keystore is written BEFORE the in-memory copy changes, so a write that
+ * fails leaves the app on the origin it was already using rather than on one
+ * that disappears at the next launch. The caller sees the rejection.
  */
 export async function setApiOrigin(value: string | null): Promise<void> {
   if (value === null) {
-    override = null;
     await store?.clear();
+    override = null;
     return;
   }
   const origin = originOf(value);
   if (origin === null) throw new Error('Not an API origin');
-  override = origin;
   await store?.set(origin);
+  override = origin;
 }
+
+/** What the Server row prints: host and port, without the scheme. */
+export const hostOf = (origin: string): string => origin.replace(/^https?:\/\//i, '');

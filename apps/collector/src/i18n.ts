@@ -599,6 +599,16 @@ const vi = {
   'devices.battery': 'Pin',
   'devices.lastUsed': 'Lần dùng gần nhất',
   'devices.notReported': 'Chưa có dữ liệu',
+
+  // runtime origin — the Server row under About (`api/origin.ts`). English is
+  // the source; the Vietnamese is the plain Zalo register the rest of this
+  // catalogue uses.
+  'server.title': 'Máy chủ',
+  'server.address': 'Địa chỉ máy chủ',
+  'server.save': 'Lưu',
+  'server.reset': 'Dùng mặc định',
+  'server.invalid': 'Địa chỉ không hợp lệ',
+  'server.signsOut': 'Đổi máy chủ thì bạn phải đăng nhập lại.',
 };
 
 export type MessageKey = keyof typeof vi;
@@ -1137,6 +1147,16 @@ const en: Record<MessageKey, string> = {
   'devices.battery': 'Battery',
   'devices.lastUsed': 'Last used',
   'devices.notReported': 'Not reported',
+
+  // runtime origin — the Server row under About (`api/origin.ts`). English is
+  // the source; the Vietnamese is the plain Zalo register the rest of this
+  // catalogue uses.
+  'server.title': 'Server',
+  'server.address': 'Server address',
+  'server.save': 'Save',
+  'server.reset': 'Use the default',
+  'server.invalid': 'That address is not valid',
+  'server.signsOut': 'Changing the server signs you out.',
 };
 
 /**
@@ -1661,6 +1681,16 @@ const zh: Record<MessageKey, string> = {
   'devices.battery': '电量',
   'devices.lastUsed': '最近使用',
   'devices.notReported': '未上报',
+
+  // runtime origin — the Server row under About (`api/origin.ts`). English is
+  // the source; the Vietnamese is the plain Zalo register the rest of this
+  // catalogue uses.
+  'server.title': '服务器',
+  'server.address': '服务器地址',
+  'server.save': '保存',
+  'server.reset': '使用默认地址',
+  'server.invalid': '地址无效',
+  'server.signsOut': '更换服务器后需要重新登录。',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en, zh };

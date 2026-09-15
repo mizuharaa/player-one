@@ -3,6 +3,8 @@ import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { API_BASE_URL } from '../src/api/config.ts';
+import { getApiOrigin, hostOf, loadApiOrigin } from '../src/api/origin.ts';
 import { ApiProvider } from '../src/api/context.tsx';
 import { MockCollectorApi } from '../src/api/mock.ts';
 import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
@@ -64,6 +66,22 @@ const controls = (): HTMLElement[] => [
 
 const named = (name: string): HTMLElement | undefined =>
   controls().find((node) => (node.getAttribute('aria-label') ?? '').trim() === name);
+
+const field = (label: string): HTMLInputElement | null =>
+  document.body.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+
+/** The native value setter, so React's own change tracking sees the edit. */
+async function type(label: string, value: string) {
+  const input = field(label)!;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+  await act(async () => { input.dispatchEvent(new Event('input', { bubbles: true })); });
+}
+
+/** `expo-secure-store` cannot load under Node; see `test/origin.test.ts`. */
+function fakeOriginStore(initial: string | null = null) {
+  let held = initial;
+  return { get: async () => held, set: async (v: string) => { held = v; }, clear: async () => { held = null; } };
+}
 
 /**
  * A settings row by its title.
@@ -154,6 +172,56 @@ it('lists the account rows and opens each available information screen', async (
     expect(page()).not.toContain(m['profile.notInBuild']);
   }
 
+});
+
+/**
+ * The Server row, work order §4.10 plus the runtime origin: one TestFlight
+ * build has to be pointed at a laptop today and the Vietnam cloud later, and
+ * this row is the only way to point it.
+ *
+ * The rule the sheet is held to is the work order's: a blocking error is
+ * printed with the control that caused it, not as a toast and not as a route
+ * change. So a refused address leaves the sheet open, leaves the session
+ * alone, and prints the reason under the field.
+ */
+it('shows the current server, refuses an address that is not an origin, and signs out on a change', async () => {
+  await loadApiOrigin(fakeOriginStore());
+  await mount();
+
+  // The row prints host and port, not the whole URL with its scheme.
+  expect(rowNamed(m['server.title'])).toBeDefined();
+  expect(page()).toContain(hostOf(API_BASE_URL));
+
+  await act(async () => rowNamed(m['server.title'])!.click());
+  expect(page()).toContain(m['server.signsOut']);
+  // The field opens on the origin in force, so it is edited rather than retyped.
+  expect(field(m['server.address'])!.value).toBe(API_BASE_URL);
+
+  // A path is the mistake this refuses: it would double the `/api` on every
+  // route in `http.ts`.
+  await type(m['server.address'], 'http://192.168.1.10:8080/api');
+  await act(async () => named(m['server.save'])!.click());
+  expect(page()).toContain(m['server.invalid']);
+  expect(signOut).not.toHaveBeenCalled();
+  expect(getApiOrigin()).toBe(API_BASE_URL);
+
+  await type(m['server.address'], 'http://192.168.1.10:8080');
+  await act(async () => named(m['server.save'])!.click());
+  expect(getApiOrigin()).toBe('http://192.168.1.10:8080');
+  // A token from the old server is meaningless on the new one, and the app
+  // comes back to the landing door rather than the form.
+  expect(signOut).toHaveBeenCalledWith({ landing: true });
+});
+
+it('puts the build back on its own origin from the same sheet', async () => {
+  await loadApiOrigin(fakeOriginStore('http://192.168.1.10:8080'));
+  await mount();
+  expect(page()).toContain('192.168.1.10:8080');
+
+  await act(async () => rowNamed(m['server.title'])!.click());
+  await act(async () => named(m['server.reset'])!.click());
+  expect(getApiOrigin()).toBe(API_BASE_URL);
+  expect(signOut).toHaveBeenCalledWith({ landing: true });
 });
 
 it('names the build on the version line', async () => {
