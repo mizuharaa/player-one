@@ -51,7 +51,7 @@ function Locale({ lang, children }: { lang: LocaleName; children: ReactNode }) {
 
 /** One instance, so the two pre-session screens share the seam the app uses. */
 // Phone-shaped browser proof only; native uses the live SafeAreaProvider.
-const PREVIEW_INSETS = { top: 24, bottom: 24, left: 0, right: 0 };
+const PREVIEW_INSETS = { top: 59, bottom: 34, left: 0, right: 0 }; // the demo handset is an iPhone with a Dynamic Island and home indicator
 const api = new MockCollectorApi();
 /** `SignIn` sends its two requests through react-query, exactly as in `App`. */
 const queryClient = new QueryClient();

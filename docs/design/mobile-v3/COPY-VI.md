@@ -1,16 +1,16 @@
 # Vietnamese copy for approval
 
-All Vietnamese text added or changed since `b40ee5c`, read from the integrated catalogue. Approval is still pending. Existing legal copy is reused.
+All Vietnamese text added or changed since `b40ee5c`, read from the integrated catalogue. Owner approval 2026-09-14: 127 rows OK, 3 rows corrected by the owner (`tab.uploads`, `income.intro`, `income.total`) and applied here; `legal.notPublished` (added after the review) is still awaiting the owner's word. Existing legal copy is reused.
 
 | Key | Before | Proposed Vietnamese | English |
 | --- | --- | --- | --- |
 | `tab.profile` | — | Hồ sơ | Profile |
 | `tab.tasks` | Nhiệm vụ | Khám phá | Explore |
-| `tab.uploads` | Tải lên | Phiên thu thập | Sessions |
+| `tab.uploads` | Tải lên | Tải lên | Sessions |
 | `hall.title` | Sảnh nhiệm vụ | Khám phá | Explore |
 | `session.title` | Tạo phiên ghi hình | Chuẩn bị | Prepare |
 | `uploads.title` | Tải lên | Phiên thu thập | Sessions |
-| `income.intro` | Tiền tính theo từng tập. Ứng dụng không cộng gộp, không tự tính. | Xem tiền đã xác nhận, tiền ước tính và trạng thái thanh toán của từng tập. | See confirmed earnings, estimates and payment status for each episode. |
+| `income.intro` | Tiền tính theo từng tập. Ứng dụng không cộng gộp, không tự tính. | Xem tiền đã xác nhận, tiền ước tính và trạng thái thanh toán của từng đoạn ghi hình. | See confirmed earnings, estimates and payment status for each episode. |
 | `income.progress` | Tiến độ | Cập nhật | Updates |
 | `income.details` | — | Chi tiết | Details |
 | `common.simulation` | — | Mô phỏng — dữ liệu mẫu | Simulation — sample data |
@@ -20,7 +20,7 @@ All Vietnamese text added or changed since `b40ee5c`, read from the integrated c
 | `income.statement` | — | Tổng kết kỳ | Cycle statement |
 | `income.transactions` | — | Các khoản thu | Transactions |
 | `income.options` | — | Tùy chọn | Options |
-| `income.total` | — | Kể cả ước tính | Including estimates |
+| `income.total` | — | Ước tính thu nhập | Including estimates |
 | `uploads.byPhone` | — | Gửi từ điện thoại | Send from this phone |
 | `uploads.byCard` | — | Bàn giao thẻ cho nhân viên | Hand the card to the operator |
 | `home.today` | — | Phiên hôm nay | Today’s session |

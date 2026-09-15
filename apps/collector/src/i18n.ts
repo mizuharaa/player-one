@@ -62,7 +62,7 @@ const vi = {
   'tab.tasks': 'Khám phá',
   'tab.session': 'Phiên',
   'tab.sessionHint': 'Mở bước chuẩn bị cho phiên ghi hình. Không bắt đầu ghi.',
-  'tab.uploads': 'Phiên thu thập',
+  'tab.uploads': 'Tải lên',
   'tab.income': 'Thu nhập',
 
   // The three beats of the landing, one per scroll step. Short on purpose:
@@ -353,7 +353,7 @@ const vi = {
   'income.settlement': 'Thanh toán',
   'income.estimatedHint': 'Đây là ước tính. Số tiền cuối cùng chốt sau khi duyệt.',
   'income.empty': 'Chưa có khoản thu nhập nào.',
-  'income.intro': 'Xem tiền đã xác nhận, tiền ước tính và trạng thái thanh toán của từng tập.',
+  'income.intro': 'Xem tiền đã xác nhận, tiền ước tính và trạng thái thanh toán của từng đoạn ghi hình.',
   'income.progress': 'Cập nhật',
   'income.details': 'Chi tiết',
   'common.simulation': 'Mô phỏng — dữ liệu mẫu',
@@ -363,7 +363,7 @@ const vi = {
   'income.statement': 'Tổng kết kỳ',
   'income.transactions': 'Các khoản thu',
   'income.options': 'Tùy chọn',
-  'income.total': 'Kể cả ước tính',
+  'income.total': 'Ước tính thu nhập',
   'uploads.byPhone': 'Gửi từ điện thoại',
   'uploads.byCard': 'Bàn giao thẻ cho nhân viên',
   'home.today': 'Phiên hôm nay',
