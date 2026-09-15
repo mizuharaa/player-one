@@ -19,7 +19,7 @@
         "PLAYERONE_BUILD_PROFILE": "demo",
         "EXPO_PUBLIC_BUILD_PROFILE": "demo",
         "EXPO_PUBLIC_API_URL": "https://api.playerone.vng.com.vn",
-        "PLAYERONE_VERSION_CODE": "43"
+        "PLAYERONE_VERSION_CODE": "44"
       },
       "pnpm": "9.15.9"
     },
@@ -47,7 +47,7 @@
         "PLAYERONE_BUILD_PROFILE": "demo",
         "EXPO_PUBLIC_BUILD_PROFILE": "demo",
         "EXPO_PUBLIC_API_URL": "https://api.playerone.vng.com.vn",
-        "PLAYERONE_VERSION_CODE": "43"
+        "PLAYERONE_VERSION_CODE": "44"
       },
       "pnpm": "9.15.9"
     }

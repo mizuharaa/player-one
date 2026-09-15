@@ -123,31 +123,7 @@ Original offline smoke check: `node --test packages/api/scripts/zalopay-sandbox-
 
 ### Final builder proof
 
-Candidate 5aaf46f merged as f1d4630. Task 2: 4a9ad7c. Task 3: e0be777. Task 6 worker proof: a7e6977. The smoke implementation began at 5504ff6; use the final lane with Merchant Wallet wiring and the renamed `.check.mjs` check.
-
-Database gate used Docker `playerone-pg:5433`, a throwaway `po_zlp`, `PLAYERONE_DB_ROLE=playerone_app`, `PLAYERONE_REQUIRE_CORPUS=1`, and `PLAYERONE_SESSIONS` pointing to the local five-session EgoCamera corpus. Builder measured these final results on 2026-09-15:
-
-```powershell
-pnpm.cmd exec vitest run packages/api/test/payout packages/api/test/settle.test.ts packages/api/test/me.test.ts packages/store/test --cache=false --maxWorkers=2 --minWorkers=1 --testTimeout=30000
-# 29 files passed, 1 skipped; 551 tests passed, 5 skipped
-
-# With DATABASE_URL removed, same corpus settings:
-pnpm.cmd exec vitest run --cache=false --maxWorkers=4 --minWorkers=1 --testTimeout=30000
-# 96 files passed, 43 skipped; 1234 tests passed, 912 skipped
-
-pnpm.cmd typecheck
-pnpm.cmd exec tsc -p apps/collector/tsconfig.json --noEmit
-# Both exit 0
-node --test packages/api/scripts/zalopay-sandbox-smoke.check.mjs
-# 6 passed
-```
-
-The database gate includes 11 worker and 30 edge-case checks. The five optional live-provider tests skipped: no credential file was loaded and no provider call or actual transfer was made. The no-database gate intentionally skips database-dependent suites. UI label behavior is covered by component tests; no emulator or physical-device proof was run.
-
-Independent QA reviewed the code and runbook corrections, with its own 63 UI/API checks, 30 mapper checks and 6 offline smoke checks passing. Its feedback on provenance propagation and the older runbook's verification/payment conflation was fixed and re-reviewed.
-
-Cleanup completed: CHECKPOINT followed by plain DROP DATABASE for all 19 owned `po_zlp`/`po_zlp_*` databases, without FORCE; remaining count is 0. No push. Task 5 real sandbox provisioning/declaration evidence remains pending owner/Fable; the accepted demo ending remains awaiting payment with an unverified destination until that evidence exists.
-
+Counts are not recorded here: whoever gates this lane runs the suites and reports the numbers they measured (CLAUDE.md rule 3). The commits are `4a9ad7c` (merchant wallet), `e0be777` (verification), `a7e6977` (worker), `a92e658` (verify-only smoke).
 
 ### Verify-only smoke without a provisioned Merchant Wallet
 

@@ -95,7 +95,7 @@ test('every installable profile in eas.json names a non-placeholder origin', () 
   }
 });
 
-test('the TestFlight profile is a store-distributed demo at version 43', () => {
+test('the TestFlight profile is a store-distributed demo at version 44', () => {
   assert.equal(eas.build.testflight.distribution, 'store');
   assert.equal(eas.build.testflight.pnpm, eas.build.demo.pnpm);
   const env = profileEnv('testflight');

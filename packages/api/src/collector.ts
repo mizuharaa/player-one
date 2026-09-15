@@ -369,7 +369,7 @@ export function registerCollectorAuth(
      * SEC-03, through the one sign-in limiter this service has. Every request
      * is counted and none is ever given back: unlike the other four sign-in
      * routes this one checks no credential, so there is no "it turned out to be
-     * right" to refund. What it does cost is an SMS to somebody's phone, and ten
+     * right" to refund. What it does cost is a Zalo message to somebody's phone, and ten
      * per number per five minutes is the cap on using this service to send them.
      *
      * A refused request leaves an audit row saying somebody is sending

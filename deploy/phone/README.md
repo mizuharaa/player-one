@@ -243,3 +243,7 @@ Stop with:
 That stops the API, Metro and MinIO and leaves Postgres and the demo database
 running, so the next run skips the seed. The firewall rules are left in place,
 so the next run needs no elevation.
+
+## TestFlight submit key path
+
+`apps/collector/eas.json` names the App Store Connect API key at `C:/Users/Khang/.playerone/AuthKey_7ZQ24Q22V5.p8`. `eas submit` reads that path on the machine that submits; on another machine put the `.p8` at the same path or edit the two `ascApiKeyPath` values. The key file is never committed.
