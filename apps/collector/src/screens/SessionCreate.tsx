@@ -7,6 +7,7 @@ import type { MessageKey } from '../i18n.ts';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
+import { RecordingSteps } from './SessionReminder.tsx';
 import { Body, Button, Card, Choice, Loading, Note, Row, Screen, Title } from '../ui.tsx';
 
 const SESSION_ERRORS: Record<string, MessageKey> = {
@@ -167,7 +168,9 @@ export function SessionCreate() {
           <Row label={tt('session.device')} value={deviceSerial ?? ''} />
         </Card>
         <Note text={tt('session.noRecord')} />
-        <Button label={tt('session.home')} onPress={() => nav.reset({ name: 'home' })} />
+        <RecordingSteps />
+        <Button label={tt('uploads.deliverTitle')} onPress={() => nav.push({ name: 'uploads', openDelivery: true })} />
+        <Button variant="secondary" label={tt('session.home')} onPress={() => nav.reset({ name: 'home' })} />
       </Screen>
     );
   }

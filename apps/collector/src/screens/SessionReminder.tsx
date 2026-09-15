@@ -3,7 +3,8 @@ import { HEADSET_COPY, HEADSET_GUIDANCE } from '../headset-guidance.ts';
 import { useLocale, useT } from '../locale.tsx';
 import { useNav } from '../nav.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Note, Screen, Title } from '../ui.tsx';
+import { HowCharge, HowWear, HowPressDevice, HowHandOver } from '../ui/illustrations/index.tsx';
+import { Body, Button, Card, Note, Screen, Title } from '../ui.tsx';
 
 /** Same source-backed material in onboarding and before each new session. */
 export function HeadsetGuidance() {
@@ -36,4 +37,13 @@ export function SessionReminder() {
       <Button label={HEADSET_COPY.continue[locale]} onPress={() => nav.push({ name: 'sessionCreate' })} />
     </Screen>
   );
+}
+
+/** Short reminder after preparation; the full sourced guidance remains before every session. */
+export function RecordingSteps() {
+  const { locale } = useLocale();
+  const items = HEADSET_GUIDANCE.map(section => section.items).flat();
+  return <>{([
+    ['power', HowCharge], ['mount', HowWear], ['sequence', HowPressDevice], ['handover', HowHandOver],
+  ] as const).map(([id, Art]) => <Card key={id}><Art size={96} /><Body>{items.find(item => item.id === id)!.text[locale]}</Body></Card>)}</>;
 }

@@ -24,7 +24,7 @@ export type Route =
   | { name: 'provisioning' }
   | { name: 'sessionReminder' }
   | { name: 'sessionCreate' }
-  | { name: 'uploads' }
+  | { name: 'uploads'; openDelivery?: boolean }
   | { name: 'income' }
   | { name: 'profile' }
   | { name: 'forum' }

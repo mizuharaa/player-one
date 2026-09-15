@@ -48,6 +48,8 @@ it('requires folder, server session and explicit confirmation; repeated presses 
   try {
     await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="vi"><NavProvider initial={{ name: 'uploads' }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
     await tap(MESSAGES.vi['uploads.deliverTitle']);
+    await tap(MESSAGES.vi['uploads.byPhone']);
+    await tap(MESSAGES.vi['common.next']);
     await vi.waitFor(() => expect(button(MESSAGES.vi['uploads.pick']).disabled).toBe(false));
     expect(runDelivery).not.toHaveBeenCalled();
     await tap(MESSAGES.vi['uploads.pick']);
@@ -79,9 +81,27 @@ it('keeps folder selection and refresh available when a saved delivery exists', 
     await act(async () => button('Refresh').click());
     await vi.waitFor(() => expect(episodes).toHaveBeenCalledTimes(2));
     await act(async () => button(MESSAGES.vi['uploads.deliverTitle']).click());
+    await act(async () => button(MESSAGES.vi['uploads.byPhone']).click());
+    await act(async () => button(MESSAGES.vi['common.next']).click());
     await vi.waitFor(() => expect(button(MESSAGES.vi['uploads.resume'])).toBeDefined());
     expect(button(MESSAGES.vi['uploads.pick']).disabled).toBe(false);
   } finally {
     await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks();
   }
+});
+
+it('shows card handover guidance without starting a phone delivery', async () => {
+  vi.mocked(runDelivery).mockClear();
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const button = (label: string) => Array.from(host.querySelectorAll('button')).find(b => b.textContent === label)!;
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={new MockCollectorApi()}><LocaleProvider initialLocale="vi"><NavProvider initial={{ name: 'uploads', openDelivery: true }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await act(async () => button(MESSAGES.vi['uploads.byCard']).click());
+    expect(button(MESSAGES.vi['common.done']).disabled).toBe(false);
+    expect(button(MESSAGES.vi['uploads.pick'])).toBeUndefined();
+    await act(async () => button(MESSAGES.vi['common.done']).click());
+    expect(runDelivery).not.toHaveBeenCalled();
+  } finally { await act(async () => root.unmount()); client.clear(); host.remove(); }
 });

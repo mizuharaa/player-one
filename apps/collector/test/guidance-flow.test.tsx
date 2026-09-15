@@ -216,5 +216,8 @@ describe('guidance in the collector flow', () => {
     await tap(MESSAGES.vi['session.create']);
     await settle(() => expect(create).toHaveBeenCalledTimes(1));
     expect(create).toHaveBeenCalledWith({ taskId: task.id, deviceSerial: 'EGO-TEST', scenario: 'home', othersInFrame: false, sensitiveInfo: true });
+    await settle(() => expect(button(MESSAGES.vi['uploads.deliverTitle'])).toBeDefined());
   });
 });
+
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ HowCharge: () => null, HowWear: () => null, HowPressDevice: () => null, HowHandOver: () => null }));

@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, type EpisodeState } from '../api/types.ts';
 import { uuid } from '../api/http.ts';
 import { useApi } from '../api/context.tsx';
-import { useT } from '../locale.tsx';
+import { HEADSET_GUIDANCE } from '../headset-guidance.ts';
+import { useLocale, useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import type { NativeTheme } from '@playerone/design/native';
 import { useGuideTarget } from '../guide/Guide.tsx';
@@ -154,13 +155,15 @@ export function Uploads() {
   const api = useApi();
   const nav = useNav();
   const sending = useRef(false);
-  const [deliveryStage, setDeliveryStage] = useState(0);
+  const [deliveryStage, setDeliveryStage] = useState(-1);
+  const [deliveryMode, setDeliveryMode] = useState<'phone' | 'card' | null>(null);
+  const { locale } = useLocale();
   const [selectedEpisode, setSelectedEpisode] = useState<string | null>(null);
   const tt = useT();
   const theme = useTheme();
   const queryClient = useQueryClient();
   /** Whether the delivery panel is open. Closed until the collector taps. */
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(nav.route.name === 'uploads' && nav.route.openDelivery === true);
   const [picked, setPicked] = useState<PickedSession | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   /** Files hashed so far. The slow part, so it is the part that is reported. */
@@ -252,7 +255,7 @@ export function Uploads() {
   };
   const close = () => {
     if (running) return;
-    setOpen(false); setPicked(null); setSessionId(null); setStep(null); setHashed(null); setDeliveryStage(0); deliver.reset();
+    setOpen(false); setPicked(null); setSessionId(null); setStep(null); setHashed(null); setDeliveryStage(-1); setDeliveryMode(null); deliver.reset();
   };
   return <>
     <ListScreen title={tt('uploads.title')} data={episodes.data ?? []} keyOf={episode => episode.episodeId}
@@ -276,10 +279,11 @@ export function Uploads() {
       </Pressable>} />
     <Modal visible={open} animationType="none" onRequestClose={close}>
       <Screen title={outcome ? tt(`delivery.${outcome.state}`) : tt(running ? 'uploads.sending' : deliveryStage === 2 ? 'uploads.confirmTitle' : 'uploads.deliverTitle')}
-        onBack={() => { if (!running && !outcome && deliveryStage > 0) { deliver.reset(); setDeliveryStage(deliveryStage - 1); } else close(); }}
+        onBack={() => { if (!running && !outcome && deliveryStage > -1) { deliver.reset(); setDeliveryStage(deliveryStage - 1); } else close(); }}
         right={<Button label={tt('common.close')} variant="ghost" disabled={running} onPress={close} />}
         footer={running ? <Button label={tt('uploads.sending')} busy onPress={() => {}} /> : outcome ?
-          <Button label={tt('common.done')} onPress={close} /> : deliver.isError ? null : deliveryStage === 2 ?
+          <Button label={tt('common.done')} onPress={close} /> : deliver.isError ? null : deliveryStage === -1 ?
+          <Button label={tt(deliveryMode === 'card' ? 'common.done' : 'common.next')} disabled={deliveryMode === null} onPress={() => deliveryMode === 'card' ? close() : setDeliveryStage(0)} /> : deliveryStage === 2 ?
           <Button label={tt('uploads.start')} disabled={!picked || !sessionId} onPress={() => start(null)} /> : deliveryStage === 1 ?
           <Button label={tt('common.next')} disabled={!sessionId || sessions.isError || sessions.isPending} onPress={() => setDeliveryStage(2)} /> :
           <Button label={tt('uploads.pick')} busy={pick.isPending} disabled={held.isPending || held.isError} onPress={() => pick.mutate()} />}>
@@ -291,6 +295,10 @@ export function Uploads() {
             {outcome.failedReason ? <Note tone="error" text={reasonText(tt, outcome.failedReason)} /> : null}</> : null}
           {deliver.isError ? <Note tone="error" text={deliver.error instanceof ApiError ? reasonText(tt, deliver.error.code) : tt('common.actionFailed')}
             onRetry={() => start(resumable)} busy={running} /> : null}
+        </> : deliveryStage === -1 ? <>
+          <Choice label={tt('uploads.byPhone')} selected={deliveryMode === 'phone'} onPress={() => setDeliveryMode('phone')} />
+          <Choice label={tt('uploads.byCard')} selected={deliveryMode === 'card'} onPress={() => setDeliveryMode('card')} />
+          {deliveryMode === 'card' ? <Note text={HEADSET_GUIDANCE.map(section => section.items).flat().find(item => item.id === 'handover')!.text[locale]} /> : null}
         </> : deliveryStage === 0 ? <>
           <Body>{tt('uploads.deliverBody')}</Body><Note text={tt('uploads.confirmBody')} />
           {held.isError ? <Note tone="error" text={tt('common.loadFailed')} onRetry={() => void held.refetch()} busy={held.isFetching} /> : null}

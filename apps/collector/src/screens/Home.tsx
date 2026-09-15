@@ -51,7 +51,7 @@ export function Home() {
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2] }}>
       <Chip label={tt('uploads.title')} onPress={() => nav.selectTab('uploads')} />
       <Chip label={tt('home.myTasks')} onPress={() => nav.push({ name: 'myTasks' })} />
-      <Chip label={tt('uploads.deliverTitle')} onPress={() => nav.selectTab('uploads')} />
+      <Chip label={tt('uploads.deliverTitle')} onPress={() => nav.push({ name: 'uploads', openDelivery: true })} />
     </View>
     <View ref={nextTarget} collapsable={false} style={{ gap: c.cardGap, paddingVertical: c.cardPad }}>
       <Button label={tt('session.title')} onPress={() => nav.push({ name: 'sessionReminder' })} />
