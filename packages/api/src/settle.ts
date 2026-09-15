@@ -3,7 +3,7 @@ import { and, asc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger, FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { schema, type Db } from '@playerone/store';
-import { adminGuard, financeGuard, roleOf } from './actor.ts';
+import { adminGuard, financeGuard, financeReadGuard, roleOf } from './actor.ts';
 import { mutate } from './audit.ts';
 import { MONEY_SCALE, ZERO, add, fromDecimal, quantise } from './money.ts';
 import { withTagDeadline, type ObjectStore } from './upload-worker.ts';
@@ -191,6 +191,12 @@ export function registerSettle(
    * separation 0013 asks for — see `settle_generate_by_finance` below.
    */
   const readOpts = { preHandler: [requireActor, financeGuard(db)] };
+  /**
+   * The same two views, for finance or the administrator — the demo's one
+   * debugging credential. `export.csv` below keeps `readOpts`: an export is a
+   * file that leaves the building, and that stays finance's.
+   */
+  const viewOpts = { preHandler: [requireActor, financeReadGuard(db)] };
   const currency = options.currency ?? 'VND';
   const cycleDays = options.cycleDays ?? 7;
 
@@ -862,7 +868,7 @@ export function registerSettle(
   // -------------------------------------------------------------------------
   // BO-08: view
 
-  app.get('/api/settle/bills', readOpts, async (req, reply) => {
+  app.get('/api/settle/bills', viewOpts, async (req, reply) => {
     const period = periodOf(req.query ?? {});
     if (typeof period === 'string') return reply.code(422).send({ error: period });
     return reply.send({
@@ -873,7 +879,7 @@ export function registerSettle(
     });
   });
 
-  app.get('/api/settle/bills/:id', readOpts, async (req, reply) => {
+  app.get('/api/settle/bills/:id', viewOpts, async (req, reply) => {
     const { id } = req.params as { id: string };
     const [bill] = await db
       .select({

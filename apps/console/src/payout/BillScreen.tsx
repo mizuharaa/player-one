@@ -45,7 +45,7 @@ import {
 import { gateReasonKey, type GateState } from './gate.ts';
 import { useGate } from './PreflightScreen.tsx';
 import { settlementStateKey } from './refusals.ts';
-import { readOnlyReason, useFinanceRole } from './role.ts';
+import { canReadFinance, readOnlyReason, useFinanceRole } from './role.ts';
 
 export function BillScreen() {
   const { t, i18n } = useTranslation();
@@ -53,12 +53,12 @@ export function BillScreen() {
   const { period } = useSearch({ strict: false }) as { period: string };
   const { billId } = useParams({ strict: false }) as { billId?: string };
   const { role } = useFinanceRole();
-  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: role === 'finance' });
+  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: canReadFinance(role) });
   // ponytail: Bill detail stays a second round trip instead of making the period batch carry every line of every bill.
   const detail = useQuery({
     queryKey: keys.bill(billId ?? ''),
     queryFn: () => (billId === undefined ? Promise.resolve(null) : settle.bill(billId)),
-    enabled: billId !== undefined && role === 'finance',
+    enabled: billId !== undefined && canReadFinance(role),
   });
   /**
    * The gate reads the cached snapshot only — rendering this screen must not

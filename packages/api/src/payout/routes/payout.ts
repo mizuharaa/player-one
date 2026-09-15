@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from '../../audit.ts';
-import { financeGuard, type Actor, type CounterActor } from '../../actor.ts';
+import { financeGuard, financeReadGuard, type Actor, type CounterActor } from '../../actor.ts';
 import { attemptById, applyEvent, insertAttempt, latestAttemptOf } from '../domain/attempts.ts';
 import type { VerifyReceiver } from '../domain/client-contract.ts';
 import { assertPayoutBootInvariants, isSimulation, type PayoutOptions } from '../domain/config.ts';
@@ -174,6 +174,13 @@ export function registerPayout(
    * list to keep.
    */
   const finance = { preHandler: [requireActor, requireFinance] };
+  /**
+   * The same reads, for finance or the administrator. Reading a bill is not
+   * paying one: the demo runs on one administrator credential and it has to be
+   * able to see what it is debugging. Every route that writes keeps `finance`,
+   * and so do the two exports.
+   */
+  const financeRead = { preHandler: [requireActor, financeReadGuard(db)] };
   /**
    * The counter operator's own guard: any operator session, no finance role.
    * Exactly one route uses it — declaring a collector's payout account at the
@@ -622,7 +629,7 @@ export function registerPayout(
    * on PaXini), so this is addressed by collector id under the operator
    * session; the app's server-side proxy maps `GET /api/payout/income` onto it.
    */
-  app.get('/api/payout/collectors/:id/income', finance, async (req, reply) => {
+  app.get('/api/payout/collectors/:id/income', financeRead, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     const [collector] = await db.select({ id: schema.collectors.id }).from(schema.collectors).where(eq(schema.collectors.id, id));
@@ -693,7 +700,7 @@ export function registerPayout(
     return { collector_id: id, currency: 'VND', simulation: isSimulation(sandbox, null), periods };
   });
 
-  app.get('/api/payout/collectors/:id/accounts', finance, async (req, reply) => {
+  app.get('/api/payout/collectors/:id/accounts', financeRead, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     const rows = await db
@@ -724,7 +731,7 @@ export function registerPayout(
   // -------------------------------------------------------------------------
   // Batches: the period's bills, and the preflight
 
-  app.get('/api/payout/batches/:period', finance, async (req, reply) => {
+  app.get('/api/payout/batches/:period', financeRead, async (req, reply) => {
     const period = periodOf(req);
     if (typeof period === 'string') return reply.code(422).send({ error: period });
     const bills = await loadBatch(db, period, batchOptions);
@@ -1063,7 +1070,7 @@ export function registerPayout(
     });
   });
 
-  app.get('/api/payout/attempts/:id', finance, async (req, reply) => {
+  app.get('/api/payout/attempts/:id', financeRead, async (req, reply) => {
     const id = pathId(req);
     if (id === null) return reply.code(400).send({ error: 'invalid id' });
     const row = await attemptById(db, id);

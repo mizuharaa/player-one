@@ -890,7 +890,13 @@ export interface BatchRun {
  * told 400 for the bad id. Neither path reads a bill, writes a row or audits
  * anything. The screens treat `unknown` as read-only.
  */
-export type FinanceRole = 'finance' | 'operator' | 'unknown';
+/**
+ * `administrator` is a reader here, not an actor: the demo runs on one
+ * administrator credential and it has to be able to see what it is debugging.
+ * `canReadFinance` in payout/role.ts is the read question; `readOnlyReason`
+ * is still the action question, and it disables the controls for this role.
+ */
+export type FinanceRole = 'finance' | 'administrator' | 'operator' | 'unknown';
 
 const batchPath = (start: string) => `/api/payout/batches/${encodeURIComponent(start)}`;
 
@@ -983,7 +989,7 @@ export const payout = {
   financeRole: async (): Promise<FinanceRole> => {
     const profile = await call<{ operator?: { role?: string; status?: string } }>('/api/operator/profile');
     if (!profile?.operator?.role || profile.operator.status !== 'active') return 'unknown';
-    return profile.operator.role === 'finance' ? 'finance' : 'operator';
+    return profile.operator.role === 'finance' || profile.operator.role === 'administrator' ? profile.operator.role : 'operator';
   },
 };
 

@@ -28,7 +28,7 @@ import { ApiError, type AttemptStatus, type PayoutIssue, type PayoutMode, type R
 import { bandLabel } from '../risk/sentences.ts';
 import { isPeriod } from './period.ts';
 import { refusalKey } from './refusals.ts';
-import { readOnlyReason, useFinanceRole } from './role.ts';
+import { canReadFinance, readOnlyReason, useFinanceRole } from './role.ts';
 
 export type SettleTab = 'bills' | 'preflight' | 'flags' | 'exceptions';
 
@@ -131,7 +131,7 @@ export function SettleShell({
       </nav>
 
       <div className="mt-4 space-y-2">
-        {mode && role === 'finance' ? (
+        {mode && canReadFinance(role) ? (
           <p className="text-[0.8125rem] leading-snug text-[var(--muted-foreground)]">
             {t(`settle.mode.${mode}`)}
           </p>
@@ -149,7 +149,7 @@ export function SettleShell({
         ) : null}
       </div>
 
-      <div className="workspace-settlement-content">{isPending ? <TableSkeleton /> : role === 'finance' ? children : null}</div>
+      <div className="workspace-settlement-content">{isPending ? <TableSkeleton /> : canReadFinance(role) ? children : null}</div>
       </div>
     </AppShell>
   );

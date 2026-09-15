@@ -10,7 +10,7 @@ const language = vi.hoisted(() => ({ value: 'en' as 'en' | 'vi' | 'zh' }));
 
 vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({ period: '2026-08-17' }), useParams: () => ({ billId: 'demo' }), useNavigate: () => () => {}, Link: ({ children }: { children: ReactNode }) => <a>{children}</a> }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ i18n: { language: language.value }, t: (key: string, values?: { reference?: string }) => (MESSAGES[language.value][key as keyof typeof MESSAGES.en] ?? key).replace('{{reference}}', values?.reference ?? '') }) }));
-vi.mock('./role.ts', () => ({ useFinanceRole: () => ({ role: 'finance' }), readOnlyReason: () => null }));
+vi.mock('./role.ts', () => ({ useFinanceRole: () => ({ role: 'finance' }), readOnlyReason: () => null, canReadFinance: () => true }));
 vi.mock('./PreflightScreen.tsx', () => ({ useGate: () => ({ gate: { open: false }, snapshot: null, fetchedAt: 0 }) }));
 vi.mock('../components/shell/AppShell.tsx', () => ({ AppShell: ({ children }: { children: ReactNode }) => <main>{children}</main> }));
 vi.mock('../components/ui/ResponsiveSheet.tsx', () => ({ useCompactSheet: () => false, ResponsiveSheet: () => null }));

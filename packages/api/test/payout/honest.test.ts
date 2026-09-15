@@ -205,6 +205,68 @@ describe.skipIf(!hasDb())('honest payout demo (SIMULATION, test database only)',
     expect(status.json().payout_environment).toBe('sandbox');
   });
 
+  /**
+   * The demo runs on one administrator credential (op-1) and the owner has to
+   * be able to see what it is debugging. So the administrator READS everything
+   * finance reads, and can still change nothing: the widening is
+   * `financeReadGuard` on GETs only, and every POST keeps `financeGuard`.
+   *
+   * The refusals below are the ones that were already there, by name. Nothing
+   * in the schema moved — `payout_finance_in_transaction` (0018, 0031) and
+   * `settle_generate_by_finance` are untouched, and this test's administrator
+   * never reaches them because the route refuses first.
+   */
+  it('the administrator reads every finance view and is refused every finance action', async () => {
+    const h = await setup();
+    await seedAccount(h.d, h.ids, 1);
+    const admin = h.operator;
+    const period = P1.start.toISOString();
+    const attempt = (await h.mark()).json().attempt_id as string;
+    const reads = [
+      `/api/payout/batches/${period}`,
+      `/api/payout/collectors/${h.ids.collector1}/income`,
+      `/api/payout/collectors/${h.ids.collector1}/accounts`,
+      `/api/payout/attempts/${attempt}`,
+      `/api/settle/bills?period_start=${encodeURIComponent(period)}`,
+      `/api/settle/bills/${h.bill}`,
+    ];
+
+    // The hole `financeGuard` was lifted to close stays closed: a plain counter
+    // operator reads none of this. Only then does op-hcm become op-1.
+    for (const url of reads) {
+      expect((await app.inject({ url, headers: h.operator })).statusCode, url).toBe(403);
+    }
+    await h.d.execute(sql`update operators set role = 'administrator' where id = ${h.ids.opA}`);
+
+    // Reads: the same answer finance gets, route by route.
+    for (const url of reads) {
+      const asAdmin = await app.inject({ url, headers: admin });
+      const asFinance = await app.inject({ url, headers: h.finance });
+      expect(asAdmin.statusCode, `${url}: ${asAdmin.body}`).toBe(200);
+      expect(asAdmin.body, url).toBe(asFinance.body);
+    }
+
+    // Actions: refused, by the name they were already refused with.
+    const before = await h.snapshot();
+    const refusals: [string, Record<string, unknown>][] = [
+      [`/api/payout/accounts`, { id: uid(), collector_id: h.ids.collector2, method: 'WALLET', declared_name: 'Nguyen Van B', phone: '0912345000' }],
+      [`/api/payout/bills/${h.bill}/mark-paid`, { amount_vnd: 679, manual_reference: 'ADMIN-SHOULD-NOT-PAY' }],
+      [`/api/payout/bills/${h.bill}/pay`, {}],
+      [`/api/payout/batches/${period}/preflight`, {}],
+      [`/api/payout/batches/${period}/run`, {}],
+      [`/api/payout/attempts/${attempt}/resolve`, { outcome: 'failed', reason: 'administrator should not resolve' }],
+    ];
+    for (const [url, payload] of refusals) {
+      const res = await app.inject({ method: 'POST', url, headers: admin, payload });
+      expect(res.statusCode, `${url}: ${res.body}`).toBe(403);
+      expect(res.json().error, url).toBe('finance role required');
+    }
+    // An export is a file that leaves the building, so it stays finance's.
+    expect((await app.inject({ url: `/api/payout/export/${period}`, headers: admin })).statusCode).toBe(403);
+    expect((await app.inject({ url: `/api/settle/export.csv?period_start=${encodeURIComponent(period)}`, headers: admin })).statusCode).toBe(403);
+    expect(await h.snapshot()).toBe(before);
+  });
+
   it('wrong role cannot record a payment', async () => {
     const h = await setup();
     await seedAccount(h.d, h.ids, 1);

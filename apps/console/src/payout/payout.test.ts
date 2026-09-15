@@ -200,7 +200,10 @@ describe('finance access uses a read-only stored-role lookup', () => {
 
   it.each([
     ['finance', 'active', 'finance'],
-    ['administrator', 'active', 'operator'],
+    // The administrator is now its own role here, because reading and acting
+    // are two questions: `canReadFinance` lets it see the money screens,
+    // `readOnlyReason` still disables every control on them.
+    ['administrator', 'active', 'administrator'],
     ['reviewer', 'active', 'operator'],
     ['finance', 'retired', 'unknown'],
   ])('maps %s / %s without probing a payment action', async (role, status, expected) => {
