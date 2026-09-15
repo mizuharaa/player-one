@@ -34,6 +34,7 @@ import { uuid } from '../lib/uuid.ts';
 import { httpsLink } from '../lib/external-url.ts';
 import {
   ApiError,
+  BO_COLLECTOR_STATUSES,
   backOffice,
   type BoAgreement,
   type BoCollector,
@@ -347,7 +348,8 @@ function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
    Collectors (BO-03, APP-02/04/05, PRV-01)
    ---------------------------------------------------------------------- */
 
-function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
+/** Exported for `collector-status.test.tsx`, which renders one row of it. */
+export function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
   const { t } = useTranslation();
   const client = useQueryClient();
   const [creating, setCreating] = useState(false);
@@ -501,7 +503,14 @@ function Collectors({ onRefused }: { onRefused: (error: unknown) => void }) {
                         update.mutate({ id: c.id, status: e.target.value as BoCollector['status'] })
                       }
                     >
-                      {(['pending', 'qualified', 'suspended'] as const).map((s) => (
+                      {/*
+                        Every status the database allows, `prospect` included:
+                        a row whose value matches no option draws with nothing
+                        selected, so an operator could not read what it said
+                        and changing it meant guessing. The create form below
+                        keeps its own three — see `BO_COLLECTOR_STATUSES`.
+                      */}
+                      {BO_COLLECTOR_STATUSES.map((s) => (
                         <option key={s} value={s}>
                           {t(`bo.collector.status.${s}`)}
                         </option>

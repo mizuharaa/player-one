@@ -394,6 +394,8 @@ const en = {
 
   'bo.collector.ref': 'Collector',
   'bo.collector.status': 'Qualification',
+  // open sign-up
+  'bo.collector.status.prospect': 'Signed up in the app',
   'bo.collector.status.pending': 'Pending',
   'bo.collector.status.qualified': 'Qualified',
   'bo.collector.status.suspended': 'Suspended',
@@ -1980,6 +1982,8 @@ const zh: Record<MessageKey, string> = {
 
   'bo.collector.ref': '采集者',
   'bo.collector.status': '资格状态',
+  // open sign-up
+  'bo.collector.status.prospect': '已在 App 注册',
   'bo.collector.status.pending': '待审核',
   'bo.collector.status.qualified': '已合格',
   'bo.collector.status.suspended': '已停用',
@@ -3192,6 +3196,8 @@ const vi: Record<MessageKey, string> = {
 
   'bo.collector.ref': 'Cộng tác viên',
   'bo.collector.status': 'Tư cách',
+  // open sign-up
+  'bo.collector.status.prospect': 'Đăng ký trên app',
   'bo.collector.status.pending': 'Chờ xét',
   'bo.collector.status.qualified': 'Đủ điều kiện',
   'bo.collector.status.suspended': 'Tạm đình chỉ',

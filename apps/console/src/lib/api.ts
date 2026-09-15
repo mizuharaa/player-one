@@ -314,10 +314,30 @@ export interface BoPayoutAccount {
   phone_masked: string;
 }
 
+/**
+ * The console's copy of `collectors_status_check`, in the order the lifecycle
+ * runs: `prospect` (migration 0034 — signed up in the app, never been to a
+ * centre), then the three an operator writes.
+ *
+ * One list, because it was three: two screens render
+ * `bo.collector.status.<status>` from live data, the back office's row select
+ * built its options separately, and the type said something different again.
+ * 0034 added a value and all three disagreed with the database at once — a
+ * counter operator read the literal key `bo.collector.status.prospect`.
+ * `collector-status.test.tsx` holds this against the catalogue and the row.
+ *
+ * It is what can be SHOWN and lifted, not what can be typed: the create form
+ * keeps its own three, and `CollectorBody`/`CollectorPatch` in the API refuse
+ * `prospect` outright. An operator lifts a prospect; nobody makes one.
+ */
+export const BO_COLLECTOR_STATUSES = ['prospect', 'pending', 'qualified', 'suspended'] as const;
+
+export type BoCollectorStatus = (typeof BO_COLLECTOR_STATUSES)[number];
+
 export interface BoCollector {
   id: string;
   external_ref: string;
-  status: 'pending' | 'qualified' | 'suspended';
+  status: BoCollectorStatus;
   exam_result: 'pass' | 'fail' | null;
   exam_decided_at: string | null;
   agreements: BoAgreement[];
@@ -490,7 +510,8 @@ export interface Reference {
   collectors: {
     id: string;
     externalRef: string;
-    status: 'pending' | 'qualified' | 'suspended';
+    /** `Counter.tsx` and `TaskAssign.tsx` render this straight through `t()`. */
+    status: BoCollectorStatus;
     examResult: 'pass' | 'fail' | null;
   }[];
   devices: {
