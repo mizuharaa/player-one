@@ -22,14 +22,9 @@ changed wallet "awaiting payment — destination unverified" and "paid, referenc
 card. A collector with no current account gets no payment line at all.
 
 **"Simulation. No live transfer." is about one outcome, not about the deployment.**
-`isSimulation` (`packages/api/src/payout/domain/config.ts`): a manual attempt carrying a reference is
-never a simulation; anything else is a simulation while the provider is the sandbox. It is applied
-where a response describes one outcome — the bill in `/api/payout/batches/:period`, both `mark-paid`
-replies, and `/api/me/payout`. Two surfaces describe no single outcome, the collector income cycle
-and the finance period list, and they keep reporting the environment. Before this, `simulation` was
-`PLAYERONE_ZALOPAY_ENV === 'sandbox'` everywhere, both example env files set `sandbox`, and
-production refuses to boot without four ZaloPay credentials — so every real manual pilot payment
-would have been labelled a simulation.
+Verification and API-attempt provenance is recorded in the existing immutable audit event when the outcome is created. Readers use `storedSimulation`; changing server credentials later cannot relabel an old sandbox outcome as production. Missing historical provenance stays Simulation. A manual payment with its actual transfer reference remains real, while its destination retains a separate verification label. Verification/payment notifications also retain their own Simulation label.
+
+The provider environment in the console header and aggregate income responses describes configuration, not proof that a transfer occurred.
 
 ## Where the sandbox word lives, and why three settle screens carry no per-bill sentence
 
@@ -72,7 +67,7 @@ statement) and is refused every finance action and both exports with `403 financ
 A counter operator reads none of it. Nothing about separation of duty moved: those rules are in the
 schema.
 
-## Proof, measured on this branch
+## Historical payout-honest proof (before the sandbox lane)
 
 Docker `playerone-pg:5433`, `DATABASE_URL=…/po_payfix`, `PLAYERONE_DB_ROLE=playerone_app`,
 `PLAYERONE_REQUIRE_CORPUS=1`, `PLAYERONE_SESSIONS` at the five-session corpus.
@@ -98,3 +93,57 @@ pnpm exec vitest run apps/console
 The five provider sandbox tests skip for want of verification credentials; no live payout is
 claimed. Cleanup: `CHECKPOINT`, then 23 `po_payfix*` databases dropped in a loop without FORCE.
 `po_payfix%` count now 0.
+
+
+## Sandbox verification path (2026-09-15)
+
+Builder status: implementation and offline checks only. No real sandbox response, named destination verification, or transfer is claimed. Owner provisions the Merchant Wallet and test user; Fable runs the read-only smoke and finance declaration proof. Thursday's fallback remains **awaiting payment - destination unverified** until that evidence exists.
+
+```powershell
+cd C:/Users/Khang/pw/zalopay-sandbox
+node packages/api/scripts/zalopay-sandbox-smoke.mjs
+```
+
+The script reads `~/.playerone/zalopay-sandbox.env` only at runtime through Node's env loader. It accepts no arguments, refuses production and URL overrides, blocks redirects, and exposes only balance and verify-account. There is no transfer branch and no database write. Every output line is labelled Simulation and contains only statuses, codes and fixed meanings. Never paste credentials, provider bodies, phone numbers, wallet identifiers, or raw provider messages into evidence.
+
+Required env names: `PLAYERONE_ZALOPAY_ENV=sandbox`, `PLAYERONE_ZALOPAY_APP_ID`, `PLAYERONE_ZALOPAY_PAYMENT_ID`, `PLAYERONE_ZALOPAY_KEY1`, `PLAYERONE_ZALOPAY_PUBLIC_KEY`, `PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID`, `PLAYERONE_ZALOPAY_SANDBOX_PHONE`. The existing `PLAYERONE_ZALOPAY_SIGNING` and `PLAYERONE_ZALOPAY_RSA_PADDING` settings remain supported. Payment ID and Merchant Wallet ID are different; neither substitutes for the other. Keep `PLAYERONE_PAYOUT_MODE=manual`.
+
+The client puts the configured Merchant Wallet ID in transfer and balance embed JSON; balance excludes embed from its MAC. Missing or conflicting configuration refuses the request. The sandbox phone override is used only for the existing demo seed's declared payout destination, never its login identity. The seed still performs no provider verification itself.
+
+Exit 0 means both read calls succeeded, not that a named account is verified. Exit 1 means a read remains unresolved; exit 2 means configuration/argument refusal. The wallet spec returns an ID without a holder name: that answer remains **unverified**, even when the smoke succeeds. Its one-dong probe does not establish capacity for a later bill amount. Bank-code lookup is omitted because it is optional and the old parser differs from the supplied spec; it would not prove wallet verification anyway.
+
+For the verified variant, Fable must declare through the finance route on a throwaway database and show a persisted matching nonempty provider name, usable wallet ID where applicable, verification status, and visible Simulation labels on phone, console and notification. A fixture is not this proof. No migration was added: incoming 0031 enforces separation of duty and 0032 enforces the named-account constraint.
+
+Acceptance is never Paid: statuses 1-3 on transfer acceptance remain processing until query; status 4 remains operator-pending. Duplicate submission queries the same order. Malformed/unknown replies and exhausted polling remain unresolved. Whole-bill flooring, authorization and manual payment gates remain in force.
+
+Manual fallback: record mark-paid only after an actual bank transfer with its real reference, by an eligible finance actor distinct from the verdict/account authors. Without that evidence, leave the bill awaiting. A funded sandbox transfer is a separate owner decision and has not been requested or performed.
+
+Offline smoke check: `node --test packages/api/scripts/zalopay-sandbox-smoke.check.mjs` (6 checks). Final builder gate evidence follows below; historical counts above belong to payout-honest, not this lane.
+
+
+### Final builder proof
+
+Candidate 5aaf46f merged as f1d4630. Task 2: 4a9ad7c. Task 3: e0be777. Task 6 worker proof: a7e6977. The smoke implementation began at 5504ff6; use the final lane with Merchant Wallet wiring and the renamed `.check.mjs` check.
+
+Database gate used Docker `playerone-pg:5433`, a throwaway `po_zlp`, `PLAYERONE_DB_ROLE=playerone_app`, `PLAYERONE_REQUIRE_CORPUS=1`, and `PLAYERONE_SESSIONS` pointing to the local five-session EgoCamera corpus. Builder measured these final results on 2026-09-15:
+
+```powershell
+pnpm.cmd exec vitest run packages/api/test/payout packages/api/test/settle.test.ts packages/api/test/me.test.ts packages/store/test --cache=false --maxWorkers=2 --minWorkers=1 --testTimeout=30000
+# 29 files passed, 1 skipped; 551 tests passed, 5 skipped
+
+# With DATABASE_URL removed, same corpus settings:
+pnpm.cmd exec vitest run --cache=false --maxWorkers=4 --minWorkers=1 --testTimeout=30000
+# 96 files passed, 43 skipped; 1234 tests passed, 912 skipped
+
+pnpm.cmd typecheck
+pnpm.cmd exec tsc -p apps/collector/tsconfig.json --noEmit
+# Both exit 0
+node --test packages/api/scripts/zalopay-sandbox-smoke.check.mjs
+# 6 passed
+```
+
+The database gate includes 11 worker and 30 edge-case checks. The five optional live-provider tests skipped: no credential file was loaded and no provider call or actual transfer was made. The no-database gate intentionally skips database-dependent suites. UI label behavior is covered by component tests; no emulator or physical-device proof was run.
+
+Independent QA reviewed the code and runbook corrections, with its own 63 UI/API checks, 30 mapper checks and 6 offline smoke checks passing. Its feedback on provenance propagation and the older runbook's verification/payment conflation was fixed and re-reviewed.
+
+Cleanup completed: CHECKPOINT followed by plain DROP DATABASE for all 19 owned `po_zlp`/`po_zlp_*` databases, without FORCE; remaining count is 0. No push. Task 5 real sandbox provisioning/declaration evidence remains pending owner/Fable; the accepted demo ending remains awaiting payment with an unverified destination until that evidence exists.
