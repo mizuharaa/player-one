@@ -12,6 +12,7 @@ import {
   rational,
 } from './money.ts';
 import { loadBill, type BatchBill, type BatchOptions, type Issue } from './payout/worker/batch.ts';
+import { isSimulation } from './payout/domain/config.ts';
 
 /**
  * What a collector is told about their own money.
@@ -545,7 +546,15 @@ const decided = (reviewState: string | null): boolean =>
 // ---------------------------------------------------------------------------
 // Routes
 
-export type MeOptions = BatchOptions & { simulation?: boolean };
+/**
+ * `sandbox` is the provider environment, not a verdict about any one payment.
+ * It was called `simulation`, which is what the P0-4 audit's finding 3 was
+ * about: a name that reads as "nothing here is real" while the manual rail was
+ * recording real transfers. `/api/me/payout` now derives its own label from the
+ * payment it read; `/api/me/income` describes a whole cycle rather than one
+ * outcome, so it keeps reporting the environment.
+ */
+export type MeOptions = BatchOptions & { sandbox?: boolean };
 
 /** The same structural shape the payout and settle routes use for a preHandler. */
 type Reply = { code: (n: number) => { send: (b: unknown) => unknown } };
@@ -729,7 +738,7 @@ export function registerMe(
 
     return {
       currency: 'VND',
-      simulation: options.simulation === true,
+      simulation: options.sandbox === true,
       episodes,
       periods,
       not_yet_billed: { episodes: notBilled.length, amount: unbilled },
@@ -788,9 +797,9 @@ export function registerMe(
      * no payment at all (`= null` matches nothing) — which is `status: 'none'`
      * with nothing beside it.
      */
-    const [payment] = await db.execute<{ reference: string; amount_vnd: string }>(sql`
+    const [payment] = await db.execute<{ reference: string; amount_vnd: string; mode: string }>(sql`
       select coalesce(a.manual_reference, a.zp_trans_id, a.partner_order_id) as reference,
-             a.amount_vnd::text
+             a.amount_vnd::text, a.mode
       from payout_attempts a join bills b on b.id = a.bill_id
       where b.collector_id = ${me} and a.status = 'succeeded'
         and a.payout_account_id = (
@@ -798,7 +807,16 @@ export function registerMe(
         )
       order by a.settled_at desc nulls last, a.created_at desc, a.id desc limit 1
     `);
-    return { ...destination, simulation: options.simulation === true,
+    /**
+     * The label is about the payment, not about the deployment. A manual
+     * attempt carrying a reference is a transfer a finance operator really
+     * made, and "Simulation. No live transfer." over it is a lie the phone
+     * would print to every pilot collector, because `manual` is the pilot's
+     * rail and both example env files set `PLAYERONE_ZALOPAY_ENV=sandbox`.
+     */
+    return { ...destination,
+      simulation: isSimulation(options.sandbox === true,
+        payment ? { mode: payment.mode, reference: payment.reference } : null),
       ...(payment ? { payment: { reference: payment.reference, amount_vnd: Number(payment.amount_vnd) } } : {}) };
 
   });

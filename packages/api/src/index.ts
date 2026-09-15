@@ -869,7 +869,7 @@ export function buildApi({
    * about whether a bill can pay.
    */
   registerMe(app, db, requireActor, {
-    simulation: (payout.zaloPayEnv ?? 'sandbox') === 'sandbox',
+    sandbox: (payout.zaloPayEnv ?? 'sandbox') === 'sandbox',
     risk: payout.risk ?? riskReader,
     holdsEnabled: payout.holdsEnabled ?? risk.holdsEnabled,
     capVnd: payout.capVnd,

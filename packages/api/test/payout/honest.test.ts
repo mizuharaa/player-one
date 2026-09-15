@@ -42,20 +42,54 @@ describe.skipIf(!hasDb())('honest payout demo (SIMULATION, test database only)',
     await seedAccount(h.d, h.ids, 1);
     const res = await h.mark();
     expect(res.statusCode, res.body).toBe(201);
-    expect(res.json()).toMatchObject({ amount_vnd: 679, manual_reference: 'SIMULATION-REF-X', status: 'succeeded', simulation: true });
+    // Audit finding 3: the reference is a transfer a finance operator made, so
+    // the outcome is not a simulation even on the sandbox provider.
+    expect(res.json()).toMatchObject({ amount_vnd: 679, manual_reference: 'SIMULATION-REF-X', status: 'succeeded', simulation: false });
     const audits = await h.d.execute(sql`select operator_id from audit_events where action = 'bill.mark_paid'`);
     expect(audits).toHaveLength(1);
     expect(audits[0]!.operator_id).toBe(h.ids.finA);
     const payout = await app.inject({ url: '/api/me/payout', headers: h.collector() });
-    expect(payout.json()).toMatchObject({ status: 'verified', simulation: true, payment: { reference: 'SIMULATION-REF-X', amount_vnd: 679 } });
+    expect(payout.json()).toMatchObject({ status: 'verified', simulation: false, payment: { reference: 'SIMULATION-REF-X', amount_vnd: 679 } });
     const income = await app.inject({ url: '/api/me/income', headers: h.collector() });
+    // A cycle is not one outcome: this field stays the sandbox environment word.
     expect(income.json().simulation).toBe(true);
     expect(income.json().episodes[0]).toMatchObject({ state: 'paid', payment_reference: 'SIMULATION-REF-X' });
     const financeIncome = await app.inject({ url: `/api/payout/collectors/${h.ids.collector1}/income`, headers: h.finance });
     expect(financeIncome.json().simulation).toBe(true);
     expect(financeIncome.json().periods[0]).toMatchObject({ status: 'paid', payment_reference: 'SIMULATION-REF-X' });
     const finance = await app.inject({ url: `/api/payout/batches/${P1.start.toISOString()}`, headers: h.finance });
-    expect(finance.json().bills[0]).toMatchObject({ paid: true, simulation: true, attempt: { manual_reference: 'SIMULATION-REF-X' } });
+    expect(finance.json().bills[0]).toMatchObject({ paid: true, simulation: false, attempt: { manual_reference: 'SIMULATION-REF-X' } });
+  });
+
+  /**
+   * Audit finding 3. `simulation` was `PLAYERONE_ZALOPAY_ENV === 'sandbox'` at
+   * five sites, and both example env files set `sandbox` while
+   * `assertPayoutBootInvariants` refuses `production` without four ZaloPay
+   * credentials nobody has — so every surface said "Simulation. No live
+   * transfer." over the manual rail, which is where a finance operator records
+   * a real transfer. Both directions are asserted here, on one sandbox
+   * deployment, so the label cannot be satisfied by a flag.
+   */
+  it('the simulation label follows the outcome, not the environment', async () => {
+    const h = await setup();
+    await seedAccount(h.d, h.ids, 1);
+    const period = `/api/payout/batches/${P1.start.toISOString()}`;
+    // Nothing has happened yet: the sandbox provider is all there is to report.
+    const unpaid = await app.inject({ url: period, headers: h.finance });
+    expect(unpaid.json().bills[0]).toMatchObject({ paid: false, simulation: true });
+    expect((await app.inject({ url: '/api/me/payout', headers: h.collector() })).json().simulation).toBe(true);
+    // A recorded manual transfer is a real payment on the same deployment.
+    expect((await h.mark()).json().simulation).toBe(false);
+    expect((await app.inject({ url: period, headers: h.finance })).json().bills[0].simulation).toBe(false);
+    expect((await app.inject({ url: '/api/me/payout', headers: h.collector() })).json().simulation).toBe(false);
+    // Replaying it says the same thing.
+    const replayed = await h.mark();
+    expect(replayed.statusCode).toBe(200);
+    expect(replayed.json()).toMatchObject({ replayed: true, simulation: false });
+    // And the environment word itself is untouched: the console header and the
+    // engineering status still say sandbox.
+    expect((await app.inject({ url: '/api/payout/environment', headers: h.finance })).json())
+      .toEqual({ environment: 'sandbox', simulation: true });
   });
 
   /**

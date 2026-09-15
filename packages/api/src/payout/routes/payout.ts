@@ -7,7 +7,7 @@ import { mutate } from '../../audit.ts';
 import { financeGuard, type Actor, type CounterActor } from '../../actor.ts';
 import { attemptById, applyEvent, insertAttempt, latestAttemptOf } from '../domain/attempts.ts';
 import type { VerifyReceiver } from '../domain/client-contract.ts';
-import { assertPayoutBootInvariants, type PayoutOptions } from '../domain/config.ts';
+import { assertPayoutBootInvariants, isSimulation, type PayoutOptions } from '../domain/config.ts';
 import { emitEvent } from '../domain/events.ts';
 import { buildExport, type ExportRow } from '../domain/export.ts';
 import { maskPhone } from '../domain/names.ts';
@@ -240,9 +240,15 @@ export function registerPayout(
     return { start, end };
   };
 
+  const sandbox = (options.zaloPayEnv ?? 'sandbox') === 'sandbox';
+
   const shapeBill = (b: BatchBill) => ({
     id: b.id,
-    simulation: (options.zaloPayEnv ?? 'sandbox') === 'sandbox',
+    // The bill's own latest outcome decides this, not the environment alone:
+    // a bill paid on the manual rail with a reference is a real transfer.
+    simulation: isSimulation(sandbox, b.latestAttempt === null
+      ? null
+      : { mode: b.latestAttempt.mode, reference: b.latestAttempt.manualReference }),
     collector_id: b.collectorId,
     collector_ref: b.collectorRef,
     period_start: b.periodStart.toISOString(),
@@ -682,7 +688,9 @@ export function registerPayout(
         status: 'pending_review',
       });
     }
-    return { collector_id: id, currency: 'VND', simulation: (options.zaloPayEnv ?? 'sandbox') === 'sandbox', periods };
+    // A list of periods is not one outcome, so this one stays the environment
+    // word: `isSimulation(sandbox, null)`, said out loud rather than implied.
+    return { collector_id: id, currency: 'VND', simulation: isSimulation(sandbox, null), periods };
   });
 
   app.get('/api/payout/collectors/:id/accounts', finance, async (req, reply) => {
@@ -902,7 +910,8 @@ export function registerPayout(
         && previous.amountVnd === b.amount_vnd && previous.manualReference === b.manual_reference
         ? { bill_id: id, attempt_id: previous.id, status: previous.status,
             amount_vnd: previous.amountVnd, manual_reference: previous.manualReference,
-            simulation: (options.zaloPayEnv ?? 'sandbox') === 'sandbox', replayed: true }
+            simulation: isSimulation(sandbox, { mode: previous.mode, reference: previous.manualReference }),
+            replayed: true }
         : null;
     };
     const prior = await replay();
@@ -988,7 +997,7 @@ export function registerPayout(
     }
     const row = attempt.value!;
     return reply.code(201).send({
-      simulation: (options.zaloPayEnv ?? 'sandbox') === 'sandbox',
+      simulation: isSimulation(sandbox, { mode: row.mode, reference: row.manualReference }),
       bill_id: id,
       attempt_id: row.id,
       partner_order_id: row.partnerOrderId,
