@@ -6,7 +6,7 @@ import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { useGuideTarget } from '../guide/Guide.tsx';
-import { Body, Button, face, Chip, Hatch, ListScreen, Loading, Note, Row, Screen, Tag, Timeline } from '../ui.tsx';
+import { Body, Button, face, Chip, Hatch, NavRow, ListScreen, Loading, Note, Row, Screen, Tag, Timeline } from '../ui.tsx';
 import { HeaderGradient } from '../ui/HeaderGradient.tsx';
 import { useNav } from '../nav.tsx';
 import { dong, quantity, shortId } from '../money.ts';
@@ -71,11 +71,11 @@ const PAID = new Set(['manually_paid', 'paid']);
 const lifecycle = (
   tt: (key: MessageKey) => string,
   entry: IncomeEntry,
-): { key: string; label: string; done: boolean; note?: string }[] => {
+): { key: string; label: string; done: boolean; current?: boolean; note?: string }[] => {
   const reviewed = entry.kind === 'confirmed';
   const paid = entry.settlementState !== null && PAID.has(entry.settlementState);
-  return [
-    { key: 'uploaded', label: tt('income.step.uploaded'), done: true },
+  const steps = [
+    { key: 'uploaded', label: tt('income.step.uploaded'), done: entry.settlementState !== null && entry.settlementState !== 'unknown' },
     {
       key: 'reviewed',
       label: tt('income.step.reviewed'),
@@ -90,6 +90,8 @@ const lifecycle = (
         entry.settlementState === null ? undefined : settlementLabel(tt, entry.settlementState),
     },
   ];
+  const current = steps.findIndex(step => !step.done);
+  return steps.map((step, index) => ({ ...step, current: index === current }));
 };
 
 export function Income() {
@@ -98,6 +100,8 @@ export function Income() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [details, setDetails] = useState(false);
   const [showDestination, setShowDestination] = useState(false);
+  const [extra, setExtra] = useState<'statement' | 'help' | null>(null);
+  const [options, setOptions] = useState(false);
   const tt = useT();
   const theme = useTheme();
   const income = useQuery({ queryKey: ['income'], queryFn: () => api.income() });
@@ -117,7 +121,7 @@ export function Income() {
     </>}
   </>;
   return <>
-    <ListScreen title={tt('income.title')} data={income.data ?? []} keyOf={entry => entry.episodeId}
+    <ListScreen title={tt('income.title')} data={options ? [] : income.data ?? []} keyOf={entry => entry.episodeId}
       refresh={{ refreshing: income.isFetching || cycle.isFetching || payout.isFetching, onRefresh: () => { void income.refetch(); void cycle.refetch(); void payout.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.sectionGap }}>
         <HeaderGradient>
@@ -128,15 +132,33 @@ export function Income() {
             <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.paper }}>{tt(cycle.isPending ? 'common.loading' : 'home.cycleUnavailable')}</Text>}
         </HeaderGradient>
         {cycle.isError ? <Note tone="error" text={tt('common.loadFailed')} onRetry={() => void cycle.refetch()} busy={cycle.isFetching} /> : null}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: c.cardGap }}>
-          <Button label={tt('uploads.title')} variant="secondary" onPress={() => nav.selectTab('uploads')} />
-          <Button label={tt('payout.title')} variant="secondary" onPress={() => setShowDestination(true)} />
+        <View style={{ flexDirection: 'row', gap: c.cardGap, alignItems: 'flex-start' }}>
+          {([
+            ['uploads.title', '↑', () => nav.selectTab('uploads')],
+            ['income.statement', '≡', () => setExtra('statement')],
+            ['payout.title', '↗', () => setShowDestination(true)],
+            ['profile.help', '?', () => setExtra('help')],
+          ] as const).map(([label, mark, press]) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={tt(label)}
+            onPress={press} style={{ flex: 1, minHeight: 48, alignItems: 'center', gap: theme.space[2] }}>
+            <View style={{ width: 52, height: 52, borderRadius: c.radius.pill, backgroundColor: c.surface, borderWidth: 1, borderColor: c.line, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ ...c.type.h2, color: c.plum, fontFamily: face(theme) }}>{mark}</Text>
+            </View><Text style={{ ...c.type.caption, color: c.ink, fontFamily: face(theme), textAlign: 'center' }}>{tt(label)}</Text>
+          </Pressable>)}
         </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2], padding: theme.space[1], borderRadius: c.radius.pill, backgroundColor: c.line }}>
+          <Chip label={tt('income.transactions')} selected={!options} onPress={() => setOptions(false)} />
+          <Chip label={tt('income.options')} selected={options} onPress={() => setOptions(true)} />
+        </View>
+        {options ? <>
+          <NavRow label={tt('income.statement')} onPress={() => setExtra('statement')} />
+          <NavRow label={tt('payout.title')} onPress={() => setShowDestination(true)} />
+          <NavRow label={tt('profile.help')} subtitle={tt('profile.helpSub')} onPress={() => setExtra('help')} />
+        </> : null}
         <Body muted>{tt('income.intro')}</Body>
         {income.isError ? <Note tone="error" text={tt(income.data ? 'income.stale' : 'common.loadFailed')} onRetry={() => void income.refetch()} busy={income.isFetching} /> : null}
         {income.isPending ? <Loading /> : null}
       </View>}
-      empty={income.isPending || income.isError ? null : <Hatch text={tt('income.empty')} />}
+      empty={options || income.isPending || income.isError ? null : <Hatch text={tt('income.empty')} />}
       renderItem={entry => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(entry.episodeId)}. ${tt(entry.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')}`}
         onPress={() => { setSelectedId(entry.episodeId); setDetails(false); }}
         style={({ pressed }) => ({ borderBottomWidth: 1, borderBottomColor: c.line, paddingVertical: c.cardPad, gap: c.cardGap, backgroundColor: pressed ? c.surface : undefined })}>
@@ -163,6 +185,16 @@ export function Income() {
           {selected.kind === 'estimated' ? <Note text={tt('income.estimatedHint')} /> : null}
         </> : <Timeline steps={lifecycle(tt, selected)} />}
       </Screen> : null}
+    </Modal>
+    <Modal visible={extra !== null} animationType="none" onRequestClose={() => setExtra(null)}>
+      <Screen title={tt(extra === 'help' ? 'profile.help' : 'income.statement')} onBack={() => setExtra(null)}>
+        {extra === 'help' ? <Body>{tt('profile.helpSub')}</Body> : cycleData ? <>
+          <Body>{cycleData.label}</Body>
+          <Row label={tt('income.confirmed')} value={dong(cycleData.confirmedVnd)} />
+          <Row label={tt('income.estimated')} value={dong(cycleData.estimatedVnd)} />
+          <Row label={tt('income.total')} value={dong(cycleData.totalVnd)} />
+        </> : cycle.isPending ? <Loading /> : <Note text={tt('home.cycleUnavailable')} onRetry={() => void cycle.refetch()} busy={cycle.isFetching} />}
+      </Screen>
     </Modal>
     <Modal visible={showDestination} animationType="none" onRequestClose={() => setShowDestination(false)}>
       <Screen title={tt('payout.title')} onBack={() => setShowDestination(false)}>{destination}</Screen>
