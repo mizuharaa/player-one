@@ -40,5 +40,5 @@ jobs:
       # policy (CSP, frame-ancestors, nosniff, HSTS) needs a built console; the
       # collector release-config and build-provenance suites run under node:test.
       - run: pnpm --dir apps/console build
-      - run: node --test deploy/*.test.mjs
+      - run: node --test deploy/*.test.mjs deploy/cloud/*.test.mjs
       - run: pnpm --dir apps/collector test:release
