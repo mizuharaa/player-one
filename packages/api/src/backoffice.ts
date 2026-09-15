@@ -216,6 +216,7 @@ export const REFUSALS = new Set([
   'task_claims_exam_gate',
   'task_claims_qualified_gate',
   'task_claims_consent_gate',
+  'task_claims_onboarding_gate',
   'task_claims_published_gate',
   'task_claims_live_key',
   'task_claims_history_immutable',

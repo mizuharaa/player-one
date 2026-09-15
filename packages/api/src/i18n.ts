@@ -629,6 +629,8 @@ const en = {
   // open sign-up
   'bo.refused.collector_not_onboarded':
     'Bind your Ego device at the collection centre to accept tasks. Signing up lets you look at the task board; a collection centre is where an account is approved for collection.',
+  'bo.refused.task_claims_onboarding_gate':
+    'Bind your Ego device at the collection centre to accept tasks. Signing up lets you look at the task board; a collection centre is where an account is approved for collection.',
   'bo.refused.not_qualified':
     'This account has not been approved for collection yet. The upload centre can say where it stands.',
   'bo.refused.agreements_incomplete':
@@ -2130,6 +2132,7 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.exam_not_passed': '领取任务前必须通过考核。请在培训页面参加考核。',
   // open sign-up
   'bo.refused.collector_not_onboarded': '请先到采集中心绑定 Ego 设备，然后才能领取任务。注册后就可以浏览任务列表，账号的采集资格由采集中心审批。',
+  'bo.refused.task_claims_onboarding_gate': '请先到采集中心绑定 Ego 设备，然后才能领取任务。注册后就可以浏览任务列表，账号的采集资格由采集中心审批。',
   'bo.refused.not_qualified': '该账号尚未通过采集资格审核。可向上传中心询问当前状态。',
   'bo.refused.agreements_incomplete': '领取任务前必须接受全部六份协议。',
   'bo.refused.claim_id_reused': '该编号已属于另一项任务。请重新领取任务。',
@@ -3370,6 +3373,8 @@ const vi: Record<MessageKey, string> = {
     'Đạt bài kiểm tra rồi bạn mới nhận được nhiệm vụ. Bài nằm ở mục Đào tạo.',
   // open sign-up
   'bo.refused.collector_not_onboarded':
+    'Bạn cần ra trung tâm thu thập để liên kết thiết bị Ego, rồi mới nhận được nhiệm vụ. Đăng ký xong bạn xem được danh sách nhiệm vụ; trung tâm là nơi duyệt tài khoản cho đi thu thập.',
+  'bo.refused.task_claims_onboarding_gate':
     'Bạn cần ra trung tâm thu thập để liên kết thiết bị Ego, rồi mới nhận được nhiệm vụ. Đăng ký xong bạn xem được danh sách nhiệm vụ; trung tâm là nơi duyệt tài khoản cho đi thu thập.',
   'bo.refused.not_qualified':
     'Tài khoản của bạn chưa được duyệt để đi thu thập. Trung tâm tải lên sẽ cho bạn biết tình trạng hiện tại.',
