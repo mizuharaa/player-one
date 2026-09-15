@@ -278,15 +278,15 @@ describe('transfer-fund', () => {
     expect(b?.macValid).toBe(true);
   });
 
-  it('partner_embed_data and extra_info default to "{}" — not "", not omitted — and "" is corrected to "{}"', async () => {
+  it('partner_embed_data includes the merchant ID and extra_info defaults to "{}" — not "", not omitted — and "" is corrected to "{}"', async () => {
     const c = client();
     await transfer(c);
     await c.transferFund({ partnerOrderId: po(), receiver: WALLET, amountVnd: 1, description: 'x', partnerEmbedData: '', extraInfo: '' });
     await c.transferFund({ partnerOrderId: po(), receiver: WALLET, amountVnd: 1, description: 'x', partnerEmbedData: '{"bill":"b"}' });
     const bodies = fake.requests('transferFund').map((r) => r.body);
-    expect(bodies[0]).toMatchObject({ partner_embed_data: '{}', extra_info: '{}' });
-    expect(bodies[1]).toMatchObject({ partner_embed_data: '{}', extra_info: '{}' });
-    expect(bodies[2]).toMatchObject({ partner_embed_data: '{"bill":"b"}', extra_info: '{}' });
+    expect(bodies[0]).toMatchObject({ partner_embed_data: '{"merchant_wallet_id":"test-merchant"}', extra_info: '{}' });
+    expect(bodies[1]).toMatchObject({ partner_embed_data: '{"merchant_wallet_id":"test-merchant"}', extra_info: '{}' });
+    expect(bodies[2]).toMatchObject({ partner_embed_data: '{"bill":"b","merchant_wallet_id":"test-merchant"}', extra_info: '{}' });
     expect(fake.requests('transferFund').every((r) => r.macValid)).toBe(true);
   });
 
@@ -602,6 +602,11 @@ describe('official shapes from docs.zalopay.vn', () => {
 
 
 describe('Merchant Wallet configuration', () => {
+  it('refuses an omitted Merchant Wallet ID even from an untyped caller', () => {
+    const untyped = { ...config(), merchantWalletId: undefined } as unknown as ZaloPayConfig;
+    expect(() => new ZaloPayHttpClient(untyped)).toThrow(/merchantWalletId/);
+  });
+
   it('signs and sends one configured embed string on transfer and excludes it from the balance MAC', async () => {
     const c = client({ merchantWalletId: 'merchant-distinct-from-payment' });
     await c.transferFund({ partnerOrderId: po(), receiver: WALLET, amountVnd: 1, description: 'probe', partnerEmbedData: '{"bill":"b"}' });

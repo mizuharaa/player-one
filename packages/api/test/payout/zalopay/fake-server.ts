@@ -196,6 +196,7 @@ export class FakeZaloPay {
       env: 'sandbox',
       appId: this.appId,
       paymentId: this.paymentId,
+      merchantWalletId: 'test-merchant',
       key1: this.key1,
       zaloPayPublicKeyPem: this.publicKeyPem,
       receiverInfoPadding: this.padding,
