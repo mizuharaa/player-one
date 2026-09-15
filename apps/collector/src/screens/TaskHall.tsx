@@ -132,11 +132,10 @@ function enqueue(collectorId: string, work: () => Promise<void>): Promise<void> 
   const tail = writeQueue.get(collectorId) ?? Promise.resolve();
   // `then(work, work)` rather than `finally`: a failed earlier write must not
   // stop the next one, and it must not stop the clear either.
-  const settled = tail.then(work, work).catch(() => {});
+  const settled = tail.then(work, work);
   writeQueue.set(collectorId, settled);
-  void settled.then(() => {
-    if (writeQueue.get(collectorId) === settled) writeQueue.delete(collectorId);
-  });
+  const clean = () => { if (writeQueue.get(collectorId) === settled) writeQueue.delete(collectorId); };
+  void settled.then(clean, clean);
   return settled;
 }
 
@@ -156,15 +155,8 @@ export type ClearPreferences = (collectorId: string) => Promise<void>;
 
 export const clearPreferences: ClearPreferences = (collectorId) =>
   enqueue(collectorId, async () => {
-    try {
-      await SecureStore.deleteItemAsync(prefsKey(collectorId));
-      await SecureStore.deleteItemAsync(recentsKey(collectorId));
-    } catch {
-      // A keystore that cannot delete is the one case this cannot fix from
-      // here. It is reported through `App.tsx`'s existing `clearFailed`
-      // recovery, which is why this resolves rather than throwing into a
-      // sign-out that has already dropped the session.
-    }
+    await SecureStore.deleteItemAsync(prefsKey(collectorId));
+    await SecureStore.deleteItemAsync(recentsKey(collectorId));
   });
 
 async function readPreferences(collectorId: string): Promise<Preferences> {

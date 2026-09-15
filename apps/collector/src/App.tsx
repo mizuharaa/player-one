@@ -8,7 +8,7 @@ import { MockCollectorApi } from './api/mock.ts';
 import { HttpCollectorApi } from './api/http.ts';
 import { API_BASE_URL, USE_MOCK_API } from './api/config.ts';
 import { secureTokenStore } from './api/token-store.ts';
-import { type CollectorApi } from './api/types.ts';
+import { type CollectorApi, type CollectorProfile } from './api/types.ts';
 import { ApiProvider } from './api/context.tsx';
 import { LocaleProvider } from './locale.tsx';
 import { NavProvider, useNav, type RouteName } from './nav.tsx';
@@ -31,7 +31,7 @@ import { Register } from './screens/Register.tsx';
 import { SessionCreate } from './screens/SessionCreate.tsx';
 import { SessionReminder } from './screens/SessionReminder.tsx';
 import { TaskDetail } from './screens/TaskDetail.tsx';
-import { TaskHall } from './screens/TaskHall.tsx';
+import { TaskHall, clearPreferences } from './screens/TaskHall.tsx';
 import { Landing } from './screens/Landing.tsx';
 import { Splash } from './screens/Splash.tsx';
 import { SignIn } from './screens/SignIn.tsx';
@@ -176,6 +176,7 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
   const [signingIn, setSigningIn] = useState(false);
   const alive = useRef(true);
   const signingOut = useRef(false);
+  const logoutCollectorId = useRef<string | null>(null);
   const run = useRef(0);
   const [queryClient] = useState(() => new QueryClient());
   const [api] = useState(() => factory(() => { if (alive.current) void leave(); }));
@@ -187,10 +188,12 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
     signingOut.current = true;
     run.current += 1;
     setState('leaving');
+    logoutCollectorId.current = queryClient.getQueryData<CollectorProfile | null>(['profile'])?.id ?? logoutCollectorId.current;
     api.dispose();
     await queryClient.cancelQueries();
     queryClient.clear();
     try {
+      if (logoutCollectorId.current !== null) await clearPreferences(logoutCollectorId.current);
       await api.signOut();
       if (alive.current) onExited();
     } catch {

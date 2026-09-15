@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import * as SecureStore from 'expo-secure-store';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -377,3 +378,14 @@ it('offers a way out of a filter that matches nothing', async () => {
 
 vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
 vi.mock('react-native-safe-area-context', async () => ({ initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null) }));
+
+it('reports a failed local deletion and lets the same collector retry it', async () => {
+  store.set('playerone.collector.prefs.col-a', '{}');
+  const remove = vi.spyOn(SecureStore, 'deleteItemAsync').mockRejectedValueOnce(new Error('keystore unavailable'));
+  try {
+    await expect(clearPreferences('col-a')).rejects.toThrow('keystore unavailable');
+    expect(store.has('playerone.collector.prefs.col-a')).toBe(true);
+    await clearPreferences('col-a');
+    expect(store.has('playerone.collector.prefs.col-a')).toBe(false);
+  } finally { remove.mockRestore(); }
+});

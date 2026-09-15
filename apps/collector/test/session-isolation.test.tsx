@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import * as SecureStore from 'expo-secure-store';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
@@ -178,3 +179,17 @@ vi.mock('react-native-svg', () => {
 });
 
 vi.mock('../src/guide/seen.ts', () => ({ guideOffered: { get: async () => true, set: async () => {} } }));
+
+it('keeps the account hidden when preference deletion fails and retries the original account key', async () => {
+  const first = await user('First collector');
+  const id = (await first.profile())!.id;
+  const remove = vi.spyOn(SecureStore, 'deleteItemAsync').mockRejectedValueOnce(new Error('keystore unavailable'));
+  await act(async () => root.render(<LocaleProvider initialLocale="vi"><CollectorSession factory={() => first} /></LocaleProvider>));
+  await settle(() => expect(host.textContent).toContain('First collector'));
+  await tap(MESSAGES.vi['signIn.signOut']);
+  await settle(() => expect(host.textContent).toContain(MESSAGES.vi['signIn.clearFailed']));
+  expect(host.textContent).not.toContain('First collector');
+  await tap(MESSAGES.vi['common.retry']);
+  await settle(() => expect(host.textContent).toContain('Sign in test'));
+  expect(remove.mock.calls.filter(([key]) => key === `playerone.collector.prefs.${id}`)).toHaveLength(2);
+});
