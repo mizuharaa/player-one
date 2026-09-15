@@ -47,7 +47,7 @@ const EVENTS: Record<string, AttemptEvent> = {
 const LEGAL: Record<AttemptStatus, Partial<Record<keyof typeof EVENTS, AttemptStatus>>> = {
   created: { SUBMIT: 'submitted', RESOLVE_FAIL: 'failed' },
   submitted: {
-    ACCEPTED_1: 'succeeded',
+    ACCEPTED_1: 'processing',
     ACCEPTED_2: 'processing',
     ACCEPTED_3: 'processing',
     ACCEPTED_4: 'pending_zlp',

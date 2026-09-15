@@ -147,7 +147,7 @@ const toItem = (
   id: row.id,
   kind: KIND_GROUP[row.kind],
   title: tt(KIND_TITLE[row.kind]),
-  body: figuresOf(row.kind, row.payload, tt),
+  body: [row.payload.simulation === 'true' ? tt('payout.simulation') : '', figuresOf(row.kind, row.payload, tt)].filter(Boolean).join(' - '),
   at: row.createdAt,
   read: row.readAt !== null,
 });

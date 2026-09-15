@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { expect, it, vi } from 'vitest';
 import { MESSAGES } from '@playerone/api/i18n';
 import { BillScreen } from './BillScreen.tsx';
+import { VerifyPill } from './pieces.tsx';
 import { keys } from './period.ts';
 const language = vi.hoisted(() => ({ value: 'en' as 'en' | 'vi' | 'zh' }));
 
@@ -54,3 +55,16 @@ it.each(['en', 'vi', 'zh'] as const)('finance bill shows awaiting, paid and simu
   }
 });
 
+it.each(['en', 'vi', 'zh'] as const)('verification pill labels only verified simulation with a short token in %s', async locale => {
+  language.value = locale;
+  const node = document.createElement('div');
+  const root = createRoot(node);
+  try {
+    for (const status of ['unverified', 'verified'] as const) {
+      await act(async () => root.render(<VerifyPill status={status} simulation />));
+      const token = { en: 'Sandbox', vi: 'M\u00f4 ph\u1ecfng', zh: '\u6a21\u62df' }[locale];
+      expect(node.textContent).toBe(MESSAGES[locale][`settle.verify.${status}`] + (status === 'verified' ? ` - ${token}` : ''));
+      expect(node.textContent).not.toContain(MESSAGES[locale]['settle.simulation']);
+    }
+  } finally { await act(async () => root.unmount()); }
+});

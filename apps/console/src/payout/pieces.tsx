@@ -220,7 +220,7 @@ export function AttemptPill({ status }: { status: AttemptStatus | null | undefin
   );
 }
 
-export function VerifyPill({ status }: { status: VerifyStatus }) {
+export function VerifyPill({ status, simulation }: { status: VerifyStatus; simulation?: boolean }) {
   const { t } = useTranslation();
   return (
     <span
@@ -231,7 +231,7 @@ export function VerifyPill({ status }: { status: VerifyStatus }) {
           : 'border border-[var(--border-strong)] bg-[var(--card)] text-[var(--foreground)]',
       )}
     >
-      {t(`settle.verify.${status}`)}
+      {t(`settle.verify.${status}`)}{status === 'verified' && simulation ? ` - ${t('settle.simulationLabel')}` : ''}
     </span>
   );
 }

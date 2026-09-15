@@ -1,3 +1,5 @@
+import { sql } from 'drizzle-orm';
+import type { Db } from '@playerone/store';
 import type { ZaloPayClient } from './client-contract.ts';
 import type { RiskReader } from './risk.ts';
 
@@ -151,4 +153,22 @@ export function assertPayoutBootInvariants(options: PayoutOptions): void {
   if (options.capVnd !== undefined && (!Number.isInteger(options.capVnd) || options.capVnd <= 0)) {
     throw new Error(`the per-collector cap must be a positive whole number of dong, not ${options.capVnd}`);
   }
+}
+
+/** Immutable outcome evidence survives a later switch of provider credentials. */
+export async function storedSimulation(
+  db: Pick<Db, 'execute'>,
+  table: 'payout_accounts' | 'payout_attempts',
+  id: string,
+  payment?: { mode: string; reference: string | null },
+): Promise<boolean> {
+  if (payment?.mode === 'manual' && payment.reference?.trim()) return false;
+  const [evidence] = await db.execute<{ environment: string | null }>(sql`
+    select "after"->>'provider_environment' as environment from audit_events
+    where target_table = ${table} and target_id = ${id}
+      and action = ${table === 'payout_accounts' ? 'payout_account.declare' : 'payout_attempt.create'}
+    order by occurred_at, id limit 1
+  `);
+  // Legacy outcomes without evidence are never promoted to live payment proof.
+  return evidence?.environment !== 'production';
 }

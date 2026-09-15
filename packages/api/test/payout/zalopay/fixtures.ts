@@ -243,9 +243,9 @@ export const OFFICIAL = {
   },
   /** Guide, "Transfer Fund" — wallet route response `data`. */
   transferFundWalletResponse: {
-    return_code: 3,
+    return_code: 1,
     return_message: 'PROCESSING',
-    sub_return_code: 3,
+    sub_return_code: 1,
     sub_return_message: 'PROCESSING',
     data: { order_id: '51642840027000060', status: 3, amount: 10000 },
   },

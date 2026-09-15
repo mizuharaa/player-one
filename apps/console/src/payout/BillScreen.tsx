@@ -197,7 +197,7 @@ export function BillScreen() {
                       label={t('settle.bill.verified')}
                       value={<span className="font-sans">{bill.account.verified_name ?? t('settle.bill.verified.none')}</span>}
                     />
-                    <Fig label={t('settle.col.attempt')} value={<VerifyPill status={bill.account.verify_status} />} />
+                    <Fig label={t('settle.col.attempt')} value={<VerifyPill simulation={bill.account.simulation} status={bill.account.verify_status} />} />
                     <Fig label={t('settle.bill.phone')} value={bill.account.phone_masked || '—'} hint={t(`settle.method.${bill.account.method}`)} />
                   </dl>
                 )}

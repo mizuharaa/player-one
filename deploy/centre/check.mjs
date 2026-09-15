@@ -42,7 +42,7 @@ export function configurationChecks(env) {
   if (env.PLAYERONE_REVIEWER_MEDIA !== '0') fail('reviewer-media', 'Set PLAYERONE_REVIEWER_MEDIA=0; this kit does not authorize remote footage playback.');
   if (env.PLAYERONE_PAYOUT_MODE !== 'manual') fail('payout-mode', 'Keep PLAYERONE_PAYOUT_MODE=manual; real gateway activation is a separate handoff.');
   if ((env.PLAYERONE_ZALOPAY_ENV ?? 'sandbox') !== 'sandbox' ||
-      ['APP_ID', 'PAYMENT_ID', 'KEY1', 'PUBLIC_KEY'].some((key) => env[`PLAYERONE_ZALOPAY_${key}`])) {
+      ['APP_ID', 'PAYMENT_ID', 'KEY1', 'PUBLIC_KEY', 'MERCHANT_WALLET_ID'].some((key) => env[`PLAYERONE_ZALOPAY_${key}`])) {
     fail('gateway-scope', 'Remove gateway credentials and keep its environment sandbox for this pre-gateway deployment; billing still works.');
   }
   // Match storageQuotaFromEnv in packages/api/src/alerts.ts; pinned by the parity test.

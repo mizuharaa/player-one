@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -119,6 +120,7 @@ describe('zaloPayClientFromEnv', () => {
   const complete = {
     PLAYERONE_ZALOPAY_APP_ID: '2553',
     PLAYERONE_ZALOPAY_PAYMENT_ID: 'PM-001',
+    PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID: 'MW-001',
     PLAYERONE_ZALOPAY_KEY1: 'k1',
     PLAYERONE_ZALOPAY_PUBLIC_KEY: TEST_RSA.publicKeySpkiPem,
   };
@@ -276,15 +278,15 @@ describe('transfer-fund', () => {
     expect(b?.macValid).toBe(true);
   });
 
-  it('partner_embed_data and extra_info default to "{}" — not "", not omitted — and "" is corrected to "{}"', async () => {
+  it('partner_embed_data includes the merchant ID and extra_info defaults to "{}" — not "", not omitted — and "" is corrected to "{}"', async () => {
     const c = client();
     await transfer(c);
     await c.transferFund({ partnerOrderId: po(), receiver: WALLET, amountVnd: 1, description: 'x', partnerEmbedData: '', extraInfo: '' });
     await c.transferFund({ partnerOrderId: po(), receiver: WALLET, amountVnd: 1, description: 'x', partnerEmbedData: '{"bill":"b"}' });
     const bodies = fake.requests('transferFund').map((r) => r.body);
-    expect(bodies[0]).toMatchObject({ partner_embed_data: '{}', extra_info: '{}' });
-    expect(bodies[1]).toMatchObject({ partner_embed_data: '{}', extra_info: '{}' });
-    expect(bodies[2]).toMatchObject({ partner_embed_data: '{"bill":"b"}', extra_info: '{}' });
+    expect(bodies[0]).toMatchObject({ partner_embed_data: '{"merchant_wallet_id":"test-merchant"}', extra_info: '{}' });
+    expect(bodies[1]).toMatchObject({ partner_embed_data: '{"merchant_wallet_id":"test-merchant"}', extra_info: '{}' });
+    expect(bodies[2]).toMatchObject({ partner_embed_data: '{"bill":"b","merchant_wallet_id":"test-merchant"}', extra_info: '{}' });
     expect(fake.requests('transferFund').every((r) => r.macValid)).toBe(true);
   });
 
@@ -330,7 +332,7 @@ describe('transfer-fund', () => {
         endpoint: 'transferFund',
         returnCode: 2,
         subReturnCode: -9999,
-        subReturnMessage: 'SOMETHING_NEW',
+        subReturnMessage: null,
         partnerOrderId: id,
       },
     ]);
@@ -595,5 +597,67 @@ describe('official shapes from docs.zalopay.vn', () => {
       for (const k of Object.keys(a.data)) expect(allowed.has(k), `undocumented key ${k}`).toBe(true);
       expect(a.data).toMatchObject({ disbursement_type: 'BANK', bank_code: 'VCB', account_holder_name: 'NGUYEN VAN A' });
     }
+  });
+});
+
+
+describe('Merchant Wallet configuration', () => {
+  it('explicit verification-only clients refuse balance and transfer even with a smuggled ID', async () => {
+    const c = new ZaloPayHttpClient({ ...config(), verificationOnly: true } as unknown as ConstructorParameters<typeof ZaloPayHttpClient>[0]);
+    await expect(c.balance()).rejects.toThrow(/verification.only/);
+    await expect(transfer(c)).rejects.toThrow(/verification.only/);
+    expect(fake.requests('balance')).toHaveLength(0);
+    expect(fake.requests('transferFund')).toHaveLength(0);
+  });
+  it('the explicit verification-only env factory works without a merchant ID', async () => {
+    const c = zaloPayClientFromEnv({
+      PLAYERONE_ZALOPAY_APP_ID: '1', PLAYERONE_ZALOPAY_PAYMENT_ID: 'test-payment',
+      PLAYERONE_ZALOPAY_KEY1: 'test', PLAYERONE_ZALOPAY_PUBLIC_KEY: TEST_RSA.publicKeySpkiPem,
+    }, { fetch: async () => new Response(JSON.stringify({ return_code: 1, data: { m_u_id: 'test-id' } })) }, { verificationOnly: true });
+    expect(await c!.verifyAccount({ receiver: { method: 'WALLET', phone: '0901234567' }, amountVnd: 1 })).toMatchObject({ kind: 'verified', mUId: 'test-id' });
+  });
+
+  it('refuses an omitted Merchant Wallet ID even from an untyped caller', () => {
+    const untyped = { ...config(), merchantWalletId: undefined } as unknown as ZaloPayConfig;
+    expect(() => new ZaloPayHttpClient(untyped)).toThrow(/merchantWalletId/);
+  });
+
+  it('signs and sends one configured embed string on transfer and excludes it from the balance MAC', async () => {
+    const c = client({ merchantWalletId: 'merchant-distinct-from-payment' });
+    await c.transferFund({ partnerOrderId: po(), receiver: WALLET, amountVnd: 1, description: 'probe', partnerEmbedData: '{"bill":"b"}' });
+    await c.balance();
+    const transfer = fake.requests('transferFund')[0]!.body;
+    const balance = fake.requests('balance')[0]!.body;
+    expect(JSON.parse(String(transfer.partner_embed_data))).toEqual({ bill: 'b', merchant_wallet_id: 'merchant-distinct-from-payment' });
+    expect(balance.partner_embed_data).toBe('{"merchant_wallet_id":"merchant-distinct-from-payment"}');
+    expect(transfer.extra_info).toBe('{}');
+    for (const [body, fields] of [[transfer, ['app_id','payment_id','partner_order_id','disbursement_type','receiver_info','amount','description','partner_embed_data','extra_info','time']], [balance, ['app_id','payment_id','time']]] as const) {
+      expect(body.mac).toBe(createHmac('sha256', fake.key1).update(fields.map(k => body[k]).join('|')).digest('hex'));
+    }
+  });
+  it('refuses missing Merchant Wallet env configuration without deriving it from payment ID', () => {
+    expect(() => zaloPayClientFromEnv({ PLAYERONE_ZALOPAY_APP_ID: '1', PLAYERONE_ZALOPAY_PAYMENT_ID: 'payment-only', PLAYERONE_ZALOPAY_KEY1: 'test', PLAYERONE_ZALOPAY_PUBLIC_KEY: TEST_RSA.publicKeySpkiPem })).toThrow(/MERCHANT_WALLET_ID/);
+    expect(() => client({ merchantWalletId: ' ' })).toThrow(/merchantWalletId/);
+  });
+  it('does not let caller embed replace the configured merchant identity', async () => {
+    await expect(client({ merchantWalletId: 'configured' }).transferFund({ partnerOrderId: po(), receiver: WALLET, amountVnd: 1, description: 'probe', partnerEmbedData: '{"merchant_wallet_id":"other"}' })).rejects.toThrow(/merchant_wallet_id/);
+    expect(fake.requests('transferFund')).toHaveLength(0);
+  });
+});
+
+
+describe('unusable provider identity and acceptance', () => {
+  it.each(['', ' ', '\t'])('refuses unusable wallet ID %j before transfer', async mUId => {
+    await expect(transfer(client(), po(), { method: 'WALLET', mUId } as typeof WALLET)).rejects.toThrow(/m_u_id/);
+    expect(fake.requests('transferFund')).toHaveLength(0);
+  });
+  it('refuses a whitespace-only wallet verify answer', async () => {
+    fake.plan('verifyAccount', { kind: 'ok', mUId: ' ' });
+    await expect(client().verifyAccount({ receiver: { method: 'WALLET', phone: '0901234567' }, amountVnd: 1 })).rejects.toMatchObject({ cause: 'malformed' });
+  });
+  it('does not accept undocumented envelope return_code 3 as success', async () => {
+    const fetch: typeof globalThis.fetch = async () => new Response(JSON.stringify({ return_code: 3, data: { order_id: 'id', status: 1 } }));
+    expect(await transfer(client({ fetch }))).toEqual({ kind: 'unknown', cause: 'malformed' });
+    expect(await client({ fetch }).queryTransaction('id')).not.toMatchObject({ kind: 'found' });
   });
 });

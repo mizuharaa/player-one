@@ -72,7 +72,9 @@ const DEVICE_SERIAL = process.env['PLAYERONE_DEMO_DEVICE_SERIAL'] ?? 'AZER76400H
  * The wallet as `AccountBody` wants it: ten digits starting with 0
  * (payout/routes/payout.ts). Same subscriber number as PHONE, national form.
  */
-const WALLET = '0900000001';
+const WALLET = process.env['PLAYERONE_ZALOPAY_SANDBOX_PHONE'] ?? '0900000001';
+if (process.env['PLAYERONE_ZALOPAY_SANDBOX_PHONE'] !== undefined && (process.env['PLAYERONE_ZALOPAY_ENV'] ?? 'sandbox') !== 'sandbox') throw new Error('Sandbox destination requires sandbox environment');
+if (!/^0\d{9}$/.test(WALLET)) throw new Error('Sandbox destination must be a national-format wallet phone');
 const DECLARED_NAME = 'Demo Collector';
 /** Fixed, so a rerun replays the declaration rather than making a second one. */
 const ACCOUNT_ID = '00000000-0000-4000-8000-00000000c001';
@@ -222,7 +224,6 @@ async function declareAccount(db) {
       },
     );
     return 'payout destination ' + (body.replayed ? 'replayed' : 'declared') + ' ' + body.method +
-      ' ' + (body.phone_masked ?? body.account_no_last4) +
       ' verify_status=' + body.verify_status;
   } finally {
     await app.close();

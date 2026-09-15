@@ -485,28 +485,16 @@ Nothing moved.
 > This bill is correct and ready. It shows as **awaiting payment — destination
 > unverified**. ZaloPay has not confirmed that this wallet belongs to this
 > person, and the platform will not send money to an unconfirmed destination.
-> That is a deliberate gate, not a missing feature. The moment VNG issues the
-> ZaloPay verification credential, this same screen verifies the account and
-> the same button records the payment.
+> A successful sandbox lookup alone does not prove the holder's name or move
+> money. We keep this ending until the required verification evidence exists.
 
-**What changes if a verification credential does arrive before Thursday:** all
-four of `PLAYERONE_ZALOPAY_APP_ID`, `PLAYERONE_ZALOPAY_PAYMENT_ID`,
-`PLAYERONE_ZALOPAY_KEY1` and `PLAYERONE_ZALOPAY_PUBLIC_KEY` have to be present
-— without all four no account can leave `unverified`. Then, and only then:
+**The optional sandbox verification path:** credentials are available, but provisioning and real provider proof remain separate steps. Follow `docs/payout-demo-state.md`: the existing four client credentials plus `PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID` are required, along with the sandbox phone for the read-only smoke. Keep `PLAYERONE_ZALOPAY_ENV=sandbox` and `PLAYERONE_PAYOUT_MODE=manual`.
 
-- Verification runs **on an isolated sandbox database**, never this demo
-  database and never anything named live, with `PLAYERONE_ZALOPAY_ENV=sandbox`.
-  A sandbox credential verifies sandbox wallets only.
-- `PLAYERONE_PAYOUT_MODE` stays **`manual`**. A person sends the money and types
-  the reference; the rail is not switched on for a demonstration.
-- Re-run the preflight: `seed-payout` will read `verified` and say so, which is
-  the signal to use the verified ending instead of this one.
-- The verified ending is: finance retypes the exact whole-dong `amount_vnd` and
-  the real transfer reference, `payout_attempts` records `amount_vnd`,
-  `manual_reference` and `settled_at`, and the settlement reads
-  **`manually_paid`**.
+- Run the smoke and finance declaration on an isolated throwaway sandbox database. The smoke itself writes no database rows and sends no transfer.
+- Only a real persisted matching nonempty provider name, with usable wallet ID where applicable, permits **Verified (Simulation)**. The bill still awaits payment. The documented wallet response contains no name and therefore stays unverified.
+- Only an actual manual transfer with its real reference permits **Paid**. The eligible finance actor records it separately; verification never implies payment.
 
-If no credential arrives, **do not simulate a payment.** A stubbed payment
+Without real payment evidence, **do not simulate a payment.** A stubbed payment
 shown to stakeholders is the one thing in this demo that would be a lie.
 
 ### 0:31 — the collector sees the same thing · collector-phone
@@ -536,6 +524,8 @@ words on screen: the collector is told where the money will go and that the
 destination is not yet confirmed. **A verified destination would carry a ✓ and
 the word "Verified"** — nothing in this demo has ever produced that, and no
 fixture may seed it.
+
+**Optional verified sandbox variant.** Use this only after Fable has a real sandbox response and a finance-route declaration persisted with a matching nonempty provider name (and usable wallet ID where applicable). Refresh the console and phone: the destination says Verified with its Simulation label; its notification must also say Simulation. Read it as "destination verified in the sandbox; payment still awaiting." A successful wallet lookup that returns only an ID remains unverified under migration 0032. The read-only smoke never transfers money, and no fixture can unlock this variant. A real manual transfer needs its actual reference and an eligible finance actor; a funded sandbox transfer needs a separate owner decision. See `docs/payout-demo-state.md` for the command and evidence boundary.
 
 **The transaction rows.** Five episodes, each with its own settlement word. The
 two on the bill the operator generated read **"Needs something from you"** (Cần

@@ -54,6 +54,8 @@ export interface ZaloPayConfig {
   appId: number;
   /** The business wallet the money leaves from. transfer-fund and balance. */
   paymentId: string;
+  /** Merchant Wallet contract ID, distinct from paymentId. */
+  merchantWalletId: string;
   /**
    * `key1` — signs OUR outbound requests. Never `key2`: that verifies inbound
    * callbacks, and disbursement has none (§0.3, "if a subagent finds itself
@@ -369,6 +371,7 @@ export interface QueryTxnRequest {
 }
 
 export interface BalanceRequest {
+  partner_embed_data: string;
   app_id: number;
   payment_id: string;
   time: number;

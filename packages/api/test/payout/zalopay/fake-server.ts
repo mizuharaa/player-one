@@ -196,6 +196,7 @@ export class FakeZaloPay {
       env: 'sandbox',
       appId: this.appId,
       paymentId: this.paymentId,
+      merchantWalletId: 'test-merchant',
       key1: this.key1,
       zaloPayPublicKeyPem: this.publicKeyPem,
       receiverInfoPadding: this.padding,
@@ -321,7 +322,7 @@ export class FakeZaloPay {
         // whatever the state — so FAIL (2) rides a success envelope with an
         // order id, and is the §2.2 `accepted, status 2`. A refusal at submit
         // (no order, sub code) is the `sub` scenario.
-        return this.envelope(status === 3 ? 3 : 1, 1, statusName(status), {
+        return this.envelope(1, 1, statusName(status), {
           order_id: order.orderId,
           disbursement_type: String(body['disbursement_type'] ?? ''),
           ...echo(receiver),
@@ -334,7 +335,7 @@ export class FakeZaloPay {
         const order = this.orders.get(String(body['partner_order_id'] ?? ''));
         if (order === undefined) return this.envelope(2, -101, 'ORDER_NOT_EXISTS');
         const status = scenario.status ?? order.status;
-        return this.envelope(status === 3 ? 3 : 1, 1, statusName(status), {
+        return this.envelope(1, 1, statusName(status), {
           order_id: order.orderId,
           disbursement_type: order.receiver !== null && 'm_u_id' in order.receiver ? 'WALLET' : 'BANK',
           ...echo(order.receiver),

@@ -8,7 +8,7 @@ import { notify } from '../../notifications.ts';
 import { financeGuard, financeReadGuard, type Actor, type CounterActor } from '../../actor.ts';
 import { attemptById, applyEvent, insertAttempt, latestAttemptOf } from '../domain/attempts.ts';
 import type { VerifyReceiver } from '../domain/client-contract.ts';
-import { assertPayoutBootInvariants, isSimulation, type PayoutOptions } from '../domain/config.ts';
+import { assertPayoutBootInvariants, isSimulation, storedSimulation, type PayoutOptions } from '../domain/config.ts';
 import { emitEvent } from '../domain/events.ts';
 import { buildExport, type ExportRow } from '../domain/export.ts';
 import { maskPhone } from '../domain/names.ts';
@@ -154,7 +154,7 @@ export function registerPayout(
   const client = options.client;
   const cycleDays = options.cycleDays ?? 7;
   const now = options.now ?? (() => new Date());
-  const batchOptions = { capVnd: options.capVnd, holdsEnabled: options.holdsEnabled, risk: options.risk };
+  const batchOptions = { providerEnvironment: options.zaloPayEnv ?? 'sandbox', capVnd: options.capVnd, holdsEnabled: options.holdsEnabled, risk: options.risk };
 
   const actorOf = (req: FastifyRequest): Actor => req.actor!;
 
@@ -254,9 +254,7 @@ export function registerPayout(
     id: b.id,
     // The bill's own latest outcome decides this, not the environment alone:
     // a bill paid on the manual rail with a reference is a real transfer.
-    simulation: isSimulation(sandbox, b.latestAttempt === null
-      ? null
-      : { mode: b.latestAttempt.mode, reference: b.latestAttempt.manualReference }),
+    simulation: b.simulation ?? true,
     collector_id: b.collectorId,
     collector_ref: b.collectorRef,
     period_start: b.periodStart.toISOString(),
@@ -271,6 +269,7 @@ export function registerPayout(
         ? null
         : {
             id: b.account.id,
+            simulation: b.account.simulation ?? true,
             method: b.account.method,
             verify_status: b.account.verifyStatus,
             declared_name: b.account.declaredName,
@@ -437,6 +436,7 @@ export function registerPayout(
       verified_name: outcome.verifiedName,
       verify_status: outcome.status,
       sub_return_code: outcome.subCode,
+      provider_environment: client === undefined ? null : options.zaloPayEnv ?? 'sandbox',
     };
 
     const attempt = await guarded(() =>
@@ -515,12 +515,12 @@ export function registerPayout(
            * link to fix it.
            */
           if (outcome.status === 'verified') {
-            await notify(tx, b.collector_id, 'payout_account_verified', { payout_account_id: b.id, method: b.method }, {
+            await notify(tx, b.collector_id, 'payout_account_verified', { payout_account_id: b.id, method: b.method, simulation: String(sandbox) }, {
               table: 'payout_accounts',
               id: b.id,
             });
           } else if (outcome.event !== null || outcome.subCode !== null) {
-            await notify(tx, b.collector_id, 'payout_account_refused', { payout_account_id: b.id, method: b.method }, {
+            await notify(tx, b.collector_id, 'payout_account_refused', { payout_account_id: b.id, method: b.method, simulation: String(sandbox) }, {
               table: 'payout_accounts',
               id: b.id,
             });
@@ -744,6 +744,7 @@ export function registerPayout(
     for (const a of rows) {
       accounts.push({
         id: a.id,
+        simulation: await storedSimulation(db, 'payout_accounts', a.id),
         method: a.method,
         phone_masked: maskPhone(a.phone),
         bank_code: a.bankCode,

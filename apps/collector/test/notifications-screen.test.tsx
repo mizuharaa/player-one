@@ -231,3 +231,11 @@ it('labels sample inbox and settings as a simulation', async () => {
   await act(async () => named(m['notif.settings'])!.click());
   expect(page()).toContain(m['common.simulation']);
 });
+
+it('labels a stored sandbox verification in the live inbox', async () => {
+  const api = new MockCollectorApi();
+  vi.spyOn(api, 'notifications').mockResolvedValue([{ id: 'sandbox', kind: 'payout_account_verified', payload: { simulation: 'true' }, createdAt: '2026-09-15T00:00:00Z', readAt: null }]);
+  await mount(false, api);
+  expect(page()).toContain(m['payout.simulation']);
+  expect(page()).toContain(m['notif.payout_account_verified']);
+});

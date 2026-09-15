@@ -1,3 +1,4 @@
+import { storedSimulation } from '../domain/config.ts';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Db } from '@playerone/store';
@@ -69,6 +70,7 @@ export type Issue =
   | 'line_in_exception';
 
 export type BatchBill = {
+  simulation?: boolean;
   id: string;
   collectorId: string;
   collectorRef: string;
@@ -85,6 +87,7 @@ export type BatchBill = {
   /** Any settlement on the bill is in `exception`. */
   inException: boolean;
   account: {
+    simulation?: boolean;
     id: string;
     method: 'WALLET' | 'BANK_ACCOUNT' | 'BANK_CARD';
     verifyStatus: string;
@@ -99,6 +102,7 @@ export type BatchBill = {
 };
 
 export type BatchOptions = {
+  providerEnvironment?: 'sandbox' | 'production';
   capVnd?: number;
   holdsEnabled?: boolean;
   risk?: RiskReader;
@@ -184,6 +188,9 @@ export async function loadBatch(
     const summary = (await risk.billSummary(r.id)) ?? clearSummary(r.id);
     const partial: Omit<BatchBill, 'issues'> = {
       id: r.id,
+      simulation: latestAttempt !== null
+        ? await storedSimulation(db, 'payout_attempts', latestAttempt.id, { mode: latestAttempt.mode, reference: latestAttempt.manualReference })
+        : r.account_id !== null ? await storedSimulation(db, 'payout_accounts', r.account_id) : true,
       collectorId: r.collector_id,
       collectorRef: r.collector_ref,
       periodStart: asDate(r.period_start),
@@ -199,12 +206,13 @@ export async function loadBatch(
           ? null
           : {
               id: r.account_id,
+              simulation: await storedSimulation(db, 'payout_accounts', r.account_id),
               method: r.method!,
               verifyStatus: r.verify_status!,
               declaredName: r.declared_name!,
               verifiedName: r.verified_name,
               phoneMasked: maskPhone(r.phone),
-              hasMUId: r.m_u_id !== null,
+              hasMUId: Boolean(r.m_u_id?.trim()),
             },
       latestAttempt,
       risk: summary,
@@ -440,7 +448,7 @@ export async function payBill(
       action: 'payout_attempt.create',
       targetTable: 'payout_attempts',
       targetId: attemptId,
-      after: { bill_id: bill.id, payout_account_id: bill.account!.id, amount_vnd: amountVnd, mode: 'api' },
+      after: { bill_id: bill.id, payout_account_id: bill.account!.id, amount_vnd: amountVnd, mode: 'api', provider_environment: options.providerEnvironment ?? null },
     },
     (tx) =>
       insertAttempt(tx, {

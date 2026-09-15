@@ -63,18 +63,24 @@ import {
  *     one thing it logs — an unknown sub code — carries endpoint, codes and
  *     `partner_order_id` only.
  */
+type ClientConfig = (ZaloPayConfig & { verificationOnly?: false }) |
+  (Omit<ZaloPayConfig, 'merchantWalletId'> & { verificationOnly: true; merchantWalletId?: never });
+
 export class ZaloPayHttpClient implements ZaloPayClient {
   // No parameter properties anywhere in this module: `bin/` runs .ts under
   // Node's strip-only type stripping, which refuses them (RUNNING.md).
-  private readonly config: ZaloPayConfig;
+  private readonly config: ClientConfig;
   private readonly baseUrl: string;
   private readonly timeouts: Timeouts;
   private readonly fetchFn: typeof fetch;
   private readonly now: () => number;
   private readonly warn: (event: ZaloPayWarning) => void;
 
-  constructor(config: ZaloPayConfig) {
+  constructor(config: ClientConfig) {
     this.config = config;
+    if (!config.verificationOnly && !config.merchantWalletId?.trim()) {
+      throw new Error('ZaloPayConfig.merchantWalletId is required for Merchant Wallet');
+    }
     const signing = config.signing ?? 'hmac';
     if (signing !== 'hmac') {
       // Escalation §0.7 item 1. The legacy scheme is built (`signing.ts`) but
@@ -150,10 +156,15 @@ export class ZaloPayHttpClient implements ZaloPayClient {
   }
 
   async transferFund(input: TransferFundInput): Promise<TransferFundResult> {
+    if (this.config.verificationOnly) throw new Error('verification-only client cannot transfer');
     const amount = wholeVnd(input.amountVnd);
     if (!input.partnerOrderId) throw new TypeError('partnerOrderId is required');
     const time = this.now();
     const receiver_info = this.encrypt(transferPayload(input.receiver));
+    const embed = JSON.parse(input.partnerEmbedData || EMPTY_JSON);
+    if (embed === null || typeof embed !== 'object' || Array.isArray(embed)) throw new TypeError('partnerEmbedData must be a JSON object');
+    if (embed.merchant_wallet_id !== undefined && embed.merchant_wallet_id !== this.config.merchantWalletId) throw new TypeError('merchant_wallet_id conflicts with configured Merchant Wallet');
+    const partnerEmbedData = JSON.stringify({ ...embed, merchant_wallet_id: this.config.merchantWalletId });
     const unsigned = {
       app_id: this.config.appId,
       payment_id: this.config.paymentId,
@@ -163,7 +174,7 @@ export class ZaloPayHttpClient implements ZaloPayClient {
       amount,
       description: input.description,
       // The spec is explicit: empty is "{}", not "" and not omitted (types.ts).
-      partner_embed_data: input.partnerEmbedData || EMPTY_JSON,
+      partner_embed_data: partnerEmbedData,
       extra_info: input.extraInfo || EMPTY_JSON,
       time,
     };
@@ -179,9 +190,9 @@ export class ZaloPayHttpClient implements ZaloPayClient {
       throw err;
     }
 
-    if (r.return_code === 1 || r.return_code === 3) {
+    if (r.return_code === 1) {
       const orderId = r.data?.order_id;
-      const status = zlpStatus(r.data?.status ?? (r.return_code === 3 ? 3 : undefined));
+      const status = zlpStatus(r.data?.status);
       if (typeof orderId !== 'string' || orderId === '' || status === null) {
         // Accepted, but we cannot name the order or its state. Same rule as
         // a lost socket: something may have moved, only a query can tell.
@@ -203,7 +214,7 @@ export class ZaloPayHttpClient implements ZaloPayClient {
     const body: QueryTxnRequest = { ...unsigned, mac: this.sign(queryTxnMacParts(unsigned)) };
 
     const r = await this.post<QueryTxnData>('queryTxn', body, this.timeouts.otherMs);
-    if (r.return_code === 1 || r.return_code === 3) {
+    if (r.return_code === 1) {
       const d = r.data ?? {};
       const status = zlpStatus(d.status);
       if (typeof d.order_id !== 'string' || status === null) {
@@ -225,8 +236,9 @@ export class ZaloPayHttpClient implements ZaloPayClient {
   }
 
   async balance(): Promise<{ balanceVnd: number }> {
+    if (this.config.verificationOnly) throw new Error('verification-only client cannot read balance');
     const unsigned = { app_id: this.config.appId, payment_id: this.config.paymentId, time: this.now() };
-    const body: BalanceRequest = { ...unsigned, mac: this.sign(balanceMacParts(unsigned)) };
+    const body: BalanceRequest = { ...unsigned, partner_embed_data: JSON.stringify({ merchant_wallet_id: this.config.merchantWalletId }), mac: this.sign(balanceMacParts(unsigned)) };
 
     const r = await this.post<BalanceData>('balance', body, this.timeouts.otherMs);
     if (r.return_code !== 1) throw this.businessError('balance', r);
@@ -324,7 +336,7 @@ export class ZaloPayHttpClient implements ZaloPayClient {
         endpoint,
         returnCode: r.return_code,
         subReturnCode: code,
-        subReturnMessage: r.sub_return_message ?? r.return_message ?? null,
+        subReturnMessage: null,
         partnerOrderId,
       });
       return { kind: 'system', subCode: code, retryable: true };
@@ -347,7 +359,7 @@ export class ZaloPayHttpClient implements ZaloPayClient {
       r.return_code,
       sub.subCode,
       sub.kind === 'system',
-      r.sub_return_message ?? r.return_message ?? null,
+      null,
     );
   }
 }
@@ -372,7 +384,7 @@ function zlpStatus(s: unknown): ZlpStatus | null {
 }
 
 function nonEmpty(s: unknown): s is string {
-  return typeof s === 'string' && s !== '';
+  return typeof s === 'string' && s.trim() !== '';
 }
 
 /** §0.4 — verify by phone on the wallet route. */
@@ -391,6 +403,7 @@ function verifyPayload(r: VerifyReceiver): ReceiverInfoPayload {
 function transferPayload(r: TransferReceiver): ReceiverInfoPayload {
   switch (r.method) {
     case 'WALLET':
+      if (!nonEmpty(r.mUId)) throw new TypeError('wallet transfer requires usable m_u_id');
       return { m_u_id: r.mUId };
     case 'BANK_ACCOUNT':
       return { bank_code: r.bankCode, account_no: r.accountNo, account_holder_name: r.accountHolderName };
@@ -443,6 +456,8 @@ function defaultWarn(event: ZaloPayWarning): void {
  */
 export function zaloPayClientFromEnv(
   env: Record<string, string | undefined> = process.env,
+  transport: Pick<ZaloPayConfig, 'fetch' | 'warn'> = {},
+  { verificationOnly = false }: { verificationOnly?: boolean } = {},
 ): ZaloPayHttpClient | null {
   const zenv = env['PLAYERONE_ZALOPAY_ENV'] ?? 'sandbox';
   if (zenv !== 'sandbox' && zenv !== 'production') {
@@ -455,13 +470,14 @@ export function zaloPayClientFromEnv(
     'PLAYERONE_ZALOPAY_PUBLIC_KEY',
   ] as const;
   const present = names.filter((k) => !!env[k]);
-  if (present.length === 0 && zenv === 'sandbox') return null;
+  if (present.length === 0 && zenv === 'sandbox' && env['PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID'] === undefined) return null;
   const missing = names.filter((k) => !env[k]);
   if (missing.length > 0) {
     throw new Error(
       `PLAYERONE_ZALOPAY_ENV=${zenv} but ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not set`,
     );
   }
+  if (!verificationOnly && !env['PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID']?.trim()) throw new Error('PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID is required');
   const appId = Number(env['PLAYERONE_ZALOPAY_APP_ID']);
   if (!Number.isSafeInteger(appId)) throw new Error('PLAYERONE_ZALOPAY_APP_ID must be an integer');
   const signing = env['PLAYERONE_ZALOPAY_SIGNING'] ?? 'hmac';
@@ -469,9 +485,11 @@ export function zaloPayClientFromEnv(
     throw new Error(`PLAYERONE_ZALOPAY_SIGNING must be hmac or hmac-rsa, got '${signing}'`);
   }
   return new ZaloPayHttpClient({
+    ...transport,
     env: zenv,
     appId,
     paymentId: env['PLAYERONE_ZALOPAY_PAYMENT_ID']!,
+    ...(verificationOnly ? { verificationOnly: true as const } : { merchantWalletId: env['PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID']! }),
     key1: env['PLAYERONE_ZALOPAY_KEY1']!,
     zaloPayPublicKeyPem: env['PLAYERONE_ZALOPAY_PUBLIC_KEY']!.replaceAll('\\n', '\n'),
     signing,

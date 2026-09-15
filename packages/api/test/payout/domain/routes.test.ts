@@ -614,7 +614,7 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       const second = await h.send('POST', `/api/payout/bills/${bill1}/pay`, h.finA);
       expect(second.statusCode, second.body).toBe(201);
       // A NEW partner_order_id: the failed one is never reused.
-      expect(second.json()).toMatchObject({ status: 'succeeded', partner_order_id: `PO-${bill1}-2` });
+      expect(second.json()).toMatchObject({ status: 'processing', partner_order_id: `PO-${bill1}-2` });
       expect(stub.transfers.map((t) => t.partnerOrderId)).toEqual([`PO-${bill1}-1`, `PO-${bill1}-2`]);
     });
 
@@ -787,9 +787,9 @@ describe.skipIf(!hasDb())('the payout routes', () => {
         expect(body).toMatchObject({ mode: 'api', stopped_at: null, tickets: [] });
         expect(body.preflight).toMatchObject({ ok: true, bills: 3, payable: 3, total_vnd: 3_770, balance_vnd: 3_959 });
         expect(body.sent).toEqual([
-          { bill_id: firstC1, attempt_id: expect.any(String), partner_order_id: `PO-${firstC1}-1`, status: 'succeeded', result: 'ACCEPTED' },
-          { bill_id: secondC1, attempt_id: expect.any(String), partner_order_id: `PO-${secondC1}-1`, status: 'succeeded', result: 'ACCEPTED' },
-          { bill_id: bill2, attempt_id: expect.any(String), partner_order_id: `PO-${bill2}-1`, status: 'succeeded', result: 'ACCEPTED' },
+          { bill_id: firstC1, attempt_id: expect.any(String), partner_order_id: `PO-${firstC1}-1`, status: 'processing', result: 'ACCEPTED' },
+          { bill_id: secondC1, attempt_id: expect.any(String), partner_order_id: `PO-${secondC1}-1`, status: 'processing', result: 'ACCEPTED' },
+          { bill_id: bill2, attempt_id: expect.any(String), partner_order_id: `PO-${bill2}-1`, status: 'processing', result: 'ACCEPTED' },
         ]);
         expect(body.refused).toEqual([]);
         expect(stub.transfers.map((t) => t.partnerOrderId)).toEqual([`PO-${firstC1}-1`, `PO-${secondC1}-1`, `PO-${bill2}-1`]);
@@ -800,6 +800,7 @@ describe.skipIf(!hasDb())('the payout routes', () => {
         expect(audits[0]!.after).toMatchObject({ preflight_ok: true, stopped_at: null });
         expect((audits[0]!.after['sent'] as unknown[]).length).toBe(3);
 
+        await tick(h.d, stub, new Date(Date.now() + 60_000), { pauseMs: 0, jitter: () => 0 });
         // Twice: nothing payable, nothing sent, no ticket, and the stub's count is unchanged.
         const again = await h.send('POST', url, h.finA);
         expect(again.statusCode, again.body).toBe(200);
@@ -923,7 +924,7 @@ describe.skipIf(!hasDb())('the payout routes', () => {
         const res = await h.send('POST', url, h.finA);
         expect(res.statusCode, res.body).toBe(200);
         expect(res.json().preflight).toMatchObject({ ok: true, payable: 2, counts: { risk_hold: 0 } });
-        expect(res.json().sent).toEqual([expect.objectContaining({ bill_id: b.bill1, status: 'succeeded' })]);
+        expect(res.json().sent).toEqual([expect.objectContaining({ bill_id: b.bill1, status: 'processing' })]);
         expect(res.json().stopped_at).toBe(b.bill2);
         expect(res.json().refused).toEqual([{ bill_id: b.bill2, collector_ref: 'c-0002', constraint: 'payout_risk_hold' }]);
         expect(stub.calls.transferFund).toBe(1);
@@ -952,12 +953,12 @@ describe.skipIf(!hasDb())('the payout routes', () => {
         const res = await h.send('POST', url, h.finA);
         expect(res.statusCode, res.body).toBe(500);
         expect(res.json()).toMatchObject({ error: 'payout_batch_aborted', message: 'socket hang up', stopped_at: bill2 });
-        expect(res.json().sent).toEqual([expect.objectContaining({ bill_id: bill1, status: 'succeeded' })]);
+        expect(res.json().sent).toEqual([expect.objectContaining({ bill_id: bill1, status: 'processing' })]);
         expect(stub.calls.transferFund).toBe(2);
 
         const attempts = await rows<{ bill_id: string; status: string }>(h.d, sql`select bill_id, status from payout_attempts order by created_at`);
         expect(attempts).toEqual([
-          { bill_id: bill1, status: 'succeeded' },
+          { bill_id: bill1, status: 'processing' },
           { bill_id: bill2, status: 'submitted' },
         ]);
         const audits = await rows<{ action: string; after: Record<string, unknown> }>(
@@ -973,7 +974,7 @@ describe.skipIf(!hasDb())('the payout routes', () => {
         expect(again.statusCode, again.body).toBe(200);
         expect(again.json()).toMatchObject({ sent: [], stopped_at: null });
         expect((again.json().refused as { constraint: string }[]).map((r) => r.constraint).sort()).toEqual([
-          'payout_already_paid',
+          'payout_attempts_previous_not_failed',
           'payout_attempts_previous_not_failed',
         ]);
         expect(stub.calls.transferFund).toBe(2);
