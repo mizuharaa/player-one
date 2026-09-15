@@ -26,6 +26,12 @@ vi.mock('react-native', () => ({
   Image: ({ accessibilityLabel }: { accessibilityLabel?: string }) => <img alt={accessibilityLabel ?? ''} />,
   BackHandler: { addEventListener: () => ({ remove() {} }) },
 }));
+// `SessionCreate` now reads two facts off the phone (APP-19). Both arrive
+// through native modules that want the React Native runtime at module load,
+// and both are above their thresholds here: this file is about the flow, and
+// the readings have their own file (`prechecks.test.tsx`).
+vi.mock('expo-battery', () => ({ getBatteryLevelAsync: async () => 0.9, isLowPowerModeEnabledAsync: async () => false }));
+vi.mock('../src/upload/delivery-native.ts', () => ({ freeDiskBytes: () => 8 * 1024 ** 3 }));
 vi.mock('../src/ui.tsx', () => ({
   Body: ({ children }: { children: ReactNode }) => <p>{children}</p>,
   Title: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,

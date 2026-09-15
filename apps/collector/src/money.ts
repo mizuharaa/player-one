@@ -62,3 +62,13 @@ export function quantity(value: string): string {
  * compared — every request carries the whole one.
  */
 export const shortId = (id: string): string => (id.length <= 12 ? id : `…${id.slice(-8)}`);
+
+/**
+ * A byte count, in gigabytes and one decimal.
+ *
+ * Display only, like everything else in this file, and the same rule applies:
+ * this is a size, not a figure anybody is paid on. It rounds — 12.44 GB and
+ * 12.35 GB both print `12.4 GB` — because a collector reading a free-space
+ * line or an upload total needs the magnitude and not the byte.
+ */
+export const gb = (bytes: number): string => `${(bytes / 1024 ** 3).toFixed(1)} GB`;

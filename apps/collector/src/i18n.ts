@@ -616,6 +616,24 @@ const vi = {
   'server.reset': 'Dùng mặc định',
   'server.invalid': 'Địa chỉ không hợp lệ',
   'server.signsOut': 'Đổi máy chủ thì bạn phải đăng nhập lại.',
+
+  // prechecks — APP-19's facts on the Prepare screen, read off THIS PHONE.
+  // English is the source; the Vietnamese is the plain Zalo register. The app
+  // cannot read the Ego camera's own battery or card, so `prechecks.camera`
+  // says whose numbers these are rather than letting a collector assume.
+  'prechecks.phoneBattery': 'Pin điện thoại',
+  'prechecks.phoneFree': 'Bộ nhớ trống',
+  'prechecks.unknown': 'Máy này không đọc được',
+  'prechecks.saverOn': 'đang tiết kiệm pin',
+  'prechecks.camera': 'Đây là số của điện thoại, không phải của camera. App không đọc được camera, bạn sạc camera riêng nhé.',
+  'prechecks.lowBattery': 'Pin điện thoại yếu. Bạn sạc trước khi ra ngoài, lát nữa còn dùng để tải dữ liệu lên.',
+  'prechecks.lowPower': 'Đang bật tiết kiệm pin. Chạy nền có thể bị ngắt khi tải lên.',
+  'prechecks.lowSpace': 'Điện thoại gần hết bộ nhớ. Bạn xóa bớt cho trống rồi hãy ghi hình.',
+  // The delivery confirm step. `{size}` is substituted at the call site, the
+  // same way `{s}` and `{amount}` are above. The sentence recommends and never
+  // promises: this app cannot tell Wi-Fi from mobile data.
+  'prechecks.totalSize': 'Dung lượng',
+  'prechecks.connection': 'App tải lên bằng mạng bạn đang dùng. Với {size} thì nên dùng Wi-Fi.',
 };
 
 export type MessageKey = keyof typeof vi;
@@ -1171,6 +1189,18 @@ const en: Record<MessageKey, string> = {
   'server.reset': 'Use the default',
   'server.invalid': 'That address is not valid',
   'server.signsOut': 'Changing the server signs you out.',
+
+  // prechecks — see the Vietnamese block. English is the source text.
+  'prechecks.phoneBattery': 'Phone battery',
+  'prechecks.phoneFree': 'Free space',
+  'prechecks.unknown': 'This phone cannot report it',
+  'prechecks.saverOn': 'battery saver on',
+  'prechecks.camera': 'These numbers are your phone, not the camera. The app cannot read the camera, so charge the camera separately.',
+  'prechecks.lowBattery': 'Your phone battery is low. Charge it before you go out; you need the phone to upload later.',
+  'prechecks.lowPower': 'Battery saver is on. An upload running in the background can be cut short.',
+  'prechecks.lowSpace': 'Your phone is nearly full. Free up space before you record.',
+  'prechecks.totalSize': 'Total size',
+  'prechecks.connection': 'Uploads use the connection you are on. Wi-Fi is recommended for {size}.',
 };
 
 /**
@@ -1711,6 +1741,18 @@ const zh: Record<MessageKey, string> = {
   'server.reset': '使用默认地址',
   'server.invalid': '地址无效',
   'server.signsOut': '更换服务器后需要重新登录。',
+
+  // prechecks — see the Vietnamese block. English is the source text.
+  'prechecks.phoneBattery': '手机电量',
+  'prechecks.phoneFree': '可用存储',
+  'prechecks.unknown': '这台手机读不到',
+  'prechecks.saverOn': '已开启省电模式',
+  'prechecks.camera': '这些是手机的数据，不是相机的。本应用读不到相机，请另外给相机充电。',
+  'prechecks.lowBattery': '手机电量偏低。出门前先充电，稍后上传还要用手机。',
+  'prechecks.lowPower': '已开启省电模式。后台上传可能被中断。',
+  'prechecks.lowSpace': '手机存储快满了。录制前先清出空间。',
+  'prechecks.totalSize': '总大小',
+  'prechecks.connection': '上传会使用当前的网络。{size} 建议用 Wi-Fi。',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en, zh };

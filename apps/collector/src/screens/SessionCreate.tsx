@@ -9,6 +9,9 @@ import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { RecordingSteps } from './SessionReminder.tsx';
+import { getBatteryLevelAsync, isLowPowerModeEnabledAsync } from 'expo-battery';
+import { freeDiskBytes } from '../upload/delivery-native.ts';
+import { gb } from '../money.ts';
 import { Body, Button, Card, Choice, Loading, Note, Row, Screen, Title } from '../ui.tsx';
 
 const SESSION_ERRORS: Record<string, MessageKey> = {
@@ -17,6 +20,71 @@ const SESSION_ERRORS: Record<string, MessageKey> = {
   task_not_claimed: 'session.needClaim',
   device_not_bound: 'session.deviceUnavailable',
 };
+
+/**
+ * Where "low" starts, for APP-19's warning.
+ *
+ * Nothing in the runbook, `apps/collector/README.md` or `RELEASE.md` names a
+ * threshold — grepped, 2026-09-15 — so these are the work order's defaults and
+ * they are here, named, for whoever does get told a real number.
+ */
+const LOW_BATTERY = 0.2;
+const LOW_FREE_BYTES = 2 * 1024 ** 3;
+
+/**
+ * APP-19: the phone's battery and free space, as facts, before the two APP-17b
+ * declarations.
+ *
+ * **It is not a gate.** A collector under either threshold can still create the
+ * session and go and record — the camera records on its own buttons and the
+ * phone is not in that path, so a phone about to die is a reason to warn and
+ * never a reason to refuse. Inline and below the facts, per the work order's
+ * §3.4 rule: a blocking thing sits next to its control, a toast is for
+ * acknowledgements, and this is neither.
+ *
+ * **These are the PHONE's numbers.** The app has no way to read the camera's
+ * battery or the space left on its card: the BLE surface is scan, connect,
+ * Wi-Fi provisioning and an IP query, and `devices.noReadings` already says
+ * the device record carries no battery field. So the copy names whose numbers
+ * these are instead of letting somebody read "82%" as the camera's.
+ */
+function PhonePrecheck() {
+  const tt = useT();
+  const theme = useTheme();
+  /**
+   * One read, through the query client the screen already uses. Deliberately
+   * NOT joined to the three queries that gate this screen's render: a battery
+   * read that fails must not stop a session being created.
+   */
+  const phone = useQuery({
+    queryKey: ['phone-precheck'],
+    retry: false,
+    queryFn: async () => {
+      const [level, saver] = await Promise.all([
+        getBatteryLevelAsync().catch(() => null),
+        isLowPowerModeEnabledAsync().catch(() => false),
+      ]);
+      // `expo-battery` answers -1 on a platform that will not say.
+      return { level: level !== null && level >= 0 ? level : null, saver, free: freeDiskBytes() };
+    },
+  });
+  const facts = phone.data;
+  const warnings = facts === undefined ? [] : [
+    facts.level !== null && facts.level < LOW_BATTERY ? tt('prechecks.lowBattery') : null,
+    facts.saver ? tt('prechecks.lowPower') : null,
+    facts.free !== null && facts.free < LOW_FREE_BYTES ? tt('prechecks.lowSpace') : null,
+  ].filter((sentence): sentence is string => sentence !== null);
+  return <View style={{ gap: theme.space[2] }}>
+    <Card>
+      <Row label={tt('prechecks.phoneBattery')}
+        value={facts?.level == null ? tt('prechecks.unknown')
+          : `${Math.round(facts.level * 100)}%${facts.saver ? ` · ${tt('prechecks.saverOn')}` : ''}`} />
+      <Row label={tt('prechecks.phoneFree')} value={facts?.free == null ? tt('prechecks.unknown') : gb(facts.free)} />
+      <Body muted>{tt('prechecks.camera')}</Body>
+    </Card>
+    {warnings.length > 0 ? <Note tone="pending" text={warnings.join(' ')} /> : null}
+  </View>;
+}
 
 /**
  * APP-16/17: one session binds task + collector + device + scenario, before
@@ -208,6 +276,14 @@ export function SessionCreate() {
     {step === 2 ? <>
       {(devices.data ?? []).length === 0 ? <><Note text={tt('session.needDevice')} /><Button label={tt('home.devices')} variant="secondary" onPress={() => nav.push({ name: 'devices' })} /></> : null}
       {pick(devices.data ?? [], d => d.serial, d => d.serial, tt('session.device'), deviceSerial, setDeviceSerial)}
+      {/*
+        * APP-19, on the last step before the two APP-17b declarations. It is on
+        * this step and not repeated on the others because this is also the step
+        * where the confusion it exists to prevent lives: the collector is
+        * picking a camera by serial here, and the next thing they read is the
+        * phone's battery.
+        */}
+      <PhonePrecheck />
     </> : null}
     {step === 3 ? <YesNo question={tt('session.othersTitle')} value={others} disabled={create.isPending}
       onChange={v => { if (!submitting.current) setOthers(v); }} /> : null}
