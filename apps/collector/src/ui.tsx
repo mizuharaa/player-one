@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useContext, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   AccessibilityInfo,
+  AppState,
   ActivityIndicator,
   Animated,
-  Dimensions,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -18,7 +18,9 @@ import {
   useWindowDimensions,
   type ImageSourcePropType,
 } from 'react-native';
+import { isLowPowerModeEnabledAsync, addLowPowerModeListener } from 'expo-battery';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { initialWindowMetrics, SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import type { NativeTheme } from '@playerone/design/native';
 import { useNav } from './nav.tsx';
 import { useT } from './locale.tsx';
@@ -27,56 +29,18 @@ import { useTheme } from './theme.tsx';
 
 
 
-/**
- * The status-bar inset. `react-native-safe-area-context` is the real answer —
- * it also covers cutouts, the gesture bar and landscape side insets — but it
- * is a native module and nothing here can build one yet (DEVICE_DEPS.md).
- * `StatusBar.currentHeight` is RN core, is the actual measured inset on
- * Android, and is at least not a guess.
- *
- * ponytail: known ceiling — top inset only, Android only. Replace the whole
- * function with `useSafeAreaInsets()` at the first build that has native
- * modules, and verify edge-to-edge on a current Android target then.
- */
+/** Initial native metrics also serve the existing non-hook layout helpers. */
 export function topInset(fallback: number): number {
-  if (Platform.OS !== 'android') return fallback;
-  return StatusBar.currentHeight ?? fallback;
+  return initialWindowMetrics?.insets.top ?? (Platform.OS === 'android' ? StatusBar.currentHeight ?? fallback : fallback);
 }
-
-/**
- * The gesture / navigation bar inset at the bottom, which the tab bar has to
- * clear or its labels sit under the system pill.
- *
- * There is no core API for it. `Dimensions.get('screen').height` counts the
- * whole display and `Dimensions.get('window').height` counts what the app was
- * given, so the difference is the system chrome the app does not own — status
- * bar plus navigation bar. Subtracting the status bar leaves the bottom one.
- * On a gesture-navigation phone that is about 24dp; on a three-button phone
- * about 48dp; and where the numbers disagree (a cutout, a foldable, a
- * simulator) the clamp keeps it inside a sane range instead of pushing the bar
- * off screen.
- *
- * ponytail: measured, not correct. `useSafeAreaInsets().bottom` from
- * `react-native-safe-area-context` is the real answer and needs a native
- * build; swap this whole function for it there, at the same time `topInset`
- * goes. Until then the floor below is what keeps a 48dp target off the pill.
- */
 export function bottomInset(floor: number): number {
-  if (Platform.OS !== 'android') return floor;
-  const screen = Dimensions.get('screen').height;
-  const win = Dimensions.get('window').height;
-  const chrome = screen - win - (StatusBar.currentHeight ?? 0);
-  if (!Number.isFinite(chrome) || chrome <= 0) return floor;
-  return Math.min(Math.max(chrome, floor), floor * 3);
+  return Math.max(initialWindowMetrics?.insets.bottom ?? 0, floor);
+}
+/** Use live provider measurements when orientation or system bars change. */
+export function useInsets() {
+  return useContext(SafeAreaInsetsContext) ?? initialWindowMetrics?.insets ?? { top: 0, right: 0, bottom: 0, left: 0 };
 }
 
-/**
- * The type face.
- *
- * Native uses the theme's linked face (currently System); a CSS family list
- * is only valid in the browser harness, where Be Vietnam Pro is loaded.
- * Browser typography is therefore not proof of the Android font appearance.
- */
 export const face = (theme: NativeTheme): string =>
   Platform.OS === 'web' ? `Be Vietnam Pro, ${theme.font.sans}` : theme.font.sans;
 
@@ -105,33 +69,9 @@ export function useReducedMotion(): boolean {
   return reduced;
 }
 
-/** Minimum bar height before native layout reports its wrapped labels. */
-const barHeight = (theme: NativeTheme): number =>
-  theme.space[12] + theme.space[3] + theme.space[2];
+/** Dock content height; its measured value replaces this first-frame reserve. */
+const barHeight = (theme: NativeTheme): number => theme.space[12] + theme.space[4];
 
-/**
- * How far the raised session button reaches above the bar's own top edge.
- *
- * `shell/TabBar.tsx` draws it `space[12] + space[2]` across and pulls it
- * `space[5]` down into the pill with a negative margin, so what hangs above is
- * the difference — 36dp.
- */
-const sessionOverhang = (theme: NativeTheme): number =>
-  theme.space[12] + theme.space[2] - theme.space[5];
-
-/**
- * How much room scrolling content must leave under the tab bar.
- *
- * The measured bar includes its raised action at normal text size, or its
- * separate action row at enlarged text. Add the system inset and content gap.
- *
- * The overhang term used to be `space[5]` — the *negative margin*, not the
- * part of the button that is actually above the bar. Measured at 390×640, the
- * old reserve of 112dp ended content at y=528 while the session button starts
- * at y=503, so the last 25dp of every scrolling screen could be drawn under a
- * 56dp ink circle. Uploads was caught doing exactly that at 320dp, with an
- * episode's own upload control underneath it.
- */
 let measuredTabHeight = 0;
 const tabListeners = new Set<() => void>();
 export function measureTabBar(height: number) {
@@ -140,7 +80,7 @@ export function measureTabBar(height: number) {
   tabListeners.forEach((notify) => notify());
 }
 export const tabBarHeight = (theme: NativeTheme): number =>
-  bottomInset(theme.space[6]) + (measuredTabHeight || barHeight(theme) + sessionOverhang(theme)) + theme.space[5];
+  (initialWindowMetrics?.insets.bottom ?? 0) + theme.space[6] + (measuredTabHeight || barHeight(theme)) + theme.space[5];
 export function useTabBarReserve() {
   const theme = useTheme();
   useWindowDimensions();
@@ -148,82 +88,26 @@ export function useTabBarReserve() {
     (notify) => { tabListeners.add(notify); return () => { tabListeners.delete(notify); }; },
     () => measuredTabHeight,
   );
-  return tabBarHeight(theme);
+  const insets = useInsets();
+  return insets.bottom + theme.space[6] + (measuredTabHeight || barHeight(theme)) + theme.space[5];
 }
 
-function Header({
-  title,
-  right,
-  onBack,
-}: {
-  title: string;
-  right?: ReactNode;
-  /** Overrides the stack's own Back — the sign-in screen is not a route. */
-  onBack?: () => void;
-}) {
+function Header({ title, right, onBack }: { title: string; right?: ReactNode; onBack?: () => void }) {
   const theme = useTheme();
   const nav = useNav();
   const tt = useT();
+  const insets = useInsets();
   const back = onBack ?? (nav.canGoBack ? nav.back : undefined);
-  return (
-    <View
-      style={{
-        paddingHorizontal: 0,
-        paddingTop: topInset(theme.space[6]) + theme.space[2],
-        paddingBottom: theme.space[3],
-        // No rule under it. The page and its header are one lavender ground
-        // now, and a hairline across a continuous wash draws a bar where the
-        // world has none — the surfaces that float on it are what carry edges.
-        backgroundColor: theme.color.background,
-        gap: theme.space[1],
-      }}
-    >
-      {back !== undefined ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={tt('common.back')}
-          onPress={back}
-          hitSlop={theme.space[3]}
-          style={{ alignSelf: 'flex-start', minWidth: theme.space[12], minHeight: theme.space[12], justifyContent: 'center' }}
-        >
-          {/* Ink, not tech blue: tech is PaXini's mark now and is not a link
-              colour anywhere in this app. */}
-          <Text
-            style={{
-              color: theme.color.foreground,
-              fontFamily: face(theme),
-              fontSize: theme.collector.type.caption.fontSize,
-          lineHeight: theme.collector.type.caption.lineHeight,
-              fontWeight: theme.fontWeight.medium,
-            }}
-          >
-            ← {tt('common.back')}
-          </Text>
-        </Pressable>
-      ) : null}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: theme.space[3] }}>
-        <Text
-          accessibilityRole="header"
-          style={{
-            color: theme.color.foreground,
-            fontFamily: face(theme),
-            fontSize: theme.collector.type.h1.fontSize,
-            // §0.3: `xl` at display weight is the screen title, and the line
-            // height is absolute and never below 1.15 — a ratio near 1.05
-            // clips the tone marks off a Vietnamese title that wraps.
-            lineHeight: theme.collector.type.h1.lineHeight,
-            fontWeight: theme.fontWeight.display,
-            letterSpacing: -0.5,
-            flexShrink: 1,
-            flexGrow: 1,
-          }}
-        >
-          {title}
-        </Text>
-        {right}
-      </View>
-    </View>
-  );
+  const heading = <Text accessibilityRole="header" style={{ ...theme.collector.type.h1, color: theme.color.foreground,
+    fontFamily: face(theme), flexShrink: 1, flexGrow: 1 }}>{title}</Text>;
+  return <View style={{ paddingTop: insets.top + theme.space[2], paddingBottom: theme.space[3], gap: theme.space[3] }}>
+    {back ? <><View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+      <Pressable accessibilityRole="button" accessibilityLabel={tt('common.back')} onPress={back}
+        style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }}>
+        <Text style={{ ...theme.collector.type.h2, color: theme.collector.ink }}>←</Text>
+      </Pressable>{right}</View>{heading}</> :
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[3] }}>{heading}{right}</View>}
+  </View>;
 }
 
 /** A screen whose content is bounded: a form, a hub, one record's detail. */
@@ -315,6 +199,7 @@ export function ListScreen<T>({
   header,
   footer,
   empty,
+  refresh,
 }: {
   title: string;
   right?: ReactNode;
@@ -324,6 +209,7 @@ export function ListScreen<T>({
   header?: ReactNode;
   footer?: ReactNode;
   empty?: ReactNode;
+  refresh?: { refreshing: boolean; onRefresh: () => void };
 }) {
   const theme = useTheme();
   const nav = useNav();
@@ -331,6 +217,8 @@ export function ListScreen<T>({
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.background }}>
       <FlatList
+        refreshing={refresh?.refreshing}
+        onRefresh={refresh?.onRefresh}
         keyboardShouldPersistTaps="handled"
         data={data as T[]}
         keyExtractor={keyOf}
@@ -512,7 +400,7 @@ export function NavRow({ label, subtitle, icon, onPress }: { label: string; subt
       <Text style={{ ...theme.collector.type.body, color: theme.color.foreground, fontFamily: face(theme) }}>{label}</Text>
       {subtitle ? <Text style={{ ...theme.collector.type.caption, color: theme.color.mutedForeground, fontFamily: face(theme) }}>{subtitle}</Text> : null}
     </View>
-    <Text importantForAccessibility="no" style={{ color: theme.color.mutedForeground, ...theme.collector.type.h2 }}>?</Text>
+    <Text importantForAccessibility="no" style={{ color: theme.color.mutedForeground, ...theme.collector.type.h2 }}>›</Text>
   </Pressable>;
 }
 
@@ -1147,7 +1035,7 @@ export function Note({ text, tone = 'info', onRetry, busy = false }: {
   const fill = tone === 'error' ? c.redBg : tone === 'pending' ? c.amberBg : c.surface;
   return <View accessibilityLiveRegion="polite" style={{ backgroundColor: fill, borderRadius: c.radius.card, padding: c.cardPad, gap: theme.space[3] }}>
     <View style={{ flexDirection: 'row', gap: theme.space[2] }}>
-      <Text importantForAccessibility="no" style={{ ...c.type.body, color: ink }}>{tone === 'error' ? '!' : tone === 'pending' ? '?' : 'i'}</Text>
+      <Text importantForAccessibility="no" style={{ ...c.type.body, color: ink }}>{tone === 'error' ? '!' : tone === 'pending' ? '…' : 'i'}</Text>
       <Text style={{ ...c.type.body, color: ink, fontFamily: face(theme), flex: 1 }}>{text}</Text>
     </View>
     {onRetry ? <Button label={tt('common.retry')} variant="secondary" busy={busy} onPress={onRetry} /> : null}
@@ -1388,7 +1276,7 @@ function alphaAt(at: number, stops: readonly (readonly [number, number])[]): num
 const SCRIM_BANDS = 40;
 export function Scrim({ stops }: { stops: readonly (readonly [number, number])[] }) {
   const theme = useTheme();
-  const [r, g, b] = channels(theme.color.discover.ink);
+  const [r, g, b] = channels(theme.collector.night);
   return (
     <View
       pointerEvents="none"
@@ -1489,7 +1377,9 @@ export function Film({
   label,
   contentFit = 'cover',
   fade,
+  active = true,
 }: {
+  active?: boolean;
   source: string | number;
   poster: ImageSourcePropType;
   label: string;
@@ -1499,7 +1389,16 @@ export function Film({
   const reduced = useReducedMotion();
   const [failed, setFailed] = useState(false);
   const fail = useCallback(() => setFailed(true), []);
-  const live = !reduced && !failed;
+  const [lowPower, setLowPower] = useState(true);
+  const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    let mounted = true;
+    void isLowPowerModeEnabledAsync().then(value => { if (mounted) setLowPower(value); }).catch(() => {});
+    const power = Platform.OS === 'web' ? null : addLowPowerModeListener(event => setLowPower(event.lowPowerMode));
+    const state = AppState.addEventListener('change', value => setForeground(value === 'active'));
+    return () => { mounted = false; power?.remove(); state.remove(); };
+  }, []);
+  const live = active && foreground && !reduced && !lowPower && !failed;
   return (
     <>
       <Image

@@ -23,6 +23,7 @@ import { Forum } from './screens/Forum.tsx';
 import { GroupChats, GroupThread } from './screens/Groups.tsx';
 import { Home } from './screens/Home.tsx';
 import { Income } from './screens/Income.tsx';
+import { Profile } from './screens/Profile.tsx';
 import { MyTasks } from './screens/MyTasks.tsx';
 import { Provisioning } from './screens/Provisioning.tsx';
 import { Register } from './screens/Register.tsx';
@@ -44,12 +45,13 @@ import { useTheme } from './theme.tsx';
  * without a component here does not typecheck. That is the "every screen
  * reachable" guarantee in its cheapest enforceable form.
  */
-const SCREENS: Record<RouteName, ComponentType> = {
+export const SCREENS: Record<RouteName, ComponentType> = {
   register: Register,
   agreements: Agreements,
   training: Training,
   exam: Exam,
   home: Home,
+  profile: Profile,
   taskHall: TaskHall,
   taskDetail: TaskDetail,
   myTasks: MyTasks,

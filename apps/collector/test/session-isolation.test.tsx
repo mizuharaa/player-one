@@ -152,3 +152,14 @@ it('offers retry instead of registration after a failed restoration', async () =
   await tap(MESSAGES.vi['common.retry']);
   await settle(() => expect(host.textContent).toContain('Restored collector'));
 });
+
+// Native inset measurements are supplied by the device, not jsdom.
+vi.mock('react-native-safe-area-context', async () => ({
+  initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null),
+}));
+
+vi.mock('../src/ui/HeaderGradient.tsx', () => ({ HeaderGradient: ({ children }: { children: import('react').ReactNode }) => children }));
+
+vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
+
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ AvatarMark: () => null, initialsOf: (name: string) => name.slice(0, 1) }));

@@ -43,6 +43,7 @@ interface Step {
 }
 
 const STEPS: Record<TabName, Step[]> = {
+  profile: [],
   /**
    * SPEC §9's four steps, in this order. Step 1's target is the WHOLE earnings
    * card and not the figure inside it: a hole around the figure alone

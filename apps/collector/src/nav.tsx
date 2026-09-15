@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { BackHandler } from 'react-native';
+import { BackHandler, Platform } from 'react-native';
 
 /**
  * A typed stack navigator in ~60 lines, with a tab concept on top of it.
@@ -26,38 +26,15 @@ export type Route =
   | { name: 'sessionCreate' }
   | { name: 'uploads' }
   | { name: 'income' }
+  | { name: 'profile' }
   | { name: 'forum' }
   | { name: 'groupChats' }
   | { name: 'groupThread'; groupId: string };
 
 export type RouteName = Route['name'];
 
-/**
- * The four destinations the bottom bar switches between, in bar order.
- *
- * A tab root is a place, not a step: it renders the bar, it never shows a Back
- * control, and Android Back at one of them goes home rather than unwinding an
- * onboarding flow the collector already finished. Everything else — a task's
- * detail, device setup, session preparation — is pushed on top of a root and
- * pops back to it.
- *
- * The session button in the middle of the bar is deliberately NOT here. It
- * pushes `sessionCreate`, which is a task with an end (APP-16 binds a session),
- * not a place to sit. It is drawn as the centre button because preparing a
- * session is the thing a collector opens this app to do.
- *
- * **`taskHall` is the second of these again, and the forum is not.** SPEC.md
- * §10: the forum is a preview with no service behind it, the hall is the money
- * path, and the owner asked for task browsing to be prominent. The forum moves
- * to Home's "Nơi khác trong ứng dụng" row, where the hall used to be — it is
- * still reachable, it just stops holding a quarter of the bar. This is
- * §22.4 and it is an owner sign-off item.
- *
- * Still four, not five. The measurement that forces a swap rather than a fifth
- * destination is in `shell/TabBar.tsx`: at 320 dp the bar is 296 wide, the
- * session slot takes 64, and the four remaining tabs get 58 pt each.
- */
-export const TAB_ROOTS = ['home', 'taskHall', 'uploads', 'income'] as const;
+/** Tab switches replace history; Android Back from a non-home root returns Home. */
+export const TAB_ROOTS = ['home', 'taskHall', 'uploads', 'income', 'profile'] as const;
 
 export type TabName = (typeof TAB_ROOTS)[number];
 
@@ -118,6 +95,7 @@ export function NavProvider({ initial, children }: { initial: Route; children: R
   // purpose: `back` closes over the current stack, so a `[]` dependency list
   // would pin the handler to the first screen.
   useEffect(() => {
+    if (Platform.OS !== 'android') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', back);
     return () => sub.remove();
   });
