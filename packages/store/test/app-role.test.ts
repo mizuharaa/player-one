@@ -103,6 +103,25 @@ describe.skipIf(!hasDb())('the application database role', () => {
     // DELETE is granted on `cloud_verifications` and nowhere else, because that
     // is the only table this codebase deletes a row from.
     await refused(`delete from upload_centres where id = '${id}'`, /permission denied/i);
+
+    /**
+     * The two tables created after 0021, each of which says in its own
+     * migration that the application may not delete from it, and neither of
+     * which was pinned here until now.
+     *
+     * `collector_notifications` (0033) is a collector's record of what happened
+     * to their own money. `sign_up_codes` (0034) holds a sign-in code for a
+     * number that is not a collector's yet, and the absence is what forced its
+     * design: a spent code is consumed by an UPDATE of `consumed_at`, because
+     * the route cannot remove the row. Both are covered by 0021's
+     * `ALTER DEFAULT PRIVILEGES` plus their own REVOKE, and neither had a test
+     * proving the REVOKE is really in the deployed grant set.
+     *
+     * No `where`: nothing needs to match for the refusal to be the answer, and
+     * a DELETE that is refused before it looks at a row is exactly the control.
+     */
+    await refused('delete from collector_notifications', /permission denied/i);
+    await refused('delete from sign_up_codes', /permission denied/i);
   });
 
   it('is a member of playerone_risk, which the engine takes SET LOCAL ROLE to', async () => {
