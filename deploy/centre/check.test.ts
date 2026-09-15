@@ -25,6 +25,11 @@ const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 
 describe('deployment configuration boundaries', () => {
+  it('refuses a lone Merchant Wallet ID before API boot', () => {
+    expect(failures({ ...base, PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID: 'test-wallet' }))
+      .toContainEqual(expect.objectContaining({ check: 'gateway-scope' }));
+  });
+
   it.each([
     ['200', false], ['1249999999', false], ['1250000000', true],
     ['200000000000', true], ['2000000000000', true],
