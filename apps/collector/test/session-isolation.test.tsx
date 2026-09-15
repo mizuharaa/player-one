@@ -162,4 +162,9 @@ vi.mock('../src/ui/HeaderGradient.tsx', () => ({ HeaderGradient: ({ children }: 
 
 vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
 
-vi.mock('../src/ui/illustrations/index.tsx', () => ({ AvatarMark: () => null, initialsOf: (name: string) => name.slice(0, 1) }));
+vi.mock('react-native-svg', () => {
+  const Stub = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
+  return { default: Stub, Svg: Stub, Circle: Stub, Rect: Stub, Path: Stub, Line: Stub, G: Stub };
+});
+
+vi.mock('../src/guide/seen.ts', () => ({ guideOffered: { get: async () => true, set: async () => {} } }));

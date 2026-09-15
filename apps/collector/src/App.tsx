@@ -12,7 +12,7 @@ import { type CollectorApi } from './api/types.ts';
 import { ApiProvider } from './api/context.tsx';
 import { LocaleProvider } from './locale.tsx';
 import { NavProvider, useNav, type RouteName } from './nav.tsx';
-import { GuideProvider, useGuideTarget } from './guide/Guide.tsx';
+import { GuideProvider, useGuide, useGuideTarget } from './guide/Guide.tsx';
 import { TabBar } from './shell/TabBar.tsx';
 import { SignOutProvider } from './session.tsx';
 import { ThemeProvider } from './theme.tsx';
@@ -23,6 +23,7 @@ import { Forum } from './screens/Forum.tsx';
 import { GroupChats, GroupThread } from './screens/Groups.tsx';
 import { Home } from './screens/Home.tsx';
 import { Income } from './screens/Income.tsx';
+import { Onboarding } from './screens/Onboarding.tsx';
 import { Profile } from './screens/Profile.tsx';
 import { MyTasks } from './screens/MyTasks.tsx';
 import { Provisioning } from './screens/Provisioning.tsx';
@@ -79,6 +80,9 @@ function Current() {
   const theme = useTheme();
   const Screen = SCREENS[nav.route.name];
   const tabsTarget = useGuideTarget('shell.tabs');
+  const guide = useGuide();
+  const [intro, setIntro] = useState(true);
+  if (nav.route.name === 'home' && guide.offered && intro) return <Onboarding onDone={() => { setIntro(false); guide.decline(); }} />;
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.surface }}>
       <Screen />

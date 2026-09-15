@@ -253,7 +253,7 @@ function GuideOverlay({
                  to — and not the light page's `lime[600]`, which is a dark
                  green against a dimmed screen. It was `sun[500]`, the partner
                  mark. */
-              borderColor: theme.color.lime[500],
+              borderColor: theme.collector.glow,
             }}
           />
         </>
