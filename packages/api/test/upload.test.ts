@@ -680,10 +680,10 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
         }, finance);
         expect(paid.statusCode, paid.body).toBe(201);
 
-        const refused = await h.send('POST', `/api/settle/settlements/${episode.settlement.id}/exception`, { reason: 'duplicate', note: 'operator attempt on a paid settlement' });
+        const refused = await h.send('POST', `/api/settle/settlements/${episode.settlement.id}/exception`, { reason: 'duplicate', note: 'finance attempt on a paid settlement' }, finance);
         expect(refused.statusCode, refused.body).toBe(409);
         expect(refused.json().constraint).toBe('settlements_transition_check');
-        const reserved = await h.send('POST', `/api/settle/settlements/${episode.settlement.id}/exception`, { reason: 'cloud_verification_failed', note: 'a person must not be able to type this' });
+        const reserved = await h.send('POST', `/api/settle/settlements/${episode.settlement.id}/exception`, { reason: 'cloud_verification_failed', note: 'a person must not be able to type this' }, finance);
         expect(reserved.statusCode, reserved.body).toBe(400);
       }
 
