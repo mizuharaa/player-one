@@ -107,3 +107,22 @@ it('replaces acknowledgments and expires only the toast, keeping a blocking erro
     expect(host.textContent).toContain('Still blocked');
   } finally { await act(async () => root.unmount()); host.remove(); vi.useRealTimers(); }
 });
+
+
+it('keeps a slow decoder mounted over the poster and removes it on an actual error', async () => {
+  vi.useFakeTimers();
+  let statusChanged!: (event: { status: string }) => void;
+  const remove = vi.fn();
+  vi.mocked(useVideoPlayer).mockReturnValue({ status: 'loading', addListener: (_name: string, listener: typeof statusChanged) => { statusChanged = listener; return { remove }; } } as never);
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login film" fade={0} />));
+    await act(async () => vi.advanceTimersByTime(500));
+    expect(host.querySelector('[role="img"]')).not.toBeNull();
+    expect(remove).not.toHaveBeenCalled();
+    await act(async () => statusChanged({ status: 'readyToPlay' }));
+    await act(async () => statusChanged({ status: 'error' }));
+    expect(remove).toHaveBeenCalledTimes(1);
+  } finally { await act(async () => root.unmount()); host.remove(); vi.useRealTimers(); }
+});

@@ -1301,26 +1301,8 @@ export function Scrim({ stops }: { stops: readonly (readonly [number, number])[]
   );
 }
 
-/**
- * A film that falls back to its own still, with §1's 400 ms first-frame gate.
- *
- * Three things can mean "no video here", and §2 is explicit that they are one
- * state and not three: the collector has "remove animations" on, `expo-video`
- * reported an error, or no first frame arrived within 400 ms of mount. All
- * three land on the poster, which is why the poster is not a fallback that
- * gets swapped in — it is **always** the bottom layer, and the film fades in
- * on top of it when it is ready. So there is never a warm rectangle waiting on
- * a decoder, and never a flash between the two.
- *
- * The gate is the cheap half of "the app didn't start". A cold decoder, a
- * codec the device refuses and a corrupt asset are indistinguishable from the
- * app being broken, from the collector's side of the screen.
- *
- * §0.5 rule 2 — one video instance at a time, unmounted before the next screen
- * paints — needs no prop here: there is exactly one film in the app, on a
- * screen that is replaced rather than covered, so it unmounts with its screen.
- * A visibility flag would be a knob with one possible value.
- */
+/** The poster paints immediately; a slow decoder may arrive later. Errors
+ * remove the decoder, including errors after playback has already started. */
 function GatedFilm({
   source,
   label,
@@ -1348,19 +1330,13 @@ function GatedFilm({
       done = true;
       Animated.timing(shown, { toValue: 1, duration: fade, useNativeDriver: true }).start();
     };
-    const give = () => {
-      if (done) return;
-      done = true;
-      onFail();
-    };
-    // Four lines, and they remove the whole class of "the app didn't start".
-    const gate = setTimeout(give, 400);
     const sub = player.addListener('statusChange', ({ status }) => {
-      if (status === 'readyToPlay') { clearTimeout(gate); arrive(); }
-      if (status === 'error') { clearTimeout(gate); give(); }
+      if (status === 'readyToPlay') arrive();
+      if (status === 'error') onFail();
     });
-    if (player.status === 'readyToPlay') { clearTimeout(gate); arrive(); }
-    return () => { clearTimeout(gate); sub.remove(); };
+    if (player.status === 'readyToPlay') arrive();
+    if (player.status === 'error') onFail();
+    return () => sub.remove();
   }, [player, fade, shown, onFail]);
 
   return (
@@ -1398,7 +1374,7 @@ export function Film({
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   useEffect(() => {
     let mounted = true;
-    void isLowPowerModeEnabledAsync().then(value => { if (mounted) setLowPower(value); }).catch(() => {});
+    void isLowPowerModeEnabledAsync().then(value => { if (mounted) setLowPower(value); }).catch(() => { if (mounted) setLowPower(false); });
     const power = Platform.OS === 'web' ? null : addLowPowerModeListener(event => setLowPower(event.lowPowerMode));
     const state = AppState.addEventListener('change', value => setForeground(value === 'active'));
     return () => { mounted = false; power?.remove(); state.remove(); };
