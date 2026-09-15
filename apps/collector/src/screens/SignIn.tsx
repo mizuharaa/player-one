@@ -72,15 +72,8 @@ import wordmark from '../../assets/discover/playerone-wordmark.png';
 const VN = { code: '+84', label: 'signIn.country.vn' as MessageKey };
 const CN = { code: '+86', label: 'signIn.country.cn' as MessageKey };
 
-/**
- * The hero's scrim, which is §2's measured one.
- *
- * The same film, the same ink over it, and the wordmark sits in the darkest
- * band at the foot — so the numbers that were measured against
- * `pov-portrait.mp4` hold here. A different still would re-run §2's
- * measurement, not reuse this constant.
- */
-const HERO_SCRIM = [[0, 0.2], [1, 0.55]] as const;
+/** Night scrim over the supplied login film; contrast proof samples this poster. */
+const HERO_SCRIM = [[0, 0.2], [0.55, 0.55], [1, 0.55]] as const;
 
 /** §4: the resend timer counts from arrival. */
 const RESEND_SECONDS = 60;
@@ -130,8 +123,8 @@ function ZaloMark({ label }: { label: string }) {
         style={{
           color: theme.color.actionInk,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.sm,
-          fontWeight: theme.fontWeight.bold,
+          ...theme.collector.type.caption,
+fontWeight: theme.fontWeight.bold,
         }}
       >
         Z
@@ -153,8 +146,8 @@ function ZaloHint() {
           flexShrink: 1,
           color: theme.color.mutedForeground,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.sm,
-          lineHeight: Math.round(theme.fontSize.sm * 1.4),
+          ...theme.collector.type.caption,
+
         }}
       >
         {tt('signIn.codeSent')}
@@ -321,8 +314,8 @@ export function SignIn({
         style={{
           color: onDark ? theme.collector.glow : theme.color.foreground,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.sm,
-          fontWeight: theme.fontWeight.medium,
+          ...theme.collector.type.caption,
+fontWeight: theme.fontWeight.medium,
         }}
       >
         ← {label}
@@ -356,8 +349,8 @@ export function SignIn({
             style={{
               color: theme.color.foreground,
               fontFamily: face(theme),
-              fontSize: theme.fontSize.xl,
-              lineHeight: Math.round(theme.fontSize.xl * 1.2),
+              ...theme.collector.type.h1,
+
               fontWeight: theme.fontWeight.display,
               letterSpacing: -0.5,
             }}
@@ -368,8 +361,8 @@ export function SignIn({
             style={{
               color: theme.color.mutedForeground,
               fontFamily: face(theme),
-              fontSize: theme.fontSize.base,
-              lineHeight: Math.round(theme.fontSize.base * 1.45),
+              ...theme.collector.type.body,
+
             }}
           >
             {tt('signIn.sentTo').replace('{phone}', number)}
@@ -403,8 +396,8 @@ export function SignIn({
                 style={{
                   color: theme.color.mutedForeground,
                   fontFamily: face(theme),
-                  fontSize: theme.fontSize.sm,
-                  lineHeight: Math.round(theme.fontSize.sm * 1.4),
+                  ...theme.collector.type.caption,
+
                 }}
               >
                 {tt('signIn.checking')}
@@ -415,8 +408,8 @@ export function SignIn({
                 style={{
                   color: theme.color.verdict.reject.fg,
                   fontFamily: face(theme),
-                  fontSize: theme.fontSize.sm,
-                  lineHeight: Math.round(theme.fontSize.sm * 1.4),
+                  ...theme.collector.type.caption,
+
                 }}
               >
                 {tt(problem)}
@@ -527,8 +520,8 @@ export function SignIn({
             style={{
               color: theme.color.foreground,
               fontFamily: face(theme),
-              fontSize: theme.fontSize.xl,
-              lineHeight: Math.round(theme.fontSize.xl * 1.2),
+              ...theme.collector.type.h1,
+
               fontWeight: theme.fontWeight.display,
               letterSpacing: -0.5,
             }}
@@ -539,8 +532,8 @@ export function SignIn({
             style={{
               color: theme.color.mutedForeground,
               fontFamily: face(theme),
-              fontSize: theme.fontSize.base,
-              lineHeight: Math.round(theme.fontSize.base * 1.45),
+              ...theme.collector.type.body,
+
             }}
           >
             {tt('signIn.intro')}
@@ -558,8 +551,8 @@ export function SignIn({
               style={{
                 color: theme.color.mutedForeground,
                 fontFamily: face(theme),
-                fontSize: theme.fontSize.sm,
-              }}
+                ...theme.collector.type.caption,
+}}
             >
               {tt('signIn.phone')}
             </Text>
@@ -579,7 +572,7 @@ export function SignIn({
                   // already there, as on `Field`, so gaining focus never moves
                   // the row.
                   borderWidth: pickerFocused ? 2 : 1,
-                  borderColor: pickerFocused ? theme.color.lime[600] : theme.color.borderStrong,
+                  borderColor: pickerFocused ? theme.collector.plum : theme.color.borderStrong,
                   borderRadius: theme.radius.base,
                   paddingHorizontal: theme.space[3] - (pickerFocused ? 1 : 0),
                   backgroundColor: pressed ? theme.color.muted : theme.color.background,
@@ -589,8 +582,8 @@ export function SignIn({
                   style={{
                     color: theme.color.foreground,
                     fontFamily: face(theme),
-                    fontSize: theme.fontSize.base,
-                    fontWeight: theme.fontWeight.medium,
+                    ...theme.collector.type.body,
+fontWeight: theme.fontWeight.medium,
                   }}
                 >
                   {country.code} ▾
@@ -616,8 +609,8 @@ export function SignIn({
                 style={{
                   color: theme.color.mutedForeground,
                   fontFamily: face(theme),
-                  fontSize: theme.fontSize.sm,
-                  lineHeight: Math.round(theme.fontSize.sm * 1.4),
+                  ...theme.collector.type.caption,
+
                   paddingTop: theme.space[1],
                 }}
               >
