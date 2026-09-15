@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
 import { AccessibilityInfo } from 'react-native';
+import { ToastProvider, useToast } from '../src/ui/Toast.tsx';
 import { Splash } from '../src/screens/Splash.tsx';
 import { Button, Film, Note } from '../src/ui.tsx';
 import { useVideoPlayer } from 'expo-video';
@@ -82,4 +83,27 @@ it('dismisses the splash immediately with reduced motion and removes its timer o
     await act(async () => vi.runAllTimers());
     expect(done).toHaveBeenCalledTimes(1);
   } finally { host.remove(); vi.useRealTimers(); }
+});
+
+it('replaces acknowledgments and expires only the toast, keeping a blocking error', async () => {
+  vi.useFakeTimers();
+  function Trigger() {
+    const show = useToast();
+    return <><button onClick={() => show('Accepted')}>First</button><button onClick={() => show('Received')}>Second</button><Note text="Still blocked" tone="error" /></>;
+  }
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<ToastProvider><Trigger /></ToastProvider>));
+    await act(async () => host.querySelectorAll('button')[0]!.click());
+    expect(host.textContent).toContain('Accepted');
+    await act(async () => vi.advanceTimersByTime(2000));
+    await act(async () => host.querySelectorAll('button')[1]!.click());
+    expect(host.textContent).not.toContain('Accepted');
+    await act(async () => vi.advanceTimersByTime(2000));
+    expect(host.textContent).toContain('Received');
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(host.textContent).not.toContain('Received');
+    expect(host.textContent).toContain('Still blocked');
+  } finally { await act(async () => root.unmount()); host.remove(); vi.useRealTimers(); }
 });

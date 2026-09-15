@@ -37,6 +37,7 @@ import { Splash } from './screens/Splash.tsx';
 import { SignIn } from './screens/SignIn.tsx';
 import { Training } from './screens/Training.tsx';
 import { Uploads } from './screens/Uploads.tsx';
+import { ToastProvider } from './ui/Toast.tsx';
 import { Body, Button } from './ui.tsx';
 import { useT } from './locale.tsx';
 import { useTheme } from './theme.tsx';
@@ -227,7 +228,7 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
   );
 
   return (
-    <ApiProvider value={api}>
+    <ToastProvider><ApiProvider value={api}>
       <QueryClientProvider client={queryClient}>
         <View style={{ flex: 1 }}>
           {state === 'out' ? (
@@ -268,7 +269,7 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
           )}
         </View>
       </QueryClientProvider>
-    </ApiProvider>
+    </ApiProvider></ToastProvider>
   );
 }
 

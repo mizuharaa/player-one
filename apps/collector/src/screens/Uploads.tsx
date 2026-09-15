@@ -1,3 +1,4 @@
+import { useToast } from '../ui/Toast.tsx';
 import { useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -153,6 +154,7 @@ function reasonText(tt: (key: MessageKey) => string, reason: string): string {
 
 export function Uploads() {
   const api = useApi();
+  const toast = useToast();
   const nav = useNav();
   const sending = useRef(false);
   const [deliveryStage, setDeliveryStage] = useState(-1);
@@ -227,6 +229,7 @@ export function Uploads() {
       };
       return await runDelivery(deps, record, { report: setStep });
     },
+    onSuccess: outcome => { if (outcome.state === 'ingested') toast(tt('delivery.ingested')); },
     onSettled: async () => {
       sending.current = false;
       await queryClient.invalidateQueries({ queryKey: ['episodes'] });

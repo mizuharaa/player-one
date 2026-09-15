@@ -1,3 +1,4 @@
+import { useToast } from '../ui/Toast.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -62,6 +63,7 @@ function YesNo({
 
 export function SessionCreate() {
   const api = useApi();
+  const toast = useToast();
   const nav = useNav();
   const submitting = useRef(false);
   /**
@@ -120,6 +122,7 @@ export function SessionCreate() {
       // The session was created and the server is the record; it shows up under
       // Uploads. Somebody who left mid-request stays where they went.
       if (!mounted.current) return;
+      toast(tt('session.created'));
       setCreatedId(session.id);
       nav.reset({ name: 'sessionCreate' });
     },

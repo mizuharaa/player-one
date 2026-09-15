@@ -1,3 +1,4 @@
+import { useToast } from '../ui/Toast.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Image, type ImageSource } from 'expo-image';
@@ -87,6 +88,7 @@ const HEAD_SCRIM = [
 
 export function TaskDetail() {
   const api = useApi();
+  const toast = useToast();
   const nav = useNav();
   const tt = useT();
   const theme = useTheme();
@@ -108,7 +110,7 @@ export function TaskDetail() {
     onSettled: () => { submitting.current = false; },
     onSuccess: async () => {
       await queryClient.invalidateQueries();
-      if (mounted.current) nav.push({ name: 'sessionReminder' });
+      if (mounted.current) { toast(tt('detail.claimed')); nav.push({ name: 'sessionReminder' }); }
     },
   });
 
