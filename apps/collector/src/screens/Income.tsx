@@ -1,21 +1,14 @@
-import { Text, View } from 'react-native';
+import { useState } from 'react';
+import { Modal, Pressable, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import type { IncomeEntry } from '../api/types.ts';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { useGuideTarget } from '../guide/Guide.tsx';
-import { Tag, Timeline } from '../ui.tsx';
-import {
-  EmptyState,
-  LoadFailed,
-  ScreenTitle,
-  Skeleton,
-  StaleStrip,
-  WarmCard,
-  WarmList,
-  textStyle,
-} from '../v2.tsx';
+import { Body, Button, face, Chip, Hatch, NavRow, ListScreen, Loading, Note, Row, Screen, Tag, Timeline } from '../ui.tsx';
+import { HeaderGradient } from '../ui/HeaderGradient.tsx';
+import { useNav } from '../nav.tsx';
 import { dong, quantity, shortId } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
 
@@ -78,11 +71,11 @@ const PAID = new Set(['manually_paid', 'paid']);
 const lifecycle = (
   tt: (key: MessageKey) => string,
   entry: IncomeEntry,
-): { key: string; label: string; done: boolean; note?: string }[] => {
+): { key: string; label: string; done: boolean; current?: boolean; note?: string }[] => {
   const reviewed = entry.kind === 'confirmed';
   const paid = entry.settlementState !== null && PAID.has(entry.settlementState);
-  return [
-    { key: 'uploaded', label: tt('income.step.uploaded'), done: true },
+  const steps = [
+    { key: 'uploaded', label: tt('income.step.uploaded'), done: entry.settlementState !== null && entry.settlementState !== 'unknown' },
     {
       key: 'reviewed',
       label: tt('income.step.reviewed'),
@@ -97,45 +90,18 @@ const lifecycle = (
         entry.settlementState === null ? undefined : settlementLabel(tt, entry.settlementState),
     },
   ];
+  const current = steps.findIndex(step => !step.done);
+  return steps.map((step, index) => ({ ...step, current: index === current }));
 };
 
-/**
- * SPEC §14. APP-33/34: per-episode effective minutes, amount and settlement
- * state, with estimated and confirmed visually unmistakable — a solid border
- * for a figure a reviewer decided, a dashed one for a figure that is still an
- * estimate, and a labelled pill either way. Geometry *and* words, because
- * `guide.income.split` already explains the dash to the collector and colour
- * alone is not allowed to carry this on a payment screen.
- *
- * Three things §14 is emphatic about, each of which a well-meaning change
- * breaks:
- *
- * - **The hero is `confirmedVnd`**, exactly as on Home and for the same APP-34
- *   reason. `estimatedVnd` never appears as a bare figure; it reaches the
- *   screen only inside `home.cycleWithEstimate`, which names it in the same
- *   sentence. Until §14.1's field arrives the card renders
- *   `home.cycleUnavailable` with no money and no split.
- * - **The payout card defaults to unknown.** The pill reads `payout.awaiting`
- *   and the body reads `payout.unknown`; `verified` is rendered only when the
- *   server has actually sent it. A fixture that seeds `verified` teaches
- *   everyone who reviews it a state the platform has never produced, and the
- *   first real collector to see "Chờ xác minh" would read it as a regression.
- *   Neither field is faked client-side.
- * - **A `null` renders as `—`, never as `0`.** The server having nothing to say
- *   is not the same as a zero.
- *
- * There is deliberately no total and no balance over the rows. Grab's rule:
- * typed rows, never netted. A single wallet figure would be the app doing
- * arithmetic on money, and it would net a reviewed payment against an estimate
- * a reviewer may yet cut to nothing. There is no cash-out button either —
- * settlement is manual and offline, which is the sixth agreement the collector
- * signed.
- *
- * **Motion: none beyond the list's own fade.** A money screen that animates its
- * numbers is a money screen people distrust.
- */
 export function Income() {
   const api = useApi();
+  const nav = useNav();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [details, setDetails] = useState(false);
+  const [showDestination, setShowDestination] = useState(false);
+  const [extra, setExtra] = useState<'statement' | 'help' | null>(null);
+  const [options, setOptions] = useState(false);
   const tt = useT();
   const theme = useTheme();
   const income = useQuery({ queryKey: ['income'], queryFn: () => api.income() });
@@ -143,236 +109,97 @@ export function Income() {
   const payout = useQuery({ queryKey: ['payout'], queryFn: () => api.payout() });
   const listTarget = useGuideTarget('income.list');
 
-  const caption = { ...textStyle(theme, 'caption'), color: theme.color.discover.muted };
-  const micro = { ...textStyle(theme, 'micro'), color: theme.color.discover.muted };
+  const c = theme.collector;
   const cycleData = cycle.data ?? null;
-
-  /**
-   * §14.2. `null` — the server has not answered, or answered with a status
-   * this app does not know — is `unknown`, and `unknown` wears the awaiting
-   * pill with the "we do not know where to pay you" sentence. It is never
-   * `verified` and never `none`: the neighbour of "refused" is "awaiting", and
-   * telling a collector to wait for a verification that already failed is the
-   * lie this card exists to avoid.
-   */
+  const selected = income.data?.find(entry => entry.episodeId === selectedId);
   const status = payout.data?.status ?? null;
-  const statusKey: MessageKey =
-    status === 'verified' ? 'payout.verified' : status === 'none' ? 'payout.none' : 'payout.awaiting';
-
-  return (
-    <WarmList
-      data={income.data ?? []}
-      keyOf={(entry) => entry.episodeId}
-      refresh={{
-        refreshing: income.isFetching && !income.isPending,
-        onRefresh: () => void income.refetch(),
-      }}
-      header={
-        <View ref={listTarget} collapsable={false} style={{ gap: theme.space[3] }}>
-          <ScreenTitle>{tt('income.title')}</ScreenTitle>
-
-          {/* The cycle card. Plain ink on the card's own ground, NOT boxed:
-              §0.2's one rule the reference pass overruled a draft on — a
-              primary figure is anchored by size, and a boxed total reads as a
-              crypto app. */}
-          <WarmCard>
-            <Text style={caption}>
-              {cycleData === null || cycleData.label === ''
-                ? tt('home.cycleTitle')
-                : `${tt('home.cycleTitle')} · ${cycleData.label}`}
-            </Text>
-            {cycle.isPending ? (
-              <Skeleton lines={3} />
-            ) : (
-              <Text
-                style={{
-                  ...textStyle(theme, 'hero'),
-                  color: theme.color.discover.ink,
-                  fontWeight: theme.fontWeight.display,
-                  fontVariant: ['tabular-nums'],
-                }}
-              >
-                {cycleData === null ? NOTHING : dong(cycleData.confirmedVnd)}
-              </Text>
-            )}
-            {cycleData === null ? (
-              cycle.isPending ? null : (
-                <Text style={caption}>{tt('home.cycleUnavailable')}</Text>
-              )
-            ) : (
-              <>
-                <Text style={caption}>
-                  {`${tt('income.confirmed')} · ${tt('home.cycleWithEstimate').replace(
-                    '{amount}',
-                    dong(cycleData.totalVnd),
-                  )}`}
-                </Text>
-                <Text style={micro}>{tt('income.estimatedHint')}</Text>
-              </>
-            )}
-          </WarmCard>
-
-          {/* §14.2, the payout destination. */}
-          <View
-            style={{
-              backgroundColor: theme.color.discover.surface,
-              borderRadius: theme.radius.lg,
-              padding: theme.space[4],
-              gap: theme.space[2],
-            }}
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: theme.space[2],
-              }}
-            >
-              <Text
-                style={{
-                  ...textStyle(theme, 'lead'),
-                  color: theme.color.discover.ink,
-                  fontWeight: theme.fontWeight.semibold,
-                  flexShrink: 1,
-                }}
-              >
-                {tt('payout.title')}
-              </Text>
-              <Tag
-                label={tt(statusKey)}
-                fg={status === 'verified' ? theme.color.verdict.pass.fg : theme.color.discover.ink}
-                bg={status === 'verified' ? theme.color.verdict.pass.bg : theme.color.discover.soft}
-                mark={status === 'verified' ? '✔' : undefined}
-              />
-            </View>
-            <Text style={caption}>
-              {status === null
-                ? tt('payout.unknown')
-                : payout.data?.masked === null || payout.data?.masked === undefined
-                  ? tt('payout.zalopay')
-                  : `${tt('payout.zalopay')} · ${payout.data.masked}`}
-            </Text>
-          </View>
-
-          {/* The promise this screen is built around, printed where a collector
-              reads it before the rows: one episode at a time, no totalling. */}
-          <Text style={caption}>{tt('income.intro')}</Text>
-
-          {income.isError && income.data !== undefined ? (
-            <StaleStrip text={tt('income.stale')} />
-          ) : null}
-          {income.isPending ? <Skeleton lines={5} /> : null}
+  const statusKey: MessageKey = status === 'verified' ? 'payout.verified' : status === 'none' ? 'payout.none' : 'payout.awaiting';
+  const destination = <>
+    {payout.isPending ? <Loading /> : payout.isError ? <Note tone="error" text={tt('common.loadFailed')} onRetry={() => void payout.refetch()} busy={payout.isFetching} /> : <>
+      <Tag label={tt(statusKey)} fg={c.ink} bg={c.paper} mark={status === 'verified' ? '✓' : '?'} />
+      <Body>{status === null ? tt('payout.unknown') : payout.data?.masked ? `${tt('payout.zalopay')} · ${payout.data.masked}` : tt('payout.zalopay')}</Body>
+    </>}
+  </>;
+  return <>
+    <ListScreen title={tt('income.title')} data={options ? [] : income.data ?? []} keyOf={entry => entry.episodeId}
+      refresh={{ refreshing: income.isFetching || cycle.isFetching || payout.isFetching, onRefresh: () => { void income.refetch(); void cycle.refetch(); void payout.refetch(); } }}
+      header={<View ref={listTarget} collapsable={false} style={{ gap: c.sectionGap }}>
+        <HeaderGradient>
+          <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.paper }}>{cycleData?.label ? `${tt('home.cycleTitle')} · ${cycleData.label}` : tt('home.cycleTitle')}</Text>
+          <Text style={{ fontFamily: face(theme), ...c.type.money, color: c.paper, fontVariant: ['tabular-nums'] }}>{cycleData ? dong(cycleData.confirmedVnd) : NOTHING}</Text>
+          <Text style={{ fontFamily: face(theme), ...c.type.body, color: c.paper }}>{tt('income.confirmed')}</Text>
+          {cycleData ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.paper }}>{tt('home.cycleWithEstimate').replace('{amount}', dong(cycleData.totalVnd))}</Text> :
+            <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.paper }}>{tt(cycle.isPending ? 'common.loading' : 'home.cycleUnavailable')}</Text>}
+        </HeaderGradient>
+        {cycle.isError ? <Note tone="error" text={tt('common.loadFailed')} onRetry={() => void cycle.refetch()} busy={cycle.isFetching} /> : null}
+        <View style={{ flexDirection: 'row', gap: c.cardGap, alignItems: 'flex-start' }}>
+          {([
+            ['uploads.title', '↑', () => nav.selectTab('uploads')],
+            ['income.statement', '≡', () => setExtra('statement')],
+            ['payout.title', '↗', () => setShowDestination(true)],
+            ['profile.help', '?', () => setExtra('help')],
+          ] as const).map(([label, mark, press]) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={tt(label)}
+            onPress={press} style={{ flex: 1, minHeight: 48, alignItems: 'center', gap: theme.space[2] }}>
+            <View style={{ width: 52, height: 52, borderRadius: c.radius.pill, backgroundColor: c.surface, borderWidth: 1, borderColor: c.line, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ ...c.type.h2, color: c.plum, fontFamily: face(theme) }}>{mark}</Text>
+            </View><Text style={{ ...c.type.caption, color: c.ink, fontFamily: face(theme), textAlign: 'center' }}>{tt(label)}</Text>
+          </Pressable>)}
         </View>
-      }
-      empty={
-        income.isPending ? null : income.isError ? (
-          <LoadFailed onRetry={() => void income.refetch()} />
-        ) : (
-          <EmptyState text={tt('income.empty')} />
-        )
-      }
-      renderItem={(entry) => {
-        const confirmed = entry.kind === 'confirmed';
-        return (
-          <View
-            style={{
-              backgroundColor: theme.color.discover.surface,
-              borderWidth: 1,
-              // Geometry as well as a label: a dashed edge for a figure that is
-              // still an estimate, a solid one for a figure a reviewer decided.
-              borderStyle: confirmed ? 'solid' : 'dashed',
-              borderColor: theme.color.discover.line,
-              borderRadius: theme.radius.lg,
-              padding: theme.space[4],
-              gap: theme.space[3],
-            }}
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'flex-start',
-                justifyContent: 'space-between',
-                gap: theme.space[3],
-              }}
-            >
-              <View style={{ flex: 1, gap: theme.space[1] }}>
-                <Text
-                  style={{
-                    ...textStyle(theme, 'body'),
-                    color: theme.color.discover.ink,
-                    fontWeight: theme.fontWeight.semibold,
-                  }}
-                >
-                  {shortId(entry.episodeId)}
-                </Text>
-                <Text style={caption}>
-                  {`${tt('income.minutes')} · ${
-                    entry.effectiveMinutes === null ? NOTHING : quantity(entry.effectiveMinutes)
-                  }`}
-                </Text>
-                {entry.settlementState === null ? null : (
-                  <Text style={caption}>
-                    {`${tt('income.settlement')} · ${settlementLabel(tt, entry.settlementState)}`}
-                  </Text>
-                )}
-              </View>
-              <View style={{ alignItems: 'flex-end', gap: theme.space[2] }}>
-                <Text
-                  style={{
-                    ...textStyle(theme, 'section'),
-                    color: theme.color.discover.ink,
-                    fontWeight: theme.fontWeight.display,
-                    fontVariant: ['tabular-nums'],
-                  }}
-                >
-                  {entry.amountVnd !== null ? dong(entry.amountVnd) : NOTHING}
-                </Text>
-                {/*
-                 * Ink, not the pass green.
-                 *
-                 * Confirmed money and a passed episode are two different facts,
-                 * and a partial pass produces confirmed money too — so a green
-                 * tag here told a collector their episode passed when it may
-                 * have half passed. APP-34 asks only that confirmed and
-                 * estimated be unmistakable, and the solid card against the
-                 * dashed one already says it; the tag says which in words. The
-                 * verdict hues stay on the verdict, on the episode's own row in
-                 * Uploads.
-                 */}
-                {confirmed ? (
-                  <Tag
-                    label={tt('income.confirmed')}
-                    fg={theme.color.actionInk}
-                    bg={theme.color.action}
-                  />
-                ) : (
-                  <Tag
-                    label={tt('income.estimated')}
-                    fg={theme.color.discover.muted}
-                    bg={theme.color.discover.soft}
-                  />
-                )}
-              </View>
-            </View>
-            <View
-              style={{
-                borderTopWidth: 1,
-                borderTopColor: theme.color.discover.line,
-                paddingTop: theme.space[3],
-                gap: theme.space[2],
-              }}
-            >
-              <Text style={caption}>{tt('income.progress')}</Text>
-              <Timeline steps={lifecycle(tt, entry)} />
-            </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2], padding: theme.space[1], borderRadius: c.radius.pill, backgroundColor: c.line }}>
+          <Chip label={tt('income.transactions')} selected={!options} onPress={() => setOptions(false)} />
+          <Chip label={tt('income.options')} selected={options} onPress={() => setOptions(true)} />
+        </View>
+        {options ? <>
+          <NavRow label={tt('income.statement')} onPress={() => setExtra('statement')} />
+          <NavRow label={tt('payout.title')} onPress={() => setShowDestination(true)} />
+          <NavRow label={tt('profile.help')} subtitle={tt('profile.helpSub')} onPress={() => setExtra('help')} />
+        </> : null}
+        <Body muted>{tt('income.intro')}</Body>
+        {income.isError ? <Note tone="error" text={tt(income.data ? 'income.stale' : 'common.loadFailed')} onRetry={() => void income.refetch()} busy={income.isFetching} /> : null}
+        {income.isPending ? <Loading /> : null}
+      </View>}
+      empty={options || income.isPending || income.isError ? null : <Hatch text={tt('income.empty')} />}
+      renderItem={entry => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(entry.episodeId)}. ${tt(entry.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')}`}
+        onPress={() => { setSelectedId(entry.episodeId); setDetails(false); }}
+        style={({ pressed }) => ({ borderBottomWidth: 1, borderBottomColor: c.line, paddingVertical: c.cardPad, gap: c.cardGap, backgroundColor: pressed ? c.surface : undefined })}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: c.cardGap }}>
+          <View style={{ flex: 1, minWidth: theme.space[24], gap: theme.space[1] }}>
+            <Body>{shortId(entry.episodeId)}</Body>
+            <Body muted>{entry.settlementState ? settlementLabel(tt, entry.settlementState) : tt('settlement.unknown')}</Body>
           </View>
-        );
-      }}
-    />
-  );
+          <Text style={{ fontFamily: face(theme), ...c.type.h2, color: entry.kind === 'confirmed' ? c.greenInk : c.ink, fontVariant: ['tabular-nums'] }}>{entry.amountVnd === null ? NOTHING : dong(entry.amountVnd)}</Text>
+        </View>
+        <Tag label={tt(entry.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')} fg={c.ink} bg={c.surface} mark={entry.kind === 'confirmed' ? '✓' : '~'} />
+      </Pressable>} />
+    <Modal visible={selected !== undefined} animationType="none" onRequestClose={() => setSelectedId(null)}>
+      {selected ? <Screen title={shortId(selected.episodeId)} onBack={() => setSelectedId(null)}>
+        <Text style={{ fontFamily: face(theme), ...c.type.money, color: selected.kind === 'confirmed' ? c.greenInk : c.ink, fontVariant: ['tabular-nums'] }}>{selected.amountVnd === null ? NOTHING : dong(selected.amountVnd)}</Text>
+        <Tag label={tt(selected.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')} fg={c.ink} bg={c.surface} mark={selected.kind === 'confirmed' ? '✓' : '~'} />
+        <View style={{ flexDirection: 'row', gap: c.cardGap }}>
+          <Chip label={tt('income.progress')} selected={!details} onPress={() => setDetails(false)} />
+          <Chip label={tt('income.details')} selected={details} onPress={() => setDetails(true)} />
+        </View>
+        {details ? <>
+          <Row label={tt('income.minutes')} value={selected.effectiveMinutes === null ? NOTHING : quantity(selected.effectiveMinutes)} />
+          <Row label={tt('income.settlement')} value={selected.settlementState ? settlementLabel(tt, selected.settlementState) : tt('settlement.unknown')} />
+          {selected.kind === 'estimated' ? <Note text={tt('income.estimatedHint')} /> : null}
+        </> : <Timeline steps={lifecycle(tt, selected)} />}
+      </Screen> : null}
+    </Modal>
+    <Modal visible={extra !== null} animationType="none" onRequestClose={() => setExtra(null)}>
+      <Screen title={tt(extra === 'help' ? 'profile.help' : 'income.statement')} onBack={() => setExtra(null)}>
+        {extra === 'help' ? <Body>{tt('profile.helpSub')}</Body> : cycleData ? <>
+          <Body>{cycleData.label}</Body>
+          <Row label={tt('income.confirmed')} value={dong(cycleData.confirmedVnd)} />
+          <Row label={tt('income.estimated')} value={dong(cycleData.estimatedVnd)} />
+          <Row label={tt('income.total')} value={dong(cycleData.totalVnd)} />
+        </> : cycle.isPending ? <Loading /> : <Note text={tt('home.cycleUnavailable')} onRetry={() => void cycle.refetch()} busy={cycle.isFetching} />}
+      </Screen>
+    </Modal>
+    <Modal visible={showDestination} animationType="none" onRequestClose={() => setShowDestination(false)}>
+      <Screen title={tt('payout.title')} onBack={() => setShowDestination(false)}>{destination}</Screen>
+    </Modal>
+  </>;
 }
 
-/** The server having nothing to say is not the same as a zero (§14). */
 const NOTHING = '—';

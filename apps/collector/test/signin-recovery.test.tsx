@@ -61,7 +61,7 @@ const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200
 async function mount() {
   const api = new HttpCollectorApi('https://collector.test', tokens, () => {}, fetchFn);
   await act(async () => root.render(
-    <QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider>
+    <QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="vi">
       <SignIn onSignedIn={signedIn} />
     </LocaleProvider></ApiProvider></QueryClientProvider>,
   ));
@@ -280,3 +280,12 @@ describe('APP-01 sign-in recovery', () => {
     expect(signedIn).toHaveBeenCalledTimes(1);
   });
 });
+
+// Native inset measurements are supplied by the device, not jsdom.
+vi.mock('react-native-safe-area-context', async () => ({
+  initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null),
+}));
+
+vi.mock('../src/ui/HeaderGradient.tsx', () => ({ HeaderGradient: ({ children }: { children: import('react').ReactNode }) => children }));
+
+vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));

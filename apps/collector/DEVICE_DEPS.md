@@ -1,5 +1,46 @@
 # Device dependencies — what a real build needs that this repo does not carry
 
+## Collector v3 native build inputs
+
+Resolved by `npx expo install` for Expo 57.0.20 / React Native 0.86.3:
+
+| Module | Locked version |
+|---|---|
+| react-native-reanimated | 4.5.1 |
+| react-native-worklets | 0.10.1 |
+| react-native-gesture-handler | 2.32.0 |
+| react-native-svg | 15.15.4 |
+| expo-linear-gradient | 57.0.2 |
+| expo-haptics | 57.0.3 |
+| expo-image | 57.0.5 |
+| expo-dev-client | 57.0.19 |
+| expo-font | 57.0.4 |
+| expo-battery | 57.0.3 |
+| react-native-safe-area-context | 5.7.0 |
+
+The Expo Babel preset installs the worklets plugin automatically. No separate
+Reanimated Babel plugin is needed. `app.json` registers expo-image and embeds
+the full Be Vietnam Pro TTFs (400–800, OFL) through expo-font for both platforms.
+expo-battery supplies the OS low-power signal required for the login poster
+fallback. It was added after the first native build and requires a fresh client.
+
+The `expo-file-system@57.0.7` patch still applies: the installed Kotlin handle
+retains and closes its ParcelFileDescriptor. Android `buildFromSource` still
+includes expo-file-system; do not remove either setting for the native rebuild.
+
+Fable's Android dev-client build, from `apps/collector`:
+
+```sh
+pnpm install --frozen-lockfile
+npx eas-cli build --platform android --profile development
+npx expo start --dev-client
+```
+
+The EAS development profile enables the dev client. Expo config resolution and
+release checks are local proof only; native compilation, SAF transfer, safe-area
+layout and motion still require Fable's device QA. No emulator was launched by
+the builder.
+
 The BLE provisioning flow in this app runs against `MockDeviceTransport`
 (`src/device/transport.ts`). The real implementation is a Kotlin TurboModule
 wrapping PaXini's EgoLowBle Android library. That library is vendor material,

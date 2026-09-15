@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useContext, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   AccessibilityInfo,
+  AppState,
+  ActivityIndicator,
   Animated,
-  Dimensions,
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -17,80 +19,29 @@ import {
   useWindowDimensions,
   type ImageSourcePropType,
 } from 'react-native';
+import { isLowPowerModeEnabledAsync, addLowPowerModeListener } from 'expo-battery';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { initialWindowMetrics, SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import type { NativeTheme } from '@playerone/design/native';
 import { useNav } from './nav.tsx';
 import { useT } from './locale.tsx';
 import type { MessageKey } from './i18n.ts';
 import { useTheme } from './theme.tsx';
 
-/**
- * The handful of pieces every screen is made of. All colour, spacing and
- * radius comes from the theme — nativeTheme(scheme) over packages/design
- * tokens — never from a literal in a screen file.
- *
- * The world these draw, committed 2026-09-07 (`DESIGN.md`): a lavender wash is
- * the page, surfaces above it are glass, the primary action is an ink pill and
- * lime is the one accent — progress, emphasis and the focus ring. Sun and tech
- * are the VNG and PaXini partner marks and appear nowhere in here; bamboo is
- * Trúc's own stalk and nothing else. Still no gradients.
- *
- * `background` is the page and `surface` is the raised step above it, which is
- * the reverse of what these components used to do. A control — a chip, a
- * field, an empty state — paints `surface`; a page paints `background`; a card
- * paints glass over whatever it is standing on.
- */
 
-/**
- * The status-bar inset. `react-native-safe-area-context` is the real answer —
- * it also covers cutouts, the gesture bar and landscape side insets — but it
- * is a native module and nothing here can build one yet (DEVICE_DEPS.md).
- * `StatusBar.currentHeight` is RN core, is the actual measured inset on
- * Android, and is at least not a guess.
- *
- * ponytail: known ceiling — top inset only, Android only. Replace the whole
- * function with `useSafeAreaInsets()` at the first build that has native
- * modules, and verify edge-to-edge on a current Android target then.
- */
+
+/** Initial native metrics also serve the existing non-hook layout helpers. */
 export function topInset(fallback: number): number {
-  if (Platform.OS !== 'android') return fallback;
-  return StatusBar.currentHeight ?? fallback;
+  return initialWindowMetrics?.insets.top ?? (Platform.OS === 'android' ? StatusBar.currentHeight ?? fallback : fallback);
 }
-
-/**
- * The gesture / navigation bar inset at the bottom, which the tab bar has to
- * clear or its labels sit under the system pill.
- *
- * There is no core API for it. `Dimensions.get('screen').height` counts the
- * whole display and `Dimensions.get('window').height` counts what the app was
- * given, so the difference is the system chrome the app does not own — status
- * bar plus navigation bar. Subtracting the status bar leaves the bottom one.
- * On a gesture-navigation phone that is about 24dp; on a three-button phone
- * about 48dp; and where the numbers disagree (a cutout, a foldable, a
- * simulator) the clamp keeps it inside a sane range instead of pushing the bar
- * off screen.
- *
- * ponytail: measured, not correct. `useSafeAreaInsets().bottom` from
- * `react-native-safe-area-context` is the real answer and needs a native
- * build; swap this whole function for it there, at the same time `topInset`
- * goes. Until then the floor below is what keeps a 48dp target off the pill.
- */
 export function bottomInset(floor: number): number {
-  if (Platform.OS !== 'android') return floor;
-  const screen = Dimensions.get('screen').height;
-  const win = Dimensions.get('window').height;
-  const chrome = screen - win - (StatusBar.currentHeight ?? 0);
-  if (!Number.isFinite(chrome) || chrome <= 0) return floor;
-  return Math.min(Math.max(chrome, floor), floor * 3);
+  return Math.max(initialWindowMetrics?.insets.bottom ?? 0, floor);
+}
+/** Use live provider measurements when orientation or system bars change. */
+export function useInsets() {
+  return useContext(SafeAreaInsetsContext) ?? initialWindowMetrics?.insets ?? { top: 0, right: 0, bottom: 0, left: 0 };
 }
 
-/**
- * The type face.
- *
- * Native uses the theme's linked face (currently System); a CSS family list
- * is only valid in the browser harness, where Be Vietnam Pro is loaded.
- * Browser typography is therefore not proof of the Android font appearance.
- */
 export const face = (theme: NativeTheme): string =>
   Platform.OS === 'web' ? `Be Vietnam Pro, ${theme.font.sans}` : theme.font.sans;
 
@@ -103,12 +54,12 @@ export const face = (theme: NativeTheme): string =>
  * in six places is how one screen keeps moving after the setting is turned on.
  */
 export function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
+  const [reduced, setReduced] = useState(true);
   useEffect(() => {
     let live = true;
     void AccessibilityInfo.isReduceMotionEnabled().then((v) => {
       if (live) setReduced(v);
-    });
+    }).catch(() => { if (live) setReduced(false); });
     const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
     return () => {
       live = false;
@@ -119,33 +70,9 @@ export function useReducedMotion(): boolean {
   return reduced;
 }
 
-/** Minimum bar height before native layout reports its wrapped labels. */
-const barHeight = (theme: NativeTheme): number =>
-  theme.space[12] + theme.space[3] + theme.space[2];
+/** Dock content height; its measured value replaces this first-frame reserve. */
+const barHeight = (theme: NativeTheme): number => theme.space[12] + theme.space[4];
 
-/**
- * How far the raised session button reaches above the bar's own top edge.
- *
- * `shell/TabBar.tsx` draws it `space[12] + space[2]` across and pulls it
- * `space[5]` down into the pill with a negative margin, so what hangs above is
- * the difference — 36dp.
- */
-const sessionOverhang = (theme: NativeTheme): number =>
-  theme.space[12] + theme.space[2] - theme.space[5];
-
-/**
- * How much room scrolling content must leave under the tab bar.
- *
- * The measured bar includes its raised action at normal text size, or its
- * separate action row at enlarged text. Add the system inset and content gap.
- *
- * The overhang term used to be `space[5]` — the *negative margin*, not the
- * part of the button that is actually above the bar. Measured at 390×640, the
- * old reserve of 112dp ended content at y=528 while the session button starts
- * at y=503, so the last 25dp of every scrolling screen could be drawn under a
- * 56dp ink circle. Uploads was caught doing exactly that at 320dp, with an
- * episode's own upload control underneath it.
- */
 let measuredTabHeight = 0;
 const tabListeners = new Set<() => void>();
 export function measureTabBar(height: number) {
@@ -153,8 +80,6 @@ export function measureTabBar(height: number) {
   measuredTabHeight = height;
   tabListeners.forEach((notify) => notify());
 }
-export const tabBarHeight = (theme: NativeTheme): number =>
-  bottomInset(theme.space[6]) + (measuredTabHeight || barHeight(theme) + sessionOverhang(theme)) + theme.space[5];
 export function useTabBarReserve() {
   const theme = useTheme();
   useWindowDimensions();
@@ -162,81 +87,26 @@ export function useTabBarReserve() {
     (notify) => { tabListeners.add(notify); return () => { tabListeners.delete(notify); }; },
     () => measuredTabHeight,
   );
-  return tabBarHeight(theme);
+  const insets = useInsets();
+  return insets.bottom + theme.space[6] + (measuredTabHeight || barHeight(theme)) + theme.space[5];
 }
 
-function Header({
-  title,
-  right,
-  onBack,
-}: {
-  title: string;
-  right?: ReactNode;
-  /** Overrides the stack's own Back — the sign-in screen is not a route. */
-  onBack?: () => void;
-}) {
+export function Header({ title, right, onBack, progress }: { title: string; right?: ReactNode; onBack?: () => void; progress?: ReactNode }) {
   const theme = useTheme();
   const nav = useNav();
   const tt = useT();
+  const insets = useInsets();
   const back = onBack ?? (nav.canGoBack ? nav.back : undefined);
-  return (
-    <View
-      style={{
-        paddingHorizontal: 0,
-        paddingTop: topInset(theme.space[6]) + theme.space[2],
-        paddingBottom: theme.space[3],
-        // No rule under it. The page and its header are one lavender ground
-        // now, and a hairline across a continuous wash draws a bar where the
-        // world has none — the surfaces that float on it are what carry edges.
-        backgroundColor: theme.color.background,
-        gap: theme.space[1],
-      }}
-    >
-      {back !== undefined ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={tt('common.back')}
-          onPress={back}
-          hitSlop={theme.space[3]}
-          style={{ alignSelf: 'flex-start', minWidth: theme.space[12], minHeight: theme.space[12], justifyContent: 'center' }}
-        >
-          {/* Ink, not tech blue: tech is PaXini's mark now and is not a link
-              colour anywhere in this app. */}
-          <Text
-            style={{
-              color: theme.color.foreground,
-              fontFamily: face(theme),
-              fontSize: theme.fontSize.sm,
-              fontWeight: theme.fontWeight.medium,
-            }}
-          >
-            ← {tt('common.back')}
-          </Text>
-        </Pressable>
-      ) : null}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: theme.space[3] }}>
-        <Text
-          accessibilityRole="header"
-          style={{
-            color: theme.color.foreground,
-            fontFamily: face(theme),
-            fontSize: theme.fontSize.xl,
-            // §0.3: `xl` at display weight is the screen title, and the line
-            // height is absolute and never below 1.15 — a ratio near 1.05
-            // clips the tone marks off a Vietnamese title that wraps.
-            lineHeight: Math.round(theme.fontSize.xl * 1.2),
-            fontWeight: theme.fontWeight.display,
-            letterSpacing: -0.5,
-            flexShrink: 1,
-            flexGrow: 1,
-          }}
-        >
-          {title}
-        </Text>
-        {right}
-      </View>
-    </View>
-  );
+  const heading = <Text accessibilityRole="header" style={{ ...theme.collector.type.h1, color: theme.color.foreground,
+    fontFamily: face(theme), flexShrink: 1, flexGrow: 1 }}>{title}</Text>;
+  return <View style={{ paddingTop: insets.top + theme.space[2], paddingBottom: theme.space[3], gap: theme.space[3] }}>
+    {back ? <><View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+      <Pressable accessibilityRole="button" accessibilityLabel={tt('common.back')} onPress={back}
+        style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }}>
+        <Text style={{ ...theme.collector.type.h2, color: theme.collector.ink }}>←</Text>
+      </Pressable>{progress}{right}</View>{heading}</> :
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[3] }}>{heading}{right}</View>}
+  </View>;
 }
 
 /** A screen whose content is bounded: a form, a hub, one record's detail. */
@@ -244,12 +114,14 @@ export function Screen({
   title,
   right,
   onBack,
+  progress,
   footer,
   children,
 }: {
   title: string;
   right?: ReactNode;
   onBack?: () => void;
+  progress?: ReactNode;
   /**
    * A commit control pinned to the foot of the screen rather than sitting at
    * the end of the list (§6, §7, §8).
@@ -266,6 +138,7 @@ export function Screen({
 }) {
   const theme = useTheme();
   const nav = useNav();
+  const insets = useInsets();
   const reserve = useTabBarReserve();
   const [footerHeight, setFooterHeight] = useState(0);
   return (
@@ -274,14 +147,14 @@ export function Screen({
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
-          padding: theme.space[4],
+          padding: theme.collector.gutter,
           paddingTop: 0,
           paddingBottom:
-            theme.space[4] + footerHeight + (nav.isTabRoot ? reserve : bottomInset(theme.space[6])),
+            theme.space[4] + footerHeight + (nav.isTabRoot ? reserve : Math.max(insets.bottom, theme.space[6])),
           gap: theme.space[3],
         }}
       >
-        <Header title={title} right={right} onBack={onBack} />
+        <Header title={title} right={right} onBack={onBack} progress={progress} />
         {children}
       </ScrollView>
       {footer === undefined ? null : (
@@ -300,7 +173,7 @@ export function Screen({
             borderTopWidth: 1,
             borderTopColor: theme.color.border,
             padding: theme.space[4],
-            paddingBottom: theme.space[4] + bottomInset(theme.space[6]),
+            paddingBottom: theme.space[4] + Math.max(insets.bottom, theme.space[6]),
             gap: theme.space[3],
           }}
         >
@@ -328,6 +201,7 @@ export function ListScreen<T>({
   header,
   footer,
   empty,
+  refresh,
 }: {
   title: string;
   right?: ReactNode;
@@ -337,13 +211,17 @@ export function ListScreen<T>({
   header?: ReactNode;
   footer?: ReactNode;
   empty?: ReactNode;
+  refresh?: { refreshing: boolean; onRefresh: () => void };
 }) {
   const theme = useTheme();
   const nav = useNav();
+  const insets = useInsets();
   const reserve = useTabBarReserve();
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.background }}>
       <FlatList
+        refreshing={refresh?.refreshing}
+        onRefresh={refresh?.onRefresh}
         keyboardShouldPersistTaps="handled"
         data={data as T[]}
         keyExtractor={keyOf}
@@ -355,9 +233,9 @@ export function ListScreen<T>({
         ListFooterComponent={footer === undefined ? null : <View>{footer}</View>}
         ListEmptyComponent={empty === undefined ? null : <View>{empty}</View>}
         contentContainerStyle={{
-          padding: theme.space[4],
+          padding: theme.collector.gutter,
           paddingTop: 0,
-          paddingBottom: theme.space[4] + (nav.isTabRoot ? reserve : bottomInset(theme.space[6])),
+          paddingBottom: theme.space[4] + (nav.isTabRoot ? reserve : Math.max(insets.bottom, theme.space[6])),
           gap: theme.space[3],
         }}
       />
@@ -365,31 +243,7 @@ export function ListScreen<T>({
   );
 }
 
-/**
- * The glass, as the one thing it actually is.
- *
- * `theme.color.card` laid over whatever the surface is standing on, at
- * `theme.glass.*.fill`. In the light scheme `card` is white, so this is
- * literally the "white overlay" the token describes; in dark it is the
- * scheme's own raised near-black, because a 62% white film over a near-black
- * page is a hole punched into daylight rather than a pane of glass.
- *
- * `theme.glass.*.blur` is deliberately not consumed. React Native has no
- * backdrop blur without a native module and this repo adds none
- * (DEVICE_DEPS.md); what reads as glass is the ground showing through and
- * varying, and the blur only softens it. That is the honest translation the
- * token's own comment asks for.
- *
- * A layer rather than an `rgba()` string, for two reasons: the alpha belongs
- * to the fill and not to the content, so `opacity` on the container — which
- * would fade the type with it — is wrong; and mixing a colour in a `.tsx` is
- * how a value that the console cannot have gets invented. The parent clips it,
- * so the parent owns `borderRadius` and `overflow: 'hidden'`, and the parent
- * must draw it before whatever sits on top of it.
- *
- * Exported because Home's hero is a photograph with a glass strip under it,
- * which is neither a `Card` nor a `GlassBar` but is made of the same material.
- */
+
 export function Frost({ fill }: { fill: number }) {
   const theme = useTheme();
   return (
@@ -403,6 +257,7 @@ export function Frost({ fill }: { fill: number }) {
 
 /** The box a card is, minus its fill — shared by `Card` and `CardLink`. */
 const cardBox = (theme: NativeTheme) => ({
+  backgroundColor: theme.collector.surface,
   borderColor: theme.color.border,
   borderWidth: 1,
   borderRadius: theme.radius.lg,
@@ -416,27 +271,12 @@ export function Card({ children }: { children: ReactNode }) {
   const theme = useTheme();
   return (
     <View style={cardBox(theme)}>
-      <Frost fill={theme.glass.card.fill} />
       {children}
     </View>
   );
 }
 
-/**
- * The floating navigation bar's surface, and the only place in this app where
- * the ground behind glass genuinely varies.
- *
- * It takes `glass.bar.fill` rather than `glass.card.fill` for the reason the
- * token has two weights at all: a card sits on the page and knows what is
- * behind it, and this passes over whatever is being scrolled. Measured at the
- * two extremes of what can pass under it in the light scheme — a near-black
- * photograph composites the bar to #C7C7C7, a white one to #FFFFFF — where
- * `foreground` reads 10.78:1 and 18.23:1.
- *
- * It lives here and not in `shell/TabBar.tsx` because the frost layer is
- * private to this file, and because the bar's height is the number
- * `tabBarHeight` has to agree with.
- */
+
 export function GlassBar({ children }: { children: ReactNode }) {
   const theme = useTheme();
   return (
@@ -498,13 +338,13 @@ export function CardLink({
         // A denser frost would have been the prettier idea and is not a press:
         // measured, 0.62 and 0.78 of white over the lavender page are #F8F9FC
         // and #FBFBFD, which nobody's thumb can tell apart.
-        backgroundColor: pressed ? theme.color.muted : undefined,
+        backgroundColor: pressed ? theme.color.muted : theme.collector.surface,
         borderColor: pressed ? theme.color.borderStrong : theme.color.border,
       })}
     >
       {({ pressed }) => (
         <>
-          {pressed ? null : <Frost fill={theme.glass.card.fill} />}
+
           {children}
         </>
       )}
@@ -519,8 +359,7 @@ export function Title({ children }: { children: ReactNode }) {
       style={{
         color: theme.color.foreground,
         fontFamily: face(theme),
-        fontSize: theme.fontSize.md,
-        fontWeight: theme.fontWeight.semibold,
+        ...theme.collector.type.h2,
         letterSpacing: -0.2,
       }}
     >
@@ -545,32 +384,26 @@ export function Body({ children, muted = false }: { children: ReactNode; muted?:
   );
 }
 
-/**
- * The one figure a row is *about*, set large.
- *
- * Its only caller is the amount on an income row, where the row is a payment
- * and the figure is the payment. It was also on the task cards in the hall and
- * on Home, three deep under one heading, where the card's subject is the task
- * and not its unit price — `DESIGN.md` allows one ink figure per screen and
- * `TaskDetail`'s `FeatureBlock` is where a unit price earns it, beside the
- * server's payment rule and the claim button. Those cards print it through
- * `Row` now. Do not reintroduce this into a list card.
- */
+
 export function Amount({ value, label }: { value: string; label: string }) {
   const theme = useTheme();
   return <View style={{ gap: theme.space[1] }}>
-    <Text style={{ color: theme.color.foreground, fontFamily: face(theme), fontSize: theme.fontSize['2xl'], fontWeight: theme.fontWeight.bold, fontVariant: ['tabular-nums'] }}>{value}</Text>
+    <Text style={{ color: theme.color.foreground, fontFamily: face(theme), ...theme.collector.type.money, fontVariant: ['tabular-nums'] }}>{value}</Text>
     <Body muted>{label}</Body>
   </View>;
 }
 
 /** Secondary destinations have a full-width touch region. */
-export function NavRow({ label, onPress }: { label: string; onPress: () => void }) {
+export function NavRow({ label, subtitle, icon, onPress }: { label: string; subtitle?: string; icon?: ReactNode; onPress: () => void }) {
   const theme = useTheme();
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress}
-    style={({ pressed }) => ({ minHeight: theme.space[12], paddingVertical: theme.space[3], flexDirection: 'row', alignItems: 'center', gap: theme.space[3], borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: pressed ? theme.color.muted : undefined })}>
-    <Text style={{ flex: 1, color: theme.color.foreground, fontFamily: face(theme), fontSize: theme.fontSize.base }}>{label}</Text>
-    <Text importantForAccessibility="no" style={{ color: theme.color.mutedForeground, fontSize: theme.fontSize.lg }}>›</Text>
+  return <Pressable accessibilityRole="button" accessibilityLabel={subtitle ? `${label}. ${subtitle}` : label} onPress={onPress}
+    style={({ pressed }) => ({ minHeight: theme.space[12], paddingVertical: theme.space[4], flexDirection: 'row', alignItems: 'center', gap: theme.space[3], borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: pressed ? theme.collector.surface : undefined })}>
+    {icon}
+    <View style={{ flex: 1, gap: theme.space[1] }}>
+      <Text style={{ ...theme.collector.type.body, color: theme.color.foreground, fontFamily: face(theme) }}>{label}</Text>
+      {subtitle ? <Text style={{ ...theme.collector.type.caption, color: theme.color.mutedForeground, fontFamily: face(theme) }}>{subtitle}</Text> : null}
+    </View>
+    <Text importantForAccessibility="no" style={{ color: theme.color.mutedForeground, ...theme.collector.type.h2 }}>›</Text>
   </Pressable>;
 }
 
@@ -591,7 +424,8 @@ export function Row({ label, value }: { label: string; value: string }) {
         style={{
           color: theme.color.mutedForeground,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.sm,
+          fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
           flexShrink: 1,
           flexBasis: stacked ? undefined : '45%',
         }}
@@ -602,7 +436,8 @@ export function Row({ label, value }: { label: string; value: string }) {
         style={{
           color: theme.color.foreground,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.sm,
+          fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
           fontWeight: theme.fontWeight.medium,
           fontVariant: ['tabular-nums'],
           flexShrink: 1,
@@ -616,188 +451,35 @@ export function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-/**
- * The one button.
- *
- * Three variants, every state declared rather than left to whatever a
- * `Pressable` does by default: default, pressed, disabled and focused all pick
- * their own colours here, and no screen writes a button style of its own.
- * Shadcn's anatomy in React Native terms — the variant decides the surface and
- * the height, and it is a prop rather than a copy of the component.
- *
- * The metrics are the welcome-screen standard (Substack, Noom, NordVPN on
- * Mobbin): full width of whatever column it is in, 56dp tall, pill radius, a
- * 17sp semibold label. Stacked pairs sit 12dp apart, which is the column's
- * gap and not this component's business.
- *
- * - **primary** — the **ink pill**: `action` fill, `actionInk` label, both of
- *   which invert with the scheme. It is not sun any more and sun is not an
- *   action colour anywhere in this app. Muted fill with faint ink when
- *   disabled. One per screen; it is the thing the screen is for.
- * - **secondary** — a **glass pill**: the same frost a card is made of, with a
- *   hairline edge and ink type, so the alternative reads as genuinely
- *   available rather than as a demotion. On footage (`onDark`) it stays a
- *   white outline with no frost — a 62% white film over a recording is a
- *   white blink, not glass.
- * - **ghost** — the word alone, for a way out: cancel, later, close. 48dp
- *   rather than 56 because it is not a commitment, and 48 is Android's floor
- *   for a target.
- *
- * The focus ring is drawn as a border colour on a border that is always there,
- * so gaining focus never reflows the row. React Native has no outline and no
- * `:focus-visible`; `onFocus`/`onBlur` is what the platform gives.
- */
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
 
-export function Button({
-  label,
-  onPress,
-  disabled = false,
-  variant = 'primary',
-  onDark = false,
-  accessibilityHint,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  variant?: ButtonVariant;
-  /** Sitting on footage or on the ink block: the outline and the type go white. */
-  onDark?: boolean;
-  accessibilityHint?: string;
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'affirmative' | 'destructive';
+
+export function Button({ label, onPress, disabled = false, busy = false, variant = 'primary', onDark = false, accessibilityHint }: {
+  label: string; onPress: () => void; disabled?: boolean; busy?: boolean;
+  variant?: ButtonVariant; onDark?: boolean; accessibilityHint?: string;
 }) {
   const theme = useTheme();
+  const c = theme.collector;
   const [focused, setFocused] = useState(false);
-
-  // The ink the outline and the ghost label are drawn in. `stage.fg` and
-  // `stage.ground` are the two neutrals the tokens define identically in both
-  // schemes, which is what a control over footage needs: the video does not
-  // get lighter because the phone is in dark mode.
-  const ink = onDark ? theme.color.stage.fg : theme.color.foreground;
-  const primary = variant === 'primary';
-  const secondary = variant === 'secondary';
-  /**
-   * The ring is `lime[600]` — the focus ring the world committed, and the same
-   * step `packages/design/src/tokens.ts` resolves `ring.light` to. Measured on
-   * every ground it can land on here: 3.71:1 on the light page, 4.39:1 on the
-   * dark one, 4.26:1 and 3.67:1 on the two ink pills, all over SC 1.4.11's
-   * 3:1. On footage it stays the stage ink, because the film behind it is not
-   * a ground this file can measure.
-   */
-  const ring = onDark ? theme.color.stage.fg : theme.color.lime[600];
-
-  /**
-   * The frost weight the secondary is filled with, or `undefined` where the
-   * control paints its own opaque fill instead. `null` means no glass at all.
-   */
-  const frost = secondary && !onDark && !disabled ? theme.glass.card.fill : null;
-
-  const surface = (pressed: boolean): string | undefined => {
-    if (primary) {
-      if (disabled) return theme.color.muted;
-      // On footage the primary inverts: a near-black pill on a scrim that is
-      // already darkening toward near-black is a pill with no edge, so the
-      // one ink pill per screen becomes the one LIGHT pill per screen and
-      // takes ink type. That is the Future Pro / Oura arrangement §2 names,
-      // and it is still exactly one primary. `stage.ground` and `stage.fg`
-      // are the two neutrals the tokens define identically in both schemes —
-      // what a control over video needs, since the film does not get lighter
-      // because the phone is in dark mode.
-      return onDark ? theme.color.stage.fg : theme.color.action;
-    }
-    if (!pressed || disabled) return undefined;
-    // `muted` is a pale lavender tint and flashing it over footage would be a
-    // white blink; `stage.panel` is the same step of the ink scale.
-    return onDark ? theme.color.stage.panel : theme.color.muted;
-  };
-
-  const labelColor = disabled
-    ? // WCAG 1.4.3 exempts inactive controls, and dimming is how "you cannot
-      // press this" is read. On footage there is no faint neutral that stays
-      // legible, so a disabled control there dims the stage ink instead.
-      onDark
-      ? theme.color.stage.mid
-      : theme.color.faintForeground
-    : // `actionInk` is the pair of `action` and both invert with the scheme, so
-      // the label can never be the 2.61:1 white-on-sun this control shipped as
-      // once. Measured now: 15.78:1 light, 16.12:1 dark. On footage the pair
-      // is the other way up, and `stage.ground` on `stage.fg` is the same two
-      // neutrals measured against each other.
-      primary
-      ? onDark
-        ? theme.color.stage.ground
-        : theme.color.actionInk
-      : ink;
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityHint={accessibilityHint}
-      accessibilityState={{ disabled }}
-      onPress={onPress}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      disabled={disabled}
-      style={({ pressed }) => ({
-        backgroundColor: surface(pressed),
-        // Constant width, colour-only change: a ring that appears by growing
-        // the border pushes every sibling in the row by 2dp.
-        borderWidth: secondary ? 1.5 : 2,
-        borderColor: focused
-          ? ring
-          : secondary
-            ? disabled
-              ? theme.color.borderStrong
-              : onDark
-                ? ink
-                : // A glass pill takes the system's hairline, not a full-weight
-                  // ink outline: the frost is what makes it a surface and an
-                  // ink edge around it reads as a second primary.
-                  theme.color.borderStrong
-            : 'transparent',
-        borderRadius: theme.radius.pill,
-        paddingHorizontal: theme.space[5],
-        paddingVertical: theme.space[3],
-        maxWidth: '100%',
-        minWidth: theme.space[12],
-        minHeight: variant === 'ghost' ? theme.space[12] : theme.space[12] + theme.space[2],
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-        opacity: pressed && primary ? 0.85 : 1,
-      })}
-    >
-      {({ pressed }) => (
-        <>
-          {frost === null || pressed ? null : <Frost fill={frost} />}
-          <Text
-            style={{
-              color: labelColor,
-              fontFamily: face(theme),
-              fontSize: theme.fontSize.md,
-              fontWeight: theme.fontWeight.semibold,
-              textAlign: 'center',
-              flexShrink: 1,
-            }}
-          >
-            {label}
-          </Text>
-        </>
-      )}
-    </Pressable>
-  );
+  const blocked = disabled || busy;
+  const outline = onDark ? c.glow : c.plum;
+  const fill = variant === 'primary' ? c.sun : variant === 'affirmative' ? c.green : variant === 'destructive' ? c.red : undefined;
+  const ink = variant === 'destructive' ? c.surface : fill ? c.night : outline;
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityHint={accessibilityHint}
+    accessibilityState={{ disabled: blocked, busy }} aria-busy={busy} disabled={blocked} onPress={onPress}
+    onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+    style={({ pressed }) => ({ backgroundColor: fill, borderWidth: 2,
+      borderColor: focused || variant === 'secondary' ? outline : 'transparent',
+      borderRadius: c.radius.pill, paddingHorizontal: c.gutter, paddingVertical: theme.space[3],
+      minHeight: theme.space[12], minWidth: theme.space[12], maxWidth: '100%',
+      flexDirection: 'row', gap: theme.space[2], alignItems: 'center', justifyContent: 'center',
+      opacity: blocked ? 0.6 : pressed ? 0.85 : 1 })}>
+    {busy ? <ActivityIndicator color={ink} /> : null}
+    <Text style={{ ...c.type.body, color: ink, fontFamily: face(theme), fontWeight: '600', textAlign: 'center', flexShrink: 1 }}>{label}</Text>
+  </Pressable>;
 }
 
-/**
- * A small pill. Static by default; give it `onPress` and it becomes a control
- * with a 48dp target and a `selected` state.
- *
- * `selected` is the ink pill, the same mark the primary button and the active
- * tab carry: it is where the collector's action is. Unselected sits on
- * `surface`, the raised step, because the page is the lavender wash now and a
- * chip painted in the page colour is a chip with only a border. Nothing
- * decorative is a chip.
- */
+
 export function Chip({
   label,
   onPress,
@@ -813,9 +495,10 @@ export function Chip({
   const body = (
     <Text
       style={{
-        color: selected ? theme.color.actionInk : theme.color.foreground,
+        color: selected ? theme.collector.paper : theme.collector.ink,
         fontFamily: face(theme),
-        fontSize: theme.fontSize.sm,
+        fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
         fontWeight: theme.fontWeight.medium,
       }}
     >
@@ -823,7 +506,7 @@ export function Chip({
     </Text>
   );
   const box = {
-    backgroundColor: selected ? theme.color.action : theme.color.surface,
+    backgroundColor: selected ? theme.collector.night : theme.collector.surface,
     borderWidth: selected ? 0 : 1,
     borderColor: theme.color.borderStrong,
     borderRadius: theme.radius.pill,
@@ -891,7 +574,8 @@ export function FeatureBlock({
         style={{
           color: theme.color.stage.mid,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.sm,
+          fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
         }}
       >
         {label}
@@ -902,6 +586,7 @@ export function FeatureBlock({
             color: theme.color.stage.fg,
             fontFamily: face(theme),
             fontSize: theme.fontSize['2xl'],
+            lineHeight: Math.ceil(theme.fontSize['2xl'] * 1.3),
             fontWeight: theme.fontWeight.display,
             fontVariant: ['tabular-nums'],
             letterSpacing: -1,
@@ -916,6 +601,7 @@ export function FeatureBlock({
               color: theme.color.stage.mid,
               fontFamily: face(theme),
               fontSize: theme.fontSize.base,
+            lineHeight: Math.ceil(theme.fontSize.base * 1.3),
             }}
           >
             {unit}
@@ -927,8 +613,9 @@ export function FeatureBlock({
           style={{
             color: theme.color.stage.mid,
             fontFamily: face(theme),
-            fontSize: theme.fontSize.sm,
-            lineHeight: theme.fontSize.sm * 1.5,
+            fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
+
           }}
         >
           {sentence}
@@ -939,71 +626,12 @@ export function FeatureBlock({
   );
 }
 
-/**
- * The empty state. Diagonal hatching rather than an illustration or a shrug:
- * it says "this area exists and has nothing in it yet" without pretending
- * something failed, and it is built from Views because no image asset ships in
- * this app.
- */
+
 export function Hatch({ text }: { text: string }) {
   const theme = useTheme();
-  const stripes = 14;
-  return (
-    <View
-      style={{
-        borderWidth: 1,
-        borderColor: theme.color.border,
-        borderRadius: theme.radius.lg,
-        // `surface`, not `background`: the page IS `background` now, and an
-        // empty state painted in the page colour is a border round nothing.
-        backgroundColor: theme.color.surface,
-        overflow: 'hidden',
-        padding: theme.space[6],
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: theme.space[20],
-      }}
-    >
-      <View
-        importantForAccessibility="no-hide-descendants"
-        pointerEvents="none"
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-      >
-        {Array.from({ length: stripes }, (_, i) => (
-          <View
-            key={i}
-            style={{
-              position: 'absolute',
-              top: -theme.space[20],
-              left: i * theme.space[8] - theme.space[16],
-              width: 1,
-              height: theme.space[20] * 3,
-              backgroundColor: theme.color.border,
-              transform: [{ rotate: '35deg' }],
-            }}
-          />
-        ))}
-      </View>
-      <View
-        style={{
-          backgroundColor: theme.color.surface,
-          paddingHorizontal: theme.space[3],
-          paddingVertical: theme.space[2],
-        }}
-      >
-        <Text
-          style={{
-            color: theme.color.mutedForeground,
-            fontFamily: face(theme),
-            fontSize: theme.fontSize.sm,
-            textAlign: 'center',
-          }}
-        >
-          {text}
-        </Text>
-      </View>
-    </View>
-  );
+  return <View style={{ padding: theme.space[6], gap: theme.space[3], alignItems: 'center' }}>
+    <Text style={{ ...theme.collector.type.body, color: theme.color.mutedForeground, fontFamily: face(theme), textAlign: 'center' }}>{text}</Text>
+  </View>;
 }
 
 /**
@@ -1088,7 +716,7 @@ export function RingChip({
             <View key={`t${i}`} style={[seat(i), { backgroundColor: theme.color.muted }]} />
           ))}
           {Array.from({ length: lit }, (_, i) => (
-            <View key={i} style={[seat(i), { backgroundColor: theme.color.lime[600] }]} />
+            <View key={i} style={[seat(i), { backgroundColor: theme.collector.plum }]} />
           ))}
           {ringFace === undefined ? null : (
             <Text
@@ -1096,7 +724,8 @@ export function RingChip({
               style={{
                 color: theme.color.foreground,
                 fontFamily: face(theme),
-                fontSize: theme.fontSize.sm,
+                fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
                 fontWeight: theme.fontWeight.bold,
                 fontVariant: ['tabular-nums'],
               }}
@@ -1111,7 +740,8 @@ export function RingChip({
         style={{
           color: theme.color.foreground,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.sm,
+          fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
           fontWeight: theme.fontWeight.medium,
         }}
       >
@@ -1184,9 +814,9 @@ export function Choice({
         // only a fill, so the label on it is the fixed near-black ink the
         // token was measured against — 13.94:1, and it does not move with the
         // scheme because `lime` does not either.
-        backgroundColor: selected ? theme.color.lime[500] : theme.color.surface,
+        backgroundColor: selected ? theme.collector.glow : theme.color.surface,
         borderWidth: 1,
-        borderColor: selected ? theme.color.lime[600] : theme.color.borderStrong,
+        borderColor: selected ? theme.collector.plum : theme.color.borderStrong,
         borderRadius: theme.radius.pill,
         paddingVertical: theme.space[2],
         paddingHorizontal: theme.space[4],
@@ -1198,7 +828,8 @@ export function Choice({
         style={{
           color: selected ? theme.color.stage.ground : theme.color.foreground,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.sm,
+          fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
           fontWeight: selected ? theme.fontWeight.semibold : theme.fontWeight.regular,
           flexShrink: 1,
         }}
@@ -1247,7 +878,8 @@ export function Field({
           style={{
             color: theme.color.mutedForeground,
             fontFamily: face(theme),
-            fontSize: theme.fontSize.sm,
+            fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
           }}
         >
           {label}
@@ -1269,7 +901,7 @@ export function Field({
           // It is drawn as a second border colour rather than an outline
           // because RN has no outline; the width does not change, so nothing
           // reflows.
-          borderColor: focused ? theme.color.lime[600] : theme.color.borderStrong,
+          borderColor: focused ? theme.collector.plum : theme.color.borderStrong,
           borderWidth: focused ? 2 : 1,
           borderRadius: theme.radius.sm,
           paddingVertical: theme.space[3] - (focused ? 1 : 0),
@@ -1278,6 +910,7 @@ export function Field({
           color: theme.color.foreground,
           fontFamily: face(theme),
           fontSize: theme.fontSize.base,
+            lineHeight: Math.ceil(theme.fontSize.base * 1.3),
         }}
       />
     </View>
@@ -1318,7 +951,8 @@ export function Tag({ label, fg, bg, mark }: { label: string; fg: string; bg: st
       {mark === undefined ? null : (
         <Text
           importantForAccessibility="no"
-          style={{ color: fg, fontFamily: face(theme), fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.semibold }}
+          style={{ color: fg, fontFamily: face(theme), fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight, fontWeight: theme.fontWeight.semibold }}
         >
           {mark}
         </Text>
@@ -1327,7 +961,8 @@ export function Tag({ label, fg, bg, mark }: { label: string; fg: string; bg: st
         style={{
           color: fg,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.xs,
+          fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
           fontWeight: theme.fontWeight.semibold,
           flexShrink: 1,
         }}
@@ -1371,7 +1006,7 @@ export function Progress({ label, value, fraction }: { label: string; value: str
           overflow: 'hidden',
         }}
       >
-        <View style={{ width: `${clamped * 100}%`, height: '100%', backgroundColor: theme.color.lime[600] }} />
+        <View style={{ width: `${clamped * 100}%`, height: '100%', backgroundColor: theme.collector.sun }} />
       </View>
     </View>
   );
@@ -1395,42 +1030,22 @@ export function Loading() {
   );
 }
 
-/**
- * The machine telling the collector something.
- *
- * It was a tech-blue tint, and tech is PaXini's partner mark now — not a
- * system colour and not a notice colour. So the notice is drawn in the
- * neutral one step off the page: `muted`, which inverts with the scheme the
- * way the tint it replaces did. Measured, `foreground` on it reads 14.66:1 in
- * light and 12.54:1 in dark. Nothing about which sentences go in here changed
- * — it still carries the gates and the failures, and it still announces.
- */
-export function Note({ text }: { text: string }) {
+
+export function Note({ text, tone = 'info', onRetry, busy = false }: {
+  text: string; tone?: 'info' | 'error' | 'pending'; onRetry?: () => void; busy?: boolean;
+}) {
   const theme = useTheme();
-  return (
-    <View
-      // Notes carry the gates and the failures — "no exam pass, no claim",
-      // "bind a device first", a rejected upload's reason. They appear after
-      // an action, so a screen reader has to be told to read them.
-      accessibilityLiveRegion="polite"
-      style={{
-        backgroundColor: theme.color.muted,
-        borderRadius: theme.radius.base,
-        padding: theme.space[3],
-      }}
-    >
-      <Text
-        style={{
-          color: theme.color.foreground,
-          fontFamily: face(theme),
-          fontSize: theme.fontSize.sm,
-          lineHeight: theme.fontSize.sm * 1.5,
-        }}
-      >
-        {text}
-      </Text>
+  const tt = useT();
+  const c = theme.collector;
+  const ink = tone === 'error' ? c.redInk : tone === 'pending' ? c.amberInk : c.ink;
+  const fill = tone === 'error' ? c.redBg : tone === 'pending' ? c.amberBg : c.surface;
+  return <View accessibilityLiveRegion="polite" style={{ backgroundColor: fill, borderRadius: c.radius.card, padding: c.cardPad, gap: theme.space[3] }}>
+    <View style={{ flexDirection: 'row', gap: theme.space[2] }}>
+      <Text importantForAccessibility="no" style={{ ...c.type.body, color: ink }}>{tone === 'error' ? '!' : tone === 'pending' ? '…' : 'i'}</Text>
+      <Text style={{ ...c.type.body, color: ink, fontFamily: face(theme), flex: 1 }}>{text}</Text>
     </View>
-  );
+    {onRetry ? <Button label={tt('common.retry')} variant="secondary" busy={busy} onPress={onRetry} /> : null}
+  </View>;
 }
 
 /**
@@ -1445,7 +1060,7 @@ export function Note({ text }: { text: string }) {
 export function Timeline({
   steps,
 }: {
-  steps: { key: string; label: string; done: boolean; note?: string }[];
+  steps: { key: string; label: string; done: boolean; current?: boolean; note?: string }[];
 }) {
   const theme = useTheme();
   const last = steps.length - 1;
@@ -1453,15 +1068,15 @@ export function Timeline({
     <View>
       {steps.map((step, i) => (
         <View key={step.key} style={{ flexDirection: 'row', gap: theme.space[3] }}>
-          <View style={{ alignItems: 'center', width: theme.space[4] }}>
+          <View style={{ alignItems: 'center', width: theme.space[6] }}>
             <View
               style={{
-                width: theme.space[4],
-                height: theme.space[4],
-                borderRadius: theme.space[2],
-                borderWidth: step.done ? 0 : 1,
+                width: theme.space[6],
+                height: theme.space[6],
+                borderRadius: theme.collector.radius.pill,
+                borderWidth: step.done || step.current ? 0 : 1,
                 borderColor: theme.color.borderStrong,
-                backgroundColor: step.done ? theme.color.foreground : theme.color.background,
+                backgroundColor: step.current ? theme.collector.plum : step.done ? theme.color.foreground : theme.color.background,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
@@ -1471,8 +1086,9 @@ export function Timeline({
                   style={{
                     color: theme.color.background,
                     fontFamily: face(theme),
-                    fontSize: theme.fontSize.xs,
-                    lineHeight: theme.fontSize.xs + 2,
+                    fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
+
                   }}
                 >
                   ✓
@@ -1493,10 +1109,10 @@ export function Timeline({
           <View style={{ flexShrink: 1, paddingBottom: i === last ? 0 : theme.space[3] }}>
             <Text
               style={{
-                color: step.done ? theme.color.foreground : theme.color.mutedForeground,
+                color: step.done || step.current ? theme.color.foreground : theme.color.mutedForeground,
                 fontFamily: face(theme),
-                fontSize: theme.fontSize.base,
-                fontWeight: step.done ? theme.fontWeight.semibold : theme.fontWeight.regular,
+                ...theme.collector.type.body,
+                fontWeight: step.done || step.current ? theme.fontWeight.semibold : theme.fontWeight.regular,
               }}
             >
               {step.label}
@@ -1506,8 +1122,9 @@ export function Timeline({
                 style={{
                   color: theme.color.mutedForeground,
                   fontFamily: face(theme),
-                  fontSize: theme.fontSize.sm,
-                  lineHeight: theme.fontSize.sm * 1.5,
+                  fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
+
                 }}
               >
                 {step.note}
@@ -1542,14 +1159,16 @@ export function Timeline({
  */
 export function LegalLine({ onDark = false }: { onDark?: boolean } = {}) {
   const theme = useTheme();
+  const insets = useInsets();
+  const [documentKey, setDocumentKey] = useState<MessageKey | null>(null);
   const tt = useT();
   const ink = onDark ? theme.color.stage.fg : theme.color.foreground;
   const link = (key: MessageKey) => (
     <Pressable
       accessibilityRole="link"
       accessibilityLabel={tt(key)}
-      onPress={() => {}}
-      hitSlop={theme.space[2]}
+      onPress={() => setDocumentKey(key)}
+      style={{ minHeight: 48, minWidth: 48, justifyContent: 'center' }}
     >
       <Text
         style={{
@@ -1561,7 +1180,8 @@ export function LegalLine({ onDark = false }: { onDark?: boolean } = {}) {
           // 15.78:1 light, 16.12:1 dark, on the page it is drawn on.
           color: ink,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.xs,
+          fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
           textDecorationLine: 'underline',
         }}
       >
@@ -1570,7 +1190,7 @@ export function LegalLine({ onDark = false }: { onDark?: boolean } = {}) {
     </Pressable>
   );
   return (
-    <View
+    <><View
       style={{
         flexDirection: 'row',
         flexWrap: 'wrap',
@@ -1584,31 +1204,28 @@ export function LegalLine({ onDark = false }: { onDark?: boolean } = {}) {
         style={{
           color: onDark ? theme.color.stage.mid : theme.color.faintForeground,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.xs,
+          fontSize: theme.collector.type.caption.fontSize,
+          lineHeight: theme.collector.type.caption.lineHeight,
         }}
       >
         ·
       </Text>
       {link('legal.dataNotice')}
     </View>
+      <Modal visible={documentKey !== null} animationType="none" onRequestClose={() => setDocumentKey(null)}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: theme.collector.paper,
+          paddingHorizontal: theme.collector.gutter, paddingTop: insets.top + theme.space[6],
+          paddingBottom: insets.bottom + theme.space[6], gap: theme.space[4] }}>
+          <Button label={tt('common.close')} variant="secondary" onPress={() => setDocumentKey(null)} />
+          <Title>{documentKey === null ? '' : tt(documentKey)}</Title>
+          <Body>{tt('legal.notPublished')}</Body>
+        </ScrollView>
+      </Modal>
+    </>
   );
 }
 
-/* ------------------------------------------------------------------ *
- * v2, and only what `SPEC.md` §0.7 says is genuinely new.
- *
- * That table names four additions for the whole redesign: the two-line price
- * chip (§10), the welcome hero with its scrim (§2), the six-box code row (§4)
- * and the splash player (§1). Three of them are here. The price chip is
- * Builder B's, by §20.4's one hand-off — it is built with the task card it is
- * burned into, and a second copy of it here would be the duplicate this table
- * exists to prevent.
- *
- * The hero and the splash player collapsed into one component rather than two,
- * because they are one component: a box that plays a film if it can and shows
- * a still if it cannot, with the same 400 ms first-frame gate on both. §1 and
- * §2 describe that gate in the same words.
- * ------------------------------------------------------------------ */
+/** Film and code inputs share the same kit as the collector screens. */
 
 /**
  * `#RRGGBB` as its three channels, so a scrim can be written at an alpha
@@ -1663,7 +1280,7 @@ function alphaAt(at: number, stops: readonly (readonly [number, number])[]): num
 const SCRIM_BANDS = 40;
 export function Scrim({ stops }: { stops: readonly (readonly [number, number])[] }) {
   const theme = useTheme();
-  const [r, g, b] = channels(theme.color.discover.ink);
+  const [r, g, b] = channels(theme.collector.night);
   return (
     <View
       pointerEvents="none"
@@ -1683,26 +1300,8 @@ export function Scrim({ stops }: { stops: readonly (readonly [number, number])[]
   );
 }
 
-/**
- * A film that falls back to its own still, with §1's 400 ms first-frame gate.
- *
- * Three things can mean "no video here", and §2 is explicit that they are one
- * state and not three: the collector has "remove animations" on, `expo-video`
- * reported an error, or no first frame arrived within 400 ms of mount. All
- * three land on the poster, which is why the poster is not a fallback that
- * gets swapped in — it is **always** the bottom layer, and the film fades in
- * on top of it when it is ready. So there is never a warm rectangle waiting on
- * a decoder, and never a flash between the two.
- *
- * The gate is the cheap half of "the app didn't start". A cold decoder, a
- * codec the device refuses and a corrupt asset are indistinguishable from the
- * app being broken, from the collector's side of the screen.
- *
- * §0.5 rule 2 — one video instance at a time, unmounted before the next screen
- * paints — needs no prop here: there is exactly one film in the app, on a
- * screen that is replaced rather than covered, so it unmounts with its screen.
- * A visibility flag would be a knob with one possible value.
- */
+/** The poster paints immediately; a slow decoder may arrive later. Errors
+ * remove the decoder, including errors after playback has already started. */
 function GatedFilm({
   source,
   label,
@@ -1730,19 +1329,13 @@ function GatedFilm({
       done = true;
       Animated.timing(shown, { toValue: 1, duration: fade, useNativeDriver: true }).start();
     };
-    const give = () => {
-      if (done) return;
-      done = true;
-      onFail();
-    };
-    // Four lines, and they remove the whole class of "the app didn't start".
-    const gate = setTimeout(give, 400);
     const sub = player.addListener('statusChange', ({ status }) => {
-      if (status === 'readyToPlay') { clearTimeout(gate); arrive(); }
-      if (status === 'error') { clearTimeout(gate); give(); }
+      if (status === 'readyToPlay') arrive();
+      if (status === 'error') onFail();
     });
-    if (player.status === 'readyToPlay') { clearTimeout(gate); arrive(); }
-    return () => { clearTimeout(gate); sub.remove(); };
+    if (player.status === 'readyToPlay') arrive();
+    if (player.status === 'error') onFail();
+    return () => sub.remove();
   }, [player, fade, shown, onFail]);
 
   return (
@@ -1764,7 +1357,9 @@ export function Film({
   label,
   contentFit = 'cover',
   fade,
+  active = true,
 }: {
+  active?: boolean;
   source: string | number;
   poster: ImageSourcePropType;
   label: string;
@@ -1774,7 +1369,16 @@ export function Film({
   const reduced = useReducedMotion();
   const [failed, setFailed] = useState(false);
   const fail = useCallback(() => setFailed(true), []);
-  const live = !reduced && !failed;
+  const [lowPower, setLowPower] = useState(true);
+  const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    let mounted = true;
+    void isLowPowerModeEnabledAsync().then(value => { if (mounted) setLowPower(value); }).catch(() => { if (mounted) setLowPower(false); });
+    const power = Platform.OS === 'web' ? null : addLowPowerModeListener(event => setLowPower(event.lowPowerMode));
+    const state = AppState.addEventListener('change', value => setForeground(value === 'active'));
+    return () => { mounted = false; power?.remove(); state.remove(); };
+  }, []);
+  const live = active && foreground && !reduced && !lowPower && !failed;
   return (
     <>
       <Image
@@ -1907,7 +1511,7 @@ export function CodeBoxes({
                 style={{
                   color: theme.color.foreground,
                   fontFamily: face(theme),
-                  fontSize: theme.fontSize.xl,
+                  ...theme.collector.type.h1,
                   fontWeight: theme.fontWeight.display,
                   fontVariant: ['tabular-nums'],
                 }}

@@ -66,33 +66,13 @@ const FILL = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 } as c
  * `Math.round` — a bare multiplier is a rejected diff, and ratios of 1.04–1.06
  * clip Vietnamese tone marks, which is the measurement this floor comes from.
  */
-const RATIO = {
-  hero: ['3xl', 1.15],
-  display: ['2xl', 1.18],
-  title: ['xl', 1.2],
-  section: ['lg', 1.3],
-  lead: ['md', 1.4],
-  body: ['base', 1.45],
-  caption: ['sm', 1.4],
-  micro: ['xs', 1.4],
+const TYPE_ROLES = {
+  hero: 'display', display: 'h1', title: 'h2', section: 'h2',
+  lead: 'body', body: 'body', caption: 'caption', micro: 'caption',
 } as const;
-
-export type TextRole = keyof typeof RATIO;
-
-/** The style fragment for one §0.3 role. Spread it into a `Text` style. */
+export type TextRole = keyof typeof TYPE_ROLES;
 export function textStyle(theme: NativeTheme, role: TextRole) {
-  const [size, ratio] = RATIO[role];
-  const px = theme.fontSize[size];
-  return {
-    fontFamily: face(theme),
-    fontSize: px,
-    lineHeight: Math.round(px * ratio),
-    // §0.3: display weight is 800, and the two largest roles take the tighter
-    // tracking with it.
-    ...(role === 'hero' || role === 'display' || role === 'title'
-      ? { letterSpacing: -0.5 }
-      : {}),
-  };
+  return { fontFamily: face(theme), ...theme.collector.type[TYPE_ROLES[role]] };
 }
 
 // ---------------------------------------------------------------------------
@@ -206,7 +186,7 @@ export function PriceChip({ value, unit }: { value: string; unit: string }) {
         alignSelf: 'flex-start',
         maxWidth: '100%',
         flexDirection: 'column',
-        backgroundColor: theme.color.discover.light,
+        backgroundColor: theme.collector.greenBg,
         borderRadius: theme.radius.base,
         paddingVertical: theme.space[2],
         paddingHorizontal: theme.space[3],
@@ -215,13 +195,13 @@ export function PriceChip({ value, unit }: { value: string; unit: string }) {
       <Text
         style={{
           ...textStyle(theme, 'lead'),
-          color: theme.color.discover.lightInk,
+          color: theme.collector.greenInk,
           fontWeight: theme.fontWeight.display,
         }}
       >
         {value}
       </Text>
-      <Text style={{ ...textStyle(theme, 'micro'), color: theme.color.discover.lightInk }}>{unit}</Text>
+      <Text style={{ ...textStyle(theme, 'micro'), color: theme.collector.greenInk }}>{unit}</Text>
     </View>
   );
 }
@@ -296,8 +276,8 @@ export function TaskCard({
       onPress={onPress}
       style={({ pressed }) => ({
         flex: variant === 'tile' ? 1 : undefined,
-        borderRadius: theme.radius.xl,
-        backgroundColor: theme.color.discover.surface,
+        borderRadius: theme.collector.radius.card,
+        backgroundColor: theme.collector.surface,
         overflow: 'hidden',
         // §0.5 rule 4: transform only, and the press is instant.
         transform: [{ scale: pressed ? 0.98 : 1 }],

@@ -33,11 +33,13 @@ export default defineConfig({
   resolve: {
     alias: {
       'react-native': 'react-native-web',
+      // Expo's native entry starts Metro HMR; Vite uses the same core exports directly.
+      'expo': 'expo-modules-core',
       'expo-secure-store': here('./stubs/expo-secure-store.ts'),
       'expo-file-system': here('./stubs/expo-file-system.ts'),
       'expo-video': here('./stubs/expo-video.tsx'),
     },
-    extensions: ['.web.tsx', '.web.ts', '.tsx', '.ts', '.jsx', '.js', '.json'],
+    extensions: ['.web.tsx', '.web.ts', '.web.jsx', '.web.js', '.tsx', '.ts', '.jsx', '.js', '.json'],
   },
   define: {
     'process.env.EXPO_PUBLIC_MOCK_API': JSON.stringify('1'),
@@ -53,7 +55,7 @@ export default defineConfig({
     global: 'globalThis',
   },
   optimizeDeps: {
-    esbuildOptions: { resolveExtensions: ['.web.tsx', '.web.ts', '.tsx', '.ts', '.js'] },
+    esbuildOptions: { resolveExtensions: ['.web.tsx', '.web.ts', '.web.jsx', '.web.js', '.tsx', '.ts', '.jsx', '.js', '.json'] },
   },
   server: { port: 5177, strictPort: true },
 });

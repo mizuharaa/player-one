@@ -5,10 +5,11 @@ import { ApiError } from '../api/types.ts';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { e164 } from '../phone.ts';
-import { Button, Choice, CodeBoxes, Field, LegalLine, Note, Scrim, face, topInset } from '../ui.tsx';
+import { Button, Film, Choice, CodeBoxes, Field, LegalLine, Note, Scrim, face, useInsets, } from '../ui.tsx';
 import { useTheme } from '../theme.tsx';
 import type { MessageKey } from '../i18n.ts';
-import poster from '../../assets/discover/pov-portrait.webp';
+import poster from '../../assets/hero/login-poster.jpg';
+import loginFilm from '../../assets/hero/login.mp4';
 import wordmark from '../../assets/discover/playerone-wordmark.png';
 
 /**
@@ -71,19 +72,8 @@ import wordmark from '../../assets/discover/playerone-wordmark.png';
 const VN = { code: '+84', label: 'signIn.country.vn' as MessageKey };
 const CN = { code: '+86', label: 'signIn.country.cn' as MessageKey };
 
-/**
- * The hero's scrim, which is §2's measured one.
- *
- * The same film, the same ink over it, and the wordmark sits in the darkest
- * band at the foot — so the numbers that were measured against
- * `pov-portrait.mp4` hold here. A different still would re-run §2's
- * measurement, not reuse this constant.
- */
-const HERO_SCRIM = [
-  [0, 0],
-  [0.55, 0.6],
-  [1, 0.88],
-] as const;
+/** Night scrim over the supplied login film; contrast proof samples this poster. */
+const HERO_SCRIM = [[0, 0.2], [0.55, 0.55], [1, 0.55]] as const;
 
 /** §4: the resend timer counts from arrival. */
 const RESEND_SECONDS = 60;
@@ -133,8 +123,8 @@ function ZaloMark({ label }: { label: string }) {
         style={{
           color: theme.color.actionInk,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.sm,
-          fontWeight: theme.fontWeight.bold,
+          ...theme.collector.type.caption,
+fontWeight: theme.fontWeight.bold,
         }}
       >
         Z
@@ -156,8 +146,8 @@ function ZaloHint() {
           flexShrink: 1,
           color: theme.color.mutedForeground,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.sm,
-          lineHeight: Math.round(theme.fontSize.sm * 1.4),
+          ...theme.collector.type.caption,
+
         }}
       >
         {tt('signIn.codeSent')}
@@ -174,9 +164,11 @@ export function SignIn({
   /** Back to the landing. Sign-in is not a route, so it cannot use the stack. */
   onBack?: () => void;
 }) {
+  const [heroVisible, setHeroVisible] = useState(true);
   const api = useApi();
   const tt = useT();
   const theme = useTheme();
+  const insets = useInsets();
   const [country, setCountry] = useState(VN);
   const [picking, setPicking] = useState(false);
   const [pickerFocused, setPickerFocused] = useState(false);
@@ -312,7 +304,7 @@ export function SignIn({
         // wall. The pill gives it a ground the film cannot change.
         ...(onDark
           ? {
-              backgroundColor: theme.color.action,
+              backgroundColor: theme.collector.nightSurface,
               borderRadius: theme.radius.pill,
               paddingHorizontal: theme.space[4],
             }
@@ -321,10 +313,10 @@ export function SignIn({
     >
       <Text
         style={{
-          color: onDark ? theme.color.actionInk : theme.color.foreground,
+          color: onDark ? theme.collector.glow : theme.color.foreground,
           fontFamily: face(theme),
-          fontSize: theme.fontSize.sm,
-          fontWeight: theme.fontWeight.medium,
+          ...theme.collector.type.caption,
+fontWeight: theme.fontWeight.medium,
         }}
       >
         ← {label}
@@ -347,7 +339,7 @@ export function SignIn({
           contentContainerStyle={{
             flexGrow: 1,
             padding: theme.space[5],
-            paddingTop: topInset(theme.space[6]) + theme.space[4],
+            paddingTop: insets.top + theme.space[4],
             gap: theme.space[5],
           }}
         >
@@ -358,8 +350,8 @@ export function SignIn({
             style={{
               color: theme.color.foreground,
               fontFamily: face(theme),
-              fontSize: theme.fontSize.xl,
-              lineHeight: Math.round(theme.fontSize.xl * 1.2),
+              ...theme.collector.type.h1,
+
               fontWeight: theme.fontWeight.display,
               letterSpacing: -0.5,
             }}
@@ -370,8 +362,8 @@ export function SignIn({
             style={{
               color: theme.color.mutedForeground,
               fontFamily: face(theme),
-              fontSize: theme.fontSize.base,
-              lineHeight: Math.round(theme.fontSize.base * 1.45),
+              ...theme.collector.type.body,
+
             }}
           >
             {tt('signIn.sentTo').replace('{phone}', number)}
@@ -405,8 +397,8 @@ export function SignIn({
                 style={{
                   color: theme.color.mutedForeground,
                   fontFamily: face(theme),
-                  fontSize: theme.fontSize.sm,
-                  lineHeight: Math.round(theme.fontSize.sm * 1.4),
+                  ...theme.collector.type.caption,
+
                 }}
               >
                 {tt('signIn.checking')}
@@ -417,8 +409,8 @@ export function SignIn({
                 style={{
                   color: theme.color.verdict.reject.fg,
                   fontFamily: face(theme),
-                  fontSize: theme.fontSize.sm,
-                  lineHeight: Math.round(theme.fontSize.sm * 1.4),
+                  ...theme.collector.type.caption,
+
                 }}
               >
                 {tt(problem)}
@@ -472,25 +464,16 @@ export function SignIn({
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1, backgroundColor: theme.color.background }}
     >
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, aspectRatio: 16 / 11 }}>
+        <Film source={loginFilm} poster={poster} label={tt('landing.videoLabel')} fade={theme.duration.base} active={heroVisible} />
+        <Scrim stops={HERO_SCRIM} />
+      </View>
       <ScrollView
+        onScroll={event => setHeroVisible(event.nativeEvent.contentOffset.y <= 0)} scrollEventThrottle={32}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ flexGrow: 1 }}
       >
-        {/*
-          The poster, not the film. §0.5 rule 1: this sheet scrolls when the
-          keyboard opens, so the screen gets the still — the film's own frame,
-          without the decoder. `aspectRatio` and never a width/height pair,
-          which is exactly how the previous build stretched things.
-        */}
         <View style={{ aspectRatio: 16 / 11 }}>
-          <Image
-            source={poster}
-            resizeMode="cover"
-            style={StyleSheet.absoluteFill}
-            accessibilityRole="image"
-            accessibilityLabel={tt('landing.videoLabel')}
-          />
-          <Scrim stops={HERO_SCRIM} />
           {/* The ratio is on the box, never on the `Image` — see §2's note. */}
           <View
             style={{
@@ -511,7 +494,7 @@ export function SignIn({
             />
           </View>
           {onBack === undefined ? null : (
-            <View style={{ position: 'absolute', top: topInset(theme.space[6]), left: theme.space[5] }}>
+            <View style={{ position: 'absolute', top: insets.top, left: theme.space[5] }}>
               {back(tt('common.back'), onBack, true)}
             </View>
           )}
@@ -538,8 +521,8 @@ export function SignIn({
             style={{
               color: theme.color.foreground,
               fontFamily: face(theme),
-              fontSize: theme.fontSize.xl,
-              lineHeight: Math.round(theme.fontSize.xl * 1.2),
+              ...theme.collector.type.h1,
+
               fontWeight: theme.fontWeight.display,
               letterSpacing: -0.5,
             }}
@@ -550,8 +533,8 @@ export function SignIn({
             style={{
               color: theme.color.mutedForeground,
               fontFamily: face(theme),
-              fontSize: theme.fontSize.base,
-              lineHeight: Math.round(theme.fontSize.base * 1.45),
+              ...theme.collector.type.body,
+
             }}
           >
             {tt('signIn.intro')}
@@ -569,8 +552,8 @@ export function SignIn({
               style={{
                 color: theme.color.mutedForeground,
                 fontFamily: face(theme),
-                fontSize: theme.fontSize.sm,
-              }}
+                ...theme.collector.type.caption,
+}}
             >
               {tt('signIn.phone')}
             </Text>
@@ -590,7 +573,7 @@ export function SignIn({
                   // already there, as on `Field`, so gaining focus never moves
                   // the row.
                   borderWidth: pickerFocused ? 2 : 1,
-                  borderColor: pickerFocused ? theme.color.lime[600] : theme.color.borderStrong,
+                  borderColor: pickerFocused ? theme.collector.plum : theme.color.borderStrong,
                   borderRadius: theme.radius.base,
                   paddingHorizontal: theme.space[3] - (pickerFocused ? 1 : 0),
                   backgroundColor: pressed ? theme.color.muted : theme.color.background,
@@ -600,8 +583,8 @@ export function SignIn({
                   style={{
                     color: theme.color.foreground,
                     fontFamily: face(theme),
-                    fontSize: theme.fontSize.base,
-                    fontWeight: theme.fontWeight.medium,
+                    ...theme.collector.type.body,
+fontWeight: theme.fontWeight.medium,
                   }}
                 >
                   {country.code} ▾
@@ -627,8 +610,8 @@ export function SignIn({
                 style={{
                   color: theme.color.mutedForeground,
                   fontFamily: face(theme),
-                  fontSize: theme.fontSize.sm,
-                  lineHeight: Math.round(theme.fontSize.sm * 1.4),
+                  ...theme.collector.type.caption,
+
                   paddingTop: theme.space[1],
                 }}
               >

@@ -2,55 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Image, Text, View } from 'react-native';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Button, Film, LegalLine, Scrim, face, topInset, useReducedMotion } from '../ui.tsx';
-import film from '../../assets/discover/pov-portrait.mp4';
-import poster from '../../assets/discover/pov-portrait.webp';
+import { Button, Film, LegalLine, Scrim, face, useInsets, useReducedMotion } from '../ui.tsx';
+import film from '../../assets/hero/login.mp4';
+import poster from '../../assets/hero/login-poster.jpg';
 import wordmark from '../../assets/discover/playerone-wordmark.png';
 
-/**
- * SPEC.md §2 — Welcome. The product in one screen, before anyone signs in.
- *
- * The file keeps its old name because `App.tsx` and the harness both reach for
- * it by that name and the screen is still the app's front door; the screen it
- * holds is new. What was here before was a ported desktop landing: eight
- * scroll sections, a collector wall, a likeness sheet. The owner rejected it
- * on the emulator ("nothing is responsive… text and images stretched… navbar
- * not needed on the landing"), and this is the replacement — one screen, one
- * decision, no navbar.
- *
- * **It does not scroll, and that is what buys it the film.** §0.5 rule 1: a
- * `VideoView` mounts only on a screen that does not scroll. The previous lane
- * measured a playing 720p film against a ten-second scroll at 38 % janky
- * frames where the same page without it was 4 %; decoding is the cost, and it
- * is only a cost while something else wants the frame budget. Nothing here
- * scrolls and nothing else is on screen, so this is the one place besides the
- * splash where the film is free. There is no second video in the app.
- *
- * **The scrim does the reading, not a faded film.** The film plays at full
- * opacity under §2's measured three-stop scrim. Measured rather than chosen:
- * the drafted .35/.82 put the headline band at 3.02:1 and failed AA; the
- * shipped .60/.88 reads 5.24:1 at the same probe, with the worst frame at 8 s
- * where the camera pans onto a sunlit wall. A new film re-runs that
- * measurement — see `Scrim` in `ui.tsx`.
- *
- * **When the film fails, the poster is the screen.** One state, not three:
- * reduced motion, a decode error and §1's expired 400 ms first-frame gate all
- * land on `pov-portrait.webp` in the same box under the same scrim. `Film`
- * holds that rule so this screen does not have to branch.
- *
- * **No account is created here.** `landing.register` opens the support-desk
- * explanation, because that is where accounts are opened (`landing.registerNote`);
- * it is not a form and there is no third path.
- */
-
-/**
- * §2's measured stops: transparent, .60 at 55 %, .88 at the foot.
- *
- * They live beside the screen that owns the film rather than inside `Scrim`,
- * because they are a property of `pov-portrait.mp4` and not of the component.
- */
+/** Non-scrolling welcome: one decoder, poster beneath it, scrim over both. */
 const SCRIM_STOPS = [
-  [0, 0],
+  [0, 0.35],
   [0.55, 0.6],
   [1, 0.88],
 ] as const;
@@ -103,6 +62,7 @@ function Rise({ step, children }: { step: number; children: React.ReactNode }) {
 
 export function Landing({ onSignIn }: { onSignIn: () => void }) {
   const theme = useTheme();
+  const insets = useInsets();
   const tt = useT();
   /** The support-desk explanation, which is what `landing.register` opens. */
   const [explaining, setExplaining] = useState(false);
@@ -127,7 +87,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
           padding: theme.space[5],
         }}
       >
-        <View style={{ alignItems: 'center', paddingTop: topInset(theme.space[6]) + theme.space[4], gap: theme.space[3] }}>
+        <View style={{ alignItems: 'center', paddingTop: insets.top + theme.space[4], gap: theme.space[3] }}>
           {/*
             The ratio lives on a wrapper `View` and the `Image` fills it.
             §0.4's rule is "every image lives in an `aspectRatio` box", and on
@@ -182,7 +142,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
                 fontSize: theme.fontSize['2xl'],
                 // 1.18, absolute. A bare multiplier is a rejected diff and a
                 // ratio near 1.05 clips Vietnamese tone marks outright (§0.3).
-                lineHeight: Math.round(theme.fontSize['2xl'] * 1.18),
+                lineHeight: Math.ceil(theme.fontSize['2xl'] * 1.3),
                 fontWeight: theme.fontWeight.display,
                 letterSpacing: -0.5,
               }}

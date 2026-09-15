@@ -1,6 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { ambient, bamboo, dark, darkBrandTints, discover, glass, lavender, light, lime, ring, stage, sun, tech, toCss, truc, verdict } from '../src/tokens.ts';
 import { nativeTheme } from '../src/native.ts';
+import { collector } from '../src/tokens.ts';
+
+describe('collector v3', () => {
+  it('keeps content, actions and semantic captions readable', () => {
+    for (const ground of [collector.paper, collector.surface]) {
+      for (const ink of [collector.ink, collector.muted, collector.plum, collector.greenInk, collector.amberInk, collector.redInk, collector.techInk]) {
+        atLeast(TEXT_AA, ink, ground, 'collector content');
+      }
+    }
+    for (const ground of [collector.night, collector.nightSurface]) {
+      atLeast(TEXT_AA, collector.paper, ground, 'night content');
+      atLeast(TEXT_AA, collector.glow, ground, 'night secondary action');
+    }
+    for (const fill of [collector.sun, collector.green]) atLeast(TEXT_AA, collector.night, fill, 'filled action');
+    atLeast(TEXT_AA, collector.surface, collector.red, 'destructive action');
+    for (const [ink, fill] of [[collector.greenInk, collector.greenBg], [collector.amberInk, collector.amberBg], [collector.redInk, collector.redBg]]) {
+      atLeast(TEXT_AA, ink!, fill!, 'semantic caption');
+    }
+  });
+  it('exports the same collector tokens to native and preserves diacritic line height', () => {
+    expect(nativeTheme('light').collector).toEqual(collector);
+    for (const style of Object.values(collector.type)) expect(style.lineHeight / style.fontSize).toBeGreaterThanOrEqual(1.3);
+  });
+});
 
 /**
  * The contrast the tokens are allowed to have, measured rather than commented.

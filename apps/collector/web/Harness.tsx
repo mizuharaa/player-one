@@ -1,9 +1,18 @@
-import { useEffect, type ReactNode } from 'react';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
+import { Onboarding } from '../src/screens/Onboarding.tsx';
+import { Notifications } from '../src/screens/Notifications.tsx';
+import { NOTIFICATION_PREVIEW } from './notification-preview.ts';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { App } from '../src/App.tsx';
+import { App, SCREENS } from '../src/App.tsx';
 import { LOCALES, type Locale as LocaleName } from '../src/i18n.ts';
 import { LocaleProvider, useLocale } from '../src/locale.tsx';
-import { NavProvider } from '../src/nav.tsx';
+import { NavProvider, useNav, type Route, type RouteName } from '../src/nav.tsx';
+import { GuideProvider } from '../src/guide/Guide.tsx';
+import { ToastProvider } from '../src/ui/Toast.tsx';
+import { TabBar } from '../src/shell/TabBar.tsx';
+import { View } from 'react-native';
+import { AGREEMENTS } from '../src/api/types.ts';
 import { ThemeProvider } from '../src/theme.tsx';
 import { Landing } from '../src/screens/Landing.tsx';
 import { SignIn } from '../src/screens/SignIn.tsx';
@@ -41,37 +50,71 @@ function Locale({ lang, children }: { lang: LocaleName; children: ReactNode }) {
 }
 
 /** One instance, so the two pre-session screens share the seam the app uses. */
+// Phone-shaped browser proof only; native uses the live SafeAreaProvider.
+const PREVIEW_INSETS = { top: 59, bottom: 34, left: 0, right: 0 }; // the demo handset is an iPhone with a Dynamic Island and home indicator
 const api = new MockCollectorApi();
 /** `SignIn` sends its two requests through react-query, exactly as in `App`. */
 const queryClient = new QueryClient();
+
+function RoutedScreen() {
+  const nav = useNav();
+  const Screen = SCREENS[nav.route.name];
+  const preview = nav.route.name === 'notifications' && new URLSearchParams(window.location.search).get('simulation') === '1';
+  return <View style={{ flex: 1 }}>{preview ? <Notifications previewItems={NOTIFICATION_PREVIEW} /> : <Screen />}{nav.isTabRoot ? <TabBar /> : null}</View>;
+}
 
 export function Harness() {
   const params = new URLSearchParams(window.location.search);
   const screen = params.get('screen');
   const asked = params.get('lang');
+  const readyRequested = params.get('ready') === '1';
+  const [ready, setReady] = useState(!readyRequested);
+  const seeding = useRef(false);
+  useEffect(() => {
+    if (!readyRequested || seeding.current) return;
+    seeding.current = true;
+    // Browser-only fixture setup uses the same mock API gates as the tests.
+    void (async () => {
+      await api.register('Demo Collector', '0903000001');
+      await api.acceptAgreements(AGREEMENTS.map(({ id, version }) => ({ agreementId: id, version })));
+      await api.completeTraining();
+      await api.submitExam([true, true, true]);
+      const task = (await api.tasks()).find(task => task.claimable);
+      if (task) await api.claimTask(task.id);
+      if (!(await api.boundDevices()).some(device => device.serial === 'EGO-DEMO')) await api.bindDevice('EGO-DEMO');
+      setReady(true);
+    })();
+  }, [readyRequested]);
   const lang: LocaleName = (LOCALES as readonly string[]).includes(asked ?? '')
     ? (asked as LocaleName)
-    : 'vi';
+    : 'en';
 
-  if (screen === null) return <App />;
+  if (screen === null) return <SafeAreaInsetsContext.Provider value={PREVIEW_INSETS}><App /></SafeAreaInsetsContext.Provider>;
+  if (!ready) return null;
+  const routed = Object.hasOwn(SCREENS, screen);
+  const initial: Route = screen === 'taskDetail' ? { name: 'taskDetail', taskId: params.get('taskId') ?? 'task-cook' }
+    : screen === 'groupThread' ? { name: 'groupThread', groupId: params.get('groupId') ?? '' }
+    : { name: (routed ? screen : 'register') as Exclude<RouteName, 'taskDetail' | 'groupThread'> };
 
   return (
+    <SafeAreaInsetsContext.Provider value={PREVIEW_INSETS}>
     <ThemeProvider>
       <LocaleProvider>
         <Locale lang={lang}>
           <ApiProvider value={api}>
             <QueryClientProvider client={queryClient}>
-              <NavProvider initial={{ name: 'register' }}>
-                {screen === 'signin' ? (
+              <ToastProvider><NavProvider initial={initial}>
+                {screen === 'onboarding' ? <GuideProvider><Onboarding onDone={() => {}} /></GuideProvider> : routed ? <GuideProvider><RoutedScreen /></GuideProvider> : screen === 'signin' ? (
                   <SignIn onSignedIn={() => {}} onBack={() => {}} />
                 ) : (
                   <Landing onSignIn={() => {}} />
                 )}
-              </NavProvider>
+              </NavProvider></ToastProvider>
             </QueryClientProvider>
           </ApiProvider>
         </Locale>
       </LocaleProvider>
     </ThemeProvider>
+    </SafeAreaInsetsContext.Provider>
   );
 }

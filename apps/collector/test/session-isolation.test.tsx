@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import * as SecureStore from 'expo-secure-store';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
@@ -16,6 +17,8 @@ import { useSignOut } from '../src/session.tsx';
 // reaches. `react-native-web` is already a devDependency of this app and is a
 // complete DOM implementation of the same surface; use it rather than growing
 // a shim one missing export at a time.
+vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
+vi.mock('expo-linear-gradient', () => ({ LinearGradient: () => null }));
 vi.mock('react-native', async () => ({ ...await import('react-native-web') }));
 /**
  * `expo-video` reaches `expo-modules-core`, which asks the native runtime for
@@ -31,6 +34,16 @@ vi.mock('../src/api/token-store.ts', () => ({ secureTokenStore: {} }));
 // and `expo-modules-core` wants a React Native `__DEV__` the moment it loads. Same
 // treatment as the keystore above: the shell mounts, the picker is never called.
 vi.mock('expo-file-system', () => ({ Directory: class {}, File: class {}, FileMode: {}, UploadType: {}, Paths: {} }));
+// The v3 Explore screen's task cards are `expo-image`, and Profile's avatar is
+// `react-native-svg`. Both reach `expo-modules-core` at module load and want
+// the same `__DEV__` as the file system above, and `App.tsx` imports both
+// screens through `SCREENS` — so the shell cannot mount without them. Nothing
+// in this file looks at a photograph.
+vi.mock('expo-image', () => ({ Image: () => null }));
+vi.mock('react-native-svg', () => {
+  const Stub = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
+  return { default: Stub, Svg: Stub, Circle: Stub, Rect: Stub, Path: Stub, Line: Stub, G: Stub };
+});
 // Only the two primitives this test reads are replaced; the rest of `ui.tsx`
 // stays real, because the shell now renders the tab bar and the guide through it.
 vi.mock('../src/ui.tsx', async (original) => ({
@@ -107,7 +120,7 @@ it('switches clients and private caches, rejects late data and ignores the old u
   const dispose = vi.spyOn(first, 'dispose');
   const callbacks: (() => void)[] = [];
   const clients = [first, second];
-  await act(async () => root.render(<LocaleProvider><CollectorSession factory={(callback) => {
+  await act(async () => root.render(<LocaleProvider initialLocale="vi"><CollectorSession factory={(callback) => {
     callbacks.push(callback);
     return clients[callbacks.length - 1]!;
   }} /></LocaleProvider>));
@@ -132,7 +145,7 @@ it('switches clients and private caches, rejects late data and ignores the old u
 it('keeps private screens hidden and asks to retry when local sign-out fails', async () => {
   const first = await user('First collector');
   const clear = vi.spyOn(first, 'signOut').mockRejectedValueOnce(new Error('keystore'));
-  await act(async () => root.render(<LocaleProvider><CollectorSession factory={() => first} /></LocaleProvider>));
+  await act(async () => root.render(<LocaleProvider initialLocale="vi"><CollectorSession factory={() => first} /></LocaleProvider>));
   await settle(() => expect(host.textContent).toContain('First collector'));
   await tap(MESSAGES.vi['signIn.signOut']);
   await settle(() => expect(host.textContent).toContain(MESSAGES.vi['signIn.clearFailed']));
@@ -146,9 +159,38 @@ it('keeps private screens hidden and asks to retry when local sign-out fails', a
 it('offers retry instead of registration after a failed restoration', async () => {
   const api = await user('Restored collector');
   vi.spyOn(api, 'restoreSession').mockRejectedValueOnce(new Error('offline'));
-  await act(async () => root.render(<LocaleProvider><CollectorSession factory={() => api} /></LocaleProvider>));
+  await act(async () => root.render(<LocaleProvider initialLocale="vi"><CollectorSession factory={() => api} /></LocaleProvider>));
   await settle(() => expect(host.textContent).toContain(MESSAGES.vi['common.loadFailed']));
   expect(host.textContent).not.toContain('Private:');
   await tap(MESSAGES.vi['common.retry']);
   await settle(() => expect(host.textContent).toContain('Restored collector'));
+});
+
+// Native inset measurements are supplied by the device, not jsdom.
+vi.mock('react-native-safe-area-context', async () => ({
+  initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null),
+}));
+
+vi.mock('../src/ui/HeaderGradient.tsx', () => ({ HeaderGradient: ({ children }: { children: import('react').ReactNode }) => children }));
+
+
+vi.mock('react-native-svg', () => {
+  const Stub = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
+  return { default: Stub, Svg: Stub, Circle: Stub, Rect: Stub, Path: Stub, Line: Stub, G: Stub };
+});
+
+vi.mock('../src/guide/seen.ts', () => ({ guideOffered: { get: async () => true, set: async () => {} } }));
+
+it('keeps the account hidden when preference deletion fails and retries the original account key', async () => {
+  const first = await user('First collector');
+  const id = (await first.profile())!.id;
+  const remove = vi.spyOn(SecureStore, 'deleteItemAsync').mockRejectedValueOnce(new Error('keystore unavailable'));
+  await act(async () => root.render(<LocaleProvider initialLocale="vi"><CollectorSession factory={() => first} /></LocaleProvider>));
+  await settle(() => expect(host.textContent).toContain('First collector'));
+  await tap(MESSAGES.vi['signIn.signOut']);
+  await settle(() => expect(host.textContent).toContain(MESSAGES.vi['signIn.clearFailed']));
+  expect(host.textContent).not.toContain('First collector');
+  await tap(MESSAGES.vi['common.retry']);
+  await settle(() => expect(host.textContent).toContain('Sign in test'));
+  expect(remove.mock.calls.filter(([key]) => key === `playerone.collector.prefs.${id}`)).toHaveLength(2);
 });

@@ -74,7 +74,7 @@ async function mount(screen: 'agreements' | 'exam', locale: Locale = 'vi') {
     get: async () => 'collector-token', set: async () => {}, clear: async () => {},
   }, () => {}, fetchFn);
   await act(async () => root.render(
-    <QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider>
+    <QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="vi">
       <LocaleControl />{screen === 'agreements' ? <Agreements /> : <Exam />}
     </LocaleProvider></ApiProvider></QueryClientProvider>,
   ));

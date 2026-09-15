@@ -43,6 +43,7 @@ interface Step {
 }
 
 const STEPS: Record<TabName, Step[]> = {
+  profile: [],
   /**
    * SPEC §9's four steps, in this order. Step 1's target is the WHOLE earnings
    * card and not the figure inside it: a hole around the figure alone
@@ -252,7 +253,7 @@ function GuideOverlay({
                  to — and not the light page's `lime[600]`, which is a dark
                  green against a dimmed screen. It was `sun[500]`, the partner
                  mark. */
-              borderColor: theme.color.lime[500],
+              borderColor: theme.collector.glow,
             }}
           />
         </>
