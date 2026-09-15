@@ -21,7 +21,7 @@ import {
   pickSessionDirectory,
   type PickedSession,
 } from '../upload/delivery-native.ts';
-import { dong, shortId } from '../money.ts';
+import { dong, gb, shortId } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
 
 
@@ -112,8 +112,6 @@ const deliveryMarks: Partial<Record<DeliveryState, string>> = {
   held: '✕',
   failed: '✕',
 };
-
-const gb = (bytes: number): string => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 
 /**
  * The server's reason, in the collector's language when this app has a sentence
@@ -240,6 +238,15 @@ export function Uploads() {
   const outcome = deliver.data ?? null;
   const running = deliver.isPending;
   const resumable = held.data ?? null;
+  /**
+   * How many bytes the picked session directory holds, which is what a
+   * confirmed delivery is about to send.
+   *
+   * A byte count, not money: it is summed here, from the inventory the picker
+   * already reported, and `money.ts` only formats it. Nothing about a payment
+   * is derived from a size anywhere in this app.
+   */
+  const totalBytes = (picked?.files ?? []).reduce((sum, file) => sum + file.bytes, 0);
 
   /**
    * SPEC §13 asks for a section list, one section per `CollectionSession`.
@@ -332,11 +339,28 @@ export function Uploads() {
           {!sessions.isPending && !sessions.isError && sessions.data?.length === 0 ? <Note text={tt('uploads.noSessions')} /> : null}
         </> : <>
           <Body>{tt('uploads.confirmBody')}</Body>
+          {/*
+            * What this delivery is about to send, before the collector confirms
+            * it. The picker already reported every file's `bytes`, so the total
+            * is a sum over the inventory this screen is holding — nothing is
+            * asked of the server and nothing new is kept in the delivery state
+            * machine, which still starts at `registered`.
+            *
+            * The connection line is static on purpose. React Native core has no
+            * NetInfo, `expo-network` is not installed and adding a native module
+            * means another APK rebuild for a sentence, so this app cannot tell
+            * Wi-Fi from mobile data. Rather than guess, it names the size and
+            * recommends Wi-Fi, and the collector — who knows what they are on —
+            * decides. APP-28's real second confirmation needs the connection
+            * type and is still not built.
+            */}
           <Card><Row label={tt('uploads.directory')} value={picked?.sessionBasename ?? ''} />
             <Row label={tt('uploads.files')} value={String(picked?.files.length ?? 0)} />
+            <Row label={tt('prechecks.totalSize')} value={gb(totalBytes)} />
             <Button label={tt('common.change')} variant="ghost" onPress={() => setDeliveryStage(0)} /></Card>
           <Card><Row label={tt('uploads.session')} value={sessionId ?? ''} />
             <Button label={tt('common.change')} variant="ghost" onPress={() => setDeliveryStage(1)} /></Card>
+          <Note text={tt('prechecks.connection').replace('{size}', gb(totalBytes))} />
         </>}
       </Screen>
     </Modal>

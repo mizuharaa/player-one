@@ -105,3 +105,48 @@ it('shows card handover guidance without starting a phone delivery', async () =>
     expect(runDelivery).not.toHaveBeenCalled();
   } finally { await act(async () => root.unmount()); client.clear(); host.remove(); }
 });
+
+/**
+ * The confirm step's own precheck: the collector reads what is about to leave
+ * the phone before they confirm it.
+ *
+ * The total is summed from the picker's own inventory, so this asserts on
+ * arithmetic over three real file sizes and not on a figure any one of them
+ * carries. The connection sentence is static and carries that same total,
+ * because this app cannot tell Wi-Fi from mobile data — see the screen.
+ */
+it('prints the session total size and the connection sentence before the delivery is confirmed', async () => {
+  const api = new MockCollectorApi();
+  vi.spyOn(api, 'sessions').mockResolvedValue([{ id: 'session-a', collectorId: 'collector-a', taskId: 'task-a', deviceSerial: 'EGO', scenario: 'home', othersInFrame: false, sensitiveInfo: false, createdAt: '2026-09-14T12:00:00Z' }]);
+  vi.mocked(nativeDeliveryStore.get).mockResolvedValue(null);
+  vi.mocked(pickSessionDirectory).mockResolvedValue({
+    directoryUri: 'content://session', sessionBasename: 'ego_A_20260914_120000',
+    // 2.5 + 1 + 0.75 = 4.25 GiB, which prints as 4.3 GB. No single file does.
+    files: [
+      { relativePath: 'left.mp4', uri: 'content://session/left.mp4', bytes: 2.5 * 1024 ** 3 },
+      { relativePath: 'right.mp4', uri: 'content://session/right.mp4', bytes: 1024 ** 3 },
+      { relativePath: 'imu.bin', uri: 'content://session/imu.bin', bytes: 0.75 * 1024 ** 3 },
+    ],
+  });
+  vi.mocked(runDelivery).mockImplementation(() => new Promise(() => {}));
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const button = (label: string) => Array.from(host.querySelectorAll('button')).find(b => b.textContent === label)!;
+  const tap = async (label: string) => { await act(async () => button(label).click()); };
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="en"><NavProvider initial={{ name: 'uploads', openDelivery: true }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await tap(MESSAGES.en['uploads.byPhone']);
+    await tap(MESSAGES.en['common.next']);
+    await vi.waitFor(() => expect(button(MESSAGES.en['uploads.pick']).disabled).toBe(false));
+    await tap(MESSAGES.en['uploads.pick']);
+    await vi.waitFor(() => expect(button(MESSAGES.en['common.next'])).toBeDefined());
+    await tap(`${MESSAGES.en['scenario.home']} · 2026-09-14`);
+    await tap(MESSAGES.en['common.next']);
+    expect(host.textContent).toContain(`${MESSAGES.en['uploads.files']}: 3`);
+    expect(host.textContent).toContain(`${MESSAGES.en['prechecks.totalSize']}: 4.3 GB`);
+    expect(host.textContent).toContain(MESSAGES.en['prechecks.connection'].replace('{size}', '4.3 GB'));
+    // Reading the size is not confirming it: the delivery still waits for Start.
+    expect(runDelivery).not.toHaveBeenCalled();
+  } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); }
+});

@@ -629,6 +629,11 @@ const vi = {
   'prechecks.lowBattery': 'Pin điện thoại yếu. Bạn sạc trước khi ra ngoài, lát nữa còn dùng để tải dữ liệu lên.',
   'prechecks.lowPower': 'Đang bật tiết kiệm pin. Chạy nền có thể bị ngắt khi tải lên.',
   'prechecks.lowSpace': 'Điện thoại gần hết bộ nhớ. Bạn xóa bớt cho trống rồi hãy ghi hình.',
+  // The delivery confirm step. `{size}` is substituted at the call site, the
+  // same way `{s}` and `{amount}` are above. The sentence recommends and never
+  // promises: this app cannot tell Wi-Fi from mobile data.
+  'prechecks.totalSize': 'Dung lượng',
+  'prechecks.connection': 'App tải lên bằng mạng bạn đang dùng. Với {size} thì nên dùng Wi-Fi.',
 };
 
 export type MessageKey = keyof typeof vi;
@@ -1194,6 +1199,8 @@ const en: Record<MessageKey, string> = {
   'prechecks.lowBattery': 'Your phone battery is low. Charge it before you go out; you need the phone to upload later.',
   'prechecks.lowPower': 'Battery saver is on. An upload running in the background can be cut short.',
   'prechecks.lowSpace': 'Your phone is nearly full. Free up space before you record.',
+  'prechecks.totalSize': 'Total size',
+  'prechecks.connection': 'Uploads use the connection you are on. Wi-Fi is recommended for {size}.',
 };
 
 /**
@@ -1744,6 +1751,8 @@ const zh: Record<MessageKey, string> = {
   'prechecks.lowBattery': '手机电量偏低。出门前先充电，稍后上传还要用手机。',
   'prechecks.lowPower': '已开启省电模式。后台上传可能被中断。',
   'prechecks.lowSpace': '手机存储快满了。录制前先清出空间。',
+  'prechecks.totalSize': '总大小',
+  'prechecks.connection': '上传会使用当前的网络。{size} 建议用 Wi-Fi。',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en, zh };
