@@ -99,7 +99,7 @@ export function Profile() {
             />
             {pending === row.key ? (
               <View style={{ paddingVertical: theme.space[2] }}>
-                <Note text={tt('profile.notInBuild')} />
+                <Note text={tt('profile.helpSub')} />
               </View>
             ) : null}
           </View>
@@ -143,12 +143,12 @@ export function Profile() {
         ])}
         {group('profile.settings', [
           { key: 'profile.language', value: LOCALE_NAME[locale], onPress: () => setSheet('language') },
-          { key: 'profile.notifications', sub: 'profile.notificationsSub', onPress: notYet('profile.notifications') },
+          { key: 'profile.notifications', sub: 'profile.notificationsSub', onPress: () => nav.push({ name: 'notifications' }) },
         ])}
         {group('profile.actions', [
           { key: 'agreements.title', sub: 'profile.agreementsSub', onPress: () => nav.push({ name: 'agreements' }) },
-          { key: 'profile.about', sub: 'profile.aboutSub', onPress: notYet('profile.about') },
-          { key: 'profile.privacy', sub: 'profile.privacySub', onPress: notYet('profile.privacy') },
+          { key: 'profile.about', sub: 'profile.aboutSub', onPress: () => nav.push({ name: 'about' }) },
+          { key: 'profile.privacy', sub: 'profile.privacySub', onPress: () => nav.push({ name: 'privacy' }) },
           { key: 'profile.help', sub: 'profile.helpSub', onPress: notYet('profile.help') },
         ])}
 

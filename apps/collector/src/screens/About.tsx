@@ -1,3 +1,4 @@
+import { useNav } from '../nav.tsx';
 import { Image, Platform, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useT } from '../locale.tsx';
@@ -20,7 +21,9 @@ import app from '../../app.json';
  * the data notice has no screen and no route, so the row says so through the
  * caller's handler rather than pretending to open something.
  */
-export function About({ onPrivacy }: { onPrivacy?: () => void }) {
+export function About({ onPrivacy }: { onPrivacy?: () => void } = {}) {
+  const nav = useNav();
+  const openDocument = onPrivacy ?? (() => nav.push({ name: 'privacy' }));
   const tt = useT();
   const theme = useTheme();
   const c = theme.collector;
@@ -83,7 +86,7 @@ export function About({ onPrivacy }: { onPrivacy?: () => void }) {
           exists as a name and has no screen, so it is not a row here: a
           chevron that opens nothing is worse than no row. */}
       <View style={{ marginTop: theme.space[2] }}>
-        <NavRow label={tt('legal.privacy')} subtitle={tt('profile.privacySub')} onPress={onPrivacy ?? (() => {})} />
+        <NavRow label={tt('legal.privacy')} subtitle={tt('profile.privacySub')} onPress={openDocument} />
       </View>
 
       {/* The version, and which platform's build it is.

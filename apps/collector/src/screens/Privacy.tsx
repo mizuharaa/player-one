@@ -1,9 +1,10 @@
+import { useNav } from '../nav.tsx';
 import { useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { AGREEMENTS } from '../api/types.ts';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Card, Note, Row, bottomInset, face, topInset, useTabBarReserve } from '../ui.tsx';
+import { Body, Button, Card, Note, Row, bottomInset, face, topInset, useTabBarReserve, useReducedMotion } from '../ui.tsx';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -28,7 +29,10 @@ import type { MessageKey } from '../i18n.ts';
 /** The two APP-17b declarations, which are the whole of what a collector declares. */
 const DECLARATIONS: readonly MessageKey[] = ['session.othersTitle', 'session.sensitiveTitle'];
 
-export function Privacy({ onAgreements }: { onAgreements?: () => void }) {
+export function Privacy({ onAgreements }: { onAgreements?: () => void } = {}) {
+  const reduced = useReducedMotion();
+  const nav = useNav();
+  const openDocument = onAgreements ?? (() => nav.push({ name: 'agreements' }));
   const tt = useT();
   const theme = useTheme();
   const c = theme.collector;
@@ -83,7 +87,7 @@ export function Privacy({ onAgreements }: { onAgreements?: () => void }) {
             key={id}
             accessibilityRole="link"
             accessibilityLabel={label}
-            onPress={() => scroll.current?.scrollTo({ y: Math.max(0, (tops.current[id] ?? 0) - theme.space[4]), animated: true })}
+            onPress={() => scroll.current?.scrollTo({ y: Math.max(0, (tops.current[id] ?? 0) - theme.space[4]), animated: !reduced })}
             style={({ pressed }) => ({ minHeight: theme.space[12], justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}
           >
             <Text style={{ ...c.type.body, color: c.plum, fontFamily: face(theme), fontWeight: theme.fontWeight.medium }}>
@@ -110,9 +114,9 @@ export function Privacy({ onAgreements }: { onAgreements?: () => void }) {
             />
           ))}
         </Card>
-        {onAgreements === undefined ? null : (
-          <Button label={tt('agreements.title')} variant="secondary" onPress={onAgreements} />
-        )}
+        {
+          <Button label={tt('agreements.title')} variant="secondary" onPress={openDocument} />
+        }
       </View>
 
       {/* APP-17b, and nothing beyond it. */}

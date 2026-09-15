@@ -27,6 +27,9 @@ export type Route =
   | { name: 'uploads'; openDelivery?: boolean }
   | { name: 'income' }
   | { name: 'profile' }
+  | { name: 'notifications' }
+  | { name: 'about' }
+  | { name: 'privacy' }
   | { name: 'forum' }
   | { name: 'groupChats' }
   | { name: 'groupThread'; groupId: string };

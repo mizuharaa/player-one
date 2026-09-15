@@ -24,6 +24,9 @@ import { GroupChats, GroupThread } from './screens/Groups.tsx';
 import { Home } from './screens/Home.tsx';
 import { Income } from './screens/Income.tsx';
 import { Onboarding } from './screens/Onboarding.tsx';
+import { Notifications } from './screens/Notifications.tsx';
+import { About } from './screens/About.tsx';
+import { Privacy } from './screens/Privacy.tsx';
 import { Profile } from './screens/Profile.tsx';
 import { MyTasks } from './screens/MyTasks.tsx';
 import { Provisioning } from './screens/Provisioning.tsx';
@@ -54,6 +57,9 @@ export const SCREENS: Record<RouteName, ComponentType> = {
   exam: Exam,
   home: Home,
   profile: Profile,
+  notifications: Notifications,
+  about: About,
+  privacy: Privacy,
   taskHall: TaskHall,
   taskDetail: TaskDetail,
   myTasks: MyTasks,

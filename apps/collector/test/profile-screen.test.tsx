@@ -7,7 +7,7 @@ import { ApiProvider } from '../src/api/context.tsx';
 import { MockCollectorApi } from '../src/api/mock.ts';
 import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
 import { LocaleProvider } from '../src/locale.tsx';
-import { NavProvider } from '../src/nav.tsx';
+import { NavProvider, useNav } from '../src/nav.tsx';
 import { SignOutProvider } from '../src/session.tsx';
 import { ThemeProvider } from '../src/theme.tsx';
 
@@ -74,6 +74,8 @@ const named = (name: string): HTMLElement | undefined =>
 const rowNamed = (title: string): HTMLElement | undefined =>
   controls().find((node) => (node.getAttribute('aria-label') ?? '').startsWith(title));
 
+function RouteProbe() { return <output data-route>{useNav().route.name}</output>; }
+
 async function mount() {
   await act(async () =>
     root.render(
@@ -83,7 +85,7 @@ async function mount() {
             <QueryClientProvider client={client}>
               <SignOutProvider signOut={signOut}>
                 <NavProvider initial={{ name: 'home' }}>
-                  <Profile />
+                  <Profile /><RouteProbe />
                 </NavProvider>
               </SignOutProvider>
             </QueryClientProvider>
@@ -128,7 +130,7 @@ it('never signs out on the first tap', async () => {
   expect(signOut).toHaveBeenCalledTimes(1);
 });
 
-it('lists the seven rows the owner asked for, and answers the ones with no screen', async () => {
+it('lists the account rows and opens each available information screen', async () => {
   await mount();
 
   for (const key of [
@@ -146,19 +148,12 @@ it('lists the seven rows the owner asked for, and answers the ones with no scree
 
   // A Tier B row has no route. It answers in words rather than doing nothing,
   // and the sentence names the desk.
-  expect(page()).not.toContain(m['profile.notInBuild']);
-  await act(async () => rowNamed(m['profile.about'])!.click());
-  expect(page()).toContain(m['profile.notInBuild']);
+  for (const route of ['about', 'privacy', 'notifications'] as const) {
+    await act(async () => rowNamed(m[`profile.${route}`])!.click());
+    expect(host.querySelector('[data-route]')?.textContent).toBe(route);
+    expect(page()).not.toContain(m['profile.notInBuild']);
+  }
 
-  // And the answer sits inside the group that caused it, immediately after the
-  // row that was tapped — not at the top of the screen.
-  const rows = [...document.body.querySelectorAll<HTMLElement>('[role="button"]')];
-  const about = rows.findIndex((node) => (node.getAttribute('aria-label') ?? '').startsWith(m['profile.about']));
-  const privacy = rows.findIndex((node) => (node.getAttribute('aria-label') ?? '').startsWith(m['profile.privacy']));
-  const note = document.body.querySelector<HTMLElement>('[aria-live="polite"]');
-  expect(note).not.toBeNull();
-  expect(rows[about]!.compareDocumentPosition(note!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(note!.compareDocumentPosition(rows[privacy]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 it('names the build on the version line', async () => {

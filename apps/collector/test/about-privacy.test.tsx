@@ -154,3 +154,6 @@ it('Privacy acknowledges the helpful answer without implying a ticket', async ()
   expect(page()).toContain(m['privacy.thanks']);
   expect(named(m['privacy.yes'])).toBeUndefined();
 });
+
+vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
+vi.mock('react-native-safe-area-context', async () => ({ initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null) }));

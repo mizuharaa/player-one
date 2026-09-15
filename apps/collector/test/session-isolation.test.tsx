@@ -193,3 +193,5 @@ it('keeps the account hidden when preference deletion fails and retries the orig
   await settle(() => expect(host.textContent).toContain('Sign in test'));
   expect(remove.mock.calls.filter(([key]) => key === `playerone.collector.prefs.${id}`)).toHaveLength(2);
 });
+
+vi.mock('expo-linear-gradient', () => ({ LinearGradient: () => null }));
