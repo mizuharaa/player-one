@@ -6,8 +6,9 @@ import { View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MockCollectorApi } from './api/mock.ts';
 import { HttpCollectorApi } from './api/http.ts';
-import { API_BASE_URL, USE_MOCK_API } from './api/config.ts';
-import { secureTokenStore } from './api/token-store.ts';
+import { USE_MOCK_API } from './api/config.ts';
+import { getApiOrigin, loadApiOrigin } from './api/origin.ts';
+import { secureOriginStore, secureTokenStore } from './api/token-store.ts';
 import { type CollectorApi, type CollectorProfile } from './api/types.ts';
 import { ApiProvider } from './api/context.tsx';
 import { LocaleProvider } from './locale.tsx';
@@ -168,30 +169,74 @@ function Restoring() {
 type ApiFactory = (onUnauthorized: () => void) => CollectorApi;
 const createApi: ApiFactory = (onUnauthorized) => USE_MOCK_API
   ? new MockCollectorApi()
-  : new HttpCollectorApi(API_BASE_URL, secureTokenStore, onUnauthorized);
+  : new HttpCollectorApi(getApiOrigin(), secureTokenStore, onUnauthorized);
 
-/** A new client, cache and navigation stack for every signed-in identity. */
+/**
+ * A new client, cache and navigation stack for every signed-in identity.
+ *
+ * Two things are read before the first client exists, and both are keystore
+ * reads on the same boot the token is read on:
+ *
+ * `loadApiOrigin` is awaited here rather than inside `Session`, because
+ * `createApi` bakes `getApiOrigin()` into the client it builds — a client
+ * built before the override was read would talk to the build's default for
+ * the whole session. The wait is one keystore read behind the splash overlay,
+ * which is already on screen, and `Restoring` is the gate the boot already
+ * uses.
+ *
+ * `door` is which door the next session opens on. A cold start and a server
+ * change both open on the landing — a server change IS a cold start, as far as
+ * what this phone knows is concerned — and a sign-out opens on the form,
+ * because whoever just signed out has seen the product story and is handing
+ * the phone to the next collector.
+ */
 export function CollectorSession({ factory = createApi }: { factory?: ApiFactory }) {
   const [epoch, setEpoch] = useState(0);
-  return <Session key={epoch} factory={factory} restore={epoch === 0} onExited={() => setEpoch((n) => n + 1)} />;
+  const [door, setDoor] = useState(true);
+  const [booted, setBooted] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const done = () => { if (alive) setBooted(true); };
+    // A keystore that cannot be read leaves the build's own origin in place;
+    // it must not stop the app from starting.
+    void loadApiOrigin(secureOriginStore).then(done, done);
+    return () => { alive = false; };
+  }, []);
+  if (!booted) return <Restoring />;
+  return (
+    <Session
+      key={epoch}
+      factory={factory}
+      restore={door}
+      onExited={(landing) => { setDoor(landing); setEpoch((n) => n + 1); }}
+    />
+  );
 }
 
-function Session({ factory, restore, onExited }: { factory: ApiFactory; restore: boolean; onExited: () => void }) {
+function Session({ factory, restore, onExited }: { factory: ApiFactory; restore: boolean; onExited: (landing: boolean) => void }) {
   const [state, setState] = useState<SessionEntry | 'leaving' | 'clearFailed' | null>(restore ? null : 'out');
   /** Whether the landing has handed over to the sign-in form. */
   const [signingIn, setSigningIn] = useState(false);
   const alive = useRef(true);
   const signingOut = useRef(false);
   const logoutCollectorId = useRef<string | null>(null);
+  /** Which door the session that replaces this one opens on. */
+  const leaveFor = useRef(false);
   const run = useRef(0);
   const [queryClient] = useState(() => new QueryClient());
   const [api] = useState(() => factory(() => { if (alive.current) void leave(); }));
   const tt = useT();
   const theme = useTheme();
 
-  async function leave() {
+  /**
+   * `landing` is passed through to `onExited`: an origin change ends the
+   * session the same way a sign-out does, and then the app is a stranger to
+   * the server it is now pointed at, so it opens on the landing door.
+   */
+  async function leave(landing = false) {
     if (signingOut.current) return;
     signingOut.current = true;
+    leaveFor.current = landing;
     run.current += 1;
     setState('leaving');
     logoutCollectorId.current = queryClient.getQueryData<CollectorProfile | null>(['profile'])?.id ?? logoutCollectorId.current;
@@ -201,7 +246,7 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
     try {
       if (logoutCollectorId.current !== null) await clearPreferences(logoutCollectorId.current);
       await api.signOut();
-      if (alive.current) onExited();
+      if (alive.current) onExited(leaveFor.current);
     } catch {
       if (alive.current) setState('clearFailed');
     } finally { signingOut.current = false; }
@@ -268,7 +313,7 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
             </NavProvider>
           ) : (
             /* Home draws it; see `session.tsx` for why it is not here. */
-            <SignOutProvider signOut={() => void leave()}>
+            <SignOutProvider signOut={(options) => void leave(options?.landing === true)}>
               <NavProvider key='in' initial={state}>
                 <GuideProvider>
                   <Current />
