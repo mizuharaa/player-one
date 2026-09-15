@@ -91,6 +91,21 @@ report **`SKIP` with the reason** instead. The variant is taken from
 `PLAYERONE_DEMO_VARIANT=lan|cloud`, or inferred from the origin — plain HTTP
 means LAN. A `SKIP` never fails the run; a `FAIL` always does.
 
+**The LAN form, written out** (measured 2026-09-15,
+`C:/Users/Khang/pw/l1-closeout`):
+
+```bash
+DATABASE_URL="postgres://playerone_app:...@127.0.0.1:5433/po_demo_thursday" \
+PLAYERONE_PUBLIC_URL="http://127.0.0.1:8080" \
+STORAGE_ENDPOINT=... STORAGE_BUCKET=... STORAGE_KEY=... STORAGE_SECRET=... \
+node deploy/demo-preflight.mjs
+```
+
+Plain HTTP in `PLAYERONE_PUBLIC_URL`, and **no `PLAYERONE_BACKUP_DIR`** — the
+LAN variant has no `backup` check to feed, so there is no dump to take before
+it. Result: `PASS` on the checks that apply, `SKIP` with a reason on `healthz`
+and `backup`.
+
 A `FAIL` on `certificate-expiry`, `healthz` or `storage` is a **cloud-loss
 decision point**, not something to fix at T-10. Go to
 [Fallback A](#fallback-a--cloud-loss-the-centre-pc-variant).
@@ -169,16 +184,24 @@ and `--scenario`; `card-intake.mjs` derives the handover, batch and session ids
 from the centre, the card, the collector and the day, so running it twice
 replays into the same rows instead of opening a second batch.
 
-**Expected:** a `handover_id` and a session on screen; the batch reads
-**`importing`**. Say the batch id aloud.
+**Expected:** the intake command finishes both the upload and the cloud
+read-back before it returns, so the batch already reads **`verified`**, not
+`importing` — `importing` is gone before the operator looks. The printed table
+has no `handover_id` line; what it prints, in order, is `session`, `copy`,
+`episode`, `ingest`, `verification`, `attribution`, `batch`, `reuse`. Say the
+batch id aloud from the `batch` line.
 
 **Recovery:** re-run the same `card-intake.mjs` line from 0:03; it is
 idempotent (measured: the second run prints `duplicate`, reuses the handover,
 batch and session, and creates nothing). `counter.ts import` is not a
-substitute: it wants five uuids, not a phone and a card. If the resolver answers
-**`operator_confirmation_required`**, that is the platform refusing to guess
-between two handover-origin sessions: confirm the session on the `/episodes`
-screen and say why it asked.
+substitute: it wants five uuids, not a phone and a card.
+**`operator_confirmation_required` cannot fire on this path**:
+`card-intake.mjs` derives the session id from centre + collector + card + day,
+so there is only ever one handover-origin session to resolve into, and every
+intake on that card and day answers `automatic_single` (measured 2026-09-15,
+five intakes in a row). The refusal is real only for `session_origin = 'app'`,
+where auto time-matching against a microsecond PTS start can find two
+candidates — that belongs to the phone-upload recovery, not this one.
 
 ### 0:08 — upload and cloud verify · operator
 
@@ -202,11 +225,12 @@ never cleared, in any recovery, for any reason** (CLAUDE.md rule 6).
 A card can carry a session the platform will not send to a human. The owner's
 two recordings on 2026-09-14 were exactly that: the left camera wrote a
 24-byte file, so both sessions carry `MEDIA-UNREADABLE` at severity
-`quarantine`, plus `PTS-EMPTY`, `STREAM-SKEW-HIGH` (≈3998 ms) and, until the
-seed's serial was fixed, `SERIAL-CONFLICT`. The ingest state is `quarantined`,
-the episode resolves to no session, and the review queue cannot offer it:
-`eligible` needs `resolution_state = 'resolved'` **and** a non-quarantined
-ingest, and it fails both. Verified: `GET /api/review/next` answers 204.
+`quarantine`, plus `PTS-EMPTY` and `STREAM-SKEW-HIGH` (≈3998 ms). The episode
+still resolves to the day's session — the same as any other recording on this
+card, with task, collector and device populated — because attribution is not
+what marks it unusable. What marks it unusable is the **ingest state**,
+`quarantined`, plus those defects: `eligible` needs a non-quarantined ingest,
+and this one fails that half. Verified: `GET /api/review/next` answers 204.
 
 **Announce it before it appears, in these words:** "one camera on this unit
 failed — watch what the platform does with it." Then the quarantine reads as
@@ -218,24 +242,35 @@ recordings are still on it, whole. Unannounced, the same screen reads as a
 broken demo.
 
 **Where the operator finds them:** console **Episodes → "Episodes needing
-attention"** (`/episodes`), panel **"Blocking, this batch"**, Needs column **"A
-session to attribute it to"** — from `GET /upload-batches/:id/exceptions`. Not
-`/episodes/stuck`, which is parked/held only and answers with an empty list.
+attention"** (`/episodes`) is the panel to point at. A lane in progress is
+adding an "unusable" list there, keyed by the defect names
+**`MEDIA-UNREADABLE`, `PTS-EMPTY` and `STREAM-SKEW-HIGH`** — the panel's own
+read of `GET /upload-batches/:id/exceptions` does not yet count a quarantined
+ingest as blocking, since the episode itself resolved. Not `/episodes/stuck`,
+which is parked/held only and answers with an empty list.
 
 **Two things the narrator must expect on that screen.** First, the browse rows
-show **blank task, collector and device columns** — a quarantined episode is
-attached to no session, so there is nothing to name there; it is not a rendering
-fault. Second, **the defect sentences are not on that screen**: the `bo.flag.*`
-sentences ("A container exists but cannot be decoded.") render in `Review.tsx`
-only, and these episodes can never reach a review screen. They live in
-`episode_defects` and in the intake command's own stderr, which is where to
-read them from if the room asks why.
+show **task, collector and device populated**, the same as any resolved
+episode — do not say the columns are blank; the episode is attributed to the
+day's session, it is only unusable, not unattributed. Second, **the defect
+sentences are not on that screen**: the `bo.flag.*` sentences ("A container
+exists but cannot be decoded.") render in `Review.tsx` only, and these
+episodes can never reach a review screen. They live in `episode_defects` and
+in the intake command's own stderr, which is where to read them from if the
+room asks why. Scripting note: `GET /api/episodes` refuses a `?limit=` query
+param with `unrecognized_keys` — do not pass one.
 
 **The paid path needs a different recording.** Use a session with both cameras
 — the corpus session `ego_AZER76400FE_20260813_072310` went the whole way
 (partial verdict, 5.0 s payable of 8.5 s measured, a 99.9996 VND line) — or,
 better, a fresh good recording made before Thursday, because it is the owner's
-own footage.
+own footage. **Warn the narrator first:** this corpus session itself carries
+`SERIAL-CONFLICT` (episode says `AZER76400FE`, handover says `AZER76400HV`)
+plus six more informational defects (`CAMERA-NAMING-CONFLICT`,
+`DUR-MANIFEST-INFLATED`, two `FRAMECOUNT-MISMATCH`,
+`MANIFEST-FILES-UNRESOLVED`, `AUDIO-STATS-ZERO`) — none block review or
+payment, but they will show on screen; a fresh recording avoids the question
+entirely.
 
 ### 0:14 — the handset · collector-phone
 
@@ -390,7 +425,11 @@ minutes`, Minutes taken so far `81 minutes`, Places left `4`.
 **Recovery:** [Fallback B](#fallback-b--handset-upload-failure-the-debug-delivery-page).
 If the upload itself is refused the panel prints the server's own reason in the
 collector's language — a checksum mismatch, a name collision, an unrecognised
-folder name — so read the sentence on screen rather than guessing. If the app
+folder name — so read the sentence on screen rather than guessing. **If
+storage itself is down**, a lane in progress is adding a named refusal,
+`storage_unavailable` (HTTP 503), with its own sentence for the panel — until
+that lands, a storage outage on the phone path answers a bare HTTP 500 with no
+named reason, and closing that gap is exactly what the lane does. If the app
 cannot reach the server at all: **Profile › About › Server** → type the
 laptop's origin, **Save**; the app signs you out and returns to Landing.
 
@@ -400,12 +439,16 @@ laptop's origin, **Save**; the app signs you out and returns to Landing.
 build, and not merely deprived of video.** With `PLAYERONE_REVIEWER_MEDIA=0` a
 `role = 'reviewer'` session is refused **on claim and on verdict**, HTTP 451
 `playback_unauthorised`, detail `D11 / Part 7.3` (`review.ts`, asserted by
-`packages/api/test/reviewer.test.ts` around line 543). Measured 2026-09-14:
+`packages/api/test/reviewer.test.ts` around line 543). Measured 2026-09-15:
 `rev-1` signs in fine — at `POST /api/session` with `role: reviewer`, **not**
 `/auth/operator`, which excludes reviewers by design — then `GET
-/api/review/next` answers 204 and `POST /api/review/claim` answers 451. There is no residency field and no in-country
-marker to set — one flag decides it, and the operator role is exempt because a
-VNG counter operator is inside Vietnam at the machine holding the files.
+/api/review/next` answers **200 with full metadata** (task, collector, device,
+both durations, the flags) and **empty media** (`media: {role: null, parts:
+[]}`), and `POST /api/review/claim` still answers **451
+`playback_unauthorised`, `D11 / Part 7.3`**. There is no residency field and no
+in-country marker to set — one flag decides it, and the operator role is
+exempt because a VNG counter operator is inside Vietnam at the machine holding
+the files.
 
 So there are two honest variants. **A is the default.**
 
@@ -417,9 +460,11 @@ the episode and decides it. The narrator says:
 > architecture. Remote playback of raw Vietnamese footage is not authorised, and
 > the platform refuses a remote reviewer's claim outright rather than showing
 > them a verdict button they cannot honestly press. A reviewer in Shenzhen can
-> sign in and can see nothing to judge. Today a VNG operator, inside Vietnam, at
-> the machine holding the files, does the review — which is the arrangement the
-> pilot was designed for and what §7.2 moves to permanently.
+> sign in and can see the queue's metadata — task, collector, durations — but
+> is refused the footage the moment they try to claim it and judge. Today a
+> VNG operator, inside Vietnam, at the machine holding the files, does the
+> review — which is the arrangement the pilot was designed for and what §7.2
+> moves to permanently.
 
 **Variant B — reviewer media on (an owner decision, not a workaround).**
 `PLAYERONE_REVIEWER_MEDIA=1` in the demo environment, which also requires
@@ -433,10 +478,10 @@ Wednesday's rehearsal or not at all.
 Whichever variant, the acting reviewer opens `/review`, claims the episode, and
 decides it.
 
-**Expected:** the review reads **`pass`**, with `measured_duration_s` and
-`effective_duration_s` both on screen. Read both aloud: the gap is the answer
-to "why isn't the whole clip paid" — payable time is the *intersection* of
-stream coverage, not the union.
+**Expected:** the review reads **`partial_pass`**, with
+`measured_duration_seconds` and `effective_duration_seconds` both on screen.
+Read both aloud: the gap is the answer to "why isn't the whole clip paid" —
+payable time is the *intersection* of stream coverage, not the union.
 
 **Recovery:** if the queue is empty, the episode is not eligible — a quarantined
 ingest, a zero measurement, or a defect whose catalogue entry says
@@ -450,7 +495,16 @@ all.
 ### 0:24 — settlement and the bill · operator (NOT finance)
 
 The verdict already wrote the settlement. The operator then runs the cycle:
-`POST /api/settle/bills`, the `/settle` screen.
+`POST /api/settle/bills`, the `/settle` screen — **with an explicit period**,
+not just the route. The seeded bill owns `01/09–14/09`, so a bare call with no
+period, or one whose dates overlap the seeded bill's own, is blocked by
+`bills_collector_period_key` and answers `created: 0` with the new money
+pushed into `deferred_to_next_period` instead — the room sees no new bill.
+Run it with the period the seed prints, `2026-09-15` → `2026-09-17`:
+
+```bash
+POST /api/settle/bills {"period_start":"2026-09-15","period_end":"2026-09-17"}
+```
 
 **Expected:** the settlement reads **`pending_settlement`** and then
 **`bill_generated`**; a `bills` row with a `total` that is the exact sum of its
@@ -459,7 +513,10 @@ lines, never rounded.
 **Recovery:** a refusal named `settle_generate_by_finance` means finance is
 signed in on this screen — swap to the operator profile; that refusal is the
 separation of duty working. A bill worth under one dong is refused as
-`payout_attempts_amount_positive_check`; use the seeded bill.
+`payout_attempts_amount_positive_check`; use the seeded bill. A `created: 0`
+with `deferred_to_next_period` means the period given overlaps the seeded
+bill's `01/09–14/09` — use the printed `2026-09-15` → `2026-09-17` period
+instead.
 
 ### 0:28 — the payment, and the honest ending · finance
 
@@ -508,6 +565,24 @@ confirmed total **`64.800 ₫`** in large type, the word **"Confirmed"** (Đã x
 nhận) under it, and **"Including estimates: 97.200 ₫"** (Kể cả ước tính). The
 app computes none of these — all four strings are the server's, and the cycle
 figures must match the console's.
+
+**These are the seed's numbers, not what the room will see.** Once 0:24 runs
+in the room, the new bill changes several figures below — do not read them as
+fixed:
+
+- **The cycle label** becomes the new bill's own period, not `01/09 – 15/09`
+  above — `me.ts:695` sets the header from the collector's *latest* bill, not
+  a fixed calendar window.
+- **The confirmed total** becomes the new bill's total, not `64.800 ₫`.
+- The **"Approved, awaiting a bill"** row (`32.400 ₫`, below) is absorbed into
+  the new bill and becomes the pending-verification state instead — the same
+  wording as the two rows already described as "Needs something from you".
+- **The transaction list grows** by the newly billed episode(s); it is not a
+  fixed count.
+
+**The rule for the narrator: the cycle is the collector's latest bill.** Say
+that rule rather than reading a number off this page — every figure below
+updates itself once the room's own bill lands, the same way it did here.
 
 **Four round buttons** under the header: **Sessions**, **Cycle statement**,
 **Where you get paid**, **Help**. Two of them carry this beat.
@@ -562,22 +637,20 @@ effective minutes the reviewer's verdict produced at 0:19. **Cycle statement**
 breaks the header into Confirmed `64.800 ₫`, Estimated `32.400 ₫`, Including
 estimates `97.200 ₫`.
 
-**The notifications screen, and it is deliberately empty.** **Profile →
-Settings → Notifications.** The first line is the honest one:
-**"Notifications are not connected yet. Check Sessions and Income for current
-status."** (Thông báo chưa được kết nối. Xem Phiên và Thu nhập để biết trạng
-thái hiện tại.) Below it an illustration, **"Nothing yet"** (Chưa có gì) and
-**"Review results, payments and session reminders show up here."** (Kết quả
-duyệt, thanh toán và nhắc buổi ghi sẽ hiện ở đây.)
+**The notifications screen, and it is real.** **Profile → Settings →
+Notifications.** The inbox is populated: measured 2026-09-15, this demo
+collector's inbox shows four rows — `review_partial`, `bill_issued`,
+`upload_ingested`, `upload_verified` — one per beat already run earlier in this
+script. `apps/collector/src/screens/Notifications.tsx:20` says it straight:
+opening it now shows what actually happened instead of an empty list. Below
+the list, the settings still list the three groups — Review results, Payments,
+Session reminders — with both switches **disabled**, and say why: "Email and
+push settings are unavailable until notifications are connected."
 
-**This is not a seeding gap and there is nothing to fix.** No push transport
-exists, so the inbox is structurally empty on every real handset; the settings
-below it list the three groups — Review results, Payments, Session reminders —
-with both switches **disabled**, and say why: "Email and push settings are
-unavailable until notifications are connected." Announce it before opening the
-screen, the same way the broken-recording beat is announced, or an empty inbox
-reads as a broken demo. **Do not try to seed a notification** — there is no
-table behind this screen.
+**There is nothing to seed and nothing to fix.** The four rows come from the
+beats already run at 0:14 (the phone upload), 0:19 (the review) and 0:24 (the
+bill) — open this screen after those, not before, and do not announce an
+empty inbox.
 
 **Recovery:** if "Where you get paid" reads **"Not set — contact a support
 point"** (Chưa khai báo — liên hệ điểm hỗ trợ), the account was declared
@@ -594,10 +667,12 @@ DATABASE_URL=... node packages/api/scripts/demo-evidence.mjs --bill <bill id>
 ```
 
 **Expected:** one JSON holding every row from every step above, the file
-digests, both durations, the unit price, the exact bill total, and the running
-server's own `git rev-parse HEAD` — so the bundle names the exact code that
-produced what the room just watched. Offer it to the stakeholders; it is the
-artefact they can take away.
+digests, both durations, the unit price, the exact bill total, and
+`serverSourceSha` — the sha of the checkout the **script** runs in, not
+necessarily the running server's (`demo-evidence.mjs:202`; measured
+2026-09-15, it read `94bdc6c…` while the API process was still serving from
+`ce98b5d` before a restart). Fallback A gate 1 is what confirms the two match.
+Offer the bundle to the stakeholders; it is the artefact they can take away.
 
 ### 0:35 — close · narrator
 

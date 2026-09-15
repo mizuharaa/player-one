@@ -97,8 +97,8 @@ upload --batch <id>` resumes the cloud leg alone from the batch id above.
 ## 3. Review
 
 **Screen:** `/review` in the console.
-**Evidence:** a decided `episode_reviews` row carrying `measured_duration_s`
-(what the footage runs) and `effective_duration_s` (what is payable — the
+**Evidence:** a decided `episode_reviews` row carrying `measured_duration_seconds`
+(what the footage runs) and `effective_duration_seconds` (what is payable — the
 intersection of stream coverage, always ≤ measured). Read both numbers aloud;
 the gap between them is the answer to "why isn't the whole clip paid."
 
