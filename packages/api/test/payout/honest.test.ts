@@ -129,15 +129,32 @@ describe.skipIf(!hasDb())('honest payout demo (SIMULATION, test database only)',
     }
   });
 
+  /**
+   * Audit finding 2. Two halves, and the second one is the gate.
+   *
+   * The mapper's answer is `unverified`, and an unverified account cannot pay —
+   * that is the first half, and it is all the lane proved. But the payable
+   * question is `verify_status <> 'verified'`, so the row the mapper used to
+   * write — `verified` with no name — was payable by anything that did not go
+   * through the mapper. The second half seeds that row shape directly, the way
+   * the audit's probe did, and the schema refuses it.
+   */
   it('IDENT.NAME_UNCONFIRMED cannot make a wallet eligible for payment', async () => {
     const h = await setup();
     const outcome = outcomeOf('Nguyen Van A', { kind: 'verified', verifiedName: null, mUId: 'mu-unnamed' });
     expect(outcome.event).toBe('IDENT.NAME_UNCONFIRMED');
+    expect(outcome.status).toBe('unverified');
     await seedAccount(h.d, h.ids, 1, { verifyStatus: outcome.status, verifiedName: outcome.verifiedName, mUId: outcome.mUId });
     const before = await h.snapshot();
     const res = await h.mark();
     expect(res.statusCode, res.body).toBe(409);
     expect(res.json().constraint).toBe('payout_attempts_account_unverified');
+    expect(await h.snapshot()).toBe(before);
+    // The shape the audit's probe paid 201 on cannot be written at all, so
+    // mark-paid never reaches its gate: the constraint refuses the row.
+    await h.d.execute(sql`update payout_accounts set is_current = false where collector_id = ${h.ids.collector1}`);
+    await violates('payout_accounts_verified_named_check',
+      seedAccount(h.d, h.ids, 1, { verifyStatus: 'verified', verifiedName: null, mUId: 'mu-unnamed' }));
     expect(await h.snapshot()).toBe(before);
   });
 

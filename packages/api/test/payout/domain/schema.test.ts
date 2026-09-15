@@ -214,6 +214,30 @@ describe.skipIf(!hasDb())('the payout schema', () => {
       expect(await countOf(d, sql`select count(*) as n from payout_attempts`)).toBe(0);
     });
 
+    /**
+     * 0032. The payable gate asks `verify_status <> 'verified'` and, for a
+     * wallet, that `m_u_id` is present — neither asks for the name ZaloPay
+     * returned. So `verified` with no `verified_name`, which is exactly the
+     * IDENT.NAME_UNCONFIRMED shape, was a payable row. `outcomeOf` no longer
+     * produces it, but a mapper is not an invariant: this is the same question
+     * asked where a psql session and a future service have to answer it too.
+     */
+    it('refuses a verified account with no verified name (IDENT.NAME_UNCONFIRMED is not a verification)', async () => {
+      const { d, ids } = await seeded();
+      await d.execute(sql`update payout_accounts set is_current = false where collector_id = ${ids.collector2}`);
+      for (const verifiedName of [null, '', '   ']) {
+        await violates(
+          'payout_accounts_verified_named_check',
+          seedAccount(d, ids, 2, { verifyStatus: 'verified', verifiedName, mUId: 'mu-unnamed' }),
+        );
+      }
+      // The name is the whole of what it asks for: a named verification passes,
+      // and so does every status that is not `verified`.
+      await seedAccount(d, ids, 2, { verifyStatus: 'verified', verifiedName: 'NGUYEN VAN A', mUId: 'mu-unnamed' });
+      await d.execute(sql`update payout_accounts set is_current = false where collector_id = ${ids.collector2}`);
+      await seedAccount(d, ids, 2, { verifyStatus: 'name_mismatch', verifiedName: null, mUId: 'mu-unnamed' });
+    });
+
     it('keeps exactly one current account per collector', async () => {
       const { d, ids } = await seeded();
       await violates('payout_accounts_current_key', seedAccount(d, ids, 1, { id: uid() }));

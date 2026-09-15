@@ -351,6 +351,13 @@
       "when": 1789070030000,
       "tag": "0031_payout_verdict_author",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789070040000,
+      "tag": "0032_payout_verified_named",
+      "breakpoints": true
     }
   ]
 }
