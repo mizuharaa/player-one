@@ -92,7 +92,7 @@ export function useTabBarReserve() {
   return insets.bottom + theme.space[6] + (measuredTabHeight || barHeight(theme)) + theme.space[5];
 }
 
-function Header({ title, right, onBack }: { title: string; right?: ReactNode; onBack?: () => void }) {
+function Header({ title, right, onBack, progress }: { title: string; right?: ReactNode; onBack?: () => void; progress?: ReactNode }) {
   const theme = useTheme();
   const nav = useNav();
   const tt = useT();
@@ -105,7 +105,7 @@ function Header({ title, right, onBack }: { title: string; right?: ReactNode; on
       <Pressable accessibilityRole="button" accessibilityLabel={tt('common.back')} onPress={back}
         style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }}>
         <Text style={{ ...theme.collector.type.h2, color: theme.collector.ink }}>←</Text>
-      </Pressable>{right}</View>{heading}</> :
+      </Pressable>{progress}{right}</View>{heading}</> :
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[3] }}>{heading}{right}</View>}
   </View>;
 }
@@ -115,12 +115,14 @@ export function Screen({
   title,
   right,
   onBack,
+  progress,
   footer,
   children,
 }: {
   title: string;
   right?: ReactNode;
   onBack?: () => void;
+  progress?: ReactNode;
   /**
    * A commit control pinned to the foot of the screen rather than sitting at
    * the end of the list (§6, §7, §8).
@@ -152,7 +154,7 @@ export function Screen({
           gap: theme.space[3],
         }}
       >
-        <Header title={title} right={right} onBack={onBack} />
+        <Header title={title} right={right} onBack={onBack} progress={progress} />
         {children}
       </ScrollView>
       {footer === undefined ? null : (
@@ -394,7 +396,7 @@ export function Amount({ value, label }: { value: string; label: string }) {
 export function NavRow({ label, subtitle, icon, onPress }: { label: string; subtitle?: string; icon?: ReactNode; onPress: () => void }) {
   const theme = useTheme();
   return <Pressable accessibilityRole="button" accessibilityLabel={subtitle ? `${label}. ${subtitle}` : label} onPress={onPress}
-    style={({ pressed }) => ({ minHeight: theme.space[12], paddingVertical: theme.space[4], flexDirection: 'row', alignItems: 'center', gap: theme.space[3], borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: pressed ? theme.color.muted : undefined })}>
+    style={({ pressed }) => ({ minHeight: theme.space[12], paddingVertical: theme.space[4], flexDirection: 'row', alignItems: 'center', gap: theme.space[3], borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: pressed ? theme.collector.surface : undefined })}>
     {icon}
     <View style={{ flex: 1, gap: theme.space[1] }}>
       <Text style={{ ...theme.collector.type.body, color: theme.color.foreground, fontFamily: face(theme) }}>{label}</Text>
@@ -492,7 +494,7 @@ export function Chip({
   const body = (
     <Text
       style={{
-        color: selected ? theme.color.actionInk : theme.color.foreground,
+        color: selected ? theme.collector.paper : theme.collector.ink,
         fontFamily: face(theme),
         fontSize: theme.collector.type.caption.fontSize,
           lineHeight: theme.collector.type.caption.lineHeight,
@@ -503,7 +505,7 @@ export function Chip({
     </Text>
   );
   const box = {
-    backgroundColor: selected ? theme.color.action : theme.color.surface,
+    backgroundColor: selected ? theme.collector.night : theme.collector.surface,
     borderWidth: selected ? 0 : 1,
     borderColor: theme.color.borderStrong,
     borderRadius: theme.radius.pill,
@@ -583,6 +585,7 @@ export function FeatureBlock({
             color: theme.color.stage.fg,
             fontFamily: face(theme),
             fontSize: theme.fontSize['2xl'],
+            lineHeight: Math.ceil(theme.fontSize['2xl'] * 1.3),
             fontWeight: theme.fontWeight.display,
             fontVariant: ['tabular-nums'],
             letterSpacing: -1,
@@ -597,6 +600,7 @@ export function FeatureBlock({
               color: theme.color.stage.mid,
               fontFamily: face(theme),
               fontSize: theme.fontSize.base,
+            lineHeight: Math.ceil(theme.fontSize.base * 1.3),
             }}
           >
             {unit}
@@ -905,6 +909,7 @@ export function Field({
           color: theme.color.foreground,
           fontFamily: face(theme),
           fontSize: theme.fontSize.base,
+            lineHeight: Math.ceil(theme.fontSize.base * 1.3),
         }}
       />
     </View>
@@ -1054,7 +1059,7 @@ export function Note({ text, tone = 'info', onRetry, busy = false }: {
 export function Timeline({
   steps,
 }: {
-  steps: { key: string; label: string; done: boolean; note?: string }[];
+  steps: { key: string; label: string; done: boolean; current?: boolean; note?: string }[];
 }) {
   const theme = useTheme();
   const last = steps.length - 1;
@@ -1062,15 +1067,15 @@ export function Timeline({
     <View>
       {steps.map((step, i) => (
         <View key={step.key} style={{ flexDirection: 'row', gap: theme.space[3] }}>
-          <View style={{ alignItems: 'center', width: theme.space[4] }}>
+          <View style={{ alignItems: 'center', width: theme.space[6] }}>
             <View
               style={{
-                width: theme.space[4],
-                height: theme.space[4],
-                borderRadius: theme.space[2],
-                borderWidth: step.done ? 0 : 1,
+                width: theme.space[6],
+                height: theme.space[6],
+                borderRadius: theme.collector.radius.pill,
+                borderWidth: step.done || step.current ? 0 : 1,
                 borderColor: theme.color.borderStrong,
-                backgroundColor: step.done ? theme.color.foreground : theme.color.background,
+                backgroundColor: step.current ? theme.collector.plum : step.done ? theme.color.foreground : theme.color.background,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
@@ -1103,10 +1108,10 @@ export function Timeline({
           <View style={{ flexShrink: 1, paddingBottom: i === last ? 0 : theme.space[3] }}>
             <Text
               style={{
-                color: step.done ? theme.color.foreground : theme.color.mutedForeground,
+                color: step.done || step.current ? theme.color.foreground : theme.color.mutedForeground,
                 fontFamily: face(theme),
-                fontSize: theme.fontSize.base,
-                fontWeight: step.done ? theme.fontWeight.semibold : theme.fontWeight.regular,
+                ...theme.collector.type.body,
+                fontWeight: step.done || step.current ? theme.fontWeight.semibold : theme.fontWeight.regular,
               }}
             >
               {step.label}
@@ -1531,7 +1536,7 @@ export function CodeBoxes({
                 style={{
                   color: theme.color.foreground,
                   fontFamily: face(theme),
-                  fontSize: theme.collector.type.h1.fontSize,
+                  ...theme.collector.type.h1,
                   fontWeight: theme.fontWeight.display,
                   fontVariant: ['tabular-nums'],
                 }}
