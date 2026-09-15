@@ -19,17 +19,13 @@ vi.mock('../src/ui/HeaderGradient.tsx', () => ({ HeaderGradient: ({ children }: 
 vi.mock('../src/guide/Guide.tsx', () => ({ useGuideTarget: () => undefined }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-/**
- * The payout card renders the server's fields and nothing it inferred itself.
- * Three cases, because the screen must never print two of them at once:
- * awaiting says only awaiting; a sandbox-provider outcome is labelled a
- * simulation; a finance-recorded manual transfer is a real payment and carries
- * no simulation sentence.
- */
+/** The server's verification provenance labels only a verified destination;
+ * payment simulation remains its own sentence, printed once. */
 const CASES: { name: string; payout: PayoutDestination; shows: ('awaiting' | 'paid' | 'simulation')[] }[] = [
   { name: 'awaiting, no payment', payout: { channel: 'zalopay', status: 'awaiting', masked: '•••• 5678' }, shows: ['awaiting'] },
+  { name: 'awaiting with server simulation flags', payout: { channel: 'zalopay', status: 'awaiting', masked: '\u2022\u2022\u2022\u2022 5678', simulation: true, verification_simulation: true }, shows: ['awaiting', 'simulation'] },
   { name: 'sandbox-provider payment', payout: { channel: 'zalopay', status: 'verified', masked: '•••• 5678', simulation: true, payment: { reference: 'SANDBOX-REF-X', amount_vnd: 679 } }, shows: ['paid', 'simulation'] },
-  { name: 'sandbox verification beside a real manual transfer', payout: { channel: 'zalopay', status: 'verified', masked: '\u2022\u2022\u2022\u2022 5678', simulation: false, verification_simulation: true, payment: { reference: 'MANUAL-REF-Y', amount_vnd: 679 } }, shows: ['paid', 'simulation'] },
+  { name: 'sandbox verification beside a real manual transfer', payout: { channel: 'zalopay', status: 'verified', masked: '\u2022\u2022\u2022\u2022 5678', simulation: false, verification_simulation: true, payment: { reference: 'MANUAL-REF-Y', amount_vnd: 679 } }, shows: ['paid'] },
   { name: 'manual transfer recorded by finance', payout: { channel: 'zalopay', status: 'verified', masked: '•••• 5678', simulation: false, payment: { reference: 'MANUAL-REF-Y', amount_vnd: 679 } }, shows: ['paid'] },
 ];
 
@@ -55,6 +51,11 @@ it.each(['vi', 'en', 'zh'] as const)('the payout card prints only the server\'s 
       const text = host.textContent ?? '';
       expect(text, testCase.name).toContain('•••• 5678');
       expect(text, testCase.name).toContain(t(locale, testCase.payout.status === 'verified' ? 'payout.verified' : 'payout.awaiting'));
+      const statusText = t(locale, testCase.payout.status === 'verified' ? 'payout.verified' : 'payout.awaiting');
+      const pill = Array.from(host.querySelectorAll('*')).find(node => node.children.length === 0 && node.textContent?.startsWith(statusText));
+      const suffix = testCase.payout.status === 'verified' && testCase.payout.verification_simulation ? ` - ${{ vi: 'M\u00f4 ph\u1ecfng', en: 'Sandbox', zh: '\u6a21\u62df' }[locale]}` : '';
+      expect(pill?.textContent, testCase.name).toBe(statusText + suffix);
+      expect(text.split(t(locale, 'payout.simulation')).length - 1, testCase.name).toBe(testCase.payout.simulation ? 1 : 0);
       const paid = t(locale, 'payout.paidReference').replace('{reference}', testCase.payout.payment?.reference ?? '');
       for (const [flag, sentence] of [['awaiting', t(locale, 'payout.awaitingPayment')], ['paid', paid], ['simulation', t(locale, 'payout.simulation')]] as const) {
         if (testCase.shows.includes(flag)) expect(text, `${testCase.name} shows ${flag}`).toContain(sentence);

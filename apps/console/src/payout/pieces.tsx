@@ -231,7 +231,7 @@ export function VerifyPill({ status, simulation }: { status: VerifyStatus; simul
           : 'border border-[var(--border-strong)] bg-[var(--card)] text-[var(--foreground)]',
       )}
     >
-      {t(`settle.verify.${status}`)}{simulation ? ` - ${t('settle.simulation')}` : ''}
+      {t(`settle.verify.${status}`)}{status === 'verified' && simulation ? ` - ${t('settle.simulationLabel')}` : ''}
     </span>
   );
 }
