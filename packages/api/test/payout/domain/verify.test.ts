@@ -75,3 +75,27 @@ describe('verification on declare', () => {
     expect(stub.calls.transferFund).toBe(0);
   });
 });
+
+
+describe('sandbox verification refusals', () => {
+  it.each([-101, -406, -1011, -1103, -1104, -104, -105, -106, -1102, -102, -103, -401, -402, -107, -500, -503, -9999])('never verifies provider refusal %s', code => {
+    const statuses: Record<number, string> = { [-101]: 'no_wallet', [-406]: 'kyc_limit', [-1011]: 'locked', [-1103]: 'unverified', [-1104]: 'name_mismatch' };
+    expect(outcomeOf('A', rejected(code)).status).toBe(statuses[code] ?? 'error');
+  });
+  it.each(['', '   ', '\t'])('keeps a blank provider name unverified: %j', verifiedName => {
+    expect(outcomeOf('A', { kind: 'verified', verifiedName, mUId: 'id' })).toMatchObject({ status: 'unverified', verifiedName: null });
+  });
+  it('keeps the no-wallet reform URL', () => {
+    expect(outcomeOf('A', rejected(-101, { reformUrl: 'https://zalopay.vn/reform' })).redirectUrl).toBe('https://zalopay.vn/reform');
+  });
+});
+
+it.each([null, '', ' '])('does not verify a wallet without usable provider ID %j', async mUId => {
+  const stub = new StubZaloPay();
+  stub.verify = { kind: 'verified', verifiedName: 'A', mUId };
+  expect(await verifyDeclaration(stub, 'A', { method: 'WALLET', phone: '0901234567' })).toMatchObject({ status: 'error', mUId: null });
+});
+
+it('keeps a provider reform URL on other verification refusals too', () => {
+  expect(outcomeOf('A', rejected(-1103, { reformUrl: 'https://zalopay.vn/reform' })).redirectUrl).toBe('https://zalopay.vn/reform');
+});

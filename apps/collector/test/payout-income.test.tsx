@@ -29,6 +29,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const CASES: { name: string; payout: PayoutDestination; shows: ('awaiting' | 'paid' | 'simulation')[] }[] = [
   { name: 'awaiting, no payment', payout: { channel: 'zalopay', status: 'awaiting', masked: '•••• 5678' }, shows: ['awaiting'] },
   { name: 'sandbox-provider payment', payout: { channel: 'zalopay', status: 'verified', masked: '•••• 5678', simulation: true, payment: { reference: 'SANDBOX-REF-X', amount_vnd: 679 } }, shows: ['paid', 'simulation'] },
+  { name: 'sandbox verification beside a real manual transfer', payout: { channel: 'zalopay', status: 'verified', masked: '\u2022\u2022\u2022\u2022 5678', simulation: false, verification_simulation: true, payment: { reference: 'MANUAL-REF-Y', amount_vnd: 679 } }, shows: ['paid', 'simulation'] },
   { name: 'manual transfer recorded by finance', payout: { channel: 'zalopay', status: 'verified', masked: '•••• 5678', simulation: false, payment: { reference: 'MANUAL-REF-Y', amount_vnd: 679 } }, shows: ['paid'] },
 ];
 

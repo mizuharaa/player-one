@@ -390,6 +390,12 @@ describe('collector wire truth and cold-start recovery', () => {
    * already failed is exactly the lie the income screen exists to avoid. An
    * unknown word renders `payout.unknown` instead.
    */
+  it('preserves separate sandbox verification beside a real manual payment', async () => {
+    const body = { channel: 'zalopay', status: 'verified', masked: 'masked', simulation: false, verification_simulation: true, payment: { reference: 'manual', amount_vnd: 1 } };
+    const { fn } = fakeFetch({ 'GET /api/me/payout': { status: 200, body } });
+    expect(await new HttpCollectorApi(BASE, fakeStore(), () => {}, fn).payout()).toEqual(body);
+  });
+
   it('copies the cycle strings across and refuses a payout status it does not know', async () => {
     const cycle = { label: '17/08 – 23/08', confirmedVnd: '1200.0000', estimatedVnd: '12000.0000', totalVnd: '13200.0000' };
     const { fn } = fakeFetch({

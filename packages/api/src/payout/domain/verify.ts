@@ -45,10 +45,10 @@ export type VerifyOutcome = {
  * Kept apart from the call so every branch is a unit test with no client.
  */
 export function outcomeOf(declaredName: string, result: VerifyAccountResult): VerifyOutcome {
-  const none = { verifiedName: null, mUId: null, redirectUrl: null };
+  const none = { verifiedName: null, mUId: null, redirectUrl: result.kind === 'rejected' ? result.reformUrl ?? result.onboardingUrl ?? null : null };
   switch (result.kind) {
     case 'verified': {
-      if (result.verifiedName === null) {
+      if (!result.verifiedName?.trim()) {
         /**
          * The account exists (a wallet with an m_u_id, typically) and ZaloPay
          * returned no holder name to compare against. The name check is the
@@ -77,7 +77,7 @@ export function outcomeOf(declaredName: string, result: VerifyAccountResult): Ve
     case 'rejected':
       switch (result.subCode) {
         case -101:
-          return { ...none, status: 'no_wallet', subCode: -101, redirectUrl: result.onboardingUrl ?? null, event: 'IDENT.NO_WALLET' };
+          return { ...none, status: 'no_wallet', subCode: -101, redirectUrl: result.reformUrl ?? result.onboardingUrl ?? null, event: 'IDENT.NO_WALLET' };
         case -406:
           return { ...none, status: 'kyc_limit', subCode: -406, redirectUrl: result.reformUrl ?? null, event: 'IDENT.KYC_LIMIT' };
         case -1011:
@@ -122,6 +122,9 @@ export async function verifyDeclaration(
     result = await client.verifyAccount({ receiver, amountVnd: 1 });
   } catch {
     return { status: 'error', verifiedName: null, mUId: null, subCode: null, redirectUrl: null, event: null };
+  }
+  if (receiver.method === 'WALLET' && result.kind === 'verified' && !result.mUId?.trim()) {
+    return { status: 'error', verifiedName: null, mUId: null, subCode: null, redirectUrl: null, event: 'IDENT.VERIFY_ERROR' };
   }
   return outcomeOf(declaredName, result);
 }

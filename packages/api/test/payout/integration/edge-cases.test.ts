@@ -521,7 +521,8 @@ describe.skipIf(!hasDb())('the edge-case suite, E01–E29, over a real socket to
 
         h.fake.plan('transferFund', { kind: 'ok', status: 1 });
         const res = await pay(h, h.bill1);
-        expect(res.json().status).toBe('succeeded');
+        expect(res.json().status).toBe('processing');
+        await poll(h, later(HOUR));
         expect(transfers(h)[0]!.body['amount']).toBe(await billTotal(h.d, h.bill1));
         // Their books drift.
         h.fake.orders.get(po(h.bill1, 1))!.amount = 2401;
@@ -651,6 +652,7 @@ describe.skipIf(!hasDb())('the edge-case suite, E01–E29, over a real socket to
       try {
         h.fake.plan('transferFund', { kind: 'ok', status: 1 });
         const api = (await pay(h, h.bill1)).json().attempt_id as string;
+        await poll(h, later(HOUR));
         const manual = (await markPaid(h, h.bill2, h.finA, { manual_reference: 'VCB-2', amount_vnd: 1200 })).json().attempt_id as string;
         for (const id of [api, manual]) {
           await violates('payout_attempts_succeeded_immutable', h.d.execute(sql`update payout_attempts set status = 'failed' where id = ${id}`));

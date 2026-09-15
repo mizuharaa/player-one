@@ -189,9 +189,9 @@ export class ZaloPayHttpClient implements ZaloPayClient {
       throw err;
     }
 
-    if (r.return_code === 1 || r.return_code === 3) {
+    if (r.return_code === 1) {
       const orderId = r.data?.order_id;
-      const status = zlpStatus(r.data?.status ?? (r.return_code === 3 ? 3 : undefined));
+      const status = zlpStatus(r.data?.status);
       if (typeof orderId !== 'string' || orderId === '' || status === null) {
         // Accepted, but we cannot name the order or its state. Same rule as
         // a lost socket: something may have moved, only a query can tell.
@@ -213,7 +213,7 @@ export class ZaloPayHttpClient implements ZaloPayClient {
     const body: QueryTxnRequest = { ...unsigned, mac: this.sign(queryTxnMacParts(unsigned)) };
 
     const r = await this.post<QueryTxnData>('queryTxn', body, this.timeouts.otherMs);
-    if (r.return_code === 1 || r.return_code === 3) {
+    if (r.return_code === 1) {
       const d = r.data ?? {};
       const status = zlpStatus(d.status);
       if (typeof d.order_id !== 'string' || status === null) {
@@ -334,7 +334,7 @@ export class ZaloPayHttpClient implements ZaloPayClient {
         endpoint,
         returnCode: r.return_code,
         subReturnCode: code,
-        subReturnMessage: r.sub_return_message ?? r.return_message ?? null,
+        subReturnMessage: null,
         partnerOrderId,
       });
       return { kind: 'system', subCode: code, retryable: true };
@@ -357,7 +357,7 @@ export class ZaloPayHttpClient implements ZaloPayClient {
       r.return_code,
       sub.subCode,
       sub.kind === 'system',
-      r.sub_return_message ?? r.return_message ?? null,
+      null,
     );
   }
 }
@@ -382,7 +382,7 @@ function zlpStatus(s: unknown): ZlpStatus | null {
 }
 
 function nonEmpty(s: unknown): s is string {
-  return typeof s === 'string' && s !== '';
+  return typeof s === 'string' && s.trim() !== '';
 }
 
 /** §0.4 — verify by phone on the wallet route. */
@@ -401,6 +401,7 @@ function verifyPayload(r: VerifyReceiver): ReceiverInfoPayload {
 function transferPayload(r: TransferReceiver): ReceiverInfoPayload {
   switch (r.method) {
     case 'WALLET':
+      if (!nonEmpty(r.mUId)) throw new TypeError('wallet transfer requires usable m_u_id');
       return { m_u_id: r.mUId };
     case 'BANK_ACCOUNT':
       return { bank_code: r.bankCode, account_no: r.accountNo, account_holder_name: r.accountHolderName };

@@ -736,6 +736,7 @@ describe.skipIf(!hasDb())('the cycle total and the payout destination', () => {
       expect(await h.payout(h.ids.collector1)).toEqual({
         channel: 'zalopay',
         simulation: true,
+        verification_simulation: true,
         status: 'none',
         masked: null,
       });
@@ -762,6 +763,7 @@ describe.skipIf(!hasDb())('the cycle total and the payout destination', () => {
       expect(await h.payout(h.ids.collector1)).toEqual({
         channel: 'zalopay',
         simulation: true,
+        verification_simulation: true,
         status: 'awaiting',
         // The redaction is the server's: a WALLET's phone is stored in full and
         // only its last four digits are selected, so there is no full
@@ -819,6 +821,7 @@ describe.skipIf(!hasDb())('the cycle total and the payout destination', () => {
       expect(await h.payout(h.ids.collector1)).toEqual({
         channel: 'zalopay',
         simulation: true,
+        verification_simulation: true,
         status: 'none',
         masked: null,
       });

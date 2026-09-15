@@ -13,7 +13,7 @@ import {
   rational,
 } from './money.ts';
 import { loadBill, type BatchBill, type BatchOptions, type Issue } from './payout/worker/batch.ts';
-import { isSimulation } from './payout/domain/config.ts';
+import { storedSimulation } from './payout/domain/config.ts';
 
 /**
  * What a collector is told about their own money.
@@ -399,6 +399,7 @@ export type IncomeCycle = {
  */
 export type PayoutDestination = {
   simulation?: boolean;
+  verification_simulation?: boolean;
   payment?: { reference: string; amount_vnd: number };
   channel: 'zalopay';
   status: 'verified' | 'awaiting' | 'none';
@@ -768,12 +769,12 @@ export function registerMe(
     if (me === null) return reply.code(403).send({ error: 'collector session required' });
 
     const accounts = (await db.execute(sql`
-      select a.verify_status,
+      select a.id, a.verify_status,
              case when a.method = 'WALLET' then right(a.phone, 4) else a.account_no_last4 end as last4
         from payout_accounts a
        where a.collector_id = ${me} and a.is_current
        limit 1
-    `)) as unknown as { verify_status: string; last4: string | null }[];
+    `)) as unknown as { id: string; verify_status: string; last4: string | null }[];
 
     const account = accounts[0];
     const destination: PayoutDestination = {
@@ -798,8 +799,8 @@ export function registerMe(
      * no payment at all (`= null` matches nothing) — which is `status: 'none'`
      * with nothing beside it.
      */
-    const [payment] = await db.execute<{ reference: string; amount_vnd: string; mode: string }>(sql`
-      select coalesce(a.manual_reference, a.zp_trans_id, a.partner_order_id) as reference,
+    const [payment] = await db.execute<{ id: string; reference: string; amount_vnd: string; mode: string }>(sql`
+      select a.id, coalesce(a.manual_reference, a.zp_trans_id, a.partner_order_id) as reference,
              a.amount_vnd::text, a.mode
       from payout_attempts a join bills b on b.id = a.bill_id
       where b.collector_id = ${me} and a.status = 'succeeded'
@@ -816,8 +817,9 @@ export function registerMe(
      * rail and both example env files set `PLAYERONE_ZALOPAY_ENV=sandbox`.
      */
     return { ...destination,
-      simulation: isSimulation(options.sandbox === true,
-        payment ? { mode: payment.mode, reference: payment.reference } : null),
+      verification_simulation: account ? await storedSimulation(db, 'payout_accounts', account.id) : options.sandbox === true,
+      simulation: payment ? await storedSimulation(db, 'payout_attempts', payment.id, payment)
+        : account ? await storedSimulation(db, 'payout_accounts', account.id) : options.sandbox === true,
       ...(payment ? { payment: { reference: payment.reference, amount_vnd: Number(payment.amount_vnd) } } : {}) };
 
   });

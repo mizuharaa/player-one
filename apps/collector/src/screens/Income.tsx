@@ -116,7 +116,7 @@ export function Income() {
   const statusKey: MessageKey = status === 'verified' ? 'payout.verified' : status === 'none' ? 'payout.none' : 'payout.awaiting';
   const destination = <>
     {payout.isPending ? <Loading /> : payout.isError ? <Note tone="error" text={tt('common.loadFailed')} onRetry={() => void payout.refetch()} busy={payout.isFetching} /> : <>
-      <Tag label={tt(statusKey)} fg={c.ink} bg={c.paper} mark={status === 'verified' ? '✓' : '?'} />
+      <Tag label={payout.data?.verification_simulation ? `${tt(statusKey)} - ${tt('payout.simulation')}` : tt(statusKey)} fg={c.ink} bg={c.paper} mark={status === 'verified' ? '✓' : '?'} />
       <Body>{status === null ? tt('payout.unknown') : payout.data?.masked ? `${tt('payout.zalopay')} · ${payout.data.masked}` : tt('payout.zalopay')}</Body>
       {status === 'awaiting' ? <Body muted>{tt('payout.awaitingPayment')}</Body> : null}
       {payout.data?.payment ? <Body muted>{tt('payout.paidReference').replace('{reference}', payout.data.payment.reference)}</Body> : null}

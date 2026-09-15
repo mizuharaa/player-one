@@ -1,3 +1,4 @@
+import { storedSimulation } from './config.ts';
 import { sql } from 'drizzle-orm';
 import type { Db } from '@playerone/store';
 import { fromDecimal, quantise } from '../../money.ts';
@@ -255,6 +256,7 @@ async function notifyPayment(tx: Tx, attempt: AttemptRow): Promise<void> {
       bill_id: attempt.billId,
       amount_vnd: attempt.amountVnd,
       reference: attempt.zpTransId,
+      simulation: String(await storedSimulation(tx, 'payout_attempts', attempt.id, { mode: attempt.mode, reference: attempt.manualReference })),
     },
     { table: 'payout_attempts', id: attempt.id },
   );

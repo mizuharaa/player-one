@@ -107,11 +107,11 @@ export function next(current: AttemptStatus, event: AttemptEvent): AttemptStatus
     case 'ACCEPTED': {
       if (current !== 'submitted') return illegal('a transfer answer belongs to a submitted attempt');
       /**
-       * Status 2 on the transfer-fund answer itself is not taken as terminal:
+       * No status on the transfer-fund answer itself is taken as terminal:
        * only a *polled* status 2 reaches `failed`. The order exists, so the
        * poller asks query-txn and lets that answer decide.
        */
-      return event.status === 2 ? 'processing' : fromZlp(event.status);
+      return event.status === 4 ? 'pending_zlp' : 'processing';
     }
 
     case 'DUPLICATE':

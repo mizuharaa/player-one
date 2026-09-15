@@ -37,6 +37,34 @@ describe.skipIf(!hasDb())('honest payout demo (SIMULATION, test database only)',
     return { d, ids, finance, operator, collector, bill, mark, snapshot };
   }
 
+  it('keeps sandbox declaration provenance after switching the reader to production', async () => {
+    const h = await setup();
+    await app.close();
+    app = buildApi({ db: await appDb(), tokenSecret: 'k', payout: { zaloPayEnv: 'sandbox', client: {
+      verifyAccount: async () => ({ kind: 'verified', verifiedName: 'NGUYEN VAN A', mUId: 'simulation-wallet' }),
+      transferFund: async () => { throw new Error('no transfer'); }, queryTransaction: async () => ({ kind: 'not_found' }),
+      balance: async () => ({ balanceVnd: 0 }), bankCodes: async () => [],
+    } } });
+    const declared = await app.inject({ method: 'POST', url: '/api/payout/accounts', headers: h.finance,
+      payload: { id: uid(), collector_id: h.ids.collector1, method: 'WALLET', phone: '0901234567', declared_name: 'NGUYEN VAN A' } });
+    expect(declared.statusCode, declared.body).toBe(201);
+    await app.close();
+    app = buildApi({ db: await appDb(), tokenSecret: 'k', payout: { zaloPayEnv: 'production', credentialsPresent: { appId: true, paymentId: true, key1: true, publicKey: true } } });
+    expect((await app.inject({ url: '/api/me/payout', headers: h.collector() })).json()).toMatchObject({ status: 'verified', simulation: true });
+    const batch = await app.inject({ url: `/api/payout/batches/${P1.start.toISOString()}`, headers: h.finance });
+    expect(batch.json().bills[0]).toMatchObject({ simulation: true });
+    const notifications = await h.d.execute(sql`select payload from collector_notifications where kind = 'payout_account_verified'`);
+    expect(notifications[0]!.payload).toMatchObject({ simulation: 'true' });
+    const machine = await app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: 'HAN-01', secret: 'pw' } });
+    const payer = await app.inject({ method: 'POST', url: '/auth/operator', payload: { external_ref: 'fin-han', secret: 'pw' } });
+    const paidResponse = await h.mark({ 'x-machine-token': `Bearer ${machine.json().token}`, authorization: `Bearer ${payer.json().token}` });
+    expect(paidResponse.statusCode, paidResponse.body).toBe(201);
+    expect((await app.inject({ url: '/api/me/payout', headers: h.collector() })).json()).toMatchObject({ simulation: false, verification_simulation: true });
+    const paid = await app.inject({ url: `/api/payout/batches/${P1.start.toISOString()}`, headers: h.finance });
+    expect(paid.json().bills[0]).toMatchObject({ simulation: false, account: { simulation: true } });
+
+  });
+
   it('fixture-verified payment records floored dong, reference and finance actor, then reads paid afresh', async () => {
     const h = await setup();
     await seedAccount(h.d, h.ids, 1);

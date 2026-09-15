@@ -255,6 +255,9 @@ describe.skipIf(!hasDb())('the payout workers', () => {
       expect(run.sent.map((s) => s.billId)).toEqual([bill1, bill2]);
       expect(order).toEqual([`PO-${bill1}-1`, `PO-${bill2}-1`]);
       expect(run.stopped_at).toBeNull();
+      expect(await countOf(d, sql`select count(*) as n from payout_attempts where status = 'succeeded'`)).toBe(0);
+      expect(await countOf(d, sql`select count(*) as n from payout_attempts where status = 'processing'`)).toBe(2);
+      await tick(d, stub, new Date(Date.now() + 60_000), { jitter: () => 0, pauseMs: 0 });
       expect(await countOf(d, sql`select count(*) as n from payout_attempts where status = 'succeeded'`)).toBe(2);
       // A second run has nothing payable: both bills are paid, nothing is sent.
       const again = await runBatch(d, stub, finA(ids), P1, { pauseMs: 0 });

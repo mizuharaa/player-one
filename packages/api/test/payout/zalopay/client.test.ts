@@ -332,7 +332,7 @@ describe('transfer-fund', () => {
         endpoint: 'transferFund',
         returnCode: 2,
         subReturnCode: -9999,
-        subReturnMessage: 'SOMETHING_NEW',
+        subReturnMessage: null,
         partnerOrderId: id,
       },
     ]);
@@ -536,7 +536,7 @@ describe('official shapes from docs.zalopay.vn', () => {
 
   it('transfer-fund response from the guide → accepted, PROCESSING, with the order id', async () => {
     const r = await transfer(client({ fetch: answer(OFFICIAL.transferFundWalletResponse) }));
-    expect(r).toEqual({ kind: 'accepted', zlpOrderId: '51642840027000060', status: 3 });
+    expect(r).toEqual({ kind: 'unknown', cause: 'malformed' });
   });
 
   it('balance response from the guide', async () => {
@@ -622,5 +622,22 @@ describe('Merchant Wallet configuration', () => {
   it('does not let caller embed replace the configured merchant identity', async () => {
     await expect(client({ merchantWalletId: 'configured' }).transferFund({ partnerOrderId: po(), receiver: WALLET, amountVnd: 1, description: 'probe', partnerEmbedData: '{"merchant_wallet_id":"other"}' })).rejects.toThrow(/merchant_wallet_id/);
     expect(fake.requests('transferFund')).toHaveLength(0);
+  });
+});
+
+
+describe('unusable provider identity and acceptance', () => {
+  it.each(['', ' ', '\t'])('refuses unusable wallet ID %j before transfer', async mUId => {
+    await expect(transfer(client(), po(), { method: 'WALLET', mUId } as typeof WALLET)).rejects.toThrow(/m_u_id/);
+    expect(fake.requests('transferFund')).toHaveLength(0);
+  });
+  it('refuses a whitespace-only wallet verify answer', async () => {
+    fake.plan('verifyAccount', { kind: 'ok', mUId: ' ' });
+    await expect(client().verifyAccount({ receiver: { method: 'WALLET', phone: '0901234567' }, amountVnd: 1 })).rejects.toMatchObject({ cause: 'malformed' });
+  });
+  it('does not accept undocumented envelope return_code 3 as success', async () => {
+    const fetch: typeof globalThis.fetch = async () => new Response(JSON.stringify({ return_code: 3, data: { order_id: 'id', status: 1 } }));
+    expect(await transfer(client({ fetch }))).toEqual({ kind: 'unknown', cause: 'malformed' });
+    expect(await client({ fetch }).queryTransaction('id')).not.toMatchObject({ kind: 'found' });
   });
 });

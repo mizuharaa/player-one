@@ -737,6 +737,7 @@ export interface RiskSummary {
 }
 
 export interface PayoutAccountSummary {
+  simulation?: boolean;
   id: string;
   method: PayoutMethod;
   verify_status: VerifyStatus;
