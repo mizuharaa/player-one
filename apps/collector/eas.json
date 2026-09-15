@@ -16,8 +16,8 @@
       "distribution": "internal",
       "env": {
         "PLAYERONE_BUILD_PROFILE": "demo",
-        "EXPO_PUBLIC_API_URL": "https://demo.playerone.invalid",
-        "PLAYERONE_VERSION_CODE": "41"
+        "EXPO_PUBLIC_API_URL": "https://api.playerone.vng.com.vn",
+        "PLAYERONE_VERSION_CODE": "43"
       },
       "pnpm": "9.15.9"
     },
@@ -40,6 +40,11 @@
     "testflight": {
       "extends": "demo",
       "distribution": "store",
+      "env": {
+        "PLAYERONE_BUILD_PROFILE": "demo",
+        "EXPO_PUBLIC_API_URL": "https://api.playerone.vng.com.vn",
+        "PLAYERONE_VERSION_CODE": "43"
+      },
       "pnpm": "9.15.9"
     }
   },
