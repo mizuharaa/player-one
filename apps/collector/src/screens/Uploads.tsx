@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
-import { Modal, Pressable, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, type EpisodeState } from '../api/types.ts';
+import { ApiError, EPISODE_STATES, type EpisodeState } from '../api/types.ts';
 import { uuid } from '../api/http.ts';
 import { useApi } from '../api/context.tsx';
 import { HEADSET_GUIDANCE } from '../headset-guidance.ts';
@@ -9,7 +9,7 @@ import { useLocale, useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import type { NativeTheme } from '@playerone/design/native';
 import { useGuideTarget } from '../guide/Guide.tsx';
-import { Body, Button, face, Card, Choice, Hatch, ListScreen, Loading, Note, Progress, Row, Screen, Tag, Title } from '../ui.tsx';
+import { Body, Button, face, Card, Chip, Choice, Field, Hatch, ListScreen, Loading, Note, Progress, Row, Screen, Tag, Title } from '../ui.tsx';
 import { useNav } from '../nav.tsx';
 import type { DeliveryRecord, DeliveryState, DeliveryStep } from '@playerone/delivery';
 import { runDelivery } from '@playerone/delivery';
@@ -20,7 +20,7 @@ import {
   pickSessionDirectory,
   type PickedSession,
 } from '../upload/delivery-native.ts';
-import { shortId } from '../money.ts';
+import { dong, shortId } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
 
 
@@ -158,6 +158,8 @@ export function Uploads() {
   const [deliveryStage, setDeliveryStage] = useState(-1);
   const [deliveryMode, setDeliveryMode] = useState<'phone' | 'card' | null>(null);
   const { locale } = useLocale();
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<EpisodeState | null>(null);
   const [selectedEpisode, setSelectedEpisode] = useState<string | null>(null);
   const tt = useT();
   const theme = useTheme();
@@ -172,6 +174,7 @@ export function Uploads() {
   const listTarget = useGuideTarget('uploads.list');
 
   const episodes = useQuery({ queryKey: ['episodes'], queryFn: () => api.episodes() });
+  const income = useQuery({ queryKey: ['income'], queryFn: () => api.income() });
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: () => api.sessions(), enabled: open });
   /**
    * The delivery this phone was interrupted in the middle of, if any.
@@ -247,6 +250,10 @@ export function Uploads() {
    * changes when it arrives.
    */
   const c = theme.collector;
+  const amounts = new Map((income.data ?? []).map(entry => [entry.episodeId, entry]));
+  const needle = search.trim().toLocaleLowerCase(locale);
+  const visible = (episodes.data ?? []).filter(episode => (filter === null || episode.state === filter) &&
+    `${episode.episodeId} ${tt(`state.${episode.state}`)}`.toLocaleLowerCase(locale).includes(needle));
   const selected = episodes.data?.find(episode => episode.episodeId === selectedEpisode);
   const start = (record: DeliveryRecord | null) => {
     if (sending.current) return;
@@ -258,24 +265,33 @@ export function Uploads() {
     setOpen(false); setPicked(null); setSessionId(null); setStep(null); setHashed(null); setDeliveryStage(-1); setDeliveryMode(null); deliver.reset();
   };
   return <>
-    <ListScreen title={tt('uploads.title')} data={episodes.data ?? []} keyOf={episode => episode.episodeId}
-      refresh={{ refreshing: episodes.isFetching, onRefresh: () => { void episodes.refetch(); } }}
+    <ListScreen title={tt('uploads.title')} data={visible} keyOf={episode => episode.episodeId}
+      refresh={{ refreshing: episodes.isFetching || income.isFetching, onRefresh: () => { void episodes.refetch(); void income.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.cardGap }}>
         <Button label={tt('uploads.deliverTitle')} onPress={() => setOpen(true)} />
         <Button label={tt('session.title')} variant="secondary" onPress={() => nav.push({ name: 'sessionReminder' })} />
+        <Field label={tt('uploads.search')} value={search} onChangeText={setSearch} />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: theme.space[2] }}>
+          <Chip label={tt('hall.all')} selected={filter === null} onPress={() => setFilter(null)} />
+          {EPISODE_STATES.map(state => <Chip key={state} label={tt(`state.${state}`)} selected={filter === state} onPress={() => setFilter(state)} />)}
+        </ScrollView>
+        {income.isError ? <Note tone="error" text={tt('common.loadFailed')} onRetry={() => void income.refetch()} busy={income.isFetching} /> : null}
         {episodes.isError ? <Note tone="error" text={tt(episodes.data ? 'common.refreshFailed' : 'common.loadFailed')} onRetry={() => void episodes.refetch()} busy={episodes.isFetching} /> : null}
         {episodes.isPending ? <Loading /> : null}
       </View>}
-      empty={episodes.isPending || episodes.isError ? null : <Hatch text={tt('uploads.empty')} />}
+      empty={episodes.isPending || episodes.isError ? null : <Hatch text={tt(search.trim() || filter ? 'uploads.noMatches' : 'uploads.empty')} />}
       renderItem={episode => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(episode.episodeId)}. ${tt(`state.${episode.state}`)}`}
         onPress={() => setSelectedEpisode(episode.episodeId)}
         style={({ pressed }) => ({ paddingVertical: c.cardPad, borderBottomWidth: 1, borderBottomColor: c.line,
           flexDirection: 'row', alignItems: 'center', gap: c.cardGap, backgroundColor: pressed ? c.surface : undefined })}>
-        <View style={{ width: 44, height: 44, borderRadius: c.radius.pill, borderWidth: 1, borderColor: c.line, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontFamily: face(theme), ...c.type.h2, color: c.plum }}>{stateMarks[episode.state]}</Text>
+        <View style={{ width: 44, height: 44, borderRadius: c.radius.pill, borderWidth: 1, borderColor: c.line, backgroundColor: stateColors(theme, episode.state).bg, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontFamily: face(theme), ...c.type.h2, color: stateColors(theme, episode.state).fg }}>{stateMarks[episode.state]}</Text>
         </View>
         <View style={{ flex: 1, gap: theme.space[1] }}><Body>{shortId(episode.episodeId)}</Body><Body muted>{tt(`state.${episode.state}`)}</Body></View>
-        <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.muted, flexShrink: 1 }}>{episode.sizeBytes === null ? tt('uploads.sizeUnknown') : gb(episode.sizeBytes)}</Text>
+        <View style={{ flexShrink: 1, alignItems: 'flex-end' }}>
+          <Text style={{ fontFamily: face(theme), ...c.type.body, color: amounts.get(episode.episodeId)?.kind === 'confirmed' ? c.greenInk : c.ink }}>{amounts.get(episode.episodeId)?.amountVnd == null ? '—' : dong(amounts.get(episode.episodeId)!.amountVnd!)}</Text>
+          {amounts.has(episode.episodeId) ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.muted }}>{tt(amounts.get(episode.episodeId)!.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')}</Text> : null}
+        </View>
       </Pressable>} />
     <Modal visible={open} animationType="none" onRequestClose={close}>
       <Screen title={outcome ? tt(`delivery.${outcome.state}`) : tt(running ? 'uploads.sending' : deliveryStage === 2 ? 'uploads.confirmTitle' : 'uploads.deliverTitle')}
@@ -314,8 +330,10 @@ export function Uploads() {
         </> : <>
           <Body>{tt('uploads.confirmBody')}</Body>
           <Card><Row label={tt('uploads.directory')} value={picked?.sessionBasename ?? ''} />
-            <Row label={tt('uploads.session')} value={sessionId ?? ''} />
-            <Row label={tt('uploads.files')} value={String(picked?.files.length ?? 0)} /></Card>
+            <Row label={tt('uploads.files')} value={String(picked?.files.length ?? 0)} />
+            <Button label={tt('common.change')} variant="ghost" onPress={() => setDeliveryStage(0)} /></Card>
+          <Card><Row label={tt('uploads.session')} value={sessionId ?? ''} />
+            <Button label={tt('common.change')} variant="ghost" onPress={() => setDeliveryStage(1)} /></Card>
         </>}
       </Screen>
     </Modal>

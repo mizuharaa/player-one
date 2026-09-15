@@ -24,7 +24,7 @@ vi.mock('../src/ui.tsx', () => ({
   Note: ({ text }: { text: string }) => <p>{text}</p>,
   Hatch: ({ text }: { text: string }) => <p>{text}</p>,
   Loading: () => <p>Loading</p>,
-  Progress: () => null, Tag: () => null,
+  Progress: () => null, Tag: () => null, Chip: () => null, Field: () => null,
   Button: ({ label, disabled, busy, onPress }: { label: string; disabled?: boolean; busy?: boolean; onPress: () => void }) => <button disabled={disabled || busy} onClick={onPress}>{label}</button>,
   Choice: ({ label, onPress }: { label: string; onPress: () => void }) => <button onClick={onPress}>{label}</button>,
 }));

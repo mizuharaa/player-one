@@ -184,17 +184,15 @@ export function SessionCreate() {
     submitting.current = true;
     create.mutate();
   };
-  return <Screen title={tt(titles[step]!)} onBack={() => step > 0 ? setStep(step - 1) : nav.back()}
+  const progress = <View accessibilityRole="progressbar" accessibilityLabel={tt('session.title')} accessibilityValue={{ min: 0, max: titles.length, now: step }}
+    style={{ flex: 1, maxWidth: 160, height: theme.space[1], borderRadius: theme.radius.pill, backgroundColor: theme.collector.line, overflow: 'hidden' }}>
+    <View style={{ width: `${step / titles.length * 100}%`, height: '100%', backgroundColor: theme.collector.plum }} />
+  </View>;
+  return <Screen progress={progress} title={tt(titles[step]!)} onBack={() => step > 0 ? setStep(step - 1) : nav.back()}
     right={<Pressable accessibilityRole="button" accessibilityLabel={tt('common.close')} onPress={() => nav.reset({ name: 'home' })}
       style={{ minWidth: 48, minHeight: 48, justifyContent: 'center', alignItems: 'center' }}><Text style={{ ...theme.collector.type.h2, color: theme.collector.ink }}>×</Text></Pressable>}
     footer={<Button label={tt(create.isPending ? 'common.saving' : step === 4 ? 'session.create' : 'common.next')}
       busy={create.isPending} disabled={!ready || create.isPending} onPress={next} />}>
-    <View accessibilityRole="progressbar" accessibilityLabel={tt('session.title')}
-      accessibilityValue={{ min: 0, max: titles.length, now: step }}
-      style={{ flexDirection: 'row', gap: theme.space[1], paddingVertical: theme.space[3] }}>
-      {titles.map((title, index) => <View key={title} style={{ flex: 1, height: theme.space[1], borderRadius: theme.radius.pill,
-        backgroundColor: index <= step ? theme.collector.plum : theme.collector.line }} />)}
-    </View>
     {step === 0 ? <>
       <Body muted>{tt('session.intro')}</Body>
       {claimedTasks.length === 0 ? <><Note text={tt('session.needClaim')} /><Button label={tt('hall.title')} variant="secondary" onPress={() => nav.push({ name: 'taskHall' })} /></> : null}
