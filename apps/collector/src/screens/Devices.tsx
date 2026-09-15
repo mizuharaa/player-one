@@ -67,10 +67,15 @@ export function Devices() {
           </Text>
           <Row label={tt('devices.boundAt')} value={new Date(d.boundAt).toLocaleString()} />
           <Row label={tt('devices.status')} value={tt(DEVICE_STATES[d.status ?? ''] ?? 'devices.unknown')} />
-          {/* Battery and last-seen are what a collector actually wants here
-              and `BoundDevice` carries neither — it is `{ serial, boundAt,
-              status }` and nothing else. Saying so is better than drawing an
-              empty gauge or a guessed percentage. */}
+          {/* Battery and last-used are what a collector wants on this card and
+              `BoundDevice` carries neither — it is `{ serial, boundAt, status }`
+              and nothing else. So the rows exist and say "not reported": the
+              field is a real property of the camera, the server does not send
+              it, and an empty gauge or a guessed percentage would be this app
+              inventing a reading. When the device record grows the columns,
+              these two rows read them and the sentence below goes. */}
+          <Row label={tt('devices.battery')} value={tt('devices.notReported')} />
+          <Row label={tt('devices.lastUsed')} value={tt('devices.notReported')} />
           <Body muted>{tt('devices.noReadings')}</Body>
         </Card>
       ))}

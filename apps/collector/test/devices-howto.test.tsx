@@ -110,9 +110,16 @@ it('prints a bound serial in the tech ink and says which readings it lacks', asy
   );
   expect(serial?.style.color.replace(/\s/g, '')).toBe(hexToRgb(collector.techInk));
 
-  // Battery and last-seen are not on `BoundDevice`, and the screen says so
-  // instead of drawing an empty gauge.
+  // Battery and last-used are not on `BoundDevice`. The rows exist and say
+  // "not reported" — never a zero, a dash that could be read as empty, or a
+  // guessed percentage.
+  expect(page()).toContain(m['devices.battery']);
+  expect(page()).toContain(m['devices.lastUsed']);
+  expect(page()).toContain(m['devices.notReported']);
   expect(page()).toContain(m['devices.noReadings']);
+  // Nothing on the card is a number this app made up: the only figures are the
+  // serial and the bound-at timestamp the server sent.
+  expect(page()).not.toMatch(/\d+\s*%/);
 });
 
 /** `style.color` comes back as `rgb(r, g, b)` in jsdom. */

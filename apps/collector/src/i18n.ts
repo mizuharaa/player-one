@@ -556,14 +556,6 @@ const vi = {
   'about.whoBody': 'VNG PT Lab làm nền tảng. PaXini cung cấp máy Ego và duyệt dữ liệu.',
   'about.build': 'Bản dựng',
   'privacy.index': 'Trong trang này',
-  'privacy.s1': 'Ghi lại những gì',
-  'privacy.s1Body': 'Máy ghi hình và tiếng theo góc nhìn của bạn, kèm dữ liệu chuyển động từ cảm biến. Máy chỉ ghi khi bạn bấm nút trên máy, ngoài ra không ghi.',
-  'privacy.s2': 'Ai được xem',
-  'privacy.s2Body': 'Nhân viên duyệt đã được đào tạo sẽ xem để quyết định số phút được duyệt. Chỉ người cần mới được xem, và mọi lần xem đều được ghi lại.',
-  'privacy.s3': 'Không được ghi gì',
-  'privacy.s3Body': 'Không ghi người chưa đồng ý. Che tên, số và màn hình có thông tin của người khác.',
-  'privacy.s4': 'Hai điều bạn khai',
-  'privacy.s4Body': 'Trước mỗi buổi ghi, bạn khai có người khác trong khung hình không, và có thông tin nhạy cảm trên màn hình không. Chỉ hai câu đó, không thêm gì.',
   'privacy.helpful': 'Phần này có giúp được bạn không?',
   'privacy.yes': 'Có',
   'privacy.no': 'Không',
@@ -578,6 +570,9 @@ const vi = {
   'devices.step4': 'Mang thẻ tới quầy',
   'devices.step4Body': 'Mang thẻ tới quầy nguyên như vậy. Không xóa gì trong thẻ: file đã xóa là công không ai trả được cho bạn.',
   'devices.noReadings': 'Bản này chưa đọc được pin hay lần cuối máy hoạt động, vì dữ liệu thiết bị chưa có mục đó. Bạn hỏi nhân viên ở quầy.',
+  'devices.battery': 'Pin',
+  'devices.lastUsed': 'Lần dùng gần nhất',
+  'devices.notReported': 'Chưa có dữ liệu',
 };
 
 export type MessageKey = keyof typeof vi;
@@ -1084,14 +1079,6 @@ const en: Record<MessageKey, string> = {
   'about.whoBody': 'VNG PT Lab builds the platform. PaXini supplies the Ego camera and reviews the data.',
   'about.build': 'Build',
   'privacy.index': 'On this page',
-  'privacy.s1': 'What is recorded',
-  'privacy.s1Body': 'The camera records video and sound from your point of view, plus motion from its sensors. It records while you press its buttons and at no other time.',
-  'privacy.s2': 'Who can see it',
-  'privacy.s2Body': 'A trained reviewer watches it to decide the reviewed minutes. Access is limited to the people who need it, and every view is recorded.',
-  'privacy.s3': 'What you must not record',
-  'privacy.s3Body': 'Do not record anyone who has not agreed to it, and cover names, numbers and screens that show other people’s information.',
-  'privacy.s4': 'The two things you declare',
-  'privacy.s4Body': 'Before each session you say whether other people are in frame and whether anything sensitive was on screen. Those two answers are the whole of what you declare.',
   'privacy.helpful': 'Was this helpful?',
   'privacy.yes': 'Yes',
   'privacy.no': 'No',
@@ -1106,6 +1093,9 @@ const en: Record<MessageKey, string> = {
   'devices.step4': 'Bring the card to the desk',
   'devices.step4Body': 'Hand the card in as it is. Do not delete anything on it: a deleted file is work nobody can pay you for.',
   'devices.noReadings': 'This build cannot read the battery or when the camera was last used: the device record has no such field yet. Ask the desk.',
+  'devices.battery': 'Battery',
+  'devices.lastUsed': 'Last used',
+  'devices.notReported': 'Not reported',
 };
 
 /**
@@ -1598,14 +1588,6 @@ const zh: Record<MessageKey, string> = {
   'about.whoBody': 'VNG PT Lab 做平台。PaXini 提供 Ego 相机并审核数据。',
   'about.build': '版本号',
   'privacy.index': '本页内容',
-  'privacy.s1': '记录了什么',
-  'privacy.s1Body': '相机以你的视角录制画面和声音，并记录传感器的动作数据。只在你按相机按钮时录制，其他时候不录。',
-  'privacy.s2': '谁能看到',
-  'privacy.s2Body': '经过培训的审核人员会看，用来定审核通过的分钟数。只有需要的人能看，每次查看都有记录。',
-  'privacy.s3': '不能拍什么',
-  'privacy.s3Body': '不要拍没有同意的人。遮住别人的姓名、号码和屏幕上的信息。',
-  'privacy.s4': '你要声明的两件事',
-  'privacy.s4Body': '每次录制前，你要说画面里有没有其他人，以及屏幕上有没有敏感信息。只有这两项。',
   'privacy.helpful': '这部分对你有帮助吗？',
   'privacy.yes': '有',
   'privacy.no': '没有',
@@ -1620,6 +1602,9 @@ const zh: Record<MessageKey, string> = {
   'devices.step4': '把卡送到柜台',
   'devices.step4Body': '原样把卡交到柜台。不要删里面的任何东西：删了的文件没有人能付你钱。',
   'devices.noReadings': '这个版本还读不到电量或最后使用时间，因为设备数据里还没有这项。请问柜台。',
+  'devices.battery': '电量',
+  'devices.lastUsed': '最近使用',
+  'devices.notReported': '未上报',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en, zh };

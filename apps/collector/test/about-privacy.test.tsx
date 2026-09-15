@@ -112,18 +112,38 @@ it('About only offers the document that has a screen', async () => {
   expect(page()).not.toContain(m['legal.dataNotice']);
 });
 
-it('Privacy indexes its sections and restates the two declarations', async () => {
+it('Privacy authors no legal copy of its own', async () => {
+  const { AGREEMENTS } = await import('../src/api/types.ts');
   await mount(<Privacy />);
 
   expect(page()).toContain(m['privacy.index']);
-  for (const key of ['privacy.s1', 'privacy.s2', 'privacy.s3', 'privacy.s4'] as const) {
-    // Once in the index, once as the section heading.
-    expect(named(m[key])).toBeDefined();
-    expect(page()).toContain(m[key]);
+  // Every word of substance is copy the app already shipped: the intro, the
+  // six agreement names with the versions the server's own constraint closes
+  // over, and the two APP-17b declarations.
+  expect(page()).toContain(m['agreements.intro']);
+  for (const agreement of AGREEMENTS) {
+    expect(page()).toContain(m[`agreement.${agreement.id}`]);
+    expect(page()).toContain(`${m['agreements.version']} ${agreement.version}`);
   }
-  // The two APP-17b declarations are the whole of what a collector declares,
-  // and this page says so rather than adding a third.
-  expect(page()).toContain(m['privacy.s4Body']);
+  expect(page()).toContain(m['session.othersTitle']);
+  expect(page()).toContain(m['session.sensitiveTitle']);
+
+  // Both sections are reachable from the index.
+  expect(named(m['agreements.title'])).toBeDefined();
+  expect(named(m['session.declare'])).toBeDefined();
+});
+
+it('Privacy offers the agreements screen when the caller can open it', async () => {
+  const onAgreements = vi.fn();
+  await mount(<Privacy onAgreements={onAgreements} />);
+
+  // The full text and the record of acceptance live there, not here.
+  const open = [...document.body.querySelectorAll<HTMLElement>('[role="button"]')].find(
+    (node) => (node.getAttribute('aria-label') ?? '') === m['agreements.title'],
+  );
+  expect(open).toBeDefined();
+  await act(async () => open!.click());
+  expect(onAgreements).toHaveBeenCalledTimes(1);
 });
 
 it('Privacy acknowledges the helpful answer without implying a ticket', async () => {
