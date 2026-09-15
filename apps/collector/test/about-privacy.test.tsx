@@ -8,6 +8,8 @@ import { NavProvider, useNav } from '../src/nav.tsx';
 import { ThemeProvider } from '../src/theme.tsx';
 import { collector } from '@playerone/design/tokens';
 
+vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
+vi.mock('react-native-safe-area-context', async () => ({ initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null) }));
 vi.mock('react-native', async () => ({ ...(await import('react-native-web')) }));
 vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({}) }));
 vi.mock('expo-image', () => ({ Image: () => null }));
@@ -155,8 +157,6 @@ it('Privacy acknowledges the helpful answer without implying a ticket', async ()
   expect(named(m['privacy.yes'])).toBeUndefined();
 });
 
-vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
-vi.mock('react-native-safe-area-context', async () => ({ initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null) }));
 
 it('Privacy provides a visible return control after opening from Profile', async () => {
   function Journey() {
@@ -168,4 +168,13 @@ it('Privacy provides a visible return control after opening from Profile', async
   expect(named(m['common.back'])).toBeDefined();
   await act(async () => named(m['common.back'])!.click());
   expect(page()).toContain('Open privacy');
+});
+
+it('About opens the existing language picker and applies the selected language', async () => {
+  await mount(<About />);
+  const language = [...document.body.querySelectorAll<HTMLElement>('[role="button"]')].find(node => node.getAttribute('aria-label')?.startsWith(m['profile.language']));
+  await act(async () => language!.click());
+  await act(async () => document.body.querySelector<HTMLElement>('[role="radio"][aria-label="Tiếng Việt"]')!.click());
+  expect(page()).toContain(MESSAGES.vi['profile.about']);
+  expect(document.body.querySelector('[role="radio"]')).toBeNull();
 });

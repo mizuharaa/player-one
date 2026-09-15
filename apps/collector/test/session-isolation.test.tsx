@@ -17,6 +17,8 @@ import { useSignOut } from '../src/session.tsx';
 // reaches. `react-native-web` is already a devDependency of this app and is a
 // complete DOM implementation of the same surface; use it rather than growing
 // a shim one missing export at a time.
+vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
+vi.mock('expo-linear-gradient', () => ({ LinearGradient: () => null }));
 vi.mock('react-native', async () => ({ ...await import('react-native-web') }));
 /**
  * `expo-video` reaches `expo-modules-core`, which asks the native runtime for
@@ -171,7 +173,6 @@ vi.mock('react-native-safe-area-context', async () => ({
 
 vi.mock('../src/ui/HeaderGradient.tsx', () => ({ HeaderGradient: ({ children }: { children: import('react').ReactNode }) => children }));
 
-vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
 
 vi.mock('react-native-svg', () => {
   const Stub = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
@@ -193,5 +194,3 @@ it('keeps the account hidden when preference deletion fails and retries the orig
   await settle(() => expect(host.textContent).toContain('Sign in test'));
   expect(remove.mock.calls.filter(([key]) => key === `playerone.collector.prefs.${id}`)).toHaveLength(2);
 });
-
-vi.mock('expo-linear-gradient', () => ({ LinearGradient: () => null }));

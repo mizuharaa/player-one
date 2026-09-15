@@ -807,8 +807,7 @@ function TaskCard({ task, lead, onPress }: { task: Task; lead: boolean; onPress:
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', gap: theme.space[2] }}>
           <Text
             style={{
-              fontSize: 18,
-              lineHeight: 24,
+              ...c.type.h2,
               color: c.greenInk,
               fontFamily: face(theme),
               fontWeight: theme.fontWeight.semibold,

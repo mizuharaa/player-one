@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
+import { NavProvider } from '../src/nav.tsx';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
 import { AccessibilityInfo } from 'react-native';
 import { ToastProvider, useToast } from '../src/ui/Toast.tsx';
 import { Splash } from '../src/screens/Splash.tsx';
-import { Button, Film, LegalLine, Note } from '../src/ui.tsx';
+import { Button, Film, Header, LegalLine, Note, useTabBarReserve } from '../src/ui.tsx';
 import { useVideoPlayer } from 'expo-video';
 import { isLowPowerModeEnabledAsync } from 'expo-battery';
 
@@ -138,5 +140,33 @@ it('opens and dismisses the honest unavailable-document state from a login legal
     expect(dialog?.textContent).toContain('PaXini has not supplied this content yet.');
     await act(async () => dialog!.querySelector<HTMLElement>('[role="button"]')!.click());
     expect(document.body.querySelector('[aria-modal="true"]')).toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it('updates the header and dock reserve when native safe-area measurements change', async () => {
+  function Probe() { return <><Header title="Measured header" /><output>{useTabBarReserve()}</output></>; }
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const render = (top: number, bottom: number) => <SafeAreaInsetsContext.Provider value={{ top, bottom, left: 0, right: 0 }}><NavProvider initial={{ name: 'home' }}><Probe /></NavProvider></SafeAreaInsetsContext.Provider>;
+  try {
+    await act(async () => root.render(render(59, 34)));
+    const header = host.querySelector<HTMLElement>('[role="heading"]')!.parentElement!.parentElement!;
+    expect(header.style.paddingTop).toBe('67px');
+    const firstReserve = Number(host.querySelector('output')!.textContent);
+    expect(firstReserve).toBeGreaterThan(98);
+    await act(async () => root.render(render(24, 8)));
+    expect(header.style.paddingTop).toBe('32px');
+    expect(firstReserve - Number(host.querySelector('output')!.textContent)).toBe(26);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it('recovers a rejected reduced-motion query without leaving the film permanently disabled', async () => {
+  vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockRejectedValueOnce(new Error('Unavailable'));
+  vi.mocked(useVideoPlayer).mockClear();
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login" fade={0} />));
+    expect(useVideoPlayer).toHaveBeenCalled();
   } finally { await act(async () => root.unmount()); host.remove(); }
 });

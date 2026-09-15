@@ -4,7 +4,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { AGREEMENTS } from '../api/types.ts';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Card, Header, Note, Row, face, useInsets, useTabBarReserve, useReducedMotion } from '../ui.tsx';
+import { Body, Button, Card, Header, Note, Row, face, useInsets, useReducedMotion } from '../ui.tsx';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -37,7 +37,6 @@ export function Privacy({ onAgreements }: { onAgreements?: () => void } = {}) {
   const theme = useTheme();
   const insets = useInsets();
   const c = theme.collector;
-  const reserve = useTabBarReserve();
   const scroll = useRef<ScrollView>(null);
   /** Where each section starts, measured rather than guessed. */
   const tops = useRef<Record<string, number>>({});
@@ -64,7 +63,7 @@ export function Privacy({ onAgreements }: { onAgreements?: () => void } = {}) {
       contentContainerStyle={{
         paddingHorizontal: c.gutter,
         paddingTop: 0,
-        paddingBottom: theme.space[6] + Math.max(reserve, Math.max(insets.bottom, theme.space[6])),
+        paddingBottom: theme.space[6] + Math.max(insets.bottom, theme.space[6]),
         gap: theme.space[3],
       }}
     >
@@ -110,9 +109,7 @@ export function Privacy({ onAgreements }: { onAgreements?: () => void } = {}) {
             />
           ))}
         </Card>
-        {
-          <Button label={tt('agreements.title')} variant="secondary" onPress={openDocument} />
-        }
+        <Button label={tt('agreements.title')} variant="secondary" onPress={openDocument} />
       </View>
 
       {/* APP-17b, and nothing beyond it. */}

@@ -1,3 +1,4 @@
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { Onboarding } from '../src/screens/Onboarding.tsx';
 import { Notifications } from '../src/screens/Notifications.tsx';
 import { NOTIFICATION_PREVIEW } from './notification-preview.ts';
@@ -49,6 +50,8 @@ function Locale({ lang, children }: { lang: LocaleName; children: ReactNode }) {
 }
 
 /** One instance, so the two pre-session screens share the seam the app uses. */
+// Phone-shaped browser proof only; native uses the live SafeAreaProvider.
+const PREVIEW_INSETS = { top: 24, bottom: 24, left: 0, right: 0 };
 const api = new MockCollectorApi();
 /** `SignIn` sends its two requests through react-query, exactly as in `App`. */
 const queryClient = new QueryClient();
@@ -86,7 +89,7 @@ export function Harness() {
     ? (asked as LocaleName)
     : 'en';
 
-  if (screen === null) return <App />;
+  if (screen === null) return <SafeAreaInsetsContext.Provider value={PREVIEW_INSETS}><App /></SafeAreaInsetsContext.Provider>;
   if (!ready) return null;
   const routed = Object.hasOwn(SCREENS, screen);
   const initial: Route = screen === 'taskDetail' ? { name: 'taskDetail', taskId: params.get('taskId') ?? 'task-cook' }
@@ -94,6 +97,7 @@ export function Harness() {
     : { name: (routed ? screen : 'register') as Exclude<RouteName, 'taskDetail' | 'groupThread'> };
 
   return (
+    <SafeAreaInsetsContext.Provider value={PREVIEW_INSETS}>
     <ThemeProvider>
       <LocaleProvider>
         <Locale lang={lang}>
@@ -111,5 +115,6 @@ export function Harness() {
         </Locale>
       </LocaleProvider>
     </ThemeProvider>
+    </SafeAreaInsetsContext.Provider>
   );
 }

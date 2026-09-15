@@ -32,3 +32,8 @@ not completion claims.
   both inbox and settings; live channel controls are unavailable.
 - The dock and splash use the work order's static fallback. Animated ripple
   and dock motion require the native performance gate before introduction.
+
+- Browser proof supplies explicit simulated 24 dp top/bottom insets. Native
+  zero insets remain valid, and provider updates move the header and dock reserve.
+- An unresolved reduced-motion query keeps the static state; a rejected query
+  recovers to normal behavior. A resolved enabled preference always stays static.

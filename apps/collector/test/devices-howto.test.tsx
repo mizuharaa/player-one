@@ -11,6 +11,8 @@ import { NavProvider } from '../src/nav.tsx';
 import { ThemeProvider } from '../src/theme.tsx';
 import { collector } from '@playerone/design/tokens';
 
+vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
+vi.mock('react-native-safe-area-context', async () => ({ initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null) }));
 vi.mock('react-native', async () => ({ ...(await import('react-native-web')) }));
 vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({}) }));
 vi.mock('expo-image', () => ({ Image: () => null }));
@@ -127,6 +129,3 @@ function hexToRgb(hex: string): string {
   const n = Number.parseInt(hex.slice(1), 16);
   return `rgb(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255})`;
 }
-
-vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
-vi.mock('react-native-safe-area-context', async () => ({ initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null) }));

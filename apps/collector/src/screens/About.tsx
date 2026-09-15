@@ -1,7 +1,10 @@
+import { useState } from 'react';
+import { LanguageChoices, LOCALE_NAME } from './Profile.tsx';
+import { Sheet } from './TaskHall.tsx';
 import { useNav } from '../nav.tsx';
-import { Image, Platform, Text, View } from 'react-native';
+import { Image, Platform, Text, View, useWindowDimensions } from 'react-native';
 import { HeaderGradient } from '../ui/HeaderGradient.tsx';
-import { useT } from '../locale.tsx';
+import { useLocale, useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { Body, Card, NavRow, Screen, face } from '../ui.tsx';
 import wordmark from '../../assets/discover/playerone-wordmark.png';
@@ -22,6 +25,9 @@ import app from '../../app.json';
  * caller's handler rather than pretending to open something.
  */
 export function About({ onPrivacy }: { onPrivacy?: () => void } = {}) {
+  const [language, setLanguage] = useState(false);
+  const { fontScale } = useWindowDimensions();
+  const { locale } = useLocale();
   const nav = useNav();
   const openDocument = onPrivacy ?? (() => nav.push({ name: 'privacy' }));
   const tt = useT();
@@ -72,6 +78,11 @@ export function About({ onPrivacy }: { onPrivacy?: () => void } = {}) {
       <View style={{ marginTop: theme.space[2] }}>
         <NavRow label={tt('legal.privacy')} subtitle={tt('profile.privacySub')} onPress={openDocument} />
       </View>
+
+      <NavRow label={tt('profile.language')} subtitle={LOCALE_NAME[locale]} onPress={() => setLanguage(true)} />
+      <Sheet open={language} onClose={() => setLanguage(false)} title={tt('profile.language')}>
+        <LanguageChoices stacked={fontScale > 1.2} onPicked={() => setLanguage(false)} />
+      </Sheet>
 
       {/* The version, and which platform's build it is.
           `app.json`'s `expo.version` and `Platform.OS`, not `expo-constants`:

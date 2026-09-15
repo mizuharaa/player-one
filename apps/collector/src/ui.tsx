@@ -59,7 +59,7 @@ export function useReducedMotion(): boolean {
     let live = true;
     void AccessibilityInfo.isReduceMotionEnabled().then((v) => {
       if (live) setReduced(v);
-    }).catch(() => {});
+    }).catch(() => { if (live) setReduced(false); });
     const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
     return () => {
       live = false;
@@ -80,8 +80,6 @@ export function measureTabBar(height: number) {
   measuredTabHeight = height;
   tabListeners.forEach((notify) => notify());
 }
-export const tabBarHeight = (theme: NativeTheme): number =>
-  (initialWindowMetrics?.insets.bottom ?? 0) + theme.space[6] + (measuredTabHeight || barHeight(theme)) + theme.space[5];
 export function useTabBarReserve() {
   const theme = useTheme();
   useWindowDimensions();
@@ -1227,21 +1225,7 @@ export function LegalLine({ onDark = false }: { onDark?: boolean } = {}) {
   );
 }
 
-/* ------------------------------------------------------------------ *
- * v2, and only what `SPEC.md` §0.7 says is genuinely new.
- *
- * That table names four additions for the whole redesign: the two-line price
- * chip (§10), the welcome hero with its scrim (§2), the six-box code row (§4)
- * and the splash player (§1). Three of them are here. The price chip is
- * Builder B's, by §20.4's one hand-off — it is built with the task card it is
- * burned into, and a second copy of it here would be the duplicate this table
- * exists to prevent.
- *
- * The hero and the splash player collapsed into one component rather than two,
- * because they are one component: a box that plays a film if it can and shows
- * a still if it cannot, with the same 400 ms first-frame gate on both. §1 and
- * §2 describe that gate in the same words.
- * ------------------------------------------------------------------ */
+/** Film and code inputs share the same kit as the collector screens. */
 
 /**
  * `#RRGGBB` as its three channels, so a scrim can be written at an alpha

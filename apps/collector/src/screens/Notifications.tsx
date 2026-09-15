@@ -276,7 +276,8 @@ function Toggle({
         gap: theme.space[3],
         borderBottomWidth: 1,
         borderBottomColor: c.line,
-        backgroundColor: pressed ? c.paper : undefined,
+        backgroundColor: pressed ? c.surface : undefined,
+        opacity: disabled ? 0.5 : 1,
       })}
     >
       <Text style={{ ...c.type.body, color: c.ink, fontFamily: face(theme), flexShrink: 1 }}>{printed}</Text>

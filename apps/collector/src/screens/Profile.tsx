@@ -99,7 +99,7 @@ export function Profile() {
             />
             {pending === row.key ? (
               <View style={{ paddingVertical: theme.space[2] }}>
-                <Note text={tt('profile.helpSub')} />
+                <Note text={tt('profile.notInBuild')} />
               </View>
             ) : null}
           </View>
@@ -244,7 +244,7 @@ export const LOCALE_NAME: Record<Locale, string> = {
   zh: '中文',
 };
 
-function LanguageChoices({ onPicked, stacked }: { onPicked: () => void; stacked: boolean }) {
+export function LanguageChoices({ onPicked, stacked }: { onPicked: () => void; stacked: boolean }) {
   const { locale, setLocale } = useLocale();
   const tt = useT();
   const theme = useTheme();
