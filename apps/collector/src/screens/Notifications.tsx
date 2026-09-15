@@ -100,7 +100,7 @@ const KIND_TITLE: Record<ServerKind, MessageKey> = {
  * A kind with no figure returns the empty string. That is a row with one line,
  * not a row with a blank second line to fill.
  */
-export function figuresOf(
+function figuresOf(
   kind: ServerKind,
   payload: Record<string, string | null>,
   tt: (key: MessageKey) => string,
@@ -165,6 +165,14 @@ export function Notifications({ previewItems }: { previewItems?: readonly Collec
   });
   const [preview, setPreview] = useState<readonly CollectorNotification[]>(previewItems ?? []);
   const [marking, setMarking] = useState(false);
+  /**
+   * The first read is still out.
+   *
+   * A disabled react-query query reports `isPending` for ever, so the
+   * `simulation` half of this is load-bearing rather than defensive: without it
+   * the harness would sit on `Loading…` and never draw its fixture.
+   */
+  const pending = !simulation && inbox.isPending;
   const items: readonly CollectorNotification[] = simulation
     ? preview
     : (inbox.data ?? []).map((row) => toItem(row, tt));
@@ -236,11 +244,12 @@ export function Notifications({ previewItems }: { previewItems?: readonly Collec
         />
       ) : null}
 
-      {/* Never the empty state while the first read is still out: "nothing yet"
-          is a claim about the server's answer, not about a pending request. */}
-      {!simulation && inbox.isPending ? <Loading /> : null}
+      {pending ? <Loading /> : null}
 
-      {items.length === 0 && !inbox.isError && !(!simulation && inbox.isPending) ? (
+      {/* Never the empty state while the first read is out or after it failed:
+          "nothing yet" is a claim about the server's answer, and neither of
+          those is an answer. */}
+      {items.length === 0 && !pending && !inbox.isError ? (
         <View style={{ alignItems: 'center', gap: theme.space[3], paddingVertical: theme.space[8] }}>
           <EmptySessions size={120} />
           <Text
