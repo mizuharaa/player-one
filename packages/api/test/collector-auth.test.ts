@@ -1067,6 +1067,51 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
     outbox.length = 0;
   });
 
+  /**
+   * The five-minute window, on the path that has no collector row.
+   *
+   * Every other expiry test in this file moves
+   * `collectors.sign_in_code_expires_at`, which is the enrolled path; the
+   * sign-up branch reads `sign_up_codes.expires_at` and nothing covered it.
+   * The half that matters is the second assertion: an expired code must not
+   * create a person. A branch that checked the expiry after the insert, or not
+   * at all, would answer 401 here and still leave a collector behind — and
+   * that collector would hold the number, so the real owner could never sign
+   * up with it.
+   */
+  it('refuses an expired sign-up code, and creates nobody', async () => {
+    const d = await db();
+    await seed();
+    outbox.length = 0;
+    const app = await api();
+    nextCode();
+
+    await request(app, STRANGER);
+    const code = outbox.at(-1)!.code;
+    // Past, by the database's own clock: `signUpAndSignIn` compares against
+    // `Date.now()`, and the row is what carries the deadline.
+    await d.execute(
+      sql`update sign_up_codes set expires_at = now() - interval '1 second' where phone = ${STRANGER}`,
+    );
+
+    const refused = await verify(app, STRANGER, code);
+    expect(refused.statusCode, refused.body).toBe(401);
+    expect(refused.json()).toEqual({ error: 'credentials', reason: 'credentials' });
+    expect(await count(sql`select count(*)::int as n from collectors where phone = ${STRANGER}`)).toBe(0);
+    // Not consumed either: nothing was spent, because nothing was accepted.
+    expect(await count(
+      sql`select count(*)::int as n from sign_up_codes where phone = ${STRANGER} and consumed_at is null`,
+    )).toBe(1);
+
+    // A fresh code for the same number still works, which is how a person
+    // recovers from having taken too long to read a notification.
+    nextCode();
+    await request(app, STRANGER);
+    expect((await verify(app, STRANGER, outbox.at(-1)!.code)).statusCode).toBe(200);
+    expect(await count(sql`select count(*)::int as n from collectors where phone = ${STRANGER}`)).toBe(1);
+    outbox.length = 0;
+  });
+
   it('spends a sign-up code once, and dies after the same handful of guesses', async () => {
     await seed();
     outbox.length = 0;
