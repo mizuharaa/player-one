@@ -551,7 +551,7 @@ const vi = {
   'notif.groupSession': 'Nhắc buổi ghi',
   'notif.groupSessionWhy': 'Trước buổi ghi bạn đã đặt, và khi cần mang thẻ tới quầy.',
   'about.what': 'Ứng dụng này để làm gì',
-  'about.whatBody': 'Player One trả tiền cho người ghi lại hoạt động thường ngày bạng máy ghi gắn trên đầu. Nhân viên duyệt sẽ xem video, và bạn được trả theo từng phút hiệu quả đã duyệt.',
+  'about.whatBody': 'Player One trả tiền cho người ghi lại hoạt động thường ngày bằng máy ghi gắn trên đầu. Nhân viên duyệt sẽ xem video, và bạn được trả theo từng phút hiệu quả đã duyệt.',
   'about.who': 'Ai làm',
   'about.whoBody': 'VNG PT Lab làm nền tảng. PaXini cung cấp máy Ego và duyệt dữ liệu.',
   'about.build': 'Bản dựng',
