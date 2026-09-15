@@ -32,3 +32,17 @@ Builder: 34/34 baseline tests passed (verify 5, state 8, signing 21), without DA
 Independent QA reproduced three mapping/state gaps with pure Node assertions. No provider requests.
 `deploy/cloud/cloud.env`: untracked and ignored verified without reading contents. No credential file opened.
 Task 4 can build its safety checks now, but a compliant balance request remains blocked until task 2 wires Merchant Wallet embed. No smoke transfer branch, database writes, or live credentials are permitted.
+
+## Read-only smoke usage (task 4)
+
+Run from this worktree after task 2 supplies Merchant Wallet embed:
+
+```powershell
+node packages/api/scripts/zalopay-sandbox-smoke.mjs
+```
+
+The script loads `~/.playerone/zalopay-sandbox.env` at runtime using Node's native loader and the existing client factory. It accepts no CLI options. Required names: PLAYERONE_ZALOPAY_ENV=sandbox, PLAYERONE_ZALOPAY_APP_ID, PLAYERONE_ZALOPAY_PAYMENT_ID, PLAYERONE_ZALOPAY_KEY1, PLAYERONE_ZALOPAY_PUBLIC_KEY, PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID, PLAYERONE_ZALOPAY_SANDBOX_PHONE. Existing SIGNING/RSA_PADDING settings remain supported by the client. Any ZaloPay URL override is refused, and redirects are disabled. No transfer endpoint or database is used.
+
+Every output line is Simulation with status/code and a fixed meaning; no balance amount, phone, wallet identifier, key, name or raw provider message is printed. Exit 0 means both read calls succeeded; it does not mean a named destination was verified or money moved. Exit 1 means an unresolved read (including missing balance payload until task 2); exit 2 means invalid configuration or arguments. A one-dong wallet lookup cannot establish the named-account requirement or capacity for an eventual bill. Fable must separately prove the persisted finance declaration on a throwaway database.
+
+Offline checks: `node --test packages/api/scripts/zalopay-sandbox-smoke.test.mjs` (6 tests); builder payout regression 88/88 and root typecheck passed. No real sandbox requests have been run by the builder.

@@ -443,6 +443,7 @@ function defaultWarn(event: ZaloPayWarning): void {
  */
 export function zaloPayClientFromEnv(
   env: Record<string, string | undefined> = process.env,
+  transport: Pick<ZaloPayConfig, 'fetch' | 'warn'> = {},
 ): ZaloPayHttpClient | null {
   const zenv = env['PLAYERONE_ZALOPAY_ENV'] ?? 'sandbox';
   if (zenv !== 'sandbox' && zenv !== 'production') {
@@ -469,6 +470,7 @@ export function zaloPayClientFromEnv(
     throw new Error(`PLAYERONE_ZALOPAY_SIGNING must be hmac or hmac-rsa, got '${signing}'`);
   }
   return new ZaloPayHttpClient({
+    ...transport,
     env: zenv,
     appId,
     paymentId: env['PLAYERONE_ZALOPAY_PAYMENT_ID']!,
