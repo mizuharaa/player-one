@@ -44,9 +44,9 @@ describe('verification on declare', () => {
     expect(Object.keys(o)).not.toContain('declaredName');
   });
 
-  it('records a wallet ZaloPay confirms but does not name as verified-unnamed, and flags it', () => {
+  it('keeps an unnamed provider verification unverified and flags it', () => {
     expect(outcomeOf('Nguyễn Văn A', { kind: 'verified', verifiedName: null, mUId: 'mu-9' })).toMatchObject({
-      status: 'verified',
+      status: 'unverified',
       verifiedName: null,
       mUId: 'mu-9',
       event: 'IDENT.NAME_UNCONFIRMED',

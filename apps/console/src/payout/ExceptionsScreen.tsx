@@ -30,7 +30,7 @@ import {
   SettleShell,
   TableSkeleton,
 } from './pieces.tsx';
-import { readOnlyReason, useFinanceRole } from './role.ts';
+import { canReadFinance, readOnlyReason, useFinanceRole } from './role.ts';
 
 const POLLING = new Set(['submitted', 'processing', 'unknown']);
 /**
@@ -53,13 +53,13 @@ export function ExceptionsScreen() {
   const locale = i18n.language;
   const { period } = useSearch({ strict: false }) as { period: string };
   const { role } = useFinanceRole();
-  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: role === 'finance' });
+  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: canReadFinance(role) });
   /**
    * The limits (ceiling, cap) come from the preflight, read under its own key:
    * this screen must not populate the gate's cache, or visiting the
    * exceptions would count as having read the preflight.
    */
-  const pre = useQuery({ queryKey: ['payout', 'limits', period], queryFn: () => payout.preflight(period), staleTime: 5 * 60_000, enabled: role === 'finance' });
+  const pre = useQuery({ queryKey: ['payout', 'limits', period], queryFn: () => payout.preflight(period), staleTime: 5 * 60_000, enabled: canReadFinance(role) });
   const [refused, setRefused] = useState<unknown>(null);
 
   const bills = batch.data?.bills ?? [];

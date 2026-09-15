@@ -556,7 +556,9 @@ export class HttpCollectorApi implements CollectorApi {
     const res = (await this.req('GET', '/api/me/payout')) as RawPayout;
     const status = PAYOUT_STATUSES.find((s) => s === res.status);
     if (status === undefined) return null;
-    return { channel: 'zalopay', status, masked: res.masked ?? null };
+    return { channel: 'zalopay', status, masked: res.masked ?? null,
+      ...(res.simulation === undefined ? {} : { simulation: res.simulation === true }),
+      ...(res.payment ? { payment: res.payment } : {}) };
   }
 
   // -- the inbox -----------------------------------------------------------
@@ -661,6 +663,8 @@ interface RawCycle {
 }
 
 interface RawPayout {
+  simulation?: boolean;
+  payment?: { reference: string; amount_vnd: number };
   status?: string;
   masked?: string | null;
 }

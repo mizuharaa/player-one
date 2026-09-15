@@ -10,6 +10,7 @@ import { useGuide } from '../guide/useGuide.ts';
 import { PillNav } from './PillNav.tsx';
 import { OperatorAvatar } from './OperatorAvatar.tsx';
 import { LocaleSwitch } from './LocaleSwitch.tsx';
+import { PayoutEnvironment } from './PayoutEnvironment.tsx';
 import { useOperatorProfile, signOut } from '../../lib/profile-api.ts';
 import { pace } from '../../lib/format.ts';
 import '../../styles/operations.css';
@@ -101,6 +102,7 @@ export function AppShell({ children, queueDepth, averageSeconds, operator, bleed
       {navigation}
     </dialog> : null}
     <div className="workspace-body">
+      <PayoutEnvironment />
       {(typeof queueDepth === 'number' || averageSeconds != null) ? <div className="workspace-route-counters" data-guide="shell.counters">
         {typeof queueDepth === 'number' ? <span>{t('queue.depth')} <strong className="num">{queueDepth}</strong></span> : null}
         {averageSeconds != null ? <span>{t('queue.average')} <strong className="num">{pace(averageSeconds)}</strong></span> : null}
