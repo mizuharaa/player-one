@@ -34,7 +34,7 @@ vi.mock('react-native-svg', () => {
   return { default: Stub, Svg: Stub, Circle: Stub, Rect: Stub, Path: Stub, Line: Stub, G: Stub };
 });
 
-const { Profile } = await import('../src/screens/Profile.tsx');
+const { LOCALE_NAME, Profile } = await import('../src/screens/Profile.tsx');
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -171,9 +171,10 @@ it('names the build on the version line', async () => {
 it('switches language in the app and shows the current one on the row', async () => {
   await mount();
 
-  // The row's value is the locale's own name, so it is the same word in every
-  // catalogue and the picker lists endonyms.
-  expect(page()).toContain('English');
+  // The row's value is the current locale's own name. Read from the screen's
+  // own table rather than written out: the default is English now and a
+  // literal 'Tiếng Việt' would assert yesterday's default.
+  expect(page()).toContain(LOCALE_NAME[DEFAULT_LOCALE]);
   await act(async () => rowNamed(m['profile.language'])!.click());
   await act(async () => named('Tiếng Việt')!.click());
   // Switching updates the real screen catalogue.

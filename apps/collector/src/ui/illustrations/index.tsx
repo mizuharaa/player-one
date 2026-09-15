@@ -250,10 +250,17 @@ export function AvatarMark({ initials, size = 72 }: { initials: string; size?: n
         style={{
           color: surface,
           fontFamily: face(theme),
-          // Scales with the circle, not with the collector's font setting: this
-          // is a mark at a fixed size, and one that grew would break the dock.
+          // Scales with the circle, not with the collector's font setting:
+          // this is a mark at a fixed size, and one that grew would break the
+          // dock.
+          //
+          // Deliberately not a `c.type.*` role: a role is a fixed pair and
+          // this has to hold at 88dp on Profile and at dock size. The ratio is
+          // what the roles guarantee, and 0.48/0.36 is 1.33 — above the 1.3
+          // floor the type scale keeps for diacritics, which 0.46 (1.278) was
+          // under.
           fontSize: size * 0.36,
-          lineHeight: size * 0.46,
+          lineHeight: size * 0.48,
           fontWeight: theme.fontWeight.display,
         }}
         allowFontScaling={false}

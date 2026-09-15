@@ -4,6 +4,7 @@ import {
   PanResponder,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
@@ -20,7 +21,7 @@ import { useTheme } from '../theme.tsx';
 import { useGuideTarget } from '../guide/Guide.tsx';
 import { Button, ListScreen, Note, Tag, bottomInset, face, topInset } from '../ui.tsx';
 import { EmptyTasks } from '../ui/illustrations/index.tsx';
-import { taskImage } from '../v2.tsx';
+import { Skeleton, taskImage } from '../v2.tsx';
 import { dong } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
 
@@ -112,6 +113,59 @@ const MINUTE_STOPS = [SIZE_CEILING.small, SIZE_CEILING.medium, null] as const;
  * ranking — §9 decision 4.
  */
 const prefsKey = (collectorId: string) => `playerone.collector.prefs.${collectorId}`;
+const recentsKey = (collectorId: string) => `${prefsKey(collectorId)}.recents`;
+
+/**
+ * One write queue per collector.
+ *
+ * Every write and the clear go through it, in order, so a save that was still
+ * in flight when the collector signed out cannot land *after* the delete and
+ * resurrect what was just cleared. Serialising is enough here and a lock is
+ * not needed: there is one writer, this phone.
+ *
+ * ponytail: a `Map` of promises, not a mutex library. The entry is dropped
+ * once it is the last link, so the map does not grow with every keystroke.
+ */
+const writeQueue = new Map<string, Promise<void>>();
+
+function enqueue(collectorId: string, work: () => Promise<void>): Promise<void> {
+  const tail = writeQueue.get(collectorId) ?? Promise.resolve();
+  // `then(work, work)` rather than `finally`: a failed earlier write must not
+  // stop the next one, and it must not stop the clear either.
+  const settled = tail.then(work, work).catch(() => {});
+  writeQueue.set(collectorId, settled);
+  void settled.then(() => {
+    if (writeQueue.get(collectorId) === settled) writeQueue.delete(collectorId);
+  });
+  return settled;
+}
+
+/**
+ * Forget everything this phone remembers about one collector.
+ *
+ * Work order §9.4: the local store is scoped per account **and cleared on
+ * logout**. Both keys go — preferences and recent searches — and only for the
+ * id given, so a second collector who uses this phone keeps their own.
+ *
+ * It resolves after any outstanding write for that collector has been applied
+ * and then deleted, which is the property that matters: `App.tsx` captures the
+ * profile id before it clears the query cache and awaits this, and a save the
+ * collector made a moment before tapping Log out must not survive it.
+ */
+export type ClearPreferences = (collectorId: string) => Promise<void>;
+
+export const clearPreferences: ClearPreferences = (collectorId) =>
+  enqueue(collectorId, async () => {
+    try {
+      await SecureStore.deleteItemAsync(prefsKey(collectorId));
+      await SecureStore.deleteItemAsync(recentsKey(collectorId));
+    } catch {
+      // A keystore that cannot delete is the one case this cannot fix from
+      // here. It is reported through `App.tsx`'s existing `clearFailed`
+      // recovery, which is why this resolves rather than throwing into a
+      // sign-out that has already dropped the session.
+    }
+  });
 
 async function readPreferences(collectorId: string): Promise<Preferences> {
   try {
@@ -129,13 +183,15 @@ async function readPreferences(collectorId: string): Promise<Preferences> {
   }
 }
 
-async function writePreferences(collectorId: string, value: Preferences): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(prefsKey(collectorId), JSON.stringify(value));
-  } catch {
-    // Nothing to recover: the sheet keeps what it was given for this session
-    // and the collector sets it again next time.
-  }
+function writePreferences(collectorId: string, value: Preferences): Promise<void> {
+  return enqueue(collectorId, async () => {
+    try {
+      await SecureStore.setItemAsync(prefsKey(collectorId), JSON.stringify(value));
+    } catch {
+      // Nothing to recover: the sheet keeps what it was given for this session
+      // and the collector sets it again next time.
+    }
+  });
 }
 
 /** Kept with the preferences: the last few things typed into search. */
@@ -143,7 +199,7 @@ const RECENTS_LIMIT = 5;
 
 async function readRecents(collectorId: string): Promise<string[]> {
   try {
-    const raw = await SecureStore.getItemAsync(`${prefsKey(collectorId)}.recents`);
+    const raw = await SecureStore.getItemAsync(recentsKey(collectorId));
     const parsed = raw === null ? [] : (JSON.parse(raw) as unknown);
     return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
   } catch {
@@ -151,12 +207,14 @@ async function readRecents(collectorId: string): Promise<string[]> {
   }
 }
 
-async function writeRecents(collectorId: string, value: string[]): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(`${prefsKey(collectorId)}.recents`, JSON.stringify(value));
-  } catch {
-    // Same as above: a lost recent search costs one retype.
-  }
+function writeRecents(collectorId: string, value: string[]): Promise<void> {
+  return enqueue(collectorId, async () => {
+    try {
+      await SecureStore.setItemAsync(recentsKey(collectorId), JSON.stringify(value));
+    } catch {
+      // Same as above: a lost recent search costs one retype.
+    }
+  });
 }
 
 /**
@@ -177,17 +235,33 @@ export function usePreferences(): { prefs: Preferences; save: (next: Preferences
   const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
   const collectorId = profile.data?.id ?? null;
   const [prefs, setPrefs] = useState<Preferences>(NO_PREFERENCES);
+  /**
+   * Has the collector changed anything since the hydrating read started?
+   *
+   * The keystore read is asynchronous, and a collector can open the sheet and
+   * save before it resolves — on a cold start with a slow keystore that is a
+   * real sequence, not a theoretical one. Without this the read lands second
+   * and silently replaces what they just chose. A change always wins; the
+   * stored value only applies if nothing has been set since the read began.
+   */
+  const changed = useRef(false);
 
   useEffect(() => {
     if (collectorId === null) return;
     let live = true;
-    void readPreferences(collectorId).then((value) => { if (live) setPrefs(value); });
+    // A different collector is a different hydration, and nothing has been
+    // set for them yet.
+    changed.current = false;
+    void readPreferences(collectorId).then((value) => {
+      if (live && !changed.current) setPrefs(value);
+    });
     return () => { live = false; };
   }, [collectorId]);
 
   return {
     prefs,
     save: (next) => {
+      changed.current = true;
       setPrefs(next);
       if (collectorId !== null) void writePreferences(collectorId, next);
     },
@@ -226,12 +300,16 @@ export function TaskHall() {
   const [recents, setRecents] = useState<string[]>([]);
   const { prefs, save: storePrefs } = usePreferences();
 
-  // Recent searches are per collector too, and are read once the profile
-  // names one.
+  /** The same hydration guard `usePreferences` documents, for recents. */
+  const recentsChanged = useRef(false);
+
   useEffect(() => {
     if (collectorId === null) return;
     let live = true;
-    void readRecents(collectorId).then((v) => { if (live) setRecents(v); });
+    recentsChanged.current = false;
+    void readRecents(collectorId).then((v) => {
+      if (live && !recentsChanged.current) setRecents(v);
+    });
     return () => { live = false; };
   }, [collectorId]);
 
@@ -239,12 +317,14 @@ export function TaskHall() {
     const trimmed = term.trim();
     if (trimmed === '') return;
     const next = [trimmed, ...recents.filter((r) => r !== trimmed)].slice(0, RECENTS_LIMIT);
+    recentsChanged.current = true;
     setRecents(next);
     if (collectorId !== null) void writeRecents(collectorId, next);
   };
 
   const forgetRecent = (term: string) => {
     const next = recents.filter((r) => r !== term);
+    recentsChanged.current = true;
     setRecents(next);
     if (collectorId !== null) void writeRecents(collectorId, next);
   };
@@ -324,6 +404,42 @@ export function TaskHall() {
         title={tt('hall.title')}
         data={rows}
         keyOf={(row) => row.map((task) => task.id).join('+')}
+        /**
+         * Refresh as a control, not a gesture.
+         *
+         * `ListScreen` at this branch point takes no `refresh` prop — the kit's
+         * `FlatList` has no `RefreshControl` — and `ui.tsx` is not this lane's
+         * file. So the way to re-read the hall is a named control in the header
+         * slot, which is also the half of pull-to-refresh a screen reader can
+         * actually use. When the kit grows `refresh`, pass
+         * `{ refreshing: tasks.isFetching && !tasks.isPending, onRefresh }`
+         * and keep this: a gesture with no visible equivalent is not reachable.
+         */
+        right={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={tt('explore.refresh')}
+            accessibilityState={{ busy: tasks.isFetching }}
+            onPress={() => void tasks.refetch()}
+            hitSlop={theme.space[2]}
+            style={({ pressed }) => ({
+              minHeight: theme.space[12],
+              justifyContent: 'center',
+              opacity: pressed || tasks.isFetching ? 0.6 : 1,
+            })}
+          >
+            <Text
+              style={{
+                ...c.type.caption,
+                color: c.plum,
+                fontFamily: face(theme),
+                fontWeight: theme.fontWeight.medium,
+              }}
+            >
+              {tt('explore.refresh')}
+            </Text>
+          </Pressable>
+        }
         header={
           <View ref={listTarget} collapsable={false} style={{ gap: theme.space[3] }}>
             <SearchEntry text={search} onPress={() => setSearching(true)} />
@@ -341,7 +457,40 @@ export function TaskHall() {
               action={tt(SORT_LABEL[sort])}
               onAction={() => setSheet('filters')}
             />
-            {tasks.isError && tasks.data !== undefined ? <Note text={tt('common.refreshFailed')} tone="pending" /> : null}
+            {/* A failed refresh over data that is already on screen keeps the
+                data and says so — and carries its own Retry, because a
+                blocking error is inline next to the control with a way out and
+                never a toast on a timer (§3.4). */}
+            {tasks.isError && tasks.data !== undefined ? (
+              <Note
+                text={tt('common.refreshFailed')}
+                tone="pending"
+                busy={tasks.isFetching}
+                onRetry={() => void tasks.refetch()}
+              />
+            ) : null}
+            {/* The skeleton grid, while the first read is in flight. Two
+                columns of it even at one column: it is the shape of what is
+                coming, and `Skeleton` already holds the pulse and respects
+                reduced motion. */}
+            {tasks.isPending ? (
+              // It announces itself, for the reason `Loading` in the kit
+              // exists: a skeleton is silent, and a screen that has said
+              // nothing since the tab was opened reads as an empty hall.
+              <View
+                accessible
+                accessibilityLiveRegion="polite"
+                accessibilityLabel={tt('common.loading')}
+                style={{ flexDirection: 'row', gap: c.cardGap }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Skeleton ratio={3 / 5} radius={c.radius.card} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Skeleton ratio={3 / 5} radius={c.radius.card} />
+                </View>
+              </View>
+            ) : null}
           </View>
         }
         empty={
@@ -913,7 +1062,18 @@ export function Sheet({
   const tt = useT();
   return (
     <Modal visible={open} transparent animationType="none" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(20,17,38,0.55)' }}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        {/* The dim behind the sheet is the night ground at 55%, drawn as its
+            own layer so the colour comes from `theme.collector.night` instead
+            of an `rgba()` literal. `theme.collector` has no `scrim` token; one
+            belongs there, and this is the only place in the lane that needs
+            it. `opacity` on a parent would fade the sheet too, so the layer is
+            a sibling behind it. */}
+        <View
+          pointerEvents="none"
+          importantForAccessibility="no-hide-descendants"
+          style={[StyleSheet.absoluteFill, { backgroundColor: c.night, opacity: 0.55 }]}
+        />
         <Pressable accessibilityRole="button" accessibilityLabel={tt('common.close')} onPress={onClose} style={{ flex: 1 }} />
         <View
           style={{

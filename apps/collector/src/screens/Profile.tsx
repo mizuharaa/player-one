@@ -237,7 +237,7 @@ function ProfileScroll({ reserve, children }: { reserve: number; children: React
  * endonyms because a list translated into the language you are leaving is the
  * usual way this control becomes unusable, so the endonyms are data here.
  */
-const LOCALE_NAME: Record<Locale, string> = {
+export const LOCALE_NAME: Record<Locale, string> = {
   vi: 'Tiếng Việt',
   en: 'English',
   zh: '中文',
