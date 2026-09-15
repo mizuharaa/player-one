@@ -107,7 +107,7 @@ it('switches clients and private caches, rejects late data and ignores the old u
   const dispose = vi.spyOn(first, 'dispose');
   const callbacks: (() => void)[] = [];
   const clients = [first, second];
-  await act(async () => root.render(<LocaleProvider><CollectorSession factory={(callback) => {
+  await act(async () => root.render(<LocaleProvider initialLocale="vi"><CollectorSession factory={(callback) => {
     callbacks.push(callback);
     return clients[callbacks.length - 1]!;
   }} /></LocaleProvider>));
@@ -132,7 +132,7 @@ it('switches clients and private caches, rejects late data and ignores the old u
 it('keeps private screens hidden and asks to retry when local sign-out fails', async () => {
   const first = await user('First collector');
   const clear = vi.spyOn(first, 'signOut').mockRejectedValueOnce(new Error('keystore'));
-  await act(async () => root.render(<LocaleProvider><CollectorSession factory={() => first} /></LocaleProvider>));
+  await act(async () => root.render(<LocaleProvider initialLocale="vi"><CollectorSession factory={() => first} /></LocaleProvider>));
   await settle(() => expect(host.textContent).toContain('First collector'));
   await tap(MESSAGES.vi['signIn.signOut']);
   await settle(() => expect(host.textContent).toContain(MESSAGES.vi['signIn.clearFailed']));
@@ -146,7 +146,7 @@ it('keeps private screens hidden and asks to retry when local sign-out fails', a
 it('offers retry instead of registration after a failed restoration', async () => {
   const api = await user('Restored collector');
   vi.spyOn(api, 'restoreSession').mockRejectedValueOnce(new Error('offline'));
-  await act(async () => root.render(<LocaleProvider><CollectorSession factory={() => api} /></LocaleProvider>));
+  await act(async () => root.render(<LocaleProvider initialLocale="vi"><CollectorSession factory={() => api} /></LocaleProvider>));
   await settle(() => expect(host.textContent).toContain(MESSAGES.vi['common.loadFailed']));
   expect(host.textContent).not.toContain('Private:');
   await tap(MESSAGES.vi['common.retry']);

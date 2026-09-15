@@ -46,7 +46,7 @@ it('requires folder, server session and explicit confirmation; repeated presses 
   const button = (label: string) => Array.from(host.querySelectorAll('button')).find(b => b.textContent === label)!;
   const tap = async (label: string) => { await act(async () => button(label).click()); };
   try {
-    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'uploads' }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="vi"><NavProvider initial={{ name: 'uploads' }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
     await tap(MESSAGES.vi['uploads.deliverTitle']);
     await vi.waitFor(() => expect(button(MESSAGES.vi['uploads.pick']).disabled).toBe(false));
     expect(runDelivery).not.toHaveBeenCalled();
@@ -74,7 +74,7 @@ it('keeps folder selection and refresh available when a saved delivery exists', 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const button = (label: string) => Array.from(host.querySelectorAll('button')).find(b => b.textContent === label)!;
   try {
-    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'uploads' }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="vi"><NavProvider initial={{ name: 'uploads' }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
     await vi.waitFor(() => expect(episodes).toHaveBeenCalledTimes(1));
     await act(async () => button('Refresh').click());
     await vi.waitFor(() => expect(episodes).toHaveBeenCalledTimes(2));

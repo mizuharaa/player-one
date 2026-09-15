@@ -2,7 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react';
 import { DEFAULT_LOCALE, t, type Locale, type MessageKey } from './i18n.ts';
 
 /**
- * Vietnamese by default (LOC-01). The toggle exists so the English catalogue
+ * English by default for v3; Vietnamese remains selectable (LOC-01). The toggle exists so the English catalogue
  * is reachable and therefore honest, not decoration.
  */
 const LocaleContext = createContext<{
@@ -10,8 +10,8 @@ const LocaleContext = createContext<{
   setLocale: (l: Locale) => void;
 }>({ locale: DEFAULT_LOCALE, setLocale: () => {} });
 
-export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocale] = useState<Locale>(DEFAULT_LOCALE);
+export function LocaleProvider({ children, initialLocale = DEFAULT_LOCALE }: { children: ReactNode; initialLocale?: Locale }) {
+  const [locale, setLocale] = useState<Locale>(initialLocale);
   return <LocaleContext.Provider value={{ locale, setLocale }}>{children}</LocaleContext.Provider>;
 }
 

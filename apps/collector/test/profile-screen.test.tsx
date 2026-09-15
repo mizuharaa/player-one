@@ -152,11 +152,11 @@ it('switches language in the app and shows the current one on the row', async ()
 
   // The row's value is the locale's own name, so it is the same word in every
   // catalogue and the picker lists endonyms.
-  expect(page()).toContain('Tiếng Việt');
+  expect(page()).toContain('English');
   await act(async () => rowNamed(m['profile.language'])!.click());
-  await act(async () => named('English')!.click());
-  // English is now what the screen prints, whatever the default was.
-  expect(page()).toContain(MESSAGES.en['profile.logOut']);
+  await act(async () => named('Tiếng Việt')!.click());
+  // Switching updates the real screen catalogue.
+  expect(page()).toContain(MESSAGES.vi['profile.logOut']);
 });
 
 it('prints the version that was built', async () => {

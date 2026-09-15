@@ -16,7 +16,7 @@
 export const LOCALES = ['vi', 'en', 'zh'] as const;
 export type Locale = (typeof LOCALES)[number];
 
-export const DEFAULT_LOCALE: Locale = 'vi';
+export const DEFAULT_LOCALE: Locale = 'en';
 
 const vi = {
   'hall.search': 'Tìm nhiệm vụ hoặc địa điểm',
@@ -59,10 +59,10 @@ const vi = {
 
   'tab.profile': 'Hồ sơ',
   'tab.home': 'Trang chủ',
-  'tab.tasks': 'Nhiệm vụ',
+  'tab.tasks': 'Khám phá',
   'tab.session': 'Phiên',
   'tab.sessionHint': 'Mở bước chuẩn bị cho phiên ghi hình. Không bắt đầu ghi.',
-  'tab.uploads': 'Tải lên',
+  'tab.uploads': 'Phiên thu thập',
   'tab.income': 'Thu nhập',
 
   // The three beats of the landing, one per scroll step. Short on purpose:
@@ -258,7 +258,7 @@ const vi = {
   'reminder.body': 'Đừng ghi hình căn cước, thẻ ngân hàng, mật khẩu, màn hình có thông tin riêng tư, trẻ em, hồ sơ sức khỏe, địa chỉ nhà cụ thể.',
   'reminder.continue': 'Tiếp tục tạo phiên',
   'session.home': 'Về trang chủ',
-  'session.title': 'Tạo phiên ghi hình',
+  'session.title': 'Chuẩn bị',
   'session.intro': 'Một phiên gồm nhiệm vụ, người thu thập, thiết bị và bối cảnh. Khai trước khi ghi hình.',
   'session.task': 'Nhiệm vụ',
   'session.device': 'Thiết bị',
@@ -277,7 +277,7 @@ const vi = {
   'session.noRecord':
     'Ứng dụng không bật và không tắt máy ghi. Nút ghi nằm trên thiết bị, trong tay bạn.',
 
-  'uploads.title': 'Tải lên',
+  'uploads.title': 'Phiên thu thập',
   'uploads.size': 'Dung lượng',
   'uploads.sizeUnknown': 'Chưa rõ',
   'uploads.upload': 'Tải lên',
@@ -352,8 +352,14 @@ const vi = {
   'income.settlement': 'Thanh toán',
   'income.estimatedHint': 'Đây là ước tính. Số tiền cuối cùng chốt sau khi duyệt.',
   'income.empty': 'Chưa có khoản thu nhập nào.',
-  'income.intro': 'Tiền tính theo từng tập. Ứng dụng không cộng gộp, không tự tính.',
-  'income.progress': 'Tiến độ',
+  'income.intro': 'Xem tiền đã xác nhận, tiền ước tính và trạng thái thanh toán của từng tập.',
+  'income.progress': 'Cập nhật',
+  'income.details': 'Chi tiết',
+  'home.today': 'Phiên hôm nay',
+  'home.awaiting': 'Chờ thanh toán',
+  'common.seeAll': 'Xem tất cả',
+  'home.noSessionToday': 'Hôm nay chưa có phiên nào.',
+  'home.noAwaiting': 'Chưa có khoản nào chờ thanh toán.',
   'income.step.uploaded': 'Đã tải lên',
   'income.step.underReview': 'Đang duyệt',
   'income.step.reviewed': 'Đã duyệt',
@@ -560,10 +566,10 @@ const en: Record<MessageKey, string> = {
 
   'tab.profile': 'Profile',
   'tab.home': 'Home',
-  'tab.tasks': 'Tasks',
+  'tab.tasks': 'Explore',
   'tab.session': 'Session',
   'tab.sessionHint': 'Opens collection-session preparation. It does not start recording.',
-  'tab.uploads': 'Uploads',
+  'tab.uploads': 'Sessions',
   'tab.income': 'Income',
 
   'landing.slogan1': 'Wear it.',
@@ -742,7 +748,7 @@ const en: Record<MessageKey, string> = {
   'reminder.body': 'avoid capturing ID cards, bank cards, passwords, screen-sensitive information, children, medical privacy, detailed home addresses.',
   'reminder.continue': 'Continue to session creation',
   'session.home': 'Back to Home',
-  'session.title': 'Create collection session',
+  'session.title': 'Prepare',
   'session.intro': 'A session binds task + collector + device + scenario, before recording.',
   'session.task': 'Task',
   'session.device': 'Device',
@@ -761,7 +767,7 @@ const en: Record<MessageKey, string> = {
   'session.noRecord':
     'The app never starts or stops recording. The record control is on the device, in your hands.',
 
-  'uploads.title': 'Uploads',
+  'uploads.title': 'Sessions',
   'uploads.size': 'Size',
   'uploads.sizeUnknown': 'Not supplied',
   'uploads.upload': 'Upload',
@@ -829,8 +835,14 @@ const en: Record<MessageKey, string> = {
   'income.settlement': 'Settlement',
   'income.estimatedHint': 'An estimate — the final figure is the server’s, after review.',
   'income.empty': 'No income yet.',
-  'income.intro': 'One episode at a time. The app adds nothing up and computes no money.',
-  'income.progress': 'Progress',
+  'income.intro': 'See confirmed earnings, estimates and payment status for each episode.',
+  'income.progress': 'Updates',
+  'income.details': 'Details',
+  'home.today': 'Today’s session',
+  'home.awaiting': 'Awaiting payment',
+  'common.seeAll': 'See all',
+  'home.noSessionToday': 'No session today yet.',
+  'home.noAwaiting': 'No payment is awaiting.',
   'income.step.uploaded': 'Uploaded',
   'income.step.underReview': 'Under review',
   'income.step.reviewed': 'Reviewed',
@@ -1030,10 +1042,10 @@ const zh: Record<MessageKey, string> = {
 
   'tab.profile': '个人资料',
   'tab.home': '首页',
-  'tab.tasks': '任务',
+  'tab.tasks': '发现',
   'tab.session': '采集场次',
   'tab.sessionHint': '打开采集场次准备页。不会开始录制。',
-  'tab.uploads': '上传',
+  'tab.uploads': '采集记录',
   'tab.income': '收入',
 
   'landing.slogan1': '戴上它。',
@@ -1197,7 +1209,7 @@ const zh: Record<MessageKey, string> = {
   'prov.failed': '没有读到 IP',
   'prov.rssi': 'RSSI',
 
-  'session.title': '创建采集场次',
+  'session.title': '准备',
   'session.intro': '一个场次在录制之前绑定任务、采集员、设备和场景。',
   'session.task': '任务',
   'session.device': '设备',
@@ -1215,7 +1227,7 @@ const zh: Record<MessageKey, string> = {
   'session.id': '场次编号',
   'session.noRecord': '应用永远不会开始或停止录制。录制按钮在设备上，在你手里。',
 
-  'uploads.title': '上传',
+  'uploads.title': '采集记录',
   'uploads.size': '大小',
   'uploads.sizeUnknown': '未提供',
   'uploads.upload': '上传',
@@ -1279,8 +1291,14 @@ const zh: Record<MessageKey, string> = {
   'income.settlement': '结算',
   'income.estimatedHint': '这是预估 — 最终数字由服务器在审核后决定。',
   'income.empty': '还没有收入。',
-  'income.intro': '一次一集。应用不做汇总，也不计算金额。',
-  'income.progress': '进程',
+  'income.intro': '查看每集的确认收入、估算和付款状态。',
+  'income.progress': '进展',
+  'income.details': '详情',
+  'home.today': '今日采集',
+  'home.awaiting': '等待付款',
+  'common.seeAll': '查看全部',
+  'home.noSessionToday': '今天还没有采集。',
+  'home.noAwaiting': '目前没有待付款项。',
   'income.step.uploaded': '已上传',
   'income.step.underReview': '审核中',
   'income.step.reviewed': '已审核',

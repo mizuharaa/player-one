@@ -68,7 +68,7 @@ function Flow() {
 
 async function mount(route: Route) {
   await act(async () => root.render(
-    <QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider>
+    <QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="vi">
       <NavProvider initial={route}><Flow /></NavProvider>
     </LocaleProvider></ApiProvider></QueryClientProvider>,
   ));

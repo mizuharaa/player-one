@@ -155,7 +155,7 @@ export function Income() {
         <Tag label={tt(selected.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')} fg={c.ink} bg={c.surface} mark={selected.kind === 'confirmed' ? '✓' : '~'} />
         <View style={{ flexDirection: 'row', gap: c.cardGap }}>
           <Chip label={tt('income.progress')} selected={!details} onPress={() => setDetails(false)} />
-          <Chip label={tt('detail.title')} selected={details} onPress={() => setDetails(true)} />
+          <Chip label={tt('income.details')} selected={details} onPress={() => setDetails(true)} />
         </View>
         {details ? <>
           <Row label={tt('income.minutes')} value={selected.effectiveMinutes === null ? NOTHING : quantity(selected.effectiveMinutes)} />

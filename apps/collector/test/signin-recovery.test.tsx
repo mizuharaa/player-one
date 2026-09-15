@@ -61,7 +61,7 @@ const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200
 async function mount() {
   const api = new HttpCollectorApi('https://collector.test', tokens, () => {}, fetchFn);
   await act(async () => root.render(
-    <QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider>
+    <QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="vi">
       <SignIn onSignedIn={signedIn} />
     </LocaleProvider></ApiProvider></QueryClientProvider>,
   ));
