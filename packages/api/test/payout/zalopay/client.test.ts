@@ -602,6 +602,21 @@ describe('official shapes from docs.zalopay.vn', () => {
 
 
 describe('Merchant Wallet configuration', () => {
+  it('explicit verification-only clients refuse balance and transfer even with a smuggled ID', async () => {
+    const c = new ZaloPayHttpClient({ ...config(), verificationOnly: true } as unknown as ConstructorParameters<typeof ZaloPayHttpClient>[0]);
+    await expect(c.balance()).rejects.toThrow(/verification.only/);
+    await expect(transfer(c)).rejects.toThrow(/verification.only/);
+    expect(fake.requests('balance')).toHaveLength(0);
+    expect(fake.requests('transferFund')).toHaveLength(0);
+  });
+  it('the explicit verification-only env factory works without a merchant ID', async () => {
+    const c = zaloPayClientFromEnv({
+      PLAYERONE_ZALOPAY_APP_ID: '1', PLAYERONE_ZALOPAY_PAYMENT_ID: 'test-payment',
+      PLAYERONE_ZALOPAY_KEY1: 'test', PLAYERONE_ZALOPAY_PUBLIC_KEY: TEST_RSA.publicKeySpkiPem,
+    }, { fetch: async () => new Response(JSON.stringify({ return_code: 1, data: { m_u_id: 'test-id' } })) }, { verificationOnly: true });
+    expect(await c!.verifyAccount({ receiver: { method: 'WALLET', phone: '0901234567' }, amountVnd: 1 })).toMatchObject({ kind: 'verified', mUId: 'test-id' });
+  });
+
   it('refuses an omitted Merchant Wallet ID even from an untyped caller', () => {
     const untyped = { ...config(), merchantWalletId: undefined } as unknown as ZaloPayConfig;
     expect(() => new ZaloPayHttpClient(untyped)).toThrow(/merchantWalletId/);

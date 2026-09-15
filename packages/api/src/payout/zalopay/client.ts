@@ -63,19 +63,22 @@ import {
  *     one thing it logs — an unknown sub code — carries endpoint, codes and
  *     `partner_order_id` only.
  */
+type ClientConfig = (ZaloPayConfig & { verificationOnly?: false }) |
+  (Omit<ZaloPayConfig, 'merchantWalletId'> & { verificationOnly: true; merchantWalletId?: never });
+
 export class ZaloPayHttpClient implements ZaloPayClient {
   // No parameter properties anywhere in this module: `bin/` runs .ts under
   // Node's strip-only type stripping, which refuses them (RUNNING.md).
-  private readonly config: ZaloPayConfig;
+  private readonly config: ClientConfig;
   private readonly baseUrl: string;
   private readonly timeouts: Timeouts;
   private readonly fetchFn: typeof fetch;
   private readonly now: () => number;
   private readonly warn: (event: ZaloPayWarning) => void;
 
-  constructor(config: ZaloPayConfig) {
+  constructor(config: ClientConfig) {
     this.config = config;
-    if (!config.merchantWalletId?.trim()) {
+    if (!config.verificationOnly && !config.merchantWalletId?.trim()) {
       throw new Error('ZaloPayConfig.merchantWalletId is required for Merchant Wallet');
     }
     const signing = config.signing ?? 'hmac';
@@ -153,6 +156,7 @@ export class ZaloPayHttpClient implements ZaloPayClient {
   }
 
   async transferFund(input: TransferFundInput): Promise<TransferFundResult> {
+    if (this.config.verificationOnly) throw new Error('verification-only client cannot transfer');
     const amount = wholeVnd(input.amountVnd);
     if (!input.partnerOrderId) throw new TypeError('partnerOrderId is required');
     const time = this.now();
@@ -232,6 +236,7 @@ export class ZaloPayHttpClient implements ZaloPayClient {
   }
 
   async balance(): Promise<{ balanceVnd: number }> {
+    if (this.config.verificationOnly) throw new Error('verification-only client cannot read balance');
     const unsigned = { app_id: this.config.appId, payment_id: this.config.paymentId, time: this.now() };
     const body: BalanceRequest = { ...unsigned, partner_embed_data: JSON.stringify({ merchant_wallet_id: this.config.merchantWalletId }), mac: this.sign(balanceMacParts(unsigned)) };
 
@@ -452,6 +457,7 @@ function defaultWarn(event: ZaloPayWarning): void {
 export function zaloPayClientFromEnv(
   env: Record<string, string | undefined> = process.env,
   transport: Pick<ZaloPayConfig, 'fetch' | 'warn'> = {},
+  { verificationOnly = false }: { verificationOnly?: boolean } = {},
 ): ZaloPayHttpClient | null {
   const zenv = env['PLAYERONE_ZALOPAY_ENV'] ?? 'sandbox';
   if (zenv !== 'sandbox' && zenv !== 'production') {
@@ -471,7 +477,7 @@ export function zaloPayClientFromEnv(
       `PLAYERONE_ZALOPAY_ENV=${zenv} but ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not set`,
     );
   }
-  if (!env['PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID']?.trim()) throw new Error('PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID is required');
+  if (!verificationOnly && !env['PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID']?.trim()) throw new Error('PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID is required');
   const appId = Number(env['PLAYERONE_ZALOPAY_APP_ID']);
   if (!Number.isSafeInteger(appId)) throw new Error('PLAYERONE_ZALOPAY_APP_ID must be an integer');
   const signing = env['PLAYERONE_ZALOPAY_SIGNING'] ?? 'hmac';
@@ -483,7 +489,7 @@ export function zaloPayClientFromEnv(
     env: zenv,
     appId,
     paymentId: env['PLAYERONE_ZALOPAY_PAYMENT_ID']!,
-    merchantWalletId: env['PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID']!,
+    ...(verificationOnly ? { verificationOnly: true as const } : { merchantWalletId: env['PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID']! }),
     key1: env['PLAYERONE_ZALOPAY_KEY1']!,
     zaloPayPublicKeyPem: env['PLAYERONE_ZALOPAY_PUBLIC_KEY']!.replaceAll('\\n', '\n'),
     signing,

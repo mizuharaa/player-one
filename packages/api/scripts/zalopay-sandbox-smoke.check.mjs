@@ -24,9 +24,21 @@ test('every supplied base URL override is refused, even the sandbox URL', async 
     assert.equal(calls, 0);
   }
 });
-test('missing Merchant Wallet ID is refused before requests', async () => {
+test('a phone without Merchant Wallet ID runs only verification and reports skipped balance', async () => {
+  const paths = [], output = [];
+  assert.equal(await smoke({ ...env, PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID: '' }, { fetch: async url => {
+    paths.push(new URL(url).pathname);
+    return answer({ return_code: 1, data: { m_u_id: 'private-wallet-sentinel' } });
+  }, write: line => output.push(line) }), 0);
+  assert.deepEqual(paths, ['/v2/disbursement/verify-account']);
+  assert(output.some(line => line.includes('skipped: no merchant wallet id')));
+  assert(output.every(line => line.startsWith('Simulation | ')));
+  assert(!output.join(' ').includes('private-wallet-sentinel'));
+});
+
+test('neither wallet ID nor phone is refused without requests', async () => {
   let calls = 0;
-  assert.equal(await smoke({ ...env, PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID: '' }, { fetch: async () => { calls++; }, write() {} }), 2);
+  assert.equal(await smoke({ ...env, PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID: '', PLAYERONE_ZALOPAY_SANDBOX_PHONE: '' }, { fetch: async () => { calls++; }, write() {} }), 2);
   assert.equal(calls, 0);
 });
 test('only pinned read endpoints can be sent, redirects refused, no identifiers printed', async () => {
@@ -72,4 +84,19 @@ test('configured balance and wallet reads both succeed without a transfer', asyn
   assert.equal(code, 0);
   assert.deepEqual(paths, ['/v2/disbursement/balance', '/v2/disbursement/verify-account']);
   assert(output.every(line => line.includes('| success |')));
+});
+
+test('wallet ID without a phone reads balance only', async () => {
+  const paths = [], output = [];
+  assert.equal(await smoke({ ...env, PLAYERONE_ZALOPAY_SANDBOX_PHONE: '' }, { fetch: async url => {
+    paths.push(new URL(url).pathname);
+    return answer({ return_code: 1, data: { balance: 123 } });
+  }, write: line => output.push(line) }), 0);
+  assert.deepEqual(paths, ['/v2/disbursement/balance']);
+  assert(output.some(line => line.includes('skipped: no sandbox phone')));
+});
+test('a malformed supplied phone refuses before any request', async () => {
+  let calls = 0;
+  assert.equal(await smoke({ ...env, PLAYERONE_ZALOPAY_SANDBOX_PHONE: 'invalid' }, { fetch: async () => { calls++; }, write() {} }), 2);
+  assert.equal(calls, 0);
 });

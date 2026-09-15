@@ -16,8 +16,10 @@ export async function smoke(env, { fetch: request = globalThis.fetch, write = co
     report('configuration', 'refused', null, 'sandbox_only_no_url_override');
     return 2;
   }
-  if (!env.PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID?.trim() || !/^0\d{9}$/.test(env.PLAYERONE_ZALOPAY_SANDBOX_PHONE ?? '')) {
-    report('configuration', 'refused', null, 'merchant_wallet_id_and_sandbox_phone_required');
+  const hasWallet = !!env.PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID?.trim();
+  const hasPhone = !!env.PLAYERONE_ZALOPAY_SANDBOX_PHONE;
+  if ((!hasWallet && !hasPhone) || (hasPhone && !/^0\d{9}$/.test(env.PLAYERONE_ZALOPAY_SANDBOX_PHONE))) {
+    report('configuration', 'refused', null, 'wallet_id_or_valid_sandbox_phone_required');
     return 2;
   }
   let client;
@@ -37,7 +39,7 @@ export async function smoke(env, { fetch: request = globalThis.fetch, write = co
         }
         return request(url, { ...init, redirect: 'error' });
       },
-    });
+    }, { verificationOnly: !hasWallet });
     if (!client) throw new Error('configuration_missing');
   } catch {
     report('configuration', 'refused', null, 'client_configuration_invalid');
@@ -45,6 +47,14 @@ export async function smoke(env, { fetch: request = globalThis.fetch, write = co
   }
   let ok = true;
   for (const endpoint of ['balance', 'verifyAccount']) {
+    if (endpoint === 'balance' && !hasWallet) {
+      report(endpoint, 'skipped', null, 'skipped: no merchant wallet id');
+      continue;
+    }
+    if (endpoint === 'verifyAccount' && !hasPhone) {
+      report(endpoint, 'skipped', null, 'skipped: no sandbox phone');
+      continue;
+    }
     try {
       if (endpoint === 'balance') {
         await client.balance();

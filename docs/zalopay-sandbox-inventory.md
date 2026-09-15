@@ -41,9 +41,9 @@ Task 2 now supplies Merchant Wallet embed. Run from this worktree:
 node packages/api/scripts/zalopay-sandbox-smoke.mjs
 ```
 
-The script loads `~/.playerone/zalopay-sandbox.env` at runtime using Node's native loader and the existing client factory. It accepts no CLI options. Required names: PLAYERONE_ZALOPAY_ENV=sandbox, PLAYERONE_ZALOPAY_APP_ID, PLAYERONE_ZALOPAY_PAYMENT_ID, PLAYERONE_ZALOPAY_KEY1, PLAYERONE_ZALOPAY_PUBLIC_KEY, PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID, PLAYERONE_ZALOPAY_SANDBOX_PHONE. Existing SIGNING/RSA_PADDING settings remain supported by the client. Any ZaloPay URL override is refused, and redirects are disabled. No transfer endpoint or database is used.
+The script loads `~/.playerone/zalopay-sandbox.env` at runtime using Node's native loader and the existing client factory. It accepts no CLI options. Core names: PLAYERONE_ZALOPAY_ENV=sandbox, PLAYERONE_ZALOPAY_APP_ID, PLAYERONE_ZALOPAY_PAYMENT_ID, PLAYERONE_ZALOPAY_KEY1, PLAYERONE_ZALOPAY_PUBLIC_KEY, PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID, PLAYERONE_ZALOPAY_SANDBOX_PHONE. Existing SIGNING/RSA_PADDING settings remain supported by the client. Any ZaloPay URL override is refused, and redirects are disabled. No transfer endpoint or database is used.
 
-Every output line is Simulation with status/code and a fixed meaning; no balance amount, phone, wallet identifier, key, name or raw provider message is printed. Exit 0 means both read calls succeeded; it does not mean a named destination was verified or money moved. Exit 1 means an unresolved read (including a refused incomplete balance payload); exit 2 means invalid configuration or arguments. A one-dong wallet lookup cannot establish the named-account requirement or capacity for an eventual bill. Fable must separately prove the persisted finance declaration on a throwaway database.
+Every output line is Simulation with status/code and a fixed meaning; no balance amount, phone, wallet identifier, key, name or raw provider message is printed. Exit 0 means all configured read calls succeeded; it does not mean a named destination was verified or money moved. Exit 1 means an unresolved read (including a refused incomplete balance payload); exit 2 means invalid configuration or arguments. A one-dong wallet lookup cannot establish the named-account requirement or capacity for an eventual bill. Fable must separately prove the persisted finance declaration on a throwaway database.
 
 Offline checks: `node --test packages/api/scripts/zalopay-sandbox-smoke.check.mjs` (6 tests); builder payout regression 88/88 and root typecheck passed. No real sandbox requests have been run by the builder.
 
@@ -60,3 +60,12 @@ Task 6 reuses the worker and edge-case suites: 11 worker tests and 30 edge-case 
 Builder's final gates (2026-09-15): database payout/settle/me/store 551 passed, 5 skipped (29 files passed, 1 skipped); full suite without DATABASE_URL 1234 passed, 912 skipped (96 files passed, 43 skipped); root and collector typechecks exit 0; offline smoke checks 6/6 passed. The five optional live sandbox tests skipped. Independent QA closed the mapping, HTTP provenance and documentation feedback; its own focused checks passed. No real provider request or credential-file read was made by the builder.
 
 Task 5 remains with owner/Fable: provision the Merchant Wallet/test user, run the read-only smoke, and prove a named persisted declaration on a throwaway database. A successful nameless wallet lookup remains unverified. No funded sandbox transfer was requested.
+
+
+### Verify-only smoke without a provisioned Merchant Wallet
+
+The owner cannot reach the SBMC reset OTP phone today. Merchant Wallet ID is therefore optional for this read-only diagnostic: with `PLAYERONE_ZALOPAY_SANDBOX_PHONE` and the core client credentials, the same command runs verify-account only and prints `Simulation | balance | skipped | code=none | skipped: no merchant wallet id`. No placeholder wallet ID is created. A successful nameless lookup still cannot verify a named destination.
+
+With both inputs it reads balance and verifies; with only Merchant Wallet ID it reads balance and reports verification skipped. With neither input, malformed phone, missing or structurally invalid local configuration, production, URL overrides or CLI arguments, exit 2 precedes any request. Exit 0 means every configured read succeeded; exit 1 means an attempted read is unresolved, including provider authentication refusals that can only be detected by a request. The runtime loader and redaction rules are unchanged.
+
+Normal payout client configuration still requires `merchantWalletId: string`. Only an explicit verification-only factory option may omit it, and that client refuses balance and transfer before signing or transport, even if an untyped caller supplies an ID. The smoke transport remains pinned to the two sandbox read endpoints. Builder uses synthetic responses only; no live request or credential-file read is authorized.
