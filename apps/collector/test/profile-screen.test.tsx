@@ -149,6 +149,23 @@ it('lists the seven rows the owner asked for, and answers the ones with no scree
   expect(page()).not.toContain(m['profile.notInBuild']);
   await act(async () => rowNamed(m['profile.about'])!.click());
   expect(page()).toContain(m['profile.notInBuild']);
+
+  // And the answer sits inside the group that caused it, immediately after the
+  // row that was tapped — not at the top of the screen.
+  const rows = [...document.body.querySelectorAll<HTMLElement>('[role="button"]')];
+  const about = rows.findIndex((node) => (node.getAttribute('aria-label') ?? '').startsWith(m['profile.about']));
+  const privacy = rows.findIndex((node) => (node.getAttribute('aria-label') ?? '').startsWith(m['profile.privacy']));
+  const note = document.body.querySelector<HTMLElement>('[aria-live="polite"]');
+  expect(note).not.toBeNull();
+  expect(rows[about]!.compareDocumentPosition(note!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(note!.compareDocumentPosition(rows[privacy]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it('names the build on the version line', async () => {
+  await mount();
+  const { default: app } = await import('../app.json');
+  // Version and platform, so a screenshot says which build it came from.
+  expect(page()).toContain(`${m['profile.version']} ${app.expo.version} ·`);
 });
 
 it('switches language in the app and shows the current one on the row', async () => {

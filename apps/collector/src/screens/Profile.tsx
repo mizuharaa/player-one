@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Modal, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { useNav } from '../nav.tsx';
@@ -69,6 +69,15 @@ export function Profile() {
     setPending(row);
   };
 
+  /**
+   * A group of rows under its heading.
+   *
+   * The Tier B answer is rendered **inside the group that caused it**, right
+   * under the row that was tapped. It used to sit at the top of the screen:
+   * a live region announces itself either way, but a sighted collector who
+   * taps the fourth row of the third group and gets a sentence above the
+   * avatar has to go looking for the reply to their own tap.
+   */
   const group = (
     title: MessageKey,
     rows: readonly { key: MessageKey; sub?: MessageKey; value?: string; onPress: () => void }[],
@@ -82,12 +91,18 @@ export function Profile() {
       </Text>
       <View>
         {rows.map((row) => (
-          <NavRow
-            key={row.key}
-            label={tt(row.key)}
-            subtitle={row.value ?? (row.sub === undefined ? undefined : tt(row.sub))}
-            onPress={row.onPress}
-          />
+          <View key={row.key}>
+            <NavRow
+              label={tt(row.key)}
+              subtitle={row.value ?? (row.sub === undefined ? undefined : tt(row.sub))}
+              onPress={row.onPress}
+            />
+            {pending === row.key ? (
+              <View style={{ paddingVertical: theme.space[2] }}>
+                <Note text={tt('profile.notInBuild')} />
+              </View>
+            ) : null}
+          </View>
         ))}
       </View>
     </View>
@@ -107,7 +122,10 @@ export function Profile() {
           >
             {name === '' ? tt('profile.title') : name}
           </Text>
-          <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>
+          <Text
+            numberOfLines={2}
+            style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme), textAlign: 'center' }}
+          >
             {profile.data === undefined || profile.data === null
               ? tt('profile.role')
               : `${tt('profile.role')} · ${profile.data.phone}`}
@@ -118,7 +136,6 @@ export function Profile() {
         {profile.isError ? (
           <Note text={tt('common.loadFailed')} tone="error" onRetry={() => void profile.refetch()} busy={profile.isFetching} />
         ) : null}
-        {pending === null ? null : <Note text={`${tt(pending)} — ${tt('profile.notInBuild')}`} />}
 
         {group('profile.account', [
           { key: 'explore.prefsTitle', sub: 'profile.preferencesSub', onPress: () => setSheet('prefs') },
@@ -146,8 +163,13 @@ export function Profile() {
             onPress={() => setSheet('logOut')}
             accessibilityHint={tt('profile.logOutBody')}
           />
+          {/* The version, and which platform's build it is.
+              `app.json`'s `expo.version` rather than `expo-constants`: that
+              module is not a dependency of this app (DEVICE_DEPS.md lists what
+              is) and one `Platform.OS` plus a JSON field answers the only
+              question this line exists for — which build am I looking at. */}
           <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>
-            {`${tt('profile.version')} ${app.expo.version}`}
+            {`${tt('profile.version')} ${app.expo.version} · ${Platform.OS}`}
           </Text>
         </View>
       </ProfileScroll>
