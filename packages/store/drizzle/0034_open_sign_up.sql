@@ -43,6 +43,20 @@
 -- `app-role.test.ts` pins that. Consuming is an UPDATE that only the winner of
 -- `WHERE consumed_at IS NULL` performs, which is the same "only the UPDATE
 -- winner signs in" shape `collector.ts` already uses to make a code single-use.
+--
+-- THE CEILING: THIS TABLE ONLY GROWS, AND THERE IS NO REAPER. Every number
+-- that signs up leaves a consumed row for ever, and every request nobody
+-- answers leaves a live one; the application cannot delete either, by the
+-- grant above. Rows are tiny and a row is dead to the sign-in five minutes
+-- after it is written, so at pilot scale — 500 collectors, and whatever
+-- mistyped numbers arrive with them — this is a table with a few thousand
+-- rows in it and nothing reads it but a lookup on its primary key.
+-- The upgrade path when that stops being true is a reaper that runs as the
+-- schema owner, `DELETE FROM sign_up_codes WHERE created_at < now() -
+-- interval '<n> days'`, on whatever schedule the deployment already has. It is
+-- deliberately not built now: a cron job and a second role in the deployment
+-- for a table measured in kilobytes is machinery guarding nothing, and the
+-- grant is what makes writing it a deliberate act rather than an accident.
 CREATE TABLE sign_up_codes (
   phone text PRIMARY KEY,
   code_hash text NOT NULL,
