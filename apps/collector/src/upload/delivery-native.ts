@@ -228,3 +228,35 @@ export const nativeDeliveryStore: DeliveryStore = {
   set: (record) => SecureStore.setItemAsync(KEY, JSON.stringify(record)),
   clear: () => SecureStore.deleteItemAsync(KEY),
 };
+
+/**
+ * How many bytes are free on this phone's internal storage, or `null`.
+ *
+ * APP-19's storage half. It sits here rather than beside the Prepare screen
+ * that reads it because `expo-file-system` has exactly one importer in this app
+ * on purpose (see the file header): the browser harness aliases the module to a
+ * stub and every test file that reaches a screen mocks it, and a second
+ * importer doubles both.
+ *
+ * `Paths.availableDiskSpace`, and NOT the `getFreeDiskStorageAsync` the task
+ * asked for. Measured against the installed `expo-file-system@57.0.7`: the
+ * package's main entry re-exports `legacyWarnings.ts`, where that function's
+ * whole body is `throw errorOnLegacyMethodUse('getFreeDiskStorageAsync')` —
+ * its own doc comment says "This method will throw in runtime". The spellings
+ * that work are `expo-file-system/legacy`, which is a second entry point and a
+ * deprecated surface, or this getter, which reads the same figure off the
+ * module this file already holds. Same number, no new import.
+ *
+ * `null`, never 0, when the platform cannot answer — the harness stub, a test
+ * mock, a future SDK that drops the getter. No free bytes at all is a fact
+ * worth warning about and "we could not look" is not, and the screen prints
+ * different words for the two.
+ */
+export function freeDiskBytes(): number | null {
+  try {
+    const bytes = Paths.availableDiskSpace;
+    return typeof bytes === 'number' && Number.isFinite(bytes) ? bytes : null;
+  } catch {
+    return null;
+  }
+}
