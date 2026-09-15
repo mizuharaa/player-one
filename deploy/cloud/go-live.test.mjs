@@ -71,6 +71,7 @@ test('the bundle it ships clones into a checkout provision.sh can run from', () 
   assert.equal(cloned.status, 0, cloned.stderr);
   assert.ok(existsSync(join(clone, 'deploy/cloud/provision.sh')), 'provision.sh is in the clone');
   assert.ok(!existsSync(join(clone, '.env.local')), 'secrets do not travel in the bundle');
+  rmSync(scratch, { recursive: true, force: true });   // the clone is the whole repo, ~140 MB
 });
 
 test('--force reaches provision.sh and --ssh-user changes the login', () => {
