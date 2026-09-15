@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useState, type ComponentType } from 'react';
+import { Text, View, useWindowDimensions } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { USE_MOCK_API } from '../api/config.ts';
 import type { MessageKey } from '../i18n.ts';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
-import { Body, Button, Card, Field, Hatch, Loading, Note, Row, Screen, Title } from '../ui.tsx';
+import { useTheme } from '../theme.tsx';
+import { Body, Button, Card, Field, Hatch, Loading, Note, Row, Screen, Title, face } from '../ui.tsx';
+import { HowCharge, HowHandOver, HowPressDevice, HowWear } from '../ui/illustrations/index.tsx';
 
 /**
  * APP-14/18: bind by QR or typed serial; list what is bound. The QR path is a
@@ -26,6 +29,7 @@ export function Devices() {
   const api = useApi();
   const nav = useNav();
   const tt = useT();
+  const theme = useTheme();
   const queryClient = useQueryClient();
   const [serial, setSerial] = useState('');
 
@@ -48,9 +52,26 @@ export function Devices() {
       ) : null}
       {(devices.data ?? []).map((d) => (
         <Card key={d.serial}>
-          <Title>{d.serial}</Title>
+          {/* The serial in tech blue, which §2 reserves for a device serial,
+              a session id and nothing else. Tabular figures, because a
+              collector reads this off the camera character by character. */}
+          <Text
+            style={{
+              ...theme.collector.type.h2,
+              color: theme.collector.techInk,
+              fontFamily: face(theme),
+              fontVariant: ['tabular-nums'],
+            }}
+          >
+            {d.serial}
+          </Text>
           <Row label={tt('devices.boundAt')} value={new Date(d.boundAt).toLocaleString()} />
           <Row label={tt('devices.status')} value={tt(DEVICE_STATES[d.status ?? ''] ?? 'devices.unknown')} />
+          {/* Battery and last-seen are what a collector actually wants here
+              and `BoundDevice` carries neither — it is `{ serial, boundAt,
+              status }` and nothing else. Saying so is better than drawing an
+              empty gauge or a guessed percentage. */}
+          <Body muted>{tt('devices.noReadings')}</Body>
         </Card>
       ))}
       <Card>
@@ -70,6 +91,83 @@ export function Devices() {
         disabled={!USE_MOCK_API || devices.isError || (devices.data ?? []).length === 0}
         onPress={() => nav.push({ name: 'provisioning' })}
       />
+
+      <HowToRecord />
     </Screen>
+  );
+}
+
+/**
+ * Work order §4.12 — how to use the Ego, in four illustrated steps.
+ *
+ * The framing is klarna-070/072: one drawing, a numbered heading, one
+ * sentence. The drawings are this lane's own family (plum fill, sun accent,
+ * one ink stroke), so they sit beside the onboarding cards rather than beside
+ * clip art.
+ *
+ * **Step three is the one that matters.** Only the camera's own buttons start
+ * and stop a recording, and the copy says the app cannot do it and never will.
+ * That is the rule most likely to be designed away by somebody adding a
+ * "Start" button here, so it is written on the screen a collector reads before
+ * their first session.
+ */
+const STEPS: readonly { key: MessageKey; body: MessageKey; Art: ComponentType<{ size?: number }> }[] = [
+  { key: 'devices.step1', body: 'devices.step1Body', Art: HowCharge },
+  { key: 'devices.step2', body: 'devices.step2Body', Art: HowWear },
+  { key: 'devices.step3', body: 'devices.step3Body', Art: HowPressDevice },
+  { key: 'devices.step4', body: 'devices.step4Body', Art: HowHandOver },
+];
+
+function HowToRecord() {
+  const tt = useT();
+  const theme = useTheme();
+  const c = theme.collector;
+  const { width, fontScale } = useWindowDimensions();
+  /**
+   * The drawing gives up room before the words do.
+   *
+   * At 320dp and 1.3x text a fixed 96dp square pushed the sentence to five
+   * lines and the step below it off the fold; the art shrinks instead.
+   */
+  const art = Math.min(width * 0.22, fontScale > 1.15 ? 64 : 96);
+  const stacked = width <= 320 || fontScale > 1.2;
+
+  return (
+    <View style={{ gap: theme.space[3], marginTop: c.sectionGap }}>
+      <Text
+        accessibilityRole="header"
+        style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme), letterSpacing: -0.2 }}
+      >
+        {tt('devices.howTitle')}
+      </Text>
+      {STEPS.map(({ key, body, Art }, index) => (
+        <View
+          key={key}
+          style={{
+            flexDirection: stacked ? 'column' : 'row',
+            alignItems: stacked ? 'flex-start' : 'center',
+            gap: theme.space[3],
+            paddingVertical: theme.space[3],
+            borderBottomWidth: index === STEPS.length - 1 ? 0 : 1,
+            borderBottomColor: c.line,
+          }}
+        >
+          <Art size={art} />
+          <View style={{ flex: stacked ? undefined : 1, gap: theme.space[1] }}>
+            <Text
+              style={{
+                ...c.type.body,
+                color: c.ink,
+                fontFamily: face(theme),
+                fontWeight: theme.fontWeight.semibold,
+              }}
+            >
+              {`${index + 1}. ${tt(key)}`}
+            </Text>
+            <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{tt(body)}</Text>
+          </View>
+        </View>
+      ))}
+    </View>
   );
 }
