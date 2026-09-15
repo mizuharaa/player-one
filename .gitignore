@@ -51,3 +51,4 @@ scratchpad/
 deploy/cloud/verify-*.txt
 deploy/cloud/source-sha.txt
 backups/
+artifacts/mobile-v3/

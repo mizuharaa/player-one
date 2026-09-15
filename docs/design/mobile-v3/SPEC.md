@@ -20,3 +20,15 @@ not completion claims.
 - Motion follows a proven static vertical slice and Fable's native smoke.
 - Local visual proof lives inside this worktree under `artifacts/mobile-v3/`,
   honoring the owner's write boundary over the work order's external path.
+
+- Client routes may be added for the specified screens (owner clarification).
+  Existing API routes and delivery contracts remain the data boundary.
+- Film posters paint immediately while decoding starts. A late decoder may
+  reveal the film; an actual playback error removes it. This replaces the
+  legacy welcome-film 400 ms cutoff, which prevented playback on the QA device.
+  Low-power, reduced-motion, background and scrolling gates still use posters.
+- Notifications are empty in the live app until a transport exists. Preview
+  events enter only through the browser harness and visibly say Simulation on
+  both inbox and settings; live channel controls are unavailable.
+- The dock and splash use the work order's static fallback. Animated ripple
+  and dock motion require the native performance gate before introduction.
