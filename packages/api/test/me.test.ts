@@ -199,7 +199,26 @@ async function signedIn() {
     return r.json();
   };
 
-  return { d, ids, app, asCollector, get, login, income, episodes, payout };
+  /** The inbox, with whatever query string the paging test is proving. */
+  const notifications = async (collectorId: string, query = '') => {
+    const r = await get(`/api/me/notifications${query}`, asCollector(collectorId));
+    expect(r.statusCode, r.body).toBe(200);
+    return r.json() as { notifications: { id: string; kind: string; payload: Record<string, unknown>; created_at: string; read_at: string | null }[]; next: string | null };
+  };
+  const unread = async (collectorId: string) => {
+    const r = await get('/api/me/notifications/unread-count', asCollector(collectorId));
+    expect(r.statusCode, r.body).toBe(200);
+    return r.json() as { unread: number };
+  };
+  /** The one write under `/api/me`, and the only one this file makes. */
+  const markRead = async (collectorId: string, id: string) =>
+    await app.inject({
+      method: 'POST',
+      url: `/api/me/notifications/${id}/read`,
+      headers: asCollector(collectorId),
+    });
+
+  return { d, ids, app, asCollector, get, login, income, episodes, payout, notifications, unread, markRead };
 }
 
 /** A reviewed episode left in `pending_settlement` — reviewed, not yet billed. */
@@ -360,12 +379,21 @@ describe.skipIf(!hasDb())('GET /api/me/income and /api/me/episodes', () => {
          * query (`taskRows` in collector-app.ts), so a task the collector may
          * not see is not there rather than confirmed to exist.
          *
+         * lane/notifications added the third, `POST /api/me/notifications/:id/read`,
+         * and it is the first one that WRITES. The argument holds for the same
+         * reason and one step harder: the `update` carries `collector_id = $me`
+         * in its own WHERE, so there is no row for another collector to stamp
+         * and no decision the handler makes after a read. It answers 404 rather
+         * than 403 for a notification that is not the asker's, which is what
+         * keeps it from being a membership oracle over every notification on
+         * the platform (the two tests at the end of this file).
+         *
          * The list stays EXACT rather than becoming "none of them says
          * collector". Both halves matter, and the exact half is the forcing
-         * one: a third parameter should be somebody's decision in a diff, not a
+         * one: a fourth parameter should be somebody's decision in a diff, not a
          * line that slips past a predicate.
          */
-        expect(params).toEqual(['/:id (GET, HEAD)', '/:id (GET, HEAD)']);
+        expect(params).toEqual(['/:id (GET, HEAD)', '/:id/read (POST)', '/:id (GET, HEAD)']);
         for (const line of params) expect(line.toLowerCase()).not.toContain('collector');
       } finally {
         await h.app.close();
@@ -807,6 +835,193 @@ describe.skipIf(!hasDb())('the cycle total and the payout destination', () => {
       const who = await h.login('HCM-01', 'fin-hcm');
       const r = await h.get('/api/me/payout', who);
       expect(r.statusCode).toBe(403);
+    } finally {
+      await h.app.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The inbox.
+//
+// `notify()` and its call sites are covered by the suites of the events
+// themselves — collector-upload, review, settle, payout, backoffice,
+// collector-app. What is tested here is the read side: the order, the cursor,
+// the scoping to the token holder, and the one write, which is the read stamp.
+
+/** A row straight into the table, the shape `notify` writes. */
+async function noted(
+  d: Awaited<ReturnType<typeof db>>,
+  collectorId: string,
+  kind: string,
+  opts: { payload?: Record<string, unknown>; at?: string } = {},
+): Promise<string> {
+  const id = uid();
+  await d.execute(sql`
+    insert into collector_notifications (id, collector_id, kind, payload, source_table, source_id, created_at)
+      values (${id}, ${collectorId}, ${kind}, ${JSON.stringify(opts.payload ?? {})}::jsonb,
+              'episode_reviews', ${id},
+              ${opts.at ?? new Date().toISOString()}::timestamptz)
+  `);
+  return id;
+}
+
+describe.skipIf(!hasDb())('GET /api/me/notifications', () => {
+  beforeEach(truncate);
+  afterAll(closeDb);
+
+  it('pages by the (created_at, id) pair, so a shared instant loses no row', async () => {
+    const h = await signedIn();
+    try {
+      // Three rows sharing ONE instant to the microsecond, which is what
+      // notifications written in one transaction look like. A cursor on
+      // `created_at` alone drops whichever of them lands on a page boundary.
+      const at = '2026-09-10T03:00:00.000000Z';
+      const ids = [
+        await noted(h.d, h.ids.collector1, 'upload_verified', { at }),
+        await noted(h.d, h.ids.collector1, 'upload_ingested', { at }),
+        await noted(h.d, h.ids.collector1, 'review_passed', { at }),
+      ];
+
+      const first = await h.notifications(h.ids.collector1, '?limit=2');
+      expect(first.notifications.length).toBe(2);
+      expect(first.next).toBe(first.notifications[1]!.id);
+
+      const second = await h.notifications(h.ids.collector1, `?limit=2&after=${first.next!}`);
+      expect(second.notifications.length).toBe(1);
+      expect(second.next).toBeNull();
+
+      // Every row appeared exactly once across the two pages.
+      const seen = [...first.notifications, ...second.notifications].map((n) => n.id);
+      expect([...seen].sort()).toEqual([...ids].sort());
+
+      // And the order inside the shared instant is stable, which is what makes
+      // the paging repeatable rather than accidentally correct once.
+      const all = await h.notifications(h.ids.collector1);
+      expect(all.notifications.map((n) => n.id)).toEqual(seen);
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  it('is newest first, and the payload arrives as the object it was stored as', async () => {
+    const h = await signedIn();
+    try {
+      await noted(h.d, h.ids.collector1, 'bill_issued', {
+        at: '2026-09-01T00:00:00Z',
+        payload: { bill_id: 'b-1', total: '1200.0000', currency: 'VND' },
+      });
+      const newer = await noted(h.d, h.ids.collector1, 'payment_recorded', {
+        at: '2026-09-08T00:00:00Z',
+        payload: { attempt_id: 'a-1', amount_vnd: '1200', reference: null },
+      });
+
+      const r = await h.notifications(h.ids.collector1);
+      expect(r.notifications.map((n) => n.kind)).toEqual(['payment_recorded', 'bill_issued']);
+      expect(r.notifications[0]!.id).toBe(newer);
+      // The stored figure, as the string the column holds. Nothing rounded it
+      // and nothing added it to anything.
+      expect(r.notifications[0]!.payload).toEqual({ attempt_id: 'a-1', amount_vnd: '1200', reference: null });
+      expect(r.notifications[0]!.read_at).toBeNull();
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  it("answers about the token holder only, and another collector's cursor pages from the top", async () => {
+    const h = await signedIn();
+    try {
+      const mine = await noted(h.d, h.ids.collector1, 'claim_accepted');
+      const theirs = await noted(h.d, h.ids.collector2, 'claim_accepted');
+
+      const one = await h.notifications(h.ids.collector1);
+      const two = await h.notifications(h.ids.collector2);
+      expect(one.notifications.map((n) => n.id)).toEqual([mine]);
+      expect(two.notifications.map((n) => n.id)).toEqual([theirs]);
+
+      /**
+       * A cursor copied out of somebody else's inbox is not an error and not a
+       * window into it: the cursor row is read under the asking collector's own
+       * id, finds nothing, and the page comes back from the top. A stale cursor
+       * is an ordinary thing for a phone to hold.
+       */
+      const withTheirs = await h.notifications(h.ids.collector1, `?after=${theirs}`);
+      expect(withTheirs.notifications.map((n) => n.id)).toEqual([mine]);
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  it('refuses an operator token and a reviewer token, like every other route under /api/me', async () => {
+    const h = await signedIn();
+    try {
+      const operator = await h.login('HCM-01', 'fin-hcm');
+      const reviewer = { authorization: `Bearer ${signToken(SECRET, { kind: 'reviewer', reviewerId: h.ids.opA })}` };
+      for (const who of [operator, reviewer]) {
+        for (const url of ['/api/me/notifications', '/api/me/notifications/unread-count']) {
+          expect((await h.get(url, who)).statusCode, url).toBe(403);
+        }
+      }
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  it("counts only the collector's own unread rows", async () => {
+    const h = await signedIn();
+    try {
+      const a = await noted(h.d, h.ids.collector1, 'upload_verified');
+      await noted(h.d, h.ids.collector1, 'upload_ingested');
+      await noted(h.d, h.ids.collector2, 'upload_verified');
+      expect(await h.unread(h.ids.collector1)).toEqual({ unread: 2 });
+      expect(await h.unread(h.ids.collector2)).toEqual({ unread: 1 });
+
+      await h.markRead(h.ids.collector1, a);
+      expect(await h.unread(h.ids.collector1)).toEqual({ unread: 1 });
+      expect(await h.unread(h.ids.collector2)).toEqual({ unread: 1 });
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  it('stamps read once: a second tap keeps the first instant', async () => {
+    const h = await signedIn();
+    try {
+      const id = await noted(h.d, h.ids.collector1, 'review_failed');
+      const first = await h.markRead(h.ids.collector1, id);
+      expect(first.statusCode, first.body).toBe(200);
+      const stamped = first.json().read_at as string;
+      expect(stamped).not.toBeNull();
+
+      const second = await h.markRead(h.ids.collector1, id);
+      expect(second.statusCode).toBe(200);
+      // "When did they see it" is evidence about a person's attention, and a
+      // double tap must not rewrite it.
+      expect(second.json().read_at).toBe(stamped);
+      expect(await h.unread(h.ids.collector1)).toEqual({ unread: 0 });
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  it("is a 404 for another collector's row and for an id that is not a uuid, never a 403", async () => {
+    const h = await signedIn();
+    try {
+      const theirs = await noted(h.d, h.ids.collector2, 'bill_issued');
+
+      /**
+       * 403 would confirm the id exists, which is a membership oracle over
+       * every notification on the platform. And the row stays unread for the
+       * collector it belongs to, so the refusal is a refusal and not a
+       * half-applied write.
+       */
+      expect((await h.markRead(h.ids.collector1, theirs)).statusCode).toBe(404);
+      expect(await h.unread(h.ids.collector2)).toEqual({ unread: 1 });
+
+      // An unparseable uuid would reach Postgres as a cast error and read as a
+      // 500 on a request that was only ever malformed.
+      expect((await h.markRead(h.ids.collector1, 'not-a-uuid')).statusCode).toBe(404);
+      expect((await h.markRead(h.ids.collector1, uid())).statusCode).toBe(404);
     } finally {
       await h.app.close();
     }

@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import type { Db } from '@playerone/store';
 import {
   MINUTES_SCALE,
@@ -827,5 +828,147 @@ export function registerMe(
     });
 
     return { episodes };
+  });
+
+  // -------------------------------------------------------------------------
+  // The inbox
+  //
+  // Three reads, the same token scope as everything above, and no write that
+  // produces a notification — every row here was written by `notify` inside the
+  // transaction of the event it is about (`notifications.ts`,
+  // `docs/notifications.md`). The only write in this section is the read stamp.
+
+  /**
+   * Newest first, keyset paginated.
+   *
+   * The cursor is the id of the last row of the previous page and the order is
+   * `(created_at desc, id desc)` — the PAIR, not the timestamp alone. Two
+   * notifications written in one transaction share an instant to the
+   * microsecond (one publish notifying one collector about one task is a single
+   * statement; a verdict and its bill are not, but nothing guarantees they are
+   * not), and a cursor on a non-unique key silently drops whichever of them
+   * landed on the page boundary. Dropping a row from a list of money is the
+   * defect the rest of this file exists to remove.
+   *
+   * `payload` leaves as the jsonb it is. It was written from a closed union of
+   * ids and stored figures and there is no field in it that can hold a sentence
+   * somebody wrote about a collector — the same structural argument the
+   * `exists(…)` booleans above make, one table further along.
+   */
+  app.get('/api/me/notifications', read, async (req, reply) => {
+    const me = collectorId(req);
+    if (me === null) return reply.code(403).send({ error: 'collector session required' });
+
+    const query = z
+      .object({ after: z.string().uuid().optional(), limit: z.coerce.number().int().min(1).max(100).default(30) })
+      .safeParse(req.query ?? {});
+    if (!query.success) {
+      return reply.code(400).send({ error: 'invalid query', detail: query.error.issues.slice(0, 5) });
+    }
+    const { after, limit } = query.data;
+
+    /**
+     * The cursor row is read under the collector's own id, so a cursor copied
+     * from another collector's inbox finds nothing and pages from the top
+     * rather than into somebody else's list. It is not an error: a stale cursor
+     * is an ordinary thing for a phone to hold.
+     */
+    let cursor: { created_at: Date | string; id: string } | undefined;
+    if (after !== undefined) {
+      const found = (await db.execute(sql`
+        select id, created_at from collector_notifications
+         where id = ${after} and collector_id = ${me}
+      `)) as unknown as { id: string; created_at: Date | string }[];
+      cursor = found[0];
+    }
+
+    /** One more than asked for, so `next` says whether another page exists without a second count. */
+    const rows = (await db.execute(sql`
+      select id, kind, payload, created_at, read_at
+        from collector_notifications
+       where collector_id = ${me}
+         ${
+           cursor === undefined
+             ? sql``
+             : sql`and (created_at, id) < (${iso(cursor.created_at)}::timestamptz, ${cursor.id}::uuid)`
+         }
+       order by created_at desc, id desc
+       limit ${limit + 1}
+    `)) as unknown as {
+      id: string;
+      kind: string;
+      payload: Record<string, unknown>;
+      created_at: Date | string;
+      read_at: Date | string | null;
+    }[];
+
+    const page = rows.slice(0, limit);
+    return {
+      notifications: page.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        payload: r.payload,
+        created_at: iso(r.created_at),
+        read_at: r.read_at === null ? null : iso(r.read_at),
+      })),
+      next: rows.length > limit ? (page[page.length - 1]?.id ?? null) : null,
+    };
+  });
+
+  /**
+   * The unread count, as its own statement.
+   *
+   * Home draws a number on a chip and must not pay for the inbox query to get
+   * it. `collector_notifications_inbox_idx` is on (collector_id, created_at
+   * desc, id desc), so this is one index scan of the collector's own rows.
+   */
+  app.get('/api/me/notifications/unread-count', read, async (req, reply) => {
+    const me = collectorId(req);
+    if (me === null) return reply.code(403).send({ error: 'collector session required' });
+    const rows = (await db.execute(sql`
+      select count(*)::int as unread
+        from collector_notifications
+       where collector_id = ${me} and read_at is null
+    `)) as unknown as { unread: number }[];
+    return { unread: rows[0]?.unread ?? 0 };
+  });
+
+  /**
+   * Marking one as read.
+   *
+   * `read_at is null` in the WHERE, so the stamp is taken once: a second tap
+   * matches nothing, and the reply is the FIRST instant, read back. "When did
+   * they see it" is evidence about a person's attention and a double tap must
+   * not rewrite it.
+   *
+   * 404 for a row belonging to another collector, never 403 — a 403 confirms
+   * the id exists, which is a membership oracle over every notification on the
+   * platform. The WHERE carries the collector id, so this is not a decision the
+   * handler makes after a read; there is no row to be wrong about.
+   *
+   * No `mutate`: the audit log records what OPERATORS did to collectors'
+   * records, and a collector opening their own inbox is neither. `read_at` is
+   * the record of it, which is the whole reason the column exists.
+   */
+  app.post('/api/me/notifications/:id/read', read, async (req, reply) => {
+    const me = collectorId(req);
+    if (me === null) return reply.code(403).send({ error: 'collector session required' });
+    const id = z.string().uuid().safeParse((req.params as { id?: string }).id);
+    // An unparseable uuid would reach Postgres as a cast error and read as a
+    // 500 on a request that was only ever malformed.
+    if (!id.success) return reply.code(404).send({ error: 'no such notification' });
+
+    await db.execute(sql`
+      update collector_notifications
+         set read_at = now()
+       where id = ${id.data} and collector_id = ${me} and read_at is null
+    `);
+    const rows = (await db.execute(sql`
+      select id, read_at from collector_notifications
+       where id = ${id.data} and collector_id = ${me}
+    `)) as unknown as { id: string; read_at: Date | string | null }[];
+    const row = rows[0];
+    if (row === undefined) return reply.code(404).send({ error: 'no such notification' });
+    return { id: row.id, read_at: row.read_at === null ? null : iso(row.read_at) };
   });
 }
