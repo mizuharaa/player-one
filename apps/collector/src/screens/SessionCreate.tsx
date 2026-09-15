@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { SCENARIOS, type Scenario } from '../api/types.ts';
@@ -39,7 +39,6 @@ function YesNo({
   const theme = useTheme();
   return (
     <View style={{ gap: theme.space[2] }}>
-      <Body>{question}</Body>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[3] }}>
         <Choice
           label={tt('session.yes')}
@@ -76,6 +75,7 @@ export function SessionCreate() {
    */
   const mounted = useRef(true);
   useEffect(() => {
+    mounted.current = true;
     api.beginSessionAttempt();
     return () => {
       mounted.current = false;
@@ -88,6 +88,7 @@ export function SessionCreate() {
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => api.tasks() });
   const devices = useQuery({ queryKey: ['devices'], queryFn: () => api.boundDevices() });
 
+  const [step, setStep] = useState(0);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [deviceSerial, setDeviceSerial] = useState<string | null>(null);
   const [others, setOthers] = useState<boolean | null>(null);
@@ -171,85 +172,45 @@ export function SessionCreate() {
     );
   }
 
-  return (
-    <Screen title={tt('session.title')}>
+  const ready = [task !== undefined, scenario !== null, device !== undefined, others !== null, sensitive !== null][step];
+  const titles: MessageKey[] = ['session.task', 'session.scenario', 'session.device', 'session.othersTitle', 'session.sensitiveTitle'];
+  const next = () => {
+    if (!ready || submitting.current) return;
+    if (step < titles.length - 1) { setStep(step + 1); return; }
+    if (task === undefined || device === undefined || scenario === null || others === null || sensitive === null) return;
+    submitting.current = true;
+    create.mutate();
+  };
+  return <Screen title={tt(titles[step]!)} onBack={() => step > 0 ? setStep(step - 1) : nav.back()}
+    right={<Pressable accessibilityRole="button" accessibilityLabel={tt('common.close')} onPress={() => nav.reset({ name: 'home' })}
+      style={{ minWidth: 48, minHeight: 48, justifyContent: 'center', alignItems: 'center' }}><Text style={{ ...theme.collector.type.h2, color: theme.collector.ink }}>×</Text></Pressable>}
+    footer={<Button label={tt(create.isPending ? 'common.saving' : step === 4 ? 'session.create' : 'common.next')}
+      busy={create.isPending} disabled={!ready || create.isPending} onPress={next} />}>
+    <View accessibilityRole="progressbar" accessibilityLabel={tt('session.title')}
+      accessibilityValue={{ min: 0, max: titles.length, now: step }}
+      style={{ flexDirection: 'row', gap: theme.space[1], paddingVertical: theme.space[3] }}>
+      {titles.map((title, index) => <View key={title} style={{ flex: 1, height: theme.space[1], borderRadius: theme.radius.pill,
+        backgroundColor: index <= step ? theme.collector.plum : theme.collector.line }} />)}
+    </View>
+    {step === 0 ? <>
       <Body muted>{tt('session.intro')}</Body>
-
-      <Card>
-        <Title>{tt('session.task')}</Title>
-        {/*
-          A gate that names what is missing and offers no way to it is a dead
-          end: this screen is reached from the raised button in the bar, and a
-          collector who has bound nothing arrived here to be told twice that
-          they cannot continue, with the only exit being Back. The refusal
-          keeps its wording — it is the same sentence the server enforces — and
-          the control under it goes where the sentence points.
-        */}
-        {claimedTasks.length === 0 ? (
-          <>
-            <Note text={tt('session.needClaim')} />
-            <Button
-              label={tt('hall.title')}
-              variant="secondary"
-              onPress={() => nav.push({ name: 'taskHall' })}
-            />
-          </>
-        ) : null}
-        {pick(claimedTasks, (t) => t.id, (t) => t.title, tt('session.task'), taskId, setTaskId)}
-      </Card>
-
-      <Card>
-        <Title>{tt('session.scenario')}</Title>
-        <Body>{tt('session.chooseScenario')}</Body>
-        {pick([...SCENARIOS], (s) => s, (s) => tt(`scenario.${s}`), tt('session.scenario'), scenario, (s) => setScenario(s as Scenario))}
-      </Card>
-
-      <Card>
-        <Title>{tt('session.device')}</Title>
-        {(devices.data ?? []).length === 0 ? (
-          <>
-            <Note text={tt('session.needDevice')} />
-            <Button
-              label={tt('home.devices')}
-              variant="secondary"
-              onPress={() => nav.push({ name: 'devices' })}
-            />
-          </>
-        ) : null}
-        {pick(
-          devices.data ?? [],
-          (d) => d.serial,
-          (d) => d.serial,
-          tt('session.device'),
-          deviceSerial,
-          setDeviceSerial,
-        )}
-      </Card>
-
-      <Card>
-        <Title>{tt('session.declare')}</Title>
-        <View style={{ gap: theme.space[5] }}>
-        <YesNo question={tt('session.othersTitle')} value={others} disabled={create.isPending || createdId !== null}
-          onChange={(v) => { if (!submitting.current) setOthers(v); }} />
-        <YesNo question={tt('session.sensitiveTitle')} value={sensitive} disabled={create.isPending || createdId !== null}
-          onChange={(v) => { if (!submitting.current) setSensitive(v); }} />
-        </View>
-        {others === null || sensitive === null ? <Note text={tt('session.needDeclarations')} /> : null}
-      </Card>
-
-      {create.isError ? <Note text={tt(SESSION_ERRORS[create.error.message] ?? 'common.actionFailed')} /> : null}
-      <Button
-        label={tt(create.isPending ? 'common.saving' : 'session.create')}
-        disabled={
-          task === undefined || device === undefined || scenario === null || others === null || sensitive === null || create.isPending || createdId !== null
-        }
-        onPress={() => {
-          if (submitting.current) return;
-          submitting.current = true;
-          create.mutate();
-        }}
-      />
-      <Note text={tt('session.noRecord')} />
-    </Screen>
-  );
+      {claimedTasks.length === 0 ? <><Note text={tt('session.needClaim')} /><Button label={tt('hall.title')} variant="secondary" onPress={() => nav.push({ name: 'taskHall' })} /></> : null}
+      {pick(claimedTasks, t => t.id, t => t.title, tt('session.task'), taskId, setTaskId)}
+    </> : null}
+    {step === 1 ? <>
+      <Body>{tt('session.chooseScenario')}</Body>
+      {pick([...SCENARIOS], s => s, s => tt(`scenario.${s}`), tt('session.scenario'), scenario, s => setScenario(s as Scenario))}
+    </> : null}
+    {step === 2 ? <>
+      {(devices.data ?? []).length === 0 ? <><Note text={tt('session.needDevice')} /><Button label={tt('home.devices')} variant="secondary" onPress={() => nav.push({ name: 'devices' })} /></> : null}
+      {pick(devices.data ?? [], d => d.serial, d => d.serial, tt('session.device'), deviceSerial, setDeviceSerial)}
+    </> : null}
+    {step === 3 ? <YesNo question={tt('session.othersTitle')} value={others} disabled={create.isPending}
+      onChange={v => { if (!submitting.current) setOthers(v); }} /> : null}
+    {step === 4 ? <YesNo question={tt('session.sensitiveTitle')} value={sensitive} disabled={create.isPending}
+      onChange={v => { if (!submitting.current) setSensitive(v); }} /> : null}
+    {step >= 3 && (others === null || sensitive === null) ? <Body muted>{tt('session.needDeclarations')}</Body> : null}
+    {create.isError ? <Note tone="error" text={tt(SESSION_ERRORS[create.error.message] ?? 'common.actionFailed')} /> : null}
+    <Body muted>{tt('session.noRecord')}</Body>
+  </Screen>;
 }

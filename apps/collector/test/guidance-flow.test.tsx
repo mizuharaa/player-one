@@ -17,7 +17,10 @@ import { SessionReminder } from '../src/screens/SessionReminder.tsx';
 // Only native presentation is replaced. Query mutations, API gates, locale and
 // navigation run unchanged; the browser harness separately checks real controls.
 vi.mock('react-native', () => ({
+  Platform: { OS: 'android' },
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => <button onClick={onPress}>{children}</button>,
   // §7 puts a 16/9 header still above the guidance. It is presentation and
   // this file is about the flow, so it renders as nothing with its name kept.
   Image: ({ accessibilityLabel }: { accessibilityLabel?: string }) => <img alt={accessibilityLabel ?? ''} />,
@@ -174,10 +177,10 @@ describe('guidance in the collector flow', () => {
     expect(container.querySelector('h1')?.textContent).toBe('home');
     await tap('Prepare in test');
     await tap(HEADSET_COPY.continue.vi);
-    await settle(() => expect(container.textContent).toContain(MESSAGES.vi['session.needDeclarations']));
+    await settle(() => expect(container.textContent).toContain(MESSAGES.vi['session.needClaim']));
     expect(begin).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain(MESSAGES.vi['session.othersTitle']);
-    expect(container.textContent).toContain(MESSAGES.vi['session.sensitiveTitle']);
+    expect(container.textContent).not.toContain(MESSAGES.vi['session.othersTitle']);
+    expect(container.textContent).not.toContain(MESSAGES.vi['session.sensitiveTitle']);
     expect(create).not.toHaveBeenCalled();
     expect(complete).not.toHaveBeenCalled();
     await tap('Back in test');
@@ -185,5 +188,33 @@ describe('guidance in the collector flow', () => {
     await tap('Back in test');
     await tap('Prepare in test');
     expect(container.querySelector('h1')?.textContent).toBe(HEADSET_COPY.shiftTitle.vi);
+  });
+
+  it('asks each preparation question in order and sends neither declaration until both are answered', async () => {
+    await api.completeTraining();
+    await api.submitExam([true, true, true]);
+    const task = (await api.tasks()).find(t => t.claimable)!;
+    await api.claimTask(task.id);
+    await api.bindDevice('EGO-TEST');
+    const create = vi.spyOn(api, 'createSession');
+    await mount({ name: 'sessionCreate' });
+    await settle(() => expect(button(MESSAGES.vi['common.next']).disabled).toBe(true));
+    await tap(task.title);
+    await tap(MESSAGES.vi['common.next']);
+    await tap(MESSAGES.vi['scenario.home']);
+    await tap(MESSAGES.vi['common.next']);
+    await tap('EGO-TEST');
+    await tap(MESSAGES.vi['common.next']);
+    expect(container.textContent).toContain(MESSAGES.vi['session.othersTitle']);
+    expect(container.textContent).not.toContain(MESSAGES.vi['session.sensitiveTitle']);
+    expect(button(MESSAGES.vi['common.next']).disabled).toBe(true);
+    await tap(MESSAGES.vi['session.no']);
+    await tap(MESSAGES.vi['common.next']);
+    expect(button(MESSAGES.vi['session.create']).disabled).toBe(true);
+    expect(create).not.toHaveBeenCalled();
+    await tap(MESSAGES.vi['session.yes']);
+    await tap(MESSAGES.vi['session.create']);
+    await settle(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(create).toHaveBeenCalledWith({ taskId: task.id, deviceSerial: 'EGO-TEST', scenario: 'home', othersInFrame: false, sensitiveInfo: true });
   });
 });
