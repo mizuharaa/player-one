@@ -1,6 +1,6 @@
 # Vietnamese copy for approval
 
-All Vietnamese text added or changed since `b40ee5c`, read from the integrated catalogue. Owner approval 2026-09-14: 127 rows OK, 3 rows corrected by the owner (`tab.uploads`, `income.intro`, `income.total`) and applied here; `legal.notPublished` (added after the review) is still awaiting the owner's word. Existing legal copy is reused.
+All Vietnamese text added or changed since `b40ee5c`, read from the integrated catalogue. Owner approval 2026-09-14: 127 rows OK, 3 rows corrected by the owner (`tab.uploads`, `income.intro`, `income.total`) and applied here; `legal.notPublished` (added after the review) was approved by the owner on 2026-09-15. Existing legal copy is reused.
 
 | Key | Before | Proposed Vietnamese | English |
 | --- | --- | --- | --- |
