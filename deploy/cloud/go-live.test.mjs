@@ -1,0 +1,68 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// go-live.sh reads real GreenNode credentials from one of two fixed paths and
+// must never print them. The first is this laptop's absolute path, which is
+// outside this repo and outside our control; the second is HOME-relative, so
+// off that laptop (CI) we can point HOME at a throwaway fixture instead.
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const laptopEnvFile = 'C:/Users/Khang/OneDrive/Documents/player-one/.env.local';
+
+let env = process.env, storageKey, storageSecret;
+if (existsSync(laptopEnvFile)) {
+  const text = readFileSync(laptopEnvFile, 'utf8');
+  storageKey = /^STORAGE_KEY=(.*)$/m.exec(text)?.[1];
+  storageSecret = /^STORAGE_SECRET=(.*)$/m.exec(text)?.[1];
+} else {
+  const home = mkdtempSync(join(tmpdir(), 'playerone-go-live-home-'));
+  mkdirSync(join(home, '.playerone'));
+  storageKey = 'fixture-key-0123456789';
+  storageSecret = 'fixture-secret-abcdefghij';
+  writeFileSync(join(home, '.playerone', 'greennode.env'),
+    `STORAGE_ENDPOINT=https://s3.example.test\nSTORAGE_KEY=${storageKey}\nSTORAGE_SECRET=${storageSecret}\n`);
+  env = { ...process.env, HOME: home };
+}
+
+function dryRun(args) {
+  const result = spawnSync('bash', [join(repoRoot, 'deploy/cloud/go-live.sh'), ...args, '--dry-run'],
+    { cwd: repoRoot, env, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout;
+}
+
+test('derives the sslip.io domain from the IP', () => {
+  const out = dryRun(['203.0.113.7']);
+  assert.match(out, /Domain: api\.203-0-113-7\.sslip\.io/);
+});
+
+test('--domain overrides the derived one', () => {
+  const out = dryRun(['203.0.113.7', '--domain', 'console.example.vn']);
+  assert.match(out, /Domain: console\.example\.vn/);
+  assert.doesNotMatch(out, /203-0-113-7/);
+});
+
+test('uses GreenNode\'s SSH port 234 by default, and --ssh-port to override', () => {
+  assert.match(dryRun(['203.0.113.7']), /ssh -p 234 /);
+  assert.match(dryRun(['203.0.113.7', '--ssh-port', '2222']), /ssh -p 2222 /);
+});
+
+test('never prints the storage key or secret, and masks them with ***', () => {
+  const out = dryRun(['203.0.113.7']);
+  if (storageKey && storageKey.length > 6) assert.doesNotMatch(out, new RegExp(storageKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  if (storageSecret && storageSecret.length > 6) assert.doesNotMatch(out, new RegExp(storageSecret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(out, /STORAGE_KEY=\*\*\*/);
+  assert.match(out, /--storage-secret \*\*\*/);
+});
+
+test('runs the steps in order: bucket, bundle, copy, provision, up, verify', () => {
+  const out = dryRun(['203.0.113.7']);
+  const at = (label) => out.indexOf(`DRY-RUN ${label}:`);
+  const order = ['bucket', 'bundle', 'copy-bundle', 'provision', 'up', 'verify'].map(at);
+  for (const index of order) assert.ok(index > -1, 'every step is printed');
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), 'steps print in the order go-live runs them');
+});

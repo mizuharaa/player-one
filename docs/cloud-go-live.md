@@ -30,6 +30,32 @@ bash verify.sh
 bash restore.sh "$(ls -t /srv/playerone/backups/*.dump | head -n 1)" po_restore_rehearsal
 ```
 
+## From the laptop with one IP
+
+Once the owner hands over only the VM's public IP, the manual recipe above can
+run as one command from this checkout instead of at the VM's console:
+
+```bash
+bash deploy/cloud/go-live.sh 14.225.1.2
+```
+
+That derives `--domain` as `api.14-225-1-2.sslip.io` (dots to dashes; override
+with `--domain`) — **sslip.io needs no DNS record**, it resolves any
+`<anything>.<ip-with-dashes>.sslip.io` back to that IP, and Caddy's ACME
+(HTTP-01) works against it exactly as it would against a real hostname. It then:
+reads the four GreenNode storage values from `.env.local` on this machine or
+`~/.playerone/greennode.env`, and creates `--bucket` (default
+`playerone-demo-<yyyymmdd>`) if it does not already exist, using the same S3
+client call as `deploy/emu/ensure-bucket.mjs`; bundles this checkout
+(`git bundle`, the same mechanism as the manual recipe) and copies it to the
+VM with `scp -P 234` (GreenNode's default SSH port; `--ssh-port` overrides);
+runs `provision.sh` over `ssh -p 234` with `--local-db` and those storage
+values, then `up.sh`, then `verify.sh`, streaming each one's output and
+stopping at the first failure, naming the step. It never prints
+`STORAGE_KEY`/`STORAGE_SECRET`, masking them with `***` wherever a command
+would otherwise show them. `--dry-run` (or `--plan`) prints every command it
+would run, masked the same way, without touching the VM or the bucket.
+
 For managed Postgres, replace `--local-db` with `--database-url 'postgres://OWNER:PASSWORD@HOST/po_demo_cloud?sslmode=require'`; pre-create that demo database and grant the owner migration, role, database-creation and checkpoint privileges.
 Generated secrets print once and remain in `/srv/playerone/deploy/cloud/cloud.env` (600). Staff: `op-1`, `fin-1`, `rev-1`; corresponding `PLAYERONE_DEMO_*_SECRET` values are in that file.
 A provision rerun needs `--force`, which preserves credentials. `up.sh --pull` uses the configured runtime/migration image pair. Never run e2e directly on the demo DB.
