@@ -83,11 +83,15 @@ test('every eas.json build profile mirrors PLAYERONE_BUILD_PROFILE into EXPO_PUB
   }
 });
 
-test('every installable profile in eas.json names a resolvable origin', () => {
+// Named for what this checks, not for DNS: it only refuses a reserved or
+// example hostname (RFC 2606), never looks the domain up, and cannot tell a
+// live host from one that has not gone up yet.
+test('every installable profile in eas.json names a non-placeholder origin', () => {
   for (const name of ['demo', 'store', 'testflight']) {
     const origin = profileEnv(name).EXPO_PUBLIC_API_URL;
     assert.equal(origin, CLOUD, `${name} must default to the Vietnam cloud domain`);
-    assert.doesNotMatch(new URL(origin).hostname, /\.(invalid|test|local|localhost|example)$/i);
+    assert.doesNotMatch(new URL(origin).hostname, /\.(invalid|test|local|localhost|example)$/i,
+      `${name} must not default to a reserved placeholder host`);
   }
 });
 
