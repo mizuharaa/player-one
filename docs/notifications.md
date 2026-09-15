@@ -208,7 +208,7 @@ cost the inbox query.
 
 ## The table
 
-Migration `0032_collector_notifications`, appended (never edited into an applied
+Migration `0033_collector_notifications`, appended (never edited into an applied
 one), journal `when` after `0030_release_held_delivery`.
 
 | | |
