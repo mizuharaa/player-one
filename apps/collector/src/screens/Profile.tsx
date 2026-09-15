@@ -2,11 +2,12 @@ import { useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
+import { getApiOrigin, hostOf, originOf, setApiOrigin } from '../api/origin.ts';
 import { useNav } from '../nav.tsx';
 import { useLocale, useT } from '../locale.tsx';
 import { useSignOut } from '../session.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Loading, NavRow, Note, face, useInsets, useTabBarReserve } from '../ui.tsx';
+import { Body, Button, Field, Loading, NavRow, Note, face, useInsets, useTabBarReserve } from '../ui.tsx';
 import { AvatarMark, initialsOf } from '../ui/illustrations/index.tsx';
 // The sheet shell and the preferences sheet live with Explore, which has three
 // sheets to this screen's two. Fable: both want to move into Astra's `ui.tsx`
@@ -49,9 +50,33 @@ export function Profile() {
   const reserve = useTabBarReserve();
   const { fontScale } = useWindowDimensions();
   /** Which sheet is open, or the row that has no screen yet. */
-  const [sheet, setSheet] = useState<'logOut' | 'language' | 'prefs' | null>(null);
+  const [sheet, setSheet] = useState<'logOut' | 'language' | 'prefs' | 'server' | null>(null);
   const [pending, setPending] = useState<MessageKey | null>(null);
+  /** The Server sheet's field, and the reason a Save was refused. */
+  const [origin, setOrigin] = useState(getApiOrigin);
+  const [originError, setOriginError] = useState<MessageKey | null>(null);
   const { prefs, save: savePrefs } = usePreferences();
+
+  /**
+   * Point this build at another server.
+   *
+   * The token was issued by the server being left and means nothing to the one
+   * being joined, so the session ends either way and the app comes back to the
+   * landing door. A keystore write that fails leaves the origin alone
+   * (`origin.ts` writes the store before its own copy), so the sheet says the
+   * action did not finish rather than pretending it did.
+   */
+  const changeServer = (next: string | null) => {
+    if (next !== null && originOf(next) === null) {
+      setOriginError('server.invalid');
+      return;
+    }
+    setOriginError(null);
+    void setApiOrigin(next).then(
+      () => signOut({ landing: true }),
+      () => setOriginError('common.actionFailed'),
+    );
+  };
 
   const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
   /**
@@ -148,6 +173,14 @@ export function Profile() {
         {group('profile.actions', [
           { key: 'agreements.title', sub: 'profile.agreementsSub', onPress: () => nav.push({ name: 'agreements' }) },
           { key: 'profile.about', sub: 'profile.aboutSub', onPress: () => nav.push({ name: 'about' }) },
+          /* Which server this build talks to. Under About because that is
+             where "which build am I holding" already lives, and the answer to
+             that question is now two things: a version and a server. */
+          { key: 'server.title', value: hostOf(getApiOrigin()), onPress: () => {
+            setOrigin(getApiOrigin());
+            setOriginError(null);
+            setSheet('server');
+          } },
           { key: 'profile.privacy', sub: 'profile.privacySub', onPress: () => nav.push({ name: 'privacy' }) },
           { key: 'profile.help', sub: 'profile.helpSub', onPress: notYet('profile.help') },
         ])}
@@ -177,6 +210,23 @@ export function Profile() {
       <Sheet open={sheet === 'logOut'} onClose={() => setSheet(null)} title={tt('profile.logOutSure')}>
         <Body muted>{tt('profile.logOutBody')}</Body>
         <Button label={tt('profile.logOutConfirm')} variant="destructive" onPress={signOut} />
+        <Button label={tt('common.cancel')} variant="ghost" onPress={() => setSheet(null)} />
+      </Sheet>
+
+      {/* The server. One field, because the whole of the setting is an origin:
+          `origin.ts` refuses a path, a query or credentials, and the same check
+          runs here so the reason is printed with the control that caused it
+          rather than after a round trip. */}
+      <Sheet open={sheet === 'server'} onClose={() => setSheet(null)} title={tt('server.title')}>
+        <Body muted>{tt('server.signsOut')}</Body>
+        <Field
+          label={tt('server.address')}
+          value={origin}
+          onChangeText={(next) => { setOrigin(next); setOriginError(null); }}
+        />
+        {originError === null ? null : <Note text={tt(originError)} tone="error" />}
+        <Button label={tt('server.save')} onPress={() => changeServer(origin)} />
+        <Button label={tt('server.reset')} variant="secondary" onPress={() => changeServer(null)} />
         <Button label={tt('common.cancel')} variant="ghost" onPress={() => setSheet(null)} />
       </Sheet>
 

@@ -295,7 +295,7 @@ try {
       note,
       " The payout destination is unverified, and that is the demo's honest ending:",
       ' no ZaloPay verification credential exists, so no account can be verified',
-      ' and the API refuses a payment by name: payout_account_unverified',
+      ' and the API refuses a payment by name: payout_attempts_account_unverified',
       ' (with the database trigger payout_attempts_account_unverified behind it).',
       '=====================================================================',
     ].join('\n'),

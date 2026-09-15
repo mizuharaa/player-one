@@ -393,7 +393,7 @@ const vi = {
   'settlement.approved': 'Đã duyệt, chờ lập hóa đơn',
   'settlement.not_paid': 'Không được duyệt',
   'settlement.on_a_bill': 'Đã lên hóa đơn',
-  'settlement.action_needed': 'Cần bạn xử lý',
+  'settlement.action_needed': 'Chờ xác minh nơi nhận tiền',
   'settlement.waiting_on_us': 'Chúng tôi đang xử lý',
   'settlement.on_hold': 'Đang tạm giữ',
   'settlement.being_rechecked': 'Đang duyệt lại',
@@ -461,6 +461,9 @@ const vi = {
   'payout.zalopay': 'Ví ZaloPay',
   'payout.verified': 'Đã xác minh',
   'payout.awaiting': 'Chờ xác minh',
+  'payout.awaitingPayment': 'Chờ thanh toán. Nơi nhận tiền chưa xác minh.',
+  'payout.simulation': 'Mô phỏng. Không chuyển tiền thật.',
+  'payout.paidReference': 'Đã thanh toán. Mã giao dịch: {reference}',
   'payout.none': 'Chưa khai báo — liên hệ điểm hỗ trợ',
   'payout.unknown': 'Chưa rõ bạn sẽ nhận tiền ở đâu. Hỏi điểm hỗ trợ giúp bạn.',
   'guide.home.earnings': 'Đây là tiền của những tập đã được duyệt trong kỳ này. Người duyệt quyết định con số, không phải ứng dụng.',
@@ -602,6 +605,16 @@ const vi = {
   'devices.battery': 'Pin',
   'devices.lastUsed': 'Lần dùng gần nhất',
   'devices.notReported': 'Chưa có dữ liệu',
+
+  // runtime origin — the Server row under About (`api/origin.ts`). English is
+  // the source; the Vietnamese is the plain Zalo register the rest of this
+  // catalogue uses.
+  'server.title': 'Máy chủ',
+  'server.address': 'Địa chỉ máy chủ',
+  'server.save': 'Lưu',
+  'server.reset': 'Dùng mặc định',
+  'server.invalid': 'Địa chỉ không hợp lệ',
+  'server.signsOut': 'Đổi máy chủ thì bạn phải đăng nhập lại.',
 };
 
 export type MessageKey = keyof typeof vi;
@@ -954,7 +967,7 @@ const en: Record<MessageKey, string> = {
   'settlement.approved': 'Approved, awaiting a bill',
   'settlement.not_paid': 'Not accepted',
   'settlement.on_a_bill': 'On a bill',
-  'settlement.action_needed': 'Needs something from you',
+  'settlement.action_needed': 'Payment setup pending',
   'settlement.waiting_on_us': 'We are working on it',
   'settlement.on_hold': 'On hold',
   'settlement.being_rechecked': 'Being reviewed again',
@@ -1013,6 +1026,9 @@ const en: Record<MessageKey, string> = {
   'payout.zalopay': 'ZaloPay wallet',
   'payout.verified': 'Verified',
   'payout.awaiting': 'Awaiting verification',
+  'payout.awaitingPayment': 'Awaiting payment — destination unverified',
+  'payout.simulation': 'Simulation. No live transfer.',
+  'payout.paidReference': 'Paid, reference {reference}',
   'payout.none': 'Not set — contact a support point',
   'payout.unknown': 'We do not yet know where to pay you. A support point can set it up.',
   'guide.home.earnings': 'This is what your reviewed episodes earned this cycle. A reviewer decides the figure, not the app.',
@@ -1143,6 +1159,16 @@ const en: Record<MessageKey, string> = {
   'devices.battery': 'Battery',
   'devices.lastUsed': 'Last used',
   'devices.notReported': 'Not reported',
+
+  // runtime origin — the Server row under About (`api/origin.ts`). English is
+  // the source; the Vietnamese is the plain Zalo register the rest of this
+  // catalogue uses.
+  'server.title': 'Server',
+  'server.address': 'Server address',
+  'server.save': 'Save',
+  'server.reset': 'Use the default',
+  'server.invalid': 'That address is not valid',
+  'server.signsOut': 'Changing the server signs you out.',
 };
 
 /**
@@ -1481,7 +1507,7 @@ const zh: Record<MessageKey, string> = {
   'settlement.approved': '已通过，等待出账单',
   'settlement.not_paid': '未被接受',
   'settlement.on_a_bill': '已列入账单',
-  'settlement.action_needed': '需要你处理',
+  'settlement.action_needed': '等待收款账户核验',
   'settlement.waiting_on_us': '我们正在处理',
   'settlement.on_hold': '暂时挂起',
   'settlement.being_rechecked': '正在重新审核',
@@ -1539,6 +1565,9 @@ const zh: Record<MessageKey, string> = {
   'payout.zalopay': 'ZaloPay 钱包',
   'payout.verified': '已验证',
   'payout.awaiting': '待验证',
+  'payout.awaitingPayment': '待付款，收款账户尚未验证。',
+  'payout.simulation': '模拟。未实际转账。',
+  'payout.paidReference': '已付款，交易参考号：{reference}',
   'payout.none': '未设置——请联系支持点',
   'payout.unknown': '尚未确定您的收款方式，请联系支持点。',
   'guide.home.earnings': '这是本周期已审核片段的收入。金额由审核员决定，而非应用。',
@@ -1669,6 +1698,16 @@ const zh: Record<MessageKey, string> = {
   'devices.battery': '电量',
   'devices.lastUsed': '最近使用',
   'devices.notReported': '未上报',
+
+  // runtime origin — the Server row under About (`api/origin.ts`). English is
+  // the source; the Vietnamese is the plain Zalo register the rest of this
+  // catalogue uses.
+  'server.title': '服务器',
+  'server.address': '服务器地址',
+  'server.save': '保存',
+  'server.reset': '使用默认地址',
+  'server.invalid': '地址无效',
+  'server.signsOut': '更换服务器后需要重新登录。',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en, zh };

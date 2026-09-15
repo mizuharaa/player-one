@@ -45,7 +45,7 @@ import {
 import { gateReasonKey, type GateState } from './gate.ts';
 import { useGate } from './PreflightScreen.tsx';
 import { settlementStateKey } from './refusals.ts';
-import { readOnlyReason, useFinanceRole } from './role.ts';
+import { canReadFinance, readOnlyReason, useFinanceRole } from './role.ts';
 
 export function BillScreen() {
   const { t, i18n } = useTranslation();
@@ -53,12 +53,12 @@ export function BillScreen() {
   const { period } = useSearch({ strict: false }) as { period: string };
   const { billId } = useParams({ strict: false }) as { billId?: string };
   const { role } = useFinanceRole();
-  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: role === 'finance' });
+  const batch = useQuery({ queryKey: keys.batch(period), queryFn: () => payout.batch(period), enabled: canReadFinance(role) });
   // ponytail: Bill detail stays a second round trip instead of making the period batch carry every line of every bill.
   const detail = useQuery({
     queryKey: keys.bill(billId ?? ''),
     queryFn: () => (billId === undefined ? Promise.resolve(null) : settle.bill(billId)),
-    enabled: billId !== undefined && role === 'finance',
+    enabled: billId !== undefined && canReadFinance(role),
   });
   /**
    * The gate reads the cached snapshot only — rendering this screen must not
@@ -90,6 +90,9 @@ export function BillScreen() {
       ) : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <div className="space-y-6">
+            {bill.simulation ? <p role="status">{t('settle.simulation')}</p> : null}
+            {!bill.paid && bill.account && bill.account.verify_status !== 'verified' ? <p>{t('settle.awaitingPayment')}</p> : null}
+            {bill.paid && bill.attempt?.manual_reference ? <p>{t('settle.paidReference', { reference: bill.attempt.manual_reference })}</p> : null}
             <div>
               <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-[var(--foreground)] pb-3">
                 <h2 className="num text-[1.5rem] font-extrabold tracking-[-0.02em]">{bill.collector_ref}</h2>

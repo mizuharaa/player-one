@@ -2474,6 +2474,17 @@ export const payoutAccounts = pgTable(
       'payout_accounts_verified_at_check',
       sql`(${t.verifyStatus} = 'unverified') = (${t.verifiedAt} is null)`,
     ),
+    /**
+     * 0032. A verified destination carries the name ZaloPay returned.
+     * IDENT.NAME_UNCONFIRMED — `verified` with no name — is not a
+     * verification, and the payable gate only ever asked about
+     * `verify_status`, so this is where that question belongs.
+     */
+    check(
+      'payout_accounts_verified_named_check',
+      sql`${t.verifyStatus} <> 'verified'
+          or (${t.verifiedName} is not null and length(trim(${t.verifiedName})) > 0)`,
+    ),
   ],
 );
 

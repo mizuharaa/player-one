@@ -181,6 +181,8 @@ export interface IncomeCycle {
 
 /** SPEC §14.2. Where the collector gets paid, and how far verification got. */
 export interface PayoutDestination {
+  simulation?: boolean;
+  payment?: { reference: string; amount_vnd: number };
   channel: 'zalopay';
   status: 'verified' | 'awaiting' | 'none';
   /** The server's own redaction, e.g. `•••• 5678`. Never a full identifier. */

@@ -86,6 +86,36 @@ export function payoutOptionsFromEnv(
 }
 
 /**
+ * Whether one outcome is a simulation.
+ *
+ * Not the same question as "which provider environment is this", which is what
+ * `/api/payout/environment` and the engineering status print and what the
+ * console header shows. That word stays as it is. This one is about a single
+ * verification or payment.
+ *
+ * `PLAYERONE_PAYOUT_MODE=manual` is the pilot's default rail, and on it a
+ * finance operator types the reference of a transfer they really made. Deriving
+ * the label from `PLAYERONE_ZALOPAY_ENV` alone printed "Simulation. No live
+ * transfer." over exactly those payments — false, and false in the direction
+ * that matters, because both example env files set `sandbox` and production
+ * refuses to boot without four ZaloPay credentials nobody has. So a manual
+ * attempt carrying a reference is never a simulation. Anything the provider
+ * produced — an API-rail transfer, or a verification — is a simulation when the
+ * provider is the sandbox.
+ *
+ * ponytail: one predicate, and the outcome is its only new input. A surface
+ * that describes no single outcome (a period list, an income summary) passes
+ * `null` and keeps saying what the environment is.
+ */
+export function isSimulation(
+  sandbox: boolean,
+  outcome: { mode: string | null; reference: string | null } | null,
+): boolean {
+  if (outcome !== null && outcome.mode === 'manual' && (outcome.reference ?? '').trim() !== '') return false;
+  return sandbox;
+}
+
+/**
  * The two invariants that throw at boot, in the style of `buildApi`'s
  * `reviewerMediaEnabled` check: a service invariant, not an entrypoint check,
  * so an embedded caller cannot assemble the unsafe combination either.

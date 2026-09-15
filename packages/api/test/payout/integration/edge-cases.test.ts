@@ -850,14 +850,14 @@ describe.skipIf(!hasDb())('the edge-case suite, E01–E29, over a real socket to
 
         const paid = await pay(h, bill1);
         expect(paid.statusCode).toBe(409);
-        expect(paid.json().constraint).toBe('payout_account_unverified');
+        expect(paid.json().constraint).toBe('payout_attempts_account_unverified');
         expect(await attemptCount(h.d)).toBe(0);
 
         // -1104 from ZaloPay is the same signal, on the wallet route.
         h.fake.plan('verifyAccount', { kind: 'sub', subCode: -1104 });
         const wallet = await h.send('POST', '/api/payout/accounts', h.finA, { id: uid(), collector_id: h.ids.collector2, method: 'WALLET', declared_name: 'Tran Thi C', phone: '0987654321' });
         expect(wallet.json()).toMatchObject({ verify_status: 'name_mismatch', sub_return_code: -1104 });
-        expect((await pay(h, bill2)).json().constraint).toBe('payout_account_unverified');
+        expect((await pay(h, bill2)).json().constraint).toBe('payout_attempts_account_unverified');
         expect(await count(h.d, sql`select count(*) as n from payout_events where kind = 'IDENT.NAME_MISMATCH'`)).toBe(2);
         expect(transfers(h)).toHaveLength(0);
         expect(h.fake.requests('verifyAccount')).toHaveLength(2);

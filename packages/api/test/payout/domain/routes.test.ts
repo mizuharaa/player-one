@@ -407,7 +407,7 @@ describe.skipIf(!hasDb())('the payout routes', () => {
         await seedAccount(h1.d, h1.ids, 1, { verifyStatus: status });
         const res = await pay(h1, bill1, 2400);
         expect(res.statusCode, status).toBe(409);
-        expect(res.json().constraint, status).toBe('payout_account_unverified');
+        expect(res.json().constraint, status).toBe('payout_attempts_account_unverified');
       }
       expect(await countOf(h1.d, sql`select count(*) as n from payout_attempts`)).toBe(0);
       expect((await settlements(h1.d, bill1)).map((s) => s.settlement_state)).toEqual(['bill_generated', 'bill_generated']);
@@ -695,7 +695,7 @@ describe.skipIf(!hasDb())('the payout routes', () => {
       expect(missing.json().constraint).toBe('payout_account_missing');
       await seedAccount(h.d, h.ids, 1, { verifyStatus: 'name_mismatch' });
       const mismatch = await h.send('POST', `/api/payout/bills/${bill1}/pay`, h.finA);
-      expect(mismatch.json().constraint).toBe('payout_account_unverified');
+      expect(mismatch.json().constraint).toBe('payout_attempts_account_unverified');
       await seedAccount(h.d, h.ids, 2, { method: 'BANK_ACCOUNT' });
       // bill2 is 1,200 VND, under the bank minimum, so that is what refuses it first.
       const small = await h.send('POST', `/api/payout/bills/${bill2}/pay`, h.finA);
