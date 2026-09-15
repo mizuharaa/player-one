@@ -8,7 +8,8 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "PLAYERONE_BUILD_PROFILE": "development"
+        "PLAYERONE_BUILD_PROFILE": "development",
+        "EXPO_PUBLIC_BUILD_PROFILE": "development"
       },
       "pnpm": "9.15.9"
     },
@@ -16,6 +17,7 @@
       "distribution": "internal",
       "env": {
         "PLAYERONE_BUILD_PROFILE": "demo",
+        "EXPO_PUBLIC_BUILD_PROFILE": "demo",
         "EXPO_PUBLIC_API_URL": "https://api.playerone.vng.com.vn",
         "PLAYERONE_VERSION_CODE": "43"
       },
@@ -25,6 +27,7 @@
       "distribution": "store",
       "env": {
         "PLAYERONE_BUILD_PROFILE": "play",
+        "EXPO_PUBLIC_BUILD_PROFILE": "play",
         "EXPO_PUBLIC_API_URL": "https://api.playerone.vng.com.vn",
         "PLAYERONE_VERSION_CODE": "41"
       },
@@ -42,6 +45,7 @@
       "distribution": "store",
       "env": {
         "PLAYERONE_BUILD_PROFILE": "demo",
+        "EXPO_PUBLIC_BUILD_PROFILE": "demo",
         "EXPO_PUBLIC_API_URL": "https://api.playerone.vng.com.vn",
         "PLAYERONE_VERSION_CODE": "43"
       },

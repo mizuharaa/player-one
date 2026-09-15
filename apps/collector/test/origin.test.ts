@@ -1,6 +1,13 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { API_BASE_URL } from '../src/api/config.ts';
 import { getApiOrigin, loadApiOrigin, originOf, setApiOrigin } from '../src/api/origin.ts';
+
+/** Mutable so a test can flip the build profile; must be `mock`-prefixed for vi.mock's hoisting. */
+let mockBuildProfile = 'demo';
+vi.mock('../src/api/config.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/api/config.ts')>();
+  return { ...actual, get BUILD_PROFILE() { return mockBuildProfile; } };
+});
 
 /**
  * The runtime API origin.
@@ -28,6 +35,7 @@ function fakeStore(initial: string | null = null) {
 
 describe('the stored API origin', () => {
   beforeEach(async () => {
+    mockBuildProfile = 'demo';
     await loadApiOrigin(fakeStore());
   });
 
@@ -70,6 +78,14 @@ describe('the stored API origin', () => {
       'http://192.168.1.10 8080',
       'http://',
     ]) expect(originOf(value), value).toBeNull();
+  });
+
+  it('refuses http:// on a Play build and accepts it on a demo build', () => {
+    mockBuildProfile = 'play';
+    expect(originOf('http://192.168.1.10:8080')).toBeNull();
+    expect(originOf('https://api.playerone.vng.com.vn')).toBe('https://api.playerone.vng.com.vn');
+    mockBuildProfile = 'demo';
+    expect(originOf('http://192.168.1.10:8080')).toBe('http://192.168.1.10:8080');
   });
 
   it('ignores a stored value that is no longer a usable origin', async () => {

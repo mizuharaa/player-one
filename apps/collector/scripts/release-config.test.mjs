@@ -72,6 +72,17 @@ function profileEnv(name) {
 }
 const CLOUD = 'https://api.playerone.vng.com.vn';
 
+test('every eas.json build profile mirrors PLAYERONE_BUILD_PROFILE into EXPO_PUBLIC_BUILD_PROFILE', () => {
+  // The app cannot read PLAYERONE_BUILD_PROFILE — Expo only inlines the
+  // EXPO_PUBLIC_ prefix — so Profile.tsx and origin.ts need their own copy of
+  // the same value to gate the Server row and http:// on a Play build.
+  for (const name of Object.keys(eas.build)) {
+    const env = profileEnv(name);
+    assert.equal(env.EXPO_PUBLIC_BUILD_PROFILE, env.PLAYERONE_BUILD_PROFILE,
+      `${name} must mirror PLAYERONE_BUILD_PROFILE into EXPO_PUBLIC_BUILD_PROFILE`);
+  }
+});
+
 test('every installable profile in eas.json names a resolvable origin', () => {
   for (const name of ['demo', 'store', 'testflight']) {
     const origin = profileEnv(name).EXPO_PUBLIC_API_URL;
