@@ -19,7 +19,7 @@ import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { useGuideTarget } from '../guide/Guide.tsx';
-import { Button, ListScreen, Note, Tag, bottomInset, face, topInset } from '../ui.tsx';
+import { Button, ListScreen, Note, Tag, face, useInsets } from '../ui.tsx';
 import { EmptyTasks } from '../ui/illustrations/index.tsx';
 import { Skeleton, taskImage } from '../v2.tsx';
 import { dong } from '../money.ts';
@@ -884,6 +884,7 @@ function SearchOverlay({
   onOpenTask: (id: string) => void;
 }) {
   const theme = useTheme();
+  const insets = useInsets();
   const c = theme.collector;
   const tt = useT();
   const typed = value.trim() !== '';
@@ -891,7 +892,7 @@ function SearchOverlay({
     <View style={{ flex: 1, backgroundColor: c.paper }}>
       <View
         style={{
-          paddingTop: topInset(theme.space[6]) + theme.space[2],
+          paddingTop: insets.top + theme.space[2],
           paddingHorizontal: c.gutter,
           paddingBottom: theme.space[3],
           flexDirection: 'row',
@@ -954,7 +955,7 @@ function SearchOverlay({
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           paddingHorizontal: c.gutter,
-          paddingBottom: theme.space[6] + bottomInset(theme.space[6]),
+          paddingBottom: theme.space[6] + Math.max(insets.bottom, theme.space[6]),
           gap: theme.space[3],
         }}
       >
@@ -1050,6 +1051,7 @@ export function Sheet({
   children: ReactNode;
 }) {
   const theme = useTheme();
+  const insets = useInsets();
   const c = theme.collector;
   const tt = useT();
   return (
@@ -1074,7 +1076,7 @@ export function Sheet({
             borderTopRightRadius: c.radius.card * 1.5,
             paddingHorizontal: c.gutter,
             paddingTop: c.gutter,
-            paddingBottom: c.gutter + bottomInset(theme.space[6]),
+            paddingBottom: c.gutter + Math.max(insets.bottom, theme.space[6]),
             maxHeight: '88%',
             gap: theme.space[3],
           }}

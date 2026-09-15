@@ -5,7 +5,7 @@ import { ApiError } from '../api/types.ts';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { e164 } from '../phone.ts';
-import { Button, Film, Choice, CodeBoxes, Field, LegalLine, Note, Scrim, face, topInset } from '../ui.tsx';
+import { Button, Film, Choice, CodeBoxes, Field, LegalLine, Note, Scrim, face, useInsets, } from '../ui.tsx';
 import { useTheme } from '../theme.tsx';
 import type { MessageKey } from '../i18n.ts';
 import poster from '../../assets/hero/login-poster.jpg';
@@ -168,6 +168,7 @@ export function SignIn({
   const api = useApi();
   const tt = useT();
   const theme = useTheme();
+  const insets = useInsets();
   const [country, setCountry] = useState(VN);
   const [picking, setPicking] = useState(false);
   const [pickerFocused, setPickerFocused] = useState(false);
@@ -338,7 +339,7 @@ fontWeight: theme.fontWeight.medium,
           contentContainerStyle={{
             flexGrow: 1,
             padding: theme.space[5],
-            paddingTop: topInset(theme.space[6]) + theme.space[4],
+            paddingTop: insets.top + theme.space[4],
             gap: theme.space[5],
           }}
         >
@@ -493,7 +494,7 @@ fontWeight: theme.fontWeight.medium,
             />
           </View>
           {onBack === undefined ? null : (
-            <View style={{ position: 'absolute', top: topInset(theme.space[6]), left: theme.space[5] }}>
+            <View style={{ position: 'absolute', top: insets.top, left: theme.space[5] }}>
               {back(tt('common.back'), onBack, true)}
             </View>
           )}

@@ -17,9 +17,8 @@ import {
   Row,
   Scrim,
   Tag,
-  bottomInset,
   face,
-  topInset,
+  useInsets,
 } from '../ui.tsx';
 import { taskImage } from '../v2.tsx';
 import { dong } from '../money.ts';
@@ -92,6 +91,7 @@ export function TaskDetail() {
   const nav = useNav();
   const tt = useT();
   const theme = useTheme();
+  const insets = useInsets();
   const c = theme.collector;
   const { taskId } = useRoute('taskDetail');
   const queryClient = useQueryClient();
@@ -127,7 +127,7 @@ export function TaskDetail() {
   if ([task, profile, claims].some((query) => query.isError)) {
     return (
       <View style={ground}>
-        <View style={{ padding: c.gutter, paddingTop: topInset(theme.space[6]) + theme.space[4] }}>
+        <View style={{ padding: c.gutter, paddingTop: insets.top + theme.space[4] }}>
           <Note
             text={tt('common.loadFailed')}
             tone="error"
@@ -146,7 +146,7 @@ export function TaskDetail() {
   if (task.data === undefined || profile.data === undefined || claims.data === undefined) {
     return (
       <View style={ground}>
-        <View style={{ padding: c.gutter, paddingTop: topInset(theme.space[6]) + theme.space[4] }}>
+        <View style={{ padding: c.gutter, paddingTop: insets.top + theme.space[4] }}>
           <Loading />
         </View>
       </View>
@@ -214,7 +214,7 @@ export function TaskDetail() {
               position: 'absolute',
               left: c.gutter,
               right: c.gutter,
-              top: topInset(theme.space[6]) + theme.space[2],
+              top: insets.top + theme.space[2],
             }}
           >
             <Pressable
@@ -331,7 +331,7 @@ export function TaskDetail() {
           borderTopColor: c.line,
           paddingHorizontal: c.gutter,
           paddingTop: theme.space[3],
-          paddingBottom: theme.space[3] + bottomInset(theme.space[6]),
+          paddingBottom: theme.space[3] + Math.max(insets.bottom, theme.space[6]),
           gap: theme.space[2],
         }}
       >

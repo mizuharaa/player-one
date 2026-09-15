@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Image, Text, View } from 'react-native';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Button, Film, LegalLine, Scrim, face, topInset, useReducedMotion } from '../ui.tsx';
+import { Button, Film, LegalLine, Scrim, face, useInsets, useReducedMotion } from '../ui.tsx';
 import film from '../../assets/hero/login.mp4';
 import poster from '../../assets/hero/login-poster.jpg';
 import wordmark from '../../assets/discover/playerone-wordmark.png';
@@ -62,6 +62,7 @@ function Rise({ step, children }: { step: number; children: React.ReactNode }) {
 
 export function Landing({ onSignIn }: { onSignIn: () => void }) {
   const theme = useTheme();
+  const insets = useInsets();
   const tt = useT();
   /** The support-desk explanation, which is what `landing.register` opens. */
   const [explaining, setExplaining] = useState(false);
@@ -86,7 +87,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
           padding: theme.space[5],
         }}
       >
-        <View style={{ alignItems: 'center', paddingTop: topInset(theme.space[6]) + theme.space[4], gap: theme.space[3] }}>
+        <View style={{ alignItems: 'center', paddingTop: insets.top + theme.space[4], gap: theme.space[3] }}>
           {/*
             The ratio lives on a wrapper `View` and the `Image` fills it.
             §0.4's rule is "every image lives in an `aspectRatio` box", and on

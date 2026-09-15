@@ -4,7 +4,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { AGREEMENTS } from '../api/types.ts';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Card, Note, Row, bottomInset, face, topInset, useTabBarReserve, useReducedMotion } from '../ui.tsx';
+import { Body, Button, Card, Note, Row, face, useInsets, useTabBarReserve, useReducedMotion } from '../ui.tsx';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -35,6 +35,7 @@ export function Privacy({ onAgreements }: { onAgreements?: () => void } = {}) {
   const openDocument = onAgreements ?? (() => nav.push({ name: 'agreements' }));
   const tt = useT();
   const theme = useTheme();
+  const insets = useInsets();
   const c = theme.collector;
   const reserve = useTabBarReserve();
   const scroll = useRef<ScrollView>(null);
@@ -62,8 +63,8 @@ export function Privacy({ onAgreements }: { onAgreements?: () => void } = {}) {
       style={{ flex: 1, backgroundColor: c.paper }}
       contentContainerStyle={{
         paddingHorizontal: c.gutter,
-        paddingTop: topInset(theme.space[6]) + theme.space[4],
-        paddingBottom: theme.space[6] + Math.max(reserve, bottomInset(theme.space[6])),
+        paddingTop: insets.top + theme.space[4],
+        paddingBottom: theme.space[6] + Math.max(reserve, Math.max(insets.bottom, theme.space[6])),
         gap: theme.space[3],
       }}
     >

@@ -6,7 +6,7 @@ import { useNav } from '../nav.tsx';
 import { useLocale, useT } from '../locale.tsx';
 import { useSignOut } from '../session.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Loading, NavRow, Note, face, topInset, useTabBarReserve } from '../ui.tsx';
+import { Body, Button, Loading, NavRow, Note, face, useInsets, useTabBarReserve } from '../ui.tsx';
 import { AvatarMark, initialsOf } from '../ui/illustrations/index.tsx';
 // The sheet shell and the preferences sheet live with Explore, which has three
 // sheets to this screen's two. Fable: both want to move into Astra's `ui.tsx`
@@ -213,12 +213,13 @@ export function Profile() {
  */
 function ProfileScroll({ reserve, children }: { reserve: number; children: ReactNode }) {
   const theme = useTheme();
+  const insets = useInsets();
   const c = theme.collector;
   return (
     <ScrollView
       contentContainerStyle={{
         paddingHorizontal: c.gutter,
-        paddingTop: topInset(theme.space[6]) + theme.space[4],
+        paddingTop: insets.top + theme.space[4],
         paddingBottom: theme.space[4] + reserve,
       }}
     >

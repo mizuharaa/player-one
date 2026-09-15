@@ -3,7 +3,7 @@ import { Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-na
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { useGuide } from '../guide/Guide.tsx';
-import { Button, bottomInset, face, topInset, useReducedMotion } from '../ui.tsx';
+import { Button, face, useInsets, useReducedMotion } from '../ui.tsx';
 import { FindWork, ReviewedThenPaid, WearCamera } from '../ui/illustrations/index.tsx';
 import type { MessageKey } from '../i18n.ts';
 
@@ -49,6 +49,7 @@ const CARDS: readonly {
 
 export function Onboarding({ onDone }: { onDone: () => void }) {
   const theme = useTheme();
+  const insets = useInsets();
   const c = theme.collector;
   const tt = useT();
   const guide = useGuide();
@@ -80,7 +81,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
           get past this screen. */}
       <View
         style={{
-          paddingTop: topInset(theme.space[6]) + theme.space[2],
+          paddingTop: insets.top + theme.space[2],
           paddingHorizontal: c.gutter,
           alignItems: 'flex-end',
         }}
@@ -160,7 +161,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
       <View
         style={{
           paddingHorizontal: c.gutter,
-          paddingBottom: theme.space[4] + bottomInset(theme.space[6]),
+          paddingBottom: theme.space[4] + Math.max(insets.bottom, theme.space[6]),
           gap: theme.space[4],
         }}
       >
