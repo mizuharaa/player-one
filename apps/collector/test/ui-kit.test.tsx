@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
+import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
 import { NavProvider } from '../src/nav.tsx';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -137,7 +138,7 @@ it('opens and dismisses the honest unavailable-document state from a login legal
     await act(async () => host.querySelector<HTMLElement>('[role="link"]')!.click());
     const dialog = document.body.querySelector('[aria-modal="true"]');
     expect(dialog).not.toBeNull();
-    expect(dialog?.textContent).toContain('PaXini has not supplied this content yet.');
+    expect(dialog?.textContent).toContain(MESSAGES[DEFAULT_LOCALE]['legal.notPublished']);
     await act(async () => dialog!.querySelector<HTMLElement>('[role="button"]')!.click());
     expect(document.body.querySelector('[aria-modal="true"]')).toBeNull();
   } finally { await act(async () => root.unmount()); host.remove(); }

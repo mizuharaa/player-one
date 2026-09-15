@@ -134,3 +134,4 @@ All Vietnamese text added or changed since `b40ee5c`, read from the integrated c
 | `devices.battery` | — | Pin | Battery |
 | `devices.lastUsed` | — | Lần dùng gần nhất | Last used |
 | `devices.notReported` | — | Chưa có dữ liệu | Not reported |
+| `legal.notPublished` | — | Ứng dụng chưa có tài liệu này. | This document is not available in the app yet. |

@@ -125,6 +125,7 @@ const vi = {
   /* The sheet on the landing, which now carries a heading of its own. */
   'landing.sheetTitle': 'Bắt đầu',
   'legal.privacy': 'Chính sách quyền riêng tư',
+  'legal.notPublished': 'Ứng dụng chưa có tài liệu này.',
   'legal.dataNotice': 'Thông báo thu thập dữ liệu',
 
   'register.title': 'Đăng ký',
@@ -669,6 +670,7 @@ const en: Record<MessageKey, string> = {
 
   'landing.sheetTitle': 'Get started',
   'legal.privacy': 'Privacy policy',
+  'legal.notPublished': 'This document is not available in the app yet.',
   'legal.dataNotice': 'Data collection notice',
 
   'register.title': 'Register',
@@ -1194,6 +1196,7 @@ const zh: Record<MessageKey, string> = {
 
   'landing.sheetTitle': '开始使用',
   'legal.privacy': '隐私政策',
+  'legal.notPublished': '应用内暂未提供此文件。',
   'legal.dataNotice': '数据收集说明',
 
   'register.title': '注册',
