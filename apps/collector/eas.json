@@ -51,16 +51,20 @@
   "submit": {
     "store": {
       "ios": {
-        "ascAppId": "$EAS_SUBMIT_ASC_APP_ID",
-        "appleId": "$EAS_SUBMIT_APPLE_ID",
-        "appleTeamId": "$EAS_SUBMIT_APPLE_TEAM_ID"
+        "ascAppId": "6812030683",
+        "appleTeamId": "4PJ4C87RDU",
+        "ascApiKeyPath": "C:/Users/Khang/.playerone/AuthKey_7ZQ24Q22V5.p8",
+        "ascApiKeyIssuerId": "dd94e02f-95ac-43e8-b5cc-15e95af38c2b",
+        "ascApiKeyId": "7ZQ24Q22V5"
       }
     },
     "testflight": {
       "ios": {
-        "appleId": "$EAS_SUBMIT_APPLE_ID",
-        "ascAppId": "$EAS_SUBMIT_ASC_APP_ID",
-        "appleTeamId": "$EAS_SUBMIT_APPLE_TEAM_ID"
+        "ascAppId": "6812030683",
+        "appleTeamId": "4PJ4C87RDU",
+        "ascApiKeyPath": "C:/Users/Khang/.playerone/AuthKey_7ZQ24Q22V5.p8",
+        "ascApiKeyIssuerId": "dd94e02f-95ac-43e8-b5cc-15e95af38c2b",
+        "ascApiKeyId": "7ZQ24Q22V5"
       }
     }
   }
