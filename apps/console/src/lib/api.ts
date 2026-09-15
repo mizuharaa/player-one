@@ -1126,6 +1126,12 @@ export interface BatchRow {
  * worth an operator's eye. `episodes_per_session` is null when the delivery
  * declared no session, and is the one figure to read even when nothing is
  * wrong.
+ *
+ * `unusable` is the OTHER population, and it is not a subset of `blocking`.
+ * These episodes have a session — so nothing holds the batch open on their
+ * account — and the recording behind them is one the engine could not read, so
+ * `eligible` in review.ts will never hand it to a reviewer. Attributed and
+ * unpayable, which is why it needs its own list rather than a count.
  */
 export interface BatchExceptions {
   batch_id: string;
@@ -1135,6 +1141,7 @@ export interface BatchExceptions {
     quarantined: number;
     awaiting_confirmation: number;
     parked: number;
+    unusable: number;
     episodes_per_session: number | null;
   };
   blocking: {
@@ -1147,6 +1154,19 @@ export interface BatchExceptions {
     session_started_at: string | null;
     resolution_state: string;
     needs: 'assignment' | 'confirmation';
+  }[];
+  unusable: {
+    episode_id: string;
+    /** The same basename stamp as above; `stamp()` reads it, `new Date()` cannot. */
+    session_started_at: string | null;
+    resolution_state: string;
+    ingest_state: string | null;
+    /**
+     * The defect codes from `episode_defects`, in the order the server stored
+     * them. Shown verbatim: `MEDIA-UNREADABLE` is the evidence an operator
+     * repeats down the phone, and translating it would make it unquotable.
+     */
+    defects: string[];
   }[];
   sessions: { id: string; prepareTime: string; sessionOrigin: string; collectorId: string }[];
 }

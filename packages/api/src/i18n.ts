@@ -1521,6 +1521,13 @@ const en = {
   'episodes.col.hold': 'Hold',
   'episodes.needs.assignment': 'A session to attribute it to',
   'episodes.needs.confirmation': 'A person to confirm the match',
+  /**
+   * Not an attribution problem at all, and the wording says so. The episode
+   * HAS a session; what it does not have is footage a reviewer can judge, so
+   * the sentence names the recording rather than the paperwork. The defect
+   * codes are appended by the cell that renders it.
+   */
+  'episodes.needs.unusable': 'Recording unusable',
   'episodes.hold.parked': 'Parked',
   'episodes.hold.held': 'Held in review',
   'episodes.summary.episodes': 'Episodes',
@@ -1528,6 +1535,7 @@ const en = {
   'episodes.summary.quarantined': 'Quarantined',
   'episodes.summary.awaiting': 'Awaiting confirmation',
   'episodes.summary.parked': 'Parked out of review',
+  'episodes.summary.unusable': 'Unusable recordings',
   'episodes.summary.perSession': 'Episodes per session',
   'episodes.resolve': 'Attribute',
   'episodes.resolve.title': 'Attribute this episode',
@@ -2749,6 +2757,7 @@ const zh: Record<MessageKey, string> = {
   'episodes.col.hold': '扣留',
   'episodes.needs.assignment': '需要指定所属会话',
   'episodes.needs.confirmation': '需要有人确认这次匹配',
+  'episodes.needs.unusable': '录像无法使用',
   'episodes.hold.parked': '已搁置',
   'episodes.hold.held': '审核中被扣留',
   'episodes.summary.episodes': '集数',
@@ -2756,6 +2765,7 @@ const zh: Record<MessageKey, string> = {
   'episodes.summary.quarantined': '已隔离',
   'episodes.summary.awaiting': '待确认',
   'episodes.summary.parked': '已移出审核队列',
+  'episodes.summary.unusable': '无法使用的录像',
   'episodes.summary.perSession': '每个会话的集数',
   'episodes.resolve': '指定归属',
   'episodes.resolve.title': '为这一集指定所属会话',
@@ -4097,6 +4107,7 @@ const vi: Record<MessageKey, string> = {
   'episodes.col.hold': 'Đang giữ',
   'episodes.needs.assignment': 'Cần gán vào một phiên',
   'episodes.needs.confirmation': 'Cần người xác nhận kết quả khớp',
+  'episodes.needs.unusable': 'Bản ghi không dùng được',
   'episodes.hold.parked': 'Đã tạm dừng',
   'episodes.hold.held': 'Bị giữ khi duyệt',
   'episodes.summary.episodes': 'Số tập',
@@ -4104,6 +4115,7 @@ const vi: Record<MessageKey, string> = {
   'episodes.summary.quarantined': 'Bị cách ly',
   'episodes.summary.awaiting': 'Chờ xác nhận',
   'episodes.summary.parked': 'Đã đưa ra khỏi hàng chờ duyệt',
+  'episodes.summary.unusable': 'Bản ghi không dùng được',
   'episodes.summary.perSession': 'Số tập mỗi phiên',
   'episodes.resolve': 'Gán phiên',
   'episodes.resolve.title': 'Gán tập này cho một phiên',

@@ -29,6 +29,12 @@ function record(opts: {
   startMs?: number | null;
   serial?: string;
   declaredSession?: string | null;
+  /**
+   * What the engine found wrong with the recording. `storeEpisode` re-derives
+   * `state` from these (`stateFrom`), so a `quarantine` severity here is how a
+   * fixture gets an ingest the review queue will not take.
+   */
+  discrepancies?: EpisodeRecord['discrepancies'];
 }): EpisodeRecord {
   const start = opts.startMs === undefined ? T : opts.startMs;
   const path = opts.basename ?? `ego_AZER76400FE_20260813_${String(Math.random()).slice(2, 8)}`;
@@ -67,7 +73,7 @@ function record(opts: {
     },
     calibration: { present: true, files: [] },
     source_files: [],
-    discrepancies: [],
+    discrepancies: opts.discrepancies ?? [],
     unclassified_files: [],
   };
 }
@@ -845,6 +851,63 @@ describe.skipIf(!hasDb())('episode submission and resolution', () => {
     expect(body.blocking).toHaveLength(2);
     expect(body.blocking.every((b: { needs: string }) => b.needs === 'assignment')).toBe(true);
     expect(body.sessions).toHaveLength(2);
+  });
+
+  /**
+   * The broken-recording beat of the demo, which had no screen.
+   *
+   * `card-intake.mjs` derives one session per card per day, so a recording the
+   * engine could not read still resolves `automatic_single` — attributed, and
+   * therefore absent from `blocking`, which only ever counted the attribution
+   * half. The ingest is `quarantined` and the review queue will not take it
+   * (`eligible` in review.ts), so the episode is unpayable and nothing in the
+   * console said so. Two measured intakes at the rehearsal answered
+   * `quarantined: 0, blocking: []` on three episodes, one of which was fine.
+   */
+  it('names an attributed episode whose recording the engine could not read', async () => {
+    const h = await harness();
+    await h.addSession(-60);
+    const broken = record({
+      discrepancies: [
+        { code: 'MEDIA-UNREADABLE', severity: 'quarantine', detail: 'camera_left' },
+        { code: 'PTS-EMPTY', severity: 'flag', detail: 'camera_left' },
+        { code: 'STREAM-SKEW-HIGH', severity: 'flag', detail: '3998.013 ms' },
+      ],
+    });
+    const res = await h.submit([broken, record({})]);
+    expect(res.statusCode, res.body).toBe(200);
+
+    const body = (await h.send('GET', `/upload-batches/${h.batch}/exceptions`)).json();
+
+    // Untouched: this episode HAS a session, so it does not hold the batch open
+    // and it is not in the attribution count.
+    expect(body.blocking).toEqual([]);
+    expect(body.summary.quarantined).toBe(0);
+
+    // The ingest half, which is the new answer.
+    expect(body.summary.unusable).toBe(1);
+    expect(body.unusable).toHaveLength(1);
+    expect(body.unusable[0]).toMatchObject({
+      episode_id: broken.episode_id,
+      ingest_state: 'quarantined',
+      resolution_state: 'resolved',
+    });
+    // Sorted by code, as `writeIngest` stores them, so the sentence the console
+    // prints is stable between two deliveries of the same recording.
+    expect(body.unusable[0].defects).toEqual([
+      'MEDIA-UNREADABLE',
+      'PTS-EMPTY',
+      'STREAM-SKEW-HIGH',
+    ]);
+  });
+
+  it('leaves a readable episode out of the unusable list', async () => {
+    const h = await harness();
+    await h.addSession(-60);
+    await h.submit([record({})]);
+    const body = (await h.send('GET', `/upload-batches/${h.batch}/exceptions`)).json();
+    expect(body.unusable).toEqual([]);
+    expect(body.summary.unusable).toBe(0);
   });
 
   it('reports batch counts for the status view', async () => {
