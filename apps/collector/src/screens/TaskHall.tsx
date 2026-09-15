@@ -1233,6 +1233,7 @@ function ToggleRow({ label, value, onChange }: { label: string; value: boolean; 
       accessibilityRole="switch"
       accessibilityLabel={label}
       accessibilityState={{ checked: value }}
+      aria-checked={value}
       onPress={() => onChange(!value)}
       style={({ pressed }) => ({
         minHeight: theme.space[12],
