@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Image, type ImageSource } from 'expo-image';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -100,11 +100,15 @@ export function TaskDetail() {
   const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
   const claims = useQuery({ queryKey: ['claims'], queryFn: () => api.myClaims() });
 
+  const mounted = useRef(true);
+  const submitting = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const claim = useMutation({
     mutationFn: () => api.claimTask(taskId),
+    onSettled: () => { submitting.current = false; },
     onSuccess: async () => {
       await queryClient.invalidateQueries();
-      nav.push({ name: 'myTasks' });
+      if (mounted.current) nav.push({ name: 'sessionReminder' });
     },
   });
 
@@ -334,7 +338,7 @@ export function TaskDetail() {
             label={tt('detail.claim')}
             variant="affirmative"
             busy={claim.isPending}
-            onPress={() => claim.mutate()}
+            onPress={() => { if (submitting.current) return; submitting.current = true; claim.mutate(); }}
           />
         ) : (
           <View accessibilityLiveRegion="polite">

@@ -55,8 +55,8 @@ const named = (name: string): HTMLElement | undefined =>
  * artefact of mounting one screen on its own, not a fault in the screen.
  */
 function OnlyOnDetail() {
-  const { route } = useNav();
-  return route.name === 'taskDetail' ? <TaskDetail /> : null;
+  const { route, reset } = useNav();
+  return <><button onClick={() => reset({ name: 'home' })}>Leave detail</button><output>{route.name}</output>{route.name === 'taskDetail' ? <TaskDetail /> : null}</>;
 }
 
 /** Take the collector through the gates the server puts before a claim. */
@@ -126,10 +126,13 @@ it('offers Accept when the gates are passed and takes the task once', async () =
 
   const accept = named(m['detail.claim']);
   expect(accept).toBeDefined();
-  await act(async () => accept!.click());
+  const claim = vi.spyOn(api, 'claimTask');
+  await act(async () => { accept!.click(); accept!.click(); });
   await act(async () => { await Promise.resolve(); });
 
   expect((await api.myClaims()).map((row) => row.taskId)).toEqual(['task-cook']);
+  expect(claim).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('output')?.textContent).toBe('sessionReminder');
 });
 
 it('replaces Accept with the reason it cannot be pressed', async () => {
@@ -160,4 +163,20 @@ it('says a full task is full', async () => {
 
   expect(named(m['detail.claim'])).toBeUndefined();
   expect(page()).toContain(m['detail.full']);
+});
+
+vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
+vi.mock('react-native-safe-area-context', async () => ({ initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null) }));
+
+it('does not navigate after an accepted task resolves on a screen the collector left', async () => {
+  await qualify();
+  let finish!: () => void;
+  const wait = new Promise<void>(resolve => { finish = resolve; });
+  const claim = api.claimTask.bind(api);
+  vi.spyOn(api, 'claimTask').mockImplementation(async id => { await wait; return claim(id); });
+  await mount();
+  await act(async () => named(m['detail.claim'])!.click());
+  await act(async () => host.querySelector('button')!.click());
+  await act(async () => finish());
+  await vi.waitFor(() => expect(host.querySelector('output')?.textContent).toBe('home'));
 });

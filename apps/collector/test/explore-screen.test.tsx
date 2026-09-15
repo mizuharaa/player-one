@@ -219,3 +219,6 @@ it('offers a way out of a filter that matches nothing', async () => {
   await act(async () => clear!.click());
   expect(page()).toContain('Nấu ăn tại nhà');
 });
+
+vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
+vi.mock('react-native-safe-area-context', async () => ({ initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null) }));
