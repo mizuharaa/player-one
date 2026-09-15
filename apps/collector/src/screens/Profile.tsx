@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
+import { BUILD_PROFILE } from '../api/config.ts';
 import { getApiOrigin, hostOf, originOf, setApiOrigin } from '../api/origin.ts';
 import { useNav } from '../nav.tsx';
 import { useLocale, useT } from '../locale.tsx';
@@ -175,12 +176,16 @@ export function Profile() {
           { key: 'profile.about', sub: 'profile.aboutSub', onPress: () => nav.push({ name: 'about' }) },
           /* Which server this build talks to. Under About because that is
              where "which build am I holding" already lives, and the answer to
-             that question is now two things: a version and a server. */
-          { key: 'server.title', value: hostOf(getApiOrigin()), onPress: () => {
+             that question is now two things: a version and a server.
+             Absent on a Play build: the OS itself refuses plain HTTP there
+             (usesCleartextTraffic/NSAllowsArbitraryLoads both false), so the
+             row would only ever offer an override the platform silently
+             drops. */
+          ...(BUILD_PROFILE === 'play' ? [] : [{ key: 'server.title' as const, value: hostOf(getApiOrigin()), onPress: () => {
             setOrigin(getApiOrigin());
             setOriginError(null);
             setSheet('server');
-          } },
+          } }]),
           { key: 'profile.privacy', sub: 'profile.privacySub', onPress: () => nav.push({ name: 'privacy' }) },
           { key: 'profile.help', sub: 'profile.helpSub', onPress: notYet('profile.help') },
         ])}

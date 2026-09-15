@@ -72,11 +72,26 @@ function profileEnv(name) {
 }
 const CLOUD = 'https://api.playerone.vng.com.vn';
 
-test('every installable profile in eas.json names a resolvable origin', () => {
+test('every eas.json build profile mirrors PLAYERONE_BUILD_PROFILE into EXPO_PUBLIC_BUILD_PROFILE', () => {
+  // The app cannot read PLAYERONE_BUILD_PROFILE — Expo only inlines the
+  // EXPO_PUBLIC_ prefix — so Profile.tsx and origin.ts need their own copy of
+  // the same value to gate the Server row and http:// on a Play build.
+  for (const name of Object.keys(eas.build)) {
+    const env = profileEnv(name);
+    assert.equal(env.EXPO_PUBLIC_BUILD_PROFILE, env.PLAYERONE_BUILD_PROFILE,
+      `${name} must mirror PLAYERONE_BUILD_PROFILE into EXPO_PUBLIC_BUILD_PROFILE`);
+  }
+});
+
+// Named for what this checks, not for DNS: it only refuses a reserved or
+// example hostname (RFC 2606), never looks the domain up, and cannot tell a
+// live host from one that has not gone up yet.
+test('every installable profile in eas.json names a non-placeholder origin', () => {
   for (const name of ['demo', 'store', 'testflight']) {
     const origin = profileEnv(name).EXPO_PUBLIC_API_URL;
     assert.equal(origin, CLOUD, `${name} must default to the Vietnam cloud domain`);
-    assert.doesNotMatch(new URL(origin).hostname, /\.(invalid|test|local|localhost|example)$/i);
+    assert.doesNotMatch(new URL(origin).hostname, /\.(invalid|test|local|localhost|example)$/i,
+      `${name} must not default to a reserved placeholder host`);
   }
 });
 

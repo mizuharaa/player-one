@@ -120,7 +120,7 @@ export function Income() {
       <Body>{status === null ? tt('payout.unknown') : payout.data?.masked ? `${tt('payout.zalopay')} · ${payout.data.masked}` : tt('payout.zalopay')}</Body>
       {status === 'awaiting' ? <Body muted>{tt('payout.awaitingPayment')}</Body> : null}
       {payout.data?.payment ? <Body muted>{tt('payout.paidReference').replace('{reference}', payout.data.payment.reference)}</Body> : null}
-      {payout.data?.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
+      {payout.data?.payment && payout.data.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
     </>}
   </>;
   return <>

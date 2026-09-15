@@ -35,6 +35,12 @@ vi.mock('react-native-svg', () => {
   const Stub = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
   return { default: Stub, Svg: Stub, Circle: Stub, Rect: Stub, Path: Stub, Line: Stub, G: Stub };
 });
+/** Mutable so a test can flip the build profile; must be `mock`-prefixed for vi.mock's hoisting. */
+let mockBuildProfile = 'demo';
+vi.mock('../src/api/config.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/api/config.ts')>();
+  return { ...actual, get BUILD_PROFILE() { return mockBuildProfile; } };
+});
 
 const { LOCALE_NAME, Profile } = await import('../src/screens/Profile.tsx');
 
@@ -126,6 +132,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   client.clear();
+  mockBuildProfile = 'demo';
 });
 
 it('never signs out on the first tap', async () => {
@@ -211,6 +218,19 @@ it('shows the current server, refuses an address that is not an origin, and sign
   // A token from the old server is meaningless on the new one, and the app
   // comes back to the landing door rather than the form.
   expect(signOut).toHaveBeenCalledWith({ landing: true });
+});
+
+/**
+ * The Server row is a runtime-origin override, and the platform blocks what
+ * it accepts on the public Play build (`usesCleartextTraffic`/
+ * `NSAllowsArbitraryLoads` both false there). So the row itself must not
+ * ship on that build — there is nothing recoverable behind it once the OS
+ * refuses the request.
+ */
+it('hides the Server row on a Play build', async () => {
+  mockBuildProfile = 'play';
+  await mount();
+  expect(rowNamed(m['server.title'])).toBeUndefined();
 });
 
 it('puts the build back on its own origin from the same sheet', async () => {

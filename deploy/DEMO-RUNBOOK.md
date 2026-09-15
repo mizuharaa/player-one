@@ -390,7 +390,9 @@ minutes`, Minutes taken so far `81 minutes`, Places left `4`.
 **Recovery:** [Fallback B](#fallback-b--handset-upload-failure-the-debug-delivery-page).
 If the upload itself is refused the panel prints the server's own reason in the
 collector's language — a checksum mismatch, a name collision, an unrecognised
-folder name — so read the sentence on screen rather than guessing.
+folder name — so read the sentence on screen rather than guessing. If the app
+cannot reach the server at all: **Profile › About › Server** → type the
+laptop's origin, **Save**; the app signs you out and returns to Landing.
 
 ### 0:19 — human review · operator (variant A) or reviewer (variant B)
 

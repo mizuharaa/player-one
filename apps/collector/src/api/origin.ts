@@ -1,4 +1,4 @@
-import { API_BASE_URL } from './config.ts';
+import { API_BASE_URL, BUILD_PROFILE } from './config.ts';
 import type { TokenStore } from './token-store.ts';
 
 /**
@@ -46,6 +46,10 @@ export function originOf(raw: string): string | null {
   if (match === null) return null;
   const port = match[1];
   if (port !== undefined && (Number(port) < 1 || Number(port) > 65535)) return null;
+  // A Play build ships with usesCleartextTraffic/NSAllowsArbitraryLoads both
+  // false, so the OS silently drops an http:// request anyway; refuse it here
+  // instead of storing an origin the platform will never let through.
+  if (BUILD_PROFILE === 'play' && /^http:\/\//i.test(value)) return null;
   return value;
 }
 

@@ -30,6 +30,7 @@ const CASES: { name: string; payout: PayoutDestination; shows: ('awaiting' | 'pa
   { name: 'awaiting, no payment', payout: { channel: 'zalopay', status: 'awaiting', masked: '•••• 5678' }, shows: ['awaiting'] },
   { name: 'sandbox-provider payment', payout: { channel: 'zalopay', status: 'verified', masked: '•••• 5678', simulation: true, payment: { reference: 'SANDBOX-REF-X', amount_vnd: 679 } }, shows: ['paid', 'simulation'] },
   { name: 'manual transfer recorded by finance', payout: { channel: 'zalopay', status: 'verified', masked: '•••• 5678', simulation: false, payment: { reference: 'MANUAL-REF-Y', amount_vnd: 679 } }, shows: ['paid'] },
+  { name: 'no payment, sandbox flag set', payout: { channel: 'zalopay', status: 'none', masked: '•••• 5678', simulation: true, payment: undefined }, shows: [] },
 ];
 
 const openDestination = async (host: HTMLElement, locale: Locale) => {
@@ -53,7 +54,8 @@ it.each(['vi', 'en', 'zh'] as const)('the payout card prints only the server\'s 
       await openDestination(host, locale);
       const text = host.textContent ?? '';
       expect(text, testCase.name).toContain('•••• 5678');
-      expect(text, testCase.name).toContain(t(locale, testCase.payout.status === 'verified' ? 'payout.verified' : 'payout.awaiting'));
+      const tagKey = testCase.payout.status === 'verified' ? 'payout.verified' : testCase.payout.status === 'none' ? 'payout.none' : 'payout.awaiting';
+      expect(text, testCase.name).toContain(t(locale, tagKey));
       const paid = t(locale, 'payout.paidReference').replace('{reference}', testCase.payout.payment?.reference ?? '');
       for (const [flag, sentence] of [['awaiting', t(locale, 'payout.awaitingPayment')], ['paid', paid], ['simulation', t(locale, 'payout.simulation')]] as const) {
         if (testCase.shows.includes(flag)) expect(text, `${testCase.name} shows ${flag}`).toContain(sentence);

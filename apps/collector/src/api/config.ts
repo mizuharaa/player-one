@@ -26,7 +26,7 @@
  * phone build must be given an origin. No trailing slash: every path in
  * `http.ts` starts with one.
  */
-declare const process: { env: { EXPO_PUBLIC_API_URL?: string; EXPO_PUBLIC_MOCK_API?: string } };
+declare const process: { env: { EXPO_PUBLIC_API_URL?: string; EXPO_PUBLIC_MOCK_API?: string; EXPO_PUBLIC_BUILD_PROFILE?: string } };
 
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8080';
 
@@ -36,3 +36,13 @@ export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:
  * gates, so it stays selectable rather than deleted.
  */
 export const USE_MOCK_API = process.env.EXPO_PUBLIC_MOCK_API === '1';
+
+/**
+ * Mirrors `eas.json`'s build-time-only `PLAYERONE_BUILD_PROFILE` ('demo',
+ * 'play', ...): `app.config.cjs` reads that one to decide `usesCleartextTraffic`
+ * / `NSAllowsArbitraryLoads`, but the bundled app can only see the
+ * `EXPO_PUBLIC_` prefix, so it needs its own copy to gate what still makes
+ * sense once the OS has already refused plain HTTP — the Server row
+ * (`Profile.tsx`) and `origin.ts`'s `http://` acceptance.
+ */
+export const BUILD_PROFILE = process.env.EXPO_PUBLIC_BUILD_PROFILE ?? 'demo';

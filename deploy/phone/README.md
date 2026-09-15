@@ -207,11 +207,11 @@ origin, the Expo URL and the five steps below.
 1. **Install Expo Go** from the App Store, and keep the phone on the hotspot.
 2. **Scan the QR code** in the Metro window with the Camera app. It encodes
    `exp://<hotspot-ip>:8081`, and the app opens in Expo Go.
-3. **Only if the app shows a different server**: Profile ▸ the **Server** row
-   under About ▸ type `<hotspot-ip>:8080` ▸ Save. Metro bakes
-   `EXPO_PUBLIC_API_URL` into the bundle, so the default should already be
-   right; the row exists because one TestFlight build has to reach a laptop
-   today and the cloud later.
+3. **Only if the app shows a different server**: Profile ▸ About ▸ the
+   **Server** row ▸ type `<hotspot-ip>:8080` ▸ Save; the app signs you out
+   and returns to Landing. Metro bakes `EXPO_PUBLIC_API_URL` into the bundle,
+   so the default should already be right; the row exists because one
+   TestFlight build has to reach a laptop today and the cloud later.
 4. **Sign in**: country **Vietnam (+84)**, number **900000001**. For this one
    seeded number the API returns the six-digit code in its reply and the app
    fills it in. Staff-assisted, not real sign-in: a real collector gets the
