@@ -365,6 +365,13 @@
       "when": 1789070050000,
       "tag": "0033_collector_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1789070060000,
+      "tag": "0034_open_sign_up",
+      "breakpoints": true
     }
   ]
 }

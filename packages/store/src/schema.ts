@@ -567,7 +567,15 @@ export const collectors = pgTable(
     uniqueIndex('collectors_phone_key').on(t.phone),
     check(
       'collectors_status_check',
-      sql`${t.status} in ('pending', 'qualified', 'suspended')`,
+      /**
+       * `prospect` joins the list in 0034: somebody who signed up in the app
+       * with their own number and has not been enrolled at a collection centre.
+       * It is its own value rather than a reuse of 'pending' because 'pending'
+       * is what BO-03 writes for a person an operator has met, and an operator
+       * has to be able to tell the two apart — `task_claims_onboarding_gate`
+       * refuses a prospect a claim by its own name for the same reason.
+       */
+      sql`${t.status} in ('prospect', 'pending', 'qualified', 'suspended')`,
     ),
     check(
       'collectors_exam_result_check',
@@ -595,6 +603,52 @@ export const collectors = pgTable(
      * indistinguishable from a column somebody forgot to fill in.
      */
     check('collectors_token_epoch_check', sql`${t.tokenEpoch} >= 1`),
+  ],
+);
+
+/**
+ * The sign-in code for a number that is not a collector's yet (migration 0034).
+ *
+ * `collectors` holds the code for somebody who already has a row. Open sign-up
+ * is for somebody who does not, and the row is created when the code is
+ * PRESENTED rather than when it is asked for: creating it on request would let
+ * an unauthenticated caller fill `collectors` with rows for numbers nobody
+ * answers, and an operator's collector list is not something a stranger may
+ * write to. So the code waits here for five minutes instead.
+ *
+ * Nothing references this table and it references nothing. It carries no name,
+ * no `external_ref` and no id — it is a credential in flight, not a person, and
+ * the row stops mattering the moment `collectors_phone_key` holds that number.
+ *
+ * The phone is the key, which is the property the lookup depends on: one row or
+ * none, never a first row. A new request replaces what was there and resets the
+ * count, the same way it does on a collector's own row.
+ */
+export const signUpCodes = pgTable(
+  'sign_up_codes',
+  {
+    phone: text('phone').primaryKey(),
+    /** scrypt, as every other credential in this service. Never the code itself. */
+    codeHash: text('code_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    /**
+     * Spent. An UPDATE and not a DELETE: 0021 grants the application DELETE on
+     * `cloud_verifications` and nowhere else, and only the winner of
+     * `consumed_at is null` signs in — the same shape that makes a collector's
+     * own code single-use.
+     */
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('sign_up_codes_phone_check', sql`length(trim(${t.phone})) > 0`),
+    check('sign_up_codes_attempts_check', sql`${t.attempts} >= 0`),
+    check(
+      'sign_up_codes_consumed_check',
+      sql`${t.consumedAt} is null or ${t.consumedAt} >= ${t.createdAt}`,
+    ),
   ],
 );
 

@@ -66,6 +66,14 @@ export interface CollectorProfile {
   trainingDone: boolean;
   /** APP-05: no exam pass, no task claiming. The server enforces it too. */
   examPassed: boolean;
+  /**
+   * Whether a collection centre has enrolled this person. False for somebody
+   * who signed up in the app and has never been to one, and that is the only
+   * thing that makes it false — the server computes it from a status this app
+   * never sees. Nothing here decides it; `POST /api/me/tasks/:id/claims`
+   * refuses with `collector_not_onboarded` whatever this says.
+   */
+  onboarded: boolean;
 }
 
 /** Existing codes documented by POST /api/me/sessions; server validates availability. */

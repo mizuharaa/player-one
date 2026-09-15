@@ -96,7 +96,16 @@ export class MockCollectorApi implements CollectorApi {
     },
   ];
 
-  constructor() {
+  /**
+   * Whether the collector this mock hands out has been enrolled at a centre.
+   *
+   * True by default, which is every existing screen and test: this object has
+   * never modelled a status and its collector has always been one who may take
+   * work. `new MockCollectorApi({ onboarded: false })` is the open-sign-up
+   * case — somebody who signed up in the app — and it is what makes the task
+   * detail's refusal reachable without a server.
+   */
+  constructor(private readonly options: { onboarded?: boolean } = {}) {
     this.taskRows = [
       {
         id: 'task-cook',
@@ -220,7 +229,15 @@ export class MockCollectorApi implements CollectorApi {
 
   async register(name: string, phone: string): Promise<CollectorProfile> {
     if (name.trim() === '' || phone.trim() === '') throw new ApiError('missing_fields');
-    this.me = { id: id('col'), name, phone, agreements: [], trainingDone: false, examPassed: false };
+    this.me = {
+      id: id('col'),
+      name,
+      phone,
+      agreements: [],
+      trainingDone: false,
+      examPassed: false,
+      onboarded: this.options.onboarded ?? true,
+    };
     return { ...this.me };
   }
 
@@ -280,6 +297,13 @@ export class MockCollectorApi implements CollectorApi {
    */
   private mustBeEligible(): CollectorProfile {
     const me = this.mustProfile();
+    /**
+     * First, because the server's gate is first (migration 0034): somebody who
+     * signed up in the app gets this one whatever else they have finished, and
+     * a sentence about the exam would send them to a screen that unlocks
+     * nothing.
+     */
+    if (!me.onboarded) throw new ApiError('collector_not_onboarded');
     for (const a of AGREEMENTS) {
       const accepted = me.agreements.find((x) => x.agreementId === a.id);
       if (accepted === undefined || accepted.version !== a.version) {

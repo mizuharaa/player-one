@@ -1,6 +1,6 @@
-import { randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { schema, type Db } from '@playerone/store';
 import { auditLogin, mutate } from './audit.ts';
@@ -184,6 +184,124 @@ function deliverAndRecord(
   })();
 }
 
+/**
+ * Open sign-up. Owner's decision, 2026-09-15, and migration 0034.
+ *
+ * Anybody may sign in with their own number and browse the task board, so the
+ * app can advertise the service; taking work still costs a visit to a
+ * collection centre. Before this a number no `collectors` row carried got a
+ * silent 204 and nothing happened, and the only way to become a collector was
+ * an operator typing an `external_ref` (BO-03).
+ *
+ * ## Why the row is created on `verify` and not on `request-code`
+ *
+ * `request-code` is unauthenticated, and a route that inserts into `collectors`
+ * for every number somebody types is a route that lets a stranger fill an
+ * operator's collector list with numbers nobody answers. So nothing is created
+ * until a code comes back — possession of the number is the credential, and
+ * until it is proved there is no person. The code waits in `sign_up_codes`,
+ * which nothing references and whose rows are dead in five minutes.
+ *
+ * ## What the routes may still say, which is nothing
+ *
+ * Neither answer changes. `request-code` is 204 for every number that parses,
+ * enrolled or not, because it now does the same amount of work either way —
+ * generate, hash, store — and `constantLatency` still covers the difference.
+ * `verify` is one 401 for a wrong code, an expired code, a spent code and a
+ * code nobody asked for. The demo echo deliberately does NOT widen to a
+ * sign-up: it is scoped to a number a collector already holds, which is the
+ * property `collector-auth.test.ts` pins.
+ */
+async function holdSignUpCode(db: Db, phone: string, hash: string): Promise<void> {
+  const at = new Date();
+  const expiresAt = new Date(at.getTime() + CODE_TTL_MS);
+  await db
+    .insert(schema.signUpCodes)
+    .values({ phone, codeHash: hash, expiresAt })
+    // A new code replaces whatever was there and resets the count, exactly as
+    // it does on a collector's own row: asking again is how a person recovers
+    // from five wrong tries, and here there is not even an operator to ask.
+    .onConflictDoUpdate({
+      target: schema.signUpCodes.phone,
+      set: { codeHash: hash, expiresAt, attempts: 0, consumedAt: null, updatedAt: at },
+    });
+}
+
+/**
+ * The code came back from a number no collector holds. Make the collector.
+ *
+ * Same checks in the same order as the enrolled path, and for the same reasons:
+ * the attempt is counted by the statement that reads the code so a burst cannot
+ * lose attempts, the cap is read off what the UPDATE returned, and the code is
+ * spent by an UPDATE whose `where` carries the condition — only the winner of
+ * `consumed_at is null` signs in, so two requests carrying the same six digits
+ * do not both create a collector.
+ *
+ * `status = 'prospect'` (0034): signed up, not enrolled. `external_ref` is NOT
+ * NULL and unique and no operator has issued one, so it is `app:<id>` — a
+ * reference that says where this person came from rather than a number invented
+ * to fill the column. It is deliberately not the phone: that is the credential,
+ * and `collectors_phone_key` already holds it.
+ *
+ * If the insert loses — an operator enrolled this very number in the moment
+ * between the lookup above and this statement — the code is spent and the
+ * answer is the same 401 as any other failure. The person asks for another
+ * code and takes the enrolled path, which by then is the true one.
+ */
+async function signUpAndSignIn(
+  db: Db,
+  phone: string,
+  code: string,
+): Promise<CollectorClaims | null> {
+  const [pending] = await db
+    .update(schema.signUpCodes)
+    .set({ attempts: sql`${schema.signUpCodes.attempts} + 1`, updatedAt: new Date() })
+    .where(eq(schema.signUpCodes.phone, phone))
+    .returning({
+      hash: schema.signUpCodes.codeHash,
+      expiresAt: schema.signUpCodes.expiresAt,
+      attempts: schema.signUpCodes.attempts,
+      consumedAt: schema.signUpCodes.consumedAt,
+    });
+  if (pending === undefined) return null;
+  if (pending.consumedAt !== null) return null;
+  if (pending.attempts > CODE_ATTEMPTS) return null;
+  if (pending.expiresAt.getTime() <= Date.now()) return null;
+  if (!(await verifyCredential(code, pending.hash))) return null;
+
+  const collectorId = randomUUID();
+  const externalRef = `app:${collectorId}`;
+  const claims = await mutate(
+    db,
+    { collector: { kind: 'collector', collectorId, epoch: 1 } },
+    {
+      action: 'collector.sign_up',
+      targetTable: 'collectors',
+      targetId: collectorId,
+      after: { status: 'prospect', external_ref: externalRef },
+    },
+    async (tx): Promise<CollectorClaims | undefined> => {
+      const at = new Date();
+      const [spent] = await tx
+        .update(schema.signUpCodes)
+        .set({ consumedAt: at, updatedAt: at })
+        .where(and(eq(schema.signUpCodes.phone, phone), isNull(schema.signUpCodes.consumedAt)))
+        .returning({ phone: schema.signUpCodes.phone });
+      if (spent === undefined) return undefined;
+      const [row] = await tx
+        .insert(schema.collectors)
+        .values({ id: collectorId, externalRef, status: 'prospect', phone })
+        // Targeted at the phone, which is the index that can actually clash:
+        // the id and the reference were both made a line ago.
+        .onConflictDoNothing({ target: schema.collectors.phone })
+        .returning({ id: schema.collectors.id, epoch: schema.collectors.tokenEpoch });
+      if (row === undefined) return undefined;
+      return { kind: 'collector', collectorId: row.id, epoch: row.epoch };
+    },
+  );
+  return claims ?? null;
+}
+
 /** One 401 body for every way `verify` can fail. */
 const CREDENTIALS = { error: 'credentials', reason: 'credentials' };
 
@@ -297,7 +415,23 @@ export function registerCollectorAuth(
         .select({ id: schema.collectors.id, epoch: schema.collectors.tokenEpoch })
         .from(schema.collectors)
         .where(eq(schema.collectors.phone, phone));
-      if (collector === undefined) return;
+      if (collector === undefined) {
+        /**
+         * Open sign-up: hold the code, create nobody. See `holdSignUpCode`.
+         *
+         * The delivery is started and not awaited, for the reason the enrolled
+         * path gives, and its outcome is recorded nowhere — there is no
+         * collector to file a row against and writing one under this number
+         * would put "which numbers are not collectors" in a table, from an
+         * unauthenticated request. A throw is caught and logged so a sender
+         * that fails cannot take the process down from an empty stack.
+         */
+        await holdSignUpCode(db, phone, hash);
+        void send(phone, code).catch((err: unknown) => {
+          console.warn(`[collector.sign_up_code] delivery failed: ${String(err)}`);
+        });
+        return;
+      }
 
       // A new code replaces whatever was there and resets the attempt count.
       // Asking again is how a person recovers from five wrong tries, and it has
@@ -377,7 +511,20 @@ export function registerCollectorAuth(
           epoch: schema.collectors.tokenEpoch,
         });
 
-      if (collector === undefined) return null;
+      /**
+       * Nobody owns this number, so this is either a sign-up or a stranger
+       * guessing. `signUpAndSignIn` decides, and it answers `null` for every
+       * way it can fail — which is the same `null` the enrolled path answers,
+       * and becomes the same 401.
+       */
+      if (collector === undefined) {
+        const signedUp = await signUpAndSignIn(db, phone, code);
+        if (signedUp === null) return null;
+        await auditLogin(db, 'collector.login', 'collectors', signedUp.collectorId, {
+          collectorId: signedUp.collectorId,
+        });
+        return signedUp;
+      }
       if (collector.attempts > CODE_ATTEMPTS) return null;
       if (collector.hash === null) return null;
       if (collector.expiresAt === null || collector.expiresAt.getTime() <= Date.now()) return null;

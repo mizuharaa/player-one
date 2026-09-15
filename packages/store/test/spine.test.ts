@@ -1468,4 +1468,104 @@ describe.skipIf(!hasDb())('the catalogues', () => {
       d.execute(sql`update review_reason_codes set code = 'VQ-UNDEREXPOSED' where code = 'VQ-DARK'`),
     );
   });
+
+  /**
+   * Open sign-up (migration 0034), in SQL. The gate is a trigger and the status
+   * is a CHECK, so both are asserted with no application in the path — a
+   * prospect is refused a claim by a psql session, not by a route.
+   */
+  describe('0034: a prospect may exist, and may not claim', () => {
+    it('accepts prospect as a status, and still refuses anything else', async () => {
+      const d = await db();
+      const id = uid();
+      await d.execute(sql`insert into collectors (id, external_ref, status, phone)
+        values (${id}, ${`app:${id}`}, 'prospect', '+84900000123')`);
+      const rows = (await d.execute(
+        sql`select status from collectors where id = ${id}`,
+      )) as unknown as { status: string }[];
+      expect(rows[0]!.status).toBe('prospect');
+
+      // Widened, not opened: the CHECK is still a closed set, of four now.
+      await violates(
+        'collectors_status_check',
+        d.execute(sql`insert into collectors (id, external_ref, status)
+          values (${uid()}, 'col-bogus', 'onboarding')`),
+      );
+    });
+
+    /**
+     * The prospect branch is FIRST in `task_claims_guard`, and that is what is
+     * being asserted: this prospect has an exam pass and all six agreements, so
+     * `task_claims_exam_gate` and `task_claims_consent_gate` both pass and
+     * `task_claims_qualified_gate` is the gate that would otherwise fire. A
+     * prospect is refused by its own name instead, which is what lets the app
+     * say what unlocks it — a collection centre, not the exam screen.
+     */
+    it('refuses a prospect a claim by its own name, before the exam and qualification gates', async () => {
+      const d = await db();
+      const ids = await seedSpine();
+      const prospect = uid();
+      await d.execute(sql`insert into collectors (id, external_ref, status, phone)
+        values (${prospect}, ${`app:${prospect}`}, 'prospect', '+84900000124')`);
+      await d.execute(sql`update collectors set exam_result = 'pass', exam_decided_at = now()
+        where id = ${prospect}`);
+      await d.execute(sql`insert into collector_agreements (collector_id, agreement, version, accepted_at)
+        select ${prospect}, a, 'v1', now()
+          from unnest(array['user', 'privacy', 'data_collection', 'commercial_use',
+                            'manual_review', 'offline_settlement']) as a`);
+
+      await violates(
+        'task_claims_onboarding_gate',
+        d.execute(sql`insert into task_claims (id, task_id, collector_id)
+          values (${uid()}, ${ids.task}, ${prospect})`),
+      );
+
+      /**
+       * Un-releasing a claim is claiming it again and runs the same function
+       * through `task_claims_guard_reclaim`, so the gate cannot be walked
+       * around with one UPDATE. The claim `seedSpine` already made for its
+       * qualified collector is the one to release and try to take back.
+       */
+      const [claim] = (await d.execute(
+        sql`select id from task_claims where collector_id = ${ids.collector}`,
+      )) as unknown as { id: string }[];
+      const claimId = claim!.id;
+      await d.execute(sql`update task_claims set released_at = now() where id = ${claimId}`);
+      await d.execute(sql`update collectors set status = 'prospect' where id = ${ids.collector}`);
+      await violates(
+        'task_claims_onboarding_gate',
+        d.execute(sql`update task_claims set released_at = null where id = ${claimId}`),
+      );
+    });
+
+    /**
+     * A code for a number no collector holds. The row is a credential in
+     * flight: one per number, and spent by an UPDATE rather than a DELETE,
+     * because the application has no DELETE on it (`app-role.test.ts`).
+     */
+    it('holds one sign-up code per number, and refuses a nonsense one', async () => {
+      const d = await db();
+      await d.execute(sql`insert into sign_up_codes (phone, code_hash, expires_at)
+        values ('+84900000125', 'scrypt$x', now() + interval '5 minutes')`);
+      await violates(
+        'sign_up_codes_pkey',
+        d.execute(sql`insert into sign_up_codes (phone, code_hash, expires_at)
+          values ('+84900000125', 'scrypt$y', now() + interval '5 minutes')`),
+      );
+      await violates(
+        'sign_up_codes_attempts_check',
+        d.execute(sql`update sign_up_codes set attempts = -1 where phone = '+84900000125'`),
+      );
+      await violates(
+        'sign_up_codes_consumed_check',
+        d.execute(sql`update sign_up_codes set consumed_at = created_at - interval '1 second'
+          where phone = '+84900000125'`),
+      );
+      await violates(
+        'sign_up_codes_phone_check',
+        d.execute(sql`insert into sign_up_codes (phone, code_hash, expires_at)
+          values ('   ', 'scrypt$z', now() + interval '5 minutes')`),
+      );
+    });
+  });
 });

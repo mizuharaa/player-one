@@ -220,6 +220,9 @@ const vi = {
   'detail.claim': 'Nhận nhiệm vụ',
   'detail.claimed': 'Đã nhận nhiệm vụ này',
   'detail.needExam': 'Bạn cần đạt bài kiểm tra trước đã.',
+  // open sign-up
+  'detail.needOnboarding':
+    'Ra trung tâm thu thập để liên kết thiết bị Ego, rồi bạn mới nhận được nhiệm vụ.',
   'detail.full': 'Nhiệm vụ này đã đủ người.',
   'detail.claiming': 'Đang nhận…',
   'detail.needAgreements': 'Bạn cần đồng ý cả sáu thỏa thuận trước đã.',
@@ -803,6 +806,9 @@ const en: Record<MessageKey, string> = {
   'detail.claim': 'Claim task',
   'detail.claimed': 'Already claimed',
   'detail.needExam': 'Pass the exam before claiming a task.',
+  // open sign-up
+  'detail.needOnboarding':
+    'Bind your Ego device at the collection centre to accept tasks.',
   'detail.full': 'This task is at claimant capacity.',
   'detail.claiming': 'Claiming…',
   'detail.needAgreements': 'Accept all six agreements before claiming a task.',
@@ -1351,6 +1357,8 @@ const zh: Record<MessageKey, string> = {
   'detail.claim': '领取任务',
   'detail.claimed': '已领取这个任务',
   'detail.needExam': '领取任务前需要先通过考核。',
+  // open sign-up
+  'detail.needOnboarding': '请先到采集中心绑定 Ego 设备，然后才能领取任务。',
   'detail.full': '这个任务的领取人数已满。',
   'detail.claiming': '正在领取…',
   'detail.needAgreements': '领取任务前需要接受全部六项协议。',
