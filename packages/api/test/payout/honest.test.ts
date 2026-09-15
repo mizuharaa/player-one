@@ -58,6 +58,27 @@ describe.skipIf(!hasDb())('honest payout demo (SIMULATION, test database only)',
     expect(finance.json().bills[0]).toMatchObject({ paid: true, simulation: true, attempt: { manual_reference: 'SIMULATION-REF-X' } });
   });
 
+  /**
+   * The audit's finding 1, the shape a wallet change produces. The payment
+   * subquery was scoped to the collector, the destination above it to the
+   * current account, so one response described two accounts: "awaiting —
+   * destination unverified" and "paid, reference OLD-REF" at the same time,
+   * and the phone renders both lines.
+   */
+  it('a payment to a replaced destination is not read back beside the new one', async () => {
+    const h = await setup();
+    await seedAccount(h.d, h.ids, 1);
+    expect((await h.mark()).statusCode).toBe(201);
+    await h.d.execute(sql`update payout_accounts set is_current = false where collector_id = ${h.ids.collector1}`);
+    const declared = await app.inject({ method: 'POST', url: '/api/payout/accounts', headers: h.finance,
+      payload: { id: uid(), collector_id: h.ids.collector1, method: 'WALLET', declared_name: 'Nguyen Van A', phone: '0912340000' } });
+    expect(declared.statusCode, declared.body).toBe(201);
+    const phone = await app.inject({ url: '/api/me/payout', headers: h.collector() });
+    expect(phone.json()).toMatchObject({ status: 'awaiting', masked: '•••• 0000' });
+    expect(phone.json().payment).toBeUndefined();
+    expect(phone.body).not.toContain('SIMULATION-REF-X');
+  });
+
   it('duplicate submission replays the same attempt without another payment', async () => {
     const h = await setup();
     await seedAccount(h.d, h.ids, 1);

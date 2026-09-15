@@ -775,11 +775,27 @@ export function registerMe(
           ? null
           : `•••• ${account.last4}`,
     };
+    /**
+     * The payment belongs to the destination that received it, so it is read
+     * off the current account and not off the collector.
+     *
+     * Scoped to the collector, this told a collector who had just changed
+     * wallet that they were "awaiting payment — destination unverified" and
+     * "paid, reference OLD-REF" in the same breath: the destination above was
+     * the current account, the payment was last cycle's. The subquery is the
+     * same `is_current` question, so an account that stopped being current
+     * takes its payment with it, and a collector with no current account gets
+     * no payment at all (`= null` matches nothing) — which is `status: 'none'`
+     * with nothing beside it.
+     */
     const [payment] = await db.execute<{ reference: string; amount_vnd: string }>(sql`
       select coalesce(a.manual_reference, a.zp_trans_id, a.partner_order_id) as reference,
              a.amount_vnd::text
       from payout_attempts a join bills b on b.id = a.bill_id
       where b.collector_id = ${me} and a.status = 'succeeded'
+        and a.payout_account_id = (
+          select id from payout_accounts where collector_id = ${me} and is_current
+        )
       order by a.settled_at desc nulls last, a.created_at desc, a.id desc limit 1
     `);
     return { ...destination, simulation: options.simulation === true,
