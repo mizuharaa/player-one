@@ -536,7 +536,7 @@ describe('official shapes from docs.zalopay.vn', () => {
 
   it('transfer-fund response from the guide → accepted, PROCESSING, with the order id', async () => {
     const r = await transfer(client({ fetch: answer(OFFICIAL.transferFundWalletResponse) }));
-    expect(r).toEqual({ kind: 'unknown', cause: 'malformed' });
+    expect(r).toEqual({ kind: 'accepted', zlpOrderId: '51642840027000060', status: 3 });
   });
 
   it('balance response from the guide', async () => {
