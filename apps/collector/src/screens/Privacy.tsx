@@ -4,7 +4,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { AGREEMENTS } from '../api/types.ts';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Card, Note, Row, face, useInsets, useTabBarReserve, useReducedMotion } from '../ui.tsx';
+import { Body, Button, Card, Header, Note, Row, face, useInsets, useTabBarReserve, useReducedMotion } from '../ui.tsx';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -63,17 +63,12 @@ export function Privacy({ onAgreements }: { onAgreements?: () => void } = {}) {
       style={{ flex: 1, backgroundColor: c.paper }}
       contentContainerStyle={{
         paddingHorizontal: c.gutter,
-        paddingTop: insets.top + theme.space[4],
+        paddingTop: 0,
         paddingBottom: theme.space[6] + Math.max(reserve, Math.max(insets.bottom, theme.space[6])),
         gap: theme.space[3],
       }}
     >
-      <Text
-        accessibilityRole="header"
-        style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme), letterSpacing: -0.5 }}
-      >
-        {tt('legal.privacy')}
-      </Text>
+      <Header title={tt('legal.privacy')} />
       <Body muted>{tt('agreements.intro')}</Body>
 
       <View style={{ gap: theme.space[2], marginTop: theme.space[2] }}>

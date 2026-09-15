@@ -92,7 +92,7 @@ export function useTabBarReserve() {
   return insets.bottom + theme.space[6] + (measuredTabHeight || barHeight(theme)) + theme.space[5];
 }
 
-function Header({ title, right, onBack, progress }: { title: string; right?: ReactNode; onBack?: () => void; progress?: ReactNode }) {
+export function Header({ title, right, onBack, progress }: { title: string; right?: ReactNode; onBack?: () => void; progress?: ReactNode }) {
   const theme = useTheme();
   const nav = useNav();
   const tt = useT();
@@ -139,6 +139,7 @@ export function Screen({
 }) {
   const theme = useTheme();
   const nav = useNav();
+  const insets = useInsets();
   const reserve = useTabBarReserve();
   const [footerHeight, setFooterHeight] = useState(0);
   return (
@@ -150,7 +151,7 @@ export function Screen({
           padding: theme.collector.gutter,
           paddingTop: 0,
           paddingBottom:
-            theme.space[4] + footerHeight + (nav.isTabRoot ? reserve : bottomInset(theme.space[6])),
+            theme.space[4] + footerHeight + (nav.isTabRoot ? reserve : Math.max(insets.bottom, theme.space[6])),
           gap: theme.space[3],
         }}
       >
@@ -173,7 +174,7 @@ export function Screen({
             borderTopWidth: 1,
             borderTopColor: theme.color.border,
             padding: theme.space[4],
-            paddingBottom: theme.space[4] + bottomInset(theme.space[6]),
+            paddingBottom: theme.space[4] + Math.max(insets.bottom, theme.space[6]),
             gap: theme.space[3],
           }}
         >
@@ -215,6 +216,7 @@ export function ListScreen<T>({
 }) {
   const theme = useTheme();
   const nav = useNav();
+  const insets = useInsets();
   const reserve = useTabBarReserve();
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.background }}>
@@ -234,7 +236,7 @@ export function ListScreen<T>({
         contentContainerStyle={{
           padding: theme.collector.gutter,
           paddingTop: 0,
-          paddingBottom: theme.space[4] + (nav.isTabRoot ? reserve : bottomInset(theme.space[6])),
+          paddingBottom: theme.space[4] + (nav.isTabRoot ? reserve : Math.max(insets.bottom, theme.space[6])),
           gap: theme.space[3],
         }}
       />
@@ -1165,7 +1167,7 @@ export function LegalLine({ onDark = false }: { onDark?: boolean } = {}) {
       accessibilityRole="link"
       accessibilityLabel={tt(key)}
       onPress={() => {}}
-      hitSlop={theme.space[2]}
+      style={{ minHeight: 48, minWidth: 48, justifyContent: 'center' }}
     >
       <Text
         style={{

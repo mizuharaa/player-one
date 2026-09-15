@@ -6,17 +6,17 @@ await mkdir('artifacts/mobile-v3', { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const rows = [];
 try {
-  for (const width of [320, 390, 430]) {
+  for (const screen of ['signin', 'landing']) for (const width of [320, 390, 430]) {
     const page = await browser.newPage({ viewport: { width, height: 844 }, reducedMotion: 'reduce' });
-    await page.goto('http://localhost:5177/?screen=signin&lang=en');
+    await page.goto(`http://localhost:5177/?screen=${screen}&lang=en`);
     const mark = page.locator('div[role="img"][aria-label="Player One"]');
     await mark.waitFor();
     await page.evaluate(() => document.fonts.ready);
     const rect = await mark.boundingBox();
     await mark.evaluate(node => { node.style.visibility = 'hidden'; });
-    const path = `artifacts/mobile-v3/login-background-${width}.png`;
+    const path = `artifacts/mobile-v3/${screen}-background-${width}.png`;
     await page.screenshot({ path });
-    rows.push({ width, rect, path });
+    rows.push({ screen, width, rect, path });
     await page.close();
   }
   await writeFile('artifacts/mobile-v3/login-contrast-regions.json', JSON.stringify(rows));

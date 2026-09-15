@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
 import { LocaleProvider } from '../src/locale.tsx';
-import { NavProvider } from '../src/nav.tsx';
+import { NavProvider, useNav } from '../src/nav.tsx';
 import { ThemeProvider } from '../src/theme.tsx';
 import { collector } from '@playerone/design/tokens';
 
@@ -29,8 +29,8 @@ vi.mock('react-native-svg', () => {
  * them where a query can find them.
  */
 vi.mock('expo-linear-gradient', () => ({
-  LinearGradient: ({ colors }: { colors: readonly string[] }) => (
-    <span data-colors={colors.join(',')} />
+  LinearGradient: ({ colors, children }: { colors: readonly string[]; children: ReactNode }) => (
+    <span data-colors={colors.join(',')}>{children}</span>
   ),
 }));
 
@@ -157,3 +157,15 @@ it('Privacy acknowledges the helpful answer without implying a ticket', async ()
 
 vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
 vi.mock('react-native-safe-area-context', async () => ({ initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null) }));
+
+it('Privacy provides a visible return control after opening from Profile', async () => {
+  function Journey() {
+    const nav = useNav();
+    return nav.route.name === 'privacy' ? <Privacy /> : <button onClick={() => nav.push({ name: 'privacy' })}>Open privacy</button>;
+  }
+  await mount(<Journey />);
+  await act(async () => host.querySelector('button')!.click());
+  expect(named(m['common.back'])).toBeDefined();
+  await act(async () => named(m['common.back'])!.click());
+  expect(page()).toContain('Open privacy');
+});

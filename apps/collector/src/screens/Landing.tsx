@@ -9,7 +9,7 @@ import wordmark from '../../assets/discover/playerone-wordmark.png';
 
 /** Non-scrolling welcome: one decoder, poster beneath it, scrim over both. */
 const SCRIM_STOPS = [
-  [0, 0],
+  [0, 0.35],
   [0.55, 0.6],
   [1, 0.88],
 ] as const;

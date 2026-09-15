@@ -1,6 +1,6 @@
 import { useNav } from '../nav.tsx';
 import { Image, Platform, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { HeaderGradient } from '../ui/HeaderGradient.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { Body, Card, NavRow, Screen, face } from '../ui.tsx';
@@ -32,25 +32,8 @@ export function About({ onPrivacy }: { onPrivacy?: () => void } = {}) {
     <Screen title={tt('profile.about')}>
       {/* The header block. `Screen` draws the page title above it; this is the
           mark, not a second title. */}
-      <View
-        style={{
-          borderRadius: c.radius.card,
-          overflow: 'hidden',
-          paddingVertical: theme.space[8],
-          paddingHorizontal: c.cardPad,
-          alignItems: 'center',
-          gap: theme.space[3],
-        }}
-      >
-        <LinearGradient
-          // The three stops at 0 / 65 / 100%, which is the header ramp SPEC.md
-          // fixes. Read from the token, never written out here.
-          colors={[...c.gradient]}
-          locations={[0, 0.65, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
-        />
+      <HeaderGradient>
+        <View style={{ alignItems: 'center', gap: theme.space[3] }}>
         <Image
           source={wordmark}
           accessibilityLabel={tt('app.name')}
@@ -60,7 +43,8 @@ export function About({ onPrivacy }: { onPrivacy?: () => void } = {}) {
         <Text style={{ ...c.type.caption, color: c.surface, fontFamily: face(theme) }}>
           {tt('splash.partners')}
         </Text>
-      </View>
+        </View>
+      </HeaderGradient>
 
       <Card>
         <Text
