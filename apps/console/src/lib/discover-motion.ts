@@ -21,9 +21,12 @@ export function useDiscoverMotion(root: RefObject<HTMLElement | null>) {
     const slogan=el.querySelector<HTMLElement>('[data-opening-slogan]');
     const copy=el.querySelector<HTMLElement>('[data-opening-copy]');
     const bar=el.querySelector<HTMLElement>('[data-discover-nav]');
-    const css=getComputedStyle(el);
-    const duration=(parseFloat(css.getPropertyValue('--discover-reveal'))||720)/1000;
-    const openingMs=parseFloat(css.getPropertyValue('--discover-opening'))||1100;
+    // ponytail: no computed style at mount. Reading a token off the live
+    // CSSStyleDeclaration here forced the document's first layout inside this mount
+    // effect - measured 700 ms of Layout over 1234 objects on a 4x-throttled phone
+    // at 390x844 @3x, the page's single worst long task. The value is only wanted
+    // after the gsap import, which is already past first paint, so it is read there.
+    let duration=.72;
     const showContent=()=>{
       // CSS owns the settled layout, including after an interrupted opening.
       // Release the active selector BEFORE removing the slogan's faded styles;
@@ -48,12 +51,16 @@ export function useDiscoverMotion(root: RefObject<HTMLElement | null>) {
       if(settled||cancelled)return;
       expired=true;window.clearTimeout(startupTimer);cleanup();showContent();
     };
-    // Cover the whole logo handshake, not just the dynamic module import.
-    const startupTimer=window.setTimeout(failOpen,Math.max(3500,openingMs*2+1000));
+    // Cover the whole logo handshake, not just the dynamic module import. 3500 ms is
+    // the floor Math.max always took at --discover-opening: 1100ms, and the token is
+    // no longer read here because that read cost the layout above; a fail-open that
+    // is early rather than late shows the content, which is the safe direction.
+    const startupTimer=window.setTimeout(failOpen,3500);
     const start=async()=>{
       if(preference.matches){window.clearTimeout(startupTimer);failOpen();return;}
       const {gsap}=await import('gsap');
       if(cancelled||expired||preference.matches)return;
+      duration=(parseFloat(getComputedStyle(el).getPropertyValue('--discover-reveal'))||720)/1000;
       if(!film||!slogan||!copy||!bar){window.clearTimeout(startupTimer);failOpen();return;}
       const animations: gsap.core.Animation[]=[];
       let observer: IntersectionObserver|undefined;

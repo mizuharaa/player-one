@@ -78,16 +78,25 @@ export function HeroLetterShuffle({animate = true, as: Tag = 'h1', onComplete}: 
     preference.addEventListener('change', changed);
     if (preference.matches) finish(true);
     else {
+      // ponytail: the first intersection callback is the first moment after the
+      // document has been laid out, so touching document.fonts.ready there is free.
+      // The old getComputedStyle(root) + document.fonts.load(...) pair ran inside
+      // React's first commit and forced the document's whole first layout before
+      // first paint - measured 960 ms of Layout over 1234 objects on a 4x-throttled
+      // phone at 390x844 @3x. By then the heading's own font request is pending, so
+      // fonts.ready covers it without naming the family.
+      let waiting = false;
       observer = new IntersectionObserver(entries => {
         visible = entries.some(entry => entry.isIntersecting);
+        if (!waiting) {
+          waiting = true;
+          void document.fonts.ready
+            .then(() => { ready = true; begin(); })
+            .catch(() => { if (!disposed) finish(true); });
+        }
         begin();
       }, {threshold: .5});
       observer.observe(root);
-      const font = getComputedStyle(root);
-      void document.fonts.load(`${font.fontWeight} ${font.fontSize} ${font.fontFamily}`, HERO_TEXT)
-        .then(() => document.fonts.ready)
-        .then(() => { ready = true; begin(); })
-        .catch(() => { if (!disposed) finish(true); });
     }
     return () => {
       disposed = true; cancelAnimationFrame(frame); observer?.disconnect();
