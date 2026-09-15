@@ -350,6 +350,7 @@ export type IncomeRow = {
   state: CollectorState;
   state_text: { en: string; vi: string };
   paid_at: string | null;
+  payment_reference?: string | null;
 };
 
 /**
@@ -395,6 +396,8 @@ export type IncomeCycle = {
  * guarantee argument `IncomeRow` makes.
  */
 export type PayoutDestination = {
+  simulation?: boolean;
+  payment?: { reference: string; amount_vnd: number };
   channel: 'zalopay';
   status: 'verified' | 'awaiting' | 'none';
   masked: string | null;
@@ -542,7 +545,7 @@ const decided = (reviewState: string | null): boolean =>
 // ---------------------------------------------------------------------------
 // Routes
 
-export type MeOptions = BatchOptions;
+export type MeOptions = BatchOptions & { simulation?: boolean };
 
 /** The same structural shape the payout and settle routes use for a preHandler. */
 type Reply = { code: (n: number) => { send: (b: unknown) => unknown } };
@@ -609,6 +612,7 @@ export function registerMe(
         state,
         state_text: STATE_SENTENCES[state],
         paid_at: paidAt(row, bill),
+        payment_reference: state === 'paid' ? bill?.latestAttempt?.manualReference ?? bill?.latestAttempt?.zpTransId ?? null : null,
       };
     });
 
@@ -725,6 +729,7 @@ export function registerMe(
 
     return {
       currency: 'VND',
+      simulation: options.simulation === true,
       episodes,
       periods,
       not_yet_billed: { episodes: notBilled.length, amount: unbilled },
@@ -770,7 +775,16 @@ export function registerMe(
           ? null
           : `•••• ${account.last4}`,
     };
-    return destination;
+    const [payment] = await db.execute<{ reference: string; amount_vnd: string }>(sql`
+      select coalesce(a.manual_reference, a.zp_trans_id, a.partner_order_id) as reference,
+             a.amount_vnd::text
+      from payout_attempts a join bills b on b.id = a.bill_id
+      where b.collector_id = ${me} and a.status = 'succeeded'
+      order by a.settled_at desc nulls last, a.created_at desc, a.id desc limit 1
+    `);
+    return { ...destination, simulation: options.simulation === true,
+      ...(payment ? { payment: { reference: payment.reference, amount_vnd: Number(payment.amount_vnd) } } : {}) };
+
   });
 
   /**
