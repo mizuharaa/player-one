@@ -52,6 +52,26 @@ const ID = {
 const EPISODE = (n) => `00000000-0000-4000-8000-0000000f000${n}`;
 const TASK = (n) => `00000000-0000-4000-8000-0000000a000${n}`;
 const CARD = 'TF-DEMO-0001';
+/**
+ * The seeded bill's own period, and it has to END BEFORE THE DEMO DAY.
+ *
+ * `bills_collector_period_key` is (collector, period_start, period_end), and
+ * `/api/settle/bills` treats a collision as money deferred rather than as an
+ * error — correctly, but the room does not see a bill. This period used to run
+ * 01/09 → 16/09, which is the period the demo asks for at 0:24, so the live
+ * review's money answered `created: 0` with `deferred_to_next_period:
+ * {settlements: 2}`. Measured at the rehearsal, beat 11.
+ *
+ * So this cycle closes on the 14th and the demo's cycle starts after it. The
+ * period an operator must ask for is printed by `seed-stakeholder.mjs`, which
+ * is the script an operator actually runs; `seed-demo.test.ts` holds the two
+ * files to the same answer.
+ *
+ * Explicit `Z`: `'2026-09-01'::timestamptz` would be midnight in whatever
+ * TimeZone the server session carries, and this seed runs on machines in two
+ * zones.
+ */
+const BILL_PERIOD = { start: '2026-09-01T00:00:00Z', end: '2026-09-14T00:00:00Z' };
 /** Same parameter as seed-demo.mjs, and it has to hold the same value. */
 const SERIAL = process.env['PLAYERONE_DEMO_DEVICE_SERIAL'] ?? 'EGO-DEMO-0001';
 const UNIT_PRICE = '1200.0000';
@@ -285,8 +305,8 @@ try {
       if (existing === undefined) {
         await tx.execute(sql`
           insert into bills (id, collector_id, period_start, period_end, currency, total)
-          values (${ID.bill}, ${ID.collector}, '2026-09-01T00:00:00Z'::timestamptz,
-                  '2026-09-16T00:00:00Z'::timestamptz, 'VND', '64800.0000')`);
+          values (${ID.bill}, ${ID.collector}, ${BILL_PERIOD.start}::timestamptz,
+                  ${BILL_PERIOD.end}::timestamptz, 'VND', '64800.0000')`);
         await tx.execute(sql`
           insert into bill_lines (bill_id, settlement_id) values
             (${ID.bill}, ${billed[0].settlementId}), (${ID.bill}, ${billed[1].settlementId})`);
@@ -294,7 +314,10 @@ try {
     }
   });
 
-  console.log('Demo work seeded: 4 published tasks, 5 episodes, 1 bill over 01/09 - 15/09.');
+  console.log(
+    'Demo work seeded: 4 published tasks, 5 episodes, 1 bill over ' +
+      BILL_PERIOD.start.slice(0, 10) + ' - ' + BILL_PERIOD.end.slice(0, 10) + '.',
+  );
   console.log('No payout account, on purpose: /api/me/payout answers "none" and never "verified".');
 } catch (error) {
   console.error(`seed-demo-work refused: ${error instanceof Error ? error.message : String(error)}`);

@@ -82,6 +82,32 @@ const ACCOUNT_ID = '00000000-0000-4000-8000-00000000c001';
 const COLLECTOR_ID = '00000000-0000-4000-8000-00000000d001';
 
 /**
+ * The period the operator must ask `POST /api/settle/bills` for at 0:24.
+ *
+ * Printed here because it is not obvious and getting it wrong looks like the
+ * platform failing in front of the room. Two rules decide it, and both were
+ * measured at the rehearsal:
+ *
+ *   - It may not be the period the seeded bill already owns.
+ *     `bills_collector_period_key` is (collector, period_start, period_end) and
+ *     a collision is reported as `deferred_to_next_period`, not as an error —
+ *     so the request answers `created: 0` and no bill appears. The seeded bill
+ *     now closes on the 14th (`BILL_PERIOD` in `seed-demo-work.mjs`) and this
+ *     period starts after it.
+ *
+ *   - `period_end` must be AFTER the demo day, not on it. `settleable()` in
+ *     `settle.ts` bounds the cycle with `settlements.created_at < period_end`
+ *     and has no lower bound at all, so an end at the demo day's own midnight
+ *     excludes the money the room just watched being reviewed. The rehearsal's
+ *     working request was `2026-09-15 → 2026-09-16` — the day after — and
+ *     answered `created: 1`. Thursday is the 17th, so this ends on the 18th.
+ *
+ * `period_start` filters nothing; it is the label the collector then reads as
+ * "This cycle" on the income screen, so it is the day after the last cycle.
+ */
+const DEMO_BILL_PERIOD = { start: '2026-09-15T00:00:00Z', end: '2026-09-18T00:00:00Z' };
+
+/**
  * Supplied secrets are used as given; missing ones are generated and printed
  * once. Keep them: bootstrap compares a credential it already holds and
  * refuses a rerun that presents a different one, so a rerun needs the same
@@ -265,6 +291,22 @@ try {
   const [sessions] = await db.execute(
     sql`select count(*)::int as n from collection_sessions where collector_id = ${COLLECTOR_ID}`,
   );
+  /**
+   * Read back, not restated. The period is `BILL_PERIOD` in
+   * `seed-demo-work.mjs`, and a second copy of it here is a second thing to
+   * keep in step — which is the failure that put the seeded bill on the demo's
+   * own period in the first place.
+   */
+  const [seededBill] = await db.execute(
+    sql`select period_start, period_end from bills
+         where collector_id = ${COLLECTOR_ID}
+         order by period_end desc limit 1`,
+  );
+  const day = (at) => new Date(at).toISOString().slice(0, 10);
+  const seededPeriod =
+    seededBill === undefined
+      ? 'no seeded bill was found'
+      : day(seededBill.period_start) + ' - ' + day(seededBill.period_end);
   const note =
     generated.length === 0
       ? ' All four were supplied from the environment.'
@@ -287,6 +329,14 @@ try {
       '   collection sessions ' + sessions.n,
       '   published tasks     ' + tasks.n,
       '   ' + declared,
+      '',
+      ' The bill request to make at 0:24. POST /api/settle/bills needs a body,',
+      ' and the period must not be one the collector already has a bill for:',
+      '   {"period_start":"' + DEMO_BILL_PERIOD.start + '",' +
+        '"period_end":"' + DEMO_BILL_PERIOD.end + '"}',
+      '   seeded bill covers  ' + seededPeriod +
+        '   (asking for that period again answers created: 0)',
+      '   period_end is exclusive, so it has to be AFTER the demo day, not on it',
       '',
       ' Sign-in secrets, printed once:',
       '   machine ' + MACHINE + '    ' + secrets.machine,
