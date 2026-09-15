@@ -52,6 +52,8 @@ import type { MessageKey } from '../i18n.ts';
  * Vietnamese collector an English error code (LOC-01).
  */
 const CLAIM_ERRORS: Record<string, MessageKey> = {
+  // open sign-up
+  collector_not_onboarded: 'detail.needOnboarding',
   exam_not_passed: 'detail.needExam',
   agreements_incomplete: 'detail.needAgreements',
   training_incomplete: 'detail.needTraining',
@@ -155,6 +157,12 @@ export function TaskDetail() {
 
   const data = task.data;
   const examPassed = profile.data !== null && profile.data.examPassed;
+  /**
+   * Open sign-up: false only for somebody who signed up in the app and has not
+   * been to a collection centre. `http.ts` reads it as true when the server
+   * does not send it, so an older deployment behaves as it always did.
+   */
+  const onboarded = profile.data === null || profile.data.onboarded;
   const alreadyClaimed = data.claimedByMe || claims.data.some((row) => row.taskId === taskId);
   const full = data.claimants >= data.maxClaimants;
   const taken = data.targetMinutes <= 0 ? 0 : data.claimedMinutes / data.targetMinutes;
@@ -171,7 +179,11 @@ export function TaskDetail() {
     ? claimErrorKey(claim.error)
     : alreadyClaimed
       ? 'detail.claimed'
-      : !examPassed
+      : // Before the exam, because the exam does not unlock this one: the
+        // server's prospect gate runs first and a centre is what clears it.
+        !onboarded
+        ? 'detail.needOnboarding'
+        : !examPassed
         ? 'detail.needExam'
         : full
           ? 'detail.full'

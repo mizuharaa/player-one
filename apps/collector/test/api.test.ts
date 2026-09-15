@@ -135,6 +135,47 @@ describe('the full eligibility gate on claiming (APP-02/03/04/05)', () => {
   // version against the presented one, but nothing in this seam can publish a
   // new version, so there is no honest way to reach that branch from outside.
   // It needs the server's current-version endpoint first.
+
+  /**
+   * Open sign-up (owner's decision 2026-09-15). The gate a collection centre
+   * clears comes FIRST, which is the server's order too: `task_claims_guard`
+   * asks about 'prospect' before it asks about the exam, so a person who
+   * finished everything the phone offers still gets this one.
+   */
+  it('refuses somebody who signed up in the app before every other prerequisite', async () => {
+    const api = new MockCollectorApi({ onboarded: false });
+    await api.register('Phạm Thị D', '0903000004');
+    await expect(api.claimTask('task-cook')).rejects.toThrow('collector_not_onboarded');
+
+    // Not a state they can leave from here: doing all four still ends the same
+    // way, and that is the point of the sentence the screen shows.
+    await api.acceptAgreements(ACCEPTANCES);
+    await api.completeTraining();
+    await api.submitExam(PASSING);
+    await expect(api.claimTask('task-cook')).rejects.toThrow('collector_not_onboarded');
+  });
+});
+
+describe('where a signed-in collector opens (open sign-up)', () => {
+  it('opens a prospect on Home so the board is one tap away, and keeps the chain for the rest', async () => {
+    // Somebody who signed up in the app: a name, and nothing else done.
+    const prospect = new MockCollectorApi({ onboarded: false });
+    await prospect.register('Phạm Thị D', '0903000004');
+    expect(await sessionEntry(prospect)).toEqual({ name: 'home' });
+
+    // A collector an operator enrolled still walks APP-01 → APP-02 → APP-03 →
+    // APP-04, in the order the claim gate wants them.
+    const enrolled = new MockCollectorApi();
+    expect(await sessionEntry(enrolled)).toEqual({ name: 'register' });
+    await enrolled.register('Lê Văn C', '0903000003');
+    expect(await sessionEntry(enrolled)).toEqual({ name: 'agreements' });
+    await enrolled.acceptAgreements(AGREEMENTS.map((a) => ({ agreementId: a.id, version: a.version })));
+    expect(await sessionEntry(enrolled)).toEqual({ name: 'training' });
+    await enrolled.completeTraining();
+    expect(await sessionEntry(enrolled)).toEqual({ name: 'exam' });
+    await enrolled.submitExam(PASSING);
+    expect(await sessionEntry(enrolled)).toEqual({ name: 'home' });
+  });
 });
 
 describe('the task hall (APP-08/10)', () => {
@@ -352,6 +393,31 @@ describe('collector wire truth and cold-start recovery', () => {
     expect(await api.task('held-task')).toEqual(task);
     expect((await api.myClaims())[0]?.taskName).toBe('Held task');
     expect((await api.boundDevices())[0]?.status).toBe('faulty');
+  });
+
+  /**
+   * Open sign-up, read off the wire. `onboarded` is the server's own boolean
+   * and a missing one means onboarded — a phone on this build talking to a
+   * deployment from before 0034 must behave exactly as it did, rather than
+   * telling every collector to visit a centre they have already been to.
+   */
+  it('reads onboarded off the profile, and an absent one as onboarded', async () => {
+    const withFlag = fakeFetch({
+      'GET /api/me/profile': { status: 200, body: { ...PROFILE, onboarded: false } },
+    });
+    /**
+     * `restoreSession()` first: `profile()` answers null while the client holds
+     * no token, and a null profile has no field to read.
+     */
+    const read = async (fn: typeof fetch): Promise<boolean | undefined> => {
+      const api = new HttpCollectorApi(BASE, fakeStore('stored-token'), () => {}, fn);
+      expect(await api.restoreSession()).toBe(true);
+      return (await api.profile())?.onboarded;
+    };
+
+    expect(await read(withFlag.fn)).toBe(false);
+    const without = fakeFetch({ 'GET /api/me/profile': { status: 200, body: PROFILE } });
+    expect(await read(without.fn)).toBe(true);
   });
 
   it('rejects an unsupported saved scenario rather than changing it to home', async () => {

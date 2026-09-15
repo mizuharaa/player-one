@@ -747,6 +747,7 @@ const toProfile = (raw: unknown): CollectorProfile => {
     agreements?: { agreement: string; version: string; accepted_at: string }[];
     training_done: boolean;
     exam_passed: boolean;
+    onboarded?: boolean;
   };
   return {
     id: p.id,
@@ -761,6 +762,14 @@ const toProfile = (raw: unknown): CollectorProfile => {
     })),
     trainingDone: p.training_done,
     examPassed: p.exam_passed,
+    /**
+     * Absent means onboarded, so a phone on this build talking to a server
+     * from before open sign-up behaves exactly as it did: the claim screen
+     * offers Accept and the server's own answer decides. Defaulting the other
+     * way would tell every collector on an older deployment to visit a centre
+     * they have already been to.
+     */
+    onboarded: p.onboarded ?? true,
   };
 };
 

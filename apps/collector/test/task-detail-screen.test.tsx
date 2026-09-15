@@ -145,6 +145,47 @@ it('replaces Accept with the reason it cannot be pressed', async () => {
   expect(page()).toContain(m['detail.needExam']);
 });
 
+/**
+ * Open sign-up. Somebody who installed the app and signed in with their own
+ * number can read this screen and cannot take the task, and the sentence says
+ * what would change that.
+ *
+ * They have finished everything the phone can finish — the six agreements,
+ * training and the exam — on purpose: the exam sentence would be the one this
+ * screen used to show, and it sends them to a screen that unlocks nothing.
+ */
+it('tells a collector who signed up in the app to go to a collection centre', async () => {
+  api = new MockCollectorApi({ onboarded: false });
+  await qualify();
+  await mount();
+
+  expect(named(m['detail.claim'])).toBeUndefined();
+  expect(page()).toContain(m['detail.needOnboarding']);
+  expect(page()).not.toContain(m['detail.needExam']);
+});
+
+/**
+ * And the server's own answer, when it is the thing that refuses.
+ *
+ * The profile says onboarded here, so the control is offered and the refusal
+ * can only come from the claim — which is the case that matters, because the
+ * server decides and this screen's own guesses never overrule it. Inline,
+ * where the control was, and not a toast.
+ */
+it('shows the server’s onboarding refusal in place of the control', async () => {
+  await qualify();
+  vi.spyOn(api, 'claimTask').mockRejectedValue(new Error('collector_not_onboarded'));
+  await mount();
+
+  const accept = named(m['detail.claim']);
+  expect(accept).toBeDefined();
+  await act(async () => { accept!.click(); });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+
+  expect(page()).toContain(m['detail.needOnboarding']);
+  expect(named(m['detail.claim'])).toBeUndefined();
+});
+
 it('offers retry rather than an action when a read failed', async () => {
   await qualify();
   vi.spyOn(api, 'task').mockRejectedValue(new Error('offline'));
