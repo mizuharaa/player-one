@@ -75,6 +75,9 @@ export class ZaloPayHttpClient implements ZaloPayClient {
 
   constructor(config: ZaloPayConfig) {
     this.config = config;
+    if (config.merchantWalletId !== undefined && !config.merchantWalletId.trim()) {
+      throw new Error('ZaloPayConfig.merchantWalletId is required for Merchant Wallet');
+    }
     const signing = config.signing ?? 'hmac';
     if (signing !== 'hmac') {
       // Escalation §0.7 item 1. The legacy scheme is built (`signing.ts`) but
@@ -154,6 +157,13 @@ export class ZaloPayHttpClient implements ZaloPayClient {
     if (!input.partnerOrderId) throw new TypeError('partnerOrderId is required');
     const time = this.now();
     const receiver_info = this.encrypt(transferPayload(input.receiver));
+    let partnerEmbedData = input.partnerEmbedData || EMPTY_JSON;
+    if (this.config.merchantWalletId !== undefined) {
+      const embed = JSON.parse(partnerEmbedData);
+      if (embed === null || typeof embed !== 'object' || Array.isArray(embed)) throw new TypeError('partnerEmbedData must be a JSON object');
+      if (embed.merchant_wallet_id !== undefined && embed.merchant_wallet_id !== this.config.merchantWalletId) throw new TypeError('merchant_wallet_id conflicts with configured Merchant Wallet');
+      partnerEmbedData = JSON.stringify({ ...embed, merchant_wallet_id: this.config.merchantWalletId });
+    }
     const unsigned = {
       app_id: this.config.appId,
       payment_id: this.config.paymentId,
@@ -163,7 +173,7 @@ export class ZaloPayHttpClient implements ZaloPayClient {
       amount,
       description: input.description,
       // The spec is explicit: empty is "{}", not "" and not omitted (types.ts).
-      partner_embed_data: input.partnerEmbedData || EMPTY_JSON,
+      partner_embed_data: partnerEmbedData,
       extra_info: input.extraInfo || EMPTY_JSON,
       time,
     };
@@ -226,7 +236,7 @@ export class ZaloPayHttpClient implements ZaloPayClient {
 
   async balance(): Promise<{ balanceVnd: number }> {
     const unsigned = { app_id: this.config.appId, payment_id: this.config.paymentId, time: this.now() };
-    const body: BalanceRequest = { ...unsigned, mac: this.sign(balanceMacParts(unsigned)) };
+    const body: BalanceRequest = { ...unsigned, partner_embed_data: JSON.stringify(this.config.merchantWalletId === undefined ? {} : { merchant_wallet_id: this.config.merchantWalletId }), mac: this.sign(balanceMacParts(unsigned)) };
 
     const r = await this.post<BalanceData>('balance', body, this.timeouts.otherMs);
     if (r.return_code !== 1) throw this.businessError('balance', r);
@@ -456,13 +466,14 @@ export function zaloPayClientFromEnv(
     'PLAYERONE_ZALOPAY_PUBLIC_KEY',
   ] as const;
   const present = names.filter((k) => !!env[k]);
-  if (present.length === 0 && zenv === 'sandbox') return null;
+  if (present.length === 0 && zenv === 'sandbox' && env['PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID'] === undefined) return null;
   const missing = names.filter((k) => !env[k]);
   if (missing.length > 0) {
     throw new Error(
       `PLAYERONE_ZALOPAY_ENV=${zenv} but ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not set`,
     );
   }
+  if (!env['PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID']?.trim()) throw new Error('PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID is required');
   const appId = Number(env['PLAYERONE_ZALOPAY_APP_ID']);
   if (!Number.isSafeInteger(appId)) throw new Error('PLAYERONE_ZALOPAY_APP_ID must be an integer');
   const signing = env['PLAYERONE_ZALOPAY_SIGNING'] ?? 'hmac';
@@ -474,6 +485,7 @@ export function zaloPayClientFromEnv(
     env: zenv,
     appId,
     paymentId: env['PLAYERONE_ZALOPAY_PAYMENT_ID']!,
+    merchantWalletId: env['PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID']!,
     key1: env['PLAYERONE_ZALOPAY_KEY1']!,
     zaloPayPublicKeyPem: env['PLAYERONE_ZALOPAY_PUBLIC_KEY']!.replaceAll('\\n', '\n'),
     signing,

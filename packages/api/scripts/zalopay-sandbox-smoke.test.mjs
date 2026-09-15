@@ -59,13 +59,17 @@ test('unknown provider messages and transport errors never leak', async () => {
   }
 });
 
-test('missing balance embed is a loud configuration refusal before network', async () => {
+test('configured balance and wallet reads both succeed without a transfer', async () => {
   const paths = [], output = [];
-  const code = await smoke(env, { write: line => output.push(line), fetch: async url => {
+  const code = await smoke(env, { write: line => output.push(line), fetch: async (url, init) => {
     paths.push(new URL(url).pathname);
+    if (url.endsWith('/balance')) {
+      assert.deepEqual(JSON.parse(JSON.parse(init.body).partner_embed_data), { merchant_wallet_id: 'test-wallet' });
+      return answer({ return_code: 1, data: { balance: 123 } });
+    }
     return answer({ return_code: 1, data: { m_u_id: 'private-id' } });
   }});
-  assert.equal(code, 1);
-  assert.deepEqual(paths, ['/v2/disbursement/verify-account']);
-  assert(output.some(line => line.includes('balance | refused') && line.includes('merchant_wallet_payload_missing')));
+  assert.equal(code, 0);
+  assert.deepEqual(paths, ['/v2/disbursement/balance', '/v2/disbursement/verify-account']);
+  assert(output.every(line => line.includes('| success |')));
 });

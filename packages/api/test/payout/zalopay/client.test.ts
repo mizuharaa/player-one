@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -119,6 +120,7 @@ describe('zaloPayClientFromEnv', () => {
   const complete = {
     PLAYERONE_ZALOPAY_APP_ID: '2553',
     PLAYERONE_ZALOPAY_PAYMENT_ID: 'PM-001',
+    PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID: 'MW-001',
     PLAYERONE_ZALOPAY_KEY1: 'k1',
     PLAYERONE_ZALOPAY_PUBLIC_KEY: TEST_RSA.publicKeySpkiPem,
   };
@@ -595,5 +597,30 @@ describe('official shapes from docs.zalopay.vn', () => {
       for (const k of Object.keys(a.data)) expect(allowed.has(k), `undocumented key ${k}`).toBe(true);
       expect(a.data).toMatchObject({ disbursement_type: 'BANK', bank_code: 'VCB', account_holder_name: 'NGUYEN VAN A' });
     }
+  });
+});
+
+
+describe('Merchant Wallet configuration', () => {
+  it('signs and sends one configured embed string on transfer and excludes it from the balance MAC', async () => {
+    const c = client({ merchantWalletId: 'merchant-distinct-from-payment' });
+    await c.transferFund({ partnerOrderId: po(), receiver: WALLET, amountVnd: 1, description: 'probe', partnerEmbedData: '{"bill":"b"}' });
+    await c.balance();
+    const transfer = fake.requests('transferFund')[0]!.body;
+    const balance = fake.requests('balance')[0]!.body;
+    expect(JSON.parse(String(transfer.partner_embed_data))).toEqual({ bill: 'b', merchant_wallet_id: 'merchant-distinct-from-payment' });
+    expect(balance.partner_embed_data).toBe('{"merchant_wallet_id":"merchant-distinct-from-payment"}');
+    expect(transfer.extra_info).toBe('{}');
+    for (const [body, fields] of [[transfer, ['app_id','payment_id','partner_order_id','disbursement_type','receiver_info','amount','description','partner_embed_data','extra_info','time']], [balance, ['app_id','payment_id','time']]] as const) {
+      expect(body.mac).toBe(createHmac('sha256', fake.key1).update(fields.map(k => body[k]).join('|')).digest('hex'));
+    }
+  });
+  it('refuses missing Merchant Wallet env configuration without deriving it from payment ID', () => {
+    expect(() => zaloPayClientFromEnv({ PLAYERONE_ZALOPAY_APP_ID: '1', PLAYERONE_ZALOPAY_PAYMENT_ID: 'payment-only', PLAYERONE_ZALOPAY_KEY1: 'test', PLAYERONE_ZALOPAY_PUBLIC_KEY: TEST_RSA.publicKeySpkiPem })).toThrow(/MERCHANT_WALLET_ID/);
+    expect(() => client({ merchantWalletId: ' ' })).toThrow(/merchantWalletId/);
+  });
+  it('does not let caller embed replace the configured merchant identity', async () => {
+    await expect(client({ merchantWalletId: 'configured' }).transferFund({ partnerOrderId: po(), receiver: WALLET, amountVnd: 1, description: 'probe', partnerEmbedData: '{"merchant_wallet_id":"other"}' })).rejects.toThrow(/merchant_wallet_id/);
+    expect(fake.requests('transferFund')).toHaveLength(0);
   });
 });
