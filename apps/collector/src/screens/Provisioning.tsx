@@ -1,3 +1,5 @@
+import { useNav } from '../nav.tsx';
+import { StatePanel } from '../ui/StatePanel.tsx';
 import { useState } from 'react';
 import { useTransport } from '../device/transport-context.tsx';
 import type { BleDevice } from '../device/transport.ts';
@@ -16,8 +18,10 @@ import { Body, Button, Card, CardLink, Field, Note, Row, Screen, Tag, Title } fr
  */
 export function Provisioning() {
   const transport = useTransport();
+  const nav = useNav();
   const tt = useT();
   const theme = useTheme();
+  const [scanned, setScanned] = useState(false);
   const [found, setFound] = useState<BleDevice[]>([]);
   const [connected, setConnected] = useState<string | null>(null);
   const [ssid, setSsid] = useState('');
@@ -26,22 +30,27 @@ export function Provisioning() {
   const [ip, setIp] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
+  const fail = (error: unknown) => setFailure(error instanceof Error ? error.message : tt('prov.failed'));
+  const scan = () => { setFailure(null); void transport.scan(5000).then(devices => { setFound(devices); setScanned(true); }).catch(fail); };
+
   if (transport instanceof UnavailableDeviceTransport) {
-    return <Screen title={tt('prov.title')}><Note text={tt('devices.unavailable')} /></Screen>;
+    return <Screen title={tt('prov.title')}><StatePanel title={tt('state.unavailable')} text={tt('devices.unavailable')} action={tt('common.back')} onPress={() => nav.back()} /></Screen>;
   }
 
   return (
     <Screen title={tt('prov.title')}>
       <Body muted>{tt('prov.hint')}</Body>
 
-      <Button label={tt('prov.scan')} onPress={() => void transport.scan(5000).then(setFound)} />
+      <Button label={tt('prov.scan')} onPress={scan} />
+      {failure !== null ? <StatePanel error title={tt('prov.failed')} text={failure} action={tt('common.retry')} onPress={scan} /> : null}
+      {scanned && found.length === 0 ? <StatePanel title={tt('state.empty')} text={tt('devices.empty')} action={tt('prov.scan')} onPress={scan} /> : null}
       {found.map((d) => (
         <CardLink
           key={d.deviceAddress}
           label={d.deviceName}
           hint={connected === d.deviceAddress ? tt('prov.connected') : tt('prov.connect')}
           onPress={() =>
-            void transport.connect(d.deviceAddress).then(() => setConnected(d.deviceAddress))
+            void transport.connect(d.deviceAddress).then(() => setConnected(d.deviceAddress)).catch(fail)
           }
         >
           <Title>{d.deviceName}</Title>
@@ -87,7 +96,7 @@ export function Provisioning() {
               void transport.configureWifi(ssid, password).then((r) => {
                 setSent(r.ok);
                 setFailure(r.ok ? null : (r.reason ?? 'failed'));
-              })
+              }).catch(fail)
             }
           />
           <Button
@@ -103,13 +112,11 @@ export function Provisioning() {
                   setIp(null);
                   setFailure(r.reason);
                 }
-              })
+              }).catch(fail)
             }
           />
           {ip !== null ? <Row label={tt('prov.ip')} value={ip} /> : null}
-          {failure !== null ? (
-            <Note text={`${tt('prov.failed')}: ${failure}`} />
-          ) : null}
+
         </Card>
       ) : null}
     </Screen>

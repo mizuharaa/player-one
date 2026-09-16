@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { CollectorSession } from '../src/App.tsx';
 import { useApi } from '../src/api/context.tsx';
 import { MockCollectorApi } from '../src/api/mock.ts';
-import { AGREEMENTS, type IncomeEntry } from '../src/api/types.ts';
+import { ApiError, AGREEMENTS, type IncomeEntry } from '../src/api/types.ts';
 import { LocaleProvider } from '../src/locale.tsx';
 import { MESSAGES } from '../src/i18n.ts';
 import { useSignOut } from '../src/session.tsx';
@@ -227,4 +227,18 @@ it('keeps the account hidden when preference deletion fails and retries the orig
   await tap(MESSAGES.vi['common.retry']);
   await settle(() => expect(host.textContent).toContain('Sign in test'));
   expect(remove.mock.calls.filter(([key]) => key === `playerone.collector.prefs.${id}`)).toHaveLength(2);
+});
+
+it('retries a restored offline session when Server settings close without signing out', async () => {
+  const api = await user('Retained collector');
+  vi.spyOn(api, 'restoreSession').mockRejectedValueOnce(new ApiError('server_unreachable')).mockResolvedValue(true);
+  const signOut = vi.spyOn(api, 'signOut');
+  await act(async () => root.render(<LocaleProvider initialLocale="vi"><CollectorSession factory={() => api} /></LocaleProvider>));
+  await settle(() => expect(host.textContent).toContain(MESSAGES.vi['state.offline']));
+  await tap(MESSAGES.vi['server.title']);
+  await settle(() => expect(document.body.textContent).toContain(MESSAGES.vi['server.address']));
+  const cancel = Array.from(document.body.querySelectorAll('button')).find(button => button.textContent === MESSAGES.vi['common.cancel']);
+  await act(async () => cancel!.click());
+  await settle(() => expect(host.textContent).toContain('Retained collector'));
+  expect(signOut).not.toHaveBeenCalled();
 });

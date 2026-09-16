@@ -432,7 +432,7 @@ describe('collector wire truth and cold-start recovery', () => {
     let offline = true;
     const fn: typeof fetch = (...args) => offline ? Promise.reject(new TypeError('offline')) : ok.fn(...args);
     const api = new HttpCollectorApi(BASE, store, () => {}, fn);
-    expect(await sessionEntry(api)).toBe('unavailable');
+    expect(await sessionEntry(api)).toBe('offline');
     expect(store.value).toBe('stored-token');
     offline = false;
     expect(await sessionEntry(api)).toEqual({ name: 'home' });
@@ -445,7 +445,7 @@ describe('collector wire truth and cold-start recovery', () => {
     let calls = 0;
     const fn: typeof fetch = (...args) => ++calls === 1 ? ok.fn(...args) : Promise.reject(new TypeError('offline'));
     const api = new HttpCollectorApi(BASE, store, () => {}, fn);
-    expect(await sessionEntry(api)).toBe('unavailable');
+    expect(await sessionEntry(api)).toBe('offline');
     expect(store.value).toBe('stored-token');
   });
 
@@ -911,7 +911,7 @@ describe('a token that has stopped working', () => {
     }) as unknown as typeof fetch;
     const api = new HttpCollectorApi(BASE, store, () => (signedOut += 1), fn);
 
-    await expect(api.restoreSession()).rejects.toThrow(TypeError);
+    await expect(api.restoreSession()).rejects.toMatchObject({ code: 'server_unreachable' });
     expect(store.value).toBe('tok-good');
     expect(signedOut).toBe(0);
   });
@@ -1061,4 +1061,26 @@ describe('what the client sends, and what it refuses to', () => {
     const api = new HttpCollectorApi(BASE, fakeStore('tok-good'), () => {}, fn);
     await expect(api.claimTask('t-1')).rejects.toThrow(new ApiError('task_at_capacity'));
   });
+});
+
+it('names unreachable transport errors without discarding the token', async () => {
+  const store = fakeStore('retained');
+  const api = new HttpCollectorApi('https://example.test', store, vi.fn(), async () => { throw new TypeError('Failed to fetch'); });
+  await expect(api.requestSignInCode('+84912345678')).rejects.toMatchObject({ code: 'server_unreachable' });
+  await expect(api.tasks()).rejects.toMatchObject({ code: 'server_unreachable' });
+  expect(store.value).toBe('retained');
+});
+
+it('keeps a server sentence on authenticated failures without changing the refusal code', async () => {
+  const api = new HttpCollectorApi('https://example.test', fakeStore(), vi.fn(), async () => new Response(JSON.stringify({ constraint: 'not_ready', message: 'Please return to the collection centre.' }), { status: 409 }));
+  await expect(api.tasks()).rejects.toMatchObject({ code: 'not_ready', sentence: 'Please return to the collection centre.' });
+});
+
+it('recognises a connection lost while reading the response body', async () => {
+  const response = new Response(null, { status: 200 });
+  vi.spyOn(response, 'text').mockRejectedValue(new TypeError('connection lost'));
+  const store = fakeStore('retained');
+  const api = new HttpCollectorApi('https://example.test', store, vi.fn(), async () => response);
+  await expect(api.tasks()).rejects.toMatchObject({ code: 'server_unreachable' });
+  expect(store.value).toBe('retained');
 });

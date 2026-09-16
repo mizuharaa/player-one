@@ -154,7 +154,7 @@ export class HttpCollectorApi implements CollectorApi {
   private async body(res: Response): Promise<unknown> {
     this.active();
     if (res.status === 204) return undefined;
-    const text = await res.text();
+    const text = await res.text().catch(() => { this.active(); throw new ApiError('server_unreachable'); });
     this.active();
     if (text === '') return undefined;
     try {
@@ -169,12 +169,13 @@ export class HttpCollectorApi implements CollectorApi {
     const headers: Record<string, string> = {};
     if (this.token !== null) headers['authorization'] = `Bearer ${this.token}`;
     if (payload !== undefined) headers['content-type'] = 'application/json';
+    const body = payload === undefined ? undefined : JSON.stringify(payload);
     const response = await this.fetchFn(`${this.baseUrl}${path}`, {
       method,
       headers,
-      body: payload === undefined ? undefined : JSON.stringify(payload),
+      body,
       signal: this.lifetime.signal,
-    });
+    }).catch(() => { this.active(); throw new ApiError('server_unreachable'); });
     this.active();
     return response;
   }
@@ -199,10 +200,9 @@ export class HttpCollectorApi implements CollectorApi {
     if (res.status >= 200 && res.status < 300) return parsed;
 
     const constraint = (parsed as { constraint?: unknown } | undefined)?.constraint;
-    if (typeof constraint === 'string') throw new ApiError(constraint);
-    if (res.status === 400) throw new ApiError('invalid_request');
-    if (res.status === 429) throw new ApiError('rate_limited');
-    throw new ApiError('server_error');
+    const sentence = (parsed as { message?: unknown } | undefined)?.message;
+    const code = typeof constraint === 'string' ? constraint : res.status === 400 ? 'invalid_request' : res.status === 429 ? 'rate_limited' : 'server_error';
+    throw Object.assign(new ApiError(code), { sentence: typeof sentence === 'string' ? sentence : undefined });
   }
 
   // -- sign in (APP-01) ----------------------------------------------------

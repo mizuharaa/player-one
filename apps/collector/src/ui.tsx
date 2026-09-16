@@ -1,3 +1,8 @@
+import { CardScrollContext, CardSheen, paperCard } from './ui/CardSheen.tsx';
+import { EmptyTasks } from './ui/illustrations/index.tsx';
+import { useReducedMotion } from './ui/motion.ts';
+import { Skeleton } from './ui/Skeleton.tsx';
+import { PhantomPressable as Pressable } from './ui/PhantomPressable.tsx';
 import { useContext, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   AccessibilityInfo,
@@ -9,8 +14,8 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
+  RefreshControl,
   StatusBar,
   StyleSheet,
   Text,
@@ -53,22 +58,7 @@ export const face = (theme: NativeTheme): string =>
  * promise and the change event needs unsubscribing, and getting either wrong
  * in six places is how one screen keeps moving after the setting is turned on.
  */
-export function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(true);
-  useEffect(() => {
-    let live = true;
-    void AccessibilityInfo.isReduceMotionEnabled().then((v) => {
-      if (live) setReduced(v);
-    }).catch(() => { if (live) setReduced(false); });
-    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
-    return () => {
-      live = false;
-      // Not every platform's implementation returns a subscription here.
-      sub?.remove();
-    };
-  }, []);
-  return reduced;
-}
+export { useReducedMotion } from './ui/motion.ts';
 
 /** Dock content height; its measured value replaces this first-frame reserve. */
 const barHeight = (theme: NativeTheme): number => theme.space[12] + theme.space[4];
@@ -116,6 +106,7 @@ export function Screen({
   onBack,
   progress,
   footer,
+  refresh,
   children,
 }: {
   title: string;
@@ -134,8 +125,10 @@ export function Screen({
    * list under the control that acts on it.
    */
   footer?: ReactNode;
+  refresh?: { refreshing: boolean; onRefresh: () => void };
   children: ReactNode;
 }) {
+  const scroll = useRef(new Animated.Value(0)).current;
   const theme = useTheme();
   const nav = useNav();
   const insets = useInsets();
@@ -143,8 +136,9 @@ export function Screen({
   const [footerHeight, setFooterHeight] = useState(0);
   return (
     // `background` is the page — the warm paper everything above it stands on.
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background }}>
-      <ScrollView
+    <CardScrollContext.Provider value={scroll}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background }}>
+      <Animated.ScrollView scrollEventThrottle={16} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scroll } } }], { useNativeDriver: Platform.OS !== 'web' })}
+        refreshControl={refresh ? <RefreshControl {...refresh} /> : undefined}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           padding: theme.collector.gutter,
@@ -156,7 +150,7 @@ export function Screen({
       >
         <Header title={title} right={right} onBack={onBack} progress={progress} />
         {children}
-      </ScrollView>
+      </Animated.ScrollView>
       {footer === undefined ? null : (
         <View
           onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}
@@ -180,7 +174,7 @@ export function Screen({
           {footer}
         </View>
       )}
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingView></CardScrollContext.Provider>
   );
 }
 
@@ -213,17 +207,18 @@ export function ListScreen<T>({
   empty?: ReactNode;
   refresh?: { refreshing: boolean; onRefresh: () => void };
 }) {
+  const scroll = useRef(new Animated.Value(0)).current;
   const theme = useTheme();
   const nav = useNav();
   const insets = useInsets();
   const reserve = useTabBarReserve();
   return (
-    <View style={{ flex: 1, backgroundColor: theme.color.background }}>
-      <FlatList
+    <CardScrollContext.Provider value={scroll}><View style={{ flex: 1, backgroundColor: theme.color.background }}>
+      <Animated.FlatList<T> scrollEventThrottle={16} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scroll } } }], { useNativeDriver: Platform.OS !== 'web' })}
         refreshing={refresh?.refreshing}
         onRefresh={refresh?.onRefresh}
         keyboardShouldPersistTaps="handled"
-        data={data as T[]}
+        data={data as unknown as Animated.WithAnimatedValue<T[]>}
         keyExtractor={keyOf}
         // Views and not fragments: `VirtualizedList` clones each of these with
         // an `onLayout`, and a fragment cannot take one — which React reports
@@ -239,7 +234,7 @@ export function ListScreen<T>({
           gap: theme.space[3],
         }}
       />
-    </View>
+    </View></CardScrollContext.Provider>
   );
 }
 
@@ -257,10 +252,7 @@ export function Frost({ fill }: { fill: number }) {
 
 /** The box a card is, minus its fill — shared by `Card` and `CardLink`. */
 const cardBox = (theme: NativeTheme) => ({
-  backgroundColor: theme.collector.surface,
-  borderColor: theme.color.border,
-  borderWidth: 1,
-  borderRadius: theme.radius.lg,
+  ...paperCard,
   padding: theme.space[4],
   gap: theme.space[2],
   // The frost layer is absolutely positioned and has to be cut to the radius.
@@ -271,6 +263,7 @@ export function Card({ children }: { children: ReactNode }) {
   const theme = useTheme();
   return (
     <View style={cardBox(theme)}>
+      <CardSheen />
       {children}
     </View>
   );
@@ -332,19 +325,11 @@ export function CardLink({
       accessibilityLabel={label}
       accessibilityHint={hint}
       onPress={onPress}
-      style={({ pressed }) => ({
-        ...cardBox(theme),
-        // Pressed, the glass clears and the muted fill under it shows through.
-        // A denser frost would have been the prettier idea and is not a press:
-        // measured, 0.62 and 0.78 of white over the lavender page are #F8F9FC
-        // and #FBFBFD, which nobody's thumb can tell apart.
-        backgroundColor: pressed ? theme.color.muted : theme.collector.surface,
-        borderColor: pressed ? theme.color.borderStrong : theme.color.border,
-      })}
+      style={cardBox(theme)}
     >
       {({ pressed }) => (
         <>
-
+          <CardSheen pressed={pressed} />
           {children}
         </>
       )}
@@ -627,10 +612,14 @@ export function FeatureBlock({
 }
 
 
-export function Hatch({ text }: { text: string }) {
+export function Hatch({ text, action, onPress }: { text: string; action?: string; onPress?: () => void }) {
   const theme = useTheme();
+  const tt = useT();
   return <View style={{ padding: theme.space[6], gap: theme.space[3], alignItems: 'center' }}>
-    <Text style={{ ...theme.collector.type.body, color: theme.color.mutedForeground, fontFamily: face(theme), textAlign: 'center' }}>{text}</Text>
+    <EmptyTasks size={104} />
+    <Title>{text}</Title>
+    <Body muted>{tt('state.emptyBody')}</Body>
+    {action && onPress ? <Button label={action} onPress={onPress} variant="secondary" /> : null}
   </View>;
 }
 
@@ -1021,13 +1010,13 @@ export function Progress({ label, value, fraction }: { label: string; value: str
  * screen reader has to be told to read it, the way `Note` is. Every one of
  * those eight copies was silent to TalkBack.
  */
-export function Loading() {
+export function Loading({ kind = 'rows' }: { kind?: 'rows' | 'number' | 'body' }) {
   const tt = useT();
-  return (
-    <View accessibilityLiveRegion="polite">
-      <Body muted>{tt('common.loading')}</Body>
-    </View>
-  );
+  return <View accessibilityLiveRegion="polite" accessibilityLabel={tt('common.loading')} accessibilityState={{ busy: true }} style={{ gap: 12 }}>
+    {kind === 'body' ? <Skeleton ratio={4 / 3} /> : null}
+    <Skeleton lines={kind === 'number' ? 3 : 2} />
+    {kind !== 'number' ? <><Skeleton lines={2} /><Skeleton lines={2} /></> : null}
+  </View>;
 }
 
 

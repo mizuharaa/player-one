@@ -43,7 +43,6 @@ export function TabBar() {
           <View style={{ minWidth: 32, minHeight: 32, padding: theme.space[1], borderRadius: c.radius.pill, backgroundColor: c.plum, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ ...c.type.caption, fontFamily: face(theme), fontWeight: '600', color: c.surface }}>{initials || '-'}</Text>
           </View>}
-        {active ? <View style={{ position: 'absolute', bottom: theme.space[1], height: theme.space[1], width: theme.space[1], borderRadius: c.radius.pill, backgroundColor: c.glow }} /> : null}
       </Pressable>;
     })}
   </View>;

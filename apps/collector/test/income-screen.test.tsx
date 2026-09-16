@@ -45,3 +45,19 @@ it.each(['on_a_bill', null])('preserves server money and timeline evidence for %
     expect(host.querySelector('[data-step="paid"]')?.getAttribute('data-done')).toBe('false');
   } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); }
 });
+
+it('shows skeletons instead of a zero while server money is pending', async () => {
+  const api = new MockCollectorApi();
+  vi.spyOn(api, 'incomeCycle').mockReturnValue(new Promise(() => {}));
+  vi.spyOn(api, 'income').mockResolvedValue([]);
+  const host = document.createElement('div'); const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'income' }}><Income /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    expect(host.querySelector('[data-testid="skeleton"]')).not.toBeNull();
+    expect(host.textContent).not.toContain(dong('0'));
+  } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
+});
+
+// Native illustration rendering is covered by the web captures.
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));

@@ -1,3 +1,5 @@
+import { StatePanel } from '../ui/StatePanel.tsx';
+import { Failure } from '../ui/StatePanel.tsx';
 import { useEffect, useRef } from 'react';
 import { Image, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
@@ -54,7 +56,7 @@ export function Training() {
       title={tt('training.title')}
       footer={
         <>
-          {done.isError ? <Note text={tt('common.actionFailed')} /> : null}
+          {done.isError ? <Failure error={done.error} text={tt('common.actionFailed')} /> : null}
           <Button
             disabled={done.isPending}
             label={tt(done.isPending ? 'common.saving' : 'training.done')}
@@ -89,7 +91,7 @@ export function Training() {
       </View>
       <Body>{HEADSET_COPY.intro[locale]}</Body>
       <HeadsetGuidance />
-      <Note text={tt('training.placeholder')} />
+      <StatePanel title={tt('state.unavailable')} text={tt('training.placeholder')} action={tt('common.back')} onPress={() => nav.back()} />
     </Screen>
   );
 }

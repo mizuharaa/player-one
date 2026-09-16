@@ -1,3 +1,6 @@
+import { Failure, StatePanel } from './ui/StatePanel.tsx';
+import { ApiError } from './api/types.ts';
+import { RouteTransition } from './shell/RouteTransition.tsx';
 import { sessionEntry, type SessionEntry } from './api/session-entry.ts';
 import { TransportProvider } from './device/transport-context.tsx';
 import { MockDeviceTransport, UnavailableDeviceTransport } from './device/transport.ts';
@@ -37,7 +40,7 @@ import { SessionReminder } from './screens/SessionReminder.tsx';
 import { TaskDetail } from './screens/TaskDetail.tsx';
 import { TaskHall, clearPreferences } from './screens/TaskHall.tsx';
 import { Landing } from './screens/Landing.tsx';
-import { Splash } from './screens/Splash.tsx';
+import { BootIntro, BootChrome } from './shell/BootIntro.tsx';
 import { SignIn } from './screens/SignIn.tsx';
 import { Training } from './screens/Training.tsx';
 import { Uploads } from './screens/Uploads.tsx';
@@ -93,14 +96,14 @@ function Current() {
   if (nav.route.name === 'home' && guide.offered && intro) return <Onboarding onDone={() => { setIntro(false); guide.decline(); }} />;
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.surface }}>
-      <Screen />
+      <RouteTransition route={nav.route} isTabRoot={nav.isTabRoot}><Screen /></RouteTransition>
       {nav.isTabRoot ? (
         <View
           ref={tabsTarget}
           collapsable={false}
           style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}
         >
-          <TabBar />
+          <BootChrome step={1}><TabBar /></BootChrome>
         </View>
       ) : null}
     </View>
@@ -273,16 +276,16 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
   }, [api, queryClient, restore]);
 
   if (state === null || state === 'leaving') return <Restoring />;
+  if (state === 'offline') return <SignOutProvider signOut={(options) => void leave(options?.landing === true)}><View style={{ flex: 1, backgroundColor: theme.collector.paper, paddingTop: 48, paddingHorizontal: 24 }}><Failure error={new ApiError('server_unreachable')} text={tt('common.loadFailed')} onServerClose={() => void enter()} /></View></SignOutProvider>;
   if (state === 'unavailable' || state === 'clearFailed') return (
     <View style={{ flex: 1, backgroundColor: theme.color.surface, padding: theme.space[4], gap: theme.space[3] }}>
-      <Body>{tt(state === 'clearFailed' ? 'signIn.clearFailed' : 'common.loadFailed')}</Body>
-      <Button label={tt('common.retry')} onPress={() => void (state === 'clearFailed' ? leave() : enter())} />
+      <StatePanel error title={tt('common.loadFailed')} text={tt(state === 'clearFailed' ? 'signIn.clearFailed' : 'common.actionFailed')} action={tt('common.retry')} onPress={() => void (state === 'clearFailed' ? leave() : enter())} />
       {state === 'unavailable' ? <Button variant='ghost' label={tt('signIn.signOut')} onPress={() => void leave()} /> : null}
     </View>
   );
 
   return (
-    <ToastProvider><ApiProvider value={api}>
+    <ToastProvider><SignOutProvider signOut={(options) => void leave(options?.landing === true)}><ApiProvider value={api}>
       <QueryClientProvider client={queryClient}>
         <View style={{ flex: 1 }}>
           {state === 'out' ? (
@@ -313,17 +316,15 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
             </NavProvider>
           ) : (
             /* Home draws it; see `session.tsx` for why it is not here. */
-            <SignOutProvider signOut={(options) => void leave(options?.landing === true)}>
               <NavProvider key='in' initial={state}>
                 <GuideProvider>
                   <Current />
                 </GuideProvider>
               </NavProvider>
-            </SignOutProvider>
           )}
         </View>
       </QueryClientProvider>
-    </ApiProvider></ToastProvider>
+    </ApiProvider></SignOutProvider></ToastProvider>
   );
 }
 
@@ -348,8 +349,8 @@ export function App() {
     <ThemeProvider>
       <LocaleProvider>
         <View style={{ flex: 1 }}>
-          <TransportProvider value={transport}><CollectorSession /></TransportProvider>
-          {splash ? <Splash onDone={() => setSplash(false)} /> : null}
+          <BootChrome><TransportProvider value={transport}><CollectorSession /></TransportProvider></BootChrome>
+          {splash ? <BootIntro onDone={() => setSplash(false)} /> : null}
         </View>
       </LocaleProvider>
     </ThemeProvider>

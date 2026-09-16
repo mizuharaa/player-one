@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { ApiError } from '../src/api/types.ts';
 import { NOTIFICATION_PREVIEW } from '../web/notification-preview.ts';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -238,4 +239,18 @@ it('labels a stored sandbox verification in the live inbox', async () => {
   await mount(false, api);
   expect(page()).toContain(m['payout.simulation']);
   expect(page()).toContain(m['notif.payout_account_verified']);
+});
+
+it('shows unreachable recovery when marking notifications read fails', async () => {
+  const api = new MockCollectorApi();
+  vi.spyOn(api, 'notifications').mockResolvedValue([{ id: 'notice', kind: 'payout_account_verified', payload: {}, createdAt: '2026-09-15T00:00:00Z', readAt: null }]);
+  vi.spyOn(api, 'markNotificationRead').mockRejectedValue(new ApiError('server_unreachable'));
+  await mount(false, api);
+  await act(async () => named(m['notif.markAllRead'])!.click());
+  await vi.waitFor(() => expect(page()).toContain(m['state.offline']));
+  expect(named(m['server.title'])).toBeDefined();
+  await act(async () => named(m['server.title'])!.click());
+  const cancel = Array.from(document.body.querySelectorAll('button, [role=button]')).find(button => button.textContent === m['common.cancel']);
+  await act(async () => (cancel as HTMLElement).click());
+  expect(api.markNotificationRead).toHaveBeenCalledTimes(1);
 });

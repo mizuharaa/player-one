@@ -636,6 +636,23 @@ const vi = {
   // promises: this app cannot tell Wi-Fi from mobile data.
   'prechecks.totalSize': 'Dung lượng',
   'prechecks.connection': 'App tải lên bằng mạng bạn đang dùng. Với {size} thì nên dùng Wi-Fi.',
+  // v3 polish states
+  "state.offline": "Không kết nối được máy chủ",
+  "state.offlineBody": "Kiểm tra kết nối và địa chỉ máy chủ trong phần Giới thiệu.",
+  "state.empty": "Chưa có nội dung",
+  "state.emptyBody": "Nội dung sẽ xuất hiện tại đây khi có cập nhật.",
+  "state.unavailable": "Tính năng chưa sẵn sàng",
+  "state.unavailableBody": "Bạn có thể tiếp tục khám phá các nhiệm vụ.",
+
+  // v3 task cards
+  "taskCard.slots": "Còn {count} chỗ",
+  "taskCard.default": "Nhiệm vụ",
+  "taskCard.warehouse": "Kho",
+  "home.recommended": "Gợi ý cho bạn",
+
+  "photos.title": "Nguồn ảnh",
+  "photos.edited": "Ảnh đã được cắt và đổi kích thước. Giấy phép bên dưới cũng áp dụng cho các bản ảnh này.",
+
 };
 
 export type MessageKey = keyof typeof vi;
@@ -1205,6 +1222,23 @@ const en: Record<MessageKey, string> = {
   'prechecks.lowSpace': 'Your phone is nearly full. Free up space before you record.',
   'prechecks.totalSize': 'Total size',
   'prechecks.connection': 'Uploads use the connection you are on. Wi-Fi is recommended for {size}.',
+  // v3 polish states
+  "state.offline": "Cannot connect to the server",
+  "state.offlineBody": "Check your connection and the server address in About.",
+  "state.empty": "Nothing here yet",
+  "state.emptyBody": "Updates will appear here when they are available.",
+  "state.unavailable": "This feature is not available yet",
+  "state.unavailableBody": "You can keep exploring available tasks.",
+
+  // v3 task cards
+  "taskCard.slots": "{count} spots left",
+  "taskCard.default": "Task",
+  "taskCard.warehouse": "Warehouse",
+  "home.recommended": "Recommended for you",
+
+  "photos.title": "Photo credits",
+  "photos.edited": "Photos have been cropped and resized. The licenses below also apply to these edited copies.",
+
 };
 
 /**
@@ -1758,6 +1792,23 @@ const zh: Record<MessageKey, string> = {
   'prechecks.lowSpace': '手机存储快满了。录制前先清出空间。',
   'prechecks.totalSize': '总大小',
   'prechecks.connection': '上传会使用当前的网络。{size} 建议用 Wi-Fi。',
+  // v3 polish states
+  "state.offline": "无法连接服务器",
+  "state.offlineBody": "请检查网络连接和关于页面中的服务器地址。",
+  "state.empty": "暂无内容",
+  "state.emptyBody": "有更新时会显示在这里。",
+  "state.unavailable": "此功能暂未开放",
+  "state.unavailableBody": "你可以继续浏览可参加的任务。",
+
+  // v3 task cards
+  "taskCard.slots": "剩余 {count} 个名额",
+  "taskCard.default": "任务",
+  "taskCard.warehouse": "仓库",
+  "home.recommended": "为你推荐",
+
+  "photos.title": "图片来源",
+  "photos.edited": "图片已裁剪并调整尺寸。以下许可证同样适用于这些编辑后的副本。",
+
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en, zh };

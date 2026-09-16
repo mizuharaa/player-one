@@ -1,7 +1,7 @@
 import { AGREEMENTS, ApiError, type CollectorApi } from './types.ts';
 import type { Route } from '../nav.tsx';
 
-export type SessionEntry = Route | 'out' | 'unavailable';
+export type SessionEntry = Route | 'out' | 'unavailable' | 'offline';
 
 /** A failed profile read is unknown state, never evidence of missing registration. */
 export async function sessionEntry(api: CollectorApi): Promise<SessionEntry> {
@@ -29,6 +29,7 @@ export async function sessionEntry(api: CollectorApi): Promise<SessionEntry> {
     if (!me.examPassed) return { name: 'exam' };
     return { name: 'home' };
   } catch (error) {
+    if (error instanceof ApiError && error.code === 'server_unreachable') return 'offline';
     return error instanceof ApiError && error.code === 'unauthorized' ? 'out' : 'unavailable';
   }
 }

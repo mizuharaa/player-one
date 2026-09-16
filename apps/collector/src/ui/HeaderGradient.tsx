@@ -4,11 +4,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../theme.tsx';
 import grain from '../../assets/grain.png';
 
-/** Reserved for splash, Income and About. Never a content-screen background. */
+/** Soft lavender wash for the Home header only. */
 export function HeaderGradient({ children }: { children: ReactNode }) {
   const theme = useTheme();
-  return <View style={{ borderRadius: theme.collector.radius.card, overflow: 'hidden' }}>
-    <LinearGradient colors={theme.collector.gradient} locations={[0, 0.65, 1]}
+  return <View testID="home-header-wash" style={{ borderRadius: 20, overflow: 'hidden' }}>
+    <LinearGradient colors={['#E9E1FB', '#F2ECF8', '#F6F2EA']} locations={[0, 0.65, 1]}
       style={{ padding: theme.space[6], gap: theme.space[4] }}>
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
         <Image source={grain} resizeMode="repeat" accessible={false}

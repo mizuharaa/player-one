@@ -1,3 +1,5 @@
+import { Failure } from '../ui/StatePanel.tsx';
+import { BrandSlot } from '../shell/BrandSlot.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
@@ -10,7 +12,6 @@ import { useTheme } from '../theme.tsx';
 import type { MessageKey } from '../i18n.ts';
 import poster from '../../assets/hero/login-poster.jpg';
 import loginFilm from '../../assets/hero/login.mp4';
-import wordmark from '../../assets/discover/playerone-wordmark.png';
 
 /**
  * APP-01. The number, then the code that comes back over Zalo.
@@ -195,7 +196,8 @@ export function SignIn({
   /** One message per named refusal, and one fallback that admits nothing. */
   const failed = (err: unknown): void => {
     const refusal = err instanceof ApiError ? err.code : '';
-    if (refusal === 'rate_limited') setProblem('signIn.rateLimited');
+    if (refusal === 'server_unreachable') setProblem('state.offline');
+    else if (refusal === 'rate_limited') setProblem('signIn.rateLimited');
     else if (refusal === 'sign_in_unavailable') setProblem('signIn.unavailable');
     else if (refusal === 'credentials') setProblem('signIn.badCode');
     else setProblem('common.actionFailed');
@@ -403,7 +405,7 @@ fontWeight: theme.fontWeight.medium,
               >
                 {tt('signIn.checking')}
               </Text>
-            ) : problem !== null ? (
+            ) : problem === 'state.offline' ? <Failure error={new ApiError('server_unreachable')} text={tt(problem)} /> : problem !== null ? (
               <Text
                 accessibilityLiveRegion="polite"
                 style={{
@@ -480,18 +482,10 @@ fontWeight: theme.fontWeight.medium,
               position: 'absolute',
               left: theme.space[5],
               bottom: theme.space[5] + theme.space[6],
-              width: '40%',
-              aspectRatio: 784 / 152,
+              minHeight: 38,
             }}
           >
-            <Image
-              source={wordmark}
-              style={{ width: '100%', height: '100%' }}
-              resizeMode="contain"
-              tintColor={theme.color.discover.surface}
-              accessibilityRole="image"
-              accessibilityLabel={tt('app.name')}
-            />
+            <BrandSlot color={theme.color.discover.surface} />
           </View>
           {onBack === undefined ? null : (
             <View style={{ position: 'absolute', top: insets.top, left: theme.space[5] }}>
@@ -649,7 +643,7 @@ fontWeight: theme.fontWeight.medium,
           */}
           <LegalLine />
 
-          {problem !== null ? <Note text={tt(problem)} /> : null}
+          {problem !== null ? <Failure error={problem === 'state.offline' ? new ApiError('server_unreachable') : undefined} text={tt(problem)} /> : null}
 
           <View style={{ marginTop: 'auto', paddingTop: theme.space[5] }}>
             <Button label={tt('signIn.sendCode')} disabled={pending} onPress={sendCode} />
