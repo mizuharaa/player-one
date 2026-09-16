@@ -108,10 +108,25 @@ the VM inside the stdin script rather than on a command line, and `--dry-run`
 masks it with `***`. The app id is not a secret and stays readable.
 
 Both or neither: half a Zalo app is refused by `configure.mjs` before the VM is
-touched, and by the server at boot. Add `--sign-in-channel sms` only once an
-eSMS brandname exists (5–10 business days, business licence required — the
-steps are in `docs/sign-in-channels.md`); with no channel named, code delivery
-stays exactly as it is today.
+touched, and by the server at boot. With no channel named, code delivery stays
+exactly as it is today.
+
+**The SMS fallback carries its own credentials, and they are not optional.**
+`--sign-in-channel sms` without all three is refused by `configure.mjs` before
+the VM is touched — it used to write them empty and leave the API refusing to
+start, which is the fault audit 3 of `3f9bb17` found:
+
+```bash
+bash deploy/cloud/go-live.sh 14.225.1.2 --sign-in-channel sms \n  --sms-api-key <esms api key> --sms-secret-key <esms secret key> \n  --sms-brandname PLAYERONE
+```
+
+Add `--sms-sandbox` while the brandname is still in approval: it is eSMS's own
+test mode, charged nothing and delivered nowhere, so the whole request path can
+be exercised on the real VM before a single message costs money. Drop it for a
+live send. Only do any of this once a brandname exists — 5–10 business days and
+a business licence; the steps are in `docs/sign-in-channels.md`. The key and the
+secret are masked in `--dry-run` and travel inside the stdin script, like the
+storage secret; the brandname is a public sender name and stays readable.
 
 **The demo bypass, for the demonstration only.** `--demo-bypass-key <key>` on
 either script sets `PLAYERONE_DEMO_BYPASS_KEY`, and then

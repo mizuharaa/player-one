@@ -16,6 +16,10 @@ zalo_app_id=; zalo_app_secret=; sign_in_channel=; demo_phone=
 # POST /auth/collector/demo answers 404. Generate one with
 # `openssl rand -base64 48`; it is never stored in this repository.
 demo_bypass_key=
+# eSMS.vn, the SMS fallback. All three or none, and mandatory when the channel
+# is sms: configure.mjs refuses the combination that used to write them empty
+# and leave the API refusing to start.
+sms_api_key=; sms_secret_key=; sms_brandname=; sms_sandbox=
 while [[ $# -gt 0 ]]; do
   case $1 in
     --domain) domain=$2; shift 2 ;;
@@ -31,6 +35,10 @@ while [[ $# -gt 0 ]]; do
     --sign-in-channel) sign_in_channel=$2; shift 2 ;;
     --demo-phone) demo_phone=$2; shift 2 ;;   # the ONE number whose code may be logged
     --demo-bypass-key) demo_bypass_key=$2; shift 2 ;;
+    --sms-api-key) sms_api_key=$2; shift 2 ;;
+    --sms-secret-key) sms_secret_key=$2; shift 2 ;;
+    --sms-brandname) sms_brandname=$2; shift 2 ;;
+    --sms-sandbox) sms_sandbox=--sms-sandbox; shift ;;   # eSMS test mode: charged nothing, delivered nowhere
     --dry-run|--plan) dry_run=1; shift ;;
     *) usage ;;
   esac
@@ -68,7 +76,11 @@ mask() { local s=$1; s=${s//$STORAGE_SECRET/***}; [[ -z $STORAGE_KEY ]] || s=${s
   [[ -z $zalo_app_secret ]] || s=${s//$zalo_app_secret/***}
   # The bypass key is a credential too: one string trades for a collector
   # session, so it travels in the stdin script and is masked in a dry run.
-  [[ -z $demo_bypass_key ]] || s=${s//$demo_bypass_key/***}; printf '%s' "$s"; }
+  [[ -z $demo_bypass_key ]] || s=${s//$demo_bypass_key/***}
+  # The eSMS key and secret are credentials the operator supplied; the brandname
+  # is a public sender name and stays readable so a plan can be checked.
+  [[ -z $sms_api_key ]] || s=${s//$sms_api_key/***}
+  [[ -z $sms_secret_key ]] || s=${s//$sms_secret_key/***}; printf '%s' "$s"; }
 
 # step <label> <argv...>: streams and exits naming the step on failure; in
 # --dry-run/--plan it only prints the (masked) command it would have run.
@@ -128,6 +140,10 @@ provision_script=$(mktemp)
   [[ -z $sign_in_channel ]] || opt_args+=(--sign-in-channel "$sign_in_channel")
   [[ -z $demo_bypass_key ]] || opt_args+=(--demo-bypass-key "$demo_bypass_key")
   [[ -z $demo_phone ]] || opt_args+=(--demo-phone "$demo_phone")
+  [[ -z $sms_api_key ]] || opt_args+=(--sms-api-key "$sms_api_key")
+  [[ -z $sms_secret_key ]] || opt_args+=(--sms-secret-key "$sms_secret_key")
+  [[ -z $sms_brandname ]] || opt_args+=(--sms-brandname "$sms_brandname")
+  [[ -z $sms_sandbox ]] || opt_args+=("$sms_sandbox")
   printf 'bash deploy/cloud/provision.sh --domain %q --acme-email %q --local-db --storage-endpoint %q --storage-bucket %q --storage-key %q --storage-secret %q --quota-bytes %q %s %s\n' \
     "$domain" "$acme_email" "$STORAGE_ENDPOINT" "$bucket" "$STORAGE_KEY" "$STORAGE_SECRET" "$quota" "$force" "$(printf '%q ' ${opt_args[@]+"${opt_args[@]}"})"
 } > "$provision_script"

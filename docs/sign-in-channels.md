@@ -112,6 +112,13 @@ long or short codes, no two-way, no numbers to buy; DLRs SMSC-ack only.
   520 VND) for the numbers ZNS cannot reach — no Zalo account (`-118`) or the
   channel refused (`-139`/`-141`). Start the eSMS paperwork now: 5–10 days.
 
+When the brandname arrives, the three credentials go in at provisioning time:
+`--sign-in-channel sms --sms-api-key … --sms-secret-key … --sms-brandname …`,
+plus `--sms-sandbox` while approval is still pending. `configure.mjs` refuses
+the channel without all three, so the combination that used to write them
+empty and leave the API refusing to start is no longer reachable — audit 3 of
+`3f9bb17` found that, and `docs/cloud-go-live.md` has the worked command.
+
 ## Stated costs — owner decisions, not defects
 
 Both audits of `4a32929` raised these and neither is a bug to fix in code. They
