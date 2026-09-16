@@ -70,10 +70,11 @@ export function BootChrome({ children, step = 0 }: { children: ReactNode; step?:
     const deadline = setTimeout(finish, 3300);
     const state = AppState.addEventListener('change', value => { if (value !== 'active') finish(); });
     const reducedChange = AccessibilityInfo.addEventListener('reduceMotionChanged', value => { if (value) finish(); });
+    const power = Platform.OS === 'web' ? null : addLowPowerModeListener(value => { if (value.lowPowerMode) finish(); });
     void Promise.all([AccessibilityInfo.isReduceMotionEnabled(), isLowPowerModeEnabledAsync()]).then(([reduced, lowPower]) => {
       if (active) progress.value = reduced || lowPower || AppState.currentState !== 'active' ? 1 : withDelay(2500 + step * 50, withTiming(1, { duration: 250, easing: ease }));
     }).catch(() => { if (active) progress.value = 1; });
-    return () => { active = false; clearTimeout(deadline); state.remove(); reducedChange?.remove(); };
+    return () => { active = false; clearTimeout(deadline); state.remove(); reducedChange?.remove(); power?.remove(); };
   }, []);
   const style = useAnimatedStyle(() => ({ opacity: progress.value, transform: [{ translateY: -8 * (1 - progress.value) }] }), [progress]);
   return <Animated.View style={[{ flex: 1 }, style]}>{children}</Animated.View>;
