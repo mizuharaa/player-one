@@ -214,6 +214,7 @@ export function TaskDetail() {
       <Animated.ScrollView scrollEventThrottle={16} onScroll={reduced ? undefined : Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: Platform.OS !== 'web' })}
         contentContainerStyle={{ paddingBottom: footer + theme.space[6], gap: c.cardGap }}
       >
+        {claim.isError && refusal ? <Failure error={claim.error} text={tt(refusal)} onRetry={() => { if (!submitting.current) { submitting.current = true; claim.mutate(); } }} busy={claim.isPending} /> : null}
         {/* The task card photo remains 4:3 here, with scroll-driven parallax. */}
         <View style={{ width: '100%', aspectRatio: 4 / 3, backgroundColor: c.line, overflow: 'hidden' }}>
           <Animated.View style={{ width: '100%', height: '100%', transform: [{ translateY: reduced ? 0 : scrollY.interpolate({ inputRange: [0, 600], outputRange: [0, 180], extrapolate: 'clamp' }) }] }}><Image
@@ -336,8 +337,9 @@ export function TaskDetail() {
       </Animated.ScrollView>
 
       {/* Sticky Accept, green because §2 makes affirmative green and this is
-          the one affirmative action in the app. Its refusal takes its place. */}
+          the one affirmative action in the app. Full refusals stay in scroll content. */}
       <View
+        testID="task-detail-footer"
         onLayout={(event) => setFooter(event.nativeEvent.layout.height)}
         style={{
           position: 'absolute',
@@ -360,7 +362,7 @@ export function TaskDetail() {
             busy={claim.isPending}
             onPress={() => { if (submitting.current) return; submitting.current = true; claim.mutate(); }}
           />
-        ) : claim.isError ? <Failure error={claim.error} text={tt(refusal)} onRetry={() => { if (!submitting.current) { submitting.current = true; claim.mutate(); } }} busy={claim.isPending} /> : (
+        ) : (
           <View accessibilityLiveRegion="polite">
             <Text
               style={{
