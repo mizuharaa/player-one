@@ -110,7 +110,7 @@ export class MockCollectorApi implements CollectorApi {
       {
         id: 'task-cook',
         title: 'Nấu ăn tại nhà',
-        scenario: 'home', published: true, claimable: true, claimedByMe: false, remainingSlots: 3, currency: 'VND',
+        scenario: 'home', type: 'home', published: true, claimable: true, claimedByMe: false, remainingSlots: 3, currency: 'VND',
         unitPriceVndPerMinute: '1200',
         targetMinutes: 3000,
         claimedMinutes: 420,
@@ -124,7 +124,7 @@ export class MockCollectorApi implements CollectorApi {
       {
         id: 'task-office',
         title: 'Làm việc văn phòng',
-        scenario: 'office', published: true, claimable: false, claimedByMe: false, remainingSlots: 0, currency: 'VND',
+        scenario: 'office', type: 'office', published: true, claimable: false, claimedByMe: false, remainingSlots: 0, currency: 'VND',
         unitPriceVndPerMinute: '1000',
         targetMinutes: 6000,
         claimedMinutes: 5800,
@@ -138,7 +138,7 @@ export class MockCollectorApi implements CollectorApi {
       {
         id: 'task-warehouse',
         title: 'Sắp xếp kho hàng',
-        scenario: 'warehouse', published: true, claimable: true, claimedByMe: false, remainingSlots: 8, currency: 'VND',
+        scenario: 'warehouse', type: 'warehouse', published: true, claimable: true, claimedByMe: false, remainingSlots: 8, currency: 'VND',
         unitPriceVndPerMinute: '1500',
         targetMinutes: 9000,
         claimedMinutes: 0,
@@ -176,7 +176,7 @@ export class MockCollectorApi implements CollectorApi {
         kind: 'confirmed',
         settlementState: 'pending_settlement',
       },
-      { episodeId: 'ego1-20260819-0640', effectiveMinutes: '0', amountVnd: '0', kind: 'confirmed', settlementState: null },
+      { episodeId: 'ego1-20260819-0640', effectiveMinutes: '0', amountVnd: '0', kind: 'confirmed', settlementState: 'not_paid' },
       // Estimated: uploaded but not yet decided. Server's estimate, not ours.
       { episodeId: 'ego1-20260820-1830', effectiveMinutes: '52', amountVnd: '62400', kind: 'estimated', settlementState: null },
     ];
@@ -195,6 +195,28 @@ export class MockCollectorApi implements CollectorApi {
   async requestSignInCode(): Promise<void> {}
 
   async signIn(): Promise<void> {}
+
+  /**
+   * The same rule as the three above: the seam's shape and not a second
+   * implementation. There is no Zalo to redirect to in a mock, so the button
+   * hides itself on `zalo_not_configured` — which is also what the browser
+   * harness should show, because a mock that opened oauth.zaloapp.com would
+   * take a screenshot run off this machine.
+   */
+  async startZaloSignIn(): Promise<{ url: string; state: string }> {
+    throw new ApiError('zalo_not_configured');
+  }
+
+  async signInWithTicket(): Promise<void> {}
+
+  /**
+   * Same rule again: the seam's shape, not a second implementation. There is
+   * no key for a mock to hold, so it answers the refusal a deployment with no
+   * bypass answers -- which is also what the browser harness should show.
+   */
+  async signInWithDemoKey(): Promise<void> {
+    throw new ApiError('demo_unavailable');
+  }
 
   async signOut(): Promise<void> {
     this.me = null;
@@ -310,7 +332,6 @@ export class MockCollectorApi implements CollectorApi {
         throw new ApiError('agreements_incomplete');
       }
     }
-    if (!me.trainingDone) throw new ApiError('training_incomplete');
     if (!me.examPassed) throw new ApiError('exam_not_passed');
     return me;
   }

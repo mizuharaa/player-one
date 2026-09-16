@@ -1,9 +1,11 @@
+import { Failure, StatePanel } from '../ui/StatePanel.tsx';
+import { ServerSettings } from '../ui/ServerSettings.tsx';
 import { useState, type ReactNode } from 'react';
-import { Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { Platform, Pressable, ScrollView, RefreshControl, Text, View, useWindowDimensions } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { BUILD_PROFILE } from '../api/config.ts';
-import { getApiOrigin, hostOf, originOf, setApiOrigin } from '../api/origin.ts';
+import { getApiOrigin, hostOf } from '../api/origin.ts';
 import { useNav } from '../nav.tsx';
 import { useLocale, useT } from '../locale.tsx';
 import { useSignOut } from '../session.tsx';
@@ -53,31 +55,7 @@ export function Profile() {
   /** Which sheet is open, or the row that has no screen yet. */
   const [sheet, setSheet] = useState<'logOut' | 'language' | 'prefs' | 'server' | null>(null);
   const [pending, setPending] = useState<MessageKey | null>(null);
-  /** The Server sheet's field, and the reason a Save was refused. */
-  const [origin, setOrigin] = useState(getApiOrigin);
-  const [originError, setOriginError] = useState<MessageKey | null>(null);
   const { prefs, save: savePrefs } = usePreferences();
-
-  /**
-   * Point this build at another server.
-   *
-   * The token was issued by the server being left and means nothing to the one
-   * being joined, so the session ends either way and the app comes back to the
-   * landing door. A keystore write that fails leaves the origin alone
-   * (`origin.ts` writes the store before its own copy), so the sheet says the
-   * action did not finish rather than pretending it did.
-   */
-  const changeServer = (next: string | null) => {
-    if (next !== null && originOf(next) === null) {
-      setOriginError('server.invalid');
-      return;
-    }
-    setOriginError(null);
-    void setApiOrigin(next).then(
-      () => signOut({ landing: true }),
-      () => setOriginError('common.actionFailed'),
-    );
-  };
 
   const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
   /**
@@ -125,7 +103,7 @@ export function Profile() {
             />
             {pending === row.key ? (
               <View style={{ paddingVertical: theme.space[2] }}>
-                <Note text={tt('profile.notInBuild')} />
+                <StatePanel title={tt('state.unavailable')} text={tt('profile.notInBuild')} action={tt('common.done')} onPress={() => setPending(null)} />
               </View>
             ) : null}
           </View>
@@ -136,7 +114,7 @@ export function Profile() {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.paper }}>
-      <ProfileScroll reserve={reserve}>
+      <ProfileScroll reserve={reserve} refresh={{ refreshing: profile.isRefetching || tasks.isRefetching, onRefresh: () => { void profile.refetch(); void tasks.refetch(); } }}>
         {/* Header: the mark, the name, what the account is. Centred, because a
             single identity block is the one thing on this screen that is not a
             list and centring is how the reference separates it from one. */}
@@ -159,8 +137,8 @@ export function Profile() {
         </View>
 
         {profile.isPending ? <Loading /> : null}
-        {profile.isError ? (
-          <Note text={tt('common.loadFailed')} tone="error" onRetry={() => void profile.refetch()} busy={profile.isFetching} />
+        {profile.isError || tasks.isError ? (
+          <Failure error={profile.error ?? tasks.error} text={tt('common.loadFailed')} onRetry={() => { void profile.refetch(); void tasks.refetch(); }} busy={profile.isFetching || tasks.isFetching} />
         ) : null}
 
         {group('profile.account', [
@@ -182,8 +160,6 @@ export function Profile() {
              row would only ever offer an override the platform silently
              drops. */
           ...(BUILD_PROFILE === 'play' ? [] : [{ key: 'server.title' as const, value: hostOf(getApiOrigin()), onPress: () => {
-            setOrigin(getApiOrigin());
-            setOriginError(null);
             setSheet('server');
           } }]),
           { key: 'profile.privacy', sub: 'profile.privacySub', onPress: () => nav.push({ name: 'privacy' }) },
@@ -218,22 +194,7 @@ export function Profile() {
         <Button label={tt('common.cancel')} variant="ghost" onPress={() => setSheet(null)} />
       </Sheet>
 
-      {/* The server. One field, because the whole of the setting is an origin:
-          `origin.ts` refuses a path, a query or credentials, and the same check
-          runs here so the reason is printed with the control that caused it
-          rather than after a round trip. */}
-      <Sheet open={sheet === 'server'} onClose={() => setSheet(null)} title={tt('server.title')}>
-        <Body muted>{tt('server.signsOut')}</Body>
-        <Field
-          label={tt('server.address')}
-          value={origin}
-          onChangeText={(next) => { setOrigin(next); setOriginError(null); }}
-        />
-        {originError === null ? null : <Note text={tt(originError)} tone="error" />}
-        <Button label={tt('server.save')} onPress={() => changeServer(origin)} />
-        <Button label={tt('server.reset')} variant="secondary" onPress={() => changeServer(null)} />
-        <Button label={tt('common.cancel')} variant="ghost" onPress={() => setSheet(null)} />
-      </Sheet>
+      {sheet === 'server' ? <ServerSettings onClose={() => setSheet(null)} /> : null}
 
       {/* Language: a real in-app picker (wise-678/679), one row per catalogue
           locale, each written in its own language — a locale list translated
@@ -266,20 +227,20 @@ export function Profile() {
  * `reserve` is `useTabBarReserve()`, measured, so the version line clears the
  * floating dock instead of sitting under it.
  */
-function ProfileScroll({ reserve, children }: { reserve: number; children: ReactNode }) {
+function ProfileScroll({ reserve, children, refresh }: { reserve: number; children: ReactNode; refresh: { refreshing: boolean; onRefresh: () => void } }) {
   const theme = useTheme();
   const insets = useInsets();
   const c = theme.collector;
   return (
-    <ScrollView
+    <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: reserve }}><ScrollView refreshControl={<RefreshControl {...refresh} />}
       contentContainerStyle={{
         paddingHorizontal: c.gutter,
-        paddingTop: insets.top + theme.space[4],
-        paddingBottom: theme.space[4] + reserve,
+        paddingTop: theme.space[4],
+        paddingBottom: theme.space[4],
       }}
     >
       {children}
-    </ScrollView>
+    </ScrollView></View>
   );
 }
 

@@ -16,7 +16,7 @@
 export const LOCALES = ['vi', 'en', 'zh'] as const;
 export type Locale = (typeof LOCALES)[number];
 
-export const DEFAULT_LOCALE: Locale = 'en';
+export const DEFAULT_LOCALE: Locale = 'vi';
 
 const vi = {
   'hall.search': 'Tìm nhiệm vụ hoặc địa điểm',
@@ -48,6 +48,7 @@ const vi = {
 
   'common.back': 'Quay lại',
   'common.cancel': 'Hủy',
+  'uploads.cancelled': 'Đã hủy tải lên. Bạn có thể tiếp tục sau; tệp gốc vẫn được giữ.',
   'common.loading': 'Đang tải…',
   'common.language': 'English',
   'common.retry': 'Thử lại',
@@ -89,17 +90,28 @@ const vi = {
 
   'signIn.title': 'Đăng nhập',
   'signIn.intro':
-    'Nhập số điện thoại. Mã dùng một lần sẽ gửi qua Zalo. Không cần mật khẩu.',
+    'Nhập số điện thoại. Mã dùng một lần sẽ gửi qua Zalo hoặc tin nhắn SMS. Không cần mật khẩu.',
   'signIn.phone': 'Số điện thoại',
   'signIn.sendCode': 'Gửi mã',
   'signIn.resendCode': 'Gửi lại mã',
-  'signIn.codeSent': 'Nếu số này đã đăng ký, mã sẽ tới Zalo trong ít phút. Mở Zalo để xem mã.',
+  'signIn.codeSent':
+    'Nếu số này đã đăng ký, mã sẽ tới trong ít phút. Xem trong Zalo, hoặc trong tin nhắn SMS.',
   'signIn.demoFilled': 'Bản trình diễn tự điền sẵn mã.',
   'signIn.code': 'Mã dùng một lần',
   'signIn.submit': 'Đăng nhập',
   'signIn.badCode': 'Mã không đúng hoặc đã hết hạn. Gửi lại mã mới.',
   'signIn.rateLimited': 'Bạn thử quá nhiều lần. Đợi vài phút rồi thử lại.',
   'signIn.unavailable': 'Chưa gửi được mã lúc này. Hãy tới điểm hỗ trợ.',
+
+  // Đăng nhập bằng Zalo (zalo.tsx). Quyết định ngày 2026-09-16: cách vào chính,
+  // còn mã qua số điện thoại là cách dự phòng ở ngay dưới.
+  'signIn.zalo': 'Tiếp tục với Zalo',
+  'signIn.zaloOpening': 'Đang mở Zalo…',
+  'signIn.zaloOr': 'hoặc dùng số điện thoại',
+  'signIn.zaloDenied': 'Bạn chưa đồng ý trên Zalo nên chưa đăng nhập được. Thử lại và bấm Cho phép.',
+  'signIn.zaloExpired': 'Lần đăng nhập Zalo này đã hết hạn. Bấm lại để thử.',
+  'signIn.zaloFailed': 'Chưa đăng nhập được bằng Zalo. Thử lại, hoặc dùng số điện thoại.',
+  'signIn.zaloUnavailable': 'Máy chủ này chưa bật đăng nhập Zalo. Dùng số điện thoại.',
   'signIn.restoring': 'Đang đăng nhập lại…',
   // The two country codes the pilot accepts, and nothing else. +86 is present
   // because collectors' phones are not all Vietnamese; `signIn.chinaNote` is
@@ -300,6 +312,12 @@ const vi = {
   'uploads.deliverTitle': 'Tải lên phiên đã ghi',
   'uploads.deliverBody':
     'Chọn thư mục phiên trên điện thoại. Việc kiểm tra và đo do chúng tôi làm, không phải điện thoại.',
+  'uploads.takePhoto': 'Chụp ảnh',
+  'uploads.chooseLibrary': 'Chọn từ thư viện',
+  'uploads.libraryUnmeasured': 'Ảnh/video từ điện thoại không phải phiên đã đo. Thiếu tệp dữ liệu Ego nên máy chủ không thể đo phiên; tải lên không xác nhận thu nhập.',
+  'uploads.photosDenied': 'Chưa có quyền truy cập Ảnh. Cho phép trong Cài đặt rồi thử lại.',
+  'uploads.cameraDenied': 'Chưa có quyền dùng camera. Cho phép trong Cài đặt rồi thử lại.',
+  'uploads.mediaUnreadable': 'Không đọc được tệp đã chọn. Chọn lại ảnh hoặc video.',
   'uploads.pick': 'Chọn thư mục phiên',
   'uploads.pickFailed': 'Chưa chọn được thư mục. Chọn đúng thư mục của phiên ghi hình.',
   'uploads.directory': 'Thư mục',
@@ -457,7 +475,7 @@ const vi = {
   'home.nextPair': 'Liên kết thiết bị trước khi tạo phiên',
   'home.nextUpload': 'Có {n} tập chờ tải lên',
   'home.nextReview': 'Đang chờ người duyệt',
-  'hall.imageLabel': 'Ảnh minh họa bối cảnh',
+  'hall.imageLabel': 'Ảnh minh họa',
   'uploads.waitingReviewer': 'Đang chờ người duyệt',
   'payout.title': 'Nơi nhận tiền',
   'payout.zalopay': 'Ví ZaloPay',
@@ -465,7 +483,7 @@ const vi = {
   'payout.awaiting': 'Chờ xác minh',
   'payout.awaitingPayment': 'Chờ thanh toán. Nơi nhận tiền chưa xác minh.',
   'payout.simulationLabel': 'Mô phỏng',
-  'payout.simulation': 'Mô phỏng. Không chuyển tiền thật.',
+  'payout.simulation': 'Mô phỏng. Không có chuyển tiền thật.',
   'payout.paidReference': 'Đã thanh toán. Mã giao dịch: {reference}',
   'payout.none': 'Chưa khai báo — liên hệ điểm hỗ trợ',
   'payout.unknown': 'Chưa rõ bạn sẽ nhận tiền ở đâu. Hỏi điểm hỗ trợ giúp bạn.',
@@ -515,7 +533,9 @@ const vi = {
   'detail.where': 'Ghi ở đâu',
   'detail.noTotal': 'Số tiền do hệ thống tính từ số phút được duyệt. Chưa có tổng nào để hiện ở đây.',
   'detail.slotsLeft': 'Còn lại',
-  'detail.claimedMinutes': 'Số phút đã có người nhận',
+  'detail.claimedMinutes': 'Thời lượng đã thu thập',
+  'detail.slotCount': '{count} chỗ',
+  'detail.slotCountOne': '{count} chỗ',
   'profile.title': 'Tài khoản',
   'profile.role': 'Người ghi dữ liệu',
   'profile.account': 'Tài khoản của bạn',
@@ -617,7 +637,7 @@ const vi = {
   'server.save': 'Lưu',
   'server.reset': 'Dùng mặc định',
   'server.invalid': 'Địa chỉ không hợp lệ',
-  'server.signsOut': 'Đổi máy chủ thì bạn phải đăng nhập lại.',
+  'server.signsOut': 'Lưu thay đổi máy chủ thì bạn phải đăng nhập lại.',
 
   // prechecks — APP-19's facts on the Prepare screen, read off THIS PHONE.
   // English is the source; the Vietnamese is the plain Zalo register. The app
@@ -636,6 +656,37 @@ const vi = {
   // promises: this app cannot tell Wi-Fi from mobile data.
   'prechecks.totalSize': 'Dung lượng',
   'prechecks.connection': 'App tải lên bằng mạng bạn đang dùng. Với {size} thì nên dùng Wi-Fi.',
+  // v3 polish states
+  "state.offline": "Không kết nối được máy chủ",
+  "state.offlineBody": "Kiểm tra kết nối và địa chỉ máy chủ trong phần Giới thiệu.",
+  "state.empty": "Chưa có nội dung",
+  "state.unavailable": "Tính năng chưa sẵn sàng",
+  "state.unavailableBody": "Bạn có thể tiếp tục khám phá các nhiệm vụ.",
+
+  // v3 task cards
+  "taskCard.slots": "Còn {count} chỗ",
+  "taskCard.default": "Nhiệm vụ",
+  "taskCard.hours": "giờ",
+  "taskCard.home": "Tại nhà",
+  "taskCard.warehouse": "Kho",
+  "home.recommended": "Gợi ý cho bạn",
+
+  "photos.title": "Nguồn ảnh",
+  "photos.edited": "Ảnh đã được cắt và đổi kích thước. Giấy phép bên dưới cũng áp dụng cho các bản ảnh này.",
+
+  // v3 block, appended -- the demo bypass sheet (owner's request 2026-09-16).
+  // Debugging and the Thursday demonstration only: one administrator key for
+  // the seeded demo collector's ordinary session, so the pipelines can be shown
+  // when no sign-in channel delivers a code. The entry is absent on the Play
+  // profile, so a collector never reads any of these lines.
+  'demo.entry': 'Chế độ demo',
+  'demo.title': 'Chế độ demo',
+  'demo.body': 'Chỉ dùng để trình diễn. Nhập mã quản trị để vào bằng tài khoản demo.',
+  'demo.key': 'Mã quản trị',
+  'demo.enter': 'Vào demo',
+  'demo.badKey': 'Mã không đúng.',
+  'demo.unavailable': 'Máy chủ này không bật chế độ demo.',
+  'demo.unseeded': 'Máy chủ chưa có tài khoản demo. Chạy seed trước đã.',
 };
 
 export type MessageKey = keyof typeof vi;
@@ -670,6 +721,7 @@ const en: Record<MessageKey, string> = {
 
   'common.back': 'Back',
   'common.cancel': 'Cancel',
+  'uploads.cancelled': 'Upload cancelled. You can resume later; source files are kept.',
   'common.loading': 'Loading…',
   // The chip names the language it switches TO, in that language: the cycle is
   // vi → en → zh → vi, so English offers Chinese and Chinese offers Vietnamese.
@@ -711,17 +763,27 @@ const en: Record<MessageKey, string> = {
 
   'signIn.title': 'Sign in',
   'signIn.intro':
-    'Enter your phone number. We send a one-time code over Zalo. There is no password.',
+    'Enter your phone number. We send a one-time code over Zalo or by SMS. There is no password.',
   'signIn.phone': 'Phone number',
   'signIn.sendCode': 'Send code',
   'signIn.resendCode': 'Resend code',
-  'signIn.codeSent': 'If this number is registered, a code will arrive over Zalo shortly. Open Zalo to read it.',
+  'signIn.codeSent':
+    'If this number is registered, a code will arrive shortly. Look in Zalo, or in your SMS messages.',
   'signIn.demoFilled': 'The server is in demonstration mode and filled the code in.',
   'signIn.code': 'One-time code',
   'signIn.submit': 'Sign in',
   'signIn.badCode': 'That code is wrong or has expired. Ask for a new one.',
   'signIn.rateLimited': 'Too many attempts. Wait a few minutes and try again.',
   'signIn.unavailable': 'Sign-in codes cannot be sent right now. Contact a support point.',
+
+  // Zalo Login (zalo.tsx). Owner's decision, 2026-09-16.
+  'signIn.zalo': 'Continue with Zalo',
+  'signIn.zaloOpening': 'Opening Zalo…',
+  'signIn.zaloOr': 'or use your phone number',
+  'signIn.zaloDenied': 'Zalo was not given permission, so you are not signed in. Try again and press Allow.',
+  'signIn.zaloExpired': 'That Zalo sign-in has expired. Tap again to start a new one.',
+  'signIn.zaloFailed': 'Could not sign in with Zalo. Try again, or use your phone number.',
+  'signIn.zaloUnavailable': 'This server does not offer Zalo sign-in. Use your phone number.',
   'signIn.restoring': 'Restoring your session…',
   'signIn.countryCode': 'Country code',
   'signIn.country.vn': 'Vietnam +84',
@@ -903,6 +965,12 @@ const en: Record<MessageKey, string> = {
   'uploads.deliverTitle': 'Upload a recorded session',
   'uploads.deliverBody':
     'Pick the session folder on this phone. The server checks and measures it, not the phone.',
+  'uploads.takePhoto': 'Take Photo',
+  'uploads.chooseLibrary': 'Choose From Library',
+  'uploads.libraryUnmeasured': 'Phone photos/videos are not a measured session. Missing Ego sidecar files prevent the server from measuring it; uploading does not confirm earnings.',
+  'uploads.photosDenied': 'Photos access was denied. Allow access in Settings, then try again.',
+  'uploads.cameraDenied': 'Camera access was denied. Allow access in Settings, then try again.',
+  'uploads.mediaUnreadable': 'The selected file cannot be read. Choose another photo or video.',
   'uploads.pick': 'Choose session folder',
   'uploads.pickFailed': 'No folder was chosen. Pick the recorded session folder.',
   'uploads.directory': 'Folder',
@@ -1043,7 +1111,7 @@ const en: Record<MessageKey, string> = {
   'home.nextPair': 'Pair a device before creating a session',
   'home.nextUpload': '{n} episodes waiting to upload',
   'home.nextReview': 'Waiting on a human reviewer',
-  'hall.imageLabel': 'Illustrative setting photograph',
+  'hall.imageLabel': 'Illustrative photo',
   'uploads.waitingReviewer': 'Waiting on a reviewer',
   'payout.title': 'Where you get paid',
   'payout.zalopay': 'ZaloPay wallet',
@@ -1101,7 +1169,9 @@ const en: Record<MessageKey, string> = {
   'detail.where': 'Where you record',
   'detail.noTotal': 'The platform works out what you are paid from the minutes a reviewer passes. There is no total to show yet.',
   'detail.slotsLeft': 'Places left',
-  'detail.claimedMinutes': 'Minutes taken so far',
+  'detail.claimedMinutes': 'Collected duration',
+  'detail.slotCount': '{count} places',
+  'detail.slotCountOne': '{count} place',
   'profile.title': 'Profile',
   'profile.role': 'Collector',
   'profile.account': 'Your account',
@@ -1192,7 +1262,7 @@ const en: Record<MessageKey, string> = {
   'server.save': 'Save',
   'server.reset': 'Use the default',
   'server.invalid': 'That address is not valid',
-  'server.signsOut': 'Changing the server signs you out.',
+  'server.signsOut': 'Saving a server change signs you out.',
 
   // prechecks — see the Vietnamese block. English is the source text.
   'prechecks.phoneBattery': 'Phone battery',
@@ -1205,6 +1275,37 @@ const en: Record<MessageKey, string> = {
   'prechecks.lowSpace': 'Your phone is nearly full. Free up space before you record.',
   'prechecks.totalSize': 'Total size',
   'prechecks.connection': 'Uploads use the connection you are on. Wi-Fi is recommended for {size}.',
+  // v3 polish states
+  "state.offline": "Cannot connect to the server",
+  "state.offlineBody": "Check your connection and the server address in About.",
+  "state.empty": "Nothing here yet",
+  "state.unavailable": "This feature is not available yet",
+  "state.unavailableBody": "You can keep exploring available tasks.",
+
+  // v3 task cards
+  "taskCard.slots": "{count} spots left",
+  "taskCard.default": "Task",
+  "taskCard.hours": "h",
+  "taskCard.home": "At home",
+  "taskCard.warehouse": "Warehouse",
+  "home.recommended": "Recommended for you",
+
+  "photos.title": "Photo credits",
+  "photos.edited": "Photos have been cropped and resized. The licenses below also apply to these edited copies.",
+
+  // v3 block, appended -- the demo bypass sheet (owner's request 2026-09-16).
+  // Debugging and the Thursday demonstration only: one administrator key for
+  // the seeded demo collector's ordinary session, so the pipelines can be shown
+  // when no sign-in channel delivers a code. The entry is absent on the Play
+  // profile, so a collector never reads any of these lines.
+  'demo.entry': 'Demo mode',
+  'demo.title': 'Demo mode',
+  'demo.body': 'For demonstration only. Enter the admin key to sign in as the demo account.',
+  'demo.key': 'Admin key',
+  'demo.enter': 'Enter demo',
+  'demo.badKey': 'That key is not right.',
+  'demo.unavailable': 'This server has no demo mode.',
+  'demo.unseeded': 'This server has no demo account yet. Run the seed first.',
 };
 
 /**
@@ -1248,6 +1349,7 @@ const zh: Record<MessageKey, string> = {
 
   'common.back': '返回',
   'common.cancel': '取消',
+  'uploads.cancelled': '上传已取消。可稍后继续，原始文件仍保留。',
   'common.loading': '加载中…',
   'common.language': 'Tiếng Việt',
   'common.retry': '重试',
@@ -1285,15 +1387,24 @@ const zh: Record<MessageKey, string> = {
   'greeting.nightOwl': '夜班辛苦',
 
   'signIn.title': '登录',
-  'signIn.intro': '输入你的手机号。我们通过 Zalo 发送一次性验证码。不需要密码。',
+  'signIn.intro': '输入你的手机号。我们通过 Zalo 或短信发送一次性验证码。不需要密码。',
   'signIn.phone': '手机号',
   'signIn.sendCode': '发送验证码',
-  'signIn.codeSent': '如果这个号码已注册，验证码会通过 Zalo 很快送达。请打开 Zalo 查看。',
+  'signIn.codeSent': '如果这个号码已注册，验证码很快就会送达。请在 Zalo 或短信里查看。',
   'signIn.code': '一次性验证码',
   'signIn.submit': '登录',
   'signIn.badCode': '验证码错误或已过期。请重新获取。',
   'signIn.rateLimited': '尝试次数过多。请等几分钟后再试。',
   'signIn.unavailable': '目前无法发送登录验证码。请联系服务点。',
+
+  // Zalo 登录（zalo.tsx）。2026-09-16 的决定。
+  'signIn.zalo': '使用 Zalo 继续',
+  'signIn.zaloOpening': '正在打开 Zalo…',
+  'signIn.zaloOr': '或使用手机号',
+  'signIn.zaloDenied': '未在 Zalo 上授权，因此没有登录。请重试并点击“允许”。',
+  'signIn.zaloExpired': '这次 Zalo 登录已过期。请再点一次重新开始。',
+  'signIn.zaloFailed': '无法用 Zalo 登录。请重试，或使用手机号。',
+  'signIn.zaloUnavailable': '本服务器未开启 Zalo 登录。请使用手机号。',
   'signIn.restoring': '正在恢复登录状态…',
   'signIn.countryCode': '国家代码',
   'signIn.country.vn': '越南 +84',
@@ -1461,6 +1572,12 @@ const zh: Record<MessageKey, string> = {
   'uploads.deliverTitle': '上传已录制的场次',
   'uploads.deliverBody':
     '在手机上选择场次文件夹。校验和测量由服务器完成，不由手机完成。',
+  'uploads.takePhoto': '拍照',
+  'uploads.chooseLibrary': '从相册选择',
+  'uploads.libraryUnmeasured': '手机照片/视频不是已测量的采集会话。缺少 Ego 配套数据文件，服务器无法测量；上传不代表确认收入。',
+  'uploads.photosDenied': '未获得相册权限。请在设置中允许访问后重试。',
+  'uploads.cameraDenied': '未获得相机权限。请在设置中允许后重试。',
+  'uploads.mediaUnreadable': '无法读取所选文件。请重新选择照片或视频。',
   'uploads.pick': '选择场次文件夹',
   'uploads.pickFailed': '未选择文件夹。请选择已录制的场次文件夹。',
   'uploads.directory': '文件夹',
@@ -1596,7 +1713,7 @@ const zh: Record<MessageKey, string> = {
   'home.nextPair': '创建会话前请绑定设备',
   'home.nextUpload': '{n} 个片段待上传',
   'home.nextReview': '等待人工审核',
-  'hall.imageLabel': '场景示意图',
+  'hall.imageLabel': '示意照片',
   'uploads.waitingReviewer': '等待审核员',
   'payout.title': '收款方式',
   'payout.zalopay': 'ZaloPay 钱包',
@@ -1654,7 +1771,9 @@ const zh: Record<MessageKey, string> = {
   'detail.where': '在哪里拍',
   'detail.noTotal': '金额由系统按审核通过的分钟数计算。现在还没有总额可以显示。',
   'detail.slotsLeft': '剩余名额',
-  'detail.claimedMinutes': '已被领取的分钟数',
+  'detail.claimedMinutes': '已采集时长',
+  'detail.slotCount': '{count} 个名额',
+  'detail.slotCountOne': '{count} 个名额',
   'profile.title': '我的',
   'profile.role': '数据采集员',
   'profile.account': '你的账户',
@@ -1745,7 +1864,7 @@ const zh: Record<MessageKey, string> = {
   'server.save': '保存',
   'server.reset': '使用默认地址',
   'server.invalid': '地址无效',
-  'server.signsOut': '更换服务器后需要重新登录。',
+  'server.signsOut': '保存服务器更改后需要重新登录。',
 
   // prechecks — see the Vietnamese block. English is the source text.
   'prechecks.phoneBattery': '手机电量',
@@ -1758,6 +1877,37 @@ const zh: Record<MessageKey, string> = {
   'prechecks.lowSpace': '手机存储快满了。录制前先清出空间。',
   'prechecks.totalSize': '总大小',
   'prechecks.connection': '上传会使用当前的网络。{size} 建议用 Wi-Fi。',
+  // v3 polish states
+  "state.offline": "无法连接服务器",
+  "state.offlineBody": "请检查网络连接和关于页面中的服务器地址。",
+  "state.empty": "暂无内容",
+  "state.unavailable": "此功能暂未开放",
+  "state.unavailableBody": "你可以继续浏览可参加的任务。",
+
+  // v3 task cards
+  "taskCard.slots": "剩余 {count} 个名额",
+  "taskCard.default": "任务",
+  "taskCard.hours": "小时",
+  "taskCard.home": "在家",
+  "taskCard.warehouse": "仓库",
+  "home.recommended": "为你推荐",
+
+  "photos.title": "图片来源",
+  "photos.edited": "图片已裁剪并调整尺寸。以下许可证同样适用于这些编辑后的副本。",
+
+  // v3 block, appended -- the demo bypass sheet (owner's request 2026-09-16).
+  // Debugging and the Thursday demonstration only: one administrator key for
+  // the seeded demo collector's ordinary session, so the pipelines can be shown
+  // when no sign-in channel delivers a code. The entry is absent on the Play
+  // profile, so a collector never reads any of these lines.
+  'demo.entry': '演示模式',
+  'demo.title': '演示模式',
+  'demo.body': '仅用于演示。输入管理密钥，以演示账号登录。',
+  'demo.key': '管理密钥',
+  'demo.enter': '进入演示',
+  'demo.badKey': '密钥不正确。',
+  'demo.unavailable': '此服务器未开启演示模式。',
+  'demo.unseeded': '此服务器还没有演示账号。请先运行种子脚本。',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en, zh };

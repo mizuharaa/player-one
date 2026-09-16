@@ -535,6 +535,22 @@ export const collectors = pgTable(
      */
     phone: text('phone'),
     /**
+     * Who Zalo says this is (migration 0035). The `id` from
+     * `graph.zalo.me/v2.0/me`, which is stable per (app, user).
+     *
+     * The second way a row can be found, and the reason it has to be: Zalo
+     * Login does not hand us the person's phone number — reading it needs a
+     * separate approved permission we do not hold — so a collector who signed
+     * in with Zalo has no `phone` at all, and `collectors_phone_key` cannot
+     * identify them on the next sign-in.
+     *
+     * Unique for exactly the reason `collectors_phone_key` is unique: the
+     * lookup is by this column alone, so there must be one row or none and
+     * never a first row. Nullable because every collector enrolled before 0035
+     * has no Zalo id, and a unique index holds any number of nulls.
+     */
+    zaloId: text('zalo_id'),
+    /**
      * The one-time code, hashed with the same scrypt as every other credential
      * in this service. The code itself is never stored — a six-digit code in
      * plaintext in a column is a credential in a backup.
@@ -565,6 +581,7 @@ export const collectors = pgTable(
   (t) => [
     uniqueIndex('collectors_external_ref_key').on(t.externalRef),
     uniqueIndex('collectors_phone_key').on(t.phone),
+    uniqueIndex('collectors_zalo_id_key').on(t.zaloId),
     check(
       'collectors_status_check',
       /**
@@ -648,6 +665,79 @@ export const signUpCodes = pgTable(
     check(
       'sign_up_codes_consumed_check',
       sql`${t.consumedAt} is null or ${t.consumedAt} >= ${t.createdAt}`,
+    ),
+  ],
+);
+
+/**
+ * One Zalo Login attempt, from the first tap to the app's session (0035).
+ *
+ * Three requests, and the state between them cannot live in the app: the
+ * middle one arrives from Zalo's servers on a redirect, in a browser, with no
+ * token on it. So one row is one attempt —
+ *
+ *   `POST /auth/collector/zalo/start`     writes `state` and `codeVerifier`
+ *   `GET  /auth/collector/zalo/callback`  spends `state`, writes `ticketHash`
+ *   `POST /auth/collector/ticket`         spends `ticketHash`, issues the token
+ *
+ * `codeVerifier` is the PKCE secret and never leaves the server: the challenge
+ * goes to Zalo, the verifier is presented once at the token exchange, and that
+ * pairing is what stops an intercepted `code` being redeemed by anybody else.
+ * `state` is the CSRF half — a callback naming a row this server did not write
+ * is refused.
+ *
+ * Each half is spent by an UPDATE carrying `... is null` in its `where`, which
+ * is the same "only the UPDATE winner proceeds" shape that makes a sign-in code
+ * single-use in `collector.ts`: a replayed ticket is a refusal, not a second
+ * session.
+ *
+ * The ticket is stored as a SHA-256 of a 256-bit random token and not as
+ * scrypt. scrypt is for a secret a person can type, where the cost is the
+ * defence; a 256-bit random token has nothing to brute-force, and the lookup
+ * here is BY the token, which scrypt's per-row salt makes impossible without a
+ * table scan. What matters is that the plaintext ticket is not in a column.
+ */
+export const zaloSignIns = pgTable(
+  'zalo_sign_ins',
+  {
+    /** The `state` parameter, and the key: the callback looks up by it alone. */
+    state: text('state').primaryKey(),
+    codeVerifier: text('code_verifier').notNull(),
+    /**
+     * Ten minutes, and it covers both halves. The hop from the callback to the
+     * app's deep link is immediate, so one deadline is honest and two would be
+     * a second thing to get wrong.
+     */
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    /** When the callback spent the state. Null until then. */
+    callbackAt: timestamp('callback_at', { withTimezone: true }),
+    ticketHash: text('ticket_hash'),
+    collectorId: uuid('collector_id'),
+    ticketUsedAt: timestamp('ticket_used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('zalo_sign_ins_ticket_hash_key').on(t.ticketHash),
+    check('zalo_sign_ins_state_check', sql`length(trim(${t.state})) > 0`),
+    /** RFC 7636 §4.1: a code verifier is 43 to 128 characters. */
+    check('zalo_sign_ins_verifier_check', sql`length(${t.codeVerifier}) between 43 and 128`),
+    /**
+     * A ticket and the collector it signs in are one fact. Both or neither,
+     * the same shape as `collectors_sign_in_code_check`: half of this pair is
+     * either a ticket that signs in nobody or a name with no way to present it.
+     */
+    check(
+      'zalo_sign_ins_ticket_check',
+      sql`(${t.ticketHash} is null) = (${t.collectorId} is null)`,
+    ),
+    /** A ticket cannot exist before the callback that minted it. */
+    check(
+      'zalo_sign_ins_ticket_order_check',
+      sql`${t.ticketHash} is null or ${t.callbackAt} is not null`,
+    ),
+    check(
+      'zalo_sign_ins_used_order_check',
+      sql`${t.ticketUsedAt} is null or ${t.ticketHash} is not null`,
     ),
   ],
 );

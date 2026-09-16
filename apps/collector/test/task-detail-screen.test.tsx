@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ApiProvider } from '../src/api/context.tsx';
 import { MockCollectorApi } from '../src/api/mock.ts';
 import { AGREEMENTS } from '../src/api/types.ts';
-import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
+import { DEFAULT_LOCALE, MESSAGES, type Locale } from '../src/i18n.ts';
 import { LocaleProvider } from '../src/locale.tsx';
 import { NavProvider, useNav } from '../src/nav.tsx';
 import { ThemeProvider } from '../src/theme.tsx';
@@ -67,11 +67,11 @@ async function qualify() {
   await api.submitExam([true, true, true]);
 }
 
-async function mount(taskId = 'task-cook') {
+async function mount(taskId = 'task-cook', locale: Locale = DEFAULT_LOCALE) {
   await act(async () =>
     root.render(
       <ThemeProvider>
-        <LocaleProvider>
+        <LocaleProvider initialLocale={locale}>
           <ApiProvider value={api}>
             <QueryClientProvider client={client}>
               <NavProvider initial={{ name: 'taskDetail', taskId }}>
@@ -110,8 +110,8 @@ it('shows only the rates the server sent, and never a projected total', async ()
   expect(page()).toContain(m['detail.rates']);
   // The rate as sent, and each count as sent.
   expect(page()).toContain(dong('1200'));
-  expect(page()).toContain(`3000 ${m['detail.minutes']}`);
-  expect(page()).toContain(`420 ${m['detail.minutes']}`);
+  expect(page()).toContain(`50 ${m['taskCard.hours']}`);
+  expect(page()).toContain(`7 ${m['taskCard.hours']}`);
   // 1200 x 3000 = 3,600,000. The one figure this screen must never print, in
   // any of the shapes `vnd` can produce it.
   expect(page()).not.toContain('3.600.000');
@@ -184,6 +184,10 @@ it('shows the server’s onboarding refusal in place of the control', async () =
 
   expect(page()).toContain(m['detail.needOnboarding']);
   expect(named(m['detail.claim'])).toBeUndefined();
+  expect(named(m['common.retry'])).toBeDefined();
+  expect(host.querySelector('[data-testid="task-detail-footer"]')?.contains(named(m['common.retry'])!)).toBe(false);
+  expect(page().split(m['detail.needOnboarding'])).toHaveLength(2);
+  expect(host.querySelector('[data-testid="task-detail-footer"]')?.textContent).not.toContain(m['detail.needOnboarding']);
 });
 
 it('offers retry rather than an action when a read failed', async () => {
@@ -220,4 +224,44 @@ it('does not navigate after an accepted task resolves on a screen the collector 
   await act(async () => host.querySelector('button')!.click());
   await act(async () => finish());
   await vi.waitFor(() => expect(host.querySelector('output')?.textContent).toBe('home'));
+});
+
+it('formats the detail target with the same hour units as task cards', async () => {
+  await qualify(); await mount('task-warehouse');
+  expect(page()).toContain(`150 ${m['taskCard.hours']}`);
+  expect(page()).not.toContain(`9000 ${m['detail.minutes']}`);
+});
+
+it('preserves fractional effective minutes while formatting detail hours', async () => {
+  await qualify();
+  const task = await api.task('task-warehouse');
+  vi.spyOn(api, 'task').mockResolvedValue({ ...task, claimedMinutes: 121.1 });
+  await mount('task-warehouse');
+  expect(page()).toContain(`2 ${m['taskCard.hours']} 1.1 ${m['detail.minutes']}`);
+  expect(page()).not.toContain('1.099999');
+});
+
+it('discloses that the task hero is an illustrative stock photo', async () => {
+  await qualify(); await mount();
+  expect(host.querySelectorAll('[data-testid="task-photo-label"]')).toHaveLength(1);
+  expect(page()).toContain(m['hall.imageLabel']);
+});
+
+
+it.each(['vi', 'en', 'zh'] as const)('labels collected duration and remaining places naturally in %s', async locale => {
+  await qualify();
+  const task = await api.task('task-warehouse');
+  vi.spyOn(api, 'task').mockResolvedValue({ ...task, claimedMinutes: 180, remainingSlots: 2 });
+  await mount('task-warehouse', locale);
+  const expected = { vi: ['Thời lượng đã thu thập', '2 chỗ'], en: ['Collected duration', '2 places'], zh: ['已采集时长', '2 个名额'] }[locale];
+  expect(page()).toContain(expected[0]);
+  expect(page()).toContain(`3 ${MESSAGES[locale]['taskCard.hours']}`);
+  expect(page()).toContain(expected[1]);
+});
+it('uses a singular unit for one remaining place', async () => {
+  await qualify();
+  const task = await api.task('task-warehouse');
+  vi.spyOn(api, 'task').mockResolvedValue({ ...task, remainingSlots: 1 });
+  await mount('task-warehouse', 'en');
+  expect(page()).toContain('1 place'); expect(page()).not.toContain('1 places');
 });

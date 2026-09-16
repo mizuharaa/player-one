@@ -104,20 +104,13 @@ describe('the full eligibility gate on claiming (APP-02/03/04/05)', () => {
   const ACCEPTANCES = AGREEMENTS.map((a) => ({ agreementId: a.id, version: a.version }));
 
   it('refuses at every missing prerequisite, in the order they are met', async () => {
-    // This test used to skip agreements and training entirely and still claim,
-    // because the gate checked `examPassed` alone. The server will not honour
-    // that: PRODUCT.md and APP-02/05 make the six agreements, the training and
-    // the exam one contract, enforced server-side. A permissive seam teaches
-    // every screen built against it to expect a permissive server.
+    // Match the live agreement/exam gate; the unavailable course is not a prerequisite.
     const api = new MockCollectorApi();
     await api.register('Lê Văn C', '0903000003');
 
     await expect(api.claimTask('task-cook')).rejects.toThrow('agreements_incomplete');
 
     await api.acceptAgreements(ACCEPTANCES);
-    await expect(api.claimTask('task-cook')).rejects.toThrow('training_incomplete');
-
-    await api.completeTraining();
     await expect(api.claimTask('task-cook')).rejects.toThrow('exam_not_passed');
 
     const failed = await api.submitExam([true, false, true]);
@@ -126,6 +119,7 @@ describe('the full eligibility gate on claiming (APP-02/03/04/05)', () => {
 
     const passed = await api.submitExam(PASSING);
     expect(passed.passed).toBe(true);
+    expect((await api.profile())?.trainingDone).toBe(false);
     const claim = await api.claimTask('task-cook');
     expect(claim.taskId).toBe('task-cook');
   });
@@ -163,15 +157,12 @@ describe('where a signed-in collector opens (open sign-up)', () => {
     await prospect.register('Phạm Thị D', '0903000004');
     expect(await sessionEntry(prospect)).toEqual({ name: 'home' });
 
-    // A collector an operator enrolled still walks APP-01 → APP-02 → APP-03 →
-    // APP-04, in the order the claim gate wants them.
+    // An enrolled collector can reach the exam without completing unavailable training.
     const enrolled = new MockCollectorApi();
     expect(await sessionEntry(enrolled)).toEqual({ name: 'register' });
     await enrolled.register('Lê Văn C', '0903000003');
     expect(await sessionEntry(enrolled)).toEqual({ name: 'agreements' });
     await enrolled.acceptAgreements(AGREEMENTS.map((a) => ({ agreementId: a.id, version: a.version })));
-    expect(await sessionEntry(enrolled)).toEqual({ name: 'training' });
-    await enrolled.completeTraining();
     expect(await sessionEntry(enrolled)).toEqual({ name: 'exam' });
     await enrolled.submitExam(PASSING);
     expect(await sessionEntry(enrolled)).toEqual({ name: 'home' });
@@ -432,7 +423,7 @@ describe('collector wire truth and cold-start recovery', () => {
     let offline = true;
     const fn: typeof fetch = (...args) => offline ? Promise.reject(new TypeError('offline')) : ok.fn(...args);
     const api = new HttpCollectorApi(BASE, store, () => {}, fn);
-    expect(await sessionEntry(api)).toBe('unavailable');
+    expect(await sessionEntry(api)).toBe('offline');
     expect(store.value).toBe('stored-token');
     offline = false;
     expect(await sessionEntry(api)).toEqual({ name: 'home' });
@@ -445,7 +436,7 @@ describe('collector wire truth and cold-start recovery', () => {
     let calls = 0;
     const fn: typeof fetch = (...args) => ++calls === 1 ? ok.fn(...args) : Promise.reject(new TypeError('offline'));
     const api = new HttpCollectorApi(BASE, store, () => {}, fn);
-    expect(await sessionEntry(api)).toBe('unavailable');
+    expect(await sessionEntry(api)).toBe('offline');
     expect(store.value).toBe('stored-token');
   });
 
@@ -911,7 +902,7 @@ describe('a token that has stopped working', () => {
     }) as unknown as typeof fetch;
     const api = new HttpCollectorApi(BASE, store, () => (signedOut += 1), fn);
 
-    await expect(api.restoreSession()).rejects.toThrow(TypeError);
+    await expect(api.restoreSession()).rejects.toMatchObject({ code: 'server_unreachable' });
     expect(store.value).toBe('tok-good');
     expect(signedOut).toBe(0);
   });
@@ -1061,4 +1052,59 @@ describe('what the client sends, and what it refuses to', () => {
     const api = new HttpCollectorApi(BASE, fakeStore('tok-good'), () => {}, fn);
     await expect(api.claimTask('t-1')).rejects.toThrow(new ApiError('task_at_capacity'));
   });
+});
+
+it('names unreachable transport errors without discarding the token', async () => {
+  const store = fakeStore('retained');
+  const api = new HttpCollectorApi('https://example.test', store, vi.fn(), async () => { throw new TypeError('Failed to fetch'); });
+  await expect(api.requestSignInCode('+84912345678')).rejects.toMatchObject({ code: 'server_unreachable' });
+  await expect(api.tasks()).rejects.toMatchObject({ code: 'server_unreachable' });
+  expect(store.value).toBe('retained');
+});
+
+it('keeps a server sentence on authenticated failures without changing the refusal code', async () => {
+  const api = new HttpCollectorApi('https://example.test', fakeStore(), vi.fn(), async () => new Response(JSON.stringify({ constraint: 'not_ready', message: 'Please return to the collection centre.' }), { status: 409 }));
+  await expect(api.tasks()).rejects.toMatchObject({ code: 'not_ready', sentence: 'Please return to the collection centre.' });
+});
+
+it('recognises a connection lost while reading the response body', async () => {
+  const response = new Response(null, { status: 200 });
+  vi.spyOn(response, 'text').mockRejectedValue(new TypeError('connection lost'));
+  const store = fakeStore('retained');
+  const api = new HttpCollectorApi('https://example.test', store, vi.fn(), async () => response);
+  await expect(api.tasks()).rejects.toMatchObject({ code: 'server_unreachable' });
+  expect(store.value).toBe('retained');
+});
+
+
+it('preserves sandbox provenance in both income adapters', async () => {
+  const api = new HttpCollectorApi(BASE, fakeStore(), () => {}, async () => new Response(JSON.stringify({
+    simulation: true,
+    episodes: [{ episode_id: 'sandbox-paid', effective_minutes: '1', amount: '1200', confirmed: true, state: 'paid' }],
+    cycle: { label: 'Sandbox cycle', confirmedVnd: '1200', estimatedVnd: '0', totalVnd: '1200' },
+  })));
+  expect(await api.income()).toEqual([expect.objectContaining({ settlementState: 'paid', simulation: true })]);
+  expect(await api.incomeCycle()).toEqual(expect.objectContaining({ simulation: true }));
+});
+
+
+it.each([['read', 20_000], ['write', 60_000]] as const)('bounds a hung %s request and keeps the session', async (kind, deadline) => {
+  vi.useFakeTimers();
+  const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(ms => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), ms);
+    return controller.signal;
+  });
+  const store = fakeStore('retained');
+  const api = new HttpCollectorApi(BASE, store, vi.fn(), async (_url, init) => new Promise((_resolve, reject) => {
+    init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason), { once: true });
+  }));
+  try {
+    const pending = kind === 'read' ? api.income() : api.claimTask('task-hung');
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'server_unreachable' });
+    await vi.advanceTimersByTimeAsync(deadline);
+    await rejected;
+    expect(timeout).toHaveBeenCalledWith(deadline);
+    expect(await store.get()).toBe('retained');
+  } finally { vi.restoreAllMocks(); vi.useRealTimers(); }
 });

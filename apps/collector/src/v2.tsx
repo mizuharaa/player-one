@@ -42,11 +42,6 @@ import { Button, bottomInset, face, topInset, useReducedMotion, useTabBarReserve
 import { Panda } from './identity/Panda.tsx';
 import { dong } from './money.ts';
 
-import kitchen from '../assets/discover/setting-kitchen.jpg';
-import workspace from '../assets/discover/setting-workspace.webp';
-import terraces from '../assets/discover/setting-terraces.webp';
-import warehouse from '../assets/discover/setting-warehouse.webp';
-import detail from '../assets/discover/work-detail.webp';
 import portrait from '../assets/discover/work-portrait.webp';
 
 /**
@@ -74,48 +69,6 @@ export type TextRole = keyof typeof TYPE_ROLES;
 export function textStyle(theme: NativeTheme, role: TextRole) {
   return { fontFamily: face(theme), ...theme.collector.type[TYPE_ROLES[role]] };
 }
-
-// ---------------------------------------------------------------------------
-// §21.2 Task images: a placeholder chosen from the scenario, until `Task` has one
-
-/**
- * SPEC §21.2. `Task` has no image field, so a task's still comes from its
- * `scenario` through this four-entry map and a `null` scenario falls back to
- * `work-detail`. These are real photographs of real settings standing in for a
- * task image that does not exist yet, which is why every screen carrying one
- * also carries `hall.imageLabel`.
- *
- * When `Task` grows an `imageUrl` this map is deleted, `expo-image` comes in
- * (§20.1), and the disclosure goes with it.
- */
-const SETTINGS: Record<Scenario, ImageSourcePropType> = {
-  home: kitchen,
-  office: workspace,
-  shop: terraces,
-  warehouse: warehouse,
-};
-
-/**
- * The placeholder for one task, and the second half of why this map exists.
- *
- * `GET /api/me/tasks` does not send a scenario — `toTask` in `api/http.ts`
- * sets `scenario: null` for every row, because `tasks` has no scenario column;
- * what it does send is `tasks.type`, and the only values that column carries
- * are the four codes in `SCENARIOS`. So a `null` scenario falls back to `type`
- * when `type` IS one of those four, and to `work-detail` otherwise.
- *
- * That fallback is a read, not a guess: it matches the exact strings the
- * platform's own scenario vocabulary defines, and anything else — a free-text
- * type somebody typed — takes the neutral still. It lives here, in the
- * placeholder chooser, rather than in the API client, because the API is
- * reporting the truth (this task has no scenario) and only the placeholder
- * needs an opinion about it. When `Task` grows an `imageUrl` the whole
- * function goes, and this goes with it.
- */
-export const taskImage = (scenario: Scenario | null, type?: string | null): ImageSourcePropType => {
-  const code = scenario ?? SCENARIOS.find((s) => s === type) ?? null;
-  return code === null ? detail : SETTINGS[code];
-};
 
 /** §10's next-step fallback, for a step that is not about one task. */
 export const workImage = portrait;
@@ -203,153 +156,6 @@ export function PriceChip({ value, unit }: { value: string; unit: string }) {
       </Text>
       <Text style={{ ...textStyle(theme, 'micro'), color: theme.collector.greenInk }}>{unit}</Text>
     </View>
-  );
-}
-
-/** The disclosure §21.2 requires beside any stand-in photograph. */
-export function ImageLabel({ floating = false }: { floating?: boolean }) {
-  const theme = useTheme();
-  const tt = useT();
-  return (
-    <View
-      pointerEvents="none"
-      style={{
-        alignSelf: 'flex-start',
-        maxWidth: '100%',
-        backgroundColor: floating ? theme.color.discover.surface : undefined,
-        borderRadius: theme.radius.pill,
-        paddingVertical: floating ? theme.space[1] : 0,
-        paddingHorizontal: floating ? theme.space[3] : 0,
-      }}
-    >
-      <Text style={{ ...textStyle(theme, 'micro'), color: theme.color.discover.muted }}>
-        {tt('hall.imageLabel')}
-      </Text>
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// §10/§11 The task card, defined once and used on both screens
-
-/**
- * §10's card and §11's grid tile are one component with two image ratios.
- *
- * The price chip sits bottom-left on the photograph and the scenario chip
- * top-right — the Peerspace arrangement, two badges on one image put in
- * opposite corners so they cannot collide at any width. There is no fixed
- * width anywhere in here: the caller's column decides, which is what makes the
- * same card work at 78% of a 320dp screen and inside a two-column grid.
- *
- * `tile` carries the neutral claim track §11 asks for; §11 has no lime at all,
- * because four tiles each with a lime bar is four accents.
- */
-export function TaskCard({
-  task,
-  variant,
-  onPress,
-  hint,
-}: {
-  task: Task;
-  variant: 'row' | 'tile';
-  onPress: () => void;
-  hint?: string;
-}) {
-  const theme = useTheme();
-  const tt = useT();
-  /**
-   * The scenario's own word, not the raw column. `/api/me/tasks` sends no
-   * scenario and `tasks.type` carries the code, so the chip printed "office"
-   * at a Vietnamese collector until this resolved it the same way `taskImage`
-   * does. A type that is not one of the four codes is printed as it stands —
-   * it is somebody's own word for the work and translating it is not ours.
-   */
-  const code = task.scenario ?? SCENARIOS.find((s) => s === task.type) ?? null;
-  const scenario = code === null ? (task.type ?? '') : tt(`scenario.${code}`);
-  const done =
-    task.targetMinutes <= 0 ? 0 : Math.min(1, Math.max(0, task.claimedMinutes / task.targetMinutes));
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={task.title}
-      accessibilityHint={hint}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flex: variant === 'tile' ? 1 : undefined,
-        borderRadius: theme.collector.radius.card,
-        backgroundColor: theme.collector.surface,
-        overflow: 'hidden',
-        // §0.5 rule 4: transform only, and the press is instant.
-        transform: [{ scale: pressed ? 0.98 : 1 }],
-      })}
-    >
-      <ImageBox source={taskImage(task.scenario, task.type)} ratio={variant === 'row' ? 16 / 9 : 4 / 5}>
-        <View
-          style={{
-            ...FILL,
-            padding: theme.space[3],
-            justifyContent: 'space-between',
-          }}
-        >
-          <View style={{ alignItems: 'flex-end' }}>
-            {scenario === '' ? null : (
-              <View
-                style={{
-                  backgroundColor: theme.color.discover.surface,
-                  borderRadius: theme.radius.pill,
-                  paddingVertical: theme.space[1],
-                  paddingHorizontal: theme.space[3],
-                  maxWidth: '100%',
-                }}
-              >
-                <Text style={{ ...textStyle(theme, 'micro'), color: theme.color.discover.ink }}>
-                  {scenario}
-                </Text>
-              </View>
-            )}
-          </View>
-          <PriceChip value={dong(task.unitPriceVndPerMinute)} unit={tt('hall.perMinute')} />
-        </View>
-      </ImageBox>
-      <View style={{ padding: theme.space[4], gap: theme.space[2] }}>
-        <Text
-          numberOfLines={2}
-          style={{
-            ...textStyle(theme, 'section'),
-            color: theme.color.discover.ink,
-            fontWeight: theme.fontWeight.semibold,
-          }}
-        >
-          {task.title}
-        </Text>
-        {variant === 'tile' ? (
-          <View
-            accessibilityRole="progressbar"
-            accessibilityValue={{ min: 0, max: 100, now: Math.round(done * 100) }}
-            style={{
-              height: theme.space[1.5],
-              borderRadius: theme.radius.pill,
-              backgroundColor: theme.color.discover.soft,
-              overflow: 'hidden',
-            }}
-          >
-            {/* Neutral, not lime: §0.2 spends lime once per screen and a
-                repeating list is the case that breaks it. The number beneath
-                carries the meaning; the bar only shows its shape. */}
-            <View
-              style={{
-                width: `${done * 100}%`,
-                height: '100%',
-                backgroundColor: theme.color.discover.muted,
-              }}
-            />
-          </View>
-        ) : null}
-        <Text style={{ ...textStyle(theme, 'caption'), color: theme.color.discover.muted }}>
-          {`${tt('hall.slots')} · ${task.remainingSlots}`}
-        </Text>
-      </View>
-    </Pressable>
   );
 }
 
@@ -504,50 +310,7 @@ export function WarmCard({
  *
  * **Reduced motion:** a static block at 0.8.
  */
-export function Skeleton({
-  ratio,
-  lines,
-  radius,
-}: {
-  ratio?: number;
-  /** Height in `space` steps, when the block is a strip rather than an image. */
-  lines?: number;
-  radius?: number;
-}) {
-  const theme = useTheme();
-  const reduced = useReducedMotion();
-  const pulse = useRef(new Animated.Value(0.8)).current;
-  useEffect(() => {
-    if (reduced) {
-      pulse.setValue(0.8);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: SKELETON_MS, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0.6, duration: SKELETON_MS, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse, reduced]);
-  return (
-    <Animated.View
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      style={{
-        opacity: pulse,
-        width: '100%',
-        aspectRatio: ratio,
-        height: ratio === undefined ? theme.space[4] * (lines ?? 1) : undefined,
-        borderRadius: radius ?? theme.radius.lg,
-        backgroundColor: theme.color.discover.soft,
-      }}
-    />
-  );
-}
-/** §0.5 rule 7's third named exception: the skeleton pulse is 900ms. */
-const SKELETON_MS = 900;
+export { Skeleton } from './ui/Skeleton.tsx';
 
 /** `common.loading`, announced rather than printed (§17). */
 export function LoadingRegion({ children }: { children: ReactNode }) {

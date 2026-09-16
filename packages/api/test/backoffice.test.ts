@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LightMyRequestResponse } from 'fastify';
 import { open, schema } from '@playerone/store';
-import { COUNTER_REFUSALS, PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, REVIEW_API_REFUSALS, REVIEW_HOLDABLE_REFUSALS, SETTLE_API_REFUSALS, API_REFUSALS, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
+import { COUNTER_REFUSALS, PAYOUT_API_REFUSALS, PAYOUT_REFUSALS, REVIEW_API_REFUSALS, REVIEW_HOLDABLE_REFUSALS, SETTLE_API_REFUSALS, API_REFUSALS, PROSPECT_MUST_BE_EMPTY_IN, REFUSALS, buildApi, hashCredential } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
 import { appDb, closeDb, db, dbUrl, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
@@ -1737,6 +1737,19 @@ describe.skipIf(!hasDb())('the back office', () => {
        * REFUSALS beside `collectors_external_ref_key` — not here.
        */
       'collectors_phone_key',
+      /**
+       * 0035, and it is here for a reason that is one step stronger than the
+       * phone key's: no back-office route accepts a Zalo id at all, and the one
+       * route that writes it — the Zalo callback — targets the conflict
+       * (`onConflictDoNothing` on `zalo_id`) and reads the winner's row back.
+       * Two tabs of the same sign-in therefore both sign the same person in
+       * rather than one of them meeting this index.
+       *
+       * It moves the day an operator can type somebody's Zalo id, and it would
+       * move for the same reason `collectors_phone_key` would: "another
+       * collector already holds that account" becomes a sentence a person reads.
+       */
+      'collectors_zalo_id_key',
       'collectors_sign_in_code_check',
       'collectors_sign_in_code_attempts_check',
       'collectors_token_epoch_check',
@@ -1900,6 +1913,36 @@ describe.skipIf(!hasDb())('the back office', () => {
         `${name} is neither a mapped refusal nor declared unreachable — a 500 with no sentence`,
       ).toBe(true);
     }
+
+    /**
+     * The prospect-emptiness list, DISCOVERED and not trusted.
+     *
+     * `POST /api/collectors/:id/zalo-link` suspends an empty prospect to move
+     * its `zalo_id` onto a real collector, and "empty" has to mean every table
+     * that references `collectors` — a table added next month would otherwise
+     * escape the check silently and let the route suspend a row with somebody's
+     * work on it.
+     *
+     * `audit_events` is the one exemption and it is not optional: the prospect
+     * always has its own `collector.sign_up` and `collector.login` rows there,
+     * and the trail must go on naming the id that existed.
+     */
+    const references = (await (await db()).execute(sql`
+      select c.conrelid::regclass::text as tbl, a.attname as col
+        from pg_constraint c
+        join unnest(c.conkey) k on true
+        join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k
+       where c.contype = 'f' and c.confrelid = 'collectors'::regclass
+       order by 1, 2`)) as unknown as { tbl: string; col: string }[];
+    const discovered = references
+      .map((r) => `${r.tbl}.${r.col}`)
+      .filter((name) => name !== 'audit_events.collector_id');
+    expect(discovered.length).toBeGreaterThan(5);
+    expect(
+      [...PROSPECT_MUST_BE_EMPTY_IN].map(([t, c]) => `${t}.${c}`).sort(),
+      'PROSPECT_MUST_BE_EMPTY_IN is not every foreign key into collectors — a zalo-link ' +
+        'could suspend a prospect carrying rows in the table that is missing',
+    ).toEqual(discovered.sort());
 
     // And nothing in the map that the schema does not actually carry, which is
     // how a renamed constraint leaves a dead entry behind.

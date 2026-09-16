@@ -1,3 +1,5 @@
+import { TaskCard } from '../ui/TaskCard.tsx';
+import { Failure } from '../ui/StatePanel.tsx';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Modal,
@@ -21,7 +23,7 @@ import { useTheme } from '../theme.tsx';
 import { useGuideTarget } from '../guide/Guide.tsx';
 import { Button, ListScreen, Note, Tag, face, useInsets } from '../ui.tsx';
 import { EmptyTasks } from '../ui/illustrations/index.tsx';
-import { Skeleton, taskImage } from '../v2.tsx';
+import { Skeleton } from '../v2.tsx';
 import { dong } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
 
@@ -349,29 +351,6 @@ export function TaskHall() {
         ? [...matched].sort((a, b) => b.remainingSlots - a.remainingSlots)
         : matched;
 
-  /**
-   * One column at 320 dp or at enlarged text (work order §4.4). Two 148 dp
-   * tiles plus the gutters do not leave a legible rate at 320, and at 1.2×
-   * the title takes three lines in a half-width card.
-   */
-  const oneColumn = width <= 320 || fontScale >= 1.2;
-
-  /**
-   * Rows, not tasks: the first card is full width (klarna-162's lead store
-   * card) and the rest pair up.
-   *
-   * `ListScreen` is the kit's virtualized screen and takes one item per row,
-   * so the row is the item. That is cheaper than a second list component with
-   * its own `numColumns` — which `FlatList` needs a key change to switch — and
-   * it keeps the tab-bar reserve, the gutter and the empty slot in one place.
-   */
-  const rows: Task[][] = [];
-  for (const [index, task] of visible.entries()) {
-    const previous = rows[rows.length - 1];
-    if (index === 0 || oneColumn || previous === undefined || previous.length === 2) rows.push([task]);
-    else previous.push(task);
-  }
-
   const filtered = needle !== '' || availableOnly || onlyMine || prefs.maxMinutes !== null || prefs.scenarios.length > 0;
 
   if (searching) {
@@ -393,9 +372,10 @@ export function TaskHall() {
   return (
     <View style={{ flex: 1 }}>
       <ListScreen
+        refresh={{ refreshing: tasks.isRefetching || profile.isRefetching, onRefresh: () => { void tasks.refetch(); void profile.refetch(); } }}
         title={tt('hall.title')}
-        data={rows}
-        keyOf={(row) => row.map((task) => task.id).join('+')}
+        data={visible}
+        keyOf={(task) => task.id}
         /**
          * Refresh as a control, not a gesture.
          *
@@ -453,12 +433,11 @@ export function TaskHall() {
                 data and says so — and carries its own Retry, because a
                 blocking error is inline next to the control with a way out and
                 never a toast on a timer (§3.4). */}
-            {tasks.isError && tasks.data !== undefined ? (
-              <Note
+            {tasks.isError || profile.isError ? (
+              <Failure error={tasks.error ?? profile.error}
                 text={tt('common.refreshFailed')}
-                tone="pending"
-                busy={tasks.isFetching}
-                onRetry={() => void tasks.refetch()}
+                busy={tasks.isFetching || profile.isFetching}
+                onRetry={() => { void tasks.refetch(); void profile.refetch(); }}
               />
             ) : null}
             {/* The skeleton grid, while the first read is in flight. Two
@@ -473,22 +452,20 @@ export function TaskHall() {
                 accessible
                 accessibilityLiveRegion="polite"
                 accessibilityLabel={tt('common.loading')}
-                style={{ flexDirection: 'row', gap: c.cardGap }}
+                style={{ gap: c.cardGap }}
               >
                 <View style={{ flex: 1 }}>
-                  <Skeleton ratio={3 / 5} radius={c.radius.card} />
+                  <Skeleton ratio={4 / 3} radius={16} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Skeleton ratio={3 / 5} radius={c.radius.card} />
+                  <Skeleton ratio={4 / 3} radius={16} />
                 </View>
               </View>
             ) : null}
           </View>
         }
         empty={
-          tasks.isPending ? null : tasks.isError ? (
-            <Note text={tt('common.loadFailed')} tone="error" onRetry={() => void tasks.refetch()} busy={tasks.isFetching} />
-          ) : (
+          tasks.isPending || tasks.isError ? null : (
             <EmptyHall
               cleared={filtered}
               onClear={() => {
@@ -496,28 +473,12 @@ export function TaskHall() {
                 setAvailableOnly(false);
                 setOnlyMine(false);
                 savePrefs(NO_PREFERENCES);
+                void tasks.refetch();
               }}
             />
           )
         }
-        renderItem={(row) => {
-          const lead = row[0] !== undefined && row[0] === visible[0];
-          return (
-            <View style={{ flexDirection: 'row', gap: c.cardGap }}>
-              {row.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  lead={lead}
-                  onPress={() => nav.push({ name: 'taskDetail', taskId: task.id })}
-                />
-              ))}
-              {/* An odd last row keeps its tile at half width rather than
-                  stretching one card across the whole grid. */}
-              {!oneColumn && row.length === 1 && !lead ? <View style={{ flex: 1 }} /> : null}
-            </View>
-          );
-        }}
+        renderItem={(task) => <TaskCard task={task} onPress={() => nav.push({ name: 'taskDetail', taskId: task.id })} />}
       />
 
       <Sheet open={sheet === 'filters'} onClose={() => setSheet(null)} title={tt('explore.filters')}>
@@ -741,100 +702,6 @@ function SectionRow({ title, action, onAction }: { title: string; action?: strin
   );
 }
 
-/**
- * A task, photo first (klarna-162).
- *
- * The rate is the largest thing in the card's text block and it is the money
- * green ink shade, not the specified `green` — measured, `#12A150` is 3.06:1
- * on white, which fails AA for anything that is not large-bold text, and
- * `contrast.test.ts` holds `greenInk` instead. §2's figure is kept; the shade
- * is the one that is legible.
- */
-function TaskCard({ task, lead, onPress }: { task: Task; lead: boolean; onPress: () => void }) {
-  const theme = useTheme();
-  const c = theme.collector;
-  const tt = useT();
-  const code = codeOf(task);
-  const scenario = code === null ? (task.type ?? '') : tt(`scenario.${code}`);
-  const size = sizeOf(task.targetMinutes);
-  const tone =
-    size === 'small'
-      ? { fg: c.greenInk, bg: c.greenBg }
-      : size === 'medium'
-        ? { fg: c.amberInk, bg: c.amberBg }
-        : { fg: c.redInk, bg: c.redBg };
-  // At most three, and each one a word the server sent or our own name for a
-  // code it sent. Never a decorative label.
-  const tags = [scenario, task.claimedByMe ? tt('detail.claimed') : task.claimable ? tt('hall.open') : tt('hall.full')]
-    .filter((label) => label !== '')
-    .slice(0, 3);
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={task.title}
-      accessibilityHint={tt('explore.openTask')}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flex: 1,
-        borderRadius: c.radius.card,
-        backgroundColor: pressed ? c.line : c.surface,
-        borderWidth: 1,
-        borderColor: c.line,
-        overflow: 'hidden',
-      })}
-    >
-      {/* An `aspectRatio` box, never a width/height pair: that pair is how the
-          rejected build stretched every still. */}
-      <View style={{ width: '100%', aspectRatio: lead ? 16 / 9 : 4 / 3, backgroundColor: c.line }}>
-        <Image
-          // `assets.d.ts` types a bundled import as React Native's source —
-          // a module number under Metro, a URL string under Vite — and
-          // `expo-image` accepts both. The cast is that one fact.
-          source={taskImage(task.scenario, task.type) as unknown as ImageSource}
-          contentFit="cover"
-          style={{ width: '100%', height: '100%' }}
-          accessible={false}
-        />
-      </View>
-      <View style={{ padding: c.cardPad, gap: theme.space[2] }}>
-        <Text
-          numberOfLines={2}
-          style={{ ...c.type.body, color: c.ink, fontFamily: face(theme), fontWeight: theme.fontWeight.semibold }}
-        >
-          {task.title}
-        </Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', gap: theme.space[2] }}>
-          <Text
-            style={{
-              ...c.type.h2,
-              color: c.greenInk,
-              fontFamily: face(theme),
-              fontWeight: theme.fontWeight.semibold,
-              fontVariant: ['tabular-nums'],
-            }}
-          >
-            {dong(task.unitPriceVndPerMinute)}
-          </Text>
-          <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme), flexShrink: 1 }}>
-            {tt('hall.perMinute')}
-          </Text>
-        </View>
-        <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>
-          {`${tt('detail.target')} · ${task.targetMinutes} ${tt('detail.minutes')}`}
-        </Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2] }}>
-          <Tag label={tt(SIZE_LABEL[size])} fg={tone.fg} bg={tone.bg} />
-          {tags.map((label) => (
-            <Tag key={label} label={label} fg={c.muted} bg={c.paper} />
-          ))}
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
-/** One object, a bold headline, one line, one CTA (`08-empty-states`). */
 function EmptyHall({ cleared, onClear }: { cleared: boolean; onClear: () => void }) {
   const theme = useTheme();
   const c = theme.collector;
@@ -854,7 +721,7 @@ function EmptyHall({ cleared, onClear }: { cleared: boolean; onClear: () => void
       {/* The CTA only exists when there is something to undo. An empty hall is
           not the collector's doing and a button that clears nothing is worse
           than no button. */}
-      {cleared ? <Button label={tt('explore.emptyAction')} variant="secondary" onPress={onClear} /> : null}
+      <Button label={tt(cleared ? 'explore.emptyAction' : 'common.retry')} variant="secondary" onPress={onClear} />
     </View>
   );
 }

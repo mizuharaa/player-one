@@ -233,13 +233,17 @@ it('hides the Server row on a Play build', async () => {
   expect(rowNamed(m['server.title'])).toBeUndefined();
 });
 
-it('puts the build back on its own origin from the same sheet', async () => {
+it('resets only the draft and preserves the session until Save', async () => {
   await loadApiOrigin(fakeOriginStore('http://192.168.1.10:8080'));
   await mount();
   expect(page()).toContain('192.168.1.10:8080');
 
   await act(async () => rowNamed(m['server.title'])!.click());
   await act(async () => named(m['server.reset'])!.click());
+  expect(field(m['server.address'])!.value).toBe(API_BASE_URL);
+  expect(getApiOrigin()).toBe('http://192.168.1.10:8080');
+  expect(signOut).not.toHaveBeenCalled();
+  await act(async () => named(m['server.save'])!.click());
   expect(getApiOrigin()).toBe(API_BASE_URL);
   expect(signOut).toHaveBeenCalledWith({ landing: true });
 });

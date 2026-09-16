@@ -1,3 +1,5 @@
+import { ThemeProvider, polish, useTheme } from '../src/theme.tsx';
+import { MotionProvider } from '../src/ui/motion.ts';
 // @vitest-environment jsdom
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
@@ -8,7 +10,7 @@ import { expect, it, vi } from 'vitest';
 import { AccessibilityInfo } from 'react-native';
 import { ToastProvider, useToast } from '../src/ui/Toast.tsx';
 import { Splash } from '../src/screens/Splash.tsx';
-import { Button, Film, Header, LegalLine, Note, useTabBarReserve } from '../src/ui.tsx';
+import { Button, Film, Header, LegalLine, Note, Screen, ListScreen, useTabBarReserve } from '../src/ui.tsx';
 import { useVideoPlayer } from 'expo-video';
 import { isLowPowerModeEnabledAsync } from 'expo-battery';
 
@@ -61,7 +63,7 @@ it('keeps the poster until power is known and never starts a decoder in low-powe
     const host = document.createElement('div'); document.body.append(host);
     const root = createRoot(host);
     try {
-      await act(async () => root.render(<Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login film" fade={0} />));
+      await act(async () => root.render(<MotionProvider><Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login film" fade={0} /></MotionProvider>));
       expect(useVideoPlayer).not.toHaveBeenCalled();
       expect(host.querySelector('[role="img"]')).not.toBeNull();
       await act(async () => resolvePower(lowPower));
@@ -120,7 +122,7 @@ it('keeps a slow decoder mounted over the poster and removes it on an actual err
   const host = document.createElement('div'); document.body.append(host);
   const root = createRoot(host);
   try {
-    await act(async () => root.render(<Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login film" fade={0} />));
+    await act(async () => root.render(<MotionProvider><Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login film" fade={0} /></MotionProvider>));
     await act(async () => vi.advanceTimersByTime(500));
     expect(host.querySelector('[role="img"]')).not.toBeNull();
     expect(remove).not.toHaveBeenCalled();
@@ -167,7 +169,47 @@ it('recovers a rejected reduced-motion query without leaving the film permanentl
   const host = document.createElement('div'); document.body.append(host);
   const root = createRoot(host);
   try {
-    await act(async () => root.render(<Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login" fade={0} />));
+    await act(async () => root.render(<MotionProvider><Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login" fade={0} /></MotionProvider>));
     expect(useVideoPlayer).toHaveBeenCalled();
   } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null }));
+
+it.each(['screen', 'list'])('reserves safe areas outside the %s scrolling viewport', async kind => {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  function Probe() { return <output>{useTabBarReserve()}</output>; }
+  try {
+    await act(async () => root.render(<SafeAreaInsetsContext.Provider value={{ top: 59, bottom: 34, left: 0, right: 0 }}><NavProvider initial={{ name: 'home' }}>
+      {kind === 'screen' ? <Screen title="Home"><Probe /></Screen> : <ListScreen title="Rows" data={['row']} keyOf={item => item} renderItem={() => <Probe />} />}
+    </NavProvider></SafeAreaInsetsContext.Provider>));
+    const viewport = [...host.querySelectorAll('div')].find(node => getComputedStyle(node).overflowY === 'auto')!;
+    const reserve = Number(host.querySelector('output')!.textContent);
+    expect(reserve).toBeGreaterThan(98);
+    expect(viewport.parentElement!.style.paddingBottom).toBe(`${reserve}px`);
+    expect(viewport.parentElement!.style.paddingTop).toBe('59px');
+    const header = host.querySelector<HTMLElement>('[role="heading"]')!.parentElement!.parentElement!;
+    expect(header.style.paddingTop).toBe('8px');
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it('keeps secondary text readable on paper, white cards and every Home gradient stop', async () => {
+  const host = document.createElement('div'); const root = createRoot(host);
+  let theme!: ReturnType<typeof useTheme>;
+  function Probe() { theme = useTheme(); return null; }
+  const luminance = (hex: string) => [0, 2, 4].map((offset, index) => {
+    const channel = parseInt(hex.slice(offset + 1, offset + 3), 16) / 255;
+    return (channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4) * [0.2126, 0.7152, 0.0722][index]!;
+  }).reduce((a, b) => a + b);
+  const ratio = (a: string, b: string) => (Math.max(luminance(a), luminance(b)) + .05) / (Math.min(luminance(a), luminance(b)) + .05);
+  try {
+    await act(async () => root.render(<ThemeProvider><Probe /></ThemeProvider>));
+    expect(polish.card).toBe(theme.collector.surface);
+    for (const ground of [theme.collector.paper, polish.card, ...polish.homeGradient]) {
+      for (const ink of [theme.collector.muted, theme.color.mutedForeground]) expect(ratio(ink, ground), `${ink} on ${ground}`).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(ratio(polish.hairline, theme.collector.paper)).toBeGreaterThanOrEqual(1.5);
+    expect(ratio(polish.homeBorder, theme.collector.paper)).toBeGreaterThanOrEqual(3);
+  } finally { await act(async () => root.unmount()); }
 });

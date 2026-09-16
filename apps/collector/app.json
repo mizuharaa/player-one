@@ -4,6 +4,7 @@
   "expo": {
     "name": "Player One",
     "slug": "playerone-collector",
+    "scheme": "playerone",
     "version": "0.0.1",
     "orientation": "portrait",
     "android": {
@@ -79,6 +80,14 @@
               "./assets/fonts/BeVietnamPro-ExtraBold.ttf"
             ]
           }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Player One uses the photos and videos you choose for an unmeasured upload.",
+          "cameraPermission": "Player One uses the camera when you choose Take Photo.",
+          "microphonePermission": false
         }
       ]
     ],

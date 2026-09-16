@@ -24,6 +24,16 @@ vi.mock('react-native', async () => ({ ...await import('react-native-web') }));
  * `Film`, and every file that reaches `ui.tsx` therefore reaches this.
  */
 vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({ addListener: () => ({ remove: () => {} }), status: 'idle' }) }));
+/**
+ * `react-native-svg` publishes Flow source, which vitest cannot parse. The
+ * same stub as `explore-screen.test.tsx` and three other screen tests: this
+ * screen reaches it through `zalo.tsx`'s Zalo mark, which the sign-in screen
+ * carries since the 2026-09-16 Zalo Login decision.
+ */
+vi.mock('react-native-svg', () => {
+  const Stub = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
+  return { default: Stub, Svg: Stub, Path: Stub, Circle: Stub, Rect: Stub, Line: Stub, G: Stub };
+});
 vi.mock('../src/ui.tsx', async (original) => ({
   ...await original<Record<string, unknown>>(),
   Body: ({ children }: { children: ReactNode }) => <p>{children}</p>,
@@ -59,7 +69,9 @@ const resendStem = 'Gửi lại';
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
 async function mount() {
-  const api = new HttpCollectorApi('https://collector.test', tokens, () => {}, fetchFn);
+  // These queued responses exercise OTP; the independent Zalo probe is unavailable.
+  const api = new HttpCollectorApi('https://collector.test', tokens, () => {}, async (input, init) =>
+    String(input).endsWith('/auth/collector/zalo/start') ? new Response(null, { status: 503 }) : fetchFn(input, init));
   await act(async () => root.render(
     <QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="vi">
       <SignIn onSignedIn={signedIn} />
@@ -272,7 +284,7 @@ describe('APP-01 sign-in recovery', () => {
     await settle(() => expect(container.textContent).toContain(copy['signIn.demoFilled']));
     await tap(copy['signIn.submit']);
     expect(container.querySelector(`input[aria-label="${copy['signIn.phone']}"]`)).toBeNull();
-    expect(codeRow()?.readOnly).toBe(true);
+    await settle(() => expect(codeRow()?.readOnly).toBe(true));
     expect(tokens.value).toBeNull();
     await act(async () => pending.resolve(json({ token: 'token-for-first-phone' })));
     await settle(() => expect(tokens.value).toBe('token-for-first-phone'));
@@ -289,3 +301,81 @@ vi.mock('react-native-safe-area-context', async () => ({
 vi.mock('../src/ui/HeaderGradient.tsx', () => ({ HeaderGradient: ({ children }: { children: import('react').ReactNode }) => children }));
 
 vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
+
+// Native illustration rendering is covered by the web captures.
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));
+
+it('shows the unreachable state before authentication and opens the shared Server setting', async () => {
+  fetchFn.mockRejectedValueOnce(new TypeError('offline'));
+  await mount();
+  await tap(copy['signIn.sendCode']);
+  await settle(() => expect(container.textContent).toContain(copy['state.offline']));
+  expect(codeRow()).toBeNull();
+  await tap(copy['server.title']);
+  await settle(() => expect(document.body.textContent).toContain(copy['server.address']));
+  expect(document.body.textContent).toContain(copy['profile.about']);
+  expect(tokens.value).toBeNull();
+});
+
+it('plain Retry repeats an offline sign-in request without opening Server settings', async () => {
+  fetchFn.mockRejectedValueOnce(new TypeError('offline')).mockResolvedValueOnce(json({ demo_code: '123456' }));
+  await mount();
+  await tap(copy['signIn.sendCode']);
+  await settle(() => expect(container.textContent).toContain(copy['state.offline']));
+  await tap(copy['common.retry']);
+  await settle(() => expect(container.textContent).toContain(copy['signIn.demoFilled']));
+  expect(fetchFn).toHaveBeenCalledTimes(2);
+  expect(document.body.textContent).not.toContain(copy['server.address']);
+});
+
+it('retries an offline new request after an earlier verification refusal', async () => {
+  fetchFn.mockResolvedValueOnce(json({ demo_code: '123456' }))
+    .mockResolvedValueOnce(new Response(null, { status: 401 }))
+    .mockRejectedValueOnce(new TypeError('offline'))
+    .mockResolvedValueOnce(json({ demo_code: '654321' }));
+  await mount(); await tap(copy['signIn.sendCode']);
+  await settle(() => expect(codeRow()).not.toBeNull());
+  await tap(copy['signIn.submit']);
+  await settle(() => expect(container.textContent).toContain(copy['signIn.badCode']));
+  await tapBack(); await tap(copy['signIn.sendCode']);
+  await settle(() => expect(container.textContent).toContain(copy['state.offline']));
+  await tap(copy['common.retry']);
+  expect(fetchFn).toHaveBeenCalledTimes(4);
+});
+
+it('does not offer automatic Retry for a refused code request', async () => {
+  fetchFn.mockResolvedValueOnce(new Response(null, { status: 429 }));
+  await mount(); await tap(copy['signIn.sendCode']);
+  await settle(() => expect(container.textContent).toContain(copy['signIn.rateLimited']));
+  expect(container.textContent).not.toContain(copy['common.retry']);
+  expect(fetchFn).toHaveBeenCalledTimes(1);
+});
+it('returns a rejected demo code to entry without spending another attempt', async () => {
+  fetchFn.mockResolvedValueOnce(json({ demo_code: '123456' }))
+    .mockResolvedValueOnce(new Response(null, { status: 401 }))
+    .mockResolvedValueOnce(json({ token: 'accepted-new-code' }));
+  await mount(); await tap(copy['signIn.sendCode']);
+  await settle(() => expect(codeRow()).not.toBeNull());
+  await tap(copy['signIn.submit']);
+  await settle(() => expect(container.textContent).toContain(copy['signIn.badCode']));
+  expect(codeRow()!.value).toBe('');
+  expect([...container.querySelectorAll('button')].some(n => n.textContent === copy['signIn.submit'] || n.textContent === copy['common.retry'])).toBe(false);
+  expect(fetchFn).toHaveBeenCalledTimes(2);
+  await edit(copy['signIn.code'], '654321');
+  await settle(() => expect(signedIn).toHaveBeenCalledTimes(1));
+  expect(fetchFn).toHaveBeenCalledTimes(3);
+});
+it('retries the preserved code only after a transport failure', async () => {
+  fetchFn.mockResolvedValueOnce(json({ demo_code: '123456' }))
+    .mockRejectedValueOnce(new TypeError('offline'))
+    .mockResolvedValueOnce(json({ token: 'accepted-after-retry' }));
+  await mount(); await tap(copy['signIn.sendCode']);
+  await settle(() => expect(codeRow()).not.toBeNull());
+  await tap(copy['signIn.submit']);
+  await settle(() => expect(container.textContent).toContain(copy['state.offline']));
+  expect(codeRow()!.value).toBe('123456');
+  await tap(copy['common.retry']);
+  await settle(() => expect(signedIn).toHaveBeenCalledTimes(1));
+  expect(fetchFn).toHaveBeenCalledTimes(3);
+  expect(JSON.parse(String(fetchFn.mock.calls[2]?.[1]?.body)).code).toBe('123456');
+});

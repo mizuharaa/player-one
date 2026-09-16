@@ -1,3 +1,4 @@
+import { Failure } from '../ui/StatePanel.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, Switch, Text, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
@@ -75,7 +76,7 @@ export function Exam() {
       title={tt('exam.title')}
       footer={
         <>
-          {submit.isError ? <Note text={tt('common.actionFailed')} /> : null}
+          {submit.isError ? <Failure onRetry={sendAnswers} busy={submit.isPending} error={submit.error} text={tt('common.actionFailed')} /> : null}
           {result === 'passed' ? (
             <Button label={tt('home.tasks')} onPress={() => nav.reset({ name: 'home' })} />
           ) : (

@@ -1,3 +1,4 @@
+import { Failure } from '../ui/StatePanel.tsx';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -137,7 +138,7 @@ export function Register() {
       </View>
 
       {missing ? <Note text={tt('register.missing')} /> : null}
-      {register.isError ? <Note text={tt('common.actionFailed')} /> : null}
+      {register.isError ? <Failure onRetry={() => { const incomplete = name.trim() === '' || phone.trim() === ''; setMissing(incomplete); if (!incomplete) register.mutate(); }} busy={register.isPending} error={register.error} text={tt('common.actionFailed')} /> : null}
       <Button
         disabled={register.isPending}
         label={tt(register.isPending ? 'common.saving' : 'register.submit')}

@@ -1,18 +1,22 @@
+import { RouteTransition } from '../src/shell/RouteTransition.tsx';
+import { BootIntro } from '../src/shell/BootIntro.tsx';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { Onboarding } from '../src/screens/Onboarding.tsx';
 import { Notifications } from '../src/screens/Notifications.tsx';
 import { NOTIFICATION_PREVIEW } from './notification-preview.ts';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App, SCREENS } from '../src/App.tsx';
-import { LOCALES, type Locale as LocaleName } from '../src/i18n.ts';
+import { DEFAULT_LOCALE, LOCALES, type Locale as LocaleName } from '../src/i18n.ts';
 import { LocaleProvider, useLocale } from '../src/locale.tsx';
 import { NavProvider, useNav, type Route, type RouteName } from '../src/nav.tsx';
 import { GuideProvider } from '../src/guide/Guide.tsx';
 import { ToastProvider } from '../src/ui/Toast.tsx';
 import { TabBar } from '../src/shell/TabBar.tsx';
-import { View } from 'react-native';
-import { AGREEMENTS } from '../src/api/types.ts';
+import { Platform, View } from 'react-native';
+// Preview iOS-only source controls without opening a native picker.
+if (new URLSearchParams(window.location.search).get('platform') === 'ios') Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
+import { AGREEMENTS, ApiError } from '../src/api/types.ts';
 import { ThemeProvider } from '../src/theme.tsx';
 import { Landing } from '../src/screens/Landing.tsx';
 import { SignIn } from '../src/screens/SignIn.tsx';
@@ -54,18 +58,38 @@ function Locale({ lang, children }: { lang: LocaleName; children: ReactNode }) {
 const PREVIEW_INSETS = { top: 59, bottom: 34, left: 0, right: 0 }; // the demo handset is an iPhone with a Dynamic Island and home indicator
 const api = new MockCollectorApi();
 /** `SignIn` sends its two requests through react-query, exactly as in `App`. */
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 function RoutedScreen() {
   const nav = useNav();
   const Screen = SCREENS[nav.route.name];
   const preview = nav.route.name === 'notifications' && new URLSearchParams(window.location.search).get('simulation') === '1';
-  return <View style={{ flex: 1 }}>{preview ? <Notifications previewItems={NOTIFICATION_PREVIEW} /> : <Screen />}{nav.isTabRoot ? <TabBar /> : null}</View>;
+  return <View style={{ flex: 1 }}>{preview ? <Notifications previewItems={NOTIFICATION_PREVIEW} /> : <RouteTransition route={nav.route} isTabRoot={nav.isTabRoot}><Screen /></RouteTransition>}{nav.isTabRoot ? <TabBar /> : null}</View>;
 }
 
 export function Harness() {
   const params = new URLSearchParams(window.location.search);
   const screen = params.get('screen');
+  const state = params.get('state');
+  const loading = state === 'loading';
+  const previewApi = useMemo(() => new Proxy(api, { get(target, key) {
+    if (state === 'zalo-refusal' && key === 'startZaloSignIn') return async (options?: { probeOnly?: boolean }) => {
+      if (options?.probeOnly) return { url: 'https://preview.invalid/zalo', state: 'preview' };
+      throw new ApiError('zalo_not_configured');
+    };
+    if (state === 'upload-stalled' && key === 'sessions') return async () => [{ id: 'preview-session', scenario: 'home', createdAt: '2026-09-16T12:00:00Z' }];
+    if (state === 'upload-stalled' && key === 'registerDelivery') return async (record: { files: { relativePath: string }[] }) => ({ state: 'registered', files: record.files.map(file => ({ relativePath: file.relativePath, done: false, putUrl: 'https://preview.invalid/upload', parts: [] })) });
+    if (state === 'simulation' && key === 'income') return async () => [{ episodeId: 'sandbox-paid', kind: 'confirmed', amountVnd: '1200', effectiveMinutes: '1', settlementState: 'paid', simulation: true }];
+    if (state === 'simulation' && key === 'incomeCycle') return async () => ({ label: 'Sandbox cycle', confirmedVnd: '1200', estimatedVnd: '0', totalVnd: '1200', simulation: true });
+    if (state === 'simulation' && key === 'episodes') return async () => [{ episodeId: 'sandbox-paid', sessionId: 'sandbox-session', sizeBytes: 1200, state: 'review_passed' }];
+    if (state === 'enrolling' && key === 'profile') return async () => ({ ...await target.profile(), trainingDone: false, examPassed: false });
+    if (state === 'refusal' && key === 'claimTask') return async () => { throw new ApiError('collector_not_onboarded'); };
+    if (loading && ['tasks', 'task', 'myClaims', 'boundDevices', 'episodes', 'income', 'incomeCycle', 'sessions', 'notifications'].includes(String(key))) return () => new Promise(() => {});
+    if (['offline', 'error'].includes(state ?? '') && ['tasks', 'task', 'myClaims', 'boundDevices', 'episodes', 'income', 'incomeCycle', 'sessions', 'notifications', 'profile', 'payout', 'requestSignInCode'].includes(String(key))) return async () => { throw new ApiError(state === 'offline' ? 'server_unreachable' : 'server_error'); };
+    if (state === 'empty' && ['tasks', 'myClaims', 'boundDevices', 'episodes', 'income', 'sessions', 'notifications'].includes(String(key))) return async () => [];
+    const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value;
+  } }), [loading, state]);
+  const [intro, setIntro] = useState(params.get('intro') === '1');
   const asked = params.get('lang');
   const readyRequested = params.get('ready') === '1';
   const [ready, setReady] = useState(!readyRequested);
@@ -87,7 +111,7 @@ export function Harness() {
   }, [readyRequested]);
   const lang: LocaleName = (LOCALES as readonly string[]).includes(asked ?? '')
     ? (asked as LocaleName)
-    : 'en';
+    : DEFAULT_LOCALE;
 
   if (screen === null) return <SafeAreaInsetsContext.Provider value={PREVIEW_INSETS}><App /></SafeAreaInsetsContext.Provider>;
   if (!ready) return null;
@@ -101,7 +125,7 @@ export function Harness() {
     <ThemeProvider>
       <LocaleProvider>
         <Locale lang={lang}>
-          <ApiProvider value={api}>
+          <ApiProvider value={previewApi}>
             <QueryClientProvider client={queryClient}>
               <ToastProvider><NavProvider initial={initial}>
                 {screen === 'onboarding' ? <GuideProvider><Onboarding onDone={() => {}} /></GuideProvider> : routed ? <GuideProvider><RoutedScreen /></GuideProvider> : screen === 'signin' ? (
@@ -109,6 +133,7 @@ export function Harness() {
                 ) : (
                   <Landing onSignIn={() => {}} />
                 )}
+                {intro ? <BootIntro onDone={() => setIntro(false)} /> : null}
               </NavProvider></ToastProvider>
             </QueryClientProvider>
           </ApiProvider>

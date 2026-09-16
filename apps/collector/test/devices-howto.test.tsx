@@ -129,3 +129,34 @@ function hexToRgb(hex: string): string {
   const n = Number.parseInt(hex.slice(1), 16);
   return `rgb(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255})`;
 }
+
+it('shows a failed device scan and an illustrated empty result after retry', async () => {
+  const { Provisioning } = await import('../src/screens/Provisioning.tsx');
+  const { MockDeviceTransport } = await import('../src/device/transport.ts');
+  const { TransportProvider } = await import('../src/device/transport-context.tsx');
+  const transport = new MockDeviceTransport();
+  vi.spyOn(transport, 'scan').mockRejectedValueOnce(new Error('Bluetooth unavailable')).mockResolvedValueOnce([]);
+  await act(async () => root.render(<ThemeProvider><LocaleProvider><TransportProvider value={transport}><NavProvider initial={{ name: 'provisioning' }}><Provisioning /></NavProvider></TransportProvider></LocaleProvider></ThemeProvider>));
+  const press = async (label: string) => { await act(async () => (document.querySelector(`[aria-label="${label}"]`) as HTMLElement).click()); };
+  await press(m['prov.scan']);
+  expect(page()).toContain('Bluetooth unavailable');
+  await press(m['common.retry']);
+  expect(page()).toContain(m['state.empty']);
+  expect(page()).not.toContain('Bluetooth unavailable');
+});
+
+it('does not let a failed bind retry bypass serial validation', async () => {
+  vi.spyOn(api, 'boundDevices').mockResolvedValue([{ serial: 'EGO-BOUND', boundAt: '2026-09-15T00:00:00Z' }]);
+  const bind = vi.spyOn(api, 'bindDevice').mockRejectedValue(new Error('offline'));
+  await mount();
+  const field = host.querySelector<HTMLInputElement>(`input[aria-label="${m['devices.typed']}"]`)!;
+  const edit = async (value: string) => act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, value);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  const button = (label: string) => [...host.querySelectorAll<HTMLElement>('[role="button"]')].find(n => n.getAttribute('aria-label') === label)!;
+  await edit('EGO-NEW'); await act(async () => button(m['devices.bind']).click());
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+  await edit(''); await act(async () => button(m['common.retry']).click());
+  expect(bind).toHaveBeenCalledTimes(1);
+});

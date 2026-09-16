@@ -1,19 +1,23 @@
+import { DemoBypass } from '../ui/DemoBypass.tsx';
+import { Failure } from '../ui/StatePanel.tsx';
+import { BrandSlot } from '../shell/BrandSlot.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
 import { ApiError } from '../api/types.ts';
+import { BUILD_PROFILE } from '../api/config.ts';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { e164 } from '../phone.ts';
 import { Button, Film, Choice, CodeBoxes, Field, LegalLine, Note, Scrim, face, useInsets, } from '../ui.tsx';
 import { useTheme } from '../theme.tsx';
+import { ZaloMark, ZaloSignIn, useZaloSignIn } from '../zalo.tsx';
 import type { MessageKey } from '../i18n.ts';
 import poster from '../../assets/hero/login-poster.jpg';
 import loginFilm from '../../assets/hero/login.mp4';
-import wordmark from '../../assets/discover/playerone-wordmark.png';
 
 /**
- * APP-01. The number, then the code that comes back over Zalo.
+ * APP-01. The number, then the code that comes back.
  *
  * SPEC.md §3 and §4. Two steps, still one component and still not a route:
  * this is not somewhere a collector navigates to, it is what the app is when
@@ -32,16 +36,27 @@ import wordmark from '../../assets/discover/playerone-wordmark.png';
  * and a refusal always says the same sentence. A more helpful message here
  * would undo the reason those routes are shaped that way.
  *
- * A collector whose number has no Zalo account cannot receive a code at all —
- * the named refusal `zns_no_zalo_account`, recorded server-side against the
- * collector so an operator can find them. The app cannot see that and must not
- * pretend to: `signIn.codeSent` tells them to check Zalo, and the way out is a
- * person at a counter.
+ * A collector whose number has no Zalo account cannot receive a ZNS code at
+ * all — the named refusal `zns_no_zalo_account`, recorded server-side against
+ * the collector so an operator can find them. The app cannot see that and must
+ * not pretend to; the way out is SMS, Zalo Login, or a person at a counter.
+ *
+ * **`signIn.codeSent` names BOTH places to look, and does not promise one.**
+ * The server chooses the channel from `PLAYERONE_SIGN_IN_CHANNEL` and the app
+ * cannot see which: all three locales used to say the code arrives over Zalo,
+ * so on an SMS deployment a collector waited in the wrong app and the fallback
+ * looked broken. Audit 3 of `3f9bb17` found it.
+ *
+ * Naming both rather than asking the server which is deliberate — the reason
+ * is in the commit, and the short version is that a deployment can be
+ * configured for ZNS and still deliver nothing (no verified Official Account),
+ * where a sentence promising Zalo would be confidently wrong and one naming
+ * both is merely broad.
  *
  * **The hint comes before the press, not after it.** §3, and it is the most
  * consistent habit in the whole reference pass: `signIn.codeSent` is rendered
- * above the button rather than revealed by it, so the Zalo channel is
- * disclosed before a collector commits a phone number rather than after. It is
+ * above the button rather than revealed by it, so where to look is disclosed
+ * before a collector commits a phone number rather than after. It is
  * conditional by construction ("Nếu số này đã được đăng ký…") and therefore
  * says nothing the 204 is protecting.
  *
@@ -78,68 +93,13 @@ const HERO_SCRIM = [[0, 0.2], [0.55, 0.55], [1, 0.55]] as const;
 /** §4: the resend timer counts from arrival. */
 const RESEND_SECONDS = 60;
 
-/**
- * The Zalo mark, so a collector knows which app the code lands in.
- *
- * Drawn from Views: `react-native-svg` is not a dependency of this app (§20.1)
- * and a remote image would make the mark depend on the network the collector
- * has not signed in over yet. It is the recognisable part — the bubble with
- * its tail — reduced to what holds at 24dp, not a reproduction of the
- * wordmark.
- *
- * It is drawn in `action`/`actionInk`, the ink pair, and not in a blue. The
- * blue it used was `tech[500]`, which is PaXini's mark: a Vietnamese messaging
- * app's logo painted in the camera vendor's brand colour was already the wrong
- * blue, and tech is the partner lockup and nothing else now.
- */
-function ZaloMark({ label }: { label: string }) {
-  const theme = useTheme();
-  const size = theme.space[6];
-  return (
-    <View
-      accessibilityRole="image"
-      accessibilityLabel={label}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: theme.radius.sm,
-        backgroundColor: theme.color.action,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <View
-        style={{
-          position: 'absolute',
-          left: theme.space[1],
-          bottom: -theme.space[1],
-          width: theme.space[2],
-          height: theme.space[2],
-          backgroundColor: theme.color.action,
-          transform: [{ rotate: '45deg' }],
-        }}
-      />
-      <Text
-        style={{
-          color: theme.color.actionInk,
-          fontFamily: face(theme),
-          ...theme.collector.type.caption,
-fontWeight: theme.fontWeight.bold,
-        }}
-      >
-        Z
-      </Text>
-    </View>
-  );
-}
-
 /** The pre-announcement, and the same row on both steps. */
 function ZaloHint() {
   const theme = useTheme();
   const tt = useT();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space[2] }}>
-      <ZaloMark label={tt('signIn.zaloMark')} />
+      <ZaloMark size={theme.space[5]} label={tt('signIn.zaloMark')} />
       <Text
         style={{
           flexGrow: 1,
@@ -181,6 +141,18 @@ export function SignIn({
   /** §4's shake fires on a count, not a flag: two wrong codes shake twice. */
   const [refused, setRefused] = useState(0);
   const [left, setLeft] = useState(0);
+  /**
+   * Zalo Login, owner's decision of 2026-09-16 — the first-class way in, with
+   * the code path below it as the fallback. It owns the whole browser hop,
+   * including the `playerone://signed-in` link coming back, so this screen only
+   * places it and hands it the same `onSignedIn` the code path calls.
+   */
+  const zalo = useZaloSignIn({ onSignedIn });
+  /**
+   * The demo bypass sheet, owner's request of 2026-09-16. See `DemoBypass.tsx`.
+   * State and not a route, for the reason this whole screen is not one.
+   */
+  const [demo, setDemo] = useState(false);
   const mounted = useRef(true);
   const revision = useRef(0);
   const submitting = useRef<'request' | 'verify' | null>(null);
@@ -195,7 +167,8 @@ export function SignIn({
   /** One message per named refusal, and one fallback that admits nothing. */
   const failed = (err: unknown): void => {
     const refusal = err instanceof ApiError ? err.code : '';
-    if (refusal === 'rate_limited') setProblem('signIn.rateLimited');
+    if (refusal === 'server_unreachable') setProblem('state.offline');
+    else if (refusal === 'rate_limited') setProblem('signIn.rateLimited');
     else if (refusal === 'sign_in_unavailable') setProblem('signIn.unavailable');
     else if (refusal === 'credentials') setProblem('signIn.badCode');
     else setProblem('common.actionFailed');
@@ -228,6 +201,7 @@ export function SignIn({
     onError: (error, attempt) => {
       if (mounted.current && attempt.revision === revision.current) {
         failed(error);
+        if (!(error instanceof ApiError && error.code === 'server_unreachable')) { setFilled(false); setCode(''); }
         setRefused((n) => n + 1);
       }
     },
@@ -246,6 +220,7 @@ export function SignIn({
     // A synchronous guard also covers two taps before React rerenders disabled.
     if (submitting.current) return;
     submitting.current = 'request';
+    verify.reset();
     setProblem(null);
     setCode('');
     setFilled(false);
@@ -403,7 +378,7 @@ fontWeight: theme.fontWeight.medium,
               >
                 {tt('signIn.checking')}
               </Text>
-            ) : problem !== null ? (
+            ) : problem === 'state.offline' ? <Failure error={new ApiError('server_unreachable')} text={tt(problem)} onRetry={() => verify.isError ? submitCode(code) : sendCode()} busy={pending} /> : problem !== null ? (
               <Text
                 accessibilityLiveRegion="polite"
                 style={{
@@ -480,18 +455,10 @@ fontWeight: theme.fontWeight.medium,
               position: 'absolute',
               left: theme.space[5],
               bottom: theme.space[5] + theme.space[6],
-              width: '40%',
-              aspectRatio: 784 / 152,
+              minHeight: 38,
             }}
           >
-            <Image
-              source={wordmark}
-              style={{ width: '100%', height: '100%' }}
-              resizeMode="contain"
-              tintColor={theme.color.discover.surface}
-              accessibilityRole="image"
-              accessibilityLabel={tt('app.name')}
-            />
+            <BrandSlot color={theme.color.discover.surface} />
           </View>
           {onBack === undefined ? null : (
             <View style={{ position: 'absolute', top: insets.top, left: theme.space[5] }}>
@@ -539,6 +506,14 @@ fontWeight: theme.fontWeight.medium,
           >
             {tt('signIn.intro')}
           </Text>
+
+          {/*
+            Above the phone field, because it is the way in that works for
+            anybody with a Zalo account and the code path is the fallback
+            underneath it. The "hoặc dùng số điện thoại" line the block ends
+            with is what says so, rather than a heading over the field.
+          */}
+          <ZaloSignIn state={zalo} />
 
           {/*
             The code and the number share one row, the way a phone number is
@@ -649,7 +624,25 @@ fontWeight: theme.fontWeight.medium,
           */}
           <LegalLine />
 
-          {problem !== null ? <Note text={tt(problem)} /> : null}
+          {/*
+            The demo bypass, owner's request of 2026-09-16, and the ONLY way
+            into it. Debugging and the Thursday demonstration: the pipelines
+            have to be showable when no sign-in channel delivers a code.
+
+            Not rendered at all on the Play profile — the same gate the Server
+            row in `Profile.tsx` uses, and the same reason: a control that must
+            not exist in a shipped app is better absent than disabled. It is a
+            ghost under the legal line rather than a third button in the stack
+            above, because it is not a way in for a collector and must not read
+            as one; `test/demo-bypass.test.tsx` measures both the presence and
+            the absence.
+          */}
+          {BUILD_PROFILE === 'play' ? null : (
+            <Button label={tt('demo.entry')} variant="ghost" onPress={() => setDemo(true)} />
+          )}
+          {demo ? <DemoBypass onSignedIn={onSignedIn} onClose={() => setDemo(false)} /> : null}
+
+          {problem !== null ? <Failure error={problem === 'state.offline' ? new ApiError('server_unreachable') : undefined} text={tt(problem)} onRetry={problem === 'state.offline' ? () => verify.isError ? submitCode(code) : sendCode() : undefined} busy={pending} /> : null}
 
           <View style={{ marginTop: 'auto', paddingTop: theme.space[5] }}>
             <Button label={tt('signIn.sendCode')} disabled={pending} onPress={sendCode} />

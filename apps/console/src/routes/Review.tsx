@@ -450,6 +450,7 @@ export function ReviewScreen() {
         <Nothing
           title={t('state.playbackWithheld.title')}
           body={t('state.playbackWithheld.body')}
+          action={<WithheldQueue />}
         />
       </AppShell>
     );
@@ -994,6 +995,40 @@ function VerdictChoice({
  * would be. It lives here rather than in `components/ui` because it is the one
  * screen with that rule.
  */
+/**
+ * What a reviewer CAN see when raw playback is withheld: the queue's metadata.
+ *
+ * `GET /api/review/next` is not behind `mayWatch` — only the claim, the
+ * heartbeat and the verdict are (review.ts) — and it answers 200 with the
+ * task, the collector, the device and both durations, with `media.parts`
+ * empty. Measured 2026-09-15 and again on 2026-09-16 against the stakeholder
+ * seed. So the screen shows that instead of implying the deployment is broken,
+ * and it does not offer a verdict control: the server refuses the verdict for
+ * this session by name, and a button that cannot honestly be pressed is the
+ * thing this screen already exists to avoid.
+ *
+ * ponytail: a read, not a queue. One episode, because that is what the route
+ * answers; a reviewer's whole list is a route nobody has needed yet.
+ */
+function WithheldQueue() {
+  const { t } = useTranslation();
+  const next = useQuery({ queryKey: ['review', 'peek'], queryFn: () => api.peek(), retry: false });
+  if (next.isPending || next.error) return null;
+  const episode = next.data;
+  if (!episode) return <p className="text-[0.9375rem]">{t('queue.empty.body')}</p>;
+  return (
+    <div>
+      <p className="text-[0.9375rem] font-semibold">{t('state.playbackWithheld.metadata')}</p>
+      <dl className="mt-3 space-y-2">
+        <Field label={t('meta.task')} value={episode.task?.name ?? t('meta.unknown')} />
+        <Field label={t('meta.collector')} value={episode.collector?.display_name ?? t('meta.unknown')} />
+        <Field label={t('meta.device')} value={episode.device.serial ?? t('meta.unknown')} />
+        <Field label={t('meta.measured')} value={duration(episode.measured_duration_seconds)} />
+      </dl>
+    </div>
+  );
+}
+
 function Nothing({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) {
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-3.5rem)] items-center justify-center p-6">

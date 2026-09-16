@@ -30,5 +30,14 @@ export function canReadFinance(role: FinanceRole): boolean {
 /** The catalogue key that says why an action is disabled for this role, or null when it is not. */
 export function readOnlyReason(role: FinanceRole): string | null {
   if (role === 'finance') return null;
-  return role === 'operator' || role === 'administrator' ? 'settle.readonly.operator' : 'settle.readonly.unknown';
+  /**
+   * The administrator gets its own sentence, because the operator's one is not
+   * true of it. `financeReadGuard` lets an administrator READ every figure on
+   * these screens, and it does — so "only finance accounts can view bills"
+   * printed above a bill table an administrator is looking at is a visible
+   * falsehood, measured on the demo build on 2026-09-16. Both roles still get
+   * every control disabled; only the reason differs.
+   */
+  if (role === 'administrator') return 'settle.readonly.administrator';
+  return role === 'operator' ? 'settle.readonly.operator' : 'settle.readonly.unknown';
 }

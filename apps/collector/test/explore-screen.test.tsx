@@ -10,7 +10,7 @@ import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
 import { LocaleProvider } from '../src/locale.tsx';
 import { NavProvider } from '../src/nav.tsx';
 import { ThemeProvider } from '../src/theme.tsx';
-import { dong } from '../src/money.ts';
+import { dong, vnd } from '../src/money.ts';
 
 vi.mock('react-native', async () => ({ ...(await import('react-native-web')) }));
 vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({}) }));
@@ -173,30 +173,24 @@ it('prints the rate the server sent and never a total', async () => {
 
   // The three seeded tasks, each with its own unit price, rendered from the
   // server's own decimal string through `dong` and nothing else.
-  expect(page()).toContain(dong('1200'));
-  expect(page()).toContain(dong('1000'));
-  expect(page()).toContain(dong('1500'));
+  expect(page()).toContain(vnd('1200'));
+  expect(page()).toContain(vnd('1000'));
+  expect(page()).toContain(vnd('1500'));
   expect(page()).toContain(m['hall.perMinute']);
 
   // 1200 x 3000 = 3,600,000 — the projection this screen must never show.
   // Nor the other two tasks' products.
-  for (const projection of [dong('3600000'), dong('6000000'), dong('13500000')]) {
+  for (const projection of [vnd('3600000'), vnd('6000000'), vnd('13500000')]) {
     expect(page()).not.toContain(projection);
   }
 });
 
-it('bands a task by the target the server sent, not by a session length', async () => {
+it('prints the server target and remaining slots on the card meta line', async () => {
   await mount();
 
-  // 3,000 minutes is Medium and 6,000 and 9,000 are Large under the bands at
-  // 1,000 and 5,000. An earlier draft banded at 30 and 90 minutes, which put
-  // all three in the same band — so this asserts two different bands appear.
-  expect(page()).toContain(m['explore.effortMedium']);
-  expect(page()).toContain(m['explore.effortLong']);
-  expect(page()).not.toContain(m['explore.effortShort']);
-
-  // And the figure itself is the server's, printed with its own unit.
-  expect(page()).toContain(`${m['detail.target']} · 3000 ${m['detail.minutes']}`);
+  expect(page()).toContain(`50 ${m['taskCard.hours']}`);
+  const task = (await api.tasks())[0]!;
+  expect(page()).toContain(m['taskCard.slots'].replace('{count}', String(task.remainingSlots)));
 });
 
 it('opens the search overlay, filters on what was typed, and remembers the term', async () => {
@@ -388,4 +382,27 @@ it('reports a failed local deletion and lets the same collector retry it', async
     await clearPreferences('col-a');
     expect(store.has('playerone.collector.prefs.col-a')).toBe(false);
   } finally { remove.mockRestore(); }
+});
+
+it('renders a seeded task title, exact price and type badge in the shared card', async () => {
+  const { TaskCard } = await import('../src/ui/TaskCard.tsx');
+  const seed = { ...(await api.tasks())[0]!, title: 'Office task', type: 'office', unitPriceVndPerMinute: '1234.5678' };
+  await act(async () => root.render(<ThemeProvider><LocaleProvider><TaskCard task={seed} onPress={() => {}} /></LocaleProvider></ThemeProvider>));
+  expect(page()).toContain('Office task');
+  expect(page()).toContain(vnd('1234.5678'));
+  expect(page()).toContain(m['hall.perMinute']);
+  const price = document.body.querySelector<HTMLElement>('[data-testid="task-price"]')!;
+  expect(price.style.fontSize).toBe('22px');
+  expect(price.style.whiteSpace).not.toBe('nowrap');
+  expect(price.style.textOverflow).not.toBe('ellipsis');
+  expect(page()).toContain(m['taskCard.home']);
+  expect(page()).toContain(m['hall.imageLabel']);
+});
+
+it.each([120, 121, 3000])('formats a server duration of %s minutes without losing the remainder', async targetMinutes => {
+  const { TaskCard } = await import('../src/ui/TaskCard.tsx');
+  const seed = { ...(await api.tasks())[0]!, targetMinutes };
+  await act(async () => root.render(<ThemeProvider><LocaleProvider><TaskCard task={seed} onPress={() => {}} /></LocaleProvider></ThemeProvider>));
+  const expected = targetMinutes === 120 ? `120 ${m['detail.minutes']}` : targetMinutes === 121 ? `2 ${m['taskCard.hours']} 1 ${m['detail.minutes']}` : `50 ${m['taskCard.hours']}`;
+  expect(page()).toContain(expected);
 });

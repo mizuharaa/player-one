@@ -1,3 +1,4 @@
+import { Failure } from '../ui/StatePanel.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, Switch, Text, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
@@ -48,7 +49,7 @@ export function Agreements() {
   const accept = useMutation({
     mutationFn: () =>
       api.acceptAgreements(AGREEMENTS.map((a) => ({ agreementId: a.id, version: a.version }))),
-    onSuccess: () => { if (mounted.current) nav.push({ name: 'training' }); },
+    onSuccess: () => { if (mounted.current) nav.push({ name: 'exam' }); },
     onSettled: () => { submitting.current = false; },
   });
 
@@ -70,7 +71,7 @@ export function Agreements() {
       footer={
         <>
           {!allChecked ? <Note text={tt('agreements.incomplete')} /> : null}
-          {accept.isError ? <Note text={tt('common.actionFailed')} /> : null}
+          {accept.isError ? <Failure onRetry={submit} busy={accept.isPending} error={accept.error} text={tt('common.actionFailed')} /> : null}
           <Button
             label={tt(accept.isPending ? 'common.saving' : accept.isError ? 'common.retry' : 'agreements.submit')}
             disabled={!allChecked || accept.isPending}

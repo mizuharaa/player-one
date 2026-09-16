@@ -68,7 +68,7 @@ export function nativeTheme(scheme: ColorScheme) {
   const isDark = scheme === 'dark';
 
   return {
-    collector,
+    collector: collector as { readonly [K in keyof typeof collector]: typeof collector[K] extends string ? string : typeof collector[K] },
     scheme,
     color: {
       ...n,

@@ -139,7 +139,7 @@ describe('APP-02 agreement recovery', () => {
     expect(native.push).not.toHaveBeenCalled();
     await press(copy['common.retry']);
     await settle(() => expect(native.push).toHaveBeenCalledTimes(1));
-    expect(native.push).toHaveBeenCalledWith({ name: 'training' });
+    expect(native.push).toHaveBeenCalledWith({ name: 'exam' });
     expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(String(fetchFn.mock.calls[0]?.[0])).toBe('https://collector.test/api/me/agreements');
     expect(body()).toEqual({ agreements: AGREEMENTS.map((a) => ({ agreement: a.id, version: a.version })) });
@@ -178,7 +178,7 @@ describe('APP-04 exam recovery', () => {
     await act(async () => pending.resolve(json({ passed: false })));
     await settle(() => expect(container.textContent).toContain(copy['exam.failed']));
     await press(copy['exam.submit']);
-    await settle(() => expect(container.textContent).toContain(copy['common.actionFailed']));
+    await settle(() => expect(container.textContent).toContain(copy['state.offline']));
     expect(container.textContent).not.toContain(copy['exam.failed']);
     expect(container.textContent).not.toContain(copy['exam.passed']);
     expect(switches().map((input) => input.checked)).toEqual([true, false, true]);
@@ -188,7 +188,7 @@ describe('APP-04 exam recovery', () => {
     await settle(() => expect(container.textContent).toContain(copy['exam.passed']));
     expect(fetchFn).toHaveBeenCalledTimes(3);
     expect(body(1)).toEqual(body()); expect(body(2)).toEqual(body());
-    expect(container.textContent).not.toContain(copy['common.actionFailed']);
+    expect(container.textContent).not.toContain(copy['state.offline']);
     expect(native.reset).not.toHaveBeenCalled();
     await press(copy['home.tasks']);
     expect(native.reset).toHaveBeenCalledTimes(1);
@@ -236,3 +236,6 @@ describe('APP-04 exam recovery', () => {
     expect(native.reset).toHaveBeenCalledWith({ name: 'home' });
   });
 });
+
+// Native illustration rendering is covered by the web captures.
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));

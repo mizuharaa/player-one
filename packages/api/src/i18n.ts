@@ -229,9 +229,10 @@ const en = {
   'state.leaseExpired.body':
     'The claim on it expired and another reviewer may now hold it. The verdict you were preparing has been discarded.',
   'state.leaseExpired.action': 'Claim the next episode',
-  'state.playbackWithheld.title': 'Review is not open on this session yet',
+  'state.playbackWithheld.title': 'Raw playback is off on this deployment',
   'state.playbackWithheld.body':
-    'Remote playback of raw footage is not authorised yet, so there is nothing to review here. No episode has been taken off the queue, and no verdict can be given without watching the footage. This screen will work as soon as the playback arrangement is approved.',
+    'This is how this deployment is configured, not a fault. Remote playback of raw footage is withheld from a reviewer seat for data residency (PLAYERONE_REVIEWER_MEDIA is off), so this session gets review metadata and no bytes, and the server refuses its claim and its verdict rather than offering a button that cannot honestly be pressed. Nothing has been taken off the queue. The review itself is done by an operator inside Vietnam, at the machine holding the files.',
+  'state.playbackWithheld.metadata': 'Next in the queue, metadata only',
   'state.mediaFailed.title': 'The footage will not play',
   'state.mediaFailed.body':
     'The media is recorded in the store but this machine cannot read it. That is a fault on this machine, not with the recording.',
@@ -293,7 +294,7 @@ const en = {
   'nav.review': 'Review',
   'nav.episodes': 'Episodes',
   'episodes.intro': 'Browse recordings received at your upload centre, newest first.',
-  'episodes.noBatch': 'Episodes without an upload batch are not shown.',
+  'episodes.noBatch': 'A recording is listed once it has reached this centre — through an upload batch, or through the handover that declared its session.',
   'episodes.task_id': 'Task',
   'episodes.collector_id': 'Collector',
   'episodes.device_id': 'Device',
@@ -313,6 +314,8 @@ const en = {
   'episodes.invalid': 'Check the filters: IDs must be UUIDs, status must be resolved or quarantined, and times must include an offset with From before To.',
   'episodes.empty': 'No episodes match these filters',
   'episodes.emptyBody': 'Change the filters and apply again.',
+  'episodes.emptyUnfiltered': 'No recordings have reached this centre yet',
+  'episodes.emptyUnfilteredBody': 'No filter is set, so this is every episode your upload centre holds. One arrives when a card is ingested at the counter, or when a session declared here is delivered from the collector’s phone.',
   'episodes.truncated': 'The 200-row limit was reached. Narrow the filters to see a smaller result.',
   'nav.settle': 'Settle',
   'nav.pipeline': 'Pipeline',
@@ -362,6 +365,8 @@ const en = {
   'bo.title': 'Back office',
   'bo.intro':
     'The tasks collectors are paid to record, the people recording them, and the hardware they carry.',
+  'bo.readonly': 'Read-only for this account.',
+  'bo.readonly.body': 'Tasks, collectors and devices are shaped by the administrator role (BO-11). This session can read every list below, and the server refuses every change it would send, so the controls are switched off rather than offered.',
   'bo.tab.tasks': 'Tasks',
   'bo.tab.collectors': 'Collectors',
   'bo.tab.devices': 'Devices',
@@ -761,6 +766,8 @@ const en = {
   'settle.readonly': 'Finance access required',
   'settle.readonly.operator':
     'Only finance accounts can view bills, payment details, and preflight checks. This account does not have that access. Contact your finance operator to review this period.',
+  'settle.readonly.administrator':
+    'This administrator session can read every figure on these screens and change none of them. Paying a bill, exporting a file and resolving an attempt are finance’s, and the server refuses them for this account.',
   'settle.readonly.unknown':
     'Account access could not be confirmed. Financial data and payment actions remain unavailable. Reload to try again.',
   'settle.readonly.refused': 'The server refused: this session does not hold the finance role. Nothing has been changed.',
@@ -771,8 +778,11 @@ const en = {
   'settle.loadFailed.body': 'The settle screens read through the API. Nothing has been changed.',
   'settle.empty': 'No bills in this period.',
   'settle.empty.body': 'Bills are made from reviewed settlements. Generate the period, or pick another start day.',
+  'settle.empty.window': 'This screen is reading the period from {{from}} up to, but not including, {{to}}. Bills are made from reviewed settlements: generate this period, or open one that already has a bill.',
+  'settle.empty.openLatest': 'Open the period of the most recent bill ({{period}})',
   'settle.generate': 'Generate bills',
   'settle.generate.hint': 'Bills every settlement of the period that is waiting. Running it twice changes nothing.',
+  'settle.generate.notFinance': 'Finance does not issue bills. Whoever generates a cycle is the one who approved its contents, and the payment by that same person is refused — so another operator runs this, and finance pays it.',
   'settle.generate.result': '{{created}} bill(s) created; {{notPayable}} settlement(s) worth nothing were left off.',
   'settle.generate.deferred': '{{n}} settlement(s) already had a bill for this period ({{who}}), so they roll into the next cycle. The money is not lost.',
   'settle.generate.skipped': '{{n}} settlement(s) ({{who}}) were billed by another run under a different period while this one was reading. They are on that run’s bill.',
@@ -780,6 +790,7 @@ const en = {
   'settle.export.payout': 'Export payout CSV',
   'settle.export.payout.hint': 'Hashed row by row and as a file, and recorded. Finance only.',
   'settle.export.lines': 'Export lines CSV',
+  'settle.export.lines.hint': 'Every line of every bill in the period, as received. Finance only.',
   'settle.col.collector': 'Collector',
   'settle.col.minutes': 'Valid minutes',
   'settle.col.gross': 'Gross',
@@ -1174,6 +1185,69 @@ const en = {
     'Zalo could not be reached, so no sign-in code was sent. Ask the collector to try again; if it keeps happening, the link to Zalo is down.',
   'bo.refused.zns_refused':
     'Zalo refused to send the code and gave a reason this server does not recognise. The reason is in the server log; ask the collector to try again while somebody reads it.',
+
+  // ---------------------------------------------------------------------
+  // Zalo Login: `ZALO_LOGIN_REFUSALS` in `zalo-login.ts`. Owner's decision of
+  // 2026-09-16, which replaced ZNS as the way a collector gets in. Unlike the
+  // ZNS names above, these DO reach the collector — the callback redirects
+  // into the app carrying one — so each sentence has to be true for a person
+  // who is holding the phone as well as for an operator reading a log.
+
+  'bo.refused.zalo_not_configured':
+    'This server holds no Zalo app credentials, so signing in with Zalo is not available on it. Set PLAYERONE_ZALO_APP_ID and PLAYERONE_ZALO_APP_SECRET, or have the collector sign in with a code instead.',
+  'bo.refused.zalo_denied':
+    'Zalo was not given permission, so nobody was signed in. Nothing is wrong: start again and press Allow on Zalo\u2019s screen, or sign in with a code.',
+  'bo.refused.zalo_state_unknown':
+    'That sign-in link does not belong to any attempt this server started, or it has already been used. Start the sign-in again from the app.',
+  'bo.refused.zalo_state_expired':
+    'This sign-in attempt took longer than ten minutes, so it was discarded. Start it again from the app.',
+  'bo.refused.zalo_code_refused':
+    'Zalo refused to exchange the sign-in for an access token. The usual cause is the callback URL registered in the Zalo app\u2019s settings not matching this server\u2019s address exactly, or a wrong app secret.',
+  'bo.refused.zalo_profile_refused':
+    'Zalo issued an access token and then would not say who it belongs to, so nobody was signed in. Ask the collector to try again; if it keeps happening, the app\u2019s Zalo permissions need checking.',
+  'bo.refused.zalo_unreachable':
+    'Zalo could not be reached, so nobody was signed in. Ask the collector to try again; if it keeps happening, the link to Zalo is down.',
+  'bo.refused.zalo_ticket_spent':
+    'This sign-in has already been completed, or it expired before the app collected it. Start the sign-in again from the app.',
+
+  // `POST /api/collectors/:id/zalo-link`, the operator's fix for a collector
+  // who was enrolled at a centre and then signed in with Zalo, becoming a
+  // second row nothing could connect to the first. See backoffice.ts.
+  'bo.refused.collector_already_zalo_linked':
+    'This collector already has a Zalo account attached, so nothing was changed. Detach the existing one first if it is the wrong account.',
+  'bo.refused.collector_zalo_link_not_prospect':
+    'That Zalo account already belongs to an enrolled collector, so it was not moved. Linking it here would take the account away from them — check the Zalo id, and if two records really are the same person, escalate rather than relinking.',
+  'bo.refused.collector_zalo_link_has_work':
+    'The app account for that Zalo id has work, agreements or a payout account on it, so it was not absorbed. It needs a person to look at both records rather than an automatic link.',
+  'bo.refused.collector_zalo_id_taken':
+    'That Zalo account was claimed by another record while this link was being saved. Reload the collector and try again.',
+
+  // The three ZNS codes the current (ZBS) table added, and the ones this
+  // deployment meets first — the OA wall above all.
+  'bo.refused.zns_oa_not_verified':
+    'Zalo will not send from this Official Account, because it is not verified or is on the free plan. Nobody can receive a sign-in code over Zalo until VNG verifies the Official Account. Sign collectors in with Zalo instead, or switch the channel to SMS.',
+  'bo.refused.zns_user_refused':
+    'This person has told Zalo not to send them messages of this kind, so no code was sent. Nothing in the back office changes that: they have to sign in with Zalo, or be sent a code by SMS.',
+  'bo.refused.zns_development_only':
+    'This server is sending in Zalo development mode, which reaches only administrators of the app or the Official Account. This number is not one of them, so no code was sent.',
+
+  // ---------------------------------------------------------------------
+  // The SMS fallback: `SMS_REFUSALS` in `sms.ts`, owner's decision of
+  // 2026-09-16. Read the same way as the ZNS names — out of `audit_events`,
+  // by an operator asking why somebody never got a code.
+
+  'bo.refused.sms_phone_not_vietnamese':
+    'The number on this collector\u2019s record is not a Vietnamese mobile number, so no SMS was sent. Correct the number in the back office.',
+  'bo.refused.sms_credentials_rejected':
+    'The SMS provider refused this server\u2019s credentials, so no code was sent. Nobody can sign in by SMS until the API key and secret key are corrected.',
+  'bo.refused.sms_brandname_rejected':
+    'The SMS provider does not recognise our registered sender name, or it is no longer active, so no code was sent. This is a brandname registration matter, not the collector\u2019s.',
+  'bo.refused.sms_template_rejected':
+    'The SMS provider has not approved our one-time-code message template, so no code was sent. Nobody can sign in by SMS until it is registered.',
+  'bo.refused.sms_unreachable':
+    'The SMS provider could not be reached, so no code was sent. Ask the collector to try again; if it keeps happening, the link to the provider is down.',
+  'bo.refused.sms_refused':
+    'The SMS provider refused to send the code and gave a reason this server does not recognise. The reason is in the server log; ask the collector to try again while somebody reads it.',
   /**
    * Shown under a failed write that the server could not explain, next to the
    * id it logged the failure against. The operator reads it out; whoever has
@@ -1863,9 +1937,10 @@ const zh: Record<MessageKey, string> = {
   'state.leaseExpired.title': '该片段已被重新分配',
   'state.leaseExpired.body': '认领已过期，可能已由其他审核员接手。您正在填写的结果已被丢弃。',
   'state.leaseExpired.action': '领取下一条',
-  'state.playbackWithheld.title': '本会话暂未开放审核',
+  'state.playbackWithheld.title': '本部署已关闭原始素材播放',
   'state.playbackWithheld.body':
-    '原始素材的远程播放尚未获得授权，因此此处暂无可审核的内容。系统未从队列中取走任何片段；未观看素材即不可提交审核结论。播放方案获批后本页即可使用。',
+    '这是本部署的设定，不是故障。出于数据驻留要求，审核席位不提供原始素材的远程播放（PLAYERONE_REVIEWER_MEDIA 未开启），因此本会话只获得审核元数据而没有素材字节；服务端会拒绝它的领取和审核结论，而不是摆出一个无法诚实点击的按钮。队列中没有任何片段被取走。审核本身由越南境内、持有文件的那台机器上的操作员完成。',
+  'state.playbackWithheld.metadata': '队列中的下一条，仅元数据',
   'state.mediaFailed.title': '素材无法播放',
   'state.mediaFailed.body': '记录已存在于数据库中，但本机无法读取该文件。这是本机的问题，与录制内容无关。',
   'state.mediaFailed.action': '跳过该片段',
@@ -1909,7 +1984,7 @@ const zh: Record<MessageKey, string> = {
   'nav.review': '审核',
   'nav.episodes': '片段',
   'episodes.intro': '浏览本上传中心收到的录制片段，最新的在前。',
-  'episodes.noBatch': '不显示没有上传批次的片段。',
+  'episodes.noBatch': '片段只要已经到达本中心即会列出——通过上传批次，或通过声明其采集会话的交接单。',
   'episodes.task_id': '任务',
   'episodes.collector_id': '采集员',
   'episodes.device_id': '设备',
@@ -1929,6 +2004,8 @@ const zh: Record<MessageKey, string> = {
   'episodes.invalid': '请检查筛选条件：ID 必须为 UUID，状态须为已确定归属或已隔离，时间须含时区偏移，且起始时间早于截止时间。',
   'episodes.empty': '没有符合筛选条件的片段',
   'episodes.emptyBody': '更改筛选条件后重新应用。',
+  'episodes.emptyUnfiltered': '本中心尚未收到任何录制片段',
+  'episodes.emptyUnfilteredBody': '未设置任何筛选条件，因此这里就是本上传中心的全部片段。当柜台导入 TF 卡，或在此声明的采集会话由采集者手机上传后，就会出现片段。',
   'episodes.truncated': '已达到 200 行上限。请缩小筛选范围。',
   'nav.settle': '结算',
   'nav.pipeline': '流程',
@@ -1970,6 +2047,8 @@ const zh: Record<MessageKey, string> = {
 
   'bo.title': '后台管理',
   'bo.intro': '采集者按任务采集并获得报酬。这里管理任务、采集者，以及他们携带的设备。',
+  'bo.readonly': '本账号为只读。',
+  'bo.readonly.body': '任务、采集者和设备由管理员角色维护（BO-11）。本会话可以查看下面所有列表，但服务端会拒绝它提交的任何更改，因此相关控件已禁用，而不是摆在那里。',
   'bo.tab.tasks': '任务',
   'bo.tab.collectors': '采集者',
   'bo.tab.devices': '设备',
@@ -2229,6 +2308,7 @@ const zh: Record<MessageKey, string> = {
   'settle.mode.api': 'API 付款模式：在付款前检查页通过 ZaloPay 发送转账。',
   'settle.readonly': '需要财务权限',
   'settle.readonly.operator': '只有财务账号可以查看账单、付款详情和付款前检查。此账号没有该权限，请联系财务人员查看本周期。',
+  'settle.readonly.administrator': '管理员会话可以查看这些页面上的全部数字，但不能更改其中任何一项。付款、导出文件和处理付款尝试属于财务，服务端会为本账号拒绝这些操作。',
   'settle.readonly.unknown': '无法确认账号权限。财务数据和付款操作暂不可用，请刷新后重试。',
   'settle.readonly.refused': '服务端拒绝：本会话没有财务角色。没有任何内容被修改。',
   'settle.failed': '请求未送达服务端。没有任何内容被修改。',
@@ -2238,8 +2318,11 @@ const zh: Record<MessageKey, string> = {
   'settle.loadFailed.body': '结算页面通过 API 读取数据。没有任何内容被修改。',
   'settle.empty': '该周期没有账单。',
   'settle.empty.body': '账单由已审核的结算记录生成。请生成该周期，或选择另一个起始日。',
+  'settle.empty.window': '本页读取的周期为 {{from}} 起至 {{to}} 止（不含当日）。账单由已审核的结算记录生成：请生成本周期，或打开已有账单的周期。',
+  'settle.empty.openLatest': '打开最近一张账单所属周期（{{period}}）',
   'settle.generate': '生成账单',
   'settle.generate.hint': '为该周期内所有待结算记录开具账单。重复执行不会产生变化。',
+  'settle.generate.notFinance': '账单不由财务开具。生成周期的人即为核准其内容的人，而由同一人付款会被拒绝——因此由另一位操作员生成，财务负责付款。',
   'settle.generate.result': '已创建 {{created}} 张账单；{{notPayable}} 条金额为零的结算记录未列入。',
   'settle.generate.deferred': '{{n}} 条结算记录在本周期已有账单（{{who}}），因此顺延至下一周期。这笔钱不会丢失。',
   'settle.generate.skipped': '{{n}} 条结算记录（{{who}}）在本次读取期间已被另一次运行按其他周期开具账单。它们在那次运行的账单上。',
@@ -2247,6 +2330,7 @@ const zh: Record<MessageKey, string> = {
   'settle.export.payout': '导出付款 CSV',
   'settle.export.payout.hint': '逐行及整体加哈希，并记录在案。仅限财务。',
   'settle.export.lines': '导出明细 CSV',
+  'settle.export.lines.hint': '该周期内每张账单的每一行，按服务端原样导出。仅限财务。',
   'settle.col.collector': '采集者',
   'settle.col.minutes': '有效分钟',
   'settle.col.gross': '总额',
@@ -2571,6 +2655,61 @@ const zh: Record<MessageKey, string> = {
     '无法连接 Zalo，因此未发送验证码。请让采集者再试一次；如果反复出现，说明与 Zalo 的链路已中断。',
   'bo.refused.zns_refused':
     'Zalo 拒绝发送验证码，给出的原因本服务器无法识别。原因记录在服务器日志中；请一边查阅日志一边让采集者再试。',
+
+  // Zalo 登录（zalo-login.ts 中的 ZALO_LOGIN_REFUSALS）。2026-09-16 的决定，
+  // 取代 ZNS 成为采集者登录的方式。与上面的 ZNS 名称不同，这些会直接呈现给
+  // 采集者：回调会带着其中一个跳回应用。
+
+  'bo.refused.zalo_not_configured':
+    '本服务器没有配置 Zalo 应用凭据，因此无法使用 Zalo 登录。请设置 PLAYERONE_ZALO_APP_ID 和 PLAYERONE_ZALO_APP_SECRET，或改用验证码登录。',
+  'bo.refused.zalo_denied':
+    '未在 Zalo 上授予权限，因此没有人登录。这不是故障：请重新开始并在 Zalo 的页面上点击“允许”，或改用验证码登录。',
+  'bo.refused.zalo_state_unknown':
+    '这个登录链接不属于本服务器发起的任何一次登录，或者已经被用过了。请在应用里重新开始登录。',
+  'bo.refused.zalo_state_expired':
+    '这次登录超过了十分钟，已被丢弃。请在应用里重新开始登录。',
+  'bo.refused.zalo_code_refused':
+    'Zalo 拒绝用这次登录换取访问令牌。常见原因是 Zalo 应用设置里登记的回调地址与本服务器的地址不完全一致，或者应用密钥不对。',
+  'bo.refused.zalo_profile_refused':
+    'Zalo 发放了访问令牌，却不肯说明它属于谁，因此没有人登录。请让采集者再试一次；如果一直如此，需要检查应用的 Zalo 权限。',
+  'bo.refused.zalo_unreachable':
+    '无法连接 Zalo，因此没有人登录。请让采集者再试一次；如果一直如此，说明与 Zalo 的链路中断了。',
+  'bo.refused.zalo_ticket_spent':
+    '这次登录已经完成，或者在应用取回之前就过期了。请在应用里重新开始登录。',
+
+  // `POST /api/collectors/:id/zalo-link`：采集者先在服务点登记、之后又用 Zalo
+  // 登录，于是出现了第二条无法与第一条关联的记录，这是运营人员的修正手段。
+  'bo.refused.collector_already_zalo_linked':
+    '这位采集者已经关联了一个 Zalo 账号，因此没有做任何更改。如果关联的账号不对，请先解除现有关联。',
+  'bo.refused.collector_zalo_link_not_prospect':
+    '该 Zalo 账号已属于一位已登记的采集者，因此没有转移。在这里关联会把账号从对方手中夺走——请核对 Zalo id；如果两条记录确实是同一个人，请上报而不要强行关联。',
+  'bo.refused.collector_zalo_link_has_work':
+    '该 Zalo id 对应的应用账号上已有任务、协议或收款账户，因此没有并入。需要有人同时查看两条记录，而不是自动关联。',
+  'bo.refused.collector_zalo_id_taken':
+    '保存这次关联时，该 Zalo 账号已被另一条记录占用。请重新加载该采集者后再试。',
+
+  // 现行 ZBS 错误表新增的三个 ZNS 代码，其中 OA 未认证是首先会遇到的那个。
+  'bo.refused.zns_oa_not_verified':
+    'Zalo 不允许这个公众号发送消息，因为它未认证或仍在免费套餐。在 VNG 完成公众号认证之前，没有人能通过 Zalo 收到登录验证码。请改用 Zalo 登录，或把发送渠道切换为短信。',
+  'bo.refused.zns_user_refused':
+    '这位用户已在 Zalo 上拒收此类消息，因此没有发送验证码。后台无法改变这一点：他们需要用 Zalo 登录，或改用短信接收验证码。',
+  'bo.refused.zns_development_only':
+    '本服务器正以 Zalo 开发模式发送，只能送达应用或公众号的管理员。这个号码不在其中，因此没有发送验证码。',
+
+  // 短信备用渠道（sms.ts 中的 SMS_REFUSALS）。2026-09-16 的决定。
+
+  'bo.refused.sms_phone_not_vietnamese':
+    '这位采集者记录中的号码不是越南手机号，因此没有发送短信。请在后台更正号码。',
+  'bo.refused.sms_credentials_rejected':
+    '短信服务商拒绝了本服务器的凭据，因此没有发送验证码。在更正 API 密钥和密钥之前，无人能通过短信登录。',
+  'bo.refused.sms_brandname_rejected':
+    '短信服务商不认识我们已登记的发送者名称，或该名称已失效，因此没有发送验证码。这属于品牌名登记事务，与采集者无关。',
+  'bo.refused.sms_template_rejected':
+    '短信服务商尚未批准我们的一次性验证码模板，因此没有发送验证码。在模板登记完成之前，无人能通过短信登录。',
+  'bo.refused.sms_unreachable':
+    '无法连接短信服务商，因此没有发送验证码。请让采集者再试一次；如果一直如此，说明与服务商的链路中断了。',
+  'bo.refused.sms_refused':
+    '短信服务商拒绝发送验证码，给出的原因本服务器无法识别。原因记录在服务器日志中；请一边查阅日志一边让采集者再试。',
   // 控制台改版自己的字符串（ui.b.*）：两个深色区块里数字旁边的句子。
   'ui.b.settle.total.sentence':
     '本批次将要发出的金额。每一笔转账由服务端决定，账单在支付的那一刻仍可能被拒绝。',
@@ -3078,9 +3217,10 @@ const vi: Record<MessageKey, string> = {
   'state.leaseExpired.body':
     'Lượt nhận đã hết hạn và người duyệt khác có thể đang giữ nó. Kết luận bạn đang chuẩn bị đã bị bỏ.',
   'state.leaseExpired.action': 'Nhận phiên tiếp theo',
-  'state.playbackWithheld.title': 'Phiên này chưa mở để duyệt',
+  'state.playbackWithheld.title': 'Bản triển khai này tắt phát tư liệu gốc',
   'state.playbackWithheld.body':
-    'Việc phát tư liệu gốc từ xa chưa được cho phép, nên ở đây chưa có gì để duyệt. Không phiên nào bị lấy khỏi hàng đợi, và không thể đưa kết luận khi chưa xem tư liệu. Màn hình này sẽ hoạt động ngay khi phương án phát được duyệt.',
+    'Đây là thiết lập của bản triển khai, không phải lỗi. Vì yêu cầu lưu trú dữ liệu, chỗ ngồi của người duyệt không được phát tư liệu gốc từ xa (PLAYERONE_REVIEWER_MEDIA đang tắt), nên phiên này chỉ nhận dữ liệu mô tả chứ không nhận tư liệu; máy chủ từ chối cả lượt nhận và kết luận, thay vì đưa ra một nút không thể bấm một cách trung thực. Không phiên nào bị lấy khỏi hàng đợi. Việc duyệt do một nhân viên tại Việt Nam thực hiện, ngay trên máy đang giữ tệp.',
+  'state.playbackWithheld.metadata': 'Phiên kế tiếp trong hàng đợi, chỉ dữ liệu mô tả',
   'state.mediaFailed.title': 'Tư liệu không phát được',
   'state.mediaFailed.body':
     'Bản ghi có trong kho nhưng máy này không đọc được tệp. Đó là lỗi của máy này, không phải của bản ghi.',
@@ -3126,7 +3266,7 @@ const vi: Record<MessageKey, string> = {
   'nav.review': 'Duyệt',
   'nav.episodes': 'Phiên ghi',
   'episodes.intro': 'Xem các phiên ghi đã nhận tại trung tâm tải lên của bạn, mới nhất trước.',
-  'episodes.noBatch': 'Không hiển thị phiên ghi chưa có lô tải lên.',
+  'episodes.noBatch': 'Một phiên ghi được liệt kê khi đã về tới trung tâm này — qua lô tải lên, hoặc qua phiếu giao nhận đã khai báo phiên đó.',
   'episodes.task_id': 'Nhiệm vụ',
   'episodes.collector_id': 'Người thu thập',
   'episodes.device_id': 'Thiết bị',
@@ -3146,6 +3286,8 @@ const vi: Record<MessageKey, string> = {
   'episodes.invalid': 'Kiểm tra bộ lọc: mã phải là UUID, trạng thái phải là đã xác định hoặc đã cách ly, thời gian phải có múi giờ và Từ phải trước Trước.',
   'episodes.empty': 'Không có phiên ghi khớp bộ lọc',
   'episodes.emptyBody': 'Đổi bộ lọc rồi áp dụng lại.',
+  'episodes.emptyUnfiltered': 'Chưa có phiên ghi nào về tới trung tâm này',
+  'episodes.emptyUnfilteredBody': 'Chưa đặt bộ lọc nào, nên đây là toàn bộ phiên ghi mà trung tâm tải lên của bạn đang có. Một phiên ghi xuất hiện khi thẻ nhớ được nạp tại quầy, hoặc khi phiên khai báo tại đây được gửi lên từ điện thoại của cộng tác viên.',
   'episodes.truncated': 'Đã đạt giới hạn 200 dòng. Thu hẹp bộ lọc để xem ít kết quả hơn.',
   'nav.settle': 'Thanh toán',
   'nav.pipeline': 'Tiến độ',
@@ -3188,6 +3330,8 @@ const vi: Record<MessageKey, string> = {
 
   'bo.title': 'Hậu cần',
   'bo.intro': 'Các nhiệm vụ cộng tác viên được trả tiền để ghi, những người ghi chúng, và thiết bị họ mang theo.',
+  'bo.readonly': 'Tài khoản này chỉ đọc.',
+  'bo.readonly.body': 'Nhiệm vụ, cộng tác viên và thiết bị do vai trò quản trị thiết lập (BO-11). Phiên này xem được mọi danh sách bên dưới, còn máy chủ sẽ từ chối mọi thay đổi nó gửi, nên các điều khiển bị tắt thay vì để mở.',
   'bo.tab.tasks': 'Nhiệm vụ',
   'bo.tab.collectors': 'Cộng tác viên',
   'bo.tab.devices': 'Thiết bị',
@@ -3495,6 +3639,8 @@ const vi: Record<MessageKey, string> = {
   'settle.readonly': 'Cần quyền tài chính',
   'settle.readonly.operator':
     'Chỉ tài khoản tài chính được xem hóa đơn, chi tiết thanh toán và kiểm tra trước khi chi. Tài khoản này chưa có quyền đó. Hãy liên hệ nhân viên tài chính để xem kỳ này.',
+  'settle.readonly.administrator':
+    'Phiên quản trị này đọc được mọi con số trên các màn hình này và không thay đổi được gì. Chi trả một hóa đơn, xuất tệp và xử lý một lần chi là việc của tài chính, và máy chủ từ chối chúng với tài khoản này.',
   'settle.readonly.unknown':
     'Chưa xác nhận được quyền của tài khoản. Dữ liệu tài chính và thao tác chi trả tạm thời không khả dụng. Tải lại để thử lại.',
   'settle.readonly.refused': 'Máy chủ từ chối: phiên này không có vai trò tài chính. Chưa có gì bị thay đổi.',
@@ -3505,8 +3651,11 @@ const vi: Record<MessageKey, string> = {
   'settle.loadFailed.body': 'Các màn hình thanh toán đọc dữ liệu qua API. Chưa có gì bị thay đổi.',
   'settle.empty': 'Kỳ này không có hóa đơn.',
   'settle.empty.body': 'Hóa đơn được lập từ các khoản đã duyệt. Hãy lập hóa đơn cho kỳ này, hoặc chọn ngày bắt đầu khác.',
+  'settle.empty.window': 'Màn hình này đang đọc kỳ từ {{from}} đến trước {{to}}. Hóa đơn được lập từ các khoản đã duyệt: hãy lập hóa đơn cho kỳ này, hoặc mở kỳ đã có hóa đơn.',
+  'settle.empty.openLatest': 'Mở kỳ của hóa đơn gần nhất ({{period}})',
   'settle.generate': 'Lập hóa đơn',
   'settle.generate.hint': 'Lập hóa đơn cho mọi khoản đang chờ trong kỳ. Chạy hai lần không thay đổi gì.',
+  'settle.generate.notFinance': 'Tài chính không lập hóa đơn. Người lập hóa đơn cho một kỳ chính là người đã chấp thuận nội dung của nó, và khoản chi do chính người đó thực hiện sẽ bị từ chối — nên một nhân viên khác lập hóa đơn, còn tài chính chi trả.',
   'settle.generate.result': 'Đã lập {{created}} hóa đơn; {{notPayable}} khoản có giá trị bằng không được để ngoài.',
   'settle.generate.deferred': '{{n}} khoản đã có hóa đơn trong kỳ này ({{who}}) nên được chuyển sang kỳ kế tiếp. Số tiền không bị mất.',
   'settle.generate.skipped': '{{n}} khoản ({{who}}) đã được một lần chạy khác lập hóa đơn theo kỳ khác trong lúc lần này đang đọc. Chúng nằm trên hóa đơn của lần chạy đó.',
@@ -3514,6 +3663,7 @@ const vi: Record<MessageKey, string> = {
   'settle.export.payout': 'Xuất CSV chi trả',
   'settle.export.payout.hint': 'Băm từng dòng và cả tệp, có ghi nhận. Chỉ dành cho tài chính.',
   'settle.export.lines': 'Xuất CSV chi tiết',
+  'settle.export.lines.hint': 'Từng dòng của mọi hóa đơn trong kỳ, đúng như máy chủ trả về. Chỉ dành cho tài chính.',
   'settle.col.collector': 'Cộng tác viên',
   'settle.col.minutes': 'Phút hợp lệ',
   'settle.col.gross': 'Tổng',
@@ -3908,6 +4058,63 @@ const vi: Record<MessageKey, string> = {
     'Không kết nối được tới Zalo nên không gửi được mã. Hãy nhờ cộng tác viên thử lại; nếu vẫn vậy thì đường tới Zalo đang hỏng.',
   'bo.refused.zns_refused':
     'Zalo từ chối gửi mã với một lý do máy chủ này không hiểu. Lý do nằm trong nhật ký máy chủ; hãy nhờ cộng tác viên thử lại trong khi có người đọc nhật ký.',
+
+  // Đăng nhập bằng Zalo (ZALO_LOGIN_REFUSALS trong zalo-login.ts). Quyết định
+  // ngày 2026-09-16, thay ZNS làm cách cộng tác viên đăng nhập. Khác với các
+  // tên ZNS ở trên, những câu này đến tận tay cộng tác viên: trang callback
+  // chuyển về ứng dụng kèm theo một trong số chúng.
+
+  'bo.refused.zalo_not_configured':
+    'Máy chủ này chưa có thông tin ứng dụng Zalo nên không dùng được cách đăng nhập bằng Zalo. Hãy đặt PLAYERONE_ZALO_APP_ID và PLAYERONE_ZALO_APP_SECRET, hoặc để cộng tác viên đăng nhập bằng mã.',
+  'bo.refused.zalo_denied':
+    'Zalo chưa được cấp quyền nên chưa ai đăng nhập. Không có lỗi gì: hãy làm lại và bấm Cho phép trên màn hình Zalo, hoặc đăng nhập bằng mã.',
+  'bo.refused.zalo_state_unknown':
+    'Liên kết đăng nhập này không thuộc lần đăng nhập nào máy chủ đã mở, hoặc đã dùng rồi. Hãy mở lại phần đăng nhập trong ứng dụng.',
+  'bo.refused.zalo_state_expired':
+    'Lần đăng nhập này quá mười phút nên đã bị bỏ. Hãy làm lại trong ứng dụng.',
+  'bo.refused.zalo_code_refused':
+    'Zalo không đổi lần đăng nhập này thành access token. Thường là do địa chỉ callback khai trong phần cài đặt ứng dụng Zalo không trùng khớp với địa chỉ máy chủ này, hoặc app secret sai.',
+  'bo.refused.zalo_profile_refused':
+    'Zalo đã cấp access token nhưng không cho biết token đó của ai nên chưa ai đăng nhập. Hãy để cộng tác viên thử lại; nếu vẫn vậy thì cần kiểm tra quyền Zalo của ứng dụng.',
+  'bo.refused.zalo_unreachable':
+    'Không kết nối được tới Zalo nên chưa ai đăng nhập. Hãy để cộng tác viên thử lại; nếu vẫn vậy thì đường tới Zalo đang mất.',
+  'bo.refused.zalo_ticket_spent':
+    'Lần đăng nhập này đã xong, hoặc đã hết hạn trước khi ứng dụng lấy được. Hãy mở lại phần đăng nhập trong ứng dụng.',
+
+  // `POST /api/collectors/:id/zalo-link`: cách vận hành viên sửa trường hợp
+  // cộng tác viên đã đăng ký ở điểm thu rồi lại đăng nhập bằng Zalo, tạo ra
+  // một hồ sơ thứ hai mà hệ thống không nối được với hồ sơ đầu.
+  'bo.refused.collector_already_zalo_linked':
+    'Cộng tác viên này đã gắn một tài khoản Zalo nên không có gì thay đổi. Nếu đó là tài khoản sai, hãy bỏ liên kết cũ trước.',
+  'bo.refused.collector_zalo_link_not_prospect':
+    'Tài khoản Zalo đó đã thuộc về một cộng tác viên đã đăng ký nên không được chuyển. Gắn ở đây sẽ lấy tài khoản khỏi người ta — hãy kiểm tra lại Zalo id; nếu hai hồ sơ đúng là một người thì hãy báo lên thay vì tự gắn.',
+  'bo.refused.collector_zalo_link_has_work':
+    'Hồ sơ trong ứng dụng của Zalo id đó đã có nhiệm vụ, thỏa thuận hoặc tài khoản nhận tiền nên không được gộp. Cần người xem cả hai hồ sơ chứ không gắn tự động.',
+  'bo.refused.collector_zalo_id_taken':
+    'Tài khoản Zalo đó vừa bị một hồ sơ khác nhận trong lúc đang lưu liên kết này. Hãy tải lại cộng tác viên rồi thử lại.',
+
+  // Ba mã ZNS mới trong bảng ZBS hiện hành; mã OA chưa xác thực là mã sẽ gặp trước nhất.
+  'bo.refused.zns_oa_not_verified':
+    'Zalo không cho Official Account này gửi tin vì OA chưa xác thực hoặc vẫn ở gói miễn phí. Chưa ai nhận được mã đăng nhập qua Zalo cho tới khi VNG xác thực OA. Hãy cho cộng tác viên đăng nhập bằng Zalo, hoặc chuyển kênh gửi sang SMS.',
+  'bo.refused.zns_user_refused':
+    'Người này đã từ chối nhận loại tin này trên Zalo nên không gửi được mã. Back office không thay đổi được điều đó: họ phải đăng nhập bằng Zalo, hoặc nhận mã qua SMS.',
+  'bo.refused.zns_development_only':
+    'Máy chủ này đang gửi ở chế độ development của Zalo, chỉ tới được quản trị viên của ứng dụng hoặc của OA. Số này không thuộc nhóm đó nên không gửi mã.',
+
+  // Kênh SMS dự phòng (SMS_REFUSALS trong sms.ts). Quyết định ngày 2026-09-16.
+
+  'bo.refused.sms_phone_not_vietnamese':
+    'Số trong hồ sơ của cộng tác viên này không phải số di động Việt Nam nên không gửi SMS. Hãy sửa lại số trong back office.',
+  'bo.refused.sms_credentials_rejected':
+    'Nhà cung cấp SMS từ chối thông tin đăng nhập của máy chủ này nên không gửi được mã. Chưa ai đăng nhập được bằng SMS cho tới khi API key và secret key được sửa.',
+  'bo.refused.sms_brandname_rejected':
+    'Nhà cung cấp SMS không nhận ra brandname đã đăng ký của chúng ta, hoặc brandname đã hết hiệu lực, nên không gửi được mã. Đây là việc đăng ký brandname, không phải lỗi của cộng tác viên.',
+  'bo.refused.sms_template_rejected':
+    'Nhà cung cấp SMS chưa duyệt mẫu tin mã dùng một lần của chúng ta nên không gửi được mã. Chưa ai đăng nhập được bằng SMS cho tới khi mẫu tin được đăng ký.',
+  'bo.refused.sms_unreachable':
+    'Không kết nối được tới nhà cung cấp SMS nên không gửi được mã. Hãy để cộng tác viên thử lại; nếu vẫn vậy thì đường tới nhà cung cấp đang mất.',
+  'bo.refused.sms_refused':
+    'Nhà cung cấp SMS từ chối gửi mã với một lý do máy chủ này không hiểu. Lý do nằm trong nhật ký máy chủ; hãy nhờ cộng tác viên thử lại trong khi có người đọc nhật ký.',
   // Chuỗi riêng của bản dựng lại giao diện (ui.b.*): câu đứng cạnh hai con số trên nền mực.
   'ui.b.settle.total.sentence':
     'Số tiền lô này sẽ gửi. Máy chủ quyết định từng lần chuyển, và một hóa đơn vẫn có thể bị từ chối ngay lúc chi trả.',

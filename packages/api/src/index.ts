@@ -12,7 +12,7 @@ export {
   type HeartbeatApp,
   type HeartbeatConfig,
 } from './heartbeat.ts';
-export { API_REFUSALS, REFUSALS } from './backoffice.ts';
+export { API_REFUSALS, PROSPECT_MUST_BE_EMPTY_IN, REFUSALS } from './backoffice.ts';
 export { COUNTER_REFUSALS } from './counter.ts';
 export {
   COLLECTOR_API_REFUSALS,
@@ -20,7 +20,12 @@ export {
   EXAM_ANSWERS,
 } from './collector-app.ts';
 import { registerCollectorApp } from './collector-app.ts';
-import { registerCollectorAuth, type SendSignInCode } from './collector.ts';
+import {
+  DEMO_BYPASS_MIN_KEY,
+  registerCollectorAuth,
+  type SendSignInCode,
+} from './collector.ts';
+import type { ZaloLogin } from './zalo-login.ts';
 export {
   MAX_DELIVERY_BYTES,
   MAX_UNMEASURED_DELIVERY_BYTES,
@@ -93,7 +98,16 @@ export {
 } from './upload-worker.ts';
 export { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 export { SIGN_IN_RATE_LIMITED, signInLimiter, type SignInLimiter } from './ratelimit.ts';
-export { CODE_ATTEMPTS, CODE_TTL_MS, type SendSignInCode } from './collector.ts';
+export {
+  CODE_ATTEMPTS,
+  CODE_TTL_MS,
+  DEMO_BYPASS_COLLECTOR_REF,
+  DEMO_BYPASS_MIN_KEY,
+  ZALO_HOP_REQUESTS,
+  type DeliveryOutcome,
+  type SendSignInCode,
+  type SignInDeliveryChannel,
+} from './collector.ts';
 export {
   DEFAULT_ZNS_TIMEOUT_MS,
   ZNS_BASE_URL,
@@ -101,15 +115,65 @@ export {
   ZNS_REFUSALS,
   ZNS_SEND_PATH,
   ZnsDeliveryError,
+  SIGN_IN_CHANNELS,
   devLogSender,
   signInCodeSenderFromEnv,
   toZnsPhone,
   znsSender,
   type CodeSender,
+  type SignInChannel,
   type ZnsConfig,
   type ZnsRefusal,
   type ZnsWarning,
 } from './zns.ts';
+export {
+  DEFAULT_SMS_TEMPLATE,
+  DEFAULT_SMS_TIMEOUT_MS,
+  SMS_ACCEPTED,
+  SMS_BASE_URL,
+  SMS_CODE_RESULTS,
+  SMS_REFUSALS,
+  SMS_SEND_PATH,
+  SmsDeliveryError,
+  smsSender,
+  smsSenderFromEnv,
+  type SmsConfig,
+  type SmsRefusal,
+  type SmsWarning,
+} from './sms.ts';
+export {
+  OA_REFRESH_SKEW_MS,
+  OA_TOKEN_URL,
+  OaTokenError,
+  fileTokenStore,
+  oaToken,
+  type OaToken,
+  type OaTokenConfig,
+  type StoredTokens,
+  type TokenStore,
+} from './zns-oa-token.ts';
+export {
+  APP_DEEP_LINK,
+  SIGN_IN_TTL_MS,
+  ZALO_AUTHORIZE_PATH,
+  ZALO_CALLBACK_PATH,
+  ZALO_GRAPH_BASE_URL,
+  ZALO_LOGIN_REFUSALS,
+  ZALO_OAUTH_BASE_URL,
+  ZALO_PROFILE_PATH,
+  ZALO_TOKEN_PATH,
+  ZaloLoginError,
+  codeChallengeFor,
+  newCodeVerifier,
+  newOpaqueToken,
+  ticketDigest,
+  zaloLogin,
+  zaloLoginFromEnv,
+  type ZaloIdentity,
+  type ZaloLogin,
+  type ZaloLoginConfig,
+  type ZaloLoginRefusal,
+} from './zalo-login.ts';
 export { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS } from './payout/routes/payout.ts';
 export { SETTLE_API_REFUSALS } from './settle.ts';
 export { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
@@ -292,10 +356,42 @@ export type ApiOptions = {
    * It is not awaited on the request's clock. See `SendSignInCode`.
    */
   sendSignInCode?: SendSignInCode;
-  /** Diagnostic provenance only; injected senders are unknown unless identified. */
+  /**
+   * Which channel `sendSignInCode` actually is.
+   *
+   * Diagnostic provenance only until 2026-09-16; it is now also the
+   * `channel` written into every `collector.sign_in_code` audit row, so the
+   * engineering page and the trail cannot describe different systems. An
+   * injected sender is `unknown` unless identified, and the row says so
+   * rather than guessing.
+   */
   signInDeliveryMode?: EngineeringCapabilities['signInDeliveryMode'];
   /** One phone number whose sign-in code comes back in the response. See `collector.ts`. */
   demoPhone?: string;
+  /**
+   * The demo bypass key, owner's request of 2026-09-16 — for debugging and the
+   * Thursday demonstration, and nothing else. Absent here,
+   * `POST /auth/collector/demo` answers 404 for every caller, which is what
+   * every deployment that was not deliberately given a key gets.
+   *
+   * Shorter than `DEMO_BYPASS_MIN_KEY` throws below rather than being padded
+   * or ignored: this one string is the whole credential, so a weak one is a
+   * configuration mistake and not a degraded mode. `bin/serve.ts` reads
+   * `PLAYERONE_DEMO_BYPASS_KEY`, and `collector.ts` argues the rest.
+   */
+  demoBypassKey?: string;
+  /**
+   * Zalo Login (OAuth v4), owner's decision of 2026-09-16 overriding the
+   * ZNS-only rule: VNG's ZNS Official Account is not available, so a sign-in
+   * that depends on a code arriving in Zalo delivers nothing.
+   *
+   * Absent here, the three `/auth/collector/zalo/...` routes answer 503
+   * `zalo_not_configured` — not defaulted inside `buildApi` for the same
+   * reason `sendSignInCode` is not: a route that answers as though it worked is
+   * worse than one that says it is not configured. `bin/serve.ts` reads
+   * `zaloLoginFromEnv()`.
+   */
+  zaloLogin?: ZaloLogin;
   /**
    * The clock the sign-in limiter counts on. Same seam, and same rule, as
    * `signInLimiter(now)`: it exists so a five-minute window and a one-minute
@@ -315,6 +411,55 @@ export type ApiOptions = {
   /** Advisory risk evaluation and the reversible payout-hold switch. */
   risk?: RiskConfig;
 };
+
+/**
+ * Query parameters that must never reach a log, by NAME rather than by route.
+ *
+ * A route added next month is covered without anybody remembering to add it,
+ * which is the same argument the `/api/me/` prefix guard makes. `code` and
+ * `state` are Zalo's callback; `ticket` is ours; `token` and `secret` are here
+ * because a query string is the wrong place for either and the day one appears
+ * there it should be redacted rather than discovered.
+ */
+export const REDACTED_QUERY_PARAMS = ['code', 'state', 'ticket', 'token', 'secret'] as const;
+
+/**
+ * The same URL with any sensitive parameter's VALUE replaced.
+ *
+ * The parameter name survives on purpose: "a `code` was present and this is
+ * what it was" and "no `code` was present" are different facts when somebody is
+ * working out why a sign-in failed, and only the second half is a secret.
+ */
+export function redactQuery(url: string): string {
+  const mark = url.indexOf('?');
+  if (mark === -1) return url;
+  const query = new URLSearchParams(url.slice(mark + 1));
+  let redacted = false;
+  for (const name of REDACTED_QUERY_PARAMS) {
+    if (!query.has(name)) continue;
+    query.set(name, 'REDACTED');
+    redacted = true;
+  }
+  return redacted ? `${url.slice(0, mark)}?${query.toString()}` : url;
+}
+
+/**
+ * Fastify's own `req` serializer, field for field, with `url` redacted.
+ *
+ * Copied rather than wrapped because Fastify does not export it; the shape is
+ * pinned by a test so a Fastify upgrade that adds a field is noticed instead of
+ * silently dropping one from every deployed log.
+ */
+export function loggedRequest(req: FastifyRequest): Record<string, unknown> {
+  return {
+    method: req.method,
+    url: redactQuery(req.url),
+    version: req.headers?.['accept-version'],
+    host: req.host,
+    remoteAddress: req.ip,
+    remotePort: req.socket?.remotePort,
+  };
+}
 
 /** What a reviewer session may reach. Everything else answers 403. */
 const REVIEW_SCOPE = '/api/review/';
@@ -392,6 +537,8 @@ export function buildApi({
   sendSignInCode,
   signInDeliveryMode,
   demoPhone,
+  demoBypassKey,
+  zaloLogin,
   now,
   payout = payoutOptionsFromEnv(),
   risk = riskConfigFromEnv(),
@@ -417,6 +564,19 @@ export function buildApi({
    * The message names the environment variable although this is a library,
    * because the only thing anybody will do with the error is set it.
    */
+  /**
+   * The bypass key's floor, as a service invariant for the reason the two
+   * above are one: an embedded caller must not be able to assemble the weak
+   * combination either. Named so the only action anybody can take is obvious.
+   */
+  if (demoBypassKey !== undefined && demoBypassKey.length < DEMO_BYPASS_MIN_KEY) {
+    throw new Error(
+      `demoBypassKey must be at least ${DEMO_BYPASS_MIN_KEY} characters ` +
+        '(PLAYERONE_DEMO_BYPASS_KEY; generate one with `openssl rand -base64 48`). ' +
+        'It is the only credential on POST /auth/collector/demo, so a short one is ' +
+        'a configuration mistake rather than a weaker mode.',
+    );
+  }
   if (reviewerMediaEnabled && !secureCookies) {
     throw new Error(
       'reviewerMediaEnabled requires secureCookies: streaming raw footage to a remote ' +
@@ -424,7 +584,25 @@ export function buildApi({
         'with TLS terminated in front of this process)',
     );
   }
-  const app = Fastify({ logger, trustProxy: trustLoopbackProxy ? ['127.0.0.1/32', '::1/128'] : false });
+  const app = Fastify({
+    /**
+     * A request logger, with the query string redacted.
+     *
+     * Fastify's default `req` serializer logs `req.url` verbatim, and the Zalo
+     * callback carries the OAuth `code` and `state` in exactly that query — so
+     * every deployed server with `PLAYERONE_LOG` on wrote a live authorization
+     * code into its container log, in clear, on every sign-in. Codex reproduced
+     * it against `4a32929` and printed both values. A code is single-use and
+     * expires in ten minutes, but a container log is read by more people than a
+     * credential store is, is shipped to whatever aggregator the VM has, and
+     * survives in a backup long after the code does.
+     *
+     * The rest of Fastify's shape is kept field for field, so an operator's
+     * existing log reading does not change — only the values disappear.
+     */
+    logger: logger ? { serializers: { req: loggedRequest } } : false,
+    trustProxy: trustLoopbackProxy ? ['127.0.0.1/32', '::1/128'] : false,
+  });
 
   /**
    * Every unhandled throw leaves through here, and the reason is one measured
@@ -916,7 +1094,17 @@ export function buildApi({
    */
   registerSessionRoutes(app, db, { tokenSecret, secureCookies, limiter });
   /** The collector's phone sign-in. Same limiter, same failed-sign-in rows. */
-  registerCollectorAuth(app, db, { tokenSecret, limiter, sendSignInCode, demoPhone });
+  registerCollectorAuth(app, db, {
+    tokenSecret,
+    limiter,
+    sendSignInCode,
+    demoPhone,
+    // The same value engineering.ts reports, so the audit row and the
+    // diagnostic cannot say different things about one deployment.
+    signInChannel: signInDeliveryMode,
+    demoBypassKey,
+    zaloLogin,
+  });
 
   /**
    * Who the caller is. Proves both-tokens and centre scope on its own, with no

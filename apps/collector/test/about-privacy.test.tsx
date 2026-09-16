@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
 import { LocaleProvider } from '../src/locale.tsx';
 import { NavProvider, useNav } from '../src/nav.tsx';
-import { ThemeProvider } from '../src/theme.tsx';
+import { ThemeProvider, polish } from '../src/theme.tsx';
 import { collector } from '@playerone/design/tokens';
 
 vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
@@ -91,12 +91,9 @@ it('About names both companies, what the app is for, and the build', async () =>
   expect(page()).toContain(m['about.build']);
 });
 
-it('About draws the header from the three token stops, not a fourth ramp', async () => {
+it('About keeps a paper header; the lavender wash belongs only to Home', async () => {
   await mount(<About />);
-  // SPEC.md: the gradient lives on three surfaces and is three stops in one
-  // hue family. A screen that wrote its own hexes would be the fourth.
-  const gradient = document.body.querySelector('[data-colors]');
-  expect(gradient?.getAttribute('data-colors')).toBe(collector.gradient.join(','));
+  expect(document.querySelector('[data-testid="home-header-wash"]')).toBeNull();
 });
 
 it('About only offers the document that has a screen', async () => {
@@ -177,4 +174,18 @@ it('About opens the existing language picker and applies the selected language',
   await act(async () => document.body.querySelector<HTMLElement>('[role="radio"][aria-label="Tiếng Việt"]')!.click());
   expect(page()).toContain(MESSAGES.vi['profile.about']);
   expect(document.body.querySelector('[role="radio"]')).toBeNull();
+});
+
+it('shows the bundled photo authors and licenses in About', async () => {
+  await mount(<About />);
+  await act(async () => named(m['photos.title'])!.click());
+  for (const author of ['Ann0611', 'amanderson2', 'Axisadman', 'Frank McKenna']) expect(page()).toContain(author);
+  expect(page()).toContain(m['photos.edited']);
+  expect(document.querySelectorAll('[role="link"]').length).toBeGreaterThanOrEqual(8);
+});
+
+it('Home draws its wash from the three design token stops', async () => {
+  const { HeaderGradient } = await import('../src/ui/HeaderGradient.tsx');
+  await mount(<HeaderGradient>Home</HeaderGradient>);
+  expect(document.body.querySelector('[data-colors]')?.getAttribute('data-colors')).toBe(polish.homeGradient.join(','));
 });

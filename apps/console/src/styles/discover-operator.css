@@ -144,7 +144,7 @@
 .operator-transfer{display:flex;flex-wrap:wrap;gap:9px;justify-content:space-between;font-size:.6875rem;color:var(--op-muted)}
 .operator-transfer i{height:4px;width:100%;background:var(--op-blue);border-radius:2px}
 
-.operator-review-stage{display:flex;flex-direction:column}
+.operator-review-stage{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(220px,.7fr);gap:14px}
 .operator-footage{position:relative;flex:1;min-height:0;background:#16243d;overflow:hidden;border-radius:8px}
 .operator-footage video{display:block;width:100%;height:100%;object-fit:cover}
 .operator-footage-label,.operator-time{position:absolute;background:#101a2ce6;color:#fff;font-size:.6875rem;border-radius:4px;padding:5px 8px}
@@ -152,14 +152,14 @@
 .operator-footage-label i{width:5px;height:5px;background:#72d6ff;border-radius:50%}
 .operator-time{right:10px;bottom:10px;font-variant-numeric:tabular-nums}
 .operator-hero[data-running='false'] .operator-time{bottom:42px}
-.operator-review-panel{height:116px;flex-shrink:0;position:relative;font-size:.75rem}
-.operator-review-checklist,.operator-verdict-panel{position:absolute;inset:0;display:flex;justify-content:center;flex-direction:column;gap:10px;transition:opacity 200ms var(--op-ease)}
+.operator-review-panel{min-width:0;position:relative;font-size:.75rem;border:1px solid #e4e9f0;border-radius:8px;background:#f7f9fc}
+.operator-review-checklist,.operator-verdict-panel{position:absolute;inset:0;display:flex;justify-content:flex-start;flex-direction:column;gap:12px;padding:18px;transition:opacity 200ms var(--op-ease)}
 .operator-verdict-panel{opacity:0;pointer-events:none}
 .operator-review-panel[data-verdict='true'] .operator-review-checklist{opacity:0;pointer-events:none}
 .operator-review-panel[data-verdict='true'] .operator-verdict-panel{opacity:1}
-.operator-criteria{display:flex;flex-wrap:wrap;gap:7px 10px;font-size:.75rem}
+.operator-criteria{display:grid;gap:8px;font-size:.75rem}
 /* Real buttons: they press under a thumb and under the scripted hand alike. */
-.operator-criteria>button{display:flex;align-items:center;gap:6px;padding:7px 10px;min-height:32px;border:1px solid transparent;background:#f2f5fa;border-radius:6px;color:var(--op-muted);font:inherit;cursor:pointer;transition:background 160ms,color 160ms}
+.operator-criteria>button{display:flex;align-items:center;gap:7px;width:100%;padding:8px 10px;min-height:36px;border:1px solid transparent;background:#fff;border-radius:6px;color:var(--op-muted);font:inherit;text-align:left;cursor:pointer;transition:background 160ms,color 160ms}
 .operator-criteria>button>svg{flex:none;color:#8996ab;transition:color 160ms}
 .operator-criteria>button:hover{background:#e6edfa}
 .operator-criteria>button:active,.operator-criteria>button[data-demo-press='true']{background:#d6e2f7;transform:scale(.97)}
@@ -170,6 +170,14 @@
 .operator-verdict>span:last-child{margin-left:auto;text-align:right;font-size:.6875rem;max-width:150px;color:var(--op-muted)}
 .operator-verdict b{display:block;font-size:1rem;color:var(--op-ink);margin-top:4px}
 .operator-verdict-panel>p{font-size:.75rem;line-height:1.5;margin:0;color:var(--op-muted)}
+
+@container (max-width:680px){
+  .operator-review-stage{display:flex;flex-direction:column;gap:0}
+  .operator-review-panel{height:126px;flex-shrink:0;border:0;border-radius:0;background:#fff}
+  .operator-review-checklist,.operator-verdict-panel{justify-content:center;gap:10px;padding:0}
+  .operator-criteria{display:flex;flex-wrap:wrap;gap:7px 10px}
+  .operator-criteria>button{width:auto;min-height:32px;padding:7px 10px;background:#f2f5fa}
+}
 
 .operator-payment{display:flex;align-items:center;justify-content:center;flex-direction:column}
 .operator-payment-brand{display:flex;align-items:center;gap:8px;font-size:.75rem;font-weight:600;color:var(--op-muted);margin-bottom:12px}

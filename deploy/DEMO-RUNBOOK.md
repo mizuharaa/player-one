@@ -61,6 +61,30 @@ fault.
 Fill in the names before Wednesday's rehearsal. An unnamed row is an unowned
 step.
 
+## Where everything is, on the day
+
+Everything below runs on the GreenNode VM in Ho Chi Minh; no laptop is in the
+path, and nobody needs to be on the same network as anybody else.
+
+| What | Value |
+| --- | --- |
+| API, operator console, finance and reviewer | `https://api.49-213-71-116.sslip.io` |
+| The phone's **Profile › About › Server** row | `api.49-213-71-116.sslip.io` |
+| Operator sign-in | machine `demo-machine-1`, reference `op-1` |
+| Role secrets (`op-1`, `fin-1`, `rev-1`) | printed once on the VM by `seed-stakeholder.mjs`; never in this file |
+| Demo bypass key | the owner holds it; it is in no file in this repository |
+
+The certificate is a real Let's Encrypt one, so the console opens in any
+browser without a warning. `sslip.io` resolves the address out of the hostname
+itself, so there is no DNS record to propagate and nothing to break on the day.
+
+**Sign-in codes are not delivered.** VNG's Zalo Official Account is not
+verified yet and the SMS brandname is still in approval, so the collector on
+stage gets in through **Fallback B0 — the demo bypass**, which is the rehearsed
+path and not an improvisation. Say nothing about it on stage; it is a debugging
+door, and the beat it serves is the app reaching the same cloud everybody else
+in the room is looking at.
+
 ## T-60 minutes — preflight, before anybody is in the room
 
 ```bash
@@ -303,12 +327,21 @@ vi → en → zh. Say which language is on screen before reading a line aloud.
 **Sign in.** The landing carries three lines over the video — "Wear it." /
 "Live your day." / "Reviewed minutes, paid." (VI: "Đeo camera." / "Sống như mọi
 ngày." / "Phút nào được duyệt, phút đó có tiền.") — then **Sign in** (Đăng
-nhập). Type `+84900000001`, press **Send code** (Gửi mã). The server fills the
-code in itself and the app says so: **"The server is in demonstration mode and
-filled the code in."** (VI: "Bản trình diễn tự điền sẵn mã.") The narrator says
-here that the six-digit code was filled in by the demo account because ZNS is
-not issued yet — **staff-assisted, and a real collector could not do this
-today.**
+nhập). **On the cloud variant, do not type a number: use the demo bypass.**
+Tap **Chế độ demo** under the legal line, paste the key the owner holds, press
+**Vào demo**. The app signs in as this same demo collector and lands on Home.
+
+The narrator says here that sign-in codes are not yet deliverable, because
+VNG's Zalo Official Account is not verified and the SMS brandname is still in
+approval — **staff-assisted, and a real collector could not sign in this way
+today.** Say nothing about the key itself.
+
+**Why not the autofill this page used to describe.** On the LAN variant
+`PLAYERONE_DEMO_PHONE` makes the server return the code in its own answer, and
+the app then says "Bản trình diễn tự điền sẵn mã." `deploy/cloud/check.test.ts`
+forbids that variable in the cloud template, because a route that hands back a
+code tells the whole internet which numbers are enrolled. So on the cloud the
+autofill does not exist, and pressing **Gửi mã** there leads nowhere.
 
 **First install only: the three intro cards.** On the first arrival at Home the
 app shows Onboarding — three swipeable cards, **"FIND WORK NEAR YOU"**, **"THE
@@ -579,7 +612,7 @@ fixed:
 - **The confirmed total** becomes the new bill's total, not `64.800 ₫`.
 - The **"Approved, awaiting a bill"** row (`32.400 ₫`, below) is absorbed into
   the new bill and becomes the pending-verification state instead — the same
-  wording as the two rows already described as "Needs something from you".
+  wording as the two rows already described as **"Payment setup pending"**.
 - **The transaction list grows** by the newly billed episode(s); it is not a
   fixed count.
 
@@ -606,8 +639,8 @@ fixture may seed it.
 **Optional verified sandbox variant.** Use this only after Fable has a real sandbox response and a finance-route declaration persisted with a matching nonempty provider name (and usable wallet ID where applicable). Refresh the console and phone: the destination says Verified with its Simulation label; its notification must also say Simulation. Read it as "destination verified in the sandbox; payment still awaiting." A successful wallet lookup that returns only an ID remains unverified under migration 0032. The read-only smoke never transfers money, and no fixture can unlock this variant. A real manual transfer needs its actual reference and an eligible finance actor; a funded sandbox transfer needs a separate owner decision. See `docs/payout-demo-state.md` for the command and evidence boundary.
 
 **The transaction rows.** Five episodes, each with its own settlement word. The
-two on the bill the operator generated read **"Needs something from you"** (Cần
-bạn xử lý) at `21.600 ₫` and `43.200 ₫`. Read that honestly rather than
+two on the bill the operator generated read **"Payment setup pending"** (Chờ
+xác minh nơi nhận tiền) at `21.600 ₫` and `43.200 ₫`. Read that honestly rather than
 literally — the server's own longer sentence behind it is *"We cannot pay this
 yet. Your ZaloPay payout account is missing or not verified."* **It is the
 platform, not the collector, that has something to do here**, and the narrator
@@ -743,6 +776,34 @@ demo-ready fallback:
       read as TLS coverage). Rehearsed on ______ by ______: PASS / FAIL
 - [ ] **5. One uninterrupted rehearsal** of the centre-PC variant, start to
       finish, no fixes mid-run. Rehearsed on ______ by ______: PASS / FAIL
+
+## Fallback B0 — sign-in delivery fails: the demo bypass
+
+Triggered by: the phone gets no code. ZNS is not issued, the eSMS brandname is
+still in approval, and Zalo Login has never been exercised against a live app —
+so on the day this is the likeliest single failure, and it happens before any of
+the four pipelines is on screen.
+
+The way through is `POST /auth/collector/demo`, gated on one key. On the phone:
+**Sign in** (Đăng nhập) → **Chế độ demo** at the foot of the sheet → paste the
+key → **Vào demo**. The app lands on Home as the same seeded demo collector
+`+84900000001` the script uses, so every beat after 0:14 reads exactly as
+rehearsed — the token is the ordinary thirty-day collector token, the claim and
+the session are the seeded ones, and the upload goes through the normal path
+with the normal size and format limits. Nothing is loosened; only the credential
+is skipped.
+
+Set it up with `--demo-bypass-key "$(openssl rand -base64 48)"` on
+`provision.sh` or `go-live.sh` (`docs/cloud-go-live.md`), keep the key off every
+command line you will screenshare, and take the line out of `cloud.env` when the
+demonstration is over. Without the key the route answers 404 and the control does
+nothing; the control itself is absent from a Play build.
+
+**The narrator says:** "no sign-in code channel is live yet, so an administrator
+key is standing in for the code. Everything after this is the platform doing its
+own work — a real collector could not sign in this way, and this key does not
+ship." Do not let it be read as collector self-service sign-in, which is already
+on the "not claimable on Thursday" list.
 
 ## Fallback B — handset upload failure: the debug-delivery page
 

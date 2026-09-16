@@ -129,18 +129,32 @@ describe('every failure ZNS can return', () => {
     }
   });
 
-  it('covers all six classes the pilot has to be able to act on', () => {
+  /**
+   * Re-transcribed 2026-09-16 against the current (ZBS) table, which is where
+   * `zns_oa_not_verified`, `zns_user_refused` and `zns_development_only` come
+   * from — see `ZNS_ERROR_CODES` and `docs/sign-in-channels.md`.
+   *
+   * `zns_unreachable` is deliberately NOT asserted here any more. No error code
+   * maps to it: it is what a timeout, a reset or a body that is not a ZNS
+   * envelope produces, and the tests above cover those. It was in this list
+   * while `-115` was mistakenly mapped to it, and `-115` is out of quota.
+   */
+  it('covers every class the pilot has to be able to act on', () => {
     const mapped = new Set(ZNS_ERROR_CODES.values());
     for (const refusal of [
       'zns_no_zalo_account',
+      'zns_phone_not_vietnamese',
+      'zns_oa_not_verified',
+      'zns_user_refused',
+      'zns_development_only',
       'zns_template_rejected',
       'zns_quota_exhausted',
       'zns_rate_limited',
       'zns_credentials_rejected',
-      'zns_unreachable',
     ] as const) {
       expect(mapped.has(refusal), refusal).toBe(true);
     }
+    expect(mapped.has('zns_unreachable'), 'no code means "could not be reached"').toBe(false);
   });
 
   it('is loud about a code no table knows, and treats it as temporary', async () => {
@@ -231,15 +245,67 @@ describe('configuration by environment', () => {
     PLAYERONE_ZNS_TEMPLATE_ID: 'tpl',
   };
 
+  /**
+   * The development sender is what the pilot runs on before VNG issues an
+   * account, and it says loudly that nothing was sent — but it no longer says
+   * WHAT was not sent unless the deployment named the number.
+   *
+   * It used to print every number's code, and `cloud.env.example` selects it
+   * (sandbox, no credentials), so a public deployment wrote real collectors'
+   * one-time codes into its container log. Both audits of `4a32929` found it.
+   * The allowlist is empty by default, so a deployment that has not thought
+   * about this discloses nothing.
+   */
   it('gives the development sender when nothing is set, rather than crashing', async () => {
     const lines: string[] = [];
     expect(() => signInCodeSenderFromEnv({})).not.toThrow();
-    // The development sender is what the pilot runs on before VNG issues an
-    // account, and it says loudly that nothing was sent.
     await devLogSender((l) => lines.push(l))(PHONE, CODE);
     expect(lines).toHaveLength(1);
+    // Still loud: silence is the dangerous outcome this sender exists to avoid.
     expect(lines[0]).toContain('NOT SENT');
-    expect(lines[0]).toContain(CODE);
+    // But no code, and no whole number — three digits, enough to recognise
+    // your own handset and not enough to harvest who is signing in.
+    expect(lines[0]).not.toContain(CODE);
+    expect(lines[0]).not.toContain(PHONE);
+    expect(lines[0]).toContain('PLAYERONE_DEMO_PHONES');
+  });
+
+  it('writes the code only for a number the deployment named, in any spelling of it', async () => {
+    for (const named of ['+84900000001', '0900000001', '84900000001', ' 0900000001 ']) {
+      const lines: string[] = [];
+      await devLogSender((l) => lines.push(l), [named])(PHONE, CODE);
+      // The format is load-bearing: a smoke script reads the code off it.
+      expect(lines[0], named).toContain(`sign-in code for ${PHONE} is ${CODE}`);
+    }
+
+    // A different number on the same deployment still gets nothing.
+    const other: string[] = [];
+    await devLogSender((l) => other.push(l), ['+84900000001'])('+84900000002', CODE);
+    expect(other[0]).not.toContain(CODE);
+  });
+
+  it('refuses the log channel on a production environment or a public origin', () => {
+    // Naming the channel must not be a way around the guard the old
+    // PLAYERONE_ZNS_ENV=production check already applied.
+    expect(() =>
+      signInCodeSenderFromEnv({ PLAYERONE_SIGN_IN_CHANNEL: 'log', PLAYERONE_ZNS_ENV: 'production' }),
+    ).toThrow(/cannot be used with PLAYERONE_ZNS_ENV=production/);
+    expect(() =>
+      signInCodeSenderFromEnv({
+        PLAYERONE_SIGN_IN_CHANNEL: 'log',
+        PLAYERONE_PUBLIC_URL: 'https://demo.203-0-113-4.sslip.io',
+      }),
+    ).toThrow(/public origin/);
+
+    // Localhost is the case it exists for, and so is a LAN centre with no
+    // public URL at all.
+    expect(() =>
+      signInCodeSenderFromEnv({
+        PLAYERONE_SIGN_IN_CHANNEL: 'log',
+        PLAYERONE_PUBLIC_URL: 'http://localhost:8080',
+      }),
+    ).not.toThrow();
+    expect(() => signInCodeSenderFromEnv({ PLAYERONE_SIGN_IN_CHANNEL: 'log' })).not.toThrow();
   });
 
   it('fails closed on half a configuration, naming what is missing', () => {
@@ -280,10 +346,14 @@ describe('configuration by environment', () => {
 // ---------------------------------------------------------------------------
 
 describe('the refusal names', () => {
-  it('are the eight the sender can produce, and nothing else', () => {
+  it('are the eleven the sender can produce, and nothing else', () => {
     const produced: ZnsRefusal[] = [
       'zns_no_zalo_account',
       'zns_phone_not_vietnamese',
+      // Added 2026-09-16 with the re-transcribed ZBS table.
+      'zns_oa_not_verified',
+      'zns_user_refused',
+      'zns_development_only',
       'zns_template_rejected',
       'zns_quota_exhausted',
       'zns_rate_limited',

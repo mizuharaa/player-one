@@ -1,6 +1,10 @@
+import { TaskPhotoLabel } from '../ui/TaskPhotoLabel.tsx';
+import { taskDuration } from '../duration.ts';
+import { CardScrollContext, useCardScroll } from '../ui/CardSheen.tsx';
+import { Failure } from '../ui/StatePanel.tsx';
 import { useToast } from '../ui/Toast.tsx';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { Image, type ImageSource } from 'expo-image';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
@@ -12,15 +16,16 @@ import {
   Button,
   Card,
   Loading,
-  Note,
+  Header,
   Progress,
   Row,
   Scrim,
   Tag,
   face,
   useInsets,
+  useReducedMotion,
 } from '../ui.tsx';
-import { taskImage } from '../v2.tsx';
+import { taskImage } from '../ui/taskImage.ts';
 import { dong } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
 
@@ -100,6 +105,9 @@ export function TaskDetail() {
   /** The sticky footer's own measured height, so content clears it exactly. */
   const [footer, setFooter] = useState(0);
 
+  const scroll = useCardScroll();
+  const scrollY = scroll.scroll;
+  const reduced = useReducedMotion();
   const task = useQuery({ queryKey: ['task', taskId], queryFn: () => api.task(taskId) });
   const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
   const claims = useQuery({ queryKey: ['claims'], queryFn: () => api.myClaims() });
@@ -130,9 +138,9 @@ export function TaskDetail() {
     return (
       <View style={ground}>
         <View style={{ padding: c.gutter, paddingTop: insets.top + theme.space[4] }}>
-          <Note
+          <Header title={tt('detail.title')} />
+          <Failure error={[task, profile, claims].find(query => query.isError)?.error}
             text={tt('common.loadFailed')}
-            tone="error"
             busy={task.isFetching || profile.isFetching || claims.isFetching}
             onRetry={() => {
               void task.refetch();
@@ -149,7 +157,7 @@ export function TaskDetail() {
     return (
       <View style={ground}>
         <View style={{ padding: c.gutter, paddingTop: insets.top + theme.space[4] }}>
-          <Loading />
+          <Loading kind="body" />
         </View>
       </View>
     );
@@ -204,23 +212,36 @@ export function TaskDetail() {
   );
 
   return (
-    <View style={ground}>
-      <ScrollView
+    <CardScrollContext.Provider value={scroll}><View style={ground}>
+      <Animated.ScrollView scrollEventThrottle={16} onScroll={reduced ? undefined : scroll.onScroll}
         contentContainerStyle={{ paddingBottom: footer + theme.space[6], gap: c.cardGap }}
       >
-        {/* 3/2 rather than 16/9 so the rate card is above the fold at 320×640
-            without letterboxing the still. */}
-        <View style={{ width: '100%', aspectRatio: 3 / 2, backgroundColor: c.line }}>
-          <Image
+        {claim.isError && refusal ? <Failure error={claim.error} text={tt(refusal)} onRetry={() => { if (!submitting.current) { submitting.current = true; claim.mutate(); } }} busy={claim.isPending} /> : refusal ? <View accessibilityLiveRegion="polite">
+            <Text
+              style={{
+                ...c.type.body,
+                color: c.muted,
+                fontFamily: face(theme),
+                textAlign: 'center',
+              }}
+            >
+              {tt(refusal)}
+            </Text>
+          </View> : null}
+        {/* The task card photo remains 4:3 here, with scroll-driven parallax. */}
+        <View style={{ width: '100%', aspectRatio: 4 / 3, backgroundColor: c.line, overflow: 'hidden' }}>
+          <Animated.View style={{ width: '100%', height: '100%', transform: [{ translateY: reduced ? 0 : scrollY.interpolate({ inputRange: [0, 600], outputRange: [0, 180], extrapolate: 'clamp' }) }] }}><Image
             // `assets.d.ts` types a bundled import as React Native's source —
             // a module number under Metro, a URL string under Vite — and
             // `expo-image` takes both. The cast is that one fact.
-            source={taskImage(data.scenario, data.type) as unknown as ImageSource}
+            source={taskImage(data) as unknown as ImageSource}
             contentFit="cover"
             style={{ width: '100%', height: '100%' }}
             accessible={false}
           />
+          </Animated.View>
           <Scrim stops={HEAD_SCRIM} />
+          <TaskPhotoLabel />
           <View
             style={{
               position: 'absolute',
@@ -247,7 +268,7 @@ export function TaskDetail() {
             </Pressable>
           </View>
           <View
-            style={{ position: 'absolute', left: c.gutter, right: c.gutter, bottom: c.cardPad }}
+            style={{ position: 'absolute', left: c.gutter, right: c.gutter, bottom: c.cardPad + 28 }}
           >
             <Text
               accessibilityRole="header"
@@ -313,12 +334,12 @@ export function TaskDetail() {
               {tt('detail.rates')}
             </Text>
             <Row label={tt('hall.perMinute')} value={dong(data.unitPriceVndPerMinute)} />
-            <Row label={tt('detail.target')} value={`${data.targetMinutes} ${tt('detail.minutes')}`} />
-            <Row label={tt('detail.claimedMinutes')} value={`${data.claimedMinutes} ${tt('detail.minutes')}`} />
-            <Row label={tt('detail.slotsLeft')} value={`${data.remainingSlots}`} />
+            <Row label={tt('detail.target')} value={taskDuration(data.targetMinutes, tt)} />
+            <Row label={tt('detail.claimedMinutes')} value={taskDuration(data.claimedMinutes, tt)} />
+            <Row label={tt('detail.slotsLeft')} value={tt(data.remainingSlots === 1 ? 'detail.slotCountOne' : 'detail.slotCount').replace('{count}', String(data.remainingSlots))} />
             <Progress
               label={tt('hall.progress')}
-              value={`${data.claimedMinutes}/${data.targetMinutes}`}
+              value={`${taskDuration(data.claimedMinutes, tt)} / ${taskDuration(data.targetMinutes, tt)}`}
               fraction={taken}
             />
             <Body muted>{tt('detail.noTotal')}</Body>
@@ -327,11 +348,12 @@ export function TaskDetail() {
 
           {section('detail.where', data.privacyNotice)}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* Sticky Accept, green because §2 makes affirmative green and this is
-          the one affirmative action in the app. Its refusal takes its place. */}
+          the one affirmative action in the app. Full refusals stay in scroll content. */}
       <View
+        testID="task-detail-footer"
         onLayout={(event) => setFooter(event.nativeEvent.layout.height)}
         style={{
           position: 'absolute',
@@ -354,20 +376,7 @@ export function TaskDetail() {
             busy={claim.isPending}
             onPress={() => { if (submitting.current) return; submitting.current = true; claim.mutate(); }}
           />
-        ) : (
-          <View accessibilityLiveRegion="polite">
-            <Text
-              style={{
-                ...c.type.body,
-                color: c.muted,
-                fontFamily: face(theme),
-                textAlign: 'center',
-              }}
-            >
-              {tt(refusal)}
-            </Text>
-          </View>
-        )}
+        ) : null}
         {alreadyClaimed ? (
           <Button
             label={tt('session.title')}
@@ -376,6 +385,6 @@ export function TaskDetail() {
           />
         ) : null}
       </View>
-    </View>
+    </View></CardScrollContext.Provider>
   );
 }

@@ -66,3 +66,6 @@ it.each(['vi', 'en', 'zh'] as const)('the payout card prints only the server\'s 
     } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); }
   }
 });
+
+// Native illustration rendering is covered by the web captures.
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));

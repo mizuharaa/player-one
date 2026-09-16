@@ -1,4 +1,5 @@
 import { configDefaults, defineConfig } from 'vitest/config';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Agent worktrees live under `.claude/worktrees/` inside this checkout while
@@ -6,6 +7,13 @@ import { configDefaults, defineConfig } from 'vitest/config';
  * test files too and every count doubles.
  */
 export default defineConfig({
+  /**
+   * The collector's tests run against the reanimated stub in
+   * `apps/collector/test/reanimated.tsx` (its own vitest.config carries the
+   * same alias). Without it here, the root runner loads the real ESM package
+   * and every collector file fails on a directory import before any test runs.
+   */
+  resolve: { alias: { 'react-native-reanimated': fileURLToPath(new URL('./apps/collector/test/reanimated.tsx', import.meta.url)) } },
   test: {
     /**
      * Native release checks and the deployment scripts use node:test; run them

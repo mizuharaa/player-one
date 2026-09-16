@@ -49,3 +49,23 @@ export const secureOriginStore: TokenStore = {
   set: (origin) => SecureStore.setItemAsync(ORIGIN_KEY, origin),
   clear: () => SecureStore.deleteItemAsync(ORIGIN_KEY),
 };
+
+/**
+ * The `state` of a Zalo sign-in in flight. Its own key, third and last.
+ *
+ * It has to survive the process, not just the screen: Android can kill the app
+ * while the person is on Zalo's permission screen and relaunch it on the deep
+ * link, and the state is what proves that link belongs to the sign-in THIS
+ * phone started. Without the comparison the app redeemed any forwarded ticket,
+ * which is login-CSRF — see `signInWithTicket`.
+ *
+ * In the keystore rather than anywhere cheaper for the same reason the token
+ * is: another app on the phone must not be able to read it and forge a match.
+ */
+const ZALO_STATE_KEY = 'playerone.collector.zalo-state';
+
+export const secureZaloStateStore: TokenStore = {
+  get: () => SecureStore.getItemAsync(ZALO_STATE_KEY),
+  set: (state) => SecureStore.setItemAsync(ZALO_STATE_KEY, state),
+  clear: () => SecureStore.deleteItemAsync(ZALO_STATE_KEY),
+};

@@ -12,7 +12,7 @@ import {
  * importing it pulls the native modules that screen reaches. Stubbed rather
  * than rendered: this file asserts about the catalogue, not about the UI.
  */
-vi.mock('react-native', () => ({ Text: () => null, View: () => null }));
+vi.mock('react-native', () => ({ Text: () => null, View: () => null, Pressable: () => null }));
 /**
  * `expo-video` reaches `expo-modules-core`, which asks the native runtime for
  * its `EventEmitter` at module load and throws in node. Same reason
@@ -37,8 +37,8 @@ const { REASON_KEYS } = await import('../src/screens/Uploads.tsx');
  * second locale actually translated rather than pasted.
  */
 describe('the collector message catalogue', () => {
-  it('opens v3 in English and keeps Vietnamese as the base catalogue', () => {
-    expect(DEFAULT_LOCALE).toBe('en');
+  it('opens the demo in Vietnamese', () => {
+    expect(DEFAULT_LOCALE).toBe('vi');
     expect(LOCALES[0]).toBe('vi');
   });
 
@@ -83,3 +83,6 @@ vi.mock('react-native-safe-area-context', async () => ({
 vi.mock('../src/ui/HeaderGradient.tsx', () => ({ HeaderGradient: ({ children }: { children: import('react').ReactNode }) => children }));
 
 vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
+
+// Native illustration rendering is covered by the web captures.
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));

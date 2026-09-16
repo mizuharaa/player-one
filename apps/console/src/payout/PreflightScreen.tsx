@@ -132,6 +132,23 @@ export function PreflightScreen() {
       <p className="mb-4 max-w-[62ch] text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">{t('settle.preflight.intro')}</p>
 
       {/*
+        Every figure on this screen is derived from the period's bills, so a
+        period with none reads as 0 bills, 0 payout accounts and a zero total
+        — which is true of the period and says nothing about the platform.
+        Name the window, and offer the period that does hold a bill.
+      */}
+      {bills.length === 0 ? (
+        <p className="mb-4 max-w-[62ch] text-[0.9375rem] leading-relaxed" role="status">
+          {t('settle.empty.window', { from: batch.data.period_start.slice(0, 10), to: batch.data.period_end.slice(0, 10) })}{' '}
+          {batch.data.latest_bill_period && batch.data.latest_bill_period !== period ? (
+            <Link to="/settle/preflight" search={{ period: batch.data.latest_bill_period }} className="workspace-text-link">
+              {t('settle.empty.openLatest', { period: batch.data.latest_bill_period })}
+            </Link>
+          ) : null}
+        </p>
+      ) : null}
+
+      {/*
         The screen's one ink block, and the whole reason this screen exists:
         the period's total, the sentence that says a transfer can still be
         refused, and — as its action — the server's own verdict on whether the

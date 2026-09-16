@@ -1,4 +1,26 @@
 import type { TokenStore } from './token-store.ts';
+
+/**
+ * A `TokenStore` that forgets when the process does.
+ *
+ * The default for the Zalo state, and fail-closed on purpose: a deep link that
+ * arrives after a restart finds nothing to match and is dropped, so the
+ * collector taps the button again. Dropping a good ticket is a retry;
+ * redeeming a bad one is somebody else's account. `App.tsx` passes the
+ * keystore, which is what makes the restart case work in the shipped app.
+ */
+const memoryStore = (): TokenStore => {
+  let held: string | null = null;
+  return {
+    get: async () => held,
+    set: async (value) => {
+      held = value;
+    },
+    clear: async () => {
+      held = null;
+    },
+  };
+};
 import {
   DELIVERY_STATES,
   type DeliveryOutcome,
@@ -147,6 +169,22 @@ export class HttpCollectorApi implements CollectorApi {
      * strategy, not configuration, and there is no second implementation.
      */
     private readonly fetchFn: typeof fetch = fetch,
+    /**
+     * Where the `state` of a Zalo sign-in in flight is kept, so the ticket that
+     * comes back can be proved to belong to the attempt this phone started.
+     *
+     * It has to OUTLIVE THE PROCESS: Android can kill the app while the person
+     * is on Zalo's permission screen and then relaunch it on the deep link, so
+     * an in-memory value would be gone at exactly the moment it is needed.
+     * `App.tsx` passes the keystore.
+     *
+     * The in-memory default is fail-closed and deliberate: a caller that
+     * supplies none can still start a sign-in, and a deep link arriving after
+     * a restart finds nothing to match and is dropped. The collector taps the
+     * button again. Dropping a good ticket is a retry; redeeming a bad one is
+     * somebody else's account.
+     */
+    private readonly zaloState: TokenStore = memoryStore(),
   ) {}
 
   // -- the wire ------------------------------------------------------------
@@ -154,7 +192,7 @@ export class HttpCollectorApi implements CollectorApi {
   private async body(res: Response): Promise<unknown> {
     this.active();
     if (res.status === 204) return undefined;
-    const text = await res.text();
+    const text = await res.text().catch(() => { this.active(); throw new ApiError('server_unreachable'); });
     this.active();
     if (text === '') return undefined;
     try {
@@ -169,12 +207,13 @@ export class HttpCollectorApi implements CollectorApi {
     const headers: Record<string, string> = {};
     if (this.token !== null) headers['authorization'] = `Bearer ${this.token}`;
     if (payload !== undefined) headers['content-type'] = 'application/json';
+    const body = payload === undefined ? undefined : JSON.stringify(payload);
     const response = await this.fetchFn(`${this.baseUrl}${path}`, {
       method,
       headers,
-      body: payload === undefined ? undefined : JSON.stringify(payload),
-      signal: this.lifetime.signal,
-    });
+      body,
+      signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(method === 'GET' ? 20_000 : 60_000)]),
+    }).catch(() => { this.active(); throw new ApiError('server_unreachable'); });
     this.active();
     return response;
   }
@@ -199,10 +238,9 @@ export class HttpCollectorApi implements CollectorApi {
     if (res.status >= 200 && res.status < 300) return parsed;
 
     const constraint = (parsed as { constraint?: unknown } | undefined)?.constraint;
-    if (typeof constraint === 'string') throw new ApiError(constraint);
-    if (res.status === 400) throw new ApiError('invalid_request');
-    if (res.status === 429) throw new ApiError('rate_limited');
-    throw new ApiError('server_error');
+    const sentence = (parsed as { message?: unknown } | undefined)?.message;
+    const code = typeof constraint === 'string' ? constraint : res.status === 400 ? 'invalid_request' : res.status === 429 ? 'rate_limited' : 'server_error';
+    throw Object.assign(new ApiError(code), { sentence: typeof sentence === 'string' ? sentence : undefined });
   }
 
   // -- sign in (APP-01) ----------------------------------------------------
@@ -235,6 +273,102 @@ export class HttpCollectorApi implements CollectorApi {
     // stored token here to clear.
     if (res.status === 401) throw new ApiError('credentials');
     if (res.status === 429) throw new ApiError('rate_limited');
+    if (res.status < 200 || res.status >= 300) throw new ApiError('server_error');
+
+    const token = (await this.body(res)) as { token?: unknown } | undefined;
+    this.active();
+    if (typeof token?.token !== 'string') throw new ApiError('server_error');
+    const value = token.token;
+    this.token = value;
+    await this.persist(() => this.tokens.set(value));
+    this.active();
+  }
+
+  // -- sign in with Zalo (APP-01, owner's decision 2026-09-16) -------------
+
+  async startZaloSignIn(options?: { probeOnly?: boolean }): Promise<{ url: string; state: string }> {
+    const res = await this.send('/auth/collector/zalo/start', 'POST');
+    if (res.status === 429) throw new ApiError('rate_limited');
+    // No Zalo app on this deployment. The screen hides the button on this
+    // rather than showing a control that cannot work.
+    if (res.status === 503) throw new ApiError('zalo_not_configured');
+    if (res.status < 200 || res.status >= 300) throw new ApiError('server_error');
+    const body = (await this.body(res)) as { url?: unknown; state?: unknown } | undefined;
+    this.active();
+    if (typeof body?.url !== 'string' || typeof body.state !== 'string') {
+      throw new ApiError('server_error');
+    }
+    /**
+     * Remembered BEFORE the browser opens, because the browser may never come
+     * back to this process. Written before the URL is returned so the caller
+     * cannot open Zalo on a state that was not stored.
+     */
+    if (!options?.probeOnly) await this.persistState(body.state);
+    return { url: body.url, state: body.state };
+  }
+
+  /**
+   * Trade the deep link's ticket for the token — but only if the link belongs
+   * to the sign-in this phone started.
+   *
+   * The `state` comes back beside the ticket and is compared, byte for byte,
+   * against the one stored by `startZaloSignIn`. Without this the app redeemed
+   * ANY `playerone://signed-in?ticket=…` the OS handed it: a second app
+   * claiming the scheme could sign the collector into an attacker's account,
+   * which is login-CSRF and is what both audits of `4a32929` found.
+   *
+   * Throws `ApiError('zalo_state_unknown')` on a mismatch or a missing stored
+   * state, and does NOT clear the stored value — a forged link must not be
+   * able to make the real one that arrives a second later fail too.
+   */
+  async signInWithTicket(ticket: string, state: string): Promise<void> {
+    const expected = await this.zaloState.get();
+    this.active();
+    if (expected === null || state === '' || state !== expected) {
+      throw new ApiError('zalo_state_unknown');
+    }
+    // Matched, so this attempt is over however the exchange goes: a ticket is
+    // single-use, and leaving the state behind would let a replay of the same
+    // link pass this check again.
+    await this.persistState(null);
+    const res = await this.send('/auth/collector/ticket', 'POST', { ticket });
+    // NOT `req`: a refused ticket is not an expired session, and there is no
+    // stored token here to clear.
+    if (res.status === 401) throw new ApiError('zalo_ticket_spent');
+    if (res.status === 429) throw new ApiError('rate_limited');
+    if (res.status < 200 || res.status >= 300) throw new ApiError('server_error');
+
+    const token = (await this.body(res)) as { token?: unknown } | undefined;
+    this.active();
+    if (typeof token?.token !== 'string') throw new ApiError('server_error');
+    const value = token.token;
+    this.token = value;
+    await this.persist(() => this.tokens.set(value));
+    this.active();
+  }
+
+  /** Serialised with the token writes, for the reason `persist` gives. */
+  private persistState(state: string | null): Promise<void> {
+    return this.persist(() => (state === null ? this.zaloState.clear() : this.zaloState.set(state)));
+  }
+
+  // -- the demo bypass (owner's request 2026-09-16) ------------------------
+
+  /**
+   * One key for the ordinary collector token. Same token handling as the two
+   * routes above -- NOT `req`, because a refused key is not an expired session
+   * and there is no stored token to clear.
+   *
+   * A 404 means this deployment has no bypass, and is exactly what a server
+   * without the route answers; the sheet says so rather than offering another
+   * try.
+   */
+  async signInWithDemoKey(key: string): Promise<void> {
+    const res = await this.send('/auth/collector/demo', 'POST', { key });
+    if (res.status === 404) throw new ApiError('demo_unavailable');
+    if (res.status === 401) throw new ApiError('credentials');
+    if (res.status === 429) throw new ApiError('rate_limited');
+    if (res.status === 503) throw new ApiError('demo_collector_absent');
     if (res.status < 200 || res.status >= 300) throw new ApiError('server_error');
 
     const token = (await this.body(res)) as { token?: unknown } | undefined;
@@ -512,7 +646,7 @@ export class HttpCollectorApi implements CollectorApi {
   }
 
   async income(): Promise<IncomeEntry[]> {
-    const res = (await this.req('GET', '/api/me/income')) as { episodes?: RawIncome[] };
+    const res = (await this.req('GET', '/api/me/income')) as { episodes?: RawIncome[]; simulation?: boolean };
     return (res.episodes ?? []).map((e) => ({
       episodeId: e.episode_id,
       // Server strings, unchanged. Nothing here adds, divides or rounds money.
@@ -521,6 +655,7 @@ export class HttpCollectorApi implements CollectorApi {
       // APP-34: `confirmed` is the server's word for "a human has decided".
       kind: e.confirmed === true ? 'confirmed' : 'estimated',
       settlementState: e.state,
+      ...(res.simulation === undefined ? {} : { simulation: res.simulation === true }),
     }));
   }
 
@@ -534,11 +669,12 @@ export class HttpCollectorApi implements CollectorApi {
    * one screen's latency actually says so.
    */
   async incomeCycle(): Promise<IncomeCycle | null> {
-    const res = (await this.req('GET', '/api/me/income')) as { cycle?: RawCycle };
+    const res = (await this.req('GET', '/api/me/income')) as { cycle?: RawCycle; simulation?: boolean };
     const c = res.cycle;
     if (c === undefined) return null;
     return {
       label: c.label,
+      ...(res.simulation === undefined ? {} : { simulation: res.simulation === true }),
       confirmedVnd: c.confirmedVnd,
       estimatedVnd: c.estimatedVnd,
       totalVnd: c.totalVnd,

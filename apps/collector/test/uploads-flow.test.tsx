@@ -3,6 +3,8 @@ import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { expect, it, vi } from 'vitest';
+import { Platform } from 'react-native';
+import { ApiError } from '../src/api/types.ts';
 import { Uploads } from '../src/screens/Uploads.tsx';
 import { ApiProvider } from '../src/api/context.tsx';
 import { MockCollectorApi } from '../src/api/mock.ts';
@@ -16,7 +18,7 @@ vi.mock('react-native', async () => ({ ...await import('react-native-web'), Moda
 vi.mock('../src/guide/Guide.tsx', () => ({ useGuideTarget: () => undefined }));
 vi.mock('../src/ui.tsx', () => ({
   ListScreen: ({ title, header, empty, refresh }: { title: string; header: ReactNode; empty: ReactNode; refresh?: { onRefresh: () => void } }) => <main><h1>{title}</h1>{header}{empty}{refresh ? <button onClick={refresh.onRefresh}>Refresh</button> : null}</main>,
-  Screen: ({ title, children, footer }: { title: string; children: ReactNode; footer: ReactNode }) => <section><h1>{title}</h1>{children}{footer}</section>,
+  Screen: ({ title, children, footer, onBack, right }: { title: string; children: ReactNode; footer: ReactNode; onBack?: () => void; right?: ReactNode }) => <section><h1>{title}</h1><button onClick={onBack}>Back</button>{right}{children}{footer}</section>,
   Body: ({ children }: { children: ReactNode }) => <p>{children}</p>,
   Title: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
   Card: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -28,7 +30,7 @@ vi.mock('../src/ui.tsx', () => ({
   Button: ({ label, disabled, busy, onPress }: { label: string; disabled?: boolean; busy?: boolean; onPress: () => void }) => <button disabled={disabled || busy} onClick={onPress}>{label}</button>,
   Choice: ({ label, onPress }: { label: string; onPress: () => void }) => <button onClick={onPress}>{label}</button>,
 }));
-vi.mock('@playerone/delivery', () => ({ runDelivery: vi.fn() }));
+vi.mock('@playerone/delivery', async original => ({ ...await original<typeof import('@playerone/delivery')>(), runDelivery: vi.fn() }));
 vi.mock('../src/upload/delivery-native.ts', () => ({
   nativeDeliveryStore: { get: vi.fn(async () => null) }, nativeTransport: {},
   pickSessionDirectory: vi.fn(async () => ({ directoryUri: 'content://session', sessionBasename: 'session_20260914_120000', files: [] })),
@@ -62,6 +64,19 @@ it('requires folder, server session and explicit confirmation; repeated presses 
     await act(async () => { button(MESSAGES.vi['uploads.start']).click(); button(MESSAGES.vi['uploads.start']).click(); });
     await vi.waitFor(() => expect(runDelivery).toHaveBeenCalledTimes(1));
     expect(vi.mocked(runDelivery).mock.calls[0]?.[1].collectionSessionId).toBe('session-a');
+    await vi.waitFor(() => expect(button(MESSAGES.vi['common.cancel'])).toBeDefined());
+    await tap(MESSAGES.vi['common.cancel']);
+    await vi.waitFor(() => expect(button(MESSAGES.vi['common.close']).disabled).toBe(false));
+    await vi.waitFor(() => expect(button(MESSAGES.vi['common.retry'])).toBeDefined());
+    await tap(MESSAGES.vi['common.retry']);
+    await vi.waitFor(() => expect(runDelivery).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(runDelivery).mock.calls[1]?.[1]).toEqual(vi.mocked(runDelivery).mock.calls[0]?.[1]);
+    expect(vi.mocked(runDelivery).mock.calls[1]?.[2]?.resume).toBeUndefined();
+    await vi.waitFor(() => expect(button(MESSAGES.vi['common.cancel'])).toBeDefined());
+    await tap(MESSAGES.vi['common.cancel']);
+    await vi.waitFor(() => expect(button(MESSAGES.vi['common.close']).disabled).toBe(false));
+    await tap('Back');
+    expect(host.querySelector('section')).toBeNull();
   } finally {
     await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks();
   }
@@ -149,4 +164,48 @@ it('prints the session total size and the connection sentence before the deliver
     // Reading the size is not confirming it: the delivery still waits for Start.
     expect(runDelivery).not.toHaveBeenCalled();
   } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); }
+});
+
+// Native illustration rendering is covered by the web captures.
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));
+
+
+it('shows one failure sentence when both upload list queries fail', async () => {
+  const api = new MockCollectorApi();
+  vi.spyOn(api, 'episodes').mockRejectedValue(new Error('offline'));
+  vi.spyOn(api, 'income').mockRejectedValue(new Error('offline'));
+  const host = document.createElement('div'), root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="en"><NavProvider initial={{ name: 'uploads' }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+    expect(host.textContent?.split(MESSAGES.en['common.loadFailed'])).toHaveLength(2);
+  } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
+});
+
+it.each(['vi', 'en', 'zh'] as const)('labels iOS media as unmeasured, keeps empty picks on the source step and retries the chosen camera in %s', async locale => {
+  const previous = Platform.OS;
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'ios' });
+  vi.mocked(nativeDeliveryStore.get).mockResolvedValue(null);
+  vi.mocked(pickSessionDirectory).mockReset().mockResolvedValueOnce(null).mockRejectedValue(new ApiError('upload_camera_denied'));
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host), client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const m = MESSAGES[locale];
+  const button = (label: string) => Array.from(host.querySelectorAll('button')).find(b => b.textContent === label)!;
+  const tap = async (label: string) => { await act(async () => button(label).click()); };
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={new MockCollectorApi()}><LocaleProvider initialLocale={locale}><NavProvider initial={{ name: 'uploads', openDelivery: true }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await tap(m['uploads.byPhone']); await tap(m['common.next']);
+    await vi.waitFor(() => expect(button(m['uploads.chooseLibrary']).disabled).toBe(false));
+    expect(host.textContent).toContain(m['uploads.libraryUnmeasured']);
+    expect(button(m['uploads.pick'])).toBeUndefined();
+    await tap(m['uploads.chooseLibrary']);
+    await vi.waitFor(() => expect(pickSessionDirectory).toHaveBeenCalledWith('library', expect.any(AbortSignal)));
+    expect(button(m['uploads.chooseLibrary'])).toBeDefined();
+    await tap(m['uploads.takePhoto']);
+    await vi.waitFor(() => expect(host.textContent).toContain(m['uploads.cameraDenied']));
+    await tap(m['common.retry']);
+    await vi.waitFor(() => expect(pickSessionDirectory).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(pickSessionDirectory).mock.calls.slice(1).every(call => call[0] === 'camera')).toBe(true);
+  } finally { await act(async () => root.unmount()); client.clear(); host.remove(); Object.defineProperty(Platform, 'OS', { configurable: true, value: previous }); }
 });

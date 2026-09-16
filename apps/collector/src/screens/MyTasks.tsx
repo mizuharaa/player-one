@@ -1,3 +1,4 @@
+import { Failure } from '../ui/StatePanel.tsx';
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { useNav } from '../nav.tsx';
@@ -20,7 +21,7 @@ export function MyTasks() {
       data={claims.data ?? []}
       keyOf={(claim) => claim.id}
       header={<View style={{ gap: theme.space[3] }}>
-        {claims.isError ? <><Note text={tt(claims.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} /><Button label={tt('common.retry')} variant="secondary" disabled={claims.isFetching} onPress={() => void claims.refetch()} /></> : null}
+        {claims.isError ? <Failure error={claims.error} text={tt(claims.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} onRetry={() => void claims.refetch()} busy={claims.isFetching} /> : null}
         {(claims.data?.length ?? 0) > 0 ? <Button label={tt('session.title')} onPress={() => nav.push({ name: 'sessionCreate' })} /> : null}
         <NavRow label={tt('home.uploads')} onPress={() => nav.selectTab('uploads')} />
       </View>}

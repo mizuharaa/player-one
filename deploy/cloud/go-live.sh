@@ -4,10 +4,22 @@
 # on the VM over SSH. See docs/cloud-go-live.md "From the laptop with one IP".
 set -euo pipefail
 
-usage() { echo "Usage: bash deploy/cloud/go-live.sh <ip> [--domain D] [--bucket B] [--acme-email E] [--ssh-port N] [--ssh-user U] [--quota-bytes N] [--force] [--dry-run|--plan]" >&2; exit 2; }
+usage() { echo "Usage: bash deploy/cloud/go-live.sh <ip> [--domain D] [--bucket B] [--acme-email E] [--ssh-port N] [--ssh-user U] [--ssh-key PATH] [--quota-bytes N] [--zalo-app-id ID --zalo-app-secret S] [--sign-in-channel C] [--demo-phone P] [--demo-bypass-key K] [--force] [--dry-run|--plan]" >&2; exit 2; }
 [[ $# -ge 1 ]] || usage
 ip=$1; shift
-domain=; bucket=; acme_email=luong.alois@gmail.com; ssh_port=234; ssh_user=ubuntu; quota=1250000000; dry_run=0; force=
+domain=; bucket=; acme_email=luong.alois@gmail.com; ssh_port=234; ssh_user=ubuntu; ssh_key=~/.ssh/id_rsa_playerone; quota=1250000000; dry_run=0; force=
+# Zalo Login, owner's decision 2026-09-16. Empty leaves the three cloud.env
+# values empty, and code delivery stays exactly as it is today.
+zalo_app_id=; zalo_app_secret=; sign_in_channel=; demo_phone=
+# The demo bypass key, owner's request 2026-09-16, for debugging and the
+# Thursday demonstration only. Empty leaves PLAYERONE_DEMO_BYPASS_KEY empty and
+# POST /auth/collector/demo answers 404. Generate one with
+# `openssl rand -base64 48`; it is never stored in this repository.
+demo_bypass_key=
+# eSMS.vn, the SMS fallback. All three or none, and mandatory when the channel
+# is sms: configure.mjs refuses the combination that used to write them empty
+# and leave the API refusing to start.
+sms_api_key=; sms_secret_key=; sms_brandname=; sms_sandbox=
 while [[ $# -gt 0 ]]; do
   case $1 in
     --domain) domain=$2; shift 2 ;;
@@ -15,8 +27,18 @@ while [[ $# -gt 0 ]]; do
     --acme-email) acme_email=$2; shift 2 ;;
     --ssh-port) ssh_port=$2; shift 2 ;;
     --ssh-user) ssh_user=$2; shift 2 ;;
+    --ssh-key) ssh_key=$2; shift 2 ;;
     --force) force=--force; shift ;;   # provision.sh refuses a re-run without it
     --quota-bytes) quota=$2; shift 2 ;;
+    --zalo-app-id) zalo_app_id=$2; shift 2 ;;
+    --zalo-app-secret) zalo_app_secret=$2; shift 2 ;;
+    --sign-in-channel) sign_in_channel=$2; shift 2 ;;
+    --demo-phone) demo_phone=$2; shift 2 ;;   # the ONE number whose code may be logged
+    --demo-bypass-key) demo_bypass_key=$2; shift 2 ;;
+    --sms-api-key) sms_api_key=$2; shift 2 ;;
+    --sms-secret-key) sms_secret_key=$2; shift 2 ;;
+    --sms-brandname) sms_brandname=$2; shift 2 ;;
+    --sms-sandbox) sms_sandbox=--sms-sandbox; shift ;;   # eSMS test mode: charged nothing, delivered nowhere
     --dry-run|--plan) dry_run=1; shift ;;
     *) usage ;;
   esac
@@ -25,7 +47,7 @@ done
 echo "Domain: $domain (sslip.io needs no DNS record; Caddy's ACME resolves it directly)"
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-ssh_key=~/.ssh/id_ed25519         # fable-playerone-vm
+# fable-playerone-vm: the RSA key the GreenNode console accepted (ed25519 was refused).
 # The login user is an assumption (Ubuntu cloud images: "ubuntu", passwordless
 # sudo); the first real run tests it. --ssh-user overrides.
 remote_src=/root/playerone-src
@@ -47,7 +69,18 @@ for v in STORAGE_ENDPOINT STORAGE_KEY STORAGE_SECRET; do
   [[ -n ${!v} ]] || { echo "FAIL $v missing from $env_file"; exit 1; }
 done
 
-mask() { local s=$1; s=${s//$STORAGE_SECRET/***}; [[ -z $STORAGE_KEY ]] || s=${s//$STORAGE_KEY/***}; printf '%s' "$s"; }
+mask() { local s=$1; s=${s//$STORAGE_SECRET/***}; [[ -z $STORAGE_KEY ]] || s=${s//$STORAGE_KEY/***};
+  # The Zalo app secret is a credential like the other two and reaches the VM
+  # the same way: inside the stdin script, never on a command line, masked in
+  # a dry run. The app id is not a secret and stays readable on purpose.
+  [[ -z $zalo_app_secret ]] || s=${s//$zalo_app_secret/***}
+  # The bypass key is a credential too: one string trades for a collector
+  # session, so it travels in the stdin script and is masked in a dry run.
+  [[ -z $demo_bypass_key ]] || s=${s//$demo_bypass_key/***}
+  # The eSMS key and secret are credentials the operator supplied; the brandname
+  # is a public sender name and stays readable so a plan can be checked.
+  [[ -z $sms_api_key ]] || s=${s//$sms_api_key/***}
+  [[ -z $sms_secret_key ]] || s=${s//$sms_secret_key/***}; printf '%s' "$s"; }
 
 # step <label> <argv...>: streams and exits naming the step on failure; in
 # --dry-run/--plan it only prints the (masked) command it would have run.
@@ -100,8 +133,19 @@ provision_script=$(mktemp)
   printf 'rm -rf %q\n' "$remote_src"
   printf 'git clone /tmp/cloud-provision.bundle %q\n' "$remote_src"
   printf 'cd %q\n' "$remote_src"
-  printf 'bash deploy/cloud/provision.sh --domain %q --acme-email %q --local-db --storage-endpoint %q --storage-bucket %q --storage-key %q --storage-secret %q --quota-bytes %q %s\n' \
-    "$domain" "$acme_email" "$STORAGE_ENDPOINT" "$bucket" "$STORAGE_KEY" "$STORAGE_SECRET" "$quota" "$force"
+  # Built as an array so an absent optional value adds no empty argument, which
+  # provision.sh would forward to configure.mjs as a flag with no value.
+  opt_args=()
+  [[ -z $zalo_app_id ]] || opt_args+=(--zalo-app-id "$zalo_app_id" --zalo-app-secret "$zalo_app_secret")
+  [[ -z $sign_in_channel ]] || opt_args+=(--sign-in-channel "$sign_in_channel")
+  [[ -z $demo_bypass_key ]] || opt_args+=(--demo-bypass-key "$demo_bypass_key")
+  [[ -z $demo_phone ]] || opt_args+=(--demo-phone "$demo_phone")
+  [[ -z $sms_api_key ]] || opt_args+=(--sms-api-key "$sms_api_key")
+  [[ -z $sms_secret_key ]] || opt_args+=(--sms-secret-key "$sms_secret_key")
+  [[ -z $sms_brandname ]] || opt_args+=(--sms-brandname "$sms_brandname")
+  [[ -z $sms_sandbox ]] || opt_args+=("$sms_sandbox")
+  printf 'bash deploy/cloud/provision.sh --domain %q --acme-email %q --local-db --storage-endpoint %q --storage-bucket %q --storage-key %q --storage-secret %q --quota-bytes %q %s %s\n' \
+    "$domain" "$acme_email" "$STORAGE_ENDPOINT" "$bucket" "$STORAGE_KEY" "$STORAGE_SECRET" "$quota" "$force" "$(printf '%q ' ${opt_args[@]+"${opt_args[@]}"})"
 } > "$provision_script"
 step_stdin provision "$provision_script" ssh "${ssh_opts[@]}" "$ssh_user@$ip" sudo bash -s
 

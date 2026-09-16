@@ -21,6 +21,7 @@ import {
   buildApi,
   s3StoreFromEnv,
   signInCodeSenderFromEnv,
+  zaloLoginFromEnv,
   startHeartbeat,
 } from '../src/index.ts';
 import { riskConfigFromEnv } from '../src/risk/config.ts';
@@ -135,10 +136,58 @@ const app = buildApi({
    * PLAYERONE_ZNS_ENV=production with none of it, throws by name.
    */
   sendSignInCode: signInCodeSenderFromEnv(env),
-  signInDeliveryMode: env['PLAYERONE_ZNS_ACCESS_TOKEN'] && env['PLAYERONE_ZNS_TEMPLATE_ID'] ? 'zns' : 'dev_log',
+  /**
+   * Diagnostic provenance, and it has to agree with what
+   * `signInCodeSenderFromEnv` actually built: PLAYERONE_SIGN_IN_CHANNEL now
+   * decides, and only falls back to the ZNS-credentials test that was the whole
+   * of this before 2026-09-16.
+   */
+  signInDeliveryMode:
+    env['PLAYERONE_SIGN_IN_CHANNEL'] === 'sms'
+      ? 'sms'
+      : env['PLAYERONE_SIGN_IN_CHANNEL'] === 'log'
+        ? 'dev_log'
+        : env['PLAYERONE_SIGN_IN_CHANNEL'] === 'zns' ||
+            (env['PLAYERONE_ZNS_TEMPLATE_ID'] &&
+              (env['PLAYERONE_ZNS_ACCESS_TOKEN'] || env['PLAYERONE_ZNS_REFRESH_TOKEN']))
+          ? 'zns'
+          : 'dev_log',
   // One number, or nothing. `serve.ts` is the only file under src/ or bin/ that
   // reads it; `scripts/seed-demo.mjs` reads it too, which is the point of it.
   demoPhone: env['PLAYERONE_DEMO_PHONE'],
+  /**
+   * The demo bypass key, owner's request of 2026-09-16 — debugging and the
+   * Thursday demonstration only. Unset, `POST /auth/collector/demo` answers
+   * 404 for every caller and this server has no bypass; a value shorter than
+   * `DEMO_BYPASS_MIN_KEY` refuses to start rather than running weakly.
+   *
+   * `||` and not `??`, for the reason `zaloLoginFromEnv` writes out:
+   * `deploy/cloud/cloud.env.example` ships `PLAYERONE_DEMO_BYPASS_KEY=` with no
+   * value, so every cloud deployment hands this an EMPTY STRING rather than
+   * `undefined` — and an empty string must mean "no bypass", not "a key of
+   * length zero", which the length check would then refuse to boot on.
+   *
+   * The key itself is generated at deploy time (`openssl rand -base64 48`) and
+   * exists nowhere in this repository.
+   */
+  demoBypassKey: env['PLAYERONE_DEMO_BYPASS_KEY'] || undefined,
+  /**
+   * Zalo Login (OAuth v4), from PLAYERONE_ZALO_APP_ID, PLAYERONE_ZALO_APP_SECRET
+   * and PLAYERONE_PUBLIC_ORIGIN (which falls back to PLAYERONE_PUBLIC_URL).
+   * Undefined when none of them is set, and then TWO of the three Zalo routes
+   * refuse: `start` with a generic 503 that does not name Zalo (naming it was
+   * a configuration oracle), and `callback` with a redirect to the app's deep
+   * link carrying `zalo_not_configured`. The ticket route has no config check
+   * at all — it never talks to Zalo, and on a deployment with no Zalo app no
+   * ticket was ever issued, so its ordinary 401 is both true and the answer
+   * that says less. A PARTIAL configuration throws by name, the same rule as
+   * the ZNS and ZaloPay readers above.
+   *
+   * Owner's decision of 2026-09-16: this is the route a collector with an
+   * ordinary Zalo account signs in through, because VNG's ZNS Official Account
+   * is not available and the code channel therefore delivers nothing.
+   */
+  zaloLogin: zaloLoginFromEnv(env) ?? undefined,
   /**
    * The console's debug-delivery page. One value, `1`, and nothing else turns
    * it on — the same shape as every other switch read here, so a deployment

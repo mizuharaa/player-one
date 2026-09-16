@@ -59,6 +59,64 @@ test('never prints the storage key or secret, and masks them with ***', () => {
   assert.match(out, /--storage-secret \*\*\*/);
 });
 
+test('passes the Zalo app through to provision.sh, and masks its secret like the others', () => {
+  // Absent, nothing is added — the whole point of the default being today's
+  // behaviour. An empty argument here would reach configure.mjs as a flag with
+  // no value and refuse the provisioning run.
+  const plain = dryRun(['203.0.113.7']);
+  assert.doesNotMatch(plain, /--zalo-app-id|--sign-in-channel/);
+
+  const out = dryRun(['203.0.113.7',
+    '--zalo-app-id', '3849367142822243338',
+    '--zalo-app-secret', 'zalo-secret-never-printed',
+    '--sign-in-channel', 'sms']);
+  assert.match(out, /--zalo-app-id 3849367142822243338/);
+  assert.match(out, /--sign-in-channel sms/);
+  // The app id is not a credential and stays readable; the secret is one and is
+  // masked wherever the dry run would otherwise show it. It also never reaches
+  // a command line — it is inside the stdin script, like the storage secret.
+  assert.doesNotMatch(out, /zalo-secret-never-printed/);
+  assert.match(out, /--zalo-app-secret \*\*\*/);
+});
+
+test('passes the demo bypass key through to provision.sh, and masks it', () => {
+  // Absent, nothing is added: the demonstration door does not exist on a
+  // deployment nobody asked for it on.
+  assert.doesNotMatch(dryRun(['203.0.113.7']), /--demo-bypass-key/);
+
+  const key = 'bypass-key-never-printed-and-long-enough-xxxxxxxx';
+  const out = dryRun(['203.0.113.7', '--demo-bypass-key', key]);
+  // It is a credential — one string trades for a collector session — so it
+  // reaches the VM inside the stdin script and is masked wherever the dry run
+  // would otherwise show it, exactly like the storage and Zalo secrets.
+  assert.doesNotMatch(out, new RegExp(key));
+  assert.match(out, /--demo-bypass-key \*\*\*/);
+});
+
+test('forwards the eSMS credentials and masks the two that are secrets', () => {
+  // Absent, nothing is added: the SMS channel is opt-in and the default
+  // deployment must carry no eSMS configuration at all.
+  assert.doesNotMatch(dryRun(['203.0.113.7']), /--sms-/);
+
+  const out = dryRun(['203.0.113.7', '--sign-in-channel', 'sms',
+    '--sms-api-key', 'esms-key-never-printed',
+    '--sms-secret-key', 'esms-secret-never-printed',
+    '--sms-brandname', 'PLAYERONE', '--sms-sandbox']);
+  assert.match(out, /--sign-in-channel sms/);
+  assert.match(out, /--sms-brandname PLAYERONE/);
+  assert.match(out, /--sms-sandbox/);
+  /**
+   * The key and the secret are credentials and are masked wherever a dry run
+   * would print them; they also never reach a command line, travelling inside
+   * the stdin script like the storage secret. The brandname is a public sender
+   * name and stays readable, so an operator can check the plan.
+   */
+  assert.ok(!out.includes('esms-key-never-printed'), 'the eSMS key was printed');
+  assert.ok(!out.includes('esms-secret-never-printed'), 'the eSMS secret was printed');
+  assert.match(out, /--sms-api-key \*\*\*/);
+  assert.match(out, /--sms-secret-key \*\*\*/);
+});
+
 test('the bundle it ships clones into a checkout provision.sh can run from', () => {
   // The only step that runs for real here: everything after it needs the VM.
   const scratch = mkdtempSync(join(tmpdir(), 'playerone-go-live-bundle-'));

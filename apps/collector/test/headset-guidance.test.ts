@@ -3,8 +3,8 @@ import { HEADSET_COPY, HEADSET_GUIDANCE } from '../src/headset-guidance.ts';
 import { DEFAULT_LOCALE } from '../src/i18n.ts';
 
 describe('PXCap source coverage', () => {
-  it('opens in English and cites every instruction', () => {
-    expect(DEFAULT_LOCALE).toBe('en');
+  it('opens in Vietnamese and cites every instruction', () => {
+    expect(DEFAULT_LOCALE).toBe('vi');
     for (const section of HEADSET_GUIDANCE) {
       for (const item of section.items) expect(item.source).toMatch(/§[1-5]\./);
     }

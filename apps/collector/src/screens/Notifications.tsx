@@ -1,3 +1,4 @@
+import { Failure, StatePanel } from '../ui/StatePanel.tsx';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Pressable, Text, View, useWindowDimensions } from 'react-native';
@@ -164,6 +165,7 @@ export function Notifications({ previewItems }: { previewItems?: readonly Collec
     enabled: !simulation,
   });
   const [preview, setPreview] = useState<readonly CollectorNotification[]>(previewItems ?? []);
+  const [markError, setMarkError] = useState<unknown>(null);
   const [marking, setMarking] = useState(false);
   /**
    * The first read is still out.
@@ -190,10 +192,12 @@ export function Notifications({ previewItems }: { previewItems?: readonly Collec
       setPreview(rows => rows.map(row => ({ ...row, read: true })));
       return;
     }
-    setMarking(true);
+    setMarking(true); setMarkError(null);
     try {
       for (const item of items.filter((row) => !row.read)) await api.markNotificationRead(item.id);
       await inbox.refetch();
+    } catch (error) {
+      setMarkError(error);
     } finally {
       setMarking(false);
     }
@@ -236,14 +240,14 @@ export function Notifications({ previewItems }: { previewItems?: readonly Collec
        * the other means "there is nothing to read".
        */}
       {inbox.isError ? (
-        <Note
-          tone="error"
+        <Failure error={inbox.error}
           text={tt(inbox.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')}
           busy={inbox.isFetching}
           onRetry={() => void inbox.refetch()}
         />
       ) : null}
 
+      {markError ? <Failure error={markError} text={tt('common.actionFailed')} onRetry={() => void markAllRead()} busy={marking} /> : null}
       {pending ? <Loading /> : null}
 
       {/* Never the empty state while the first read is out or after it failed:
@@ -259,6 +263,7 @@ export function Notifications({ previewItems }: { previewItems?: readonly Collec
             {tt('notif.emptyTitle')}
           </Text>
           <Body muted>{tt('notif.emptyBody')}</Body>
+          <Button label={tt('common.retry')} onPress={() => void inbox.refetch()} busy={inbox.isFetching} variant="secondary" />
         </View>
       ) : null}
 
@@ -354,7 +359,7 @@ function NotificationRow({ item }: { item: CollectorNotification }) {
       {item.read ? null : (
         <View
           importantForAccessibility="no"
-          style={{ width: theme.space[2], height: theme.space[2], borderRadius: c.radius.pill, backgroundColor: c.plum, marginTop: theme.space[2] }}
+          style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: c.plum, marginTop: theme.space[2] }}
         />
       )}
     </View>
@@ -386,7 +391,7 @@ function NotificationSettings({ onBack, simulation }: { onBack: () => void; simu
     <Screen title={tt('notif.settings')} onBack={onBack}>
       {/* The honest sentence first: nothing here reaches a server yet. */}
       {simulation ? <Body>{tt('common.simulation')}</Body> : null}
-      <Body muted>{tt('notif.settingsIntro')}</Body>
+      {simulation ? <Body muted>{tt('notif.settingsIntro')}</Body> : <StatePanel title={tt('state.unavailable')} text={tt('notif.settingsIntro')} action={tt('common.back')} onPress={onBack} />}
       {GROUPS.map(({ key, why }) => {
         const channels = state[key] ?? { email: false, push: false };
         return (

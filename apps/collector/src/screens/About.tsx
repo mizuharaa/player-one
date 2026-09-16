@@ -1,30 +1,21 @@
+import { PhantomPressable } from '../ui/PhantomPressable.tsx';
+import { TASK_PHOTO_CREDITS } from '../ui/taskImage.ts';
+import { ServerSettings } from '../ui/ServerSettings.tsx';
 import { useState } from 'react';
 import { LanguageChoices, LOCALE_NAME } from './Profile.tsx';
 import { Sheet } from './TaskHall.tsx';
 import { useNav } from '../nav.tsx';
-import { Image, Platform, Text, View, useWindowDimensions } from 'react-native';
-import { HeaderGradient } from '../ui/HeaderGradient.tsx';
+import { Image, Linking, Platform, Text, View, useWindowDimensions } from 'react-native';
 import { useLocale, useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { Body, Card, NavRow, Screen, face } from '../ui.tsx';
 import wordmark from '../../assets/discover/playerone-wordmark.png';
 import app from '../../app.json';
 
-/**
- * Work order §4.13 — About, copying klarna-334's block: the wordmark on the
- * gradient, then what the app is for, who builds it, and the version.
- *
- * **This is one of the three gradient surfaces**, with the splash and Income
- * (SPEC.md). The gradient is `theme.collector.gradient` — three stops in one
- * hue family, over about a third of the viewport, never on the text and never
- * full-screen. There is no fourth.
- *
- * The links row is `legal.privacy` and `legal.dataNotice`, which are the two
- * documents this product actually has. `Privacy` is a screen in this lane;
- * the data notice has no screen and no route, so the row says so through the
- * caller's handler rather than pretending to open something.
- */
+/** About keeps a paper header, shared Server settings and bundled photo credits. */
 export function About({ onPrivacy }: { onPrivacy?: () => void } = {}) {
+  const [credits, setCredits] = useState(false);
+  const [server, setServer] = useState(false);
   const [language, setLanguage] = useState(false);
   const { fontScale } = useWindowDimensions();
   const { locale } = useLocale();
@@ -38,19 +29,19 @@ export function About({ onPrivacy }: { onPrivacy?: () => void } = {}) {
     <Screen title={tt('profile.about')}>
       {/* The header block. `Screen` draws the page title above it; this is the
           mark, not a second title. */}
-      <HeaderGradient>
+      <Card>
         <View style={{ alignItems: 'center', gap: theme.space[3] }}>
         <Image
           source={wordmark}
           accessibilityLabel={tt('app.name')}
           resizeMode="contain"
-          style={{ width: '70%', height: theme.space[10], tintColor: c.surface }}
+          style={{ width: '70%', height: theme.space[10], tintColor: c.ink }}
         />
-        <Text style={{ ...c.type.caption, color: c.surface, fontFamily: face(theme) }}>
+        <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>
           {tt('splash.partners')}
         </Text>
         </View>
-      </HeaderGradient>
+      </Card>
 
       <Card>
         <Text
@@ -79,6 +70,17 @@ export function About({ onPrivacy }: { onPrivacy?: () => void } = {}) {
         <NavRow label={tt('legal.privacy')} subtitle={tt('profile.privacySub')} onPress={openDocument} />
       </View>
 
+      <NavRow label={tt('photos.title')} onPress={() => setCredits(!credits)} />
+      {credits ? <Card>
+        <Body muted>{tt('photos.edited')}</Body>
+        {TASK_PHOTO_CREDITS.map(photo => <View key={photo.source} style={{ gap: 8 }}>
+          <PhantomPressable accessibilityRole="link" accessibilityLabel={photo.title} onPress={() => void Linking.openURL(photo.source)} style={{ minHeight: 44, minWidth: 44, justifyContent: 'center' }}><Text style={{ ...c.type.body, color: c.plum, fontFamily: face(theme), textDecorationLine: 'underline' }}>{photo.title}</Text></PhantomPressable>
+          <Body>{photo.author}</Body>
+          <PhantomPressable accessibilityRole="link" accessibilityLabel={photo.license} onPress={() => void Linking.openURL(photo.licenseUrl)} style={{ minHeight: 44, minWidth: 44, justifyContent: 'center' }}><Text style={{ ...c.type.caption, color: c.plum, fontFamily: face(theme), textDecorationLine: 'underline' }}>{photo.license}</Text></PhantomPressable>
+        </View>)}
+      </Card> : null}
+      <NavRow label={tt('server.title')} onPress={() => setServer(true)} />
+      {server ? <ServerSettings onClose={() => setServer(false)} /> : null}
       <NavRow label={tt('profile.language')} subtitle={LOCALE_NAME[locale]} onPress={() => setLanguage(true)} />
       <Sheet open={language} onClose={() => setLanguage(false)} title={tt('profile.language')}>
         <LanguageChoices stacked={fontScale > 1.2} onPicked={() => setLanguage(false)} />

@@ -23,9 +23,16 @@ describe('the two questions', () => {
     expect(canReadFinance('unknown')).toBe(false);
   });
 
-  it('leaves every action disabled for the administrator, with the sentence an operator gets', () => {
+  /**
+   * The administrator's sentence used to be the operator's. It was changed
+   * because the operator's sentence says only finance may VIEW bills, which is
+   * exactly what `canReadFinance` above lets an administrator do — the screen
+   * printed it over a bill table the administrator was reading. What has not
+   * changed is the half this file exists for: every action stays disabled.
+   */
+  it('leaves every action disabled for the administrator, with a reason that is true of it', () => {
     expect(readOnlyReason('finance')).toBe(null);
-    expect(readOnlyReason('administrator')).toBe('settle.readonly.operator');
+    expect(readOnlyReason('administrator')).toBe('settle.readonly.administrator');
     expect(readOnlyReason('operator')).toBe('settle.readonly.operator');
     expect(readOnlyReason('unknown')).toBe('settle.readonly.unknown');
   });
@@ -76,10 +83,10 @@ it.each(['administrator', 'finance'] as const)('%s fetches the bill; only financ
     // The action half: for the administrator the panel says why it is inert and
     // nothing is submittable; for finance it is live.
     if (role === 'administrator') {
-      expect(node.textContent).toContain(MESSAGES.en['settle.readonly.operator']);
+      expect(node.textContent).toContain(MESSAGES.en['settle.readonly.administrator']);
       for (const button of node.querySelectorAll('button')) expect(button.disabled, button.textContent ?? '').toBe(true);
     } else {
-      expect(node.textContent).not.toContain(MESSAGES.en['settle.readonly.operator']);
+      expect(node.textContent).not.toContain(MESSAGES.en['settle.readonly.administrator']);
     }
   } finally { await act(async () => root.unmount()); client.clear(); }
 });

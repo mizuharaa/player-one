@@ -1,3 +1,4 @@
+import { Failure } from '../ui/StatePanel.tsx';
 import { useState, type ComponentType } from 'react';
 import { Text, View, useWindowDimensions } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -43,12 +44,17 @@ export function Devices() {
     },
   });
 
+  const bindSerial = () => {
+    if (serial.trim() === '' || bind.isPending || devices.isPending || devices.isError) return;
+    bind.mutate(serial.trim());
+  };
+
   return (
     <Screen title={tt('devices.title')}>
-      {devices.isError ? <><Note text={tt(devices.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} /><Button label={tt('common.retry')} disabled={devices.isFetching} onPress={() => void devices.refetch()} /></> : null}
+      {devices.isError ? <Failure error={devices.error} text={tt(devices.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} onRetry={() => void devices.refetch()} busy={devices.isFetching} /> : null}
       {devices.isPending ? <Loading /> : null}
       {!devices.isError && devices.data !== undefined && devices.data.length === 0 ? (
-        <Hatch text={tt('devices.empty')} />
+        <Hatch action={tt('common.retry')} onPress={() => void devices.refetch()} text={tt('devices.empty')} />
       ) : null}
       {(devices.data ?? []).map((d) => (
         <Card key={d.serial}>
@@ -86,9 +92,9 @@ export function Devices() {
         <Button
           label={tt(bind.isPending ? 'common.saving' : 'devices.bind')}
           disabled={serial.trim() === '' || bind.isPending || devices.isPending || devices.isError}
-          onPress={() => bind.mutate(serial.trim())}
+          onPress={bindSerial}
         />
-        {bind.isError ? <Note text={tt(BIND_ERRORS[bind.error.message] ?? 'devices.bindFailed')} /> : null}
+        {bind.isError ? <Failure onRetry={bindSerial} busy={bind.isPending} error={bind.error} text={tt(BIND_ERRORS[bind.error.message] ?? 'devices.bindFailed')} /> : null}
       </Card>
       <Button
         label={tt('devices.provision')}
