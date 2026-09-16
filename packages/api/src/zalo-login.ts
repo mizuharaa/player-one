@@ -372,7 +372,14 @@ export function zaloLoginFromEnv(
 ): ZaloLogin | null {
   const appId = env['PLAYERONE_ZALO_APP_ID'];
   const appSecret = env['PLAYERONE_ZALO_APP_SECRET'];
-  const publicOrigin = env['PLAYERONE_PUBLIC_ORIGIN'] ?? env['PLAYERONE_PUBLIC_URL'];
+  /**
+   * `||` and not `??`, and the difference is a live bug rather than a style
+   * point: `deploy/cloud/cloud.env.example` writes `PLAYERONE_PUBLIC_ORIGIN=`
+   * with no value, so every cloud deployment hands this an EMPTY STRING rather
+   * than `undefined`. `??` would take the empty string, skip the fallback, and
+   * refuse to start naming a variable the operator had never been asked to set.
+   */
+  const publicOrigin = env['PLAYERONE_PUBLIC_ORIGIN'] || env['PLAYERONE_PUBLIC_URL'];
   if (!appId && !appSecret) return null;
   const missing = (
     [

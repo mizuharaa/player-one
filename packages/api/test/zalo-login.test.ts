@@ -405,6 +405,23 @@ describe('the environment reader', () => {
     expect(zalo?.redirectUri).toBe(ORIGIN + ZALO_CALLBACK_PATH);
   });
 
+  /**
+   * `cloud.env.example` writes `PLAYERONE_PUBLIC_ORIGIN=` with no value, so
+   * every cloud deployment hands the reader an empty string and not an absent
+   * key. With `??` instead of `||` that empty string wins, the fallback is
+   * skipped, and the server refuses to start naming a variable nobody was asked
+   * to set. This is that case.
+   */
+  it('falls back past an EMPTY public origin, which is what a cloud.env actually contains', () => {
+    const zalo = zaloLoginFromEnv({
+      PLAYERONE_ZALO_APP_ID: APP_ID,
+      PLAYERONE_ZALO_APP_SECRET: APP_SECRET,
+      PLAYERONE_PUBLIC_ORIGIN: '',
+      PLAYERONE_PUBLIC_URL: ORIGIN,
+    });
+    expect(zalo?.redirectUri).toBe(ORIGIN + ZALO_CALLBACK_PATH);
+  });
+
   it('refuses a public origin that carries a path, because the redirect URI is built from it', () => {
     expect(() =>
       zaloLogin({ appId: APP_ID, appSecret: APP_SECRET, publicOrigin: `${ORIGIN}/console` }),

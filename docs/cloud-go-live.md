@@ -96,6 +96,17 @@ bash deploy/cloud/provision.sh ... \
   --zalo-app-id 3849367142822243338 --zalo-app-secret <secret>
 ```
 
+`go-live.sh` takes the same three flags and forwards them:
+
+```bash
+bash deploy/cloud/go-live.sh 14.225.1.2 \
+  --zalo-app-id 3849367142822243338 --zalo-app-secret <secret>
+```
+
+The app secret is treated as a credential like the storage secret: it reaches
+the VM inside the stdin script rather than on a command line, and `--dry-run`
+masks it with `***`. The app id is not a secret and stays readable.
+
 Both or neither: half a Zalo app is refused by `configure.mjs` before the VM is
 touched, and by the server at boot. Add `--sign-in-channel sms` only once an
 eSMS brandname exists (5–10 business days, business licence required — the
