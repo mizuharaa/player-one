@@ -1737,6 +1737,19 @@ describe.skipIf(!hasDb())('the back office', () => {
        * REFUSALS beside `collectors_external_ref_key` — not here.
        */
       'collectors_phone_key',
+      /**
+       * 0035, and it is here for a reason that is one step stronger than the
+       * phone key's: no back-office route accepts a Zalo id at all, and the one
+       * route that writes it — the Zalo callback — targets the conflict
+       * (`onConflictDoNothing` on `zalo_id`) and reads the winner's row back.
+       * Two tabs of the same sign-in therefore both sign the same person in
+       * rather than one of them meeting this index.
+       *
+       * It moves the day an operator can type somebody's Zalo id, and it would
+       * move for the same reason `collectors_phone_key` would: "another
+       * collector already holds that account" becomes a sentence a person reads.
+       */
+      'collectors_zalo_id_key',
       'collectors_sign_in_code_check',
       'collectors_sign_in_code_attempts_check',
       'collectors_token_epoch_check',
