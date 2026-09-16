@@ -1,3 +1,13 @@
+/*
+ * eas.json, checked against what Expo actually loads.
+ *
+ * Known and harmless, so nobody chases it: every `eas submit` run logs
+ * "Skipping TestFlight group setup: ENOENT ... UsersKhang.playeroneAuthKey_*.p8".
+ * The CLI strips the drive and slashes out of `submit.*.ios.ascApiKeyPath` when it
+ * resolves that path relative to the project, and only the optional group step
+ * uses it — the submission itself authenticates fine, and the internal group is
+ * set to all builds, which is why 43 through 47 all appeared without it.
+ */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
