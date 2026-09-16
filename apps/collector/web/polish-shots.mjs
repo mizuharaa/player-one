@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 const section = process.argv[2] ?? 'section-1';
+const groupsOnly = section === 'round3-M1';
 const out = join(process.env.PLAYERONE_SHOTS_DIR ?? 'C:/build/mobile-v3-polish-shots', section);
 const base = process.env.PLAYERONE_HARNESS_URL ?? 'http://127.0.0.1:5177';
 await mkdir(out, { recursive: true });
@@ -11,12 +12,19 @@ try {
   for (const width of [390, 430]) {
     const page = await browser.newPage({ viewport: { width, height: 932 }, reducedMotion: 'no-preference' });
     const errors = []; page.on('pageerror', error => errors.push(error.message));
-    for (const screen of ['home', 'taskHall', 'taskDetail', 'uploads', 'income']) {
+    for (const screen of groupsOnly ? ['groupChats', 'groupThread'] : ['home', 'taskHall', 'taskDetail', 'uploads', 'income']) {
       await page.goto(`${base}/?screen=${screen}&ready=1&lang=vi`);
       await page.waitForTimeout(500);
+      if (groupsOnly) {
+        const panel = page.locator('[aria-live="polite"]');
+        await panel.waitFor({ state: 'visible' });
+        const box = await panel.boundingBox();
+        if (!box || box.y < 0 || box.y + box.height > 932 || box.x < 0 || box.x + box.width > width) throw new Error(`${screen}: unavailable panel is clipped`);
+        if (await panel.getByRole('button').count() !== 1) throw new Error(`${screen}: Explore action missing`);
+      }
       await page.screenshot({ path: `${out}/${width}-${screen}.png`, fullPage: true }); count++;
     }
-    if (section !== 'section-1' && section !== 'section-2') for (const screen of ['home', 'taskHall', 'taskDetail', 'uploads', 'income']) {
+    if (!groupsOnly && section !== 'section-1' && section !== 'section-2') for (const screen of ['home', 'taskHall', 'taskDetail', 'uploads', 'income']) {
       await page.goto(`${base}/?screen=${screen}&ready=1&lang=vi&state=loading`);
       await page.waitForTimeout(600);
       await page.screenshot({ path: `${out}/${width}-${screen}-loading.png`, fullPage: true }); count++;
@@ -55,7 +63,7 @@ try {
       await page.screenshot({ path: `${out}/${width}-photo-credits.png`, fullPage: true }); count++;
     }
     await page.close();
-    for (const [beat, time] of [['ring',600], ['one',1500], ['plate',2200], ['wipe',2900]]) {
+    if (!groupsOnly) for (const [beat, time] of [['ring',600], ['one',1500], ['plate',2200], ['wipe',2900]]) {
       const intro = await browser.newPage({ viewport: { width, height: 932 }, reducedMotion: 'no-preference' });
       intro.on('pageerror', error => errors.push(error.message));
       await intro.goto(`${base}/?screen=home&ready=1&intro=1&lang=vi`);
