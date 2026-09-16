@@ -314,3 +314,29 @@ it('shows the unreachable state before authentication and opens the shared Serve
   expect(document.body.textContent).toContain(copy['profile.about']);
   expect(tokens.value).toBeNull();
 });
+
+it('plain Retry repeats an offline sign-in request without opening Server settings', async () => {
+  fetchFn.mockRejectedValueOnce(new TypeError('offline')).mockResolvedValueOnce(json({ demo_code: '123456' }));
+  await mount();
+  await tap(copy['signIn.sendCode']);
+  await settle(() => expect(container.textContent).toContain(copy['state.offline']));
+  await tap(copy['common.retry']);
+  await settle(() => expect(container.textContent).toContain(copy['signIn.demoFilled']));
+  expect(fetchFn).toHaveBeenCalledTimes(2);
+  expect(document.body.textContent).not.toContain(copy['server.address']);
+});
+
+it('retries an offline new request after an earlier verification refusal', async () => {
+  fetchFn.mockResolvedValueOnce(json({ demo_code: '123456' }))
+    .mockResolvedValueOnce(new Response(null, { status: 401 }))
+    .mockRejectedValueOnce(new TypeError('offline'))
+    .mockResolvedValueOnce(json({ demo_code: '654321' }));
+  await mount(); await tap(copy['signIn.sendCode']);
+  await settle(() => expect(codeRow()).not.toBeNull());
+  await tap(copy['signIn.submit']);
+  await settle(() => expect(container.textContent).toContain(copy['signIn.badCode']));
+  await tapBack(); await tap(copy['signIn.sendCode']);
+  await settle(() => expect(container.textContent).toContain(copy['state.offline']));
+  await tap(copy['common.retry']);
+  expect(fetchFn).toHaveBeenCalledTimes(4);
+});

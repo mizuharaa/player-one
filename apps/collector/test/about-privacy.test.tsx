@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
 import { LocaleProvider } from '../src/locale.tsx';
 import { NavProvider, useNav } from '../src/nav.tsx';
-import { ThemeProvider } from '../src/theme.tsx';
+import { ThemeProvider, polish } from '../src/theme.tsx';
 import { collector } from '@playerone/design/tokens';
 
 vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
@@ -182,4 +182,10 @@ it('shows the bundled photo authors and licenses in About', async () => {
   for (const author of ['Ann0611', 'amanderson2', 'Axisadman', 'Frank McKenna']) expect(page()).toContain(author);
   expect(page()).toContain(m['photos.edited']);
   expect(document.querySelectorAll('[role="link"]').length).toBeGreaterThanOrEqual(8);
+});
+
+it('Home draws its wash from the three design token stops', async () => {
+  const { HeaderGradient } = await import('../src/ui/HeaderGradient.tsx');
+  await mount(<HeaderGradient>Home</HeaderGradient>);
+  expect(document.body.querySelector('[data-colors]')?.getAttribute('data-colors')).toBe(polish.homeGradient.join(','));
 });

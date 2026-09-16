@@ -76,7 +76,7 @@ export function Exam() {
       title={tt('exam.title')}
       footer={
         <>
-          {submit.isError ? <Failure error={submit.error} text={tt('common.actionFailed')} /> : null}
+          {submit.isError ? <Failure onRetry={sendAnswers} busy={submit.isPending} error={submit.error} text={tt('common.actionFailed')} /> : null}
           {result === 'passed' ? (
             <Button label={tt('home.tasks')} onPress={() => nav.reset({ name: 'home' })} />
           ) : (

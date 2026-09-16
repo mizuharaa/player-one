@@ -241,7 +241,6 @@ export function Notifications({ previewItems }: { previewItems?: readonly Collec
        */}
       {inbox.isError ? (
         <Failure error={inbox.error}
-          tone="error"
           text={tt(inbox.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')}
           busy={inbox.isFetching}
           onRetry={() => void inbox.refetch()}

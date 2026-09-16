@@ -256,6 +256,7 @@ export function SignIn({
     // A synchronous guard also covers two taps before React rerenders disabled.
     if (submitting.current) return;
     submitting.current = 'request';
+    verify.reset();
     setProblem(null);
     setCode('');
     setFilled(false);
@@ -413,7 +414,7 @@ fontWeight: theme.fontWeight.medium,
               >
                 {tt('signIn.checking')}
               </Text>
-            ) : problem === 'state.offline' ? <Failure error={new ApiError('server_unreachable')} text={tt(problem)} /> : problem !== null ? (
+            ) : problem === 'state.offline' ? <Failure error={new ApiError('server_unreachable')} text={tt(problem)} onRetry={() => verify.isError ? submitCode(code) : sendCode()} busy={pending} /> : problem !== null ? (
               <Text
                 accessibilityLiveRegion="polite"
                 style={{
@@ -659,7 +660,7 @@ fontWeight: theme.fontWeight.medium,
           */}
           <LegalLine />
 
-          {problem !== null ? <Failure error={problem === 'state.offline' ? new ApiError('server_unreachable') : undefined} text={tt(problem)} /> : null}
+          {problem !== null ? <Failure error={problem === 'state.offline' ? new ApiError('server_unreachable') : undefined} text={tt(problem)} onRetry={() => verify.isError ? submitCode(code) : sendCode()} busy={pending} /> : null}
 
           <View style={{ marginTop: 'auto', paddingTop: theme.space[5] }}>
             <Button label={tt('signIn.sendCode')} disabled={pending} onPress={sendCode} />

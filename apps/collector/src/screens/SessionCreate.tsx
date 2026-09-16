@@ -291,7 +291,7 @@ export function SessionCreate() {
     {step === 4 ? <YesNo question={tt('session.sensitiveTitle')} value={sensitive} disabled={create.isPending}
       onChange={v => { if (!submitting.current) setSensitive(v); }} /> : null}
     {step >= 3 && (others === null || sensitive === null) ? <Body muted>{tt('session.needDeclarations')}</Body> : null}
-    {create.isError ? <Failure error={create.error} tone="error" text={tt(SESSION_ERRORS[create.error.message] ?? 'common.actionFailed')} /> : null}
+    {create.isError ? <Failure onRetry={next} busy={create.isPending} error={create.error} text={tt(SESSION_ERRORS[create.error.message] ?? 'common.actionFailed')} /> : null}
     <Body muted>{tt('session.noRecord')}</Body>
   </Screen>;
 }

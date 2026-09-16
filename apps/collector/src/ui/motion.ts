@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react';
+import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from 'react';
 import { AccessibilityInfo } from 'react-native';
-export function useReducedMotion(): boolean {
+const MotionContext = createContext(true);
+export const useReducedMotion = () => useContext(MotionContext);
+
+/** One platform subscription for every motion consumer beneath the app theme. */
+export function MotionProvider({ children }: { children: ReactNode }) {
   const [reduced, setReduced] = useState(true);
   useEffect(() => {
     let live = true;
@@ -14,5 +18,5 @@ export function useReducedMotion(): boolean {
       sub?.remove();
     };
   }, []);
-  return reduced;
+  return createElement(MotionContext.Provider, { value: reduced }, children);
 }

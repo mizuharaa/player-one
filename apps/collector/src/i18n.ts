@@ -627,7 +627,7 @@ const vi = {
   'server.save': 'Lưu',
   'server.reset': 'Dùng mặc định',
   'server.invalid': 'Địa chỉ không hợp lệ',
-  'server.signsOut': 'Đổi máy chủ thì bạn phải đăng nhập lại.',
+  'server.signsOut': 'Lưu thay đổi máy chủ thì bạn phải đăng nhập lại.',
 
   // prechecks — APP-19's facts on the Prepare screen, read off THIS PHONE.
   // English is the source; the Vietnamese is the plain Zalo register. The app
@@ -650,13 +650,14 @@ const vi = {
   "state.offline": "Không kết nối được máy chủ",
   "state.offlineBody": "Kiểm tra kết nối và địa chỉ máy chủ trong phần Giới thiệu.",
   "state.empty": "Chưa có nội dung",
-  "state.emptyBody": "Nội dung sẽ xuất hiện tại đây khi có cập nhật.",
   "state.unavailable": "Tính năng chưa sẵn sàng",
   "state.unavailableBody": "Bạn có thể tiếp tục khám phá các nhiệm vụ.",
 
   // v3 task cards
   "taskCard.slots": "Còn {count} chỗ",
   "taskCard.default": "Nhiệm vụ",
+  "taskCard.hours": "giờ",
+  "taskCard.home": "Tại nhà",
   "taskCard.warehouse": "Kho",
   "home.recommended": "Gợi ý cho bạn",
 
@@ -1228,7 +1229,7 @@ const en: Record<MessageKey, string> = {
   'server.save': 'Save',
   'server.reset': 'Use the default',
   'server.invalid': 'That address is not valid',
-  'server.signsOut': 'Changing the server signs you out.',
+  'server.signsOut': 'Saving a server change signs you out.',
 
   // prechecks — see the Vietnamese block. English is the source text.
   'prechecks.phoneBattery': 'Phone battery',
@@ -1245,13 +1246,14 @@ const en: Record<MessageKey, string> = {
   "state.offline": "Cannot connect to the server",
   "state.offlineBody": "Check your connection and the server address in About.",
   "state.empty": "Nothing here yet",
-  "state.emptyBody": "Updates will appear here when they are available.",
   "state.unavailable": "This feature is not available yet",
   "state.unavailableBody": "You can keep exploring available tasks.",
 
   // v3 task cards
   "taskCard.slots": "{count} spots left",
   "taskCard.default": "Task",
+  "taskCard.hours": "h",
+  "taskCard.home": "At home",
   "taskCard.warehouse": "Warehouse",
   "home.recommended": "Recommended for you",
 
@@ -1807,7 +1809,7 @@ const zh: Record<MessageKey, string> = {
   'server.save': '保存',
   'server.reset': '使用默认地址',
   'server.invalid': '地址无效',
-  'server.signsOut': '更换服务器后需要重新登录。',
+  'server.signsOut': '保存服务器更改后需要重新登录。',
 
   // prechecks — see the Vietnamese block. English is the source text.
   'prechecks.phoneBattery': '手机电量',
@@ -1824,13 +1826,14 @@ const zh: Record<MessageKey, string> = {
   "state.offline": "无法连接服务器",
   "state.offlineBody": "请检查网络连接和关于页面中的服务器地址。",
   "state.empty": "暂无内容",
-  "state.emptyBody": "有更新时会显示在这里。",
   "state.unavailable": "此功能暂未开放",
   "state.unavailableBody": "你可以继续浏览可参加的任务。",
 
   // v3 task cards
   "taskCard.slots": "剩余 {count} 个名额",
   "taskCard.default": "任务",
+  "taskCard.hours": "小时",
+  "taskCard.home": "在家",
   "taskCard.warehouse": "仓库",
   "home.recommended": "为你推荐",
 

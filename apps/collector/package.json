@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "web": "vite --config web/vite.config.ts",
     "shots": "node web/shots.mjs",
+    "shots:polish": "node web/polish-shots.mjs",
     "start": "expo start",
     "android": "expo run:android",
     "test:release": "node --test scripts/*.test.mjs",

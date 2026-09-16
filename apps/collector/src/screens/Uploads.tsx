@@ -285,6 +285,7 @@ export function Uploads() {
     <ListScreen title={tt('uploads.title')} data={visible} keyOf={episode => episode.episodeId}
       refresh={{ refreshing: episodes.isFetching || income.isFetching, onRefresh: () => { void episodes.refetch(); void income.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.cardGap }}>
+        {[episodes, income].some(q => q.isError) ? <Failure error={[episodes, income].find(q => q.isError)?.error} text={tt('common.loadFailed')} onRetry={() => { void episodes.refetch(); void income.refetch(); }} busy={episodes.isFetching || income.isFetching} /> : null}
         <Button label={tt('uploads.deliverTitle')} onPress={() => setOpen(true)} />
         <Button label={tt('session.title')} variant="secondary" onPress={() => nav.push({ name: 'sessionReminder' })} />
         <Field label={tt('uploads.search')} value={search} onChangeText={setSearch} />
@@ -292,8 +293,8 @@ export function Uploads() {
           <Chip label={tt('hall.all')} selected={filter === null} onPress={() => setFilter(null)} />
           {EPISODE_STATES.map(state => <Chip key={state} label={tt(`state.${state}`)} selected={filter === state} onPress={() => setFilter(state)} />)}
         </ScrollView>
-        {income.isError ? <Failure error={income.error} tone="error" text={tt('common.loadFailed')} onRetry={() => void income.refetch()} busy={income.isFetching} /> : null}
-        {episodes.isError ? <Failure error={episodes.error} tone="error" text={tt(episodes.data ? 'common.refreshFailed' : 'common.loadFailed')} onRetry={() => void episodes.refetch()} busy={episodes.isFetching} /> : null}
+        {income.isError ? <Body muted>{tt('common.loadFailed')}</Body> : null}
+        {episodes.isError ? <Body muted>{tt('common.loadFailed')}</Body> : null}
         {episodes.isPending ? <Loading /> : null}
       </View>}
       empty={episodes.isPending || episodes.isError ? null : <Hatch action={tt('common.retry')} onPress={() => { setSearch(''); setFilter(null); void episodes.refetch(); }} text={tt(search.trim() || filter ? 'uploads.noMatches' : 'uploads.empty')} />}
@@ -320,13 +321,14 @@ export function Uploads() {
           <Button label={tt('uploads.start')} disabled={!picked || !sessionId} onPress={() => start(null)} /> : deliveryStage === 1 ?
           <Button label={tt('common.next')} disabled={!sessionId || sessions.isError || sessions.isPending} onPress={() => setDeliveryStage(2)} /> :
           <Button label={tt('uploads.pick')} busy={pick.isPending} disabled={held.isPending || held.isError} onPress={() => pick.mutate()} />}>
+          {!running && !outcome && !deliver.isError && (deliveryStage === 0 || deliveryStage === 1) && [held, sessions].some(q => q.isError) ? <Failure error={[held, sessions].find(q => q.isError)?.error} text={tt('common.loadFailed')} onRetry={() => { void held.refetch(); void sessions.refetch(); }} busy={held.isFetching || sessions.isFetching} /> : null}
         {running || outcome || deliver.isError ? <>
           {hashed ? <Progress label={tt('uploads.hashing')} value={`${hashed.done}/${hashed.total}`} fraction={hashed.total ? hashed.done / hashed.total : 0} /> : null}
           {step ? <Progress label={tt('uploads.sending')} value={`${step.sentFiles}/${step.totalFiles}`} fraction={step.totalFiles ? step.sentFiles / step.totalFiles : 0} /> : null}
           {outcome ? <><Tag label={tt(`delivery.${outcome.state}`)} fg={deliveryColors(theme, outcome.state).fg} bg={deliveryColors(theme, outcome.state).bg} mark={deliveryMarks[outcome.state]} />
             {outcome.heldReason ? <Note tone="pending" text={reasonText(tt, outcome.heldReason)} /> : null}
             {outcome.failedReason ? <Note tone="error" text={reasonText(tt, outcome.failedReason)} /> : null}</> : null}
-          {deliver.isError ? <Failure error={deliver.error} tone="error" text={deliver.error instanceof ApiError ? reasonText(tt, deliver.error.code) : tt('common.actionFailed')}
+          {deliver.isError ? <Failure error={deliver.error} text={deliver.error instanceof ApiError ? reasonText(tt, deliver.error.code) : tt('common.actionFailed')}
             onRetry={() => start(resumable)} busy={running} /> : null}
         </> : deliveryStage === -1 ? <>
           <Choice label={tt('uploads.byPhone')} selected={deliveryMode === 'phone'} onPress={() => setDeliveryMode('phone')} />
@@ -334,13 +336,13 @@ export function Uploads() {
           {deliveryMode === 'card' ? <Note text={HEADSET_GUIDANCE.map(section => section.items).flat().find(item => item.id === 'handover')!.text[locale]} /> : null}
         </> : deliveryStage === 0 ? <>
           <Body>{tt('uploads.deliverBody')}</Body><Note text={tt('uploads.confirmBody')} />
-          {held.isError ? <Failure error={held.error} tone="error" text={tt('common.loadFailed')} onRetry={() => void held.refetch()} busy={held.isFetching} /> : null}
+          {held.isError ? <Body muted>{tt('common.loadFailed')}</Body> : null}
           {resumable ? <Card><Row label={tt('uploads.session')} value={resumable.sessionBasename} /><Button label={tt('uploads.resume')} variant="secondary" onPress={() => start(resumable)} /></Card> : null}
-          {pick.isError ? <Failure error={pick.error} tone="error" text={pick.error instanceof ApiError ? reasonText(tt, pick.error.code) : tt('uploads.pickFailed')} onRetry={() => pick.mutate()} busy={pick.isPending} /> : null}
+          {pick.isError ? <Failure error={pick.error} text={pick.error instanceof ApiError ? reasonText(tt, pick.error.code) : tt('uploads.pickFailed')} onRetry={() => pick.mutate()} busy={pick.isPending} /> : null}
         </> : deliveryStage === 1 ? <>
           <Title>{tt('uploads.chooseSession')}</Title>
           {sessions.isPending ? <Loading /> : null}
-          {sessions.isError ? <Failure error={sessions.error} tone="error" text={tt('common.loadFailed')} onRetry={() => void sessions.refetch()} busy={sessions.isFetching} /> : null}
+          {sessions.isError ? <Body muted>{tt('common.loadFailed')}</Body> : null}
           {(sessions.data ?? []).map(session => <Choice key={session.id} label={`${tt(`scenario.${session.scenario}`)} · ${session.createdAt.slice(0, 10)}`}
             describedBy={tt('uploads.session')} selected={sessionId === session.id} onPress={() => setSessionId(session.id)} />)}
           {!sessions.isPending && !sessions.isError && sessions.data?.length === 0 ? <StatePanel title={tt('state.empty')} text={tt('uploads.noSessions')} action={tt('session.title')} onPress={() => { close(); nav.push({ name: 'sessionCreate' }); }} /> : null}

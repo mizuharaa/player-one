@@ -1,10 +1,14 @@
+import kitchen from '../../assets/discover/setting-kitchen.jpg';
 import office from '../../assets/tasks/office.jpg';
 import shop from '../../assets/tasks/shop.jpg';
 import warehouse from '../../assets/tasks/warehouse.jpg';
 import fallback from '../../assets/tasks/default.jpg';
 
-/** Photos follow the server type; an unknown type never borrows another setting. */
-export const taskImage = (type?: string | null) => type === 'office' ? office : type === 'shop' ? shop : type === 'warehouse' ? warehouse : fallback;
+/** The server scenario takes precedence; unknown settings use the default photo. */
+export const taskImage = (task: { scenario?: string | null; type?: string | null }) => {
+  const type = task.scenario ?? task.type;
+  return type === 'home' || type === 'kitchen' ? kitchen : type === 'office' ? office : type === 'shop' ? shop : type === 'warehouse' ? warehouse : fallback;
+};
 
 /** Attribution travels with the bundled crops. */
 export const TASK_PHOTO_CREDITS = [

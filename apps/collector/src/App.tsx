@@ -276,7 +276,7 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
   }, [api, queryClient, restore]);
 
   if (state === null || state === 'leaving') return <Restoring />;
-  if (state === 'offline') return <SignOutProvider signOut={(options) => void leave(options?.landing === true)}><View style={{ flex: 1, backgroundColor: theme.collector.paper, paddingTop: 48, paddingHorizontal: 24 }}><Failure error={new ApiError('server_unreachable')} text={tt('common.loadFailed')} onServerClose={() => void enter()} /></View></SignOutProvider>;
+  if (state === 'offline') return <SignOutProvider signOut={(options) => void leave(options?.landing === true)}><View style={{ flex: 1, backgroundColor: theme.collector.paper, paddingTop: 48, paddingHorizontal: 24 }}><Failure error={new ApiError('server_unreachable')} text={tt('common.loadFailed')} onRetry={() => void enter()} /></View></SignOutProvider>;
   if (state === 'unavailable' || state === 'clearFailed') return (
     <View style={{ flex: 1, backgroundColor: theme.color.surface, padding: theme.space[4], gap: theme.space[3] }}>
       <StatePanel error title={tt('common.loadFailed')} text={tt(state === 'clearFailed' ? 'signIn.clearFailed' : 'common.actionFailed')} action={tt('common.retry')} onPress={() => void (state === 'clearFailed' ? leave() : enter())} />

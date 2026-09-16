@@ -1,4 +1,4 @@
-import { CardScrollContext } from '../ui/CardSheen.tsx';
+import { CardScrollContext, useCardScroll } from '../ui/CardSheen.tsx';
 import { Failure } from '../ui/StatePanel.tsx';
 import { useToast } from '../ui/Toast.tsx';
 import { useEffect, useRef, useState } from 'react';
@@ -103,7 +103,8 @@ export function TaskDetail() {
   /** The sticky footer's own measured height, so content clears it exactly. */
   const [footer, setFooter] = useState(0);
 
-  const scrollY = useRef(new Animated.Value(0)).current;
+  const scroll = useCardScroll();
+  const scrollY = scroll.scroll;
   const reduced = useReducedMotion();
   const task = useQuery({ queryKey: ['task', taskId], queryFn: () => api.task(taskId) });
   const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
@@ -138,7 +139,6 @@ export function TaskDetail() {
           <Header title={tt('detail.title')} />
           <Failure error={[task, profile, claims].find(query => query.isError)?.error}
             text={tt('common.loadFailed')}
-            tone="error"
             busy={task.isFetching || profile.isFetching || claims.isFetching}
             onRetry={() => {
               void task.refetch();
@@ -210,17 +210,18 @@ export function TaskDetail() {
   );
 
   return (
-    <CardScrollContext.Provider value={scrollY}><View style={ground}>
-      <Animated.ScrollView scrollEventThrottle={16} onScroll={reduced ? undefined : Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: Platform.OS !== 'web' })}
+    <CardScrollContext.Provider value={scroll}><View style={ground}>
+      <Animated.ScrollView scrollEventThrottle={16} onScroll={reduced ? undefined : scroll.onScroll}
         contentContainerStyle={{ paddingBottom: footer + theme.space[6], gap: c.cardGap }}
       >
+        {claim.isError && refusal ? <Failure error={claim.error} text={tt(refusal)} onRetry={() => { if (!submitting.current) { submitting.current = true; claim.mutate(); } }} busy={claim.isPending} /> : null}
         {/* The task card photo remains 4:3 here, with scroll-driven parallax. */}
         <View style={{ width: '100%', aspectRatio: 4 / 3, backgroundColor: c.line, overflow: 'hidden' }}>
           <Animated.View style={{ width: '100%', height: '100%', transform: [{ translateY: reduced ? 0 : scrollY.interpolate({ inputRange: [0, 600], outputRange: [0, 180], extrapolate: 'clamp' }) }] }}><Image
             // `assets.d.ts` types a bundled import as React Native's source —
             // a module number under Metro, a URL string under Vite — and
             // `expo-image` takes both. The cast is that one fact.
-            source={taskImage(data.type) as unknown as ImageSource}
+            source={taskImage(data) as unknown as ImageSource}
             contentFit="cover"
             style={{ width: '100%', height: '100%' }}
             accessible={false}
@@ -336,8 +337,9 @@ export function TaskDetail() {
       </Animated.ScrollView>
 
       {/* Sticky Accept, green because §2 makes affirmative green and this is
-          the one affirmative action in the app. Its refusal takes its place. */}
+          the one affirmative action in the app. Full refusals stay in scroll content. */}
       <View
+        testID="task-detail-footer"
         onLayout={(event) => setFooter(event.nativeEvent.layout.height)}
         style={{
           position: 'absolute',
@@ -360,7 +362,7 @@ export function TaskDetail() {
             busy={claim.isPending}
             onPress={() => { if (submitting.current) return; submitting.current = true; claim.mutate(); }}
           />
-        ) : claim.isError ? <Failure error={claim.error} text={tt(refusal)} onRetry={() => { if (!submitting.current) { submitting.current = true; claim.mutate(); } }} busy={claim.isPending} /> : (
+        ) : (
           <View accessibilityLiveRegion="polite">
             <Text
               style={{

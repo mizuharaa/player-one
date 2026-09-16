@@ -1,4 +1,4 @@
-import { CardScrollContext, CardSheen, paperCard } from './ui/CardSheen.tsx';
+import { CardScrollContext, CardSheen, paperCard, useCardScroll } from './ui/CardSheen.tsx';
 import { EmptyTasks } from './ui/illustrations/index.tsx';
 import { useReducedMotion } from './ui/motion.ts';
 import { Skeleton } from './ui/Skeleton.tsx';
@@ -128,7 +128,7 @@ export function Screen({
   refresh?: { refreshing: boolean; onRefresh: () => void };
   children: ReactNode;
 }) {
-  const scroll = useRef(new Animated.Value(0)).current;
+  const scroll = useCardScroll();
   const theme = useTheme();
   const nav = useNav();
   const insets = useInsets();
@@ -137,7 +137,7 @@ export function Screen({
   return (
     // `background` is the page — the warm paper everything above it stands on.
     <CardScrollContext.Provider value={scroll}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background }}>
-      <Animated.ScrollView scrollEventThrottle={16} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scroll } } }], { useNativeDriver: Platform.OS !== 'web' })}
+      <Animated.ScrollView scrollEventThrottle={16} onScroll={scroll.onScroll}
         refreshControl={refresh ? <RefreshControl {...refresh} /> : undefined}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
@@ -207,14 +207,14 @@ export function ListScreen<T>({
   empty?: ReactNode;
   refresh?: { refreshing: boolean; onRefresh: () => void };
 }) {
-  const scroll = useRef(new Animated.Value(0)).current;
+  const scroll = useCardScroll();
   const theme = useTheme();
   const nav = useNav();
   const insets = useInsets();
   const reserve = useTabBarReserve();
   return (
     <CardScrollContext.Provider value={scroll}><View style={{ flex: 1, backgroundColor: theme.color.background }}>
-      <Animated.FlatList<T> scrollEventThrottle={16} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scroll } } }], { useNativeDriver: Platform.OS !== 'web' })}
+      <Animated.FlatList<T> scrollEventThrottle={16} onScroll={scroll.onScroll}
         refreshing={refresh?.refreshing}
         onRefresh={refresh?.onRefresh}
         keyboardShouldPersistTaps="handled"
@@ -617,8 +617,8 @@ export function Hatch({ text, action, onPress }: { text: string; action?: string
   const tt = useT();
   return <View style={{ padding: theme.space[6], gap: theme.space[3], alignItems: 'center' }}>
     <EmptyTasks size={104} />
-    <Title>{text}</Title>
-    <Body muted>{tt('state.emptyBody')}</Body>
+    <Title>{tt('state.empty')}</Title>
+    <Body muted>{text}</Body>
     {action && onPress ? <Button label={action} onPress={onPress} variant="secondary" /> : null}
   </View>;
 }

@@ -2,14 +2,15 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
+import { addLowPowerModeListener } from 'expo-battery';
 import { withDelay, withTiming } from 'react-native-reanimated';
 vi.mock('react-native-reanimated', async importOriginal => ({ ...await importOriginal<object>(), withDelay: vi.fn((_delay, value) => value), withTiming: vi.fn(value => value) }));
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, Platform } from 'react-native';
 vi.mock('react-native', async () => ({ ...await import('react-native-web'),
   AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
   AccessibilityInfo: { isReduceMotionEnabled: vi.fn(async () => false), addEventListener: () => ({ remove() {} }) },
 }));
-vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
+vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: vi.fn(() => ({ remove: vi.fn() })) }));
 vi.mock('react-native-svg', () => ({ default: 'svg', Circle: 'circle', Path: 'path' }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 afterEach(() => { vi.useRealTimers(); vi.resetModules(); });
@@ -43,4 +44,24 @@ it('reveals chrome by the deadline even when the accessibility gate stalls', asy
   await act(async () => vi.advanceTimersByTime(3300));
   expect((host.firstChild as HTMLElement).style.opacity).toBe('1');
   await act(async () => root.unmount());
+});
+
+it('reveals BootChrome immediately when low power begins before the deadline', async () => {
+  vi.useFakeTimers();
+  const platform = Platform.OS;
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'ios' });
+  vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockReturnValue(new Promise(() => {}));
+  const { BootChrome } = await import('../src/shell/BootIntro.tsx');
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<BootChrome>Header</BootChrome>));
+    expect((host.firstChild as HTMLElement).style.opacity).toBe('0');
+    const listener = vi.mocked(addLowPowerModeListener).mock.calls.at(-1)![0];
+    await act(async () => listener({ lowPowerMode: true }));
+    expect((host.firstChild as HTMLElement).style.opacity).toBe('1');
+  } finally {
+    await act(async () => root.unmount());
+    expect(vi.mocked(addLowPowerModeListener).mock.results.at(-1)!.value.remove).toHaveBeenCalledTimes(1);
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: platform });
+  }
 });

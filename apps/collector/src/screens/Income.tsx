@@ -107,6 +107,8 @@ export function Income() {
   const income = useQuery({ queryKey: ['income'], queryFn: () => api.income() });
   const cycle = useQuery({ queryKey: ['income', 'cycle'], queryFn: () => api.incomeCycle() });
   const payout = useQuery({ queryKey: ['payout'], queryFn: () => api.payout() });
+  const queries = [income, cycle, payout];
+  const failed = queries.find(q => q.isError);
   const listTarget = useGuideTarget('income.list');
 
   const c = theme.collector;
@@ -115,7 +117,7 @@ export function Income() {
   const status = payout.data?.status ?? null;
   const statusKey: MessageKey = status === 'verified' ? 'payout.verified' : status === 'none' ? 'payout.none' : 'payout.awaiting';
   const destination = <>
-    {payout.isPending ? <Loading /> : payout.isError ? <Failure error={payout.error} tone="error" text={tt('common.loadFailed')} onRetry={() => void payout.refetch()} busy={payout.isFetching} /> : <>
+    {payout.isPending ? <Loading /> : payout.isError ? <Body muted>{tt('common.loadFailed')}</Body> : <>
       <Tag label={status === 'verified' && payout.data?.verification_simulation ? `${tt(statusKey)} - ${tt('payout.simulationLabel')}` : tt(statusKey)} fg={c.ink} bg={c.paper} mark={status === 'verified' ? '✓' : '?'} />
       <Body>{status === null ? tt('payout.unknown') : payout.data?.masked ? `${tt('payout.zalopay')} · ${payout.data.masked}` : tt('payout.zalopay')}</Body>
       {status === 'awaiting' ? <Body muted>{tt('payout.awaitingPayment')}</Body> : null}
@@ -127,14 +129,14 @@ export function Income() {
     <ListScreen title={tt('income.title')} data={options ? [] : income.data ?? []} keyOf={entry => entry.episodeId}
       refresh={{ refreshing: income.isFetching || cycle.isFetching || payout.isFetching, onRefresh: () => { void income.refetch(); void cycle.refetch(); void payout.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.sectionGap }}>
-        <Card>
+        {failed ? <Failure error={failed.error} text={tt('common.loadFailed')} onRetry={() => { for (const q of queries) void q.refetch(); }} busy={queries.some(q => q.isFetching)} /> : null}
+        {cycle.isError ? <Body muted>{tt('common.loadFailed')}</Body> : <Card>
           <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.ink }}>{cycleData?.label ? `${tt('home.cycleTitle')} · ${cycleData.label}` : tt('home.cycleTitle')}</Text>
           {cycle.isPending ? <Loading kind="number" /> : <Text style={{ fontFamily: face(theme), ...c.type.money, color: c.ink, fontVariant: ['tabular-nums'] }}>{cycleData ? dong(cycleData.confirmedVnd) : NOTHING}</Text>}
           <Text style={{ fontFamily: face(theme), ...c.type.body, color: c.ink }}>{tt('income.confirmed')}</Text>
           {cycleData ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.ink }}>{tt('home.cycleWithEstimate').replace('{amount}', dong(cycleData.totalVnd))}</Text> :
             <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.ink }}>{tt(cycle.isPending ? 'common.loading' : 'home.cycleUnavailable')}</Text>}
-        </Card>
-        {cycle.isError ? <Failure error={cycle.error} tone="error" text={tt('common.loadFailed')} onRetry={() => void cycle.refetch()} busy={cycle.isFetching} /> : null}
+        </Card>}
         <View style={{ flexDirection: 'row', gap: c.cardGap, alignItems: 'flex-start' }}>
           {([
             ['uploads.title', '↑', () => nav.selectTab('uploads')],
@@ -158,7 +160,7 @@ export function Income() {
           <NavRow label={tt('profile.help')} subtitle={tt('profile.helpSub')} onPress={() => setExtra('help')} />
         </> : null}
         <Body muted>{tt('income.intro')}</Body>
-        {income.isError ? <Failure error={income.error} tone="error" text={tt(income.data ? 'income.stale' : 'common.loadFailed')} onRetry={() => void income.refetch()} busy={income.isFetching} /> : null}
+        {income.isError ? <Body muted>{tt('common.loadFailed')}</Body> : null}
         {income.isPending ? <Loading /> : null}
       </View>}
       empty={options || income.isPending || income.isError ? null : <Hatch action={tt('common.retry')} onPress={() => void income.refetch()} text={tt('income.empty')} />}
