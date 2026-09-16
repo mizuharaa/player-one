@@ -27,6 +27,7 @@ import { AppShell } from '../components/shell/AppShell.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { EmptyState, Panel, Problem, Skeleton } from '../components/ui/primitives.tsx';
 import { durationShort, localNow } from '../lib/format.ts';
+import { useOperatorProfile } from '../lib/profile-api.ts';
 import { refusalKey } from './refusal.ts';
 import { TaskAssign } from './TaskAssign.tsx';
 import { cn } from '../lib/cn.ts';
@@ -51,6 +52,16 @@ export function BackOfficeScreen() {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('tasks');
   const [refused, setRefused] = useState<unknown>(null);
+  /**
+   * May this session shape anything? The administrator role, and active — the
+   * same pair the shell uses to decide the Engineering item. A profile that
+   * has not loaded or failed is treated as an administrator on purpose: the
+   * server is the gate, and a slow profile request must not lock an operator
+   * out of a screen they are entitled to.
+   */
+  const profile = useOperatorProfile();
+  const shaping = profile.data === undefined
+    || (profile.data.operator.role === 'administrator' && profile.data.operator.status === 'active');
 
   return (
     <AppShell>
@@ -109,11 +120,39 @@ export function BackOfficeScreen() {
         </div>
       ) : null}
 
-      <div className="mt-5">
-        {tab === 'tasks' ? <Tasks onRefused={setRefused} /> : null}
-        {tab === 'collectors' ? <Collectors onRefused={setRefused} /> : null}
-        {tab === 'devices' ? <Devices onRefused={setRefused} /> : null}
-      </div>
+      {/*
+        BO-11, said before the click. Every shaping route in this screen
+        carries `adminGuard` and answers 403 `operators_admin_role_required`
+        for anybody else (backoffice.ts, migration 0020), while the GETs stay
+        open because a clerk has to look up the collector in front of them.
+        Measured 2026-09-16: a finance session opened this screen with New
+        task, Edit, Take down, the qualification and exam controls and every
+        device control live.
+
+        One `fieldset[disabled]` rather than a `disabled` on twenty buttons:
+        the platform already propagates it to every control inside, and the
+        screen's own rule — it never second-guesses whether an ACTION is
+        allowed, because that is a trigger's answer — is untouched. This is not
+        a copy of a rule about a row; it is the role the session already knows
+        it holds, and the sentence says which one is needed.
+      */}
+      {shaping ? null : (
+        <p className="mt-5 flex items-start gap-2 rounded-[var(--radius-base)] border border-[var(--border)] bg-[var(--muted)] px-3 py-2 text-[0.8125rem] leading-snug" role="status">
+          <span><strong className="font-semibold">{t('bo.readonly')}</strong> {t('bo.readonly.body')}</span>
+        </p>
+      )}
+      {/* The fade has to be declared here, not left to the buttons: the
+          primary variant keeps its fill while disabled on purpose, because
+          until now "disabled" only ever meant "a request is in flight"
+          (button.tsx). Inside a disabled fieldset it means switched off, and
+          New task must not read as a live button. */}
+      <fieldset className="contents [&:disabled_button]:opacity-45" disabled={!shaping}>
+        <div className="mt-5">
+          {tab === 'tasks' ? <Tasks onRefused={setRefused} /> : null}
+          {tab === 'collectors' ? <Collectors onRefused={setRefused} /> : null}
+          {tab === 'devices' ? <Devices onRefused={setRefused} /> : null}
+        </div>
+      </fieldset>
     </AppShell>
   );
 }

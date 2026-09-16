@@ -176,10 +176,25 @@ export function SettleScreen() {
 
       <div className="workspace-settlement-actions">
         <div>
-          <Button variant="primary" disabled={generate.isPending} onClick={() => generate.mutate()}>
+          {/*
+            Separation of duty, said before the click instead of after it.
+            `POST /api/settle/bills` answers 409 `settle_generate_by_finance`
+            for a finance session (settle.ts, migration 0013): whoever
+            generates a cycle is the one who approved it, and the payment by
+            that same person is what the trigger refuses. The button was
+            enabled for everybody, so finance's only way to learn this was to
+            press it.
+          */}
+          {/* `outline` when the role is what disables it: the primary variant
+              deliberately keeps its fill while disabled, because until now the
+              only reason it was ever disabled was "a request is in flight"
+              (button.tsx). A role refusal is not busy, and it must not look
+              like a live button. */}
+          <Button variant={role === 'finance' ? 'outline' : 'primary'} disabled={generate.isPending || role === 'finance'}
+            aria-describedby="generate-hint" onClick={() => generate.mutate()}>
             {generate.isPending ? t('bo.working') : t('settle.generate')}
           </Button>
-          <Reason id="generate-hint">{t('settle.generate.hint')}</Reason>
+          <Reason id="generate-hint">{t(role === 'finance' ? 'settle.generate.notFinance' : 'settle.generate.hint')}</Reason>
           {generate.data !== undefined && generate.data !== null ? (
             <div className="mt-1 max-w-[70ch] text-[0.8125rem] font-semibold leading-relaxed" role="status">
               <p>
@@ -225,11 +240,25 @@ export function SettleScreen() {
           <Reason id="export-reason">{readOnly === null ? t('settle.export.payout.hint') : t(readOnly)}</Reason>
         </div>
         <div>
-          <Button asChild variant="ghost">
-            <a href={settle.linesCsvUrl(period)} download>
+          {/*
+            `GET /api/settle/export.csv` carries `financeGuard`, not the read
+            guard: an export is a file that leaves the building and stays
+            finance's. So an administrator or a counter operator got a live
+            link that answers 403, which is the same lie the payout export
+            already avoids — this now matches it.
+          */}
+          {readOnly === null ? (
+            <Button asChild variant="ghost">
+              <a href={settle.linesCsvUrl(period)} download>
+                {t('settle.export.lines')}
+              </a>
+            </Button>
+          ) : (
+            <Button variant="ghost" disabled aria-describedby="export-lines-reason">
               {t('settle.export.lines')}
-            </a>
-          </Button>
+            </Button>
+          )}
+          <Reason id="export-lines-reason">{readOnly === null ? t('settle.export.lines.hint') : t(readOnly)}</Reason>
         </div>
       </div>
 
@@ -238,7 +267,31 @@ export function SettleScreen() {
       ) : batch.isPending ? (
         <TableSkeleton />
       ) : rows.length === 0 ? (
-        <EmptyState title={t('settle.empty')} body={t('settle.empty.body')} />
+        /**
+         * An empty period says WHICH period it read and where the money is.
+         *
+         * The window is the server's own `period_start`/`period_end`; the
+         * console derives neither. The button appears only when a bill exists
+         * on some other period, and it is one click to that period on this
+         * same screen — which is the difference between "0 bills" and "0
+         * bills here, 1 on the week of the 1st".
+         */
+        <EmptyState
+          title={t('settle.empty')}
+          body={t('settle.empty.window', {
+            from: (batch.data?.period_start ?? period).slice(0, 10),
+            to: (batch.data?.period_end ?? period).slice(0, 10),
+          })}
+          action={
+            batch.data?.latest_bill_period && batch.data.latest_bill_period !== period ? (
+              <Button asChild variant="primary">
+                <Link to="/settle" search={{ period: batch.data.latest_bill_period }}>
+                  {t('settle.empty.openLatest', { period: batch.data.latest_bill_period })}
+                </Link>
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <div data-guide="settle.bills" className="workspace-settlement-ledger">
           <Table minWidth={900}>

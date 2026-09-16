@@ -364,6 +364,8 @@ const en = {
   'bo.title': 'Back office',
   'bo.intro':
     'The tasks collectors are paid to record, the people recording them, and the hardware they carry.',
+  'bo.readonly': 'Read-only for this account.',
+  'bo.readonly.body': 'Tasks, collectors and devices are shaped by the administrator role (BO-11). This session can read every list below, and the server refuses every change it would send, so the controls are switched off rather than offered.',
   'bo.tab.tasks': 'Tasks',
   'bo.tab.collectors': 'Collectors',
   'bo.tab.devices': 'Devices',
@@ -763,6 +765,8 @@ const en = {
   'settle.readonly': 'Finance access required',
   'settle.readonly.operator':
     'Only finance accounts can view bills, payment details, and preflight checks. This account does not have that access. Contact your finance operator to review this period.',
+  'settle.readonly.administrator':
+    'This administrator session can read every figure on these screens and change none of them. Paying a bill, exporting a file and resolving an attempt are finance’s, and the server refuses them for this account.',
   'settle.readonly.unknown':
     'Account access could not be confirmed. Financial data and payment actions remain unavailable. Reload to try again.',
   'settle.readonly.refused': 'The server refused: this session does not hold the finance role. Nothing has been changed.',
@@ -777,6 +781,7 @@ const en = {
   'settle.empty.openLatest': 'Open the period of the most recent bill ({{period}})',
   'settle.generate': 'Generate bills',
   'settle.generate.hint': 'Bills every settlement of the period that is waiting. Running it twice changes nothing.',
+  'settle.generate.notFinance': 'Finance does not issue bills. Whoever generates a cycle is the one who approved its contents, and the payment by that same person is refused — so another operator runs this, and finance pays it.',
   'settle.generate.result': '{{created}} bill(s) created; {{notPayable}} settlement(s) worth nothing were left off.',
   'settle.generate.deferred': '{{n}} settlement(s) already had a bill for this period ({{who}}), so they roll into the next cycle. The money is not lost.',
   'settle.generate.skipped': '{{n}} settlement(s) ({{who}}) were billed by another run under a different period while this one was reading. They are on that run’s bill.',
@@ -784,6 +789,7 @@ const en = {
   'settle.export.payout': 'Export payout CSV',
   'settle.export.payout.hint': 'Hashed row by row and as a file, and recorded. Finance only.',
   'settle.export.lines': 'Export lines CSV',
+  'settle.export.lines.hint': 'Every line of every bill in the period, as received. Finance only.',
   'settle.col.collector': 'Collector',
   'settle.col.minutes': 'Valid minutes',
   'settle.col.gross': 'Gross',
@@ -2039,6 +2045,8 @@ const zh: Record<MessageKey, string> = {
 
   'bo.title': '后台管理',
   'bo.intro': '采集者按任务采集并获得报酬。这里管理任务、采集者，以及他们携带的设备。',
+  'bo.readonly': '本账号为只读。',
+  'bo.readonly.body': '任务、采集者和设备由管理员角色维护（BO-11）。本会话可以查看下面所有列表，但服务端会拒绝它提交的任何更改，因此相关控件已禁用，而不是摆在那里。',
   'bo.tab.tasks': '任务',
   'bo.tab.collectors': '采集者',
   'bo.tab.devices': '设备',
@@ -2298,6 +2306,7 @@ const zh: Record<MessageKey, string> = {
   'settle.mode.api': 'API 付款模式：在付款前检查页通过 ZaloPay 发送转账。',
   'settle.readonly': '需要财务权限',
   'settle.readonly.operator': '只有财务账号可以查看账单、付款详情和付款前检查。此账号没有该权限，请联系财务人员查看本周期。',
+  'settle.readonly.administrator': '管理员会话可以查看这些页面上的全部数字，但不能更改其中任何一项。付款、导出文件和处理付款尝试属于财务，服务端会为本账号拒绝这些操作。',
   'settle.readonly.unknown': '无法确认账号权限。财务数据和付款操作暂不可用，请刷新后重试。',
   'settle.readonly.refused': '服务端拒绝：本会话没有财务角色。没有任何内容被修改。',
   'settle.failed': '请求未送达服务端。没有任何内容被修改。',
@@ -2311,6 +2320,7 @@ const zh: Record<MessageKey, string> = {
   'settle.empty.openLatest': '打开最近一张账单所属周期（{{period}}）',
   'settle.generate': '生成账单',
   'settle.generate.hint': '为该周期内所有待结算记录开具账单。重复执行不会产生变化。',
+  'settle.generate.notFinance': '账单不由财务开具。生成周期的人即为核准其内容的人，而由同一人付款会被拒绝——因此由另一位操作员生成，财务负责付款。',
   'settle.generate.result': '已创建 {{created}} 张账单；{{notPayable}} 条金额为零的结算记录未列入。',
   'settle.generate.deferred': '{{n}} 条结算记录在本周期已有账单（{{who}}），因此顺延至下一周期。这笔钱不会丢失。',
   'settle.generate.skipped': '{{n}} 条结算记录（{{who}}）在本次读取期间已被另一次运行按其他周期开具账单。它们在那次运行的账单上。',
@@ -2318,6 +2328,7 @@ const zh: Record<MessageKey, string> = {
   'settle.export.payout': '导出付款 CSV',
   'settle.export.payout.hint': '逐行及整体加哈希，并记录在案。仅限财务。',
   'settle.export.lines': '导出明细 CSV',
+  'settle.export.lines.hint': '该周期内每张账单的每一行，按服务端原样导出。仅限财务。',
   'settle.col.collector': '采集者',
   'settle.col.minutes': '有效分钟',
   'settle.col.gross': '总额',
@@ -3316,6 +3327,8 @@ const vi: Record<MessageKey, string> = {
 
   'bo.title': 'Hậu cần',
   'bo.intro': 'Các nhiệm vụ cộng tác viên được trả tiền để ghi, những người ghi chúng, và thiết bị họ mang theo.',
+  'bo.readonly': 'Tài khoản này chỉ đọc.',
+  'bo.readonly.body': 'Nhiệm vụ, cộng tác viên và thiết bị do vai trò quản trị thiết lập (BO-11). Phiên này xem được mọi danh sách bên dưới, còn máy chủ sẽ từ chối mọi thay đổi nó gửi, nên các điều khiển bị tắt thay vì để mở.',
   'bo.tab.tasks': 'Nhiệm vụ',
   'bo.tab.collectors': 'Cộng tác viên',
   'bo.tab.devices': 'Thiết bị',
@@ -3623,6 +3636,8 @@ const vi: Record<MessageKey, string> = {
   'settle.readonly': 'Cần quyền tài chính',
   'settle.readonly.operator':
     'Chỉ tài khoản tài chính được xem hóa đơn, chi tiết thanh toán và kiểm tra trước khi chi. Tài khoản này chưa có quyền đó. Hãy liên hệ nhân viên tài chính để xem kỳ này.',
+  'settle.readonly.administrator':
+    'Phiên quản trị này đọc được mọi con số trên các màn hình này và không thay đổi được gì. Chi trả một hóa đơn, xuất tệp và xử lý một lần chi là việc của tài chính, và máy chủ từ chối chúng với tài khoản này.',
   'settle.readonly.unknown':
     'Chưa xác nhận được quyền của tài khoản. Dữ liệu tài chính và thao tác chi trả tạm thời không khả dụng. Tải lại để thử lại.',
   'settle.readonly.refused': 'Máy chủ từ chối: phiên này không có vai trò tài chính. Chưa có gì bị thay đổi.',
@@ -3637,6 +3652,7 @@ const vi: Record<MessageKey, string> = {
   'settle.empty.openLatest': 'Mở kỳ của hóa đơn gần nhất ({{period}})',
   'settle.generate': 'Lập hóa đơn',
   'settle.generate.hint': 'Lập hóa đơn cho mọi khoản đang chờ trong kỳ. Chạy hai lần không thay đổi gì.',
+  'settle.generate.notFinance': 'Tài chính không lập hóa đơn. Người lập hóa đơn cho một kỳ chính là người đã chấp thuận nội dung của nó, và khoản chi do chính người đó thực hiện sẽ bị từ chối — nên một nhân viên khác lập hóa đơn, còn tài chính chi trả.',
   'settle.generate.result': 'Đã lập {{created}} hóa đơn; {{notPayable}} khoản có giá trị bằng không được để ngoài.',
   'settle.generate.deferred': '{{n}} khoản đã có hóa đơn trong kỳ này ({{who}}) nên được chuyển sang kỳ kế tiếp. Số tiền không bị mất.',
   'settle.generate.skipped': '{{n}} khoản ({{who}}) đã được một lần chạy khác lập hóa đơn theo kỳ khác trong lúc lần này đang đọc. Chúng nằm trên hóa đơn của lần chạy đó.',
@@ -3644,6 +3660,7 @@ const vi: Record<MessageKey, string> = {
   'settle.export.payout': 'Xuất CSV chi trả',
   'settle.export.payout.hint': 'Băm từng dòng và cả tệp, có ghi nhận. Chỉ dành cho tài chính.',
   'settle.export.lines': 'Xuất CSV chi tiết',
+  'settle.export.lines.hint': 'Từng dòng của mọi hóa đơn trong kỳ, đúng như máy chủ trả về. Chỉ dành cho tài chính.',
   'settle.col.collector': 'Cộng tác viên',
   'settle.col.minutes': 'Phút hợp lệ',
   'settle.col.gross': 'Tổng',
