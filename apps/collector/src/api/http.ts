@@ -286,7 +286,7 @@ export class HttpCollectorApi implements CollectorApi {
 
   // -- sign in with Zalo (APP-01, owner's decision 2026-09-16) -------------
 
-  async startZaloSignIn(): Promise<{ url: string; state: string }> {
+  async startZaloSignIn(options?: { probeOnly?: boolean }): Promise<{ url: string; state: string }> {
     const res = await this.send('/auth/collector/zalo/start', 'POST');
     if (res.status === 429) throw new ApiError('rate_limited');
     // No Zalo app on this deployment. The screen hides the button on this
@@ -303,7 +303,7 @@ export class HttpCollectorApi implements CollectorApi {
      * back to this process. Written before the URL is returned so the caller
      * cannot open Zalo on a state that was not stored.
      */
-    await this.persistState(body.state);
+    if (!options?.probeOnly) await this.persistState(body.state);
     return { url: body.url, state: body.state };
   }
 

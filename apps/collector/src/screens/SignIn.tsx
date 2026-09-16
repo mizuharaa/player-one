@@ -11,7 +11,7 @@ import { useT } from '../locale.tsx';
 import { e164 } from '../phone.ts';
 import { Button, Film, Choice, CodeBoxes, Field, LegalLine, Note, Scrim, face, useInsets, } from '../ui.tsx';
 import { useTheme } from '../theme.tsx';
-import { ZaloSignIn, useZaloSignIn } from '../zalo.tsx';
+import { ZaloMark, ZaloSignIn, useZaloSignIn } from '../zalo.tsx';
 import type { MessageKey } from '../i18n.ts';
 import poster from '../../assets/hero/login-poster.jpg';
 import loginFilm from '../../assets/hero/login.mp4';
@@ -93,68 +93,13 @@ const HERO_SCRIM = [[0, 0.2], [0.55, 0.55], [1, 0.55]] as const;
 /** §4: the resend timer counts from arrival. */
 const RESEND_SECONDS = 60;
 
-/**
- * The Zalo mark, so a collector knows which app the code lands in.
- *
- * Drawn from Views: `react-native-svg` is not a dependency of this app (§20.1)
- * and a remote image would make the mark depend on the network the collector
- * has not signed in over yet. It is the recognisable part — the bubble with
- * its tail — reduced to what holds at 24dp, not a reproduction of the
- * wordmark.
- *
- * It is drawn in `action`/`actionInk`, the ink pair, and not in a blue. The
- * blue it used was `tech[500]`, which is PaXini's mark: a Vietnamese messaging
- * app's logo painted in the camera vendor's brand colour was already the wrong
- * blue, and tech is the partner lockup and nothing else now.
- */
-function ZaloMark({ label }: { label: string }) {
-  const theme = useTheme();
-  const size = theme.space[6];
-  return (
-    <View
-      accessibilityRole="image"
-      accessibilityLabel={label}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: theme.radius.sm,
-        backgroundColor: theme.color.action,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <View
-        style={{
-          position: 'absolute',
-          left: theme.space[1],
-          bottom: -theme.space[1],
-          width: theme.space[2],
-          height: theme.space[2],
-          backgroundColor: theme.color.action,
-          transform: [{ rotate: '45deg' }],
-        }}
-      />
-      <Text
-        style={{
-          color: theme.color.actionInk,
-          fontFamily: face(theme),
-          ...theme.collector.type.caption,
-fontWeight: theme.fontWeight.bold,
-        }}
-      >
-        Z
-      </Text>
-    </View>
-  );
-}
-
 /** The pre-announcement, and the same row on both steps. */
 function ZaloHint() {
   const theme = useTheme();
   const tt = useT();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space[2] }}>
-      <ZaloMark label={tt('signIn.zaloMark')} />
+      <ZaloMark size={theme.space[5]} label={tt('signIn.zaloMark')} />
       <Text
         style={{
           flexGrow: 1,

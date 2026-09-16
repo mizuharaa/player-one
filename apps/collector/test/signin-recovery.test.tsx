@@ -69,7 +69,9 @@ const resendStem = 'Gửi lại';
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
 async function mount() {
-  const api = new HttpCollectorApi('https://collector.test', tokens, () => {}, fetchFn);
+  // These queued responses exercise OTP; the independent Zalo probe is unavailable.
+  const api = new HttpCollectorApi('https://collector.test', tokens, () => {}, async (input, init) =>
+    String(input).endsWith('/auth/collector/zalo/start') ? new Response(null, { status: 503 }) : fetchFn(input, init));
   await act(async () => root.render(
     <QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="vi">
       <SignIn onSignedIn={signedIn} />
@@ -282,7 +284,7 @@ describe('APP-01 sign-in recovery', () => {
     await settle(() => expect(container.textContent).toContain(copy['signIn.demoFilled']));
     await tap(copy['signIn.submit']);
     expect(container.querySelector(`input[aria-label="${copy['signIn.phone']}"]`)).toBeNull();
-    expect(codeRow()?.readOnly).toBe(true);
+    await settle(() => expect(codeRow()?.readOnly).toBe(true));
     expect(tokens.value).toBeNull();
     await act(async () => pending.resolve(json({ token: 'token-for-first-phone' })));
     await settle(() => expect(tokens.value).toBe('token-for-first-phone'));

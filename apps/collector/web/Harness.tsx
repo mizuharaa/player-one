@@ -71,6 +71,10 @@ export function Harness() {
   const state = params.get('state');
   const loading = state === 'loading';
   const previewApi = useMemo(() => new Proxy(api, { get(target, key) {
+    if (state === 'zalo-refusal' && key === 'startZaloSignIn') return async (options?: { probeOnly?: boolean }) => {
+      if (options?.probeOnly) return { url: 'https://preview.invalid/zalo', state: 'preview' };
+      throw new ApiError('zalo_not_configured');
+    };
     if (state === 'upload-stalled' && key === 'sessions') return async () => [{ id: 'preview-session', scenario: 'home', createdAt: '2026-09-16T12:00:00Z' }];
     if (state === 'upload-stalled' && key === 'registerDelivery') return async (record: { files: { relativePath: string }[] }) => ({ state: 'registered', files: record.files.map(file => ({ relativePath: file.relativePath, done: false, putUrl: 'https://preview.invalid/upload', parts: [] })) });
     if (state === 'simulation' && key === 'income') return async () => [{ episodeId: 'sandbox-paid', kind: 'confirmed', amountVnd: '1200', effectiveMinutes: '1', settlementState: 'paid', simulation: true }];

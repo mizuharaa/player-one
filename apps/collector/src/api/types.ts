@@ -293,7 +293,7 @@ export interface CollectorApi extends DeliveryApi {
    * Throws `ApiError('zalo_not_configured')` when this deployment holds no
    * Zalo app credentials, which is how the screen knows to hide the button.
    */
-  startZaloSignIn(): Promise<{ url: string; state: string }>;
+  startZaloSignIn(options?: { probeOnly?: boolean }): Promise<{ url: string; state: string }>;
   /**
    * APP-01. Trade the deep link's one-time ticket for the token, and keep it.
    *
