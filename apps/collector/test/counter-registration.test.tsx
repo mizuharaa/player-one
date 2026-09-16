@@ -24,6 +24,7 @@ vi.mock('../src/ui.tsx', () => ({
 
 it.each(LOCALES)('counter registration opens complete guidance and returns without registering (%s)', async locale => {
   const host = document.createElement('div');
+  document.body.append(host);
   const root = createRoot(host);
   const signIn = vi.fn();
   const signedIn = vi.fn();
@@ -33,15 +34,15 @@ it.each(LOCALES)('counter registration opens complete guidance and returns witho
     await act(async () => root.render(<LocaleProvider initialLocale={locale}><Landing onSignIn={signIn} onSignedIn={signedIn} /></LocaleProvider>));
     const register = Array.from(host.querySelectorAll('button')).find(button => button.textContent === MESSAGES[locale]['landing.register'])!;
     await act(async () => register.click());
-    expect(host.querySelector('main')).not.toBeNull();
-    expect(host.querySelector('svg')).not.toBeNull();
+    expect(document.body.querySelector('main')).not.toBeNull();
+    expect(document.body.querySelector('main svg')).not.toBeNull();
     for (const key of ['counter.bring', 'counter.where', 'counter.staff', 'counter.next'] as const) {
-      expect(host.textContent).toContain(MESSAGES[locale][key]);
+      expect(document.body.querySelector('main')?.textContent).toContain(MESSAGES[locale][key]);
     }
-    await act(async () => host.querySelector('button')!.click());
-    expect(host.querySelector('main')).toBeNull();
+    await act(async () => document.body.querySelector('main button')!.click());
+    expect(document.body.querySelector('main')).toBeNull();
     expect(signIn).not.toHaveBeenCalled();
     expect(signedIn).not.toHaveBeenCalled();
     expect(request).not.toHaveBeenCalled();
-  } finally { await act(async () => root.unmount()); vi.unstubAllGlobals(); }
+  } finally { await act(async () => root.unmount()); vi.unstubAllGlobals(); host.remove(); }
 });

@@ -131,7 +131,7 @@ export function Harness() {
                 {screen === 'onboarding' ? <GuideProvider><Onboarding onDone={() => {}} /></GuideProvider> : routed ? <GuideProvider><RoutedScreen /></GuideProvider> : screen === 'signin' ? (
                   <SignIn onSignedIn={() => {}} onBack={() => {}} />
                 ) : (
-                  <Landing onSignIn={() => {}} />
+                  <Landing introDone={!intro} onSignIn={() => {}} onSignedIn={() => {}} />
                 )}
                 {intro ? <BootIntro onDone={() => setIntro(false)} /> : null}
               </NavProvider></ToastProvider>

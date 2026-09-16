@@ -1,7 +1,8 @@
+import { LandingGallery } from './LandingGallery.tsx';
 import { CounterRegistration } from './CounterRegistration.tsx';
 import { BrandSlot } from '../shell/BrandSlot.tsx';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Image, Text, View } from 'react-native';
+import { Animated, Modal, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { Button, Film, LegalLine, Scrim, face, useInsets, useReducedMotion } from '../ui.tsx';
@@ -9,7 +10,7 @@ import { ZaloSignIn, useZaloSignIn } from '../zalo.tsx';
 import film from '../../assets/hero/login.mp4';
 import poster from '../../assets/hero/login-poster.jpg';
 
-/** Non-scrolling welcome: one decoder, poster beneath it, scrim over both. */
+/** Scroll from the photo gallery to the welcome: one decoder, poster beneath it, scrim over both. */
 const SCRIM_STOPS = [
   [0, 0.35],
   [0.55, 0.6],
@@ -65,7 +66,9 @@ function Rise({ step, children }: { step: number; children: React.ReactNode }) {
 export function Landing({
   onSignIn,
   onSignedIn,
+  introDone = true,
 }: {
+  introDone?: boolean;
   onSignIn: () => void;
   /**
    * A finished Zalo sign-in, which can land here as well as on §3: the deep
@@ -74,6 +77,11 @@ export function Landing({
    */
   onSignedIn: () => void;
 }) {
+  const scroll = useRef<ScrollView>(null);
+  const { height } = useWindowDimensions();
+  const [galleryHeight, setGalleryHeight] = useState(height);
+  const [filmVisible, setFilmVisible] = useState(false);
+  const reduced = useReducedMotion();
   const theme = useTheme();
   const insets = useInsets();
   const tt = useT();
@@ -84,11 +92,16 @@ export function Landing({
   /** See `zalo.tsx`. Owner's decision, 2026-09-16. */
   const zalo = useZaloSignIn({ onSignedIn });
 
-  if (explaining) return <CounterRegistration onBack={() => setExplaining(false)} />;
+
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.color.background }}>
+    <>
+    <ScrollView ref={scroll} style={{ flex: 1, backgroundColor: theme.color.background }} showsVerticalScrollIndicator={false}
+      scrollEventThrottle={32} onScroll={event => setFilmVisible(event.nativeEvent.contentOffset.y > galleryHeight * .55)}>
+      <View onLayout={event => setGalleryHeight(event.nativeEvent.layout.height)}><LandingGallery ready={introDone} onContinue={() => scroll.current?.scrollTo({ y: galleryHeight, animated: !reduced })} /></View>
+    <View style={{ minHeight: height, backgroundColor: theme.color.background }}>
       <Film
+        active={introDone && filmVisible && !explaining}
         source={film}
         poster={poster}
         label={tt('landing.videoLabel')}
@@ -102,6 +115,8 @@ export function Landing({
           flex: 1,
           justifyContent: 'space-between',
           padding: theme.space[5],
+          paddingBottom: insets.bottom + theme.space[5],
+          minHeight: height,
         }}
       >
         <View style={{ alignItems: 'center', paddingTop: insets.top + theme.space[4], gap: theme.space[3] }}>
@@ -115,7 +130,7 @@ export function Landing({
             the whole screen. A `View` has no intrinsic size to fall back to,
             so the box is the box.
           */}
-          <BrandSlot color={onFilm} />
+          <BrandSlot color={onFilm} measure={false} />
           {LANDING_CENTRE_CODE === '' ? null : (
             <Text
               style={{
@@ -211,5 +226,10 @@ export function Landing({
         </View>
       </View>
     </View>
+    </ScrollView>
+    <Modal visible={explaining} animationType={reduced ? 'none' : 'slide'} onRequestClose={() => setExplaining(false)}>
+      {explaining ? <CounterRegistration onBack={() => setExplaining(false)} /> : null}
+    </Modal>
+    </>
   );
 }
