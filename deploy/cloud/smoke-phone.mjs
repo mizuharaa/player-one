@@ -339,8 +339,21 @@ export function deletionSql({ sessionId, uploadId, episodeId, basename }) {
   return [
     'To remove this run\'s rows (children first; run against the demo database):',
     `  delete from cloud_verifications where episode_id = '${episodeId}';`,
+    `  delete from episode_reviews where episode_id = '${episodeId}';`,
     `  delete from collector_uploads where id = '${uploadId}';`,
-    `  delete from episode_files where ingest_id in (select ingest_id from episode_ingests where episode_id = '${episodeId}');`,
+    // Every table that references episode_ingests, or the delete is refused:
+    // episode_defects, episode_streams, episode_files, episode_reviews.
+    // Measured against the live demo database on 2026-09-16, where
+    // episode_defects refused it and the whole transaction rolled back.
+    `  create temporary table doomed as select ingest_id from episode_ingests where episode_id = '${episodeId}';`,
+    // episodes.latest_ingest_id points back at an ingest, so that link is cut
+    // first or the ingest delete is refused in turn. Measured on the live
+    // database: without it the whole transaction rolls back.
+    "  update episodes set latest_ingest_id = null where episode_id = '" + episodeId + "';",
+    `  delete from episode_defects where ingest_id in (select ingest_id from doomed);`,
+    `  delete from episode_streams where ingest_id in (select ingest_id from doomed);`,
+    `  delete from episode_files where ingest_id in (select ingest_id from doomed);`,
+    `  delete from episode_reviews where ingest_id in (select ingest_id from doomed);`,
     `  delete from episode_ingests where episode_id = '${episodeId}';`,
     `  delete from episodes where episode_id = '${episodeId}';`,
     `  delete from collection_session_devices where collection_session_id = '${sessionId}';`,
