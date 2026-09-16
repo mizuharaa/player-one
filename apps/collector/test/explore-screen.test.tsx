@@ -188,7 +188,7 @@ it('prints the rate the server sent and never a total', async () => {
 it('prints the server target and remaining slots on the card meta line', async () => {
   await mount();
 
-  expect(page()).toContain(`3000 ${m['detail.minutes']}`);
+  expect(page()).toContain(`50 ${m['taskCard.hours']}`);
   const task = (await api.tasks())[0]!;
   expect(page()).toContain(m['taskCard.slots'].replace('{count}', String(task.remainingSlots)));
 });
@@ -391,4 +391,12 @@ it('renders a seeded task title, exact price and type badge in the shared card',
   expect(page()).toContain('Office task');
   expect(page()).toContain(`${vnd('1234.5678')} ${m['hall.perMinute']}`);
   expect(page()).toContain(m['taskCard.home']);
+});
+
+it.each([120, 121, 3000])('formats a server duration of %s minutes without losing the remainder', async targetMinutes => {
+  const { TaskCard } = await import('../src/ui/TaskCard.tsx');
+  const seed = { ...(await api.tasks())[0]!, targetMinutes };
+  await act(async () => root.render(<ThemeProvider><LocaleProvider><TaskCard task={seed} onPress={() => {}} /></LocaleProvider></ThemeProvider>));
+  const expected = targetMinutes === 120 ? `120 ${m['detail.minutes']}` : targetMinutes === 121 ? `2 ${m['taskCard.hours']} 1 ${m['detail.minutes']}` : `50 ${m['taskCard.hours']}`;
+  expect(page()).toContain(expected);
 });

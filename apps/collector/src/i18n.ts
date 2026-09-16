@@ -647,6 +647,7 @@ const vi = {
   // v3 task cards
   "taskCard.slots": "Còn {count} chỗ",
   "taskCard.default": "Nhiệm vụ",
+  "taskCard.hours": "giờ",
   "taskCard.home": "Tại nhà",
   "taskCard.warehouse": "Kho",
   "home.recommended": "Gợi ý cho bạn",
@@ -1234,6 +1235,7 @@ const en: Record<MessageKey, string> = {
   // v3 task cards
   "taskCard.slots": "{count} spots left",
   "taskCard.default": "Task",
+  "taskCard.hours": "h",
   "taskCard.home": "At home",
   "taskCard.warehouse": "Warehouse",
   "home.recommended": "Recommended for you",
@@ -1805,6 +1807,7 @@ const zh: Record<MessageKey, string> = {
   // v3 task cards
   "taskCard.slots": "剩余 {count} 个名额",
   "taskCard.default": "任务",
+  "taskCard.hours": "小时",
   "taskCard.home": "在家",
   "taskCard.warehouse": "仓库",
   "home.recommended": "为你推荐",
