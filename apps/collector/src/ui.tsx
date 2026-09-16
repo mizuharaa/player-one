@@ -213,7 +213,7 @@ export function ListScreen<T>({
   const insets = useInsets();
   const reserve = useTabBarReserve();
   return (
-    <CardScrollContext.Provider value={scroll}><View style={{ flex: 1, backgroundColor: theme.color.background }}>
+    <CardScrollContext.Provider value={scroll}><View style={{ flex: 1, backgroundColor: theme.color.background, paddingBottom: nav.isTabRoot ? reserve : 0 }}>
       <Animated.FlatList<T> scrollEventThrottle={16} onScroll={scroll.onScroll}
         refreshing={refresh?.refreshing}
         onRefresh={refresh?.onRefresh}
@@ -230,7 +230,7 @@ export function ListScreen<T>({
         contentContainerStyle={{
           padding: theme.collector.gutter,
           paddingTop: 0,
-          paddingBottom: theme.space[4] + (nav.isTabRoot ? reserve : Math.max(insets.bottom, theme.space[6])),
+          paddingBottom: theme.space[4] + (nav.isTabRoot ? 0 : Math.max(insets.bottom, theme.space[6])),
           gap: theme.space[3],
         }}
       />

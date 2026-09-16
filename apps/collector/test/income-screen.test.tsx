@@ -72,7 +72,27 @@ it('shows one recovery panel when every Income query fails', async () => {
     await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'income' }}><Income /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
     expect(host.querySelectorAll('[aria-live="polite"]')).toHaveLength(1);
-    expect(host.textContent).toContain(MESSAGES.en['common.loadFailed']);
+    expect(host.textContent?.split(MESSAGES.en['common.loadFailed'])).toHaveLength(2);
     expect(host.textContent).not.toContain(MESSAGES.en['common.actionFailed']);
   } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
+});
+
+
+it.each(['vi', 'en', 'zh'] as const)('labels simulated paid rows, details and cycle in %s', async locale => {
+  const api = new MockCollectorApi();
+  vi.spyOn(api, 'incomeCycle').mockResolvedValue({ label: 'Sandbox cycle', confirmedVnd: '1200', estimatedVnd: '0', totalVnd: '1200', simulation: true });
+  vi.spyOn(api, 'income').mockResolvedValue([{ episodeId: 'sandbox-paid', kind: 'confirmed', amountVnd: '1200', effectiveMinutes: '1', settlementState: 'paid', simulation: true }]);
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale={locale}><NavProvider initial={{ name: 'income' }}><Income /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+    const notice = MESSAGES[locale]['payout.simulation'];
+    const row = Array.from(host.querySelectorAll<HTMLElement>('[role="button"]')).find(node => node.getAttribute('aria-label')?.startsWith(shortId('sandbox-paid') + '.'))!;
+    expect(row.textContent).toContain(notice);
+    expect(host.textContent?.split(notice)).toHaveLength(3);
+    await act(async () => row.click());
+    expect(host.textContent?.split(notice)).toHaveLength(4);
+  } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); }
 });

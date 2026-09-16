@@ -1,3 +1,4 @@
+import { uuid } from '../api/http.ts';
 import * as SecureStore from 'expo-secure-store';
 import { Directory, File, FileMode, Paths, UploadType } from 'expo-file-system';
 import { ApiError } from '../api/types.ts';
@@ -8,7 +9,6 @@ import {
   type DeclaredFile,
   type DeliveryRecord,
   type DeliveryStore,
-  type DeliveryTransport,
 } from '@playerone/delivery';
 
 /**
@@ -21,8 +21,8 @@ import {
  * for the browser harness, the same way it already does for
  * `expo-secure-store`.
  *
- * Not tested here. Every function below needs a real Android handset with a
- * real recorded session directory on it — see `docs/agents/lanes/` and the
+ * Cancellation is covered with a native-module fake. Device I/O still needs
+ * a real Android handset with a recorded session directory — see `docs/agents/lanes/` and the
  * "what a real phone would still need to prove" list in the commit message.
  */
 
@@ -113,13 +113,16 @@ const yieldToUi = (): Promise<void> => new Promise((resolve) => setTimeout(resol
 export async function hashSession(
   files: readonly PickedFile[],
   report: (hashedFiles: number, totalFiles: number) => void = () => {},
+  signal?: AbortSignal,
 ): Promise<DeclaredFile[]> {
   const declared: DeclaredFile[] = [];
   for (const file of files) {
+    if (signal?.aborted) throw new ApiError('upload_cancelled');
     const handle = new File(file.uri).open(FileMode.ReadOnly);
     try {
       const hash = new Sha256();
       for (;;) {
+        if (signal?.aborted) throw new ApiError('upload_cancelled');
         const chunk = handle.readBytes(CHUNK);
         if (chunk.length === 0) break;
         hash.update(chunk);
@@ -135,7 +138,24 @@ export async function hashSession(
   return declared;
 }
 
-export const nativeTransport: DeliveryTransport = {
+async function upload(file: File, url: string, signal?: AbortSignal): Promise<number> {
+  const deadline = AbortSignal.timeout(60_000);
+  const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
+  if (combined.aborted) throw new ApiError(signal?.aborted ? 'upload_cancelled' : 'server_unreachable');
+  try {
+    const result = await file.upload(url, {
+      httpMethod: 'PUT', uploadType: UploadType.BINARY_CONTENT, signal: combined,
+    });
+    if (combined.aborted) throw new ApiError(signal?.aborted ? 'upload_cancelled' : 'server_unreachable');
+    return result.status;
+  } catch (error) {
+    if (signal?.aborted) throw new ApiError('upload_cancelled');
+    if (deadline.aborted) throw new ApiError('server_unreachable');
+    throw error;
+  }
+}
+
+export const nativeTransport = {
   /**
    * One signed PUT of a whole file, streamed off disk by the native module.
    *
@@ -144,12 +164,8 @@ export const nativeTransport: DeliveryTransport = {
    * request adds no headers of its own and must not: an unexpected signed
    * header is a 403 and looks exactly like an expired URL.
    */
-  async putFile(uri, url) {
-    const result = await new File(uri).upload(url, {
-      httpMethod: 'PUT',
-      uploadType: UploadType.BINARY_CONTENT,
-    });
-    return result.status;
+  async putFile(uri: string, url: string, signal?: AbortSignal) {
+    return upload(new File(uri), url, signal);
   },
 
   /**
@@ -169,30 +185,27 @@ export const nativeTransport: DeliveryTransport = {
    * upgrade path is unchanged and is the Kotlin foreground-service uploader
    * that Path A always owed (`App.tsx`), which can seek the source directly.
    */
-  async putRange(uri, url, start, end) {
-    const part = new File(Paths.cache, `playerone-part-${start}-${end}`);
+  async putRange(uri: string, url: string, start: number, end: number, signal?: AbortSignal) {
+    if (signal?.aborted) throw new ApiError('upload_cancelled');
+    const part = new File(Paths.cache, `playerone-part-${uuid()}`);
     part.create({ overwrite: true, intermediates: true });
-    const source = new File(uri).open(FileMode.ReadOnly);
-    const sink = part.open(FileMode.Truncate);
     try {
-      source.offset = start;
-      for (let copied = 0; copied < end - start; ) {
-        const chunk = source.readBytes(Math.min(CHUNK, end - start - copied));
-        if (chunk.length === 0) break;
-        sink.writeBytes(chunk);
-        copied += chunk.length;
-        await yieldToUi();
-      }
-    } finally {
-      sink.close();
-      source.close();
-    }
-    try {
-      const result = await part.upload(url, {
-        httpMethod: 'PUT',
-        uploadType: UploadType.BINARY_CONTENT,
-      });
-      return result.status;
+      const source = new File(uri).open(FileMode.ReadOnly);
+      try {
+        const sink = part.open(FileMode.Truncate);
+        try {
+          source.offset = start;
+          for (let copied = 0; copied < end - start; ) {
+            if (signal?.aborted) throw new ApiError('upload_cancelled');
+            const chunk = source.readBytes(Math.min(CHUNK, end - start - copied));
+            if (chunk.length === 0) break;
+            sink.writeBytes(chunk);
+            copied += chunk.length;
+            await yieldToUi();
+          }
+        } finally { sink.close(); }
+      } finally { source.close(); }
+      return await upload(part, url, signal);
     } finally {
       try {
         part.delete();

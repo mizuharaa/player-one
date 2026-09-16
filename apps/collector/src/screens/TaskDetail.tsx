@@ -336,7 +336,7 @@ export function TaskDetail() {
             <Row label={tt('hall.perMinute')} value={dong(data.unitPriceVndPerMinute)} />
             <Row label={tt('detail.target')} value={taskDuration(data.targetMinutes, tt)} />
             <Row label={tt('detail.claimedMinutes')} value={taskDuration(data.claimedMinutes, tt)} />
-            <Row label={tt('detail.slotsLeft')} value={`${data.remainingSlots}`} />
+            <Row label={tt('detail.slotsLeft')} value={tt(data.remainingSlots === 1 ? 'detail.slotCountOne' : 'detail.slotCount').replace('{count}', String(data.remainingSlots))} />
             <Progress
               label={tt('hall.progress')}
               value={`${taskDuration(data.claimedMinutes, tt)} / ${taskDuration(data.targetMinutes, tt)}`}

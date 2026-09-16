@@ -126,47 +126,17 @@ describe('guidance in the collector flow', () => {
     expect((await api.profile())?.trainingDone).toBe(false);
   });
 
-  it('waits for training to save, disables repeat submission and only then opens the exam', async () => {
-    const original = api.completeTraining.bind(api);
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => { release = resolve; });
-    const complete = vi.spyOn(api, 'completeTraining').mockImplementation(async () => { await pending; return original(); });
-    await mount({ name: 'training' });
-    await tap(MESSAGES.vi['training.done']);
-    await settle(() => expect(button(MESSAGES.vi['common.saving']).disabled).toBe(true));
-    await tap(MESSAGES.vi['common.saving']);
-    expect(complete).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('h1')?.textContent).toBe(MESSAGES.vi['training.title']);
-    await act(async () => release());
-    await settle(() => expect(container.querySelector('h1')?.textContent).toBe('exam'));
-    expect((await api.profile())?.trainingDone).toBe(true);
-  });
-
-  it('retains guidance after a failed completion and lets the collector retry', async () => {
-    const complete = vi.spyOn(api, 'completeTraining').mockRejectedValueOnce(new Error('offline'));
-    await mount({ name: 'training' });
-    await tap(MESSAGES.vi['training.done']);
-    await settle(() => expect(container.textContent).toContain(MESSAGES.vi['common.actionFailed']));
-    expect(container.querySelector('h1')?.textContent).toBe(MESSAGES.vi['training.title']);
-    expect((await api.profile())?.trainingDone).toBe(false);
-    expect(button(MESSAGES.vi['training.done']).disabled).toBe(false);
-    await tap(MESSAGES.vi['training.done']);
-    await settle(() => expect(container.querySelector('h1')?.textContent).toBe('exam'));
-    expect(complete).toHaveBeenCalledTimes(2);
-  });
-
-  it('does not navigate into the exam when training completes after leaving the screen', async () => {
-    const original = api.completeTraining.bind(api);
-    let finish!: () => void;
-    const pending = new Promise<void>((resolve) => { finish = resolve; });
-    vi.spyOn(api, 'completeTraining').mockImplementation(async () => { await pending; return original(); });
+  it('cannot complete unavailable training or enter the exam from the placeholder', async () => {
+    const complete = vi.spyOn(api, 'completeTraining');
     await mount({ name: 'home' });
     await tap('Training in test');
-    await tap(MESSAGES.vi['training.done']);
+    expect(container.textContent).toContain(MESSAGES.vi['training.placeholder']);
+    expect(container.textContent).not.toContain(MESSAGES.vi['training.done']);
+    expect(container.querySelector('footer')?.textContent).toBe('');
     await tap('Back in test');
-    await act(async () => finish());
-    await settle(() => expect(container.querySelector('h1')?.textContent).toBe('home'));
-    expect((await api.profile())?.trainingDone).toBe(true);
+    expect(container.querySelector('h1')?.textContent).toBe('home');
+    expect(complete).not.toHaveBeenCalled();
+    expect((await api.profile())?.trainingDone).toBe(false);
   });
 
   it('shows the reminder on every new session visit, supports Back and adds no declaration', async () => {

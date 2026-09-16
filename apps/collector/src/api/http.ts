@@ -212,7 +212,7 @@ export class HttpCollectorApi implements CollectorApi {
       method,
       headers,
       body,
-      signal: this.lifetime.signal,
+      signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(method === 'GET' ? 20_000 : 60_000)]),
     }).catch(() => { this.active(); throw new ApiError('server_unreachable'); });
     this.active();
     return response;
@@ -646,7 +646,7 @@ export class HttpCollectorApi implements CollectorApi {
   }
 
   async income(): Promise<IncomeEntry[]> {
-    const res = (await this.req('GET', '/api/me/income')) as { episodes?: RawIncome[] };
+    const res = (await this.req('GET', '/api/me/income')) as { episodes?: RawIncome[]; simulation?: boolean };
     return (res.episodes ?? []).map((e) => ({
       episodeId: e.episode_id,
       // Server strings, unchanged. Nothing here adds, divides or rounds money.
@@ -655,6 +655,7 @@ export class HttpCollectorApi implements CollectorApi {
       // APP-34: `confirmed` is the server's word for "a human has decided".
       kind: e.confirmed === true ? 'confirmed' : 'estimated',
       settlementState: e.state,
+      ...(res.simulation === undefined ? {} : { simulation: res.simulation === true }),
     }));
   }
 
@@ -668,11 +669,12 @@ export class HttpCollectorApi implements CollectorApi {
    * one screen's latency actually says so.
    */
   async incomeCycle(): Promise<IncomeCycle | null> {
-    const res = (await this.req('GET', '/api/me/income')) as { cycle?: RawCycle };
+    const res = (await this.req('GET', '/api/me/income')) as { cycle?: RawCycle; simulation?: boolean };
     const c = res.cycle;
     if (c === undefined) return null;
     return {
       label: c.label,
+      ...(res.simulation === undefined ? {} : { simulation: res.simulation === true }),
       confirmedVnd: c.confirmedVnd,
       estimatedVnd: c.estimatedVnd,
       totalVnd: c.totalVnd,
