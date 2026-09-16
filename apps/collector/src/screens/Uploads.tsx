@@ -328,7 +328,7 @@ export function Uploads() {
           {outcome ? <><Tag label={tt(`delivery.${outcome.state}`)} fg={deliveryColors(theme, outcome.state).fg} bg={deliveryColors(theme, outcome.state).bg} mark={deliveryMarks[outcome.state]} />
             {outcome.heldReason ? <Note tone="pending" text={reasonText(tt, outcome.heldReason)} /> : null}
             {outcome.failedReason ? <Note tone="error" text={reasonText(tt, outcome.failedReason)} /> : null}</> : null}
-          {deliver.isError ? <Failure error={deliver.error} tone="error" text={deliver.error instanceof ApiError ? reasonText(tt, deliver.error.code) : tt('common.actionFailed')}
+          {deliver.isError ? <Failure error={deliver.error} text={deliver.error instanceof ApiError ? reasonText(tt, deliver.error.code) : tt('common.actionFailed')}
             onRetry={() => start(resumable)} busy={running} /> : null}
         </> : deliveryStage === -1 ? <>
           <Choice label={tt('uploads.byPhone')} selected={deliveryMode === 'phone'} onPress={() => setDeliveryMode('phone')} />
@@ -338,7 +338,7 @@ export function Uploads() {
           <Body>{tt('uploads.deliverBody')}</Body><Note text={tt('uploads.confirmBody')} />
           {held.isError ? <Body muted>{tt('common.loadFailed')}</Body> : null}
           {resumable ? <Card><Row label={tt('uploads.session')} value={resumable.sessionBasename} /><Button label={tt('uploads.resume')} variant="secondary" onPress={() => start(resumable)} /></Card> : null}
-          {pick.isError ? <Failure error={pick.error} tone="error" text={pick.error instanceof ApiError ? reasonText(tt, pick.error.code) : tt('uploads.pickFailed')} onRetry={() => pick.mutate()} busy={pick.isPending} /> : null}
+          {pick.isError ? <Failure error={pick.error} text={pick.error instanceof ApiError ? reasonText(tt, pick.error.code) : tt('uploads.pickFailed')} onRetry={() => pick.mutate()} busy={pick.isPending} /> : null}
         </> : deliveryStage === 1 ? <>
           <Title>{tt('uploads.chooseSession')}</Title>
           {sessions.isPending ? <Loading /> : null}

@@ -436,7 +436,6 @@ export function TaskHall() {
             {tasks.isError || profile.isError ? (
               <Failure error={tasks.error ?? profile.error}
                 text={tt('common.refreshFailed')}
-                tone="pending"
                 busy={tasks.isFetching || profile.isFetching}
                 onRetry={() => { void tasks.refetch(); void profile.refetch(); }}
               />

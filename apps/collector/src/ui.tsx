@@ -617,8 +617,8 @@ export function Hatch({ text, action, onPress }: { text: string; action?: string
   const tt = useT();
   return <View style={{ padding: theme.space[6], gap: theme.space[3], alignItems: 'center' }}>
     <EmptyTasks size={104} />
-    <Title>{text}</Title>
-    <Body muted>{tt('state.emptyBody')}</Body>
+    <Title>{tt('state.empty')}</Title>
+    <Body muted>{text}</Body>
     {action && onPress ? <Button label={action} onPress={onPress} variant="secondary" /> : null}
   </View>;
 }

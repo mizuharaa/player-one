@@ -139,7 +139,6 @@ export function TaskDetail() {
           <Header title={tt('detail.title')} />
           <Failure error={[task, profile, claims].find(query => query.isError)?.error}
             text={tt('common.loadFailed')}
-            tone="error"
             busy={task.isFetching || profile.isFetching || claims.isFetching}
             onRetry={() => {
               void task.refetch();

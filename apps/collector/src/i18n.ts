@@ -640,7 +640,6 @@ const vi = {
   "state.offline": "Không kết nối được máy chủ",
   "state.offlineBody": "Kiểm tra kết nối và địa chỉ máy chủ trong phần Giới thiệu.",
   "state.empty": "Chưa có nội dung",
-  "state.emptyBody": "Nội dung sẽ xuất hiện tại đây khi có cập nhật.",
   "state.unavailable": "Tính năng chưa sẵn sàng",
   "state.unavailableBody": "Bạn có thể tiếp tục khám phá các nhiệm vụ.",
 
@@ -1228,7 +1227,6 @@ const en: Record<MessageKey, string> = {
   "state.offline": "Cannot connect to the server",
   "state.offlineBody": "Check your connection and the server address in About.",
   "state.empty": "Nothing here yet",
-  "state.emptyBody": "Updates will appear here when they are available.",
   "state.unavailable": "This feature is not available yet",
   "state.unavailableBody": "You can keep exploring available tasks.",
 
@@ -1800,7 +1798,6 @@ const zh: Record<MessageKey, string> = {
   "state.offline": "无法连接服务器",
   "state.offlineBody": "请检查网络连接和关于页面中的服务器地址。",
   "state.empty": "暂无内容",
-  "state.emptyBody": "有更新时会显示在这里。",
   "state.unavailable": "此功能暂未开放",
   "state.unavailableBody": "你可以继续浏览可参加的任务。",
 
