@@ -285,15 +285,13 @@ export function TaskDetail() {
         </View>
 
         <View style={{ paddingHorizontal: c.gutter, gap: c.cardGap }}>
-          {/* The rate, in the money green ink shade and the largest figure on
-              the screen. §2 puts rates in green; `greenInk` is the shade that
-              passes AA on white, which `contrast.test.ts` holds. */}
+          {/* A rate is not a payment; reserve green for settled live amounts. */}
           <Card>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', gap: theme.space[2] }}>
               <Text
                 style={{
                   ...c.type.display,
-                  color: c.greenInk,
+                  color: c.ink,
                   fontFamily: face(theme),
                   fontVariant: ['tabular-nums'],
                 }}

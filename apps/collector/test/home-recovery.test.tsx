@@ -59,3 +59,20 @@ it('offers the language switch in the Home header and cycles every locale', asyn
     expect(host.textContent).toContain(MESSAGES.en['home.cycleTitle']);
   } finally { await act(async () => root.unmount()); client.clear(); }
 });
+
+
+it('keeps confirmed cycle and awaiting money neutral because neither proves payment', async () => {
+  const api = new MockCollectorApi();
+  vi.spyOn(api, 'incomeCycle').mockResolvedValue({ label: 'Cycle', confirmedVnd: '9001', estimatedVnd: '801', totalVnd: '9802' });
+  vi.spyOn(api, 'income').mockResolvedValue([{ episodeId: 'pending', kind: 'confirmed', amountVnd: '1234', effectiveMinutes: '1', settlementState: 'pending_settlement', simulation: false }]);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'home' }}><Home /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
+    for (const value of ['9001', '1234']) {
+      const amount = [...host.querySelectorAll<HTMLElement>('*')].find(node => !node.children.length && node.textContent === dong(value))!;
+      expect(amount.style.color).toBe('rgb(26, 22, 48)');
+    }
+  } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
+});

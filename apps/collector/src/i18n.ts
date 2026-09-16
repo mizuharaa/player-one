@@ -42,7 +42,7 @@ const vi = {
 
   'common.back': 'Quay lại',
   'common.cancel': 'Hủy',
-  'uploads.cancelled': 'Đã hủy tải lên. Bạn có thể tiếp tục sau; tệp gốc vẫn được giữ.',
+  'uploads.cancelled': 'Đã dừng tải lên. Nhấn Thử lại để tiếp tục. Tệp gốc vẫn được giữ.',
   'common.loading': 'Đang tải…',
   'common.language': 'English',
   'common.retry': 'Thử lại',
@@ -692,6 +692,7 @@ const vi = {
   'demo.badKey': 'Mã không đúng.',
   'demo.unavailable': 'Máy chủ này không bật chế độ demo.',
   'demo.unseeded': 'Máy chủ chưa có tài khoản demo. Chạy seed trước đã.',
+  'uploads.keepOpen': 'Giữ ứng dụng mở trên màn hình này khi gửi tệp. Nhấn Hủy hoặc Quay lại để dừng; tệp gốc vẫn được giữ.',
 };
 
 export type MessageKey = keyof typeof vi;
@@ -726,7 +727,7 @@ const en: Record<MessageKey, string> = {
 
   'common.back': 'Back',
   'common.cancel': 'Cancel',
-  'uploads.cancelled': 'Upload cancelled. You can resume later; source files are kept.',
+  'uploads.cancelled': 'Upload stopped. Tap Retry to continue. Source files are kept.',
   'common.loading': 'Loading…',
   // The chip names the language it switches TO, in that language: the cycle is
   // vi → en → zh → vi, so English offers Chinese and Chinese offers Vietnamese.
@@ -1322,6 +1323,7 @@ const en: Record<MessageKey, string> = {
   'demo.badKey': 'That key is not right.',
   'demo.unavailable': 'This server has no demo mode.',
   'demo.unseeded': 'This server has no demo account yet. Run the seed first.',
+  'uploads.keepOpen': 'Keep the app open on this screen while sending files. Cancel or Back stops the upload; source files are kept.',
 };
 
 /**
@@ -1365,7 +1367,7 @@ const zh: Record<MessageKey, string> = {
 
   'common.back': '返回',
   'common.cancel': '取消',
-  'uploads.cancelled': '上传已取消。可稍后继续，原始文件仍保留。',
+  'uploads.cancelled': '上传已停止。点击重试以继续。原始文件仍保留。',
   'common.loading': '加载中…',
   'common.language': 'Tiếng Việt',
   'common.retry': '重试',
@@ -1935,6 +1937,7 @@ const zh: Record<MessageKey, string> = {
   'demo.badKey': '密钥不正确。',
   'demo.unavailable': '此服务器未开启演示模式。',
   'demo.unseeded': '此服务器还没有演示账号。请先运行种子脚本。',
+  'uploads.keepOpen': '发送文件时，请保持应用停留在此页面。取消或返回会停止上传；原始文件仍保留。',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en, zh };

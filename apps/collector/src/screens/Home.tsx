@@ -56,7 +56,7 @@ export function Home() {
     {headerFailure ? <Body muted>{failureText(headerFailure)}</Body> : null}
     {cycle.isError && cycle.data === undefined ? null : <View ref={earningsTarget} collapsable={false} style={{ gap: theme.space[2], paddingVertical: c.cardPad }}>
       <Body muted>{cycle.data?.label ? `${tt('home.cycleTitle')} · ${cycle.data.label}` : tt('home.cycleTitle')}</Body>
-      {cycle.isPending ? <Loading kind="number" /> : <Text style={{ ...c.type.money, fontFamily: face(theme), color: c.greenInk, fontVariant: ['tabular-nums'] }}>{cycle.data ? dong(cycle.data.confirmedVnd) : '—'}</Text>}
+      {cycle.isPending ? <Loading kind="number" /> : <Text style={{ ...c.type.money, fontFamily: face(theme), color: c.ink, fontVariant: ['tabular-nums'] }}>{cycle.data ? dong(cycle.data.confirmedVnd) : '—'}</Text>}
       {cycle.data ? <Body muted>{`${tt('income.confirmed')} · ${tt('home.cycleWithEstimate').replace('{amount}', dong(cycle.data.totalVnd))}`}</Body> : cycle.isPending ? null : <Body muted>{tt('home.cycleUnavailable')}</Body>}
       {cycle.data?.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
     </View>}
@@ -79,7 +79,7 @@ export function Home() {
               {sessions.isError ? <Body muted>{failureText(sessions)}</Body> : sessions.isPending ? <Loading /> : !todaySession ? <Body muted>{tt('home.noSessionToday')}</Body> : <Body muted>{tt(`scenario.${todaySession.scenario}`)}</Body>}
             </> : <>
               <NavRow label={tt('home.awaiting')} subtitle={awaiting ? shortId(awaiting.episodeId) : undefined} onPress={() => nav.selectTab('income')} />
-              {income.isError ? <Body muted>{failureText(income)}</Body> : income.isPending ? <Loading /> : awaiting ? <Text style={{ ...c.type.h2, fontFamily: face(theme), color: c.greenInk }}>{awaiting.amountVnd === null ? '—' : dong(awaiting.amountVnd)}</Text> : <Body muted>{tt('home.noAwaiting')}</Body>}
+              {income.isError ? <Body muted>{failureText(income)}</Body> : income.isPending ? <Loading /> : awaiting ? <Text style={{ ...c.type.h2, fontFamily: face(theme), color: c.ink }}>{awaiting.amountVnd === null ? '—' : dong(awaiting.amountVnd)}</Text> : <Body muted>{tt('home.noAwaiting')}</Body>}
               {awaiting?.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
             </>}
           </Card></View>} />

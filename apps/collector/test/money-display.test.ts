@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dong, vnd } from '../src/money.ts';
+import { dong, vnd, isLivePaid } from '../src/money.ts';
 
 /**
  * `vnd` is the only thing in this app that touches a money string, so it is
@@ -49,4 +49,13 @@ describe('vnd', () => {
   it('prints the currency glyph beside the figure and nothing else', () => {
     expect(dong('960000.0000')).toBe('960.000 ₫');
   });
+});
+
+
+it('requires an explicit live paid status and positive decimal digits for green money', () => {
+  const entry = { episodeId: 'e', effectiveMinutes: '1', kind: 'confirmed' as const, settlementState: 'paid', simulation: false };
+  for (const amountVnd of ['0', '000.0000', '-1', '1e3', 'NaN', '', null]) expect(isLivePaid({ ...entry, amountVnd })).toBe(false);
+  for (const amountVnd of ['1', '0.0001', '0001.0000', '9999999999999999999999999999']) expect(isLivePaid({ ...entry, amountVnd })).toBe(true);
+  expect(isLivePaid({ ...entry, amountVnd: '1' }, true)).toBe(false);
+  expect(isLivePaid(undefined)).toBe(false);
 });

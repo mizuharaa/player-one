@@ -10,7 +10,7 @@ import { expect, it, vi } from 'vitest';
 import { AccessibilityInfo } from 'react-native';
 import { ToastProvider, useToast } from '../src/ui/Toast.tsx';
 import { Splash } from '../src/screens/Splash.tsx';
-import { Button, Film, Header, LegalLine, Note, Screen, ListScreen, useTabBarReserve } from '../src/ui.tsx';
+import { Button, Film, Header, LegalLine, Note, Progress, Screen, ListScreen, useTabBarReserve } from '../src/ui.tsx';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { isLowPowerModeEnabledAsync } from 'expo-battery';
 
@@ -20,6 +20,19 @@ vi.mock('react-native', async () => ({ ...await import('react-native-web'),
 }));
 vi.mock('expo-video', () => ({ VideoView: vi.fn(() => null), useVideoPlayer: vi.fn(() => ({ status: 'idle', addListener: () => ({ remove() {} }) })) }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+it('shows activity and a visible track while the first file is still sending', async () => {
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<Progress label="Sending" value="0/1 files" fraction={0} busy />));
+    const bars = host.querySelectorAll<HTMLElement>('[role="progressbar"]');
+    expect(bars.length).toBe(2); // Activity indicator plus the measured-file track.
+    const progress = bars[1]!;
+    expect(progress.style.backgroundColor).toBe('rgb(81, 75, 99)');
+    expect((progress.firstElementChild as HTMLElement).style.width).toBe('0%');
+    expect(host.textContent).toContain('0/1 files');
+  } finally { await act(async () => root.unmount()); }
+});
 
 it('blocks repeat presses while busy and keeps a blocking error visible until retry', async () => {
   const host = document.createElement('div');

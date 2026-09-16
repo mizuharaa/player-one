@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { BackHandler, Platform } from 'react-native';
 
 /**
@@ -45,6 +45,8 @@ export const isTabRootName = (name: RouteName): name is TabName =>
   (TAB_ROOTS as readonly string[]).includes(name);
 
 interface Nav {
+  /** A mounted screen can refuse navigation until its foreground work stops. */
+  beforeLeave: RefObject<(() => boolean) | null>;
   route: Route;
   canGoBack: boolean;
   /** True when the current route is one of the four bar destinations. */
@@ -61,10 +63,12 @@ interface Nav {
 const NavContext = createContext<Nav | null>(null);
 
 export function NavProvider({ initial, children }: { initial: Route; children: ReactNode }) {
+  const beforeLeave = useRef<(() => boolean) | null>(null);
   const [stack, setStack] = useState<Route[]>([initial]);
   const route = stack[stack.length - 1] ?? initial;
   const canGoBack = stack.length > 1;
   const back = (): boolean => {
+    if (beforeLeave.current?.() === false) return true;
     if (canGoBack) {
       setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
       return true;
@@ -80,15 +84,16 @@ export function NavProvider({ initial, children }: { initial: Route; children: R
     return false;
   };
   const nav: Nav = {
+    beforeLeave,
     route,
     canGoBack,
     isTabRoot: !canGoBack && isTabRootName(route.name),
-    push: (r) => setStack((s) => [...s, r]),
+    push: (r) => { if (beforeLeave.current?.() !== false) setStack((s) => [...s, r]); },
     back,
-    reset: (r) => setStack([r]),
+    reset: (r) => { if (beforeLeave.current?.() !== false) setStack([r]); },
     // A bar destination replaces the stack rather than pushing onto it, so
     // tapping four tabs does not leave four screens for Back to walk through.
-    selectTab: (tab) => setStack([{ name: tab }]),
+    selectTab: (tab) => { if (beforeLeave.current?.() !== false) setStack([{ name: tab }]); },
   };
 
   // Android's hardware/gesture Back. Without this a hand-rolled stack leaves

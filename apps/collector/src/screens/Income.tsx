@@ -9,7 +9,7 @@ import { useTheme } from '../theme.tsx';
 import { useGuideTarget } from '../guide/Guide.tsx';
 import { Body, Button, Card, face, Chip, Hatch, NavRow, ListScreen, Loading, Note, Row, Screen, Tag, Timeline } from '../ui.tsx';
 import { useNav } from '../nav.tsx';
-import { dong, incomeStatus, quantity, shortId } from '../money.ts';
+import { dong, incomeStatus, isLivePaid, quantity, shortId } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -174,14 +174,14 @@ export function Income() {
             <Body>{shortId(entry.episodeId)}</Body>
             <Body muted>{entry.settlementState ? settlementLabel(tt, entry.settlementState) : tt('settlement.unknown')}</Body>
           </View>
-          <Text style={{ fontFamily: face(theme), ...c.type.h2, color: incomeStatus(entry) === 'income.confirmed' ? c.greenInk : c.muted, fontVariant: ['tabular-nums'] }}>{entry.amountVnd === null ? NOTHING : dong(entry.amountVnd)}</Text>
+          <Text style={{ fontFamily: face(theme), ...c.type.h2, color: isLivePaid(entry) ? c.greenInk : c.muted, fontVariant: ['tabular-nums'] }}>{entry.amountVnd === null ? NOTHING : dong(entry.amountVnd)}</Text>
         </View>
         {entry.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
         <Tag label={tt(incomeStatus(entry))} fg={c.ink} bg={c.surface} mark={incomeStatus(entry) === 'income.confirmed' ? '✓' : entry.kind === 'estimated' ? '~' : undefined} />
       </Pressable>} />
     <Modal visible={selected !== undefined} animationType="none" onRequestClose={() => setSelectedId(null)}>
       {selected ? <Screen title={shortId(selected.episodeId)} onBack={() => setSelectedId(null)}>
-        <Text style={{ fontFamily: face(theme), ...c.type.money, color: incomeStatus(selected) === 'income.confirmed' ? c.greenInk : c.muted, fontVariant: ['tabular-nums'] }}>{selected.amountVnd === null ? NOTHING : dong(selected.amountVnd)}</Text>
+        <Text style={{ fontFamily: face(theme), ...c.type.money, color: isLivePaid(selected) ? c.greenInk : c.muted, fontVariant: ['tabular-nums'] }}>{selected.amountVnd === null ? NOTHING : dong(selected.amountVnd)}</Text>
         <Tag label={tt(incomeStatus(selected))} fg={c.ink} bg={c.surface} mark={incomeStatus(selected) === 'income.confirmed' ? '✓' : selected.kind === 'estimated' ? '~' : undefined} />
         <View style={{ flexDirection: 'row', gap: c.cardGap }}>
           <Chip label={tt('income.progress')} selected={!details} onPress={() => setDetails(false)} />

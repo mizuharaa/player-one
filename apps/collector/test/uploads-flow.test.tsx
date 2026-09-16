@@ -9,10 +9,10 @@ import { Uploads } from '../src/screens/Uploads.tsx';
 import { ApiProvider } from '../src/api/context.tsx';
 import { MockCollectorApi } from '../src/api/mock.ts';
 import { LocaleProvider } from '../src/locale.tsx';
-import { NavProvider } from '../src/nav.tsx';
+import { NavProvider, useNav } from '../src/nav.tsx';
 import { MESSAGES } from '../src/i18n.ts';
 import { runDelivery } from '@playerone/delivery';
-import { nativeDeliveryStore, pickSessionDirectory } from '../src/upload/delivery-native.ts';
+import { hashSession, nativeDeliveryStore, pickSessionDirectory } from '../src/upload/delivery-native.ts';
 
 vi.mock('react-native', async () => ({ ...await import('react-native-web'), Modal: ({ visible, children }: { visible: boolean; children: ReactNode }) => visible ? children : null }));
 vi.mock('../src/guide/Guide.tsx', () => ({ useGuideTarget: () => undefined }));
@@ -37,6 +37,53 @@ vi.mock('../src/upload/delivery-native.ts', () => ({
   hashSession: vi.fn(async () => []),
 }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+it.each(['hashing', 'sending'])('keeps the upload mounted during %s until explicitly cancelled', async phase => {
+  const api = new MockCollectorApi();
+  vi.spyOn(api, 'sessions').mockResolvedValue([{ id: 'session-a', collectorId: 'collector-a', taskId: 'task-a', deviceSerial: 'EGO', scenario: 'home', othersInFrame: false, sensitiveInfo: false, createdAt: '2026-09-14T12:00:00Z' }]);
+  vi.mocked(nativeDeliveryStore.get).mockResolvedValue({ uploadId: 'old-upload', collectionSessionId: 'old-session', directoryUri: 'content://old', sessionBasename: 'old-footage', files: [] });
+  vi.mocked(hashSession).mockImplementation(async (_files, _report, signal) => phase === 'hashing'
+    ? new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(new ApiError('upload_cancelled')), { once: true }))
+    : []);
+  vi.mocked(runDelivery).mockClear().mockImplementation(() => new Promise(() => {}));
+  function Shell() {
+    const nav = useNav();
+    return <><button onClick={() => nav.selectTab('home')}>Home tab</button><button onClick={() => nav.push({ name: 'profile' })}>Push</button><button onClick={() => nav.reset({ name: 'home' })}>Reset</button><button onClick={() => nav.back()}>Hardware back</button>{nav.route.name === 'uploads' ? <Uploads /> : <p>Left upload</p>}</>;
+  }
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host), client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const button = (label: string) => Array.from(host.querySelectorAll('button')).find(b => b.textContent === label)!;
+  const tap = async (label: string) => { await act(async () => button(label).click()); };
+  const m = MESSAGES.en;
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="en"><NavProvider initial={{ name: 'uploads', openDelivery: true }}><Shell /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await tap(m['uploads.byPhone']); await tap(m['common.next']);
+    await vi.waitFor(() => expect(button(m['uploads.pick']).disabled).toBe(false));
+    await tap(m['uploads.pick']);
+    await vi.waitFor(() => expect(button(m['common.next'])).toBeDefined());
+    await tap(`${m['scenario.home']} · 2026-09-14`); await tap(m['common.next']); await tap(m['uploads.start']);
+    await vi.waitFor(() => expect(button(m['common.cancel'])).toBeDefined());
+    for (const destination of ['Home tab', 'Push', 'Reset', 'Hardware back']) {
+      await tap(destination);
+      expect(host.textContent).not.toContain('Left upload');
+    }
+    await tap('Back');
+    await vi.waitFor(() => expect(host.textContent).toContain(m['uploads.cancelled']));
+    vi.mocked(hashSession).mockResolvedValue([]);
+    vi.mocked(runDelivery).mockClear();
+    await tap(m['common.retry']);
+    await vi.waitFor(() => expect(runDelivery).toHaveBeenCalled());
+    expect(vi.mocked(runDelivery).mock.calls.at(-1)![1].collectionSessionId).toBe('session-a');
+    expect(vi.mocked(runDelivery).mock.calls.at(-1)![1].sessionBasename).toBe('session_20260914_120000');
+    await vi.waitFor(() => expect(button(m['common.cancel'])).toBeDefined());
+    await tap(m['common.cancel']);
+    await vi.waitFor(() => expect(host.textContent).toContain(m['uploads.cancelled']));
+    await tap('Home tab');
+    expect(host.textContent).toContain('Left upload');
+  } finally {
+    await act(async () => root.unmount()); client.clear(); host.remove(); vi.mocked(hashSession).mockResolvedValue([]); vi.mocked(nativeDeliveryStore.get).mockResolvedValue(null); vi.restoreAllMocks();
+  }
+});
 
 it('requires folder, server session and explicit confirmation; repeated presses start one delivery', async () => {
   const api = new MockCollectorApi();

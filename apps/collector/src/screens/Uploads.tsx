@@ -22,7 +22,7 @@ import {
   pickSessionDirectory,
   type PickedSession,
 } from '../upload/delivery-native.ts';
-import { dong, incomeStatus, gb, shortId } from '../money.ts';
+import { dong, incomeStatus, isLivePaid, gb, shortId } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
 
 
@@ -177,6 +177,15 @@ export function Uploads() {
   const [filter, setFilter] = useState<EpisodeState | null>(null);
   const [selectedEpisode, setSelectedEpisode] = useState<string | null>(null);
   const tt = useT();
+  // ponytail: foreground transfers keep this screen mounted; app-level ownership is needed for background transfers.
+  useEffect(() => {
+    nav.beforeLeave.current = () => {
+      if (!sending.current) return true;
+      toast(tt('uploads.keepOpen'), 'neutral');
+      return false;
+    };
+    return () => { nav.beforeLeave.current = null; };
+  }, [nav.beforeLeave, toast, tt]);
   const theme = useTheme();
   const queryClient = useQueryClient();
   /** Whether the delivery panel is open. Closed until the collector taps. */
@@ -244,6 +253,7 @@ export function Uploads() {
         return await runPhoneDelivery(deps, resuming, signal, { report: setStep });
       }
       if (picked === null || sessionId === null) throw new ApiError('upload_not_ready');
+      setHashed({ done: 0, total: picked.files.length });
       const files = await hashSession(picked.files, (done, total) => setHashed({ done, total }), signal);
       if (signal.aborted) throw new ApiError('upload_cancelled');
       const record: DeliveryRecord = {
@@ -304,7 +314,7 @@ export function Uploads() {
     deliver.mutate(record);
   };
   const close = () => {
-    if (running) return;
+    if (sending.current) { transfer.current?.abort(); return; }
     pickerRequest.current?.abort(); pick.reset();
     setOpen(false); setPicked(null); setSessionId(null); setStep(null); setHashed(null); setDeliveryStage(-1); setDeliveryMode(null); deliver.reset();
   };
@@ -325,7 +335,7 @@ export function Uploads() {
         {episodes.isPending ? <Loading /> : null}
       </View>}
       empty={episodes.isPending || episodes.isError ? null : <Hatch action={tt('common.retry')} onPress={() => { setSearch(''); setFilter(null); void episodes.refetch(); }} text={tt(search.trim() || filter ? 'uploads.noMatches' : 'uploads.empty')} />}
-      renderItem={episode => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(episode.episodeId)}. ${tt(`state.${episode.state}`)}${amounts.get(episode.episodeId)?.simulation ? `. ${tt('payout.simulation')}` : ''}`}
+      renderItem={episode => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(episode.episodeId)}. ${tt(`state.${episode.state}`)}. ${amounts.get(episode.episodeId)?.amountVnd == null ? '—' : dong(amounts.get(episode.episodeId)!.amountVnd!)}${amounts.has(episode.episodeId) ? `. ${tt(incomeStatus(amounts.get(episode.episodeId), episode.state === 'review_failed'))}` : ''}${amounts.get(episode.episodeId)?.simulation ? `. ${tt('payout.simulation')}` : ''}`}
         onPress={() => setSelectedEpisode(episode.episodeId)}
         style={({ pressed }) => ({ paddingVertical: c.cardPad, borderBottomWidth: 1, borderBottomColor: c.line,
           gap: c.cardGap, backgroundColor: c.surface, opacity: pressed ? .85 : 1 })}>
@@ -335,7 +345,7 @@ export function Uploads() {
         </View>
         <View style={{ flex: 1, gap: theme.space[1] }}><Body>{shortId(episode.episodeId)}</Body><Body muted>{tt(`state.${episode.state}`)}</Body></View>
         <View style={{ flexShrink: 1, alignItems: 'flex-end' }}>
-          <Text style={{ fontFamily: face(theme), ...c.type.body, color: incomeStatus(amounts.get(episode.episodeId), episode.state === 'review_failed') === 'income.confirmed' ? c.greenInk : c.muted }}>{amounts.get(episode.episodeId)?.amountVnd == null ? '—' : dong(amounts.get(episode.episodeId)!.amountVnd!)}</Text>
+          <Text style={{ fontFamily: face(theme), ...c.type.body, color: isLivePaid(amounts.get(episode.episodeId), episode.state === 'review_failed') ? c.greenInk : c.muted }}>{amounts.get(episode.episodeId)?.amountVnd == null ? '—' : dong(amounts.get(episode.episodeId)!.amountVnd!)}</Text>
           {amounts.has(episode.episodeId) ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.muted }}>{tt(incomeStatus(amounts.get(episode.episodeId), episode.state === 'review_failed'))}</Text> : null}
         </View>
         </View>
@@ -354,13 +364,14 @@ export function Uploads() {
           {!running && !outcome && !deliver.isError && (deliveryStage === 0 || deliveryStage === 1) && [held, sessions].some(q => q.isError) ? <Failure error={[held, sessions].find(q => q.isError)?.error} text={tt('common.loadFailed')} onRetry={() => { void held.refetch(); void sessions.refetch(); }} busy={held.isFetching || sessions.isFetching} /> : null}
         {Platform.OS === 'ios' && deliveryStage >= 0 ? <Note text={tt('uploads.libraryUnmeasured')} /> : null}
         {running || outcome || deliver.isError ? <>
-          {hashed ? <Progress label={tt('uploads.hashing')} value={`${hashed.done}/${hashed.total}`} fraction={hashed.total ? hashed.done / hashed.total : 0} /> : null}
-          {step ? <Progress label={tt('uploads.sending')} value={`${step.sentFiles}/${step.totalFiles}`} fraction={step.totalFiles ? step.sentFiles / step.totalFiles : 0} /> : null}
+          {running ? <Note text={tt('uploads.keepOpen')} /> : null}
+          {hashed ? <Progress label={tt('uploads.hashing')} value={`${hashed.done}/${hashed.total} ${tt('uploads.files')}`} fraction={hashed.total ? hashed.done / hashed.total : 0} busy={running && !step} /> : null}
+          {step ? <Progress label={tt('uploads.sending')} value={`${step.sentFiles}/${step.totalFiles} ${tt('uploads.files')}`} fraction={step.totalFiles ? step.sentFiles / step.totalFiles : 0} busy={running} /> : null}
           {outcome ? <><Tag label={tt(`delivery.${outcome.state}`)} fg={deliveryColors(theme, outcome.state).fg} bg={deliveryColors(theme, outcome.state).bg} mark={deliveryMarks[outcome.state]} />
             {outcome.heldReason ? <Note tone="pending" text={reasonText(tt, outcome.heldReason)} /> : null}
             {outcome.failedReason ? <Note tone="error" text={reasonText(tt, outcome.failedReason)} /> : null}</> : null}
           {deliver.isError ? <Failure error={deliver.error} text={deliver.error instanceof ApiError ? reasonText(tt, deliver.error.code) : tt('common.actionFailed')}
-            onRetry={() => start(activeRecord.current ?? resumable)} busy={running} /> : null}
+            onRetry={() => start(activeRecord.current)} busy={running} /> : null}
         </> : deliveryStage === -1 ? <>
           <Choice label={tt('uploads.byPhone')} selected={deliveryMode === 'phone'} onPress={() => setDeliveryMode('phone')} />
           <Choice label={tt('uploads.byCard')} selected={deliveryMode === 'card'} onPress={() => setDeliveryMode('card')} />

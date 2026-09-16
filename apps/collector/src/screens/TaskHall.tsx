@@ -875,7 +875,7 @@ function SearchOverlay({
               <Text
                 style={{
                   ...c.type.caption,
-                  color: c.greenInk,
+                  color: c.ink,
                   fontFamily: face(theme),
                   fontVariant: ['tabular-nums'],
                 }}
@@ -947,19 +947,12 @@ export function Sheet({
             gap: theme.space[3],
           }}
         >
-          <View
-            importantForAccessibility="no"
-            style={{
-              alignSelf: 'center',
-              width: theme.space[10],
-              height: theme.space[1],
-              borderRadius: c.radius.pill,
-              backgroundColor: c.line,
-            }}
-          />
-          <Text accessibilityRole="header" style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme) }}>
-            {title}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[3] }}>
+            <Text accessibilityRole="header" style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme), flex: 1 }}>
+              {title}
+            </Text>
+            <Button label={tt('common.close')} variant="ghost" onPress={onClose} />
+          </View>
           <ScrollView contentContainerStyle={{ gap: theme.space[3], paddingBottom: theme.space[2] }}>
             {children}
           </ScrollView>

@@ -968,11 +968,8 @@ export function Tag({ label, fg, bg, mark }: { label: string; fg: string; bg: st
  * How far along something measured is: a task's claimed minutes, a session's
  * files hashed, a delivery's files sent.
  *
- * The bar is `lime[600]` on the muted track, which is the one job `DESIGN.md`
- * gives that step — "500 fills, 600 strokes, 600 is also progress and the focus
- * ring" — and it is the screen's one lime moment. It is determinate and it does
- * not animate: a bar that eases to a figure is showing a number nobody measured
- * yet, and motion here conveys state or it is not there.
+ * The collector's sun fill sits on a contrasting muted track. The measured
+ * fraction never animates; an activity indicator can show work within a file.
  *
  * **The figure is never the bar alone.** `label` and `value` print above it
  * through `Row`, so the fraction is readable digit for digit and the bar is the
@@ -981,19 +978,22 @@ export function Tag({ label, fg, bg, mark }: { label: string; fg: string; bg: st
  * string because its unit belongs to the caller: minutes on a task, a file count
  * on a delivery.
  */
-export function Progress({ label, value, fraction }: { label: string; value: string; fraction: number }) {
+export function Progress({ label, value, fraction, busy = false }: { label: string; value: string; fraction: number; busy?: boolean }) {
   const theme = useTheme();
   const clamped = Math.min(1, Math.max(0, Number.isFinite(fraction) ? fraction : 0));
   return (
     <View style={{ gap: theme.space[2] }}>
       <Row label={label} value={value} />
+      {busy ? <ActivityIndicator color={theme.collector.ink} accessibilityLabel={label} /> : null}
       <View
         accessibilityRole="progressbar"
-        accessibilityValue={{ min: 0, max: 100, now: Math.round(clamped * 100) }}
+        accessibilityLabel={label}
+        accessibilityState={{ busy }}
+        accessibilityValue={{ min: 0, max: 100, now: Math.round(clamped * 100), text: value }}
         style={{
           height: theme.space[1.5],
           borderRadius: theme.space[1],
-          backgroundColor: theme.color.muted,
+          backgroundColor: theme.collector.muted,
           overflow: 'hidden',
         }}
       >

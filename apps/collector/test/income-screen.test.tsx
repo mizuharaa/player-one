@@ -146,3 +146,36 @@ it.each(['vi', 'en', 'zh'] as const)('keeps the failed-review Uploads row neutra
     expect(money.style.color).toBe('rgb(81, 75, 99)');
   } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); }
 });
+
+
+it.each(['income', 'uploads'] as const)('uses green only for a nonzero live payment in %s', async screen => {
+  for (const [settlementState, amountVnd, simulation, paid] of [
+    ['pending_settlement', '1234', false, false],
+    ['paid', '0.0000', false, false],
+    ['paid', '1234', true, false],
+    ['paid', '1234', undefined, false],
+    ['paid', '1234', false, true],
+    ['manually_paid', '1234', false, true],
+  ] as const) {
+    const api = new MockCollectorApi();
+    vi.spyOn(api, 'incomeCycle').mockResolvedValue(null);
+    vi.spyOn(api, 'episodes').mockResolvedValue([{ episodeId: 'payment', sessionId: 'session', sizeBytes: 10, state: 'review_passed' }]);
+    vi.spyOn(api, 'income').mockResolvedValue([{ episodeId: 'payment', kind: 'confirmed', amountVnd, effectiveMinutes: '1', settlementState, simulation }]);
+    const host = document.createElement('div'), root = createRoot(host);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const assertMoney = (scope: HTMLElement) => {
+      const amount = [...scope.querySelectorAll<HTMLElement>('*')].find(node => !node.children.length && node.textContent === dong(amountVnd))!;
+      expect(amount.style.color, `${settlementState}/${amountVnd}/simulation=${simulation}`).toBe(paid ? 'rgb(8, 122, 56)' : 'rgb(81, 75, 99)');
+    };
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: screen }}>{screen === 'income' ? <Income /> : <Uploads />}</NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+      const row = [...host.querySelectorAll<HTMLElement>('[role="button"]')].find(node => node.getAttribute('aria-label')?.startsWith('payment.'))!;
+      assertMoney(row);
+      if (screen === 'income') {
+        await act(async () => row.click());
+        assertMoney(host.querySelector<HTMLElement>('[data-testid="modal"]')!);
+      }
+    } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
+  }
+});

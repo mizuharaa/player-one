@@ -125,11 +125,8 @@ export function ImageBox({
  * unit. An ellipsised pay rate is not acceptable at any width, so neither
  * `Text` here carries `numberOfLines`.
  *
- * Plum rather than lime, so it can appear on every card in a list without
- * spending the screen's one lime (§0.2), and on the image rather than under it
- * because a rate over a photograph needs its own ground to stay legible. The
- * §0.2 rule that a money *total* is never inside a coloured box is not broken
- * by this: a rate on a photograph is the stated exception.
+ * Neutral ink on an opaque ground keeps a rate readable over a photo without
+ * implying that it is already paid.
  */
 export function PriceChip({ value, unit }: { value: string; unit: string }) {
   const theme = useTheme();
@@ -139,7 +136,7 @@ export function PriceChip({ value, unit }: { value: string; unit: string }) {
         alignSelf: 'flex-start',
         maxWidth: '100%',
         flexDirection: 'column',
-        backgroundColor: theme.collector.greenBg,
+        backgroundColor: theme.collector.surface,
         borderRadius: theme.radius.base,
         paddingVertical: theme.space[2],
         paddingHorizontal: theme.space[3],
@@ -148,13 +145,13 @@ export function PriceChip({ value, unit }: { value: string; unit: string }) {
       <Text
         style={{
           ...textStyle(theme, 'lead'),
-          color: theme.collector.greenInk,
+          color: theme.collector.ink,
           fontWeight: theme.fontWeight.display,
         }}
       >
         {value}
       </Text>
-      <Text style={{ ...textStyle(theme, 'micro'), color: theme.collector.greenInk }}>{unit}</Text>
+      <Text style={{ ...textStyle(theme, 'micro'), color: theme.collector.ink }}>{unit}</Text>
     </View>
   );
 }
