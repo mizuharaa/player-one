@@ -70,7 +70,13 @@ function profileEnv(name) {
   assert.ok(profile, `eas.json has no ${name} profile`);
   return { ...(profile.extends ? profileEnv(profile.extends) : {}), ...profile.env };
 }
-const CLOUD = 'https://api.playerone.vng.com.vn';
+/*
+ * Two origins, because the production hostname does not resolve yet: the
+ * demo builds must reach the GreenNode VM that is actually up, and `store`
+ * keeps the name VNG will point at it. Both are checked, neither is DNS.
+ */
+const DEMO_CLOUD = 'https://api.49-213-71-116.sslip.io';
+const PROD_CLOUD = 'https://api.playerone.vng.com.vn';
 
 test('every eas.json build profile mirrors PLAYERONE_BUILD_PROFILE into EXPO_PUBLIC_BUILD_PROFILE', () => {
   // The app cannot read PLAYERONE_BUILD_PROFILE — Expo only inlines the
@@ -89,29 +95,30 @@ test('every eas.json build profile mirrors PLAYERONE_BUILD_PROFILE into EXPO_PUB
 test('every installable profile in eas.json names a non-placeholder origin', () => {
   for (const name of ['demo', 'store', 'testflight']) {
     const origin = profileEnv(name).EXPO_PUBLIC_API_URL;
-    assert.equal(origin, CLOUD, `${name} must default to the Vietnam cloud domain`);
+    const expected = name === 'store' ? PROD_CLOUD : DEMO_CLOUD;
+    assert.equal(origin, expected, `${name} must default to its Vietnam cloud domain`);
     assert.doesNotMatch(new URL(origin).hostname, /\.(invalid|test|local|localhost|example)$/i,
       `${name} must not default to a reserved placeholder host`);
   }
 });
 
-test('the TestFlight profile is a store-distributed demo at version 44', () => {
+test('the TestFlight profile is a store-distributed demo at version 45', () => {
   // The three installable profiles ship the same build and must carry the
   // same Play/App Store version code, or one of them ships stale.
   for (const name of ['demo', 'store', 'testflight']) {
-    assert.equal(profileEnv(name).PLAYERONE_VERSION_CODE, '44', `${name} must be at version 44`);
+    assert.equal(profileEnv(name).PLAYERONE_VERSION_CODE, '45', `${name} must be at version 45`);
   }
 
   assert.equal(eas.build.testflight.distribution, 'store');
   assert.equal(eas.build.testflight.pnpm, eas.build.demo.pnpm);
   const env = profileEnv('testflight');
   assert.equal(env.PLAYERONE_BUILD_PROFILE, 'demo');
-  assert.equal(env.PLAYERONE_VERSION_CODE, '44');
+  assert.equal(env.PLAYERONE_VERSION_CODE, '45');
   // What Expo hands the native build: iOS reads the build number, Android the
   // version code, and both come from the one variable.
   const value = config(env);
-  assert.equal(value.ios.buildNumber, '44');
-  assert.equal(value.android.versionCode, 44);
+  assert.equal(value.ios.buildNumber, '45');
+  assert.equal(value.android.versionCode, 45);
   assert.equal(value.ios.bundleIdentifier, 'vn.vng.playerone.collector.demo');
   // A demo build talks to a laptop over plain HTTP once the origin is
   // overridden at runtime, so it keeps arbitrary loads and cleartext.
