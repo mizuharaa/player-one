@@ -26,7 +26,7 @@ export function TaskCard({ task, onPress, hint }: { task: Task; onPress: () => v
       <View style={{ padding: 16, gap: 8 }}>
         <Text numberOfLines={2} style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme) }}>{task.title}</Text>
         <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{`${task.targetMinutes} ${tt('detail.minutes')} \u00b7 ${tt('taskCard.slots').replace('{count}', String(task.remainingSlots))}`}</Text>
-        <Text style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme), fontWeight: '700', fontVariant: ['tabular-nums'] }}>{`${vnd(task.unitPriceVndPerMinute)} ${tt('hall.perMinute')}`}</Text>
+        <Text testID="task-price" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5} style={{ ...c.type.body, color: c.ink, fontFamily: face(theme), fontWeight: '700', fontVariant: ['tabular-nums'] }}>{`${vnd(task.unitPriceVndPerMinute)} ${tt('hall.perMinute')}`}</Text>
       </View>
       <CardSheen pressed={pressed} />
     </>}
