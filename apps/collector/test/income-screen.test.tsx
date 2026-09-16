@@ -9,7 +9,7 @@ import { NavProvider } from '../src/nav.tsx';
 import { LocaleProvider } from '../src/locale.tsx';
 import { Income } from '../src/screens/Income.tsx';
 import { dong, shortId } from '../src/money.ts';
-import { MESSAGES } from '../src/i18n.ts';
+import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
 
 vi.mock('react-native', async () => ({ ...await import('react-native-web'), Modal: ({ visible, children }: { visible: boolean; children: ReactNode }) => visible ? children : null }));
 vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({}) }));
@@ -37,7 +37,7 @@ it.each(['on_a_bill', null])('preserves server money and timeline evidence for %
     expect(host.textContent).toContain(dong('9001'));
     expect(host.textContent).toContain(dong('9802'));
     expect(host.textContent).toContain(dong('1234'));
-    const entry = Array.from(host.querySelectorAll<HTMLElement>('[role="button"]')).find(node => node.getAttribute('aria-label') === `${shortId('episode-confirmed')}. ${MESSAGES.en[kind === 'confirmed' ? 'income.confirmed' : 'income.estimated']}`)!;
+    const entry = Array.from(host.querySelectorAll<HTMLElement>('[role="button"]')).find(node => node.getAttribute('aria-label') === `${shortId('episode-confirmed')}. ${MESSAGES[DEFAULT_LOCALE][kind === 'confirmed' ? 'income.confirmed' : 'income.estimated']}`)!;
     await act(async () => entry.click());
     expect(host.querySelector('[data-step="reviewed"]')?.getAttribute('data-done')).toBe(String(kind === 'confirmed'));
     expect(host.querySelector('[data-step="uploaded"]')?.getAttribute('data-done')).toBe(String(settlementState !== null));
@@ -72,8 +72,8 @@ it('shows one recovery panel when every Income query fails', async () => {
     await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'income' }}><Income /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
     expect(host.querySelectorAll('[aria-live="polite"]')).toHaveLength(1);
-    expect(host.textContent?.split(MESSAGES.en['common.loadFailed'])).toHaveLength(2);
-    expect(host.textContent).not.toContain(MESSAGES.en['common.actionFailed']);
+    expect(host.textContent?.split(MESSAGES[DEFAULT_LOCALE]['common.loadFailed'])).toHaveLength(2);
+    expect(host.textContent).not.toContain(MESSAGES[DEFAULT_LOCALE]['common.actionFailed']);
   } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
 });
 

@@ -7,7 +7,7 @@ import { NOTIFICATION_PREVIEW } from './notification-preview.ts';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App, SCREENS } from '../src/App.tsx';
-import { LOCALES, type Locale as LocaleName } from '../src/i18n.ts';
+import { DEFAULT_LOCALE, LOCALES, type Locale as LocaleName } from '../src/i18n.ts';
 import { LocaleProvider, useLocale } from '../src/locale.tsx';
 import { NavProvider, useNav, type Route, type RouteName } from '../src/nav.tsx';
 import { GuideProvider } from '../src/guide/Guide.tsx';
@@ -111,7 +111,7 @@ export function Harness() {
   }, [readyRequested]);
   const lang: LocaleName = (LOCALES as readonly string[]).includes(asked ?? '')
     ? (asked as LocaleName)
-    : 'en';
+    : DEFAULT_LOCALE;
 
   if (screen === null) return <SafeAreaInsetsContext.Provider value={PREVIEW_INSETS}><App /></SafeAreaInsetsContext.Provider>;
   if (!ready) return null;

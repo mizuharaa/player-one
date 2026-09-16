@@ -37,8 +37,8 @@ const { REASON_KEYS } = await import('../src/screens/Uploads.tsx');
  * second locale actually translated rather than pasted.
  */
 describe('the collector message catalogue', () => {
-  it('opens v3 in English and keeps Vietnamese as the base catalogue', () => {
-    expect(DEFAULT_LOCALE).toBe('en');
+  it('opens the demo in Vietnamese', () => {
+    expect(DEFAULT_LOCALE).toBe('vi');
     expect(LOCALES[0]).toBe('vi');
   });
 
