@@ -175,7 +175,7 @@ it('recovers a rejected reduced-motion query without leaving the film permanentl
 
 vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null }));
 
-it.each(['screen', 'list'])('reserves the dock outside the %s scrolling viewport', async kind => {
+it.each(['screen', 'list'])('reserves safe areas outside the %s scrolling viewport', async kind => {
   const host = document.createElement('div'); document.body.append(host);
   const root = createRoot(host);
   function Probe() { return <output>{useTabBarReserve()}</output>; }
@@ -187,5 +187,8 @@ it.each(['screen', 'list'])('reserves the dock outside the %s scrolling viewport
     const reserve = Number(host.querySelector('output')!.textContent);
     expect(reserve).toBeGreaterThan(98);
     expect(viewport.parentElement!.style.paddingBottom).toBe(`${reserve}px`);
+    expect(viewport.parentElement!.style.paddingTop).toBe('59px');
+    const header = host.querySelector<HTMLElement>('[role="heading"]')!.parentElement!.parentElement!;
+    expect(header.style.paddingTop).toBe('8px');
   } finally { await act(async () => root.unmount()); host.remove(); }
 });

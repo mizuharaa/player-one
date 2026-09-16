@@ -23,6 +23,8 @@ import {
   View,
   useWindowDimensions,
   type ImageSourcePropType,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { isLowPowerModeEnabledAsync, addLowPowerModeListener } from 'expo-battery';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -81,7 +83,7 @@ export function useTabBarReserve() {
   return insets.bottom + theme.space[6] + (measuredTabHeight || barHeight(theme)) + theme.space[5];
 }
 
-export function Header({ title, right, onBack, progress }: { title: string; right?: ReactNode; onBack?: () => void; progress?: ReactNode }) {
+export function Header({ title, right, onBack, progress, insetTop = true }: { title: string; right?: ReactNode; onBack?: () => void; progress?: ReactNode; insetTop?: boolean }) {
   const theme = useTheme();
   const nav = useNav();
   const tt = useT();
@@ -89,7 +91,7 @@ export function Header({ title, right, onBack, progress }: { title: string; righ
   const back = onBack ?? (nav.canGoBack ? nav.back : undefined);
   const heading = <Text accessibilityRole="header" style={{ ...theme.collector.type.h1, color: theme.color.foreground,
     fontFamily: face(theme), flexShrink: 1, flexGrow: 1 }}>{title}</Text>;
-  return <View style={{ paddingTop: insets.top + theme.space[2], paddingBottom: theme.space[3], gap: theme.space[3] }}>
+  return <View style={{ paddingTop: (insetTop ? insets.top : 0) + theme.space[2], paddingBottom: theme.space[3], gap: theme.space[3] }}>
     {back ? <><View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
       <Pressable accessibilityRole="button" accessibilityLabel={tt('common.back')} onPress={back}
         style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }}>
@@ -136,7 +138,7 @@ export function Screen({
   const [footerHeight, setFooterHeight] = useState(0);
   return (
     // `background` is the page — the warm paper everything above it stands on.
-    <CardScrollContext.Provider value={scroll}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background, paddingBottom: nav.isTabRoot ? reserve : 0 }}>
+    <CardScrollContext.Provider value={scroll}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background, paddingTop: insets.top, paddingBottom: nav.isTabRoot ? reserve : 0 }}>
       <Animated.ScrollView scrollEventThrottle={16} onScroll={scroll.onScroll}
         refreshControl={refresh ? <RefreshControl {...refresh} /> : undefined}
         keyboardShouldPersistTaps="handled"
@@ -148,7 +150,7 @@ export function Screen({
           gap: theme.space[3],
         }}
       >
-        <Header title={title} right={right} onBack={onBack} progress={progress} />
+        <Header title={title} right={right} onBack={onBack} progress={progress} insetTop={false} />
         {children}
       </Animated.ScrollView>
       {footer === undefined ? null : (
@@ -213,7 +215,7 @@ export function ListScreen<T>({
   const insets = useInsets();
   const reserve = useTabBarReserve();
   return (
-    <CardScrollContext.Provider value={scroll}><View style={{ flex: 1, backgroundColor: theme.color.background, paddingBottom: nav.isTabRoot ? reserve : 0 }}>
+    <CardScrollContext.Provider value={scroll}><View style={{ flex: 1, backgroundColor: theme.color.background, paddingTop: insets.top, paddingBottom: nav.isTabRoot ? reserve : 0 }}>
       <Animated.FlatList<T> scrollEventThrottle={16} onScroll={scroll.onScroll}
         refreshing={refresh?.refreshing}
         onRefresh={refresh?.onRefresh}
@@ -224,7 +226,7 @@ export function ListScreen<T>({
         // an `onLayout`, and a fragment cannot take one — which React reports
         // as an invalid-prop error on every render.
         renderItem={({ item }) => <View>{renderItem(item)}</View>}
-        ListHeaderComponent={<View style={{ gap: theme.space[3] }}><Header title={title} right={right} />{header}</View>}
+        ListHeaderComponent={<View style={{ gap: theme.space[3] }}><Header title={title} right={right} insetTop={false} />{header}</View>}
         ListFooterComponent={footer === undefined ? null : <View>{footer}</View>}
         ListEmptyComponent={empty === undefined ? null : <View>{empty}</View>}
         contentContainerStyle={{
@@ -259,10 +261,10 @@ const cardBox = (theme: NativeTheme) => ({
   overflow: 'hidden' as const,
 });
 
-export function Card({ children }: { children: ReactNode }) {
+export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const theme = useTheme();
   return (
-    <View style={cardBox(theme)}>
+    <View style={[cardBox(theme), style]}>
       <CardSheen />
       {children}
     </View>
