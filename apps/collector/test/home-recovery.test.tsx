@@ -43,3 +43,36 @@ it.each([false, true])('shows one header error and preserves the cached-data dis
     if (cached) { expect(header).toContain('Cached collector'); expect(header).toContain(dong('9001')); }
   } finally { await act(async () => root.unmount()); client.clear(); }
 });
+
+it('offers the language switch in the Home header and cycles every locale', async () => {
+  const api = new MockCollectorApi();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'home' }}><Home /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    for (const locale of ['en', 'zh', 'vi'] as const) {
+      const header = host.querySelector('[role="heading"]')!.parentElement!.parentElement!;
+      const toggle = [...header.querySelectorAll<HTMLElement>('[role="button"]')].find(node => node.getAttribute('aria-label') === `${MESSAGES[locale]['profile.language']} / ${locale.toUpperCase()}`);
+      expect(toggle, `language switch visible in ${locale} header`).toBeDefined();
+      await act(async () => toggle!.click());
+    }
+    expect(host.textContent).toContain(MESSAGES.en['home.cycleTitle']);
+  } finally { await act(async () => root.unmount()); client.clear(); }
+});
+
+
+it('keeps confirmed cycle and awaiting money neutral because neither proves payment', async () => {
+  const api = new MockCollectorApi();
+  vi.spyOn(api, 'incomeCycle').mockResolvedValue({ label: 'Cycle', confirmedVnd: '9001', estimatedVnd: '801', totalVnd: '9802' });
+  vi.spyOn(api, 'income').mockResolvedValue([{ episodeId: 'pending', kind: 'confirmed', amountVnd: '1234', effectiveMinutes: '1', settlementState: 'pending_settlement', simulation: false }]);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'home' }}><Home /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
+    for (const value of ['9001', '1234']) {
+      const amount = [...host.querySelectorAll<HTMLElement>('*')].find(node => !node.children.length && node.textContent === dong(value))!;
+      expect(amount.style.color).toBe('rgb(32, 40, 39)');
+    }
+  } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
+});

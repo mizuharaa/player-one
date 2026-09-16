@@ -148,6 +148,21 @@ export class MockCollectorApi implements CollectorApi {
         privacyNotice: 'Cần giấy phép của quản lý kho trước khi ghi hình.',
         paymentRule: 'Trả theo phút hiệu quả đã duyệt.',
       },
+      ...[
+        ['task-set-table', 'Set a Table', 'Arrange plates, cutlery, glasses and napkins for a meal. Record the natural sequence from an empty surface to a ready table.'],
+        ['task-fold-clothes', 'Fold Clothes', 'Fold a small batch of clean laundry, group similar items and put them away in their usual places.'],
+        ['task-tidy-room', 'Tidy Room', 'Return everyday objects to their storage spots and straighten one room, keeping the hands-on work in view.'],
+        ['task-vacuum-room', 'Vacuum Room', 'Vacuum an accessible floor area at a normal pace, working around furniture and returning the equipment when finished.'],
+        ['task-load-dishwasher', 'Load Dishwasher', 'Move used dishes and utensils into the dishwasher, placing each item securely without blocking the spray arms.'],
+      ].map(([id, title, instructions]) => ({
+        id: id!, title: title!, instructions: instructions!,
+        scenario: 'home' as const, type: 'home', published: true, claimable: true,
+        claimedByMe: false, remainingSlots: 5, currency: 'VND',
+        unitPriceVndPerMinute: '1200', targetMinutes: 3000, claimedMinutes: 0,
+        maxClaimants: 5, claimants: 0,
+        privacyNotice: 'Record only where you have permission. Keep private documents, screens and other people out of frame unless their inclusion is permitted.',
+        paymentRule: 'Demo rate. Payment is based only on effective minutes approved by a reviewer.',
+      })),
     ];
     // Two sessions' worth of episodes, spread over the six APP-23 states.
     this.episodeRows = [
@@ -217,6 +232,9 @@ export class MockCollectorApi implements CollectorApi {
   async signInWithDemoKey(): Promise<void> {
     throw new ApiError('demo_unavailable');
   }
+
+  async demoContext(): Promise<{ runId: null }> { return { runId: null }; }
+  async skipDemoStep(): Promise<void> { throw new ApiError('demo_unavailable'); }
 
   async signOut(): Promise<void> {
     this.me = null;

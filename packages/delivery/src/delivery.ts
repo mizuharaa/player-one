@@ -188,9 +188,9 @@ export interface DeliveryTransport {
    * status — including a non-2xx one. A 403 from the object store is an
    * expired signature and is this state machine's business, not an exception.
    */
-  putFile(uri: string, url: string): Promise<number>;
+  putFile(uri: string, url: string, progress?: (bytesSent: number) => void): Promise<number>;
   /** The same, for one byte range of a file. `end` exclusive. */
-  putRange(uri: string, url: string, start: number, end: number): Promise<number>;
+  putRange(uri: string, url: string, start: number, end: number, progress?: (bytesSent: number) => void): Promise<number>;
 }
 
 export interface DeliveryStore {
@@ -209,6 +209,10 @@ export type DeliveryDeps = {
 
 /** What the screen renders while this runs. Counts of files, never of money. */
 export type DeliveryStep = {
+  phase?: 'registering' | 'sending' | 'verifying' | 'ingesting' | 'done';
+  currentFile?: string;
+  sentBytes?: number;
+  totalBytes?: number;
   sentFiles: number;
   totalFiles: number;
   /** Null until the server has said something about the delivery. */
@@ -294,24 +298,35 @@ async function transfer(
     return file.uri;
   };
 
-  let sentFiles = 0;
+  const totalBytes = record.files.reduce((sum, file) => sum + file.bytes, 0);
+  // Missing multipart ranges come from the server; retained bytes count only after it confirms them.
+  let sentBytes = totalBytes - plan.files.reduce((sum, file) => sum + (file.done ? 0 : file.putUrl !== null
+    ? record.files.find(item => item.relativePath === file.relativePath)?.bytes ?? 0
+    : file.parts.reduce((bytes, part) => bytes + part.end - part.start, 0)), 0);
+  let sentFiles = record.files.length - plan.files.length;
   for (const file of plan.files) {
+    const emit = (bytes = sentBytes) => report({ phase: 'sending', currentFile: file.relativePath, sentFiles, totalFiles: record.files.length, sentBytes: bytes, totalBytes, state: plan.state });
+    emit();
     if (!file.done) {
       const uri = uriOf(file.relativePath);
       if (file.putUrl !== null) {
-        const status = await deps.transport.putFile(uri, file.putUrl);
+        const size = record.files.find(item => item.relativePath === file.relativePath)!.bytes;
+        const status = await deps.transport.putFile(uri, file.putUrl, bytes => { if (Number.isFinite(bytes)) emit(sentBytes + Math.max(0, Math.min(size, bytes))); });
         if (staleSignature(status)) return 'stale';
         if (status < 200 || status >= 300) throw new ApiError('upload_transport_failed');
+        sentBytes += size;
       } else {
         for (const part of file.parts) {
-          const status = await deps.transport.putRange(uri, part.url, part.start, part.end);
+          const size = part.end - part.start;
+          const status = await deps.transport.putRange(uri, part.url, part.start, part.end, bytes => { if (Number.isFinite(bytes)) emit(sentBytes + Math.max(0, Math.min(size, bytes))); });
           if (staleSignature(status)) return 'stale';
           if (status < 200 || status >= 300) throw new ApiError('upload_transport_failed');
+          sentBytes += size;
         }
       }
     }
     sentFiles += 1;
-    report({ sentFiles, totalFiles: plan.files.length, state: plan.state });
+    emit();
   }
   return 'sent';
 }
@@ -342,6 +357,7 @@ export async function runDelivery(
     throw new ApiError('session_basename_unrecognised');
   }
   await deps.store.set(record);
+  report({ phase: 'registering', sentFiles: 0, totalFiles: record.files.length, state: null });
 
   let plan = resume
     ? await deps.api.deliveryPlan(record.uploadId)
@@ -356,7 +372,6 @@ export async function runDelivery(
   if (resolved(plan.state)) return await finish(deps, record, outcomeOf(plan), report);
 
   for (let attempt = 1; ; attempt += 1) {
-    report({ sentFiles: 0, totalFiles: plan.files.length, state: plan.state });
     if ((await transfer(deps, record, plan, report)) === 'sent') break;
     if (attempt > RESIGN_ATTEMPTS) throw new ApiError('upload_urls_expired');
     // Re-registering with the same id re-signs every URL and re-reads what the
@@ -365,6 +380,8 @@ export async function runDelivery(
   }
 
   let outcome: DeliveryOutcome;
+  const totalBytes = record.files.reduce((sum, file) => sum + file.bytes, 0);
+  report({ phase: 'verifying', sentFiles: record.files.length, totalFiles: record.files.length, sentBytes: totalBytes, totalBytes, state: plan.state });
   try {
     outcome = await deps.api.completeDelivery(record.uploadId);
   } catch (err) {
@@ -381,6 +398,7 @@ export async function runDelivery(
   }
 
   for (let i = 0; outcome.state === 'ingesting' && i < POLL_LIMIT; i += 1) {
+    report({ phase: 'ingesting', sentFiles: record.files.length, totalFiles: record.files.length, sentBytes: totalBytes, totalBytes, state: outcome.state });
     await (deps.wait ?? sleep)(POLL_INTERVAL_MS);
     outcome = outcomeOf(await deps.api.deliveryPlan(record.uploadId));
   }
@@ -396,6 +414,6 @@ async function finish(
 ): Promise<DeliveryOutcome> {
   if (outcome.state === 'ingested') await deps.store.clear();
   else await deps.store.set(record);
-  report({ sentFiles: record.files.length, totalFiles: record.files.length, state: outcome.state });
+  report({ phase: outcome.state === 'ingesting' ? 'ingesting' : 'done', sentFiles: record.files.length, totalFiles: record.files.length, state: outcome.state });
   return outcome;
 }

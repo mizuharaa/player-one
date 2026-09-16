@@ -34,6 +34,7 @@ import { useNav } from './nav.tsx';
 import { useT } from './locale.tsx';
 import type { MessageKey } from './i18n.ts';
 import { useTheme } from './theme.tsx';
+import { Icon } from './ui/Icon.tsx';
 
 
 
@@ -80,7 +81,7 @@ export function useTabBarReserve() {
     () => measuredTabHeight,
   );
   const insets = useInsets();
-  return insets.bottom + theme.space[6] + (measuredTabHeight || barHeight(theme)) + theme.space[5];
+  return insets.bottom + theme.space[2] + (measuredTabHeight || barHeight(theme)) + theme.space[3];
 }
 
 export function Header({ title, right, onBack, progress, insetTop = true }: { title: string; right?: ReactNode; onBack?: () => void; progress?: ReactNode; insetTop?: boolean }) {
@@ -95,7 +96,7 @@ export function Header({ title, right, onBack, progress, insetTop = true }: { ti
     {back ? <><View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
       <Pressable accessibilityRole="button" accessibilityLabel={tt('common.back')} onPress={back}
         style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }}>
-        <Text style={{ ...theme.collector.type.h2, color: theme.collector.ink }}>←</Text>
+        <Icon name="arrowLeft" color={theme.collector.ink} />
       </Pressable>{progress}{right}</View>{heading}</> :
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[3] }}>{heading}{right}</View>}
   </View>;
@@ -390,7 +391,7 @@ export function NavRow({ label, subtitle, icon, onPress }: { label: string; subt
       <Text style={{ ...theme.collector.type.body, color: theme.color.foreground, fontFamily: face(theme) }}>{label}</Text>
       {subtitle ? <Text style={{ ...theme.collector.type.caption, color: theme.color.mutedForeground, fontFamily: face(theme) }}>{subtitle}</Text> : null}
     </View>
-    <Text importantForAccessibility="no" style={{ color: theme.color.mutedForeground, ...theme.collector.type.h2 }}>›</Text>
+    <Icon name="chevronRight" size={18} color={theme.color.mutedForeground} />
   </Pressable>;
 }
 
@@ -450,8 +451,8 @@ export function Button({ label, onPress, disabled = false, busy = false, variant
   const [focused, setFocused] = useState(false);
   const blocked = disabled || busy;
   const outline = onDark ? c.glow : c.plum;
-  const fill = variant === 'primary' ? c.sun : variant === 'affirmative' ? c.green : variant === 'destructive' ? c.red : undefined;
-  const ink = variant === 'destructive' ? c.surface : fill ? c.night : outline;
+  const fill = variant === 'primary' ? (onDark ? c.surface : c.night) : variant === 'affirmative' ? c.greenBg : variant === 'destructive' ? c.red : undefined;
+  const ink = variant === 'destructive' || (variant === 'primary' && !onDark) ? c.surface : fill ? c.night : outline;
   return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityHint={accessibilityHint}
     accessibilityState={{ disabled: blocked, busy }} aria-busy={busy} disabled={blocked} onPress={onPress}
     onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
@@ -939,7 +940,7 @@ export function Tag({ label, fg, bg, mark }: { label: string; fg: string; bg: st
         maxWidth: '100%',
       }}
     >
-      {mark === undefined ? null : (
+      {mark === '✓' || mark === '?' || mark === '!' || mark === '×' ? <Icon name={mark === '✓' ? 'check' : mark === '?' ? 'help' : mark === '×' ? 'close' : 'info'} color={fg} size={16} /> : mark === undefined ? null : (
         <Text
           importantForAccessibility="no"
           style={{ color: fg, fontFamily: face(theme), fontSize: theme.collector.type.caption.fontSize,
@@ -968,11 +969,8 @@ export function Tag({ label, fg, bg, mark }: { label: string; fg: string; bg: st
  * How far along something measured is: a task's claimed minutes, a session's
  * files hashed, a delivery's files sent.
  *
- * The bar is `lime[600]` on the muted track, which is the one job `DESIGN.md`
- * gives that step — "500 fills, 600 strokes, 600 is also progress and the focus
- * ring" — and it is the screen's one lime moment. It is determinate and it does
- * not animate: a bar that eases to a figure is showing a number nobody measured
- * yet, and motion here conveys state or it is not there.
+ * The charcoal fill sits on a lighter neutral track. The measured
+ * fraction never animates; an activity indicator can show work within a file.
  *
  * **The figure is never the bar alone.** `label` and `value` print above it
  * through `Row`, so the fraction is readable digit for digit and the bar is the
@@ -981,23 +979,26 @@ export function Tag({ label, fg, bg, mark }: { label: string; fg: string; bg: st
  * string because its unit belongs to the caller: minutes on a task, a file count
  * on a delivery.
  */
-export function Progress({ label, value, fraction }: { label: string; value: string; fraction: number }) {
+export function Progress({ label, value, fraction, busy = false }: { label: string; value: string; fraction: number; busy?: boolean }) {
   const theme = useTheme();
   const clamped = Math.min(1, Math.max(0, Number.isFinite(fraction) ? fraction : 0));
   return (
     <View style={{ gap: theme.space[2] }}>
       <Row label={label} value={value} />
+      {busy ? <ActivityIndicator color={theme.collector.ink} accessibilityLabel={label} /> : null}
       <View
         accessibilityRole="progressbar"
-        accessibilityValue={{ min: 0, max: 100, now: Math.round(clamped * 100) }}
+        accessibilityLabel={label}
+        accessibilityState={{ busy }}
+        accessibilityValue={{ min: 0, max: 100, now: Math.round(clamped * 100), text: value }}
         style={{
           height: theme.space[1.5],
           borderRadius: theme.space[1],
-          backgroundColor: theme.color.muted,
+          backgroundColor: theme.collector.line,
           overflow: 'hidden',
         }}
       >
-        <View style={{ width: `${clamped * 100}%`, height: '100%', backgroundColor: theme.collector.sun }} />
+        <View style={{ width: `${clamped * 100}%`, height: '100%', backgroundColor: theme.collector.ink }} />
       </View>
     </View>
   );
@@ -1072,19 +1073,7 @@ export function Timeline({
                 justifyContent: 'center',
               }}
             >
-              {step.done ? (
-                <Text
-                  style={{
-                    color: theme.color.background,
-                    fontFamily: face(theme),
-                    fontSize: theme.collector.type.caption.fontSize,
-          lineHeight: theme.collector.type.caption.lineHeight,
-
-                  }}
-                >
-                  ✓
-                </Text>
-              ) : null}
+              {step.done ? <Icon name="check" size={15} color={theme.color.background} /> : null}
             </View>
             {i === last ? null : (
               <View
@@ -1309,32 +1298,40 @@ function GatedFilm({
   const player = useVideoPlayer(source, (p) => {
     p.muted = true;
     p.loop = true;
+    p.timeUpdateEventInterval = 1;
     p.play();
   });
   const shown = useRef(new Animated.Value(0)).current;
 
+  const arrived = useRef(false);
+  const arrive = useCallback(() => {
+    if (arrived.current) return;
+    arrived.current = true;
+    Animated.timing(shown, { toValue: 1, duration: fade, useNativeDriver: true }).start();
+  }, [shown, fade]);
   useEffect(() => {
-    let done = false;
-    const arrive = () => {
-      if (done) return;
-      done = true;
-      Animated.timing(shown, { toValue: 1, duration: fade, useNativeDriver: true }).start();
-    };
     const sub = player.addListener('statusChange', ({ status }) => {
-      if (status === 'readyToPlay') arrive();
       if (status === 'error') onFail();
     });
-    if (player.status === 'readyToPlay') arrive();
     if (player.status === 'error') onFail();
-    return () => sub.remove();
-  }, [player, fade, shown, onFail]);
+    let deadline = setTimeout(onFail, 8000);
+    let previous = player.currentTime;
+    const progress = player.addListener('timeUpdate', ({ currentTime }) => {
+      if (!arrived.current || currentTime === previous) return;
+      previous = currentTime;
+      clearTimeout(deadline);
+      deadline = setTimeout(onFail, 8000);
+    });
+    return () => { clearTimeout(deadline); sub.remove(); progress.remove(); };
+  }, [player, onFail]);
 
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, { opacity: shown }]}>
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: shown }]}>
       <VideoView
         player={player}
         contentFit={contentFit}
         nativeControls={false}
+        onFirstFrameRender={arrive}
         accessibilityLabel={label}
         style={StyleSheet.absoluteFill}
       />
@@ -1349,8 +1346,10 @@ export function Film({
   contentFit = 'cover',
   fade,
   active = true,
+  style = StyleSheet.absoluteFill,
 }: {
   active?: boolean;
+  style?: StyleProp<ViewStyle>;
   source: string | number;
   poster: ImageSourcePropType;
   label: string;
@@ -1358,6 +1357,9 @@ export function Film({
   fade: number;
 }) {
   const reduced = useReducedMotion();
+  const tt = useT();
+  const insets = useInsets();
+  const [requested, setRequested] = useState(false);
   const [failed, setFailed] = useState(false);
   const fail = useCallback(() => setFailed(true), []);
   const [lowPower, setLowPower] = useState(true);
@@ -1369,9 +1371,10 @@ export function Film({
     const state = AppState.addEventListener('change', value => setForeground(value === 'active'));
     return () => { mounted = false; power?.remove(); state.remove(); };
   }, []);
-  const live = active && foreground && !reduced && !lowPower && !failed;
+  const live = active && foreground && (requested || (!reduced && !lowPower)) && !failed;
   return (
     <>
+      <View pointerEvents="none" style={style}>
       <Image
         source={poster}
         resizeMode={contentFit}
@@ -1381,6 +1384,12 @@ export function Film({
       />
       {live ? (
         <GatedFilm source={source} label={label} contentFit={contentFit} fade={fade} onFail={fail} />
+      ) : null}
+      </View>
+      {active && foreground && !live ? (
+        <View style={{ position: 'absolute', top: insets.top + 48, right: 16, zIndex: 2 }}>
+          <Button label={tt(failed ? 'landing.retryFilm' : 'landing.playFilm')} onDark onPress={() => { setFailed(false); setRequested(true); }} />
+        </View>
       ) : null}
     </>
   );

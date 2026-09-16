@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from 'react';
 
 type Status = 'idle' | 'loading' | 'readyToPlay' | 'error';
 type Listener = (payload: { status: Status }) => void;
+type ProgressListener = (payload: { currentTime: number }) => void;
 
 /**
  * The player, which in a browser is a handle on a `<video>` the view mounts.
@@ -33,10 +34,13 @@ type Listener = (payload: { status: Status }) => void;
 class StubVideoPlayer {
   muted = false;
   loop = false;
+  timeUpdateEventInterval = 0;
+  get currentTime() { return this.element?.currentTime ?? 0; }
   status: Status = 'idle';
   element: HTMLVideoElement | null = null;
   private wanted = false;
   private listeners = new Set<Listener>();
+  private progressListeners = new Set<ProgressListener>();
 
   constructor(readonly src: string) {}
 
@@ -50,10 +54,15 @@ class StubVideoPlayer {
     this.element?.pause();
   }
 
-  addListener(event: 'statusChange', listener: Listener) {
-    if (event !== 'statusChange') throw new Error(`expo-video stub: no ${event} event`);
-    this.listeners.add(listener);
-    return { remove: () => this.listeners.delete(listener) };
+  addListener(event: 'statusChange', listener: Listener): { remove: () => boolean };
+  addListener(event: 'timeUpdate', listener: ProgressListener): { remove: () => boolean };
+  addListener(event: 'statusChange' | 'timeUpdate', listener: Listener | ProgressListener) {
+    if (event === 'timeUpdate') {
+      this.progressListeners.add(listener as ProgressListener);
+      return { remove: () => this.progressListeners.delete(listener as ProgressListener) };
+    }
+    this.listeners.add(listener as Listener);
+    return { remove: () => this.listeners.delete(listener as Listener) };
   }
 
   /** Called by `VideoView` when its element appears or goes away. */
@@ -64,6 +73,9 @@ class StubVideoPlayer {
     element.loop = this.loop;
     const ready = () => this.emit('readyToPlay');
     element.addEventListener('canplay', ready);
+    element.addEventListener('timeupdate', () => {
+      if (this.timeUpdateEventInterval > 0) for (const listener of this.progressListeners) listener({ currentTime: element.currentTime });
+    });
     element.addEventListener('error', () => this.emit('error'));
     if (element.readyState >= 3) ready();
     if (this.wanted) void element.play().catch(() => this.emit('error'));
@@ -100,11 +112,13 @@ export function VideoView({
   player,
   contentFit = 'contain',
   style,
+  onFirstFrameRender,
   ...rest
 }: {
   player: StubVideoPlayer | null;
   contentFit?: VideoContentFit;
   nativeControls?: boolean;
+  onFirstFrameRender?: () => void;
   style?: Record<string, unknown> | Record<string, unknown>[];
   [key: string]: unknown;
 }) {
@@ -121,6 +135,7 @@ export function VideoView({
     <video
       ref={ref}
       src={player?.src}
+      onLoadedData={onFirstFrameRender}
       playsInline
       aria-label={typeof rest['accessibilityLabel'] === 'string' ? rest['accessibilityLabel'] : undefined}
       /*

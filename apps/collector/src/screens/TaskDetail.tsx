@@ -1,4 +1,5 @@
 import { TaskPhotoLabel } from '../ui/TaskPhotoLabel.tsx';
+import { Icon } from '../ui/Icon.tsx';
 import { taskDuration } from '../duration.ts';
 import { CardScrollContext, useCardScroll } from '../ui/CardSheen.tsx';
 import { Failure } from '../ui/StatePanel.tsx';
@@ -104,6 +105,10 @@ export function TaskDetail() {
   const queryClient = useQueryClient();
   /** The sticky footer's own measured height, so content clears it exactly. */
   const [footer, setFooter] = useState(0);
+  const content = useRef<ScrollView>(null);
+  const [instructionsY, setInstructionsY] = useState(0);
+  const [ratesY, setRatesY] = useState(0);
+  const [contentY, setContentY] = useState(0);
 
   const scroll = useCardScroll();
   const scrollY = scroll.scroll;
@@ -213,21 +218,9 @@ export function TaskDetail() {
 
   return (
     <CardScrollContext.Provider value={scroll}><View style={ground}>
-      <Animated.ScrollView scrollEventThrottle={16} onScroll={reduced ? undefined : scroll.onScroll}
+      <Animated.ScrollView ref={content} scrollEventThrottle={16} onScroll={reduced ? undefined : scroll.onScroll}
         contentContainerStyle={{ paddingBottom: footer + theme.space[6], gap: c.cardGap }}
       >
-        {claim.isError && refusal ? <Failure error={claim.error} text={tt(refusal)} onRetry={() => { if (!submitting.current) { submitting.current = true; claim.mutate(); } }} busy={claim.isPending} /> : refusal ? <View accessibilityLiveRegion="polite">
-            <Text
-              style={{
-                ...c.type.body,
-                color: c.muted,
-                fontFamily: face(theme),
-                textAlign: 'center',
-              }}
-            >
-              {tt(refusal)}
-            </Text>
-          </View> : null}
         {/* The task card photo remains 4:3 here, with scroll-driven parallax. */}
         <View style={{ width: '100%', aspectRatio: 4 / 3, backgroundColor: c.line, overflow: 'hidden' }}>
           <Animated.View style={{ width: '100%', height: '100%', transform: [{ translateY: reduced ? 0 : scrollY.interpolate({ inputRange: [0, 600], outputRange: [0, 180], extrapolate: 'clamp' }) }] }}><Image
@@ -246,7 +239,6 @@ export function TaskDetail() {
             style={{
               position: 'absolute',
               left: c.gutter,
-              right: c.gutter,
               top: insets.top + theme.space[2],
             }}
           >
@@ -264,7 +256,7 @@ export function TaskDetail() {
                 opacity: pressed ? 0.7 : 1,
               })}
             >
-              <Text style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme) }}>←</Text>
+              <Icon name="arrowLeft" color={c.ink} />
             </Pressable>
           </View>
           <View
@@ -284,16 +276,14 @@ export function TaskDetail() {
           </View>
         </View>
 
-        <View style={{ paddingHorizontal: c.gutter, gap: c.cardGap }}>
-          {/* The rate, in the money green ink shade and the largest figure on
-              the screen. §2 puts rates in green; `greenInk` is the shade that
-              passes AA on white, which `contrast.test.ts` holds. */}
-          <Card>
+        <View onLayout={event => setContentY(event.nativeEvent.layout.y)} style={{ paddingHorizontal: c.gutter, gap: c.cardGap }}>
+          {/* A rate is not a payment; reserve green for settled live amounts. */}
+          <View style={{ gap: 12 }}>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', gap: theme.space[2] }}>
               <Text
                 style={{
-                  ...c.type.display,
-                  color: c.greenInk,
+                  ...c.type.h2,
+                  color: c.ink,
                   fontFamily: face(theme),
                   fontVariant: ['tabular-nums'],
                 }}
@@ -319,14 +309,27 @@ export function TaskDetail() {
                 bg={alreadyClaimed ? c.greenBg : full ? c.redBg : c.paper}
               />
             </View>
-          </Card>
+          </View>
 
-          {section('detail.instructions', data.instructions)}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {([
+              { label: 'detail.instructions', icon: 'tasks', onPress: () => content.current?.scrollTo({ y: contentY + instructionsY - insets.top, animated: !reduced }) },
+              { label: 'detail.rates', icon: 'wallet', onPress: () => content.current?.scrollTo({ y: contentY + ratesY - insets.top, animated: !reduced }) },
+              { label: 'profile.help', icon: 'help', onPress: () => nav.push({ name: 'about' }) },
+            ] as const).map(action => <Pressable key={action.label} accessibilityRole="button" accessibilityLabel={tt(action.label)} onPress={action.onPress} style={({ pressed }) => ({ flex: 1, minHeight: 72, borderRadius: 16, backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center', padding: 8, gap: 6, opacity: pressed ? .65 : 1 })}>
+              <Icon name={action.icon} color={c.ink} size={22} />
+              <Text style={{ ...c.type.caption, color: c.ink, fontFamily: face(theme), textAlign: 'center' }}>{tt(action.label)}</Text>
+            </Pressable>)}
+          </View>
+
+          {claim.isError && refusal ? <Failure error={claim.error} text={tt(refusal)} onRetry={() => { if (!submitting.current) { submitting.current = true; claim.mutate(); } }} busy={claim.isPending} /> : refusal ? <Text accessibilityLiveRegion="polite" style={{ ...c.type.body, color: c.muted, fontFamily: face(theme) }}>{tt(refusal)}</Text> : null}
+
+          <View onLayout={event => setInstructionsY(event.nativeEvent.layout.y)}>{section('detail.instructions', data.instructions)}</View>
 
           {/* "Task rates": server numbers only. The sentence under the rows is
               there because the obvious missing row is a total, and saying why
               it is missing is better than leaving the collector to multiply. */}
-          <Card>
+          <View onLayout={event => setRatesY(event.nativeEvent.layout.y)}><Card>
             <Text
               accessibilityRole="header"
               style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme), letterSpacing: -0.2 }}
@@ -344,7 +347,7 @@ export function TaskDetail() {
             />
             <Body muted>{tt('detail.noTotal')}</Body>
             <Body muted>{data.paymentRule.trim() === '' ? tt('detail.notSupplied') : data.paymentRule}</Body>
-          </Card>
+          </Card></View>
 
           {section('detail.where', data.privacyNotice)}
         </View>

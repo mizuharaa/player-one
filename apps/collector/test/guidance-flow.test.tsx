@@ -42,8 +42,8 @@ vi.mock('../src/ui.tsx', () => ({
   Card: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   // `footer` is §7's pinned commit control; without it here the training
   // screen has no button to press.
-  Screen: ({ title, footer, children }: { title: string; footer?: ReactNode; children: ReactNode }) =>
-    <main><h1>{title}</h1>{children}<footer>{footer}</footer></main>,
+  Screen: ({ title, right, footer, children }: { title: string; right?: ReactNode; footer?: ReactNode; children: ReactNode }) =>
+    <main><h1>{title}</h1>{right}{children}<footer>{footer}</footer></main>,
   Note: ({ text }: { text: string }) => <p role="status">{text}</p>,
   Loading: () => <p role="status">loading</p>,
   Row: ({ label, value }: { label: string; value: string }) => <p>{label}: {value}</p>,
@@ -112,6 +112,31 @@ afterEach(async () => {
   client.clear();
   container.remove();
   vi.restoreAllMocks();
+});
+
+it('audits a demo exit from an unanswered preparation step without creating a session', async () => {
+  vi.spyOn(api, 'demoContext').mockResolvedValue({ runId: 'demo-test' });
+  const audit = vi.spyOn(api, 'skipDemoStep').mockResolvedValue();
+  const create = vi.spyOn(api, 'createSession');
+  await mount({ name: 'sessionCreate' });
+  const label = `${MESSAGES.vi['onboarding.skip']} · ${MESSAGES.vi['demo.title']}`;
+  await settle(() => expect(container.textContent).toContain(label));
+  await tap(label);
+  await settle(() => expect(container.querySelector('h1')?.textContent).toBe('uploads'));
+  expect(audit).toHaveBeenCalledTimes(1);
+  expect(audit).toHaveBeenCalledWith('sessionCreate.task', 'uploads');
+  expect(create).not.toHaveBeenCalled();
+});
+
+it('keeps the reminder open when its demo skip audit fails', async () => {
+  vi.spyOn(api, 'demoContext').mockResolvedValue({ runId: 'demo-test' });
+  vi.spyOn(api, 'skipDemoStep').mockRejectedValue(new Error('offline'));
+  await mount({ name: 'sessionReminder' });
+  const label = `${MESSAGES.vi['onboarding.skip']} · ${MESSAGES.vi['demo.title']}`;
+  await settle(() => expect(container.textContent).toContain(label));
+  await tap(label);
+  expect(container.querySelector('h1')?.textContent).toBe(HEADSET_COPY.shiftTitle.vi);
+  expect(container.textContent).toContain(MESSAGES.vi['common.actionFailed']);
 });
 
 describe('guidance in the collector flow', () => {
@@ -227,7 +252,7 @@ it('never posts training completion when continuing from the placeholder', async
   await tap(MESSAGES.vi['exam.title']);
   expect(container.querySelector('h1')?.textContent).toBe('exam');
   expect(fetchFn).toHaveBeenCalled();
-  expect(fetchFn.mock.calls.every(([url, init]) => String(url).endsWith('/api/me/profile') && init?.method === 'GET')).toBe(true);
+  expect(fetchFn.mock.calls.every(([url, init]) => ['/api/me/profile', '/api/me/demo'].some(path => String(url).endsWith(path)) && init?.method === 'GET')).toBe(true);
 });
 
 

@@ -81,3 +81,12 @@ export function incomeStatus(entry: IncomeEntry | undefined, reviewFailed = fals
   if (entry?.settlementState === 'cannot_be_paid') return 'settlement.cannot_be_paid';
   return entry?.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated';
 }
+
+
+/** Green is evidence of a positive live payment, never a rate or a reviewed estimate. */
+export function isLivePaid(entry: IncomeEntry | undefined, reviewFailed = false): boolean {
+  const amount = entry?.amountVnd ?? '';
+  return !reviewFailed && entry?.kind === 'confirmed' && entry.simulation === false
+    && (entry.settlementState === 'paid' || entry.settlementState === 'manually_paid')
+    && /^\d+(?:\.\d+)?$/.test(amount) && /[1-9]/.test(amount);
+}

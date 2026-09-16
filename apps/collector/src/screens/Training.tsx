@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
+import { DemoSkip } from '../ui/DemoSkip.tsx';
 import { Failure, StatePanel } from '../ui/StatePanel.tsx';
 import { Image, View } from 'react-native';
 import { useNav } from '../nav.tsx';
@@ -20,7 +21,7 @@ export function Training() {
   const theme = useTheme();
   const { locale } = useLocale();
   return (
-    <Screen title={tt('training.title')}>
+    <Screen title={tt('training.title')} right={<DemoSkip from="training" to="exam" onSkipped={() => nav.push({ name: 'exam' })} />}>
       {profile.isError ? <Failure error={profile.error} text={tt('common.loadFailed')} onRetry={() => void profile.refetch()} busy={profile.isFetching} /> : null}
       {/*
         An `aspectRatio` box with `resizeMode="cover"`, never a width/height

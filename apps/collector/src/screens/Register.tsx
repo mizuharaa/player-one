@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
+import { DemoSkip } from '../ui/DemoSkip.tsx';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
@@ -53,7 +54,7 @@ export function Register() {
   });
 
   return (
-    <Screen title={tt('register.title')}>
+    <Screen title={tt('register.title')} right={<DemoSkip from="register" to="agreements" disabled={register.isPending} onSkipped={() => nav.push({ name: 'agreements' })} />}>
       <Body muted>{tt('register.intro')}</Body>
 
       {/* One grouped object, not two fields: the pair is the control. */}

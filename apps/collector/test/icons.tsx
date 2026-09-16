@@ -1,0 +1,3 @@
+/** Library vectors are exercised by browser captures, not the Node native bridge. */
+function Glyph({ color, size }: { color?: string; size?: number }) { return <svg aria-hidden="true" width={size} height={size} stroke={color} />; }
+export const ArrowDown = Glyph, ArrowLeft = Glyph, ArrowUp = Glyph, ArrowUpRight = Glyph, Bell = Glyph, Camera = Glyph, Check = Glyph, ChevronRight = Glyph, CircleCheck = Glyph, CircleHelp = Glyph, Clock = Glyph, FileText = Glyph, House = Glyph, Info = Glyph, LayoutGrid = Glyph, ListChecks = Glyph, MessageCircle = Glyph, Plus = Glyph, Search = Glyph, Settings = Glyph, ShieldCheck = Glyph, Upload = Glyph, UserRound = Glyph, Wallet = Glyph, X = Glyph, Play = Glyph;

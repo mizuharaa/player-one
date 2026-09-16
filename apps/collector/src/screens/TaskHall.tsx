@@ -1,4 +1,5 @@
 import { TaskCard } from '../ui/TaskCard.tsx';
+import { Icon } from '../ui/Icon.tsx';
 import { Failure } from '../ui/StatePanel.tsx';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
@@ -542,35 +543,10 @@ function SearchEntry({ text, onPress }: { text: string; onPress: () => void }) {
   );
 }
 
-/** The magnifier, drawn rather than imported: two shapes, one stroke. */
+/** The same licensed icon family as the dock and the recording workflow. */
 function Lens() {
   const theme = useTheme();
-  const c = theme.collector;
-  return (
-    <View importantForAccessibility="no" style={{ width: theme.space[5], height: theme.space[5], justifyContent: 'center' }}>
-      <View
-        style={{
-          width: theme.space[4],
-          height: theme.space[4],
-          borderRadius: c.radius.pill,
-          borderWidth: 2,
-          borderColor: c.muted,
-        }}
-      />
-      <View
-        style={{
-          position: 'absolute',
-          right: 0,
-          bottom: theme.space[1],
-          width: theme.space[2],
-          height: 2,
-          borderRadius: 1,
-          backgroundColor: c.muted,
-          transform: [{ rotate: '45deg' }],
-        }}
-      />
-    </View>
-  );
+  return <Icon name="search" size={20} color={theme.collector.muted} />;
 }
 
 /**
@@ -875,7 +851,7 @@ function SearchOverlay({
               <Text
                 style={{
                   ...c.type.caption,
-                  color: c.greenInk,
+                  color: c.ink,
                   fontFamily: face(theme),
                   fontVariant: ['tabular-nums'],
                 }}
@@ -920,9 +896,11 @@ export function Sheet({
   const insets = useInsets();
   const c = theme.collector;
   const tt = useT();
+  const { width } = useWindowDimensions();
+  const wide = width >= 640;
   return (
     <Modal visible={open} transparent animationType="none" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+      <View style={{ flex: 1, justifyContent: wide ? 'center' : 'flex-end' }}>
         {/* The dim behind the sheet is the night ground at 55%, drawn as its
             own layer so the colour comes from `theme.collector.night` instead
             of an `rgba()` literal. `theme.collector` has no `scrim` token; one
@@ -934,12 +912,19 @@ export function Sheet({
           importantForAccessibility="no-hide-descendants"
           style={[StyleSheet.absoluteFill, { backgroundColor: c.night, opacity: 0.55 }]}
         />
-        <Pressable accessibilityRole="button" accessibilityLabel={tt('common.close')} onPress={onClose} style={{ flex: 1 }} />
+        <Pressable accessibilityRole="button" accessibilityLabel={tt('common.close')} onPress={onClose} style={StyleSheet.absoluteFill} />
         <View
+          testID="preferences-sheet-surface"
           style={{
-            backgroundColor: c.surface,
-            borderTopLeftRadius: c.radius.card * 1.5,
-            borderTopRightRadius: c.radius.card * 1.5,
+            width: wide ? Math.min(560, width - 32) : '100%',
+            maxWidth: 560,
+            alignSelf: 'center',
+            backgroundColor: c.paper,
+            borderRadius: wide ? c.radius.card : undefined,
+            borderTopLeftRadius: c.radius.card,
+            borderTopRightRadius: c.radius.card,
+            borderWidth: 1,
+            borderColor: c.line,
             paddingHorizontal: c.gutter,
             paddingTop: c.gutter,
             paddingBottom: c.gutter + Math.max(insets.bottom, theme.space[6]),
@@ -947,19 +932,12 @@ export function Sheet({
             gap: theme.space[3],
           }}
         >
-          <View
-            importantForAccessibility="no"
-            style={{
-              alignSelf: 'center',
-              width: theme.space[10],
-              height: theme.space[1],
-              borderRadius: c.radius.pill,
-              backgroundColor: c.line,
-            }}
-          />
-          <Text accessibilityRole="header" style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme) }}>
-            {title}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[3] }}>
+            <Text accessibilityRole="header" style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme), flex: 1 }}>
+              {title}
+            </Text>
+            <Button label={tt('common.close')} variant="ghost" onPress={onClose} />
+          </View>
           <ScrollView contentContainerStyle={{ gap: theme.space[3], paddingBottom: theme.space[2] }}>
             {children}
           </ScrollView>
@@ -1196,34 +1174,31 @@ export function PreferencesSheet({
                 // column count and survives 320 dp and 1.3× together.
                 flexBasis: '47%',
                 flexGrow: 1,
-                minHeight: theme.space[16],
-                borderRadius: c.radius.card,
-                borderWidth: 2,
+                minHeight: 56,
+                borderRadius: 14,
+                borderWidth: 1,
                 borderColor: picked ? c.plum : c.line,
-                backgroundColor: picked ? c.plum : c.surface,
-                padding: c.cardPad,
-                justifyContent: 'flex-end',
+                backgroundColor: picked ? c.glow : c.paper,
+                padding: theme.space[3],
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: theme.space[2],
                 opacity: pressed ? 0.85 : 1,
               })}
             >
-              {/* A tick as well as the fill: the choice must be readable
-                  without the plum. */}
-              <Text
-                importantForAccessibility="no"
-                style={{ ...c.type.body, color: picked ? c.surface : c.muted, fontFamily: face(theme) }}
-              >
-                {picked ? '✓' : ''}
-              </Text>
               <Text
                 style={{
                   ...c.type.body,
-                  color: picked ? c.surface : c.ink,
+                  color: c.ink,
                   fontFamily: face(theme),
                   fontWeight: theme.fontWeight.semibold,
+                  flexShrink: 1,
                 }}
               >
                 {tt(`scenario.${scenario}`)}
               </Text>
+              {picked ? <Icon name="circleCheck" size={20} color={c.plum} /> : null}
             </Pressable>
           );
         })}
@@ -1267,7 +1242,8 @@ function MinutesSlider({
   const atRef = useRef(at);
   atRef.current = at;
   const widthRef = useRef(0);
-  widthRef.current = track;
+  widthRef.current = Math.max(0, track - theme.space[12]);
+  const dragStart = useRef(at);
 
   const move = (next: number) => {
     const clamped = Math.max(0, Math.min(MINUTE_STOPS.length - 1, next));
@@ -1284,11 +1260,12 @@ function MinutesSlider({
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => { dragStart.current = atRef.current; },
       onPanResponderMove: (_event, gesture) => {
         const span = widthRef.current;
         if (span <= 0) return;
         const step = span / (MINUTE_STOPS.length - 1);
-        moveRef.current(atRef.current + Math.round(gesture.dx / step));
+        moveRef.current(dragStart.current + Math.round(gesture.dx / step));
       },
     }),
   ).current;
@@ -1339,7 +1316,7 @@ function MinutesSlider({
         {...pan.panHandlers}
         style={{ minHeight: theme.space[12], justifyContent: 'center' }}
       >
-        <View style={{ height: theme.space[1], borderRadius: c.radius.pill, backgroundColor: c.line }}>
+        <View style={{ marginHorizontal: theme.space[6], height: theme.space[1], borderRadius: c.radius.pill, backgroundColor: c.line }}>
           <View
             style={{
               width: `${(at / (MINUTE_STOPS.length - 1)) * 100}%`,
@@ -1351,10 +1328,10 @@ function MinutesSlider({
         </View>
         {/* A 44 pt handle, centred on its stop and kept inside the track. */}
         <View
+          testID="preferences-slider-handle"
           style={{
             position: 'absolute',
-            left: `${(at / (MINUTE_STOPS.length - 1)) * 100}%`,
-            marginLeft: -theme.space[6],
+            left: Math.max(0, track - theme.space[12]) * at / (MINUTE_STOPS.length - 1),
             width: theme.space[12],
             height: theme.space[12],
             alignItems: 'center',

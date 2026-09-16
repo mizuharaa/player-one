@@ -10,16 +10,30 @@ import { expect, it, vi } from 'vitest';
 import { AccessibilityInfo } from 'react-native';
 import { ToastProvider, useToast } from '../src/ui/Toast.tsx';
 import { Splash } from '../src/screens/Splash.tsx';
-import { Button, Film, Header, LegalLine, Note, Screen, ListScreen, useTabBarReserve } from '../src/ui.tsx';
-import { useVideoPlayer } from 'expo-video';
+import { Button, Film, Header, LegalLine, Note, Progress, Screen, ListScreen, useTabBarReserve } from '../src/ui.tsx';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { isLowPowerModeEnabledAsync } from 'expo-battery';
 
 vi.mock('react-native', async () => ({ ...await import('react-native-web'),
   AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
   AccessibilityInfo: { isReduceMotionEnabled: vi.fn(async () => false), addEventListener: () => ({ remove() {} }) },
 }));
-vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: vi.fn(() => ({ status: 'idle', addListener: () => ({ remove() {} }) })) }));
+vi.mock('expo-video', () => ({ VideoView: vi.fn(() => null), useVideoPlayer: vi.fn(() => ({ status: 'idle', addListener: () => ({ remove() {} }) })) }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+it('shows activity and a visible track while the first file is still sending', async () => {
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<Progress label="Sending" value="0/1 files" fraction={0} busy />));
+    const bars = host.querySelectorAll<HTMLElement>('[role="progressbar"]');
+    expect(bars.length).toBe(2); // Activity indicator plus the measured-file track.
+    const progress = bars[1]!;
+    expect(progress.style.backgroundColor).toBe('rgb(184, 194, 185)');
+    expect((progress.firstElementChild as HTMLElement).style.backgroundColor).toBe('rgb(32, 40, 39)');
+    expect((progress.firstElementChild as HTMLElement).style.width).toBe('0%');
+    expect(host.textContent).toContain('0/1 files');
+  } finally { await act(async () => root.unmount()); }
+});
 
 it('blocks repeat presses while busy and keeps a blocking error visible until retry', async () => {
   const host = document.createElement('div');
@@ -118,7 +132,7 @@ it('keeps a slow decoder mounted over the poster and removes it on an actual err
   vi.useFakeTimers();
   let statusChanged!: (event: { status: string }) => void;
   const remove = vi.fn();
-  vi.mocked(useVideoPlayer).mockReturnValue({ status: 'loading', addListener: (_name: string, listener: typeof statusChanged) => { statusChanged = listener; return { remove }; } } as never);
+  vi.mocked(useVideoPlayer).mockReturnValue({ status: 'loading', addListener: (name: string, listener: typeof statusChanged) => { if (name === 'statusChange') statusChanged = listener; return { remove }; } } as never);
   const host = document.createElement('div'); document.body.append(host);
   const root = createRoot(host);
   try {
@@ -128,7 +142,7 @@ it('keeps a slow decoder mounted over the poster and removes it on an actual err
     expect(remove).not.toHaveBeenCalled();
     await act(async () => statusChanged({ status: 'readyToPlay' }));
     await act(async () => statusChanged({ status: 'error' }));
-    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledTimes(2);
   } finally { await act(async () => root.unmount()); host.remove(); vi.useRealTimers(); }
 });
 
@@ -212,4 +226,72 @@ it('keeps secondary text readable on paper, white cards and every Home gradient 
     expect(ratio(polish.hairline, theme.collector.paper)).toBeGreaterThanOrEqual(1.5);
     expect(ratio(polish.homeBorder, theme.collector.paper)).toBeGreaterThanOrEqual(3);
   } finally { await act(async () => root.unmount()); }
+});
+
+
+it.each(['power', 'motion', 'pending'] as const)('offers explicit playback when %s prevents autoplay', async gate => {
+  vi.mocked(useVideoPlayer).mockClear();
+  vi.mocked(isLowPowerModeEnabledAsync).mockImplementationOnce(() => gate === 'pending' ? new Promise(() => {}) : Promise.resolve(gate === 'power'));
+  vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValueOnce(gate === 'motion');
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<MotionProvider><Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Film" fade={0} /></MotionProvider>));
+    expect(useVideoPlayer).not.toHaveBeenCalled();
+    const play = host.querySelector<HTMLElement>('[role="button"]');
+    expect(play).not.toBeNull();
+    await act(async () => play!.click());
+    expect(useVideoPlayer).toHaveBeenCalled();
+  } finally { await act(async () => root.unmount()); }
+});
+
+it('keeps the video hidden until the first rendered frame and offers retry after failure', async () => {
+  let statusChanged!: (event: { status: string }) => void;
+  vi.mocked(useVideoPlayer).mockReturnValue({ status: 'readyToPlay', addListener: (name: string, listener: typeof statusChanged) => { if (name === 'statusChange') statusChanged = listener; return { remove() {} }; } } as never);
+  vi.mocked(VideoView).mockImplementation(() => <div data-testid="native-video" />);
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<MotionProvider><Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Film" fade={0} /></MotionProvider>));
+    expect(host.querySelector('[data-testid="native-video"]')?.parentElement?.style.opacity).toBe('0');
+    await act(async () => vi.mocked(VideoView).mock.calls.at(-1)![0].onFirstFrameRender!());
+    expect(host.querySelector('[data-testid="native-video"]')?.parentElement?.style.opacity).toBe('1');
+    await act(async () => statusChanged({ status: 'error' }));
+    expect(host.querySelector('[data-testid="native-video"]')).toBeNull();
+    const retry = host.querySelector<HTMLElement>('[role="button"]');
+    expect(retry).not.toBeNull();
+    await act(async () => retry!.click());
+    expect(host.querySelector('[data-testid="native-video"]')).not.toBeNull();
+  } finally { await act(async () => root.unmount()); vi.mocked(VideoView).mockImplementation(() => null); }
+});
+
+
+it('offers retry when decoding never produces a first frame', async () => {
+  vi.useFakeTimers();
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<MotionProvider><Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Film" fade={0} /></MotionProvider>));
+    expect(host.querySelector('[role="button"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTime(8000));
+    expect(host.querySelector('[role="button"]')).not.toBeNull();
+    expect(host.querySelector('[role="img"]')).not.toBeNull();
+  } finally { await act(async () => root.unmount()); vi.useRealTimers(); }
+});
+
+
+it('offers retry after playback stops advancing, even after the first frame', async () => {
+  vi.useFakeTimers();
+  const listeners = new Map<string, (event: { currentTime: number }) => void>();
+  vi.mocked(useVideoPlayer).mockReturnValue({ status: 'readyToPlay', currentTime: 0, addListener: (name: string, listener: (event: { currentTime: number }) => void) => { listeners.set(name, listener); return { remove: () => listeners.delete(name) }; } } as never);
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<MotionProvider><Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Film" fade={0} /></MotionProvider>));
+    await act(async () => vi.mocked(VideoView).mock.calls.at(-1)![0].onFirstFrameRender!());
+    await act(async () => vi.advanceTimersByTime(7000));
+    await act(async () => listeners.get('timeUpdate')?.({ currentTime: 1 }));
+    await act(async () => vi.advanceTimersByTime(7000));
+    expect(host.querySelector('[role="button"]')).toBeNull();
+    await act(async () => listeners.get('timeUpdate')?.({ currentTime: 1 }));
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(host.querySelector('[role="button"]')).not.toBeNull();
+    expect(listeners.size).toBe(0);
+  } finally { await act(async () => root.unmount()); vi.useRealTimers(); }
 });

@@ -98,7 +98,7 @@ export function ImageBox({
         maxWidth: '100%',
         borderRadius: radius,
         overflow: 'hidden',
-        backgroundColor: theme.color.discover.soft,
+        backgroundColor: theme.collector.line,
       }}
     >
       <Image
@@ -125,11 +125,8 @@ export function ImageBox({
  * unit. An ellipsised pay rate is not acceptable at any width, so neither
  * `Text` here carries `numberOfLines`.
  *
- * Plum rather than lime, so it can appear on every card in a list without
- * spending the screen's one lime (§0.2), and on the image rather than under it
- * because a rate over a photograph needs its own ground to stay legible. The
- * §0.2 rule that a money *total* is never inside a coloured box is not broken
- * by this: a rate on a photograph is the stated exception.
+ * Neutral ink on an opaque ground keeps a rate readable over a photo without
+ * implying that it is already paid.
  */
 export function PriceChip({ value, unit }: { value: string; unit: string }) {
   const theme = useTheme();
@@ -139,7 +136,7 @@ export function PriceChip({ value, unit }: { value: string; unit: string }) {
         alignSelf: 'flex-start',
         maxWidth: '100%',
         flexDirection: 'column',
-        backgroundColor: theme.collector.greenBg,
+        backgroundColor: theme.collector.surface,
         borderRadius: theme.radius.base,
         paddingVertical: theme.space[2],
         paddingHorizontal: theme.space[3],
@@ -148,13 +145,13 @@ export function PriceChip({ value, unit }: { value: string; unit: string }) {
       <Text
         style={{
           ...textStyle(theme, 'lead'),
-          color: theme.collector.greenInk,
+          color: theme.collector.ink,
           fontWeight: theme.fontWeight.display,
         }}
       >
         {value}
       </Text>
-      <Text style={{ ...textStyle(theme, 'micro'), color: theme.collector.greenInk }}>{unit}</Text>
+      <Text style={{ ...textStyle(theme, 'micro'), color: theme.collector.ink }}>{unit}</Text>
     </View>
   );
 }
@@ -187,7 +184,7 @@ export function ScreenTitle({
       accessibilityRole="header"
       style={{
         ...textStyle(theme, compact ? 'section' : 'title'),
-        color: theme.color.discover.ink,
+        color: theme.collector.ink,
         fontWeight: theme.fontWeight.display,
       }}
     >
@@ -208,7 +205,7 @@ export function WarmScreen({ children, tabRoot = true }: { children: ReactNode; 
   const theme = useTheme();
   const reserve = useTabBarReserve();
   return (
-    <View style={{ flex: 1, backgroundColor: theme.color.discover.paper }}>
+    <View style={{ flex: 1, backgroundColor: theme.collector.paper }}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
@@ -244,7 +241,7 @@ export function WarmList<T>({
   const theme = useTheme();
   const reserve = useTabBarReserve();
   return (
-    <View style={{ flex: 1, backgroundColor: theme.color.discover.paper }}>
+    <View style={{ flex: 1, backgroundColor: theme.collector.paper }}>
       <FlatList
         key={numColumns === undefined ? 'one' : `cols-${numColumns}`}
         data={data as T[]}
@@ -287,7 +284,7 @@ export function WarmCard({
       collapsable={false}
       style={[
         {
-          backgroundColor: theme.color.discover.surface,
+          backgroundColor: theme.collector.surface,
           borderRadius: theme.radius.xl,
           padding: theme.space[5],
           gap: theme.space[3],
@@ -343,7 +340,7 @@ export function EmptyState({
       <Text
         style={{
           ...textStyle(theme, 'body'),
-          color: theme.color.discover.muted,
+          color: theme.collector.muted,
           textAlign: 'center',
         }}
       >
@@ -362,7 +359,7 @@ export function LoadFailed({ onRetry }: { onRetry: () => void }) {
   const tt = useT();
   return (
     <View style={{ gap: theme.space[4], paddingVertical: theme.space[8] }}>
-      <Text style={{ ...textStyle(theme, 'body'), color: theme.color.discover.ink, textAlign: 'center' }}>
+      <Text style={{ ...textStyle(theme, 'body'), color: theme.collector.ink, textAlign: 'center' }}>
         {tt('common.loadFailed')}
       </Text>
       <Button label={tt('common.retry')} onPress={onRetry} />
@@ -492,7 +489,7 @@ export function LimeTrack({ fraction }: { fraction: number }) {
         height: theme.space[1.5],
         alignSelf: 'stretch',
         borderRadius: theme.radius.pill,
-        backgroundColor: theme.color.discover.soft,
+        backgroundColor: theme.collector.line,
         overflow: 'hidden',
       }}
     >

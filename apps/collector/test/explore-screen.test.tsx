@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ApiProvider } from '../src/api/context.tsx';
 import { MockCollectorApi } from '../src/api/mock.ts';
-import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
+import { DEFAULT_LOCALE, LOCALES, MESSAGES } from '../src/i18n.ts';
 import { LocaleProvider } from '../src/locale.tsx';
 import { NavProvider } from '../src/nav.tsx';
 import { ThemeProvider } from '../src/theme.tsx';
@@ -63,7 +63,7 @@ vi.mock('expo-secure-store', () => ({
   deleteItemAsync: async (key: string) => { store.delete(key); },
 }));
 
-const { TaskHall, clearPreferences } = await import('../src/screens/TaskHall.tsx');
+const { TaskHall, Sheet, clearPreferences } = await import('../src/screens/TaskHall.tsx');
 const { GuideProvider } = await import('../src/guide/Guide.tsx');
 
 declare global {
@@ -392,11 +392,24 @@ it('renders a seeded task title, exact price and type badge in the shared card',
   expect(page()).toContain(vnd('1234.5678'));
   expect(page()).toContain(m['hall.perMinute']);
   const price = document.body.querySelector<HTMLElement>('[data-testid="task-price"]')!;
-  expect(price.style.fontSize).toBe('22px');
+  expect(price.style.fontSize).toBe('20px');
   expect(price.style.whiteSpace).not.toBe('nowrap');
   expect(price.style.textOverflow).not.toBe('ellipsis');
   expect(page()).toContain(m['taskCard.home']);
   expect(page()).toContain(m['hall.imageLabel']);
+});
+
+it('offers eight distinct demo tasks with original instructions and no imported competitor imagery', async () => {
+  const tasks = await api.tasks();
+  expect(tasks).toHaveLength(8);
+  expect(new Set(tasks.map(task => task.id)).size).toBe(8);
+  for (const title of ['Set a Table', 'Fold Clothes', 'Tidy Room', 'Vacuum Room', 'Load Dishwasher']) {
+    const task = tasks.find(row => row.title === title)!;
+    expect(task.instructions.length).toBeGreaterThan(60);
+    expect(task.claimable).toBe(true);
+    expect(task).not.toHaveProperty('imageUrl');
+    expect(await api.task(task.id)).toEqual(task);
+  }
 });
 
 it.each([120, 121, 3000])('formats a server duration of %s minutes without losing the remainder', async targetMinutes => {
@@ -405,4 +418,26 @@ it.each([120, 121, 3000])('formats a server duration of %s minutes without losin
   await act(async () => root.render(<ThemeProvider><LocaleProvider><TaskCard task={seed} onPress={() => {}} /></LocaleProvider></ThemeProvider>));
   const expected = targetMinutes === 120 ? `120 ${m['detail.minutes']}` : targetMinutes === 121 ? `2 ${m['taskCard.hours']} 1 ${m['detail.minutes']}` : `50 ${m['taskCard.hours']}`;
   expect(page()).toContain(expected);
+});
+
+
+it.each(LOCALES)('shared sheet has a visible localized Close without requiring a drag (%s)', async locale => {
+  const close = vi.fn();
+  await act(async () => root.render(<LocaleProvider initialLocale={locale}><Sheet open onClose={close} title="Preferences"><span>Draft</span></Sheet></LocaleProvider>));
+  const control = controls().find(node => node.getAttribute('aria-label') === MESSAGES[locale]['common.close'] && node.textContent?.trim() === MESSAGES[locale]['common.close']);
+  expect(control).toBeDefined();
+  await act(async () => control!.click());
+  expect(close).toHaveBeenCalledOnce();
+});
+
+it('dismisses unsaved preferences with the visible Close and keeps the saved preferences unchanged', async () => {
+  await mount();
+  await act(async () => named(m['explore.filters'])!.click());
+  await act(async () => named(m['explore.prefsTitle'])!.click());
+  await act(async () => named(m['scenario.warehouse'])!.click());
+  const close = controls().find(node => node.getAttribute('aria-label') === m['common.close'] && node.textContent?.trim() === m['common.close']);
+  expect(close).toBeDefined();
+  await act(async () => close!.click());
+  expect(named(m['explore.savePrefs'])).toBeUndefined();
+  expect([...store.keys()].some(key => key.startsWith('playerone.collector.prefs.'))).toBe(false);
 });

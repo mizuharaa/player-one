@@ -1,12 +1,6 @@
 /**
- * Every user-facing string in the collector app, Vietnamese first.
- *
- * LOC-01: the collector app is in Vietnamese, P0. English and Simplified
- * Chinese ride along — English because the pilot's own staff read it, Chinese
- * because PaXini's people do — and the completeness check holds all three to
- * the same standard as the base. Same mechanism as
- * `packages/api/src/i18n.ts`, which this file deliberately mirrors: a flat
- * map of dotted keys, every locale holding every key, asserted by a test.
+ * Every user-facing string in English, Vietnamese and Simplified Chinese.
+ * English is the default. Every locale holds the same flat dotted keys.
  *
  * Vietnamese is the BASE locale: `MessageKey` derives from `vi`, so a key
  * added in English only does not typecheck, and a key missing from English
@@ -16,7 +10,7 @@
 export const LOCALES = ['vi', 'en', 'zh'] as const;
 export type Locale = (typeof LOCALES)[number];
 
-export const DEFAULT_LOCALE: Locale = 'vi';
+export const DEFAULT_LOCALE: Locale = 'en';
 
 const vi = {
   'hall.search': 'Tìm nhiệm vụ hoặc địa điểm',
@@ -48,7 +42,7 @@ const vi = {
 
   'common.back': 'Quay lại',
   'common.cancel': 'Hủy',
-  'uploads.cancelled': 'Đã hủy tải lên. Bạn có thể tiếp tục sau; tệp gốc vẫn được giữ.',
+  'uploads.cancelled': 'Đã dừng tải lên. Nhấn Thử lại để tiếp tục. Tệp gốc vẫn được giữ.',
   'common.loading': 'Đang tải…',
   'common.language': 'English',
   'common.retry': 'Thử lại',
@@ -72,8 +66,19 @@ const vi = {
   'landing.slogan2': 'Sống như mọi ngày.',
   'landing.slogan3': 'Phút nào được duyệt, phút đó có tiền.',
   'landing.videoLabel': 'Video giới thiệu Player One',
+  'landing.illustrativeScenes': 'Cảnh ghi hình minh họa',
+  'landing.playFilm': 'Phát video',
+  'landing.retryFilm': 'Thử phát lại',
   'landing.centre': 'Điểm hỗ trợ',
   'landing.signIn': 'Đăng nhập',
+  'counter.bringTitle': 'Mang theo gì',
+  'counter.bring': 'Mang theo điện thoại bạn dùng để đăng nhập, có thể nhận mã xác minh. Nếu đã có tài khoản, hãy báo nhân viên.',
+  'counter.whereTitle': 'Đến đâu',
+  'counter.where': 'Trước khi đến, hãy hỏi người phụ trách tuyển cộng tác viên địa chỉ và giờ làm việc của trung tâm được phân công. Ứng dụng chưa có địa chỉ hoặc số liên hệ đã xác nhận.',
+  'counter.staffTitle': 'Nhân viên hỗ trợ gì',
+  'counter.staff': 'Nhân viên kiểm tra hoặc tạo hồ sơ cộng tác viên, ghi nhận các thỏa thuận bạn đã đồng ý và kết quả đánh giá. Khi giao thiết bị, nhân viên gắn thiết bị với hồ sơ của bạn.',
+  'counter.nextTitle': 'Sau khi đăng ký',
+  'counter.next': 'Đăng nhập, đọc và chấp thuận các thỏa thuận, rồi làm bài kiểm tra. Bạn cần đạt bài kiểm tra trước khi nhận công việc. Dữ liệu ghi hình được bàn giao, tải lên và duyệt; thu nhập dựa trên số phút hiệu dụng đã duyệt. Đăng ký không đồng nghĩa với đã được thanh toán.',
   'landing.register': 'Đăng ký tại quầy',
   'landing.registerNote':
     'Quầy hỗ trợ sẽ mở tài khoản cho bạn. Đăng nhập bằng số điện thoại bạn đã đưa ở quầy.',
@@ -327,6 +332,17 @@ const vi = {
     'Bạn chưa tạo phiên ghi hình nào. Tạo phiên trước khi tải lên.',
   'uploads.hashing': 'Đang kiểm tra tệp',
   'uploads.sending': 'Đang gửi tệp',
+  'uploads.registering': 'Đang chuẩn bị tải lên',
+  'uploads.all': 'Tất cả',
+  'uploads.paused': 'Đã dừng tải lên',
+  'uploads.verifying': 'Đang xác minh bản sao trên đám mây',
+  'uploads.verifyingBody': 'Tệp đã được gửi. Máy chủ đang kiểm tra và xử lý; thu nhập chưa được xác nhận.',
+  'uploads.elapsed': 'Thời gian',
+  'uploads.waitingProgress': 'Chưa có tiến triển mới. Giữ ứng dụng mở và kiểm tra kết nối. Bạn có thể hủy rồi thử lại; tiến trình đã lưu sẽ được dùng lại.',
+  'uploads.sessionWhy': 'Phiên thu thập liên kết bản ghi với nhiệm vụ, thiết bị và khai báo riêng tư của bạn.',
+  'uploads.sessionMatched': 'Đã chọn phiên duy nhất của bạn. Kiểm tra lại trước khi gửi.',
+  'uploads.journeyTitle': 'Từ bản ghi đến kết quả',
+  'uploads.journeyBody': 'Theo dõi tệp đã gửi, kết quả duyệt và thu nhập được xác nhận.',
   'uploads.start': 'Bắt đầu tải lên',
   'uploads.resume': 'Tải tiếp lần dở dang',
   'uploads.reasonChecksum':
@@ -687,6 +703,7 @@ const vi = {
   'demo.badKey': 'Mã không đúng.',
   'demo.unavailable': 'Máy chủ này không bật chế độ demo.',
   'demo.unseeded': 'Máy chủ chưa có tài khoản demo. Chạy seed trước đã.',
+  'uploads.keepOpen': 'Giữ ứng dụng mở trên màn hình này khi gửi tệp. Nhấn Hủy hoặc Quay lại để dừng; tệp gốc vẫn được giữ.',
 };
 
 export type MessageKey = keyof typeof vi;
@@ -721,7 +738,7 @@ const en: Record<MessageKey, string> = {
 
   'common.back': 'Back',
   'common.cancel': 'Cancel',
-  'uploads.cancelled': 'Upload cancelled. You can resume later; source files are kept.',
+  'uploads.cancelled': 'Upload stopped. Tap Retry to continue. Source files are kept.',
   'common.loading': 'Loading…',
   // The chip names the language it switches TO, in that language: the cycle is
   // vi → en → zh → vi, so English offers Chinese and Chinese offers Vietnamese.
@@ -745,8 +762,19 @@ const en: Record<MessageKey, string> = {
   'landing.slogan2': 'Live your day.',
   'landing.slogan3': 'Reviewed minutes, paid.',
   'landing.videoLabel': 'Player One introduction video',
+  'landing.illustrativeScenes': 'Illustrative recording scenes',
+  'landing.playFilm': 'Play film',
+  'landing.retryFilm': 'Retry film',
   'landing.centre': 'Support point',
   'landing.signIn': 'Sign in',
+  'counter.bringTitle': 'What to bring',
+  'counter.bring': 'Bring the phone you use to sign in, with access to verification codes. Tell the staff if you already have an account.',
+  'counter.whereTitle': 'Where to go',
+  'counter.where': 'Before travelling, ask your collector recruitment contact for the assigned centre location and opening hours. The app does not yet have a confirmed address or contact number.',
+  'counter.staffTitle': 'What staff do',
+  'counter.staff': 'Staff check or create your collector record and record the agreements you accepted and your assessment result. When issuing a device, staff link it to your record.',
+  'counter.nextTitle': 'After registration',
+  'counter.next': 'Sign in, read and accept the agreements, then take the exam. You need to pass before claiming work. Recordings are handed over, uploaded and reviewed; earnings depend on reviewed effective minutes. Registration does not mean a payment has been made.',
   'landing.register': 'Register at the counter',
   'landing.registerNote':
     'Accounts are opened at a support counter. Sign in with the number you gave there.',
@@ -980,6 +1008,17 @@ const en: Record<MessageKey, string> = {
     'You have not declared a collection session yet. Create one before uploading.',
   'uploads.hashing': 'Hashing files',
   'uploads.sending': 'Sending files',
+  'uploads.registering': 'Preparing upload',
+  'uploads.all': 'All',
+  'uploads.paused': 'Upload stopped',
+  'uploads.verifying': 'Verifying cloud copy',
+  'uploads.verifyingBody': 'Files have been sent. The server is checking and processing them; earnings are not confirmed yet.',
+  'uploads.elapsed': 'Elapsed',
+  'uploads.waitingProgress': 'No new progress yet. Keep the app open and check your connection. You can cancel and retry; saved progress will be reused.',
+  'uploads.sessionWhy': 'A collection session links this recording to your task, device and privacy declarations.',
+  'uploads.sessionMatched': 'Your only collection session is selected. Check it before sending.',
+  'uploads.journeyTitle': 'From recording to review',
+  'uploads.journeyBody': 'Follow your uploads, review results and confirmed earnings.',
   'uploads.start': 'Start upload',
   'uploads.resume': 'Resume the unfinished upload',
   'uploads.reasonChecksum':
@@ -1306,6 +1345,7 @@ const en: Record<MessageKey, string> = {
   'demo.badKey': 'That key is not right.',
   'demo.unavailable': 'This server has no demo mode.',
   'demo.unseeded': 'This server has no demo account yet. Run the seed first.',
+  'uploads.keepOpen': 'Keep the app open on this screen while sending files. Cancel or Back stops the upload; source files are kept.',
 };
 
 /**
@@ -1349,7 +1389,7 @@ const zh: Record<MessageKey, string> = {
 
   'common.back': '返回',
   'common.cancel': '取消',
-  'uploads.cancelled': '上传已取消。可稍后继续，原始文件仍保留。',
+  'uploads.cancelled': '上传已停止。点击重试以继续。原始文件仍保留。',
   'common.loading': '加载中…',
   'common.language': 'Tiếng Việt',
   'common.retry': '重试',
@@ -1371,8 +1411,19 @@ const zh: Record<MessageKey, string> = {
   'landing.slogan2': '照常生活。',
   'landing.slogan3': '审核通过，按分钟付酬。',
   'landing.videoLabel': 'Player One 介绍视频',
+  'landing.illustrativeScenes': '录制场景示意图',
+  'landing.playFilm': '播放视频',
+  'landing.retryFilm': '重试播放',
   'landing.centre': '服务点',
   'landing.signIn': '登录',
+  'counter.bringTitle': '需要携带什么',
+  'counter.bring': '请携带用于登录、能接收验证码的手机。如已有账号，请告知工作人员。',
+  'counter.whereTitle': '去哪里',
+  'counter.where': '出发前，请向招募联系人确认指定中心的地址和营业时间。应用尚未提供已确认的地址或联系电话。',
+  'counter.staffTitle': '工作人员的协助',
+  'counter.staff': '工作人员会核对或创建采集员档案，记录您同意的协议和考核结果。发放设备时，会将设备关联到您的档案。',
+  'counter.nextTitle': '注册之后',
+  'counter.next': '登录后，阅读并同意协议，然后参加考试。通过考试后才能领取任务。录制内容需交接、上传并审核；收入取决于已审核的有效分钟数。注册不代表已付款。',
   'landing.register': '到服务台注册',
   'landing.registerNote': '账号由服务台工作人员开通。用你在服务台留下的手机号登录即可。',
   'landing.pandaLabel': '小竹，Player One 的熊猫',
@@ -1586,6 +1637,17 @@ const zh: Record<MessageKey, string> = {
   'uploads.noSessions': '你还没有申报采集场次。上传前请先创建。',
   'uploads.hashing': '正在计算文件校验值',
   'uploads.sending': '正在发送文件',
+  'uploads.registering': '正在准备上传',
+  'uploads.all': '全部',
+  'uploads.paused': '上传已停止',
+  'uploads.verifying': '正在验证云端副本',
+  'uploads.verifyingBody': '文件已发送。服务器正在检查和处理，收益尚未确认。',
+  'uploads.elapsed': '已用时间',
+  'uploads.waitingProgress': '暂无新进展。请保持应用开启并检查网络。可取消后重试；已保存的进度将被复用。',
+  'uploads.sessionWhy': '采集记录将此录像关联到你的任务、设备和隐私声明。',
+  'uploads.sessionMatched': '已选中你唯一的采集记录，请在发送前核对。',
+  'uploads.journeyTitle': '从录制到审核',
+  'uploads.journeyBody': '查看上传进度、审核结果和已确认收益。',
   'uploads.start': '开始上传',
   'uploads.resume': '继续未完成的上传',
   'uploads.reasonChecksum': '云端副本与手机上的文件不一致。请重新发送。',
@@ -1908,6 +1970,7 @@ const zh: Record<MessageKey, string> = {
   'demo.badKey': '密钥不正确。',
   'demo.unavailable': '此服务器未开启演示模式。',
   'demo.unseeded': '此服务器还没有演示账号。请先运行种子脚本。',
+  'uploads.keepOpen': '发送文件时，请保持应用停留在此页面。取消或返回会停止上传；原始文件仍保留。',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en, zh };

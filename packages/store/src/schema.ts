@@ -400,6 +400,8 @@ export const tasks = pgTable(
   {
     id: uuid('id').primaryKey(),
     name: text('name').notNull(),
+    /** Task-specific recording guidance; empty means no instructions were supplied. */
+    instructions: text('instructions').notNull().default(''),
     /**
      * APP-08: the task hall lists "type, unit price, target duration, current
      * progress and claimable state", so type is the one thing BO-02 configures

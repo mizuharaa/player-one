@@ -11,7 +11,9 @@ import { useLocale, useT } from '../locale.tsx';
 import { useSignOut } from '../session.tsx';
 import { useTheme } from '../theme.tsx';
 import { Body, Button, Field, Loading, NavRow, Note, face, useInsets, useTabBarReserve } from '../ui.tsx';
-import { AvatarMark, initialsOf } from '../ui/illustrations/index.tsx';
+import { initialsOf } from '../ui/illustrations/index.tsx';
+import { Icon, type IconName } from '../ui/Icon.tsx';
+import { GlassSurface } from '../ui/GlassSurface.tsx';
 // The sheet shell and the preferences sheet live with Explore, which has three
 // sheets to this screen's two. Fable: both want to move into Astra's `ui.tsx`
 // once the kit grows a sheet — they are the shared parts of this lane.
@@ -19,6 +21,12 @@ import { PreferencesSheet, Sheet, usePreferences } from './TaskHall.tsx';
 import type { MessageKey } from '../i18n.ts';
 import { LOCALES, type Locale } from '../i18n.ts';
 import app from '../../app.json';
+
+const ROW_ICONS: Partial<Record<MessageKey, IconName>> = {
+  'explore.prefsTitle': 'settings', 'devices.title': 'camera', 'profile.language': 'chat',
+  'profile.notifications': 'bell', 'agreements.title': 'file', 'profile.about': 'info',
+  'server.title': 'settings', 'profile.privacy': 'shield', 'profile.help': 'help',
+};
 
 /**
  * Work order §4.10 — the account screen, copying `13-profile-settings`
@@ -93,10 +101,11 @@ export function Profile() {
       >
         {tt(title)}
       </Text>
-      <View>
+      <View style={{ backgroundColor: c.surface, borderRadius: 20, paddingHorizontal: 16 }}>
         {rows.map((row) => (
           <View key={row.key}>
             <NavRow
+              icon={<Icon name={ROW_ICONS[row.key] ?? 'settings'} color={c.muted} size={21} />}
               label={tt(row.key)}
               subtitle={row.value ?? (row.sub === undefined ? undefined : tt(row.sub))}
               onPress={row.onPress}
@@ -118,23 +127,28 @@ export function Profile() {
         {/* Header: the mark, the name, what the account is. Centred, because a
             single identity block is the one thing on this screen that is not a
             list and centring is how the reference separates it from one. */}
-        <View style={{ alignItems: 'center', gap: theme.space[2], paddingBottom: theme.space[4] }}>
-          <AvatarMark initials={initialsOf(name)} size={88} />
+        <Text accessibilityRole="header" style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme), marginBottom: 20 }}>{tt('profile.title')}</Text>
+        <GlassSurface style={{ flexDirection: 'row', alignItems: 'center', gap: 16, padding: 20 }}>
+          <View style={{ width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: c.glow }}>
+            <Text style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme) }}>{initialsOf(name)}</Text>
+          </View>
+          <View style={{ flex: 1, gap: 4 }}>
           <Text
             accessibilityRole="header"
-            style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme), textAlign: 'center' }}
+            style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme) }}
           >
             {name === '' ? tt('profile.title') : name}
           </Text>
           <Text
             numberOfLines={2}
-            style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme), textAlign: 'center' }}
+            style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}
           >
             {profile.data === undefined || profile.data === null
               ? tt('profile.role')
               : `${tt('profile.role')} · ${profile.data.phone}`}
           </Text>
-        </View>
+          </View>
+        </GlassSurface>
 
         {profile.isPending ? <Loading /> : null}
         {profile.isError || tasks.isError ? (

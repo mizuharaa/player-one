@@ -13,6 +13,7 @@ import {
   type DeliveryRecord,
   type DeliveryStore,
   type DeliveryTransport,
+  type DeliveryStep,
 } from '@playerone/delivery';
 
 /**
@@ -42,6 +43,27 @@ const BASENAME = 'ego_AZER76400FE_20260813_072310';
 const UPLOAD_ID = '11111111-2222-4333-8444-555555555555';
 const SESSION_ID = '99999999-8888-4777-8666-555555555555';
 const BASE = 'http://api.test';
+
+it.each(['whole', 'part', 'resume'])('reports measured %s bytes before completion, then cloud verification separately', async mode => {
+  const files = [file('camera_01.mp4', 4096), ...(mode === 'resume' ? [file('already-sent.mp4', 4096)] : [])];
+  const steps: DeliveryStep[] = [];
+  const outcome = { state: 'ingested' as const, episodeId: 'ep-1', heldReason: null, failedReason: null };
+  const retained = mode === 'part' ? 2048 : mode === 'resume' ? 4096 : 0;
+  const send = async (progress?: (bytes: number) => void) => {
+    progress?.(1024);
+    expect(steps.at(-1)).toMatchObject({phase: 'sending', currentFile: 'camera_01.mp4', sentFiles: mode === 'resume' ? 1 : 0, totalFiles: files.length, sentBytes: retained + 1024, totalBytes: files.length * 4096});
+    return 200;
+  };
+  const {store, peek} = memoryStore();
+  await runPhoneDelivery({store, transport: {putFile: (_uri, _url, progress) => send(progress), putRange: (_uri, _url, _start, _end, progress) => send(progress)}, api: {
+    registerDelivery: async () => ({...outcome, uploadId: UPLOAD_ID, state: 'registered', files: [{relativePath: 'camera_01.mp4', done: false, putUrl: mode !== 'part' ? 'https://store/whole' : null, parts: mode === 'part' ? [{partNumber: 2, start: 2048, end: 4096, url: 'https://store/part'}] : []}]}),
+    deliveryPlan: async () => { throw new Error('not needed'); },
+    completeDelivery: async () => { expect(steps.at(-1)).toMatchObject({phase:'verifying', totalFiles: files.length, sentFiles: files.length, sentBytes: files.length * 4096, totalBytes: files.length * 4096}); return outcome; },
+  }}, record(files), new AbortController().signal, {report: step => steps.push(step)});
+  expect(steps[0]?.phase).toBe('registering');
+  expect(steps.at(-1)).toMatchObject({phase: 'done', state: 'ingested'});
+  expect(peek()).toBeNull();
+});
 
 function fakeStore(initial: string | null = 'tok-good'): TokenStore {
   let value = initial;

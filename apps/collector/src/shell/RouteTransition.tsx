@@ -3,10 +3,12 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { View } from 'react-native';
 import Animated, { useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { type Route } from '../nav.tsx';
+import { useReducedMotion } from '../ui/motion.ts';
 
 const spring = { damping: 20, stiffness: 180, mass: .8 };
 /** Mirror observed keys only to distinguish a pop; navigation still owns all history. */
 export function RouteTransition({ route, isTabRoot, children }: { route: Route; isTabRoot: boolean; children: ReactNode }) {
+  const reduced = useReducedMotion();
   const key = JSON.stringify(route);
   const history = useRef<string[]>([]);
   const direction = useSharedValue(0);
@@ -32,5 +34,5 @@ export function RouteTransition({ route, isTabRoot, children }: { route: Route; 
     'worklet';
     return { initialValues: { opacity: 1, transform: [{ translateX: 0 }] }, animations: { opacity: withTiming(direction.value === 0 ? 0 : .96, { duration: 220 }), transform: [{ translateX: withSpring(direction.value === 0 ? 0 : direction.value < 0 ? values.windowWidth : -values.windowWidth * .25, spring) }] } };
   };
-  return <View style={{ flex: 1, backgroundColor: polish.openingCover }}><Animated.View key={key} testID="route-transition" entering={entering} exiting={exiting} style={{ flex: 1, backgroundColor: polish.paper }}>{children}</Animated.View></View>;
+  return <View style={{ flex: 1, backgroundColor: polish.paper }}><Animated.View key={key} testID="route-transition" entering={reduced ? undefined : entering} exiting={reduced ? undefined : exiting} style={{ flex: 1, backgroundColor: polish.paper }}>{children}</Animated.View></View>;
 }

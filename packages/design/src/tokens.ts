@@ -56,23 +56,23 @@
 
 /** Collector v3 only; the console keeps its existing tokens. */
 export const collector = {
-  night: '#141126', nightSurface: '#1F1B38', paper: '#F6F2EA', surface: '#FFFFFF',
-  ink: '#1A1630', muted: '#6B6580', line: '#E4DDD0', plum: '#6C4BD6', glow: '#A78BFA',
-  sun: '#FF7A1A', green: '#12A150', greenBg: '#DCF5E6', amber: '#D98E04', amberBg: '#FFF1D6',
+  night: '#202827', nightSurface: '#34423F', paper: '#F5F6F3', surface: '#FFFFFF',
+  ink: '#202827', muted: '#445048', line: '#B8C2B9', plum: '#286454', glow: '#C3DDD1',
+  sun: '#D1E5DA', green: '#12A150', greenBg: '#DCF5E6', amber: '#D98E04', amberBg: '#FFF1D6',
   red: '#D92D20', redBg: '#FEE4E2', tech: '#1B6EF3',
   // The specified semantic fills do not pass AA as small text on paper.
   greenInk: '#087A38', amberInk: '#885700', redInk: '#B42318', techInk: '#1558C0',
-  gradient: ['#141126', '#2E2258', '#6C4BD6'],
+  gradient: ['#202827', '#34423F', '#286454'],
   type: {
     display: { fontSize: 34, lineHeight: 45, fontWeight: '800' },
     h1: { fontSize: 28, lineHeight: 37, fontWeight: '700' },
-    h2: { fontSize: 22, lineHeight: 29, fontWeight: '600' },
+    h2: { fontSize: 20, lineHeight: 28, fontWeight: '600' },
     body: { fontSize: 16, lineHeight: 24, fontWeight: '400' },
-    caption: { fontSize: 13, lineHeight: 18, fontWeight: '400' },
+    caption: { fontSize: 14, lineHeight: 20, fontWeight: '400' },
     money: { fontSize: 40, lineHeight: 52, fontWeight: '700' },
   },
-  gutter: 20, cardPad: 16, cardGap: 12, sectionGap: 24,
-  radius: { card: 16, pill: 999, dock: 28 },
+  gutter: 16, cardPad: 16, cardGap: 12, sectionGap: 24,
+  radius: { card: 20, pill: 999, dock: 28 },
 } as const;
 
 /** VNG's sun. Action and brand. Never progress, never a verdict, never a surface. */

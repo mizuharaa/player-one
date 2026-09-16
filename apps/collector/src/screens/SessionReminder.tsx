@@ -5,6 +5,8 @@ import { useNav } from '../nav.tsx';
 import { useTheme } from '../theme.tsx';
 import { HowCharge, HowWear, HowPressDevice, HowHandOver } from '../ui/illustrations/index.tsx';
 import { Body, Button, Card, Note, Screen, Title } from '../ui.tsx';
+import { Icon } from '../ui/Icon.tsx';
+import { DemoSkip } from '../ui/DemoSkip.tsx';
 
 /** Same source-backed material in onboarding and before each new session. */
 export function HeadsetGuidance() {
@@ -13,9 +15,9 @@ export function HeadsetGuidance() {
   return (
     <>
       <Note text={HEADSET_COPY.external[locale]} />
-      {HEADSET_GUIDANCE.map((section) => (
-        <View key={section.id} style={{ gap: theme.space[3], marginTop: theme.space[3] }}>
-          <Title>{section.title[locale]}</Title>
+      {HEADSET_GUIDANCE.map((section, index) => (
+        <View key={section.id} style={{ gap: theme.space[3], marginTop: theme.space[3], backgroundColor: theme.collector.surface, padding: 16, borderRadius: 20 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}><Icon name={index === 0 ? 'camera' : index === 1 ? 'check' : 'info'} color={theme.collector.plum} /><View style={{ flex: 1 }}><Title>{section.title[locale]}</Title></View></View>
           {section.items.map((item) => <Body key={item.id}>{item.text[locale]}</Body>)}
         </View>
       ))}
@@ -30,11 +32,12 @@ export function SessionReminder() {
   const nav = useNav();
   const tt = useT();
   return (
-    <Screen title={HEADSET_COPY.shiftTitle[locale]}>
+    <Screen title={HEADSET_COPY.shiftTitle[locale]}
+      right={<DemoSkip from="sessionReminder" to="sessionCreate" onSkipped={() => nav.push({ name: 'sessionCreate' })} />}
+      footer={<Button label={HEADSET_COPY.continue[locale]} onPress={() => nav.push({ name: 'sessionCreate' })} />}>
       <Body>{HEADSET_COPY.shiftIntro[locale]}</Body>
       <Body>{tt('reminder.body')}</Body>
       <HeadsetGuidance />
-      <Button label={HEADSET_COPY.continue[locale]} onPress={() => nav.push({ name: 'sessionCreate' })} />
     </Screen>
   );
 }

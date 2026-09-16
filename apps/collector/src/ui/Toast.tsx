@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { PanResponder, Pressable, Text, View } from 'react-native';
+import { AccessibilityInfo, PanResponder, Platform, Pressable, Text, View } from 'react-native';
 import { useTheme } from '../theme.tsx';
 import { useT } from '../locale.tsx';
 import { face, useInsets } from '../ui.tsx';
+import { GlassSurface } from './GlassSurface.tsx';
+import { Icon } from './Icon.tsx';
 
 type Tone = 'success' | 'error' | 'neutral';
 const ToastContext = createContext<(text: string, tone?: Tone) => void>(() => {});
@@ -23,23 +25,24 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }), [dismiss]);
   useEffect(() => {
     if (!notice) return;
+    if (Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(notice.text);
     const timer = setTimeout(dismiss, 3000);
     return () => clearTimeout(timer);
   }, [notice, dismiss]);
-  const fill = notice?.tone === 'error' ? c.red : notice?.tone === 'neutral' ? c.night : c.green;
-  const ink = notice?.tone === 'success' ? c.night : c.surface;
+  const ink = notice?.tone === 'error' ? c.redInk : c.ink;
   return <ToastContext.Provider value={show}>
     <View style={{ flex: 1 }}>{children}
       {notice ? <View {...gesture.panHandlers} accessibilityLiveRegion="polite"
         style={{ position: 'absolute', top: insets.top + theme.space[2], left: c.gutter, right: c.gutter,
-          backgroundColor: fill, borderRadius: c.radius.pill, paddingLeft: c.cardPad, paddingRight: theme.space[1],
-          flexDirection: 'row', alignItems: 'center', gap: theme.space[2] }}>
-        <Text style={{ ...c.type.body, color: ink }}>{notice.tone === 'success' ? '✓' : notice.tone === 'error' ? '!' : 'i'}</Text>
+          borderRadius: 20 }}>
+        <GlassSurface style={{ paddingLeft: c.cardPad, paddingRight: theme.space[1], flexDirection: 'row', alignItems: 'center', gap: theme.space[2] }}>
+        <Icon name={notice.tone === 'success' ? 'circleCheck' : 'info'} color={ink} size={22} />
         <Text style={{ ...c.type.body, color: ink, fontFamily: face(theme), flex: 1, paddingVertical: theme.space[2] }}>{notice.text}</Text>
         <Pressable accessibilityRole="button" accessibilityLabel={tt('common.close')} onPress={dismiss}
           style={{ minHeight: 48, minWidth: 48, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ ...c.type.h2, color: ink }}>×</Text>
+          <Icon name="close" color={ink} size={18} />
         </Pressable>
+        </GlassSurface>
       </View> : null}
     </View>
   </ToastContext.Provider>;

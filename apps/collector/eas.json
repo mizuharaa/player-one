@@ -19,7 +19,7 @@
         "PLAYERONE_BUILD_PROFILE": "demo",
         "EXPO_PUBLIC_BUILD_PROFILE": "demo",
         "EXPO_PUBLIC_API_URL": "https://api.49-213-71-116.sslip.io",
-        "PLAYERONE_VERSION_CODE": "47"
+        "PLAYERONE_VERSION_CODE": "50"
       },
       "pnpm": "9.15.9"
     },
@@ -29,7 +29,7 @@
         "PLAYERONE_BUILD_PROFILE": "play",
         "EXPO_PUBLIC_BUILD_PROFILE": "play",
         "EXPO_PUBLIC_API_URL": "https://api.playerone.vng.com.vn",
-        "PLAYERONE_VERSION_CODE": "47"
+        "PLAYERONE_VERSION_CODE": "50"
       },
       "pnpm": "9.15.9"
     },
@@ -47,7 +47,7 @@
         "PLAYERONE_BUILD_PROFILE": "demo",
         "EXPO_PUBLIC_BUILD_PROFILE": "demo",
         "EXPO_PUBLIC_API_URL": "https://api.49-213-71-116.sslip.io",
-        "PLAYERONE_VERSION_CODE": "47"
+        "PLAYERONE_VERSION_CODE": "50"
       },
       "pnpm": "9.15.9"
     }

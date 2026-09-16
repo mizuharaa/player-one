@@ -439,8 +439,9 @@ fontWeight: theme.fontWeight.medium,
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1, backgroundColor: theme.color.background }}
     >
+      <Film source={loginFilm} poster={poster} label={tt('landing.videoLabel')} fade={theme.duration.base} active={heroVisible}
+        style={{ position: 'absolute', left: 0, right: 0, top: 0, aspectRatio: 16 / 11 }} />
       <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, aspectRatio: 16 / 11 }}>
-        <Film source={loginFilm} poster={poster} label={tt('landing.videoLabel')} fade={theme.duration.base} active={heroVisible} />
         <Scrim stops={HERO_SCRIM} />
       </View>
       <ScrollView

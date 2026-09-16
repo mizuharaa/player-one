@@ -175,6 +175,8 @@ export async function auditLogin(
      */
     collectorId?: string;
     source?: string;
+    /** Correlation for an authenticated demo run; never the shared key. */
+    demoRunId?: string;
     /**
      * Why it failed, and it is a closed union on purpose: the whole value of
      * this row is the name, and a `string` here would be somewhere a caller

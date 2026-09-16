@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
-import { SCENARIOS, type Scenario } from '../api/types.ts';
+import { SCENARIOS, type DemoStep, type Scenario } from '../api/types.ts';
 import type { MessageKey } from '../i18n.ts';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
@@ -14,6 +14,8 @@ import { getBatteryLevelAsync, isLowPowerModeEnabledAsync } from 'expo-battery';
 import { freeDiskBytes } from '../upload/delivery-native.ts';
 import { gb } from '../money.ts';
 import { Body, Button, Card, Choice, Loading, Note, Row, Screen, Title } from '../ui.tsx';
+import { DemoSkip } from '../ui/DemoSkip.tsx';
+import { Icon, type IconName } from '../ui/Icon.tsx';
 
 const SESSION_ERRORS: Record<string, MessageKey> = {
   scenario_not_found: 'session.scenarioUnavailable',
@@ -249,6 +251,8 @@ export function SessionCreate() {
 
   const ready = [task !== undefined, scenario !== null, device !== undefined, others !== null, sensitive !== null][step];
   const titles: MessageKey[] = ['session.task', 'session.scenario', 'session.device', 'session.othersTitle', 'session.sensitiveTitle'];
+  const steps: DemoStep[] = ['sessionCreate.task', 'sessionCreate.scenario', 'sessionCreate.device', 'sessionCreate.others', 'sessionCreate.sensitive'];
+  const icons: IconName[] = ['tasks', 'home', 'camera', 'profile', 'shield'];
   const next = () => {
     if (!ready || submitting.current) return;
     if (step < titles.length - 1) { setStep(step + 1); return; }
@@ -257,14 +261,20 @@ export function SessionCreate() {
     create.mutate();
   };
   const progress = <View accessibilityRole="progressbar" accessibilityLabel={tt('session.title')} accessibilityValue={{ min: 0, max: titles.length, now: step }}
-    style={{ flex: 1, maxWidth: 160, height: theme.space[1], borderRadius: theme.radius.pill, backgroundColor: theme.collector.line, overflow: 'hidden' }}>
+    style={{ flex: 1, maxWidth: 88, height: theme.space[1], borderRadius: theme.radius.pill, backgroundColor: theme.collector.line, overflow: 'hidden' }}>
     <View style={{ width: `${step / titles.length * 100}%`, height: '100%', backgroundColor: theme.collector.plum }} />
   </View>;
   return <Screen progress={progress} title={tt(titles[step]!)} onBack={() => step > 0 ? setStep(step - 1) : nav.back()}
-    right={<Pressable accessibilityRole="button" accessibilityLabel={tt('common.close')} onPress={() => nav.reset({ name: 'home' })}
-      style={{ minWidth: 48, minHeight: 48, justifyContent: 'center', alignItems: 'center' }}><Text style={{ ...theme.collector.type.h2, color: theme.collector.ink }}>×</Text></Pressable>}
+    right={<View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
+      <DemoSkip from={steps[step]!} to="uploads" disabled={create.isPending} onSkipped={() => nav.push({ name: 'uploads' })} />
+      <Pressable accessibilityRole="button" accessibilityLabel={tt('common.close')} onPress={() => nav.reset({ name: 'home' })}
+      style={{ minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' }}><Icon name="close" color={theme.collector.ink} /></Pressable></View>}
     footer={<Button label={tt(create.isPending ? 'common.saving' : step === 4 ? 'session.create' : 'common.next')}
       busy={create.isPending} disabled={!ready || create.isPending} onPress={next} />}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+      <View style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: theme.collector.glow, alignItems: 'center', justifyContent: 'center' }}><Icon name={icons[step]!} size={24} color={theme.collector.ink} /></View>
+      <Text style={{ ...theme.collector.type.caption, fontFamily: theme.font.sans, color: theme.collector.muted }}>{tt('session.title')} · {step + 1} / {titles.length}</Text>
+    </View>
     {step === 0 ? <>
       <Body muted>{tt('session.intro')}</Body>
       {claimedTasks.length === 0 ? <StatePanel title={tt('state.empty')} text={tt('session.needClaim')} action={tt('hall.title')} onPress={() => nav.push({ name: 'taskHall' })} /> : null}

@@ -202,7 +202,7 @@ const createApi: ApiFactory = (onUnauthorized) => USE_MOCK_API
  * because whoever just signed out has seen the product story and is handing
  * the phone to the next collector.
  */
-export function CollectorSession({ factory = createApi }: { factory?: ApiFactory }) {
+export function CollectorSession({ factory = createApi, introDone = true }: { factory?: ApiFactory; introDone?: boolean }) {
   const [epoch, setEpoch] = useState(0);
   const [door, setDoor] = useState(true);
   const [booted, setBooted] = useState(false);
@@ -220,12 +220,13 @@ export function CollectorSession({ factory = createApi }: { factory?: ApiFactory
       key={epoch}
       factory={factory}
       restore={door}
+      introDone={introDone}
       onExited={(landing) => { setDoor(landing); setEpoch((n) => n + 1); }}
     />
   );
 }
 
-function Session({ factory, restore, onExited }: { factory: ApiFactory; restore: boolean; onExited: (landing: boolean) => void }) {
+function Session({ factory, restore, onExited, introDone }: { factory: ApiFactory; restore: boolean; introDone: boolean; onExited: (landing: boolean) => void }) {
   const [state, setState] = useState<SessionEntry | 'leaving' | 'clearFailed' | null>(restore ? null : 'out');
   /** Whether the landing has handed over to the sign-in form. */
   const [signingIn, setSigningIn] = useState(false);
@@ -316,6 +317,7 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
             <NavProvider key='out' initial={{ name: 'register' }}>
               {restore && !signingIn ? (
                 <Landing
+                  introDone={introDone}
                   onSignIn={() => setSigningIn(true)}
                   onSignedIn={() => { if (alive.current && !signingOut.current) void enter(); }}
                 />
@@ -361,7 +363,7 @@ export function App() {
     <ThemeProvider>
       <LocaleProvider>
         <View style={{ flex: 1 }}>
-          <BootChrome><TransportProvider value={transport}><CollectorSession /></TransportProvider></BootChrome>
+          <BootChrome><TransportProvider value={transport}><CollectorSession introDone={!splash} /></TransportProvider></BootChrome>
           {splash ? <BootIntro onDone={() => setSplash(false)} /> : null}
         </View>
       </LocaleProvider>
