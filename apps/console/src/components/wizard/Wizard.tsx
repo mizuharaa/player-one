@@ -79,6 +79,15 @@ export function Wizard({
    * it has already written down.
    */
   startAt = 0,
+  /**
+   * Told which step is open, so a caller that persists a draft can put the
+   * operator back where they were rather than at question one.
+   *
+   * The step stays this component's state; this only reports it. A wizard whose
+   * position lived in its caller would have two owners of one number, and the
+   * two would disagree the first time `startAt` changed under it.
+   */
+  onStepChange,
   /** A `[data-guide]` value for the rail, when the route this sits on has a tour. */
   guide,
 }: {
@@ -91,10 +100,14 @@ export function Wizard({
   problem?: ReactNode;
   done?: ReactNode;
   startAt?: number;
+  onStepChange?: (at: number) => void;
   guide?: string;
 }) {
   const { t } = useTranslation();
   const [at, setAt] = useState(startAt);
+  /** Reported from the same effect that moves focus, so it fires on a change and never on mount. */
+  const report = useRef(onStepChange);
+  report.current = onStepChange;
   const heading = useRef<HTMLHeadingElement>(null);
   /**
    * The heading takes focus when the step CHANGES, and never on mount.
@@ -111,7 +124,10 @@ export function Wizard({
    */
   const shown = useRef(at);
   useEffect(() => {
-    if (shown.current !== at) heading.current?.focus();
+    if (shown.current !== at) {
+      heading.current?.focus();
+      report.current?.(at);
+    }
     shown.current = at;
   }, [at]);
 

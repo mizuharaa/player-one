@@ -40,11 +40,14 @@
  * this path deletes source media, and the last thing the screen says is that
  * the card in the operator's hand is still the card.
  */
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from '@tanstack/react-router';
 import { AppShell } from '../components/shell/AppShell.tsx';
+import { DraftRestored } from '../components/ui/DraftRestored.tsx';
+import { useDraft } from '../lib/draft.ts';
+import { useOperatorProfile } from '../lib/profile-api.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Panel, Problem, Skeleton } from '../components/ui/primitives.tsx';
 import {
@@ -131,6 +134,28 @@ function Header() {
 /** What was written, so the done panel can name it without re-reading anything. */
 type Recorded = { card: string; collector: string; task: string };
 
+/**
+ * What survives leaving the counter screen.
+ *
+ * Only what the operator typed or picked, plus the two ids they typed it
+ * under. No money, no computed figure, and no `done` receipt.
+ */
+type CounterDraft = {
+  handoverId: string;
+  sessionId: string;
+  landed: boolean;
+  collectorId: string | null;
+  deviceId: string | null;
+  card: string;
+  handoverAt: string;
+  taskId: string | null;
+  scenarioId: string | null;
+  preparedAt: string;
+  others: boolean | null;
+  sensitive: boolean | null;
+  step: number;
+};
+
 function Intake({ reference }: { reference: Reference }) {
   const { t } = useTranslation();
 
@@ -175,6 +200,62 @@ function Intake({ reference }: { reference: Reference }) {
   const [others, setOthers] = useState<boolean | null>(null);
   const [sensitive, setSensitive] = useState<boolean | null>(null);
 
+  /**
+   * The intake, kept so leaving this screen does not lose the counter's work.
+   *
+   * This is the most dangerous draft in the console and the reason it is the
+   * first one built. Everything above is local state, so a reload or a stray
+   * click on the top bar threw away nine answers **and minted two fresh ids**.
+   * Neither `handovers` nor `collection_sessions` has a natural key — only a
+   * primary key and plain indexes — so the second attempt was not a retry: one
+   * physical TF card became two handovers, and one handover two sessions.
+   * Settlement pays on that attribution.
+   *
+   * So the two ids travel in the draft, and `landed` with them: it is the only
+   * record that the handover half of the commit already succeeded, and an
+   * operator who lost it would re-answer the first three questions and send
+   * them under a new id. `done` is deliberately absent — it is a receipt for
+   * work already written, not work in progress, and restoring it would show a
+   * finished intake to somebody who has not done one.
+   */
+  const [step, setStep] = useState(0);
+  const profile = useOperatorProfile();
+  const draft = useDraft(
+    'counter',
+    profile.data?.operator.id,
+    {
+      handoverId,
+      sessionId,
+      landed,
+      collectorId,
+      deviceId,
+      card,
+      handoverAt,
+      taskId,
+      scenarioId,
+      preparedAt,
+      others,
+      sensitive,
+      step,
+    },
+    useCallback((held: CounterDraft) => {
+      setHandoverId(held.handoverId);
+      setSessionId(held.sessionId);
+      setLanded(held.landed);
+      setCollectorId(held.collectorId);
+      setDeviceId(held.deviceId);
+      setCard(held.card);
+      setHandoverAt(held.handoverAt);
+      setTaskId(held.taskId);
+      setScenarioId(held.scenarioId);
+      setPreparedAt(held.preparedAt);
+      setOthers(held.others);
+      setSensitive(held.sensitive);
+      setStep(held.step);
+    }, []),
+    done === null,
+  );
+
   const collector = reference.collectors.find((c) => c.id === collectorId);
   const device = reference.devices.find((d) => d.id === deviceId);
   const task = reference.tasks.find((x) => x.id === taskId);
@@ -216,12 +297,21 @@ function Intake({ reference }: { reference: Reference }) {
         collector: collector?.externalRef ?? '',
         task: task?.name ?? '',
       });
+      /**
+       * The intake is written, so it is no longer in progress. Kept, the draft
+       * would offer to restore a form whose two ids the database has already
+       * decided — a replay that changes nothing, presented as work to finish.
+       * `anotherSession` and `anotherCard` mint fresh ids and the draft follows
+       * them from there.
+       */
+      draft.discard();
     },
     onError: setError,
   });
 
   /** A second recording on the card already on the desk: same handover, new session. */
   const anotherSession = () => {
+    setStep(landed ? 3 : 0);
     setSessionId(uuid());
     setTaskId(null);
     setScenarioId(null);
@@ -231,6 +321,21 @@ function Intake({ reference }: { reference: Reference }) {
     setDone(null);
     setError(null);
     setRun(run + 1);
+  };
+
+  /**
+   * "No, throw that away" on a restored draft.
+   *
+   * It mints fresh ids, and that is the whole point of the button rather than a
+   * side effect of reusing `anotherCard`. Keeping the id is right for a
+   * *resumed* intake — that is what makes a second submit a retry instead of a
+   * second handover. Discarding is the operator saying this is not that intake,
+   * so a new action needs a new id; reusing the old one would replay into a row
+   * they have just told us they do not want.
+   */
+  const discardIntake = () => {
+    draft.discard();
+    anotherCard();
   };
 
   /** A different collector at the counter: everything starts again. */
@@ -243,6 +348,7 @@ function Intake({ reference }: { reference: Reference }) {
     setCard('');
     setHandoverAt(localNow());
     anotherSession();
+    setStep(0);
   };
 
   const steps: WizardStep[] = [
@@ -427,10 +533,20 @@ function Intake({ reference }: { reference: Reference }) {
   ];
 
   return (
+    <>
+      {draft.restoredAt === null ? null : <DraftRestored onDiscard={discardIntake} />}
     <Wizard
-      key={run}
+      /**
+       * Remounted when a draft arrives, because `startAt` is only read on
+       * mount. The restore runs in an effect after the first render, so
+       * without this the operator would be put back on question one with
+       * every answer already filled in behind them. `run` is the same
+       * mechanism the second-recording path already uses.
+       */
+      key={`${run}:${draft.restoredAt ?? 'fresh'}`}
       guide="counter.plan"
-      startAt={landed ? 3 : 0}
+      startAt={draft.restoredAt === null ? (landed ? 3 : 0) : step}
+      onStepChange={setStep}
       steps={steps}
       title={t('counter.title')}
       intro={t('counter.review.intro')}
@@ -455,6 +571,7 @@ function Intake({ reference }: { reference: Reference }) {
         )
       }
     />
+    </>
   );
 }
 

@@ -20,14 +20,16 @@
  * rounded figure beside the exact one the settlement uses. It is shown as
  * stored, in the mono column, with a line saying so.
  */
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '../components/shell/AppShell.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { EmptyState, Panel, Problem, Skeleton } from '../components/ui/primitives.tsx';
 import { durationShort, localNow } from '../lib/format.ts';
 import { useOperatorProfile } from '../lib/profile-api.ts';
+import { clearDraft, useDraft } from '../lib/draft.ts';
 import { refusalKey } from './refusal.ts';
 import { TaskAssign } from './TaskAssign.tsx';
 import { cn } from '../lib/cn.ts';
@@ -48,9 +50,42 @@ import {
 type Tab = 'tasks' | 'collectors' | 'devices';
 const TABS: Tab[] = ['tasks', 'collectors', 'devices'];
 
+/**
+ * Which tab, and whether the new-task flow is open, in the address.
+ *
+ * The tab used to be local `useState`, which cost three things at once: the
+ * address could not be linked or bookmarked, a reload always landed on Tasks,
+ * and the browser Back button did nothing on a screen with three panels. Same
+ * shape as `episodeSearch` and `periodSearch` — a plain function that narrows
+ * and drops anything it does not recognise, so a mistyped `?tab=taks` opens
+ * Tasks rather than a blank panel.
+ *
+ * `new` is here and not in the draft because it is a *position*, not something
+ * the operator typed. It also has to be: the wizard is rendered by this
+ * screen, so a restored draft with nowhere to render would put the answers
+ * back into a component that is not on screen. Carrying it in the URL means
+ * Back leaves the wizard, which is what an operator expects of a page that
+ * changed under them.
+ */
+export function backOfficeSearch(raw: Record<string, unknown>): { tab?: Tab; new?: true } {
+  const tab = TABS.find((name) => name === raw['tab']);
+  return {
+    ...(tab === undefined ? {} : { tab }),
+    ...((tab ?? 'tasks') === 'tasks' && raw['new'] === true ? { new: true as const } : {}),
+  };
+}
+
 export function BackOfficeScreen() {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<Tab>('tasks');
+  /**
+   * Both parameters are optional, and `tab` defaults here rather than in the
+   * validator, so a bare `/backoffice` is still a valid address. Making them
+   * required would have forced a `search={{ tab: 'tasks' }}` onto every plain
+   * "go to the back office" link in the console — `Home.tsx` and `Counter.tsx`
+   * both have one — which is a worse trade than one default in one place.
+   */
+  const { tab = 'tasks', new: creating = false } = useSearch({ from: '/backoffice' });
+  const navigate = useNavigate();
   const [refused, setRefused] = useState<unknown>(null);
   /**
    * May this session shape anything? The administrator role, and active — the
@@ -89,7 +124,10 @@ export function BackOfficeScreen() {
             role="tab"
             aria-selected={tab === name}
             onClick={() => {
-              setTab(name);
+              // `search` and not `setState`: the tab is the address now. The
+              // `new` flag is dropped by moving tab, because the new-task flow
+              // belongs to Tasks and nothing else.
+              void navigate({ to: '/backoffice', search: { tab: name } });
               setRefused(null);
             }}
             className={cn(
@@ -148,7 +186,7 @@ export function BackOfficeScreen() {
           New task must not read as a live button. */}
       <fieldset className="contents [&:disabled_button]:opacity-45" disabled={!shaping}>
         <div className="mt-5">
-          {tab === 'tasks' ? <Tasks onRefused={setRefused} /> : null}
+          {tab === 'tasks' ? <Tasks onRefused={setRefused} creating={creating} /> : null}
           {tab === 'collectors' ? <Collectors onRefused={setRefused} /> : null}
           {tab === 'devices' ? <Devices onRefused={setRefused} /> : null}
         </div>
@@ -161,9 +199,10 @@ export function BackOfficeScreen() {
    Tasks (BO-01, BO-02)
    ---------------------------------------------------------------------- */
 
-function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
+function Tasks({ onRefused, creating }: { onRefused: (error: unknown) => void; creating: boolean }) {
   const { t } = useTranslation();
   const client = useQueryClient();
+  const navigate = useNavigate();
   /**
    * Creating a task is a sequence, so it is a wizard and not a row of inputs
    * above the table.
@@ -175,7 +214,18 @@ function Tasks({ onRefused }: { onRefused: (error: unknown) => void }) {
    * triggers impose. The table is untouched; it is what this tab shows when the
    * wizard is closed.
    */
-  const [assigning, setAssigning] = useState(false);
+  /**
+   * Whether the wizard is open lives in the URL (`?tab=tasks&new`), not here.
+   *
+   * It used to be `useState`, and that is half of the defect the owner
+   * reported: switching tabs unmounted this panel, so coming back reset the
+   * flag and the operator's half-finished task had nowhere to be rendered even
+   * once its answers were being kept. The answers themselves are in
+   * `TaskAssign`'s own draft.
+   */
+  const assigning = creating;
+  const setAssigning = (open: boolean) =>
+    void navigate({ to: '/backoffice', search: open ? { tab: 'tasks', new: true } : { tab: 'tasks' } });
   const [editing, setEditing] = useState<string | null>(null);
 
   const { data, isPending, error } = useQuery({
@@ -397,6 +447,30 @@ export function Collectors({ onRefused }: { onRefused: (error: unknown) => void 
   const [declared, setDeclared] = useState<{ collectorId: string; result: BoPayoutDeclared } | null>(null);
   const [requestId, setRequestId] = useState(() => uuid());
 
+  /**
+   * The id this create will write under, kept across a remount.
+   *
+   * Only the id. The create form's inputs are uncontrolled and read through
+   * `FormData` at submit, so there is nothing in state to keep, and an operator
+   * enrolling somebody standing in front of them can retype a reference. What
+   * they cannot do is know that their second attempt went out under a different
+   * id: `collectors_external_ref_key` catches the duplicate and answers a
+   * refusal about a reference that "already names a different declaration",
+   * which reads like the data is wrong when in fact the request was.
+   *
+   * `declared` is never in here — it is the server's answer to a declaration,
+   * and a stale copy of it shown as current is the defect this lane is
+   * supposed to prevent.
+   */
+  const profile = useOperatorProfile();
+  const actor = profile.data?.operator.id;
+  useDraft(
+    'collector-create',
+    actor,
+    { requestId },
+    useCallback((held: { requestId: string }) => setRequestId(held.requestId), []),
+  );
+
   const { data, isPending, error } = useQuery({
     queryKey: ['bo', 'collectors'],
     queryFn: backOffice.collectors,
@@ -438,6 +512,7 @@ export function Collectors({ onRefused }: { onRefused: (error: unknown) => void 
     mutationFn: ({ collectorId, ...body }: { collectorId: string } & BoPayoutDeclaration) =>
       backOffice.declarePayoutAccount(collectorId, body),
     onSuccess: (result, sent) => {
+      if (actor !== undefined) clearDraft(`payout-declaration.${sent.collectorId}`, actor);
       setDeclaring(null);
       if (result !== null) setDeclared({ collectorId: sent.collectorId, result });
       done();
@@ -605,6 +680,7 @@ export function Collectors({ onRefused }: { onRefused: (error: unknown) => void 
                       size="sm"
                       variant={c.payout_account === null ? 'secondary' : 'ghost'}
                       onClick={() => {
+                        if (declaring === c.id && actor !== undefined) clearDraft(`payout-declaration.${c.id}`, actor);
                         setDeclared(null);
                         setDeclaring(declaring === c.id ? null : c.id);
                       }}
@@ -668,6 +744,8 @@ export function Collectors({ onRefused }: { onRefused: (error: unknown) => void 
                 {declaring === c.id ? (
                   <EditRow span={6}>
                     <PayoutDeclaration
+                      collectorId={c.id}
+                      actor={actor}
                       busy={declare.isPending}
                       onSubmit={(body) => declare.mutate({ collectorId: c.id, ...body })}
                     />
@@ -789,15 +867,51 @@ export function Collectors({ onRefused }: { onRefused: (error: unknown) => void 
  * decides.
  */
 function PayoutDeclaration({
+  collectorId,
+  actor,
   busy,
   onSubmit,
 }: {
+  collectorId: string;
+  actor: string | undefined;
   busy: boolean;
   onSubmit: (body: BoPayoutDeclaration) => void;
 }) {
   const { t } = useTranslation();
   const [method, setMethod] = useState<BoPayoutDeclaration['method']>('WALLET');
-  const [id] = useState(() => uuid());
+  const [id, setId] = useState(() => uuid());
+
+  /**
+   * The id survives a remount, and **only** the id.
+   *
+   * This is the one form on the screen where a re-minted id is not just a
+   * confusing refusal. `collectors` and `devices` are caught by
+   * `collectors_external_ref_key` and `devices_hardware_serial_key`, so a
+   * second attempt under a new id is refused. `payout_accounts` is not: the
+   * insert sets the previous row `is_current = false` and writes the new one as
+   * current, in one transaction, so a fresh id **succeeds** and moves where a
+   * collector's money goes. The same id with the same fields replays
+   * (`payout/routes/payout.ts`) and never asks ZaloPay twice; the same id with
+   * different fields is refused `payout_accounts_id_reused`, which is right —
+   * that is a correction wearing a used id, not a retry.
+   *
+   * The fields are deliberately not kept. They are the collector's holder
+   * name, phone, bank code and account number, which is exactly what
+   * `lib/draft.ts` refuses to store, and the inputs are uncontrolled
+   * (`FormData` at submit) so there is nothing in state to leak anyway. An
+   * operator who leaves mid-declaration retypes the destination — the thing
+   * that must not change under them is which declaration it is.
+   *
+   * Keyed per collector: this component is mounted per row, and one shared key
+   * would give two collectors' declarations the same id.
+   */
+  const draft = useDraft(
+    `payout-declaration.${collectorId}`,
+    actor,
+    { requestId: id },
+    useCallback((held: { requestId: string }) => setId(held.requestId), []),
+  );
+  void draft;
 
   return (
     <form
@@ -868,10 +982,24 @@ function PayoutDeclaration({
 
 function Devices({ onRefused }: { onRefused: (error: unknown) => void }) {
   const { t } = useTranslation();
+  const profile = useOperatorProfile();
   const client = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [requestId, setRequestId] = useState(() => uuid());
+
+  /**
+   * As in `Collectors`: the id survives a remount, the uncontrolled fields do
+   * not need to. `devices_hardware_serial_key` catches a duplicate created
+   * under a fresh id, so what this prevents is a refusal that blames the
+   * serial for a problem in the request.
+   */
+  useDraft(
+    'device-create',
+    profile.data?.operator.id,
+    { requestId },
+    useCallback((held: { requestId: string }) => setRequestId(held.requestId), []),
+  );
 
   const devices = useQuery({ queryKey: ['bo', 'devices'], queryFn: backOffice.devices });
   /** Binding needs the roll of collectors; the same list the other tab reads. */

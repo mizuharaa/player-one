@@ -25,11 +25,14 @@
  * exception — if it cannot be created there is nothing to claim, and the flow
  * stops with the refusal on screen.
  */
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button.tsx';
 import { Problem } from '../components/ui/primitives.tsx';
+import { DraftRestored } from '../components/ui/DraftRestored.tsx';
+import { useDraft } from '../lib/draft.ts';
+import { useOperatorProfile } from '../lib/profile-api.ts';
 import {
   CheckList,
   Refusal,
@@ -51,6 +54,28 @@ type Outcome = {
 };
 
 type Result = { name: string; published: boolean; outcomes: Outcome[] };
+
+/**
+ * What survives leaving the New task flow.
+ *
+ * Only the operator's own answers, plus the ids they were typed under. The
+ * unit price is in here because the operator typed it — it is an input, not a
+ * computed figure — and it is kept as the decimal string it was typed as, the
+ * same way the table refuses to put it through `Intl`.
+ */
+type TaskAssignDraft = {
+  taskId: string;
+  ids: [string, { claim: string; assignment: string }][];
+  name: string;
+  type: string;
+  price: string;
+  target: string;
+  capacity: string;
+  publish: boolean | null;
+  chosen: string[];
+  cameras: Record<string, string>;
+  step: number;
+};
 
 export function TaskAssign({
   collectors,
@@ -75,7 +100,7 @@ export function TaskAssign({
    * in a ref, so ticking a collector, unticking it and ticking it again does
    * not mint a third id for one claim.
    */
-  const [taskId] = useState(() => uuid());
+  const [taskId, setTaskId] = useState(() => uuid());
   const ids = useRef(new Map<string, { claim: string; assignment: string }>());
   const idsFor = (collectorId: string) => {
     const held = ids.current.get(collectorId);
@@ -97,6 +122,58 @@ export function TaskAssign({
 
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<Result | null>(null);
+  const [step, setStep] = useState(0);
+
+  /**
+   * What the operator typed, kept across leaving this screen.
+   *
+   * **This is the flow the owner's report was about.** Part-way through New
+   * task, over to the Collectors tab, back, and every field was empty: the tab
+   * unmounts this component, so the answers above and the ids below went with
+   * it. The ids matter as much as the answers — a ref survives a re-render but
+   * not a remount, and `tasks` has no unique on name or type, so a second
+   * attempt under a fresh `taskId` is a second task row rather than a retry.
+   * The claim side is protected by `task_claims_live_key`; the device
+   * assignment is not, so a re-minted assignment id is a second custody period
+   * for one camera that went out once.
+   *
+   * `chosen` is a `Set` and `ids` a `Map`, and neither survives `JSON`, so both
+   * travel as arrays and are rebuilt on the way back in. `result` is not kept:
+   * it is the server's report of writes that already happened, and restoring it
+   * would show a finished flow to somebody who has not finished one.
+   */
+  const profile = useOperatorProfile();
+  const draft = useDraft(
+    'task-assign',
+    profile.data?.operator.id,
+    {
+      taskId,
+      ids: [...ids.current],
+      name,
+      type,
+      price,
+      target,
+      capacity,
+      publish,
+      chosen: [...chosen],
+      cameras,
+      step,
+    },
+    useCallback((h: TaskAssignDraft) => {
+      setTaskId(h.taskId);
+      ids.current = new Map(h.ids);
+      setName(h.name);
+      setType(h.type);
+      setPrice(h.price);
+      setTarget(h.target);
+      setCapacity(h.capacity);
+      setPublish(h.publish);
+      setChosen(new Set(h.chosen));
+      setCameras(h.cameras);
+      setStep(h.step);
+    }, []),
+    result === null,
+  );
 
   const picked = collectors.filter((c) => chosen.has(c.id));
 
@@ -151,6 +228,8 @@ export function TaskAssign({
     onSuccess: (landed) => {
       setError(null);
       setResult(landed);
+      /** The task exists, so this is no longer work in progress. */
+      draft.discard();
       onLanded();
     },
     onError: setError,
@@ -278,7 +357,10 @@ export function TaskAssign({
           onToggle={(id) => {
             const next = new Set(chosen);
             if (next.has(id)) next.delete(id);
-            else next.add(id);
+            else {
+              idsFor(id);
+              next.add(id);
+            }
             setChosen(next);
           }}
           idOf={(c) => c.id}
@@ -344,6 +426,28 @@ export function TaskAssign({
     },
   ];
 
+  /**
+   * "No, throw that away."
+   *
+   * Fresh ids, for the same reason the counter's discard mints fresh ones:
+   * keeping the id is what makes a *resumed* submit a retry, and discarding is
+   * the operator saying this is not that task.
+   */
+  const discardDraft = () => {
+    draft.discard();
+    setTaskId(uuid());
+    ids.current = new Map();
+    setName('');
+    setType('');
+    setPrice('');
+    setTarget('');
+    setCapacity('1');
+    setPublish(null);
+    setChosen(new Set());
+    setCameras({});
+    setStep(0);
+  };
+
   if (result !== null) {
     return <Landed result={result} onClose={onClose} />;
   }
@@ -358,7 +462,12 @@ export function TaskAssign({
           {t('bo.cancel')}
         </Button>
       </div>
+      {draft.restoredAt === null ? null : <DraftRestored onDiscard={discardDraft} />}
       <Wizard
+        /** Remounted once a draft arrives, because `startAt` is read on mount only. */
+        key={draft.restoredAt ?? 'fresh'}
+        startAt={draft.restoredAt === null ? 0 : step}
+        onStepChange={setStep}
         steps={steps}
         title={t('assign.title')}
         intro={t('assign.review.intro')}

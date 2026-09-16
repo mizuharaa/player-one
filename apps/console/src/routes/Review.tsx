@@ -33,7 +33,7 @@ import { Field, FlagRow, Problem, Skeleton } from '../components/ui/primitives.t
 import { guideBlocksKeys } from '../components/guide/useGuide.ts';
 import { IconKeyboard, IconPartial, IconPass, IconReject, IconRefresh } from '../components/icons.tsx';
 import { MESSAGES } from '@playerone/api/i18n';
-import { api, ApiError, type Claim, type ReasonCode, type Verdict } from '../lib/api.ts';
+import { api, ApiError, type Claim, type ReasonCode, type ReviewQueue, type Verdict } from '../lib/api.ts';
 import { commitFailure, type CommitFailure } from './refusal.ts';
 import { duration, money, signedPercent, signedSeconds } from '../lib/format.ts';
 import { cn } from '../lib/cn.ts';
@@ -50,6 +50,11 @@ interface Span {
 export function ReviewScreen() {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
+  const [queue, setQueue] = useState<ReviewQueue>('standard');
+  const queueRef = useRef<ReviewQueue>('standard');
+  const episodeRef = useRef<string | null>(null);
+  const claiming = useRef(false);
+  const mounted = useRef(false);
 
   const [episode, setEpisode] = useState<Claim | null>(null);
   const [verdictId, setVerdictId] = useState<string>(() => uuid());
@@ -87,6 +92,7 @@ export function ReviewScreen() {
 
   /** Reset everything that belongs to one episode. */
   const adopt = useCallback((claim: Claim | null) => {
+    episodeRef.current = claim?.episode_id ?? null;
     setEpisode(claim);
     setVerdictId(uuid());
     setSpans([]);
@@ -124,23 +130,40 @@ export function ReviewScreen() {
    * What the claim releases before it claims. A ref, not the state, so the
    * mutation is built once instead of on every episode.
    */
-  const episodeRef = useRef<string | null>(null);
-  episodeRef.current = episode?.episode_id ?? null;
-
   const claim = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (nextQueue: ReviewQueue) => {
       const held = episodeRef.current;
       if (held !== null) await api.release(held);
-      return api.claimNext();
+      adopt(null);
+      if (!mounted.current) return null;
+      return api.claimNext(nextQueue);
     },
-    onSuccess: (next) => adopt(next),
+    onSuccess: (next) => {
+      if (mounted.current) adopt(next);
+      else if (next) api.releaseOnUnload(next.episode_id);
+    },
+    onSettled: () => { claiming.current = false; },
   });
 
-  /** Claim the first episode when the screen opens. */
   const claimMutate = claim.mutate;
-  useEffect(() => {
-    claimMutate();
+  const requestClaim = useCallback((nextQueue = queueRef.current) => {
+    // Guard synchronously: double clicks and StrictMode effects precede the pending render.
+    if (claiming.current || !mounted.current) return;
+    claiming.current = true;
+    queueRef.current = nextQueue;
+    setQueue(nextQueue);
+    claimMutate(nextQueue);
   }, [claimMutate]);
+
+  /** Claim the first episode when the screen opens. */
+  useEffect(() => {
+    mounted.current = true;
+    requestClaim();
+    return () => {
+      mounted.current = false;
+      if (episodeRef.current) api.releaseOnUnload(episodeRef.current);
+    };
+  }, [requestClaim]);
 
   /* ---------------------------------------------------------------------
      The lease: a heartbeat while working, a beacon on the way out.
@@ -152,6 +175,7 @@ export function ReviewScreen() {
     if (episodeId === null || lost !== null) return;
     const timer = setInterval(() => {
       api.heartbeat(episodeId).catch((err) => {
+        if (episodeRef.current !== episodeId || !mounted.current) return;
         if (err instanceof ApiError && err.isReassigned) {
           setLost('lease');
           setLeaseError(err);
@@ -286,7 +310,7 @@ export function ReviewScreen() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['shift'] });
-      claim.mutate();
+      requestClaim();
     },
     /**
      * A failure here is one of three things and they are not interchangeable.
@@ -344,6 +368,8 @@ export function ReviewScreen() {
     decision !== null &&
     lost === null &&
     !held &&
+    !claim.isPending &&
+    !claim.isError &&
     !commit.isPending &&
     (decision !== 'partial' || closed.length > 0) &&
     (decision !== 'bad' || reasons.length > 0);
@@ -364,7 +390,7 @@ export function ReviewScreen() {
       if (guideBlocksKeys(event)) return;
       const target = event.target as HTMLElement | null;
       /** Never steal a key from a text field. */
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
       switch (event.key) {
@@ -412,7 +438,7 @@ export function ReviewScreen() {
           setDecision('bad');
           return;
         case 'Enter':
-          if (canCommit) commit.mutate();
+          if (canCommit && !claiming.current) commit.mutate();
           return;
         case '?':
           setShowShortcuts((s) => !s);
@@ -435,6 +461,26 @@ export function ReviewScreen() {
     queueDepth: episode?.queue_depth,
     averageSeconds: episode?.session_average_seconds,
   };
+  const queueSelector = (
+    <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border)] bg-[var(--background)] px-4 py-3">
+      <label htmlFor="review-queue" className="text-sm font-semibold">{t('queue.select')}</label>
+      <select
+        id="review-queue"
+        value={queue}
+        disabled={claim.isPending || commit.isPending || hold.isPending}
+        onChange={(event) => {
+          commit.reset();
+          hold.reset();
+          requestClaim(event.currentTarget.value as ReviewQueue);
+        }}
+        className="min-h-11 max-w-full rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)] disabled:cursor-wait disabled:opacity-60"
+      >
+        <option value="standard">{t('queue.standard')}</option>
+        <option value="privacy">{t('queue.privacy')}</option>
+        <option value="second_review">{t('queue.secondReview')}</option>
+      </select>
+    </div>
+  );
 
   /**
    * Playback is not authorised for this session, so there is no review to do.
@@ -447,10 +493,24 @@ export function ReviewScreen() {
   if (claim.error instanceof ApiError && claim.error.isWithheld) {
     return (
       <AppShell {...shellProps} bleed>
+        {queueSelector}
         <Nothing
           title={t('state.playbackWithheld.title')}
           body={t('state.playbackWithheld.body')}
-          action={<WithheldQueue />}
+          action={<WithheldQueue queue={queue} />}
+        />
+      </AppShell>
+    );
+  }
+
+  if (claim.isError) {
+    return (
+      <AppShell {...shellProps} bleed>
+        {queueSelector}
+        <Nothing
+          title={t('state.loadFailed.title')}
+          body={claim.error.message}
+          action={<Button variant="outline" onClick={() => requestClaim()}>{t('queue.refresh')}</Button>}
         />
       </AppShell>
     );
@@ -460,11 +520,12 @@ export function ReviewScreen() {
   if (!claim.isPending && episode === null && !claim.isError) {
     return (
       <AppShell {...shellProps} bleed>
+        {queueSelector}
         <Nothing
           title={t('queue.empty.title')}
           body={t('queue.empty.body')}
           action={
-            <Button variant="outline" onClick={() => claim.mutate()}>
+            <Button variant="outline" onClick={() => requestClaim()}>
               <IconRefresh size={17} />
               {t('queue.refresh')}
             </Button>
@@ -476,6 +537,7 @@ export function ReviewScreen() {
 
   return (
     <AppShell {...shellProps} bleed>
+      {queueSelector}
       <div className="grid min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[minmax(0,1fr)_360px]">
         {/* ---------------- The theatre ---------------- */}
         <section className="on-stage flex min-w-0 flex-col">
@@ -489,7 +551,7 @@ export function ReviewScreen() {
                   title={t('state.mediaFailed.title')}
                   body={t('state.mediaFailed.body')}
                   action={
-                    <Button variant="stage" onClick={() => claim.mutate()}>
+                    <Button variant="stage" onClick={() => requestClaim()}>
                       {t('state.mediaFailed.action')}
                     </Button>
                   }
@@ -600,7 +662,7 @@ export function ReviewScreen() {
                 title={t('state.leaseExpired.title')}
                 body={t('state.leaseExpired.body')}
                 action={
-                  <Button variant="primary" onClick={() => claim.mutate()}>
+                  <Button variant="primary" onClick={() => requestClaim()}>
                     {t('state.leaseExpired.action')}
                   </Button>
                 }
@@ -832,7 +894,7 @@ export function ReviewScreen() {
                           ) : null}
                         </div>
                       ) : (
-                        <Button variant="primary" size="sm" onClick={() => claim.mutate()}>
+                        <Button variant="primary" size="sm" onClick={() => requestClaim()}>
                           {t('state.leaseExpired.action')}
                         </Button>
                       )
@@ -840,7 +902,7 @@ export function ReviewScreen() {
                   />
                 )}
                 {held ? (
-                  <Button variant="primary" size="sm" className="mt-3" onClick={() => claim.mutate()}>
+                  <Button variant="primary" size="sm" className="mt-3" onClick={() => requestClaim()}>
                     {t('state.leaseExpired.action')}
                   </Button>
                 ) : null}
@@ -1010,9 +1072,9 @@ function VerdictChoice({
  * ponytail: a read, not a queue. One episode, because that is what the route
  * answers; a reviewer's whole list is a route nobody has needed yet.
  */
-function WithheldQueue() {
+function WithheldQueue({ queue }: { queue: ReviewQueue }) {
   const { t } = useTranslation();
-  const next = useQuery({ queryKey: ['review', 'peek'], queryFn: () => api.peek(), retry: false });
+  const next = useQuery({ queryKey: ['review', 'peek', queue], queryFn: () => api.peek(queue), retry: false });
   if (next.isPending || next.error) return null;
   const episode = next.data;
   if (!episode) return <p className="text-[0.9375rem]">{t('queue.empty.body')}</p>;

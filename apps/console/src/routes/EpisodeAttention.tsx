@@ -126,7 +126,7 @@ export const holdKey = (r: Pick<StuckEpisode, 'park' | 'held'>): string =>
  * column is what keeps them apart, and `defects` is why the unusable case says
  * something an operator can repeat rather than just "quarantined".
  */
-export type AttentionRow = BatchExceptions['blocking'][number] & {
+export type AttentionRow = Omit<BatchExceptions['blocking'][number], 'needs'> & {
   needs: 'assignment' | 'confirmation' | 'unusable';
   defects?: string[];
 };
@@ -138,7 +138,7 @@ export type AttentionRow = BatchExceptions['blocking'][number] & {
  * the screen used to read one, so what has to stay true is that an unusable
  * episode becomes a row with its own `needs` and its own defect codes.
  */
-export const attentionRows = (data: BatchExceptions | undefined): AttentionRow[] => [
+export const attentionRows = (data: BatchExceptions | null | undefined): AttentionRow[] => [
   ...(data?.blocking ?? []),
   ...(data?.unusable ?? []).map((u) => ({
     episode_id: u.episode_id,

@@ -17,7 +17,7 @@
 	email {$PLAYERONE_ACME_EMAIL}
 }
 
-{$PLAYERONE_PUBLIC_URL} {
+{$PLAYERONE_PUBLIC_URL} {$PLAYERONE_PUBLIC_ALIASES} {
 	bind {$PLAYERONE_BIND}
 	# The same four headers `deploy/http-server.mjs` sends for the Railway
 	# console, on every response this listener makes — the console SPA, the
@@ -62,19 +62,14 @@
 		}
 	}
 
-	handle /api/* {
+	# Match the showcase proxy's API roots, including counter intake writes.
+	# /episodes itself stays a console route; only descendants belong to the API.
+	@api path /api /api/* /auth /auth/* /whoami /whoami/* /reference /reference/* /handovers /handovers/* /upload-batches /upload-batches/* /episodes/*
+	handle @api {
 		reverse_proxy 127.0.0.1:{$PORT}
 	}
-	handle /auth/* {
-		reverse_proxy 127.0.0.1:{$PORT}
-	}
-	handle /whoami {
-		reverse_proxy 127.0.0.1:{$PORT}
-	}
-	handle /reference/* {
-		reverse_proxy 127.0.0.1:{$PORT}
-	}
-	handle /media/* {
+	@media path /media /media/*
+	handle @media {
 		reverse_proxy 127.0.0.1:{$PORT} {
 			# A reviewer seeks inside an MP4; buffering the range response
 			# stalls the lane this deployment exists to run.

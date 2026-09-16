@@ -40,6 +40,7 @@ export const browseEpisodes = (search: string) =>
   call<{ episodes: BrowsedEpisode[]; truncated: boolean }>(`/api/episodes${search ? `?${search}` : ''}`);
 
 export type Verdict = 'good' | 'partial' | 'bad';
+export type ReviewQueue = 'standard' | 'privacy' | 'second_review';
 
 export interface Flag {
   code: string;
@@ -580,13 +581,13 @@ export const counter = {
 
 export const api = {
   /** Claims the next episode, or null when there is nothing to review. */
-  claimNext: () => call<Claim>('/api/review/claim', { method: 'POST' }),
+  claimNext: (queue: ReviewQueue = 'standard') => call<Claim>(`/api/review/claim?queue=${queue}`, { method: 'POST' }),
 
   /** Metadata without claiming — this is what warms the next video element. */
   episode: (id: string) => call<Episode>(`/api/review/episode/${id}`),
 
   /** What is next in the queue, without taking it. */
-  peek: () => call<Episode>('/api/review/next'),
+  peek: (queue: ReviewQueue = 'standard') => call<Episode>(`/api/review/next?queue=${queue}`),
 
   reasons: () => call<{ reasons: ReasonCode[] }>('/api/review/reasons'),
 

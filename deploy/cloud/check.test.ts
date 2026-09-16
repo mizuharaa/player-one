@@ -70,17 +70,27 @@ describe('the cloud listener and the console listener send the same headers', ()
 });
 
 describe('the Caddyfile, the compose file and the env template agree', () => {
-  it('proxies only paths the API owns, and every path the console needs', () => {
-    const handled = [...caddyfile.matchAll(/^\thandle (\/\S*) \{/gm)].map((m) => m[1]!);
+  it('serves optional aliases alongside the unchanged primary hostname', () => {
+    expect(caddyfile).toContain('{$PLAYERONE_PUBLIC_URL} {$PLAYERONE_PUBLIC_ALIASES} {');
+    expect(env.PLAYERONE_PUBLIC_ALIASES).toBe('');
+    expect(compose.services.caddy.env_file).toContain('cloud.env');
+  });
+  it('proxies only paths the API owns, and every path the console needs', async () => {
+    const handled = [...caddyfile.matchAll(/^\t@(?:api|media) path (.+)$/gm)].flatMap(m => m[1]!.trim().split(/\s+/));
     expect(handled).not.toHaveLength(0);
     for (const path of handled) {
-      // `/healthz` is this listener's own, answered from the API's /whoami.
-      if (path === '/healthz') continue;
       expect(isApiPath(path.replace(/\/\*$/, '/x')), `${path} is an API path`).toBe(true);
     }
-    for (const root of ['/api/*', '/auth/*', '/whoami', '/reference/*', '/media/*']) {
+    const proxy = await read(join('..', 'http-server.mjs'));
+    const roots = [.../const API_ROOTS = \[([^\]]+)\]/.exec(proxy)![1]!.matchAll(/'([^']+)'/g)].map(m => m[1]!);
+    expect(roots).not.toHaveLength(0);
+    for (const root of roots) {
       expect(handled).toContain(root);
+      expect(handled).toContain(`${root}/*`);
     }
+    expect(handled).toContain('/episodes/*');
+    expect(handled).not.toContain('/episodes');
+    for (const matcher of ['api', 'media']) expect(caddyfile).toMatch(new RegExp(`handle @${matcher} \\{\\s+reverse_proxy 127\\.0\\.0\\.1:`));
   });
 
   it('asks the API for /whoami and reads 401 as ready, in the proxy and in the container', () => {

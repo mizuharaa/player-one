@@ -116,6 +116,10 @@ const en = {
   'login.mismatch': 'The machine and the operator belong to different upload centres.',
 
   'queue.depth': 'In queue',
+  'queue.select': 'Review queue',
+  'queue.standard': 'Standard',
+  'queue.privacy': 'Privacy review',
+  'queue.secondReview': 'Second review',
   'queue.average': 'Average per verdict',
   'queue.empty.title': 'Nothing to review',
   'queue.empty.body':
@@ -1642,6 +1646,13 @@ const en = {
      you are, and a summary of every answer before anything is written.
      --------------------------------------------------------------------- */
 
+  /**
+   * A restored draft says so, and offers a way out. `lib/draft.ts` explains
+   * why: a form that refills itself silently leaves an operator unable to tell
+   * whose answers they are looking at or whether any of it was sent.
+   */
+  'draft.restored': 'Restored your unfinished work. Check the details before continuing.',
+  'draft.discard': 'Discard and start over',
   'wiz.step': 'Step',
   'wiz.review': 'Check and commit',
   'wiz.review.question': 'Check every answer before this is written.',
@@ -1843,6 +1854,10 @@ const zh: Record<MessageKey, string> = {
   'login.mismatch': '机器与操作员属于不同的上传中心。',
 
   'queue.depth': '队列中',
+  'queue.select': '审核队列',
+  'queue.standard': '常规审核',
+  'queue.privacy': '隐私审核',
+  'queue.secondReview': '二次审核',
   'queue.average': '每条平均用时',
   'queue.empty.title': '暂无待审核内容',
   'queue.empty.body': '所有已归属且通过完整性校验的片段均已处理。新导入的素材会出现在这里。',
@@ -2935,6 +2950,8 @@ const zh: Record<MessageKey, string> = {
   'episodes.noMatch': '此范围内没有符合筛选条件的行。',
   /* 向导语法：柜台收卡与后台任务派发共用。每一步只问一个问题。 */
 
+  'draft.restored': '已恢复未完成的内容。请核对后继续。',
+  'draft.discard': '放弃并重新开始',
   'wiz.step': '步骤',
   'wiz.review': '核对并提交',
   'wiz.review.question': '写入之前，请逐项核对。',
@@ -3121,6 +3138,10 @@ const vi: Record<MessageKey, string> = {
   'login.mismatch': 'Máy và nhân viên thuộc hai trung tâm tải lên khác nhau.',
 
   'queue.depth': 'Trong hàng đợi',
+  'queue.select': 'Hàng đợi duyệt',
+  'queue.standard': 'Duyệt thông thường',
+  'queue.privacy': 'Duyệt quyền riêng tư',
+  'queue.secondReview': 'Duyệt lần hai',
   'queue.average': 'Trung bình mỗi kết luận',
   'queue.empty.title': 'Không có gì để duyệt',
   'queue.empty.body':
@@ -4355,6 +4376,13 @@ const vi: Record<MessageKey, string> = {
   'episodes.noMatch': 'Không có dòng nào trong phạm vi này khớp với bộ lọc.',
   /* Ngữ pháp của luồng nhiều bước: dùng chung cho quầy nhận thẻ và giao nhiệm vụ. */
 
+  /**
+   * `vi` wording pending the owner's approval. Short and plain, the register
+   * Zalo and MoMo use — not "Bản nháp của bạn đã được phục hồi", which is the
+   * passive officialese a literal translation lands on.
+   */
+  'draft.restored': 'Đã giữ lại nội dung bạn nhập dở. Hãy kiểm tra trước khi tiếp tục.',
+  'draft.discard': 'Bỏ và làm lại',
   'wiz.step': 'Bước',
   'wiz.review': 'Kiểm lại rồi ghi',
   'wiz.review.question': 'Kiểm lại từng câu trả lời trước khi ghi.',

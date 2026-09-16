@@ -26,7 +26,7 @@ import { NotFoundScreen } from './routes/NotFound.tsx';
 import { EpisodesScreen, episodeSearch } from './routes/Episodes.tsx';
 import { EpisodeAttentionScreen } from './routes/EpisodeAttention.tsx';
 import { CounterScreen } from './routes/Counter.tsx';
-import { BackOfficeScreen } from './routes/BackOffice.tsx';
+import { BackOfficeScreen, backOfficeSearch } from './routes/BackOffice.tsx';
 import { SettleScreen } from './payout/SettleScreen.tsx';
 import { PreflightScreen } from './payout/PreflightScreen.tsx';
 import { BillScreen } from './payout/BillScreen.tsx';
@@ -166,11 +166,19 @@ const reviewRoute = createRoute({
   component: ReviewScreen,
 });
 
-/** BO-01 to BO-04, on one screen: tasks, collectors and devices. */
+/**
+ * BO-01 to BO-04, on one screen: tasks, collectors and devices.
+ *
+ * `?tab=` carries which of the three, and `?new` whether the new-task flow is
+ * open. Both were local state until an operator reported the cost: part-way
+ * through New task, over to Collectors, back, and every field was empty.
+ * `backOfficeSearch` validates them the way `episodeSearch` does its filters.
+ */
 const backOfficeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/backoffice',
   beforeLoad: requireSession,
+  validateSearch: backOfficeSearch,
   component: BackOfficeScreen,
 });
 
