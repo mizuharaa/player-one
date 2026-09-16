@@ -1229,7 +1229,28 @@ export function registerEpisodes(
     });
   });
 
-  /** BO-05: browse only the recordings received at the caller's centre. */
+  /**
+   * BO-05: browse only the recordings received at the caller's centre.
+   *
+   * **Two chains name a centre, and this route has to read both.** The batch
+   * chain — `episodes.upload_batch_id → upload_batches → handovers` — is the
+   * one a card ingested at a counter carries. It is not the only one: an
+   * episode delivered from the collector's phone has no batch at all, and the
+   * session it belongs to still names the handover an operator declared at
+   * their own counter (`collection_sessions.handover_id`, `session_origin =
+   * 'handover'`). Read through the batch alone, such an episode belongs to
+   * nobody and this screen is empty on a database that holds five of them —
+   * measured against the stakeholder seed on 2026-09-16, where all five
+   * episodes are `upload_path = 'A'` with `upload_batch_id is null` while
+   * their session's handover names the caller's own centre.
+   *
+   * The scope is not widened by this: an episode still has to reach a
+   * handover this operator's centre owns, which is the same SEC-02 question
+   * asked of the row that actually records the claim. `episodeAtCentre` above
+   * is deliberately the narrower one and stays as it is — that gate decides
+   * who may stream the FOOTAGE, and bytes cached by an upload machine are the
+   * only bytes it can serve.
+   */
   app.get('/api/episodes', opts, async (req, reply) => {
     const q = BrowseQuery.safeParse(req.query ?? {});
     if (!q.success) {
@@ -1242,14 +1263,20 @@ export function registerEpisodes(
              d.hardware_serial as device_serial, e.resolution_state,
              e.first_seen_at, e.session_started_at
         from episodes e
-        join upload_batches b on b.id = e.upload_batch_id
-        join handovers h on h.id = b.handover_id
         left join collection_sessions s on s.id = e.collection_session_id
         left join tasks t on t.id = s.task_id
         left join collectors c on c.id = s.collector_id
         left join collection_session_devices sd on sd.collection_session_id = s.id
         left join devices d on d.id = sd.device_id
-       where h.upload_centre_id = ${actor.operator.uploadCentreId}
+       where (exists (
+                select 1 from upload_batches b
+                  join handovers h on h.id = b.handover_id
+                 where b.id = e.upload_batch_id
+                   and h.upload_centre_id = ${actor.operator.uploadCentreId})
+              or exists (
+                select 1 from handovers h2
+                 where h2.id = s.handover_id
+                   and h2.upload_centre_id = ${actor.operator.uploadCentreId}))
          ${task_id === undefined ? sql`` : sql`and s.task_id = ${task_id}`}
          ${collector_id === undefined ? sql`` : sql`and s.collector_id = ${collector_id}`}
          ${device_id === undefined ? sql`` : sql`and sd.device_id = ${device_id}`}

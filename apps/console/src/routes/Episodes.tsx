@@ -52,6 +52,14 @@ function EpisodesBrowse({ search, query }: { search: Search; query: string }) {
   ], [t]);
   const table = useReactTable({ data: episodes.data?.episodes ?? [], columns, getCoreRowModel: getCoreRowModel() });
   const error = episodes.error ?? tasks.error ?? collectors.error ?? devices.error;
+  /**
+   * Is anything actually filtering? An empty result under no filter at all is
+   * not "change the filters and apply again" — there is nothing to change, and
+   * an operator reading that sentence concludes the screen is broken. Measured
+   * on the stakeholder seed: five episodes existed and this screen said "No
+   * episodes match these filters" with every selector on All.
+   */
+  const filtered = FILTERS.some((key) => search[key] !== undefined && search[key] !== '');
   const change = (key: Filter, value: string) => setDraft((s) => ({ ...s, [key]: value }));
 
   return (
@@ -95,7 +103,9 @@ function EpisodesBrowse({ search, query }: { search: Search; query: string }) {
             void episodes.refetch(); void tasks.refetch(); void collectors.refetch(); void devices.refetch();
           }}>{t('episodes.retry')}</Button>} />
           : episodes.isPending ? <Skeleton className="h-20 w-full" />
-          : table.getRowModel().rows.length === 0 ? <EmptyState title={t('episodes.empty')} body={t('episodes.emptyBody')} />
+          : table.getRowModel().rows.length === 0 ? <EmptyState
+              title={t(filtered ? 'episodes.empty' : 'episodes.emptyUnfiltered')}
+              body={t(filtered ? 'episodes.emptyBody' : 'episodes.emptyUnfilteredBody')} />
           : <Panel className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-sm">

@@ -764,6 +764,28 @@ export function registerPayout(
   // -------------------------------------------------------------------------
   // Batches: the period's bills, and the preflight
 
+  /**
+   * The most recent period that actually holds a bill, as its start day.
+   *
+   * Sent with every batch so an empty period can say where the money is
+   * instead of only that there is none here. The console's default period is
+   * the Monday of the current week (`payout/period.ts`), and a cycle nobody
+   * has billed yet is a legitimate empty answer — but on 2026-09-16 the
+   * stakeholder seed's one bill covers 01/09 to 14/09, the default asked for
+   * the week of the 14th, and finance read "0 bills, 0" on a database with a
+   * bill in it and no way to find the period it was on.
+   *
+   * `period_start` and not the id, because that is what the period travels as
+   * on every settle screen. Null when there is no bill at all.
+   */
+  const latestBillPeriod = async (): Promise<string | null> => {
+    const [row] = (await db.execute(
+      sql`select max(period_start) as start from bills`,
+    )) as unknown as { start: Date | string | null }[];
+    const start = row?.start ?? null;
+    return start === null ? null : new Date(start).toISOString().slice(0, 10);
+  };
+
   app.get('/api/payout/batches/:period', financeRead, async (req, reply) => {
     const period = periodOf(req);
     if (typeof period === 'string') return reply.code(422).send({ error: period });
@@ -772,6 +794,7 @@ export function registerPayout(
       period_start: period.start.toISOString(),
       period_end: period.end.toISOString(),
       mode,
+      latest_bill_period: await latestBillPeriod(),
       bills: bills.map(shapeBill),
     });
   });

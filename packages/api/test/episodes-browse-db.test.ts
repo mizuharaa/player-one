@@ -88,7 +88,7 @@ describe.skipIf(!hasDb())('BO-05 centre-scoped episode browsing (database)', () 
     const unresolved = await add(batches[0], null, T + 2000);
     const otherCentre = await add(batches[2], sessions[0], T + 3000);
     const noBatch = await add(null, sessions[0], T + 4000);
-    return { d, app, get, headers, collector, device, task, reviewer, batches, sessions, add, first, second, unresolved, otherCentre, noBatch };
+    return { d, app, get, headers, centre, operator, scenario, collector, device, task, reviewer, batches, sessions, add, first, second, unresolved, otherCentre, noBatch };
   }
 
   it('includes only this centre, excludes no-batch episodes, and retains unresolved rows with null labels', async () => {
@@ -98,6 +98,25 @@ describe.skipIf(!hasDb())('BO-05 centre-scoped episode browsing (database)', () 
     expect(res.episodes[0]).toMatchObject({ task_name: null, collector_ref: null, device_serial: null, resolution_state: 'quarantined' });
     expect((await h.get({}, h.headers(1))).episodes.map((r) => r.episode_id)).toEqual([h.otherCentre]);
     expect(res.truncated).toBe(false);
+  });
+
+  /**
+   * A phone-delivered episode has no upload batch, and the handover its
+   * session names is the only row that says which centre it belongs to. The
+   * stakeholder seed is exactly this shape — five episodes, no batch, one
+   * handover — and the screen was empty on it.
+   */
+  it('includes a no-batch episode when its session names a handover at this centre', async () => {
+    const h = await harness();
+    const handover = uid();
+    const session = uid();
+    await h.d.execute(sql`insert into handovers (id, collector_id, device_id, tf_card_id, upload_centre_id, operator_id, handover_time)
+      values (${handover}, ${h.collector[0]}, ${h.device[0]}, ${uid()}, ${h.centre[0]}, ${h.operator[0]}, ${new Date(T).toISOString()})`);
+    await h.d.execute(sql`insert into collection_sessions (id, handover_id, task_id, collector_id, scenario_id, others_in_frame, sensitive_info_present, session_origin)
+      values (${session}, ${handover}, ${h.task[0]}, ${h.collector[0]}, ${h.scenario}, false, false, 'handover')`);
+    const phone = await h.add(null, session, T + 5000);
+    expect((await h.get()).episodes.map((r) => r.episode_id)).toContain(phone);
+    expect((await h.get({}, h.headers(1))).episodes.map((r) => r.episode_id)).not.toContain(phone);
   });
 
   it('applies each filter and their intersection, including both time boundaries', async () => {

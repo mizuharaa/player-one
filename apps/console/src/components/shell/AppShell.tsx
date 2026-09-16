@@ -79,7 +79,11 @@ export function AppShell({ children, queueDepth, averageSeconds, operator, bleed
     <Link to="/" className="ops-brand workspace-brand" aria-label={t('workspace.homeLink')}><ConsoleLogo /></Link>
     <div className="workspace-language"><span>{t('app.language')}</span><LocaleSwitch /></div>
     {identity?.centre ? <div className="workspace-centre"><strong>{identity.centre.name}</strong><span>{identity.centre.region}</span></div> : null}
-    <PillNav current={path} showcase={Boolean(identity)} administrator={identity?.role==='administrator'&&identity.status==='active'} onNavigate={() => setMenuOpen(false)} />
+    {/* The role decides which items exist at all (PillNav's ROLE_SCOPE). A
+        reviewer never has an operator profile — the operator endpoint excludes
+        them by design — so their role comes off `/whoami`. */}
+    <PillNav current={path} showcase={Boolean(identity)} administrator={identity?.role==='administrator'&&identity.status==='active'}
+      role={reviewer ? 'reviewer' : identity?.status==='active' ? identity.role : undefined} onNavigate={() => setMenuOpen(false)} />
     <div className="workspace-sidebar-bottom">
       {profileEntry}
     </div>

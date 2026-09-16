@@ -143,7 +143,11 @@ export function SettleShell({
           >
             <IconAlert size={16} className="mt-0.5 shrink-0 text-[var(--foreground)]" />
             <span>
-              <strong className="font-semibold">{t(role === 'operator' ? 'settle.readonly' : 'workspace.unavailable')}.</strong> {t(reason)}
+              {/* "Unavailable" is for a session whose role is unknown. A known
+                  role that may not act is told which role may: the heading is
+                  about the ACTIONS, and an administrator reading the table
+                  below it must not be told the screen is unavailable. */}
+              <strong className="font-semibold">{t(role === 'unknown' ? 'workspace.unavailable' : 'settle.readonly')}.</strong> {t(reason)}
             </span>
           </p>
         ) : null}
