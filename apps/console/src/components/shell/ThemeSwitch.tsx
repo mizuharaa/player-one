@@ -8,10 +8,9 @@
  * pipeline, the rails, the counter. A staffed upload centre in daylight wants
  * light; a reviewer on the 02:00 shift does not.
  *
- * Three states, not two, matching how the tokens are written: an explicit
- * choice stamps `data-theme`, and no choice leaves the OS preference to decide.
- * The button cycles light → dark → system so the operator can get back to
- * "follow the machine" without clearing storage.
+ * No saved choice still follows the OS. Once pressed, the control switches the
+ * visible appearance immediately. The old three-stop cycle could move from an
+ * explicit theme to the same system theme, making the first click look broken.
  */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -35,6 +34,11 @@ function apply(choice: Choice) {
   else root.setAttribute('data-theme', choice);
 }
 
+export function nextTheme(choice: Choice, systemIsDark: boolean): Choice {
+  if (choice === 'system') return systemIsDark ? 'light' : 'dark';
+  return choice === 'light' ? 'dark' : 'light';
+}
+
 export function ThemeSwitch() {
   const { t } = useTranslation();
   const [choice, setChoice] = useState<Choice>(read);
@@ -46,7 +50,7 @@ export function ThemeSwitch() {
   }, [choice]);
 
   const cycle = () =>
-    setChoice((c) => (c === 'light' ? 'dark' : c === 'dark' ? 'system' : 'light'));
+    setChoice((current) => nextTheme(current, window.matchMedia('(prefers-color-scheme: dark)').matches));
 
   return (
     <button
