@@ -100,6 +100,16 @@ const vi = {
   'signIn.badCode': 'Mã không đúng hoặc đã hết hạn. Gửi lại mã mới.',
   'signIn.rateLimited': 'Bạn thử quá nhiều lần. Đợi vài phút rồi thử lại.',
   'signIn.unavailable': 'Chưa gửi được mã lúc này. Hãy tới điểm hỗ trợ.',
+
+  // Đăng nhập bằng Zalo (zalo.tsx). Quyết định ngày 2026-09-16: cách vào chính,
+  // còn mã qua số điện thoại là cách dự phòng ở ngay dưới.
+  'signIn.zalo': 'Tiếp tục với Zalo',
+  'signIn.zaloOpening': 'Đang mở Zalo…',
+  'signIn.zaloOr': 'hoặc dùng số điện thoại',
+  'signIn.zaloDenied': 'Bạn chưa đồng ý trên Zalo nên chưa đăng nhập được. Thử lại và bấm Cho phép.',
+  'signIn.zaloExpired': 'Lần đăng nhập Zalo này đã hết hạn. Bấm lại để thử.',
+  'signIn.zaloFailed': 'Chưa đăng nhập được bằng Zalo. Thử lại, hoặc dùng số điện thoại.',
+  'signIn.zaloUnavailable': 'Máy chủ này chưa bật đăng nhập Zalo. Dùng số điện thoại.',
   'signIn.restoring': 'Đang đăng nhập lại…',
   // The two country codes the pilot accepts, and nothing else. +86 is present
   // because collectors' phones are not all Vietnamese; `signIn.chinaNote` is
@@ -722,6 +732,15 @@ const en: Record<MessageKey, string> = {
   'signIn.badCode': 'That code is wrong or has expired. Ask for a new one.',
   'signIn.rateLimited': 'Too many attempts. Wait a few minutes and try again.',
   'signIn.unavailable': 'Sign-in codes cannot be sent right now. Contact a support point.',
+
+  // Zalo Login (zalo.tsx). Owner's decision, 2026-09-16.
+  'signIn.zalo': 'Continue with Zalo',
+  'signIn.zaloOpening': 'Opening Zalo…',
+  'signIn.zaloOr': 'or use your phone number',
+  'signIn.zaloDenied': 'Zalo was not given permission, so you are not signed in. Try again and press Allow.',
+  'signIn.zaloExpired': 'That Zalo sign-in has expired. Tap again to start a new one.',
+  'signIn.zaloFailed': 'Could not sign in with Zalo. Try again, or use your phone number.',
+  'signIn.zaloUnavailable': 'This server does not offer Zalo sign-in. Use your phone number.',
   'signIn.restoring': 'Restoring your session…',
   'signIn.countryCode': 'Country code',
   'signIn.country.vn': 'Vietnam +84',
@@ -1294,6 +1313,15 @@ const zh: Record<MessageKey, string> = {
   'signIn.badCode': '验证码错误或已过期。请重新获取。',
   'signIn.rateLimited': '尝试次数过多。请等几分钟后再试。',
   'signIn.unavailable': '目前无法发送登录验证码。请联系服务点。',
+
+  // Zalo 登录（zalo.tsx）。2026-09-16 的决定。
+  'signIn.zalo': '使用 Zalo 继续',
+  'signIn.zaloOpening': '正在打开 Zalo…',
+  'signIn.zaloOr': '或使用手机号',
+  'signIn.zaloDenied': '未在 Zalo 上授权，因此没有登录。请重试并点击“允许”。',
+  'signIn.zaloExpired': '这次 Zalo 登录已过期。请再点一次重新开始。',
+  'signIn.zaloFailed': '无法用 Zalo 登录。请重试，或使用手机号。',
+  'signIn.zaloUnavailable': '本服务器未开启 Zalo 登录。请使用手机号。',
   'signIn.restoring': '正在恢复登录状态…',
   'signIn.countryCode': '国家代码',
   'signIn.country.vn': '越南 +84',

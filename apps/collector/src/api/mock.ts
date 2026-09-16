@@ -196,6 +196,19 @@ export class MockCollectorApi implements CollectorApi {
 
   async signIn(): Promise<void> {}
 
+  /**
+   * The same rule as the three above: the seam's shape and not a second
+   * implementation. There is no Zalo to redirect to in a mock, so the button
+   * hides itself on `zalo_not_configured` — which is also what the browser
+   * harness should show, because a mock that opened oauth.zaloapp.com would
+   * take a screenshot run off this machine.
+   */
+  async startZaloSignIn(): Promise<{ url: string; state: string }> {
+    throw new ApiError('zalo_not_configured');
+  }
+
+  async signInWithTicket(): Promise<void> {}
+
   async signOut(): Promise<void> {
     this.me = null;
     this.claims = [];
