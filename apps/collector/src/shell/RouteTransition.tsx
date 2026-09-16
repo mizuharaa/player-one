@@ -21,10 +21,11 @@ export function RouteTransition({ route, isTabRoot, children }: { route: Route; 
   }
   previousRoot.current = isTabRoot;
   useLayoutEffect(() => { direction.value = nextDirection.current; }, [key, direction]);
+  const enteringDirection = nextDirection.current;
   const entering = (values: { windowWidth: number }) => {
     'worklet';
-    const tab = direction.value === 0;
-    return { initialValues: { opacity: tab ? 0 : 1, transform: [{ translateX: tab ? 0 : direction.value > 0 ? values.windowWidth : -values.windowWidth * .25 }, { translateY: tab ? 8 : 0 }] },
+    const tab = enteringDirection === 0;
+    return { initialValues: { opacity: tab ? 0 : 1, transform: [{ translateX: tab ? 0 : enteringDirection > 0 ? values.windowWidth : -values.windowWidth * .25 }, { translateY: tab ? 8 : 0 }] },
       animations: { opacity: withTiming(1, { duration: 220 }), transform: [{ translateX: withSpring(0, spring) }, { translateY: withTiming(0, { duration: 220 }) }] } };
   };
   const exiting = (values: { windowWidth: number }) => {
