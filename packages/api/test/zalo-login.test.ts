@@ -427,6 +427,43 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
     expect(text).not.toContain('a-ticket-that-was-never-issued');
   });
 
+  /**
+   * A shared carrier address must not run out of sign-ins.
+   *
+   * Both audits of `4a32929` reproduced this: the hop is three requests and
+   * each charges the shared address budget, but only ONE was refunded on
+   * success, so every completed sign-in cost two of the thirty per five
+   * minutes. Codex measured login 15 blocked for 300 seconds. Behind
+   * Vietnamese carrier NAT one address is a province, so that is a province
+   * locked out by fifteen people signing in.
+   *
+   * Twenty consecutive successful sign-ins, which is 60 charges against a
+   * budget of 30. It passes only if a success gives back everything it spent.
+   */
+  it('does not spend the shared address budget on sign-ins that succeed', async () => {
+    const app = await api(client(fakeZalo().fetch));
+
+    for (let n = 0; n < 20; n += 1) {
+      const opened = await start(app);
+      expect(opened.statusCode, `start ${n + 1}: ${opened.body}`).toBe(200);
+      const { state } = opened.json() as { state: string };
+
+      const back = await callback(app, { code: `code-${n}`, state });
+      expect(back.statusCode, `callback ${n + 1}: ${back.body}`).toBe(302);
+      const ticket = landed(back.headers.location as string).get('ticket');
+      expect(ticket, `callback ${n + 1} gave no ticket`).toBeTruthy();
+
+      const signedIn = await exchange(app, ticket!);
+      expect(signedIn.statusCode, `ticket ${n + 1}: ${signedIn.body}`).toBe(200);
+    }
+
+    // And the same person throughout, so this is twenty sign-ins and not
+    // twenty collectors quietly created.
+    const d = await db();
+    const [count] = await d.execute<{ n: number }>(sql`select count(*)::int as n from collectors`);
+    expect(count?.n).toBe(1);
+  });
+
   it('leaves one rate-limited row per window, not one per refused request', async () => {
     const app = await api(client(fakeZalo().fetch));
 

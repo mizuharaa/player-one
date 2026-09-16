@@ -69,6 +69,30 @@ export const CODE_TTL_MS = 5 * 60_000;
 export const CODE_ATTEMPTS = 5;
 
 /**
+ * How many of the shared address budget one Zalo sign-in spends, and therefore
+ * how many a successful one gives back.
+ *
+ * The hop is three requests — start, callback, ticket — and each one charges
+ * the limiter, because leaving any of them unmetered would leave a credential
+ * unmetered with it. But it is ONE sign-in, and before this only one charge
+ * was refunded on success: a completed sign-in cost two, so a shared carrier
+ * address ran out of the thirty-per-five-minutes at about the fifteenth
+ * collector and blocked everyone behind it for 300 seconds. Both audits of
+ * `4a32929` reproduced that.
+ *
+ * So a success refunds exactly what the flow spent, and no more. The rule
+ * `succeeded` states — a shared counter gives back this one attempt, never a
+ * clear, so one valid account cannot wipe the count for every guess sprayed
+ * from the same address — is about not giving back more than was taken. Three
+ * requests took three.
+ *
+ * A FAILED hop still costs one to three, which is the point: it is the failures
+ * the budget exists to cap, and `ratelimit.ts` names the shared-address ceiling
+ * behind carrier NAT as a known one.
+ */
+export const ZALO_HOP_REQUESTS = 3;
+
+/**
  * The floor both routes answer no faster than.
  *
  * Measured on the org PC before this was here: `hashCredential` costs 92 ms on
@@ -1035,7 +1059,13 @@ export function registerCollectorAuth(
     await auditLogin(db, 'collector.login', 'collectors', collector.id, {
       collectorId: collector.id,
     });
-    options.limiter.succeeded(req.ip, []);
+    /**
+     * Give back all three, not one. See `ZALO_HOP_REQUESTS`: this hop charged
+     * the address once per request, and refunding a third of it made every
+     * completed sign-in cost two — which is what filled a shared carrier
+     * address at roughly the fifteenth collector.
+     */
+    for (let spent = 0; spent < ZALO_HOP_REQUESTS; spent += 1) options.limiter.succeeded(req.ip, []);
     return {
       token: signToken(options.tokenSecret, {
         kind: 'collector',

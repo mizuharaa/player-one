@@ -94,7 +94,14 @@ export {
 } from './upload-worker.ts';
 export { MACHINE_COOKIE, OPERATOR_COOKIE, parseCookies } from './cookies.ts';
 export { SIGN_IN_RATE_LIMITED, signInLimiter, type SignInLimiter } from './ratelimit.ts';
-export { CODE_ATTEMPTS, CODE_TTL_MS, type SendSignInCode } from './collector.ts';
+export {
+  CODE_ATTEMPTS,
+  CODE_TTL_MS,
+  ZALO_HOP_REQUESTS,
+  type DeliveryOutcome,
+  type SendSignInCode,
+  type SignInDeliveryChannel,
+} from './collector.ts';
 export {
   DEFAULT_ZNS_TIMEOUT_MS,
   ZNS_BASE_URL,
