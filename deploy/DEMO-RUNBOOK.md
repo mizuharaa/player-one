@@ -327,12 +327,21 @@ vi → en → zh. Say which language is on screen before reading a line aloud.
 **Sign in.** The landing carries three lines over the video — "Wear it." /
 "Live your day." / "Reviewed minutes, paid." (VI: "Đeo camera." / "Sống như mọi
 ngày." / "Phút nào được duyệt, phút đó có tiền.") — then **Sign in** (Đăng
-nhập). Type `+84900000001`, press **Send code** (Gửi mã). The server fills the
-code in itself and the app says so: **"The server is in demonstration mode and
-filled the code in."** (VI: "Bản trình diễn tự điền sẵn mã.") The narrator says
-here that the six-digit code was filled in by the demo account because ZNS is
-not issued yet — **staff-assisted, and a real collector could not do this
-today.**
+nhập). **On the cloud variant, do not type a number: use the demo bypass.**
+Tap **Chế độ demo** under the legal line, paste the key the owner holds, press
+**Vào demo**. The app signs in as this same demo collector and lands on Home.
+
+The narrator says here that sign-in codes are not yet deliverable, because
+VNG's Zalo Official Account is not verified and the SMS brandname is still in
+approval — **staff-assisted, and a real collector could not sign in this way
+today.** Say nothing about the key itself.
+
+**Why not the autofill this page used to describe.** On the LAN variant
+`PLAYERONE_DEMO_PHONE` makes the server return the code in its own answer, and
+the app then says "Bản trình diễn tự điền sẵn mã." `deploy/cloud/check.test.ts`
+forbids that variable in the cloud template, because a route that hands back a
+code tells the whole internet which numbers are enrolled. So on the cloud the
+autofill does not exist, and pressing **Gửi mã** there leads nowhere.
 
 **First install only: the three intro cards.** On the first arrival at Home the
 app shows Onboarding — three swipeable cards, **"FIND WORK NEAR YOU"**, **"THE

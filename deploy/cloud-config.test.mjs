@@ -138,7 +138,7 @@ test('a re-provision adds the variables a release added and touches nothing it a
   try {
     // A cloud.env from an older release: these two variables, and nothing else.
     writeFileSync(output, `PLAYERONE_TOKEN_SECRET='kept-secret'
-PLAYERONE_DEMO_BYPASS_KEY=''
+PLAYERONE_DEMO_BYPASS_KEY='already-in-use'
 `);
     const args = ['deploy/cloud/configure.mjs', ...inputs, '--output', output, '--merge'];
     const first = spawnSync(process.execPath, [...args, '--demo-bypass-key', key], { encoding: 'utf8' });
@@ -147,8 +147,10 @@ PLAYERONE_DEMO_BYPASS_KEY=''
 
     // What it already held is byte-identical, the credential included.
     assert.match(merged, /^PLAYERONE_TOKEN_SECRET='kept-secret'$/m);
-    // Held variables are left alone even when a flag would have set one.
-    assert.match(merged, /^PLAYERONE_DEMO_BYPASS_KEY=''$/m);
+    // A variable held WITH a value is left alone even when a flag would have set
+    // it: that value may be what the deployment is running on. Held with NO
+    // value it is filled instead, which is the test above this one.
+    assert.match(merged, /^PLAYERONE_DEMO_BYPASS_KEY='already-in-use'$/m);
     assert.doesNotMatch(merged, new RegExp(key));
     // And what the release has since added is now there.
     assert.match(merged, /^POSTGRES_PASSWORD=/m);
@@ -231,6 +233,41 @@ test('the CLI never prints the eSMS credentials', () => {
     assert.match(written, /PLAYERONE_SMS_BRANDNAME='PLAYERONE'/);
   } finally { rmSync(output, { force: true }); rmdirSync(directory); }
 });
+/**
+ * Keeping what a file already holds is right for a credential and wrong for a
+ * blank. An operator who re-provisions with --demo-bypass-key and watches it be
+ * ignored believes the bypass is on while the route still answers 404; the
+ * re-check of f96315a called that the worst thing left in the deploy path.
+ */
+test('a re-provision fills a variable that is present with no value, and still never overwrites one', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'playerone-cloud-blank-'));
+  const output = join(directory, 'cloud.env');
+  const key = 'k'.repeat(40);
+  try {
+    writeFileSync(output, `PLAYERONE_TOKEN_SECRET='kept-secret'
+PLAYERONE_DEMO_BYPASS_KEY=''
+`);
+    const args = ['deploy/cloud/configure.mjs', ...inputs, '--output', output, '--merge'];
+    const run = spawnSync(process.execPath, [...args, '--demo-bypass-key', key], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    const filled = readFileSync(output, 'utf8');
+
+    // The blank is now the supplied key, exactly once.
+    assert.match(filled, new RegExp(`^PLAYERONE_DEMO_BYPASS_KEY='${key}'$`, 'm'));
+    assert.equal(filled.match(/^PLAYERONE_DEMO_BYPASS_KEY=/gm).length, 1);
+    // And the credential it was already running on is untouched.
+    assert.match(filled, /^PLAYERONE_TOKEN_SECRET='kept-secret'$/m);
+    // Names, never values.
+    assert.doesNotMatch(run.stdout, new RegExp(key));
+    assert.doesNotMatch(run.stdout, /kept-secret/);
+
+    // A second pass has nothing left to fill and changes nothing.
+    const again = spawnSync(process.execPath, [...args, '--demo-bypass-key', 'z'.repeat(40)], { encoding: 'utf8' });
+    assert.equal(again.status, 0, again.stderr);
+    assert.equal(readFileSync(output, 'utf8'), filled);
+  } finally { rmSync(output, { force: true }); rmdirSync(directory); }
+});
+
 test('CLI refuses a second write and prints secrets only on the first creation', () => {
   const directory = mkdtempSync(join(tmpdir(), 'playerone-cloud-config-'));
   const output = join(directory, 'cloud.env');

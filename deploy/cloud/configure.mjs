@@ -186,6 +186,21 @@ export function configuration(args) {
  * left exactly as it is, because its value may be a credential this deployment
  * is running on; changing one is an edit to cloud.env, not a re-provision.
  */
+/**
+ * Which variables an existing cloud.env holds with NO value, while this
+ * release has one for them.
+ *
+ * Keeping a value already in the file is right for a credential a deployment
+ * is running on, and wrong for a blank: an operator who re-provisions with
+ * `--demo-bypass-key` and watches it be ignored believes the bypass is on
+ * when the route still answers 404. Filling a blank rotates nothing, because
+ * a blank authenticates nothing.
+ */
+export const blankIn = (existing, env) => {
+  const blank = new Set([...existing.matchAll(/^([A-Z_][A-Z0-9_]*)=(?:''|"")?[ \t]*$/gm)].map(m => m[1]));
+  return Object.keys(env).filter(k => blank.has(k) && env[k] !== '');
+};
+
 export const missingFrom = (existing, env) => {
   const held = new Set([...existing.matchAll(/^([A-Z_][A-Z0-9_]*)=/gm)].map(m => m[1]));
   return Object.keys(env).filter(k => !held.has(k));
@@ -209,7 +224,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const env = { ...fixed, ...values };
     if (Object.values(env).some(v => v.includes('REPLACE_'))) throw new Error('An unfilled template value remains');
     if (merge && existsSync(output)) {
-      const missing = missingFrom(readFileSync(output, 'utf8'), env);
+      const held = readFileSync(output, 'utf8');
+      const missing = missingFrom(held, env);
+      const blanks = blankIn(held, env);
+      if (blanks.length > 0) {
+        const filled = blanks.reduce((text, k) =>
+          text.replace(new RegExp(`^${k}=(?:''|"")?[ \t]*$`, 'm'), dotenv({ [k]: env[k] }).trimEnd()), held);
+        writeFileSync(output, filled, { mode: 0o600 });
+        console.log(`PASS cloud.env had ${blanks.length} variable(s) with no value, now set: ${blanks.join(', ')}`);
+      }
       // Names only: a value here could be a credential, and this runs on every redeploy.
       if (missing.length === 0) console.log('PASS cloud.env already carries every variable this release needs');
       else {
