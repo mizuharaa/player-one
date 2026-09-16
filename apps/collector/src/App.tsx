@@ -37,7 +37,7 @@ import { SessionReminder } from './screens/SessionReminder.tsx';
 import { TaskDetail } from './screens/TaskDetail.tsx';
 import { TaskHall, clearPreferences } from './screens/TaskHall.tsx';
 import { Landing } from './screens/Landing.tsx';
-import { Splash } from './screens/Splash.tsx';
+import { BootIntro, BootChrome } from './shell/BootIntro.tsx';
 import { SignIn } from './screens/SignIn.tsx';
 import { Training } from './screens/Training.tsx';
 import { Uploads } from './screens/Uploads.tsx';
@@ -100,7 +100,7 @@ function Current() {
           collapsable={false}
           style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}
         >
-          <TabBar />
+          <BootChrome step={1}><TabBar /></BootChrome>
         </View>
       ) : null}
     </View>
@@ -348,8 +348,8 @@ export function App() {
     <ThemeProvider>
       <LocaleProvider>
         <View style={{ flex: 1 }}>
-          <TransportProvider value={transport}><CollectorSession /></TransportProvider>
-          {splash ? <Splash onDone={() => setSplash(false)} /> : null}
+          <BootChrome><TransportProvider value={transport}><CollectorSession /></TransportProvider></BootChrome>
+          {splash ? <BootIntro onDone={() => setSplash(false)} /> : null}
         </View>
       </LocaleProvider>
     </ThemeProvider>

@@ -1,3 +1,4 @@
+import { BrandSlot } from '../shell/BrandSlot.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Image, Text, View } from 'react-native';
 import { useT } from '../locale.tsx';
@@ -5,7 +6,6 @@ import { useTheme } from '../theme.tsx';
 import { Button, Film, LegalLine, Scrim, face, useInsets, useReducedMotion } from '../ui.tsx';
 import film from '../../assets/hero/login.mp4';
 import poster from '../../assets/hero/login-poster.jpg';
-import wordmark from '../../assets/discover/playerone-wordmark.png';
 
 /** Non-scrolling welcome: one decoder, poster beneath it, scrim over both. */
 const SCRIM_STOPS = [
@@ -98,16 +98,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
             the whole screen. A `View` has no intrinsic size to fall back to,
             so the box is the box.
           */}
-          <View style={{ width: '46%', aspectRatio: 784 / 152 }}>
-            <Image
-              source={wordmark}
-              style={{ width: '100%', height: '100%' }}
-              resizeMode="contain"
-              tintColor={onFilm}
-              accessibilityRole="image"
-              accessibilityLabel={tt('app.name')}
-            />
-          </View>
+          <BrandSlot color={onFilm} />
           {LANDING_CENTRE_CODE === '' ? null : (
             <Text
               style={{

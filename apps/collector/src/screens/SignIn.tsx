@@ -1,3 +1,4 @@
+import { BrandSlot } from '../shell/BrandSlot.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
@@ -10,7 +11,6 @@ import { useTheme } from '../theme.tsx';
 import type { MessageKey } from '../i18n.ts';
 import poster from '../../assets/hero/login-poster.jpg';
 import loginFilm from '../../assets/hero/login.mp4';
-import wordmark from '../../assets/discover/playerone-wordmark.png';
 
 /**
  * APP-01. The number, then the code that comes back over Zalo.
@@ -480,18 +480,10 @@ fontWeight: theme.fontWeight.medium,
               position: 'absolute',
               left: theme.space[5],
               bottom: theme.space[5] + theme.space[6],
-              width: '40%',
-              aspectRatio: 784 / 152,
+              minHeight: 38,
             }}
           >
-            <Image
-              source={wordmark}
-              style={{ width: '100%', height: '100%' }}
-              resizeMode="contain"
-              tintColor={theme.color.discover.surface}
-              accessibilityRole="image"
-              accessibilityLabel={tt('app.name')}
-            />
+            <BrandSlot color={theme.color.discover.surface} />
           </View>
           {onBack === undefined ? null : (
             <View style={{ position: 'absolute', top: insets.top, left: theme.space[5] }}>

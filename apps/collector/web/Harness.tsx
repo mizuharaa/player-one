@@ -1,3 +1,4 @@
+import { BootIntro } from '../src/shell/BootIntro.tsx';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { Onboarding } from '../src/screens/Onboarding.tsx';
 import { Notifications } from '../src/screens/Notifications.tsx';
@@ -66,6 +67,7 @@ function RoutedScreen() {
 export function Harness() {
   const params = new URLSearchParams(window.location.search);
   const screen = params.get('screen');
+  const [intro, setIntro] = useState(params.get('intro') === '1');
   const asked = params.get('lang');
   const readyRequested = params.get('ready') === '1';
   const [ready, setReady] = useState(!readyRequested);
@@ -109,6 +111,7 @@ export function Harness() {
                 ) : (
                   <Landing onSignIn={() => {}} />
                 )}
+                {intro ? <BootIntro onDone={() => setIntro(false)} /> : null}
               </NavProvider></ToastProvider>
             </QueryClientProvider>
           </ApiProvider>

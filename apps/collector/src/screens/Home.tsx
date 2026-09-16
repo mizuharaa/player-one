@@ -1,3 +1,4 @@
+import { BrandSlot } from '../shell/BrandSlot.tsx';
 import { FlatList, Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { mascotStateAt } from '@playerone/design/tokens';
@@ -40,6 +41,7 @@ export function Home() {
       style={{ minWidth: 48, minHeight: 48, borderRadius: c.radius.pill, backgroundColor: c.plum, alignItems: 'center', justifyContent: 'center' }}>
       <Text style={{ ...c.type.body, fontFamily: face(theme), color: c.surface }}>{initials || '-'}</Text>
     </Pressable>}>
+    <BrandSlot />
     <Text style={{ ...c.type.h1, fontFamily: face(theme), color: c.ink }}>{profile.data?.name ?? ''}</Text>
     {profile.isError ? <Note tone="error" text={tt('common.loadFailed')} onRetry={() => void profile.refetch()} busy={profile.isFetching} /> : null}
     <View ref={earningsTarget} collapsable={false} style={{ gap: theme.space[2], paddingVertical: c.cardPad }}>
