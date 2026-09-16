@@ -56,7 +56,7 @@ export function Training() {
       title={tt('training.title')}
       footer={
         <>
-          {done.isError ? <Failure error={done.error} text={tt('common.actionFailed')} /> : null}
+          {done.isError ? <Failure onRetry={() => { if (!submitting.current) { submitting.current = true; done.mutate(); } }} busy={done.isPending} error={done.error} text={tt('common.actionFailed')} /> : null}
           <Button
             disabled={done.isPending}
             label={tt(done.isPending ? 'common.saving' : 'training.done')}

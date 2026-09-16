@@ -89,7 +89,7 @@ export function Devices() {
           disabled={serial.trim() === '' || bind.isPending || devices.isPending || devices.isError}
           onPress={() => bind.mutate(serial.trim())}
         />
-        {bind.isError ? <Failure error={bind.error} text={tt(BIND_ERRORS[bind.error.message] ?? 'devices.bindFailed')} /> : null}
+        {bind.isError ? <Failure onRetry={() => bind.mutate(serial.trim())} busy={bind.isPending} error={bind.error} text={tt(BIND_ERRORS[bind.error.message] ?? 'devices.bindFailed')} /> : null}
       </Card>
       <Button
         label={tt('devices.provision')}

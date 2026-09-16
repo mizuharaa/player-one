@@ -617,7 +617,7 @@ const vi = {
   'server.save': 'Lưu',
   'server.reset': 'Dùng mặc định',
   'server.invalid': 'Địa chỉ không hợp lệ',
-  'server.signsOut': 'Đổi máy chủ thì bạn phải đăng nhập lại.',
+  'server.signsOut': 'Lưu thay đổi máy chủ thì bạn phải đăng nhập lại.',
 
   // prechecks — APP-19's facts on the Prepare screen, read off THIS PHONE.
   // English is the source; the Vietnamese is the plain Zalo register. The app
@@ -1210,7 +1210,7 @@ const en: Record<MessageKey, string> = {
   'server.save': 'Save',
   'server.reset': 'Use the default',
   'server.invalid': 'That address is not valid',
-  'server.signsOut': 'Changing the server signs you out.',
+  'server.signsOut': 'Saving a server change signs you out.',
 
   // prechecks — see the Vietnamese block. English is the source text.
   'prechecks.phoneBattery': 'Phone battery',
@@ -1781,7 +1781,7 @@ const zh: Record<MessageKey, string> = {
   'server.save': '保存',
   'server.reset': '使用默认地址',
   'server.invalid': '地址无效',
-  'server.signsOut': '更换服务器后需要重新登录。',
+  'server.signsOut': '保存服务器更改后需要重新登录。',
 
   // prechecks — see the Vietnamese block. English is the source text.
   'prechecks.phoneBattery': '手机电量',

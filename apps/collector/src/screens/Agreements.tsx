@@ -71,7 +71,7 @@ export function Agreements() {
       footer={
         <>
           {!allChecked ? <Note text={tt('agreements.incomplete')} /> : null}
-          {accept.isError ? <Failure error={accept.error} text={tt('common.actionFailed')} /> : null}
+          {accept.isError ? <Failure onRetry={submit} busy={accept.isPending} error={accept.error} text={tt('common.actionFailed')} /> : null}
           <Button
             label={tt(accept.isPending ? 'common.saving' : accept.isError ? 'common.retry' : 'agreements.submit')}
             disabled={!allChecked || accept.isPending}
