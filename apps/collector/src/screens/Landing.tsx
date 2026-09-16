@@ -1,3 +1,4 @@
+import { CounterRegistration } from './CounterRegistration.tsx';
 import { BrandSlot } from '../shell/BrandSlot.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Image, Text, View } from 'react-native';
@@ -82,6 +83,8 @@ export function Landing({
   const onFilm = theme.color.discover.surface;
   /** See `zalo.tsx`. Owner's decision, 2026-09-16. */
   const zalo = useZaloSignIn({ onSignedIn });
+
+  if (explaining) return <CounterRegistration onBack={() => setExplaining(false)} />;
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.background }}>
@@ -196,27 +199,6 @@ export function Landing({
                 accessibilityHint={tt('landing.registerNote')}
                 onPress={() => setExplaining(true)}
               />
-              {/*
-                What the register control opens. Not a form: accounts are
-                opened at a support desk and this sentence is the whole of
-                what this screen can do about it (§2, "Not built"). It is
-                plain text on the scrim rather than a `Note` box, because a
-                warm panel here would be a second surface on top of the one
-                photograph this screen is made of.
-              */}
-              {explaining ? (
-                <Text
-                  accessibilityLiveRegion="polite"
-                  style={{
-                    color: onFilm,
-                    fontFamily: face(theme),
-                    fontSize: theme.fontSize.xs,
-                    lineHeight: Math.round(theme.fontSize.xs * 1.4),
-                  }}
-                >
-                  {tt('landing.registerNote')}
-                </Text>
-              ) : null}
               {/*
                 Below the CTAs here, and between the field and the CTA on
                 sign-in. That is positional and not arbitrary: on a welcome
