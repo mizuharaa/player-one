@@ -218,6 +218,22 @@ export type ZnsConfig = {
   accessToken: string | OaToken;
   /** The approved one-time-code template. */
   templateId: string;
+  /**
+   * `sandbox` sends Zalo's documented `mode: "development"`; `production`
+   * sends nothing and is a real, charged send.
+   *
+   * It was missing entirely, which Codex found: a credentialed
+   * `PLAYERONE_ZNS_ENV=sandbox` deployment ran every send as PRODUCTION.
+   * "Sandbox" would have meant real money, a real message to a real
+   * collector, and a real deduction from the ZBS balance — the exact opposite
+   * of what the word promises whoever set it.
+   *
+   * Development mode reaches only administrators of the app or the OA (`-127`
+   * otherwise), which is why it is not the default for a deployment that says
+   * production: `docs/sign-in-channels.md` records that there is no separate
+   * sandbox endpoint, only this flag.
+   */
+  env?: 'sandbox' | 'production';
   /** The `template_data` key the six digits go in. Whatever the approved template names. */
   codeParam?: string;
   baseUrl?: string;
@@ -275,6 +291,9 @@ export function znsSender(config: ZnsConfig): CodeSender {
           phone: to,
           template_id: config.templateId,
           template_data: { [codeParam]: code },
+          // Omitted entirely on production; Zalo documents no value meaning
+          // "not development", so sending one would be inventing a parameter.
+          ...(config.env === 'sandbox' ? { mode: 'development' } : {}),
         }),
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -341,10 +360,51 @@ export function znsSender(config: ZnsConfig): CodeSender {
  * protecting against — a deployment that answers 204 and delivers nothing
  * looks exactly like a working one until a collector says nobody ever sent
  * them anything. This one says, in every line, that the code was not sent.
+ *
+ * ## Why there is an allowlist, and why it defaults to nothing
+ *
+ * This sender printed EVERY number's code, and `deploy/cloud/cloud.env.example`
+ * selects it — `PLAYERONE_ZNS_ENV=sandbox` with no ZNS credentials falls back
+ * here, which is the shipped demo configuration. So a public deployment wrote
+ * real collectors' one-time codes into its container log, where anyone with log
+ * access could sign in as any of them. Both audits of `4a32929` found it; it is
+ * the same class of mistake as the OAuth code in the request log, and worse,
+ * because a sign-in code is the whole credential.
+ *
+ * So a code is written only for a number the deployment NAMED, in
+ * `PLAYERONE_DEMO_PHONES`. The default is empty, which means a deployment that
+ * has not thought about it discloses nothing. Every other number still gets a
+ * loud line — the point of this sender is that silence is the dangerous
+ * outcome — but the line carries no code and only the last three digits of the
+ * number, which is enough to recognise your own handset and not enough to
+ * harvest who is signing in.
+ *
+ * Numbers are compared NORMALISED through `toZnsPhone`, so `0900000001`,
+ * `+84900000001` and `84900000001` are one entry and an operator's formatting
+ * cannot silently empty the allowlist.
  */
-export function devLogSender(log: (line: string) => void = console.warn): CodeSender {
+export function devLogSender(
+  log: (line: string) => void = console.warn,
+  allowed: readonly string[] = [],
+): CodeSender {
+  /** Normalised once; a non-Vietnamese entry becomes null and matches nothing. */
+  const named = new Set(allowed.map((entry) => toZnsPhone(entry.trim())).filter((e) => e !== null));
   return async (phone, code) => {
-    log(`[zns:dev] NOT SENT — sign-in code for ${phone} is ${code}. No ZNS credentials are configured.`);
+    const normalised = toZnsPhone(phone);
+    if (normalised !== null && named.has(normalised)) {
+      /**
+       * The format is load-bearing: a smoke script reads the code off this
+       * line to walk the demo sign-in without a handset. Keep `[zns:dev] NOT
+       * SENT`, keep `... is <code>`.
+       */
+      log(`[zns:dev] NOT SENT — sign-in code for ${phone} is ${code}. No ZNS credentials are configured.`);
+      return;
+    }
+    log(
+      `[zns:dev] NOT SENT — a sign-in code for a number ending ${phone.slice(-3)} was NOT written ` +
+        'to this log, because that number is not in PLAYERONE_DEMO_PHONES. Nobody received it. ' +
+        'Configure a real channel (PLAYERONE_SIGN_IN_CHANNEL=zns or sms) before a collector uses this deployment.',
+    );
   };
 }
 
@@ -403,11 +463,17 @@ function znsSenderFromEnv(env: Record<string, string | undefined>): CodeSender {
       `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not set, so no ZNS message can be sent`,
     );
   }
+  /**
+   * `sandbox` unless the deployment says otherwise, which matches what the
+   * variable's absence has always meant everywhere else in this file.
+   */
+  const zenv = env['PLAYERONE_ZNS_ENV'] === 'production' ? 'production' : 'sandbox';
   return znsSender({
     accessToken: token ?? env['PLAYERONE_ZNS_ACCESS_TOKEN']!,
     templateId: env['PLAYERONE_ZNS_TEMPLATE_ID']!,
     codeParam: env['PLAYERONE_ZNS_CODE_PARAM'],
     baseUrl: env['PLAYERONE_ZNS_BASE_URL'],
+    env: zenv,
   });
 }
 
@@ -435,6 +501,8 @@ function znsSenderFromEnv(env: Record<string, string | undefined>): CodeSender {
  * print sign-in codes into a production log.
  */
 export function signInCodeSenderFromEnv(env: Record<string, string | undefined> = process.env): CodeSender {
+  /** Named by the deployment, and the only numbers a code is ever logged for. */
+  const demoPhones = (env['PLAYERONE_DEMO_PHONES'] ?? '').split(',').filter((e) => e.trim() !== '');
   const channel = env['PLAYERONE_SIGN_IN_CHANNEL'];
   if (channel !== undefined && channel !== '') {
     if (!(SIGN_IN_CHANNELS as readonly string[]).includes(channel)) {
@@ -442,7 +510,10 @@ export function signInCodeSenderFromEnv(env: Record<string, string | undefined> 
         `PLAYERONE_SIGN_IN_CHANNEL must be ${SIGN_IN_CHANNELS.join(', ')}, got '${channel}'`,
       );
     }
-    if (channel === 'log') return devLogSender();
+    if (channel === 'log') {
+      assertLogChannelIsLocal(env);
+      return devLogSender(console.warn, demoPhones);
+    }
     if (channel === 'sms') return smsSenderFromEnv(env);
     return znsSenderFromEnv(env);
   }
@@ -454,7 +525,14 @@ export function signInCodeSenderFromEnv(env: Record<string, string | undefined> 
   const names = ['PLAYERONE_ZNS_ACCESS_TOKEN', 'PLAYERONE_ZNS_TEMPLATE_ID'] as const;
   const missing = names.filter((k) => !env[k]);
   if (missing.length === names.length && zenv === 'sandbox' && !env['PLAYERONE_ZNS_REFRESH_TOKEN']) {
-    return devLogSender();
+    /**
+     * The shipped demo configuration reaches here: sandbox, no credentials.
+     * The allowlist is what makes that safe on a public hostname, and it is
+     * why the gate lives on `devLogSender` rather than only on the explicit
+     * `log` channel — guarding the channel alone would have left the one
+     * deployment that actually logs codes unguarded.
+     */
+    return devLogSender(console.warn, demoPhones);
   }
   if (missing.length > 0 && !env['PLAYERONE_ZNS_REFRESH_TOKEN']) {
     throw new Error(
@@ -462,6 +540,44 @@ export function signInCodeSenderFromEnv(env: Record<string, string | undefined> 
     );
   }
   return znsSenderFromEnv(env);
+}
+
+/**
+ * `PLAYERONE_SIGN_IN_CHANNEL=log` is a local choice, and refuses to be a remote
+ * one.
+ *
+ * Asking for the log writer on a production ZNS environment, or on a public
+ * hostname, is asking this service to print one-time codes where strangers can
+ * read them. The old `PLAYERONE_ZNS_ENV=production` check already refused an
+ * empty production configuration for the same reason; naming the channel must
+ * not be a way around it.
+ *
+ * An UNSET public origin is allowed, because a pilot upload centre is a LAN
+ * with no public URL at all and reading a code off the operator's own console
+ * is exactly what this sender is for there.
+ */
+function assertLogChannelIsLocal(env: Record<string, string | undefined>): void {
+  if ((env['PLAYERONE_ZNS_ENV'] ?? 'sandbox') === 'production') {
+    throw new Error(
+      'PLAYERONE_SIGN_IN_CHANNEL=log writes sign-in codes to the server log and cannot be used ' +
+        'with PLAYERONE_ZNS_ENV=production. Configure zns or sms.',
+    );
+  }
+  const origin = env['PLAYERONE_PUBLIC_ORIGIN'] || env['PLAYERONE_PUBLIC_URL'];
+  if (!origin) return;
+  let host: string;
+  try {
+    host = new URL(origin).hostname;
+  } catch {
+    throw new Error(`PLAYERONE_PUBLIC_ORIGIN must be a URL, got '${origin}'`);
+  }
+  if (host !== 'localhost' && host !== '127.0.0.1' && host !== '::1' && host !== '[::1]') {
+    throw new Error(
+      `PLAYERONE_SIGN_IN_CHANNEL=log writes sign-in codes to the server log and cannot be used on ` +
+        `a public origin (${origin}). Configure zns or sms, or name the demo numbers in ` +
+        'PLAYERONE_DEMO_PHONES and leave the channel unset.',
+    );
+  }
 }
 
 /** For an error message only: never the token, never the number, never the code. */

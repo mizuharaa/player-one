@@ -130,12 +130,39 @@ try {
       );
     }
 
+    /**
+     * `zalo_id` is seeded from PLAYERONE_DEMO_ZALO_ID when it is set, and left
+     * null when it is not.
+     *
+     * Without it the demo has two ways in that land on two different rows: the
+     * phone code signs in as this qualified collector, and "Tiếp tục với Zalo"
+     * creates a fresh `prospect` who cannot claim anything
+     * (`task_claims_onboarding_gate`). Both audits of `4a32929` found that
+     * split; `POST /api/collectors/:id/zalo-link` is the operator's fix for a
+     * real collector, and this is the same link done once at seed time so the
+     * demo does not need an operator before it can be demonstrated.
+     *
+     * The id is the numeric `id` from `graph.zalo.me/v2.0/me` for whichever
+     * Zalo account will be used on stage. It is NOT a secret — it identifies
+     * an account, it does not authenticate one — so it belongs in the demo
+     * environment beside PLAYERONE_DEMO_PHONE rather than in a secret store.
+     */
+    const zaloId = process.env['PLAYERONE_DEMO_ZALO_ID'] ?? null;
+    if (zaloId !== null && !/^[0-9]{6,32}$/.test(zaloId)) {
+      fail(
+        `PLAYERONE_DEMO_ZALO_ID must be 6-32 digits — Zalo's own numeric id from ` +
+          `graph.zalo.me/v2.0/me — and not '${zaloId}'. A wrong value seeds a row no real ` +
+          'sign-in can ever match.',
+      );
+    }
     await tx.execute(sql`
-      insert into collectors (id, external_ref, name, phone, status, training_completed_at,
-                              exam_result, exam_decided_at)
-      values (${ID.collector}, ${REF}, 'Demo Collector', ${phone}, 'qualified', now(), 'pass', now())
+      insert into collectors (id, external_ref, name, phone, zalo_id, status,
+                              training_completed_at, exam_result, exam_decided_at)
+      values (${ID.collector}, ${REF}, 'Demo Collector', ${phone}, ${zaloId}, 'qualified',
+              now(), 'pass', now())
       on conflict (id) do update set
         external_ref = excluded.external_ref, name = excluded.name, phone = excluded.phone,
+        zalo_id = coalesce(excluded.zalo_id, collectors.zalo_id),
         status = excluded.status, training_completed_at = excluded.training_completed_at,
         exam_result = excluded.exam_result, exam_decided_at = excluded.exam_decided_at`);
 

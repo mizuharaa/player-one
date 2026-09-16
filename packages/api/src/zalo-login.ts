@@ -351,9 +351,12 @@ export function zaloLogin(config: ZaloLoginConfig): ZaloLogin {
  * The client the environment describes, or null.
  *
  * Null when none of the three variables is set, and then the two Zalo routes
- * answer 503 naming `zalo_not_configured` — the same answer, and for the same
- * reason, that `request-code` gives a deployment with no code sender: a route
- * that pretends to work is worse than one that says it is not configured.
+ * that need it refuse — `start` with the same generic 503 `request-code` gives
+ * a deployment with no code sender, and `callback` with a redirect naming
+ * `zalo_not_configured`. A route that pretends to work is worse than one that
+ * says it is not available; naming Zalo on `start` was a configuration oracle
+ * and is gone, while naming it on the callback is safe, because reaching the
+ * callback means Zalo already redirected a browser there.
  *
  * A *partial* configuration throws, naming what is missing. Same rule as
  * `zaloPayClientFromEnv`, `s3StoreFromEnv` and `signInCodeSenderFromEnv`, and

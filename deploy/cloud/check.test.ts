@@ -215,8 +215,23 @@ describe('the template is the deployment this kit claims to be', () => {
       expect(env[name], name).toMatch(/^REPLACE_[A-Z_]+$/);
     }
     expect(env.DATABASE_URL).toContain('REPLACE_DATABASE_PASSWORD');
-    // A demo phone's sign-in code comes back in the response; not on a public
-    // hostname. The centre preflight refuses it in https-production anyway.
-    expect(template).not.toContain('PLAYERONE_DEMO_PHONE');
+    /**
+     * A demo phone's sign-in code comes back in the RESPONSE; not on a public
+     * hostname. The centre preflight refuses it in https-production anyway.
+     *
+     * Asserted on the parsed variable and no longer on the raw text, because
+     * `PLAYERONE_DEMO_PHONES` — the log allowlist added with the sign-in
+     * channels — contains this name as a prefix and is a different thing under
+     * a different rule: a container log an operator reads on the VM is not a
+     * response the internet can ask for. The ban is on the echo.
+     */
+    expect(env.PLAYERONE_DEMO_PHONE).toBeUndefined();
+    /**
+     * And the allowlist ships EMPTY. The log sender is this template's own
+     * fallback (sandbox, no ZNS credentials), so a value here would be a
+     * deployment that writes that number's one-time codes into its log without
+     * anybody having asked for it. `--demo-phone` is how a demo asks.
+     */
+    expect(env.PLAYERONE_DEMO_PHONES).toBe('');
   });
 });

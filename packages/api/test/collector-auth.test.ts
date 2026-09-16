@@ -7,9 +7,11 @@ import {
   signToken,
   verifyToken,
   CODE_ATTEMPTS,
+  SmsDeliveryError,
   ZnsDeliveryError,
   type SendSignInCode,
 } from '../src/index.ts';
+import { MESSAGES } from '../src/i18n.ts';
 import { appDb, closeDb, db, hasDb, truncate, violates, useDatabase } from '../../store/test/db.ts';
 import * as credentials from '../src/credentials.ts';
 
@@ -402,7 +404,21 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
 
   it('records the attempt and its outcome against the collector, as a collector', async () => {
     const ids = await seed();
-    const app = await api();
+    /**
+     * `signInDeliveryMode` is named here and was not before. The row used to
+     * write the literal `'zns'` whatever the deployment was actually sending
+     * on; it now writes the configured channel, so a test that injects a
+     * sender without naming one gets `unknown` — which is what an unidentified
+     * injected sender honestly is. Naming it is what makes this assertion
+     * about the channel rather than about a constant.
+     */
+    const app = buildApi({
+      db: await appDb(),
+      tokenSecret: SECRET,
+      sendSignInCode: send,
+      signInDeliveryMode: 'zns',
+      now: () => clockMs,
+    });
     await request(app, PHONE_A);
 
     const [row] = await recorded(ids.collectorA);
@@ -448,6 +464,80 @@ describe.skipIf(!hasDb())('collector sign-in', () => {
          and target_id in (${ids.collectorA}, ${ids.collectorB}, ${ids.collectorNoPhone})`);
     expect(rows).toHaveLength(1);
     expect((rows[0] as { target_id: string }).target_id).toBe(ids.collectorA);
+  });
+
+  /**
+   * The audit row has to name the channel that was actually configured, and
+   * the refusal the adapter that was actually used produced.
+   *
+   * This is the gap the audit of `e4bf1fb` found (F1). `deliverAndRecord`
+   * typed its outcome `'sent' | ZnsRefusal`, mapped only `ZnsDeliveryError`,
+   * and wrote `channel: 'zns'` as a literal — so on
+   * `PLAYERONE_SIGN_IN_CHANNEL=sms` all six named SMS refusals fell through to
+   * `zns_unreachable`, which is both the wrong name and a TEMPORARY one. An
+   * operator reading it would tell the collector to try again, when the real
+   * answer for `sms_credentials_rejected` is that nobody signs in until this
+   * server's eSMS keys are fixed. The six `bo.refused.sms_*` sentences were
+   * unreachable from any code path.
+   *
+   * The existing completeness test could not catch it: it compares
+   * `SMS_REFUSALS` against the catalogue and never drives a route. This one
+   * drives the route, reads the row an operator would read, and then reads the
+   * sentence the console would show them for it.
+   */
+  it('audits an SMS failure under the SMS channel, with the SMS refusal an operator can act on', async () => {
+    const ids = await seed();
+    const app = buildApi({
+      db: await appDb(),
+      tokenSecret: SECRET,
+      sendSignInCode: async () => {
+        throw new SmsDeliveryError('sms_credentials_rejected', '101', 'Authorize Failed');
+      },
+      signInDeliveryMode: 'sms',
+      now: () => clockMs,
+    });
+
+    expect((await request(app, PHONE_A)).statusCode).toBe(204);
+    const [row] = await recorded(ids.collectorA);
+
+    expect(row!.after.channel).toBe('sms');
+    expect(row!.after.outcome).toBe('sms_credentials_rejected');
+    // The point of the name: a sentence exists for it, in the language the
+    // operator reads, and it does not say "try again".
+    const sentence = MESSAGES.en['bo.refused.sms_credentials_rejected'];
+    expect(sentence).toBeTruthy();
+    expect(sentence).not.toMatch(/try again/i);
+    // Attribution is unchanged — 0019's third shape, the collector's own row.
+    expect(row!.actor_role).toBe('collector');
+    expect(row!.collector_id).toBe(ids.collectorA);
+  });
+
+  /**
+   * The other half of F1: an adapter that throws something neither class
+   * covers is a bug in a sender, and the honest name for it depends on the
+   * channel. Both are temporary, so nobody is stranded either way.
+   */
+  it('names an unrecognised throw after the configured channel', async () => {
+    for (const [channel, outcome] of [
+      ['sms', 'sms_unreachable'],
+      ['zns', 'zns_unreachable'],
+    ] as const) {
+      await truncate();
+      const ids = await seed();
+      const app = buildApi({
+        db: await appDb(),
+        tokenSecret: SECRET,
+        sendSignInCode: async () => {
+          throw new Error('a bug in a sender');
+        },
+        signInDeliveryMode: channel,
+        now: () => clockMs,
+      });
+      nextCode();
+      expect((await request(app, PHONE_A)).statusCode).toBe(204);
+      const [row] = await recorded(ids.collectorA);
+      expect(row!.after, channel).toEqual({ channel, outcome });
+    }
   });
 
   it('never writes the code into audit_events', async () => {

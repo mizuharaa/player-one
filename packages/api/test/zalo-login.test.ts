@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -6,10 +7,14 @@ import {
   codeChallengeFor,
   SIGN_IN_TTL_MS,
   verifyToken,
+  hashCredential,
   ZALO_AUTHORIZE_PATH,
   ZALO_CALLBACK_PATH,
   ZALO_LOGIN_REFUSALS,
   ZALO_PROFILE_PATH,
+  REDACTED_QUERY_PARAMS,
+  loggedRequest,
+  redactQuery,
   ZALO_TOKEN_PATH,
   zaloLogin,
   zaloLoginFromEnv,
@@ -129,6 +134,47 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
   const exchange = (app: Api, ticket: string) =>
     app.inject({ method: 'POST', url: '/auth/collector/ticket', payload: { ticket } });
 
+  /**
+   * An administrator's POST, both tokens, as `backoffice-role.test.ts` does it.
+   * Seeded here rather than in `seed()` because only the link tests need it.
+   */
+  const admin = async (app: Api, url: string, payload: Record<string, unknown>) => {
+    const d = await db();
+    const centre = randomUUID();
+    const hash = await hashCredential('pw');
+    await d.execute(sql`
+      insert into upload_centres (id, region, name, status)
+        values (${centre}, 'HCM', ${`centre-${centre.slice(0, 8)}`}, 'active')
+      on conflict do nothing`);
+    const machine = `M-${centre.slice(0, 8)}`;
+    const ref = `admin-${centre.slice(0, 8)}`;
+    await d.execute(sql`
+      insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash)
+        values (${randomUUID()}, ${centre}, ${machine}, 'active', ${hash})`);
+    await d.execute(sql`
+      insert into operators (id, upload_centre_id, external_ref, role, credential_hash)
+        values (${randomUUID()}, ${centre}, ${ref}, 'administrator', ${hash})`);
+    const m = await app.inject({
+      method: 'POST',
+      url: '/auth/machine',
+      payload: { machine_identifier: machine, secret: 'pw' },
+    });
+    const o = await app.inject({
+      method: 'POST',
+      url: '/auth/operator',
+      payload: { external_ref: ref, secret: 'pw' },
+    });
+    return app.inject({
+      method: 'POST',
+      url,
+      payload,
+      headers: {
+        'x-machine-token': `Bearer ${m.json().token}`,
+        authorization: `Bearer ${o.json().token}`,
+      },
+    });
+  };
+
   /** The deep link's parameters, so a test reads `ticket` or `error` by name. */
   const landed = (location: string): URLSearchParams => {
     expect(location.startsWith(`${APP_DEEP_LINK}?`), location).toBe(true);
@@ -179,8 +225,17 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
 
     const back = await callback(app, { code: 'zalo-auth-code', state });
     expect(back.statusCode, back.body).toBe(302);
-    const ticket = landed(back.headers.location as string).get('ticket');
+    const arrived = landed(back.headers.location as string);
+    const ticket = arrived.get('ticket');
     expect(ticket).toBeTruthy();
+    /**
+     * The state rides back WITH the ticket, and that is what lets the app
+     * prove the link belongs to the sign-in it started. Without it the app
+     * redeemed any forwarded `playerone://signed-in?ticket=…` — login-CSRF,
+     * which both audits of `4a32929` found. Safe to echo because the UPDATE
+     * above already spent it.
+     */
+    expect(arrived.get('state')).toBe(state);
 
     // The exchange sent the code, the verifier and the secret in its header.
     const token = zalo.calls[0]!;
@@ -347,12 +402,31 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
     expect(logins?.n).toBe(1);
   });
 
-  it('says it is not configured on the two routes that need a Zalo app', async () => {
+  it('says only that sign-in is unavailable, and never names Zalo, on an unconfigured start', async () => {
     const app = await api(undefined);
-    for (const res of [await start(app), await callback(app, { code: 'x', state: 'y' })]) {
-      expect(res.statusCode, res.body).toBe(503);
-      expect(res.json().constraint).toBe('zalo_not_configured');
-    }
+    /**
+     * A 503 with a GENERIC body. `zalo_not_configured` here was a
+     * configuration oracle — it told any anonymous caller which deployments
+     * hold Zalo credentials — and the app hides the button on the STATUS, so
+     * the name costs nothing to give up.
+     */
+    const opened = await start(app);
+    expect(opened.statusCode, opened.body).toBe(503);
+    expect(opened.body).not.toContain('zalo');
+    expect(opened.body).not.toContain('Zalo');
+
+    /**
+     * The callback answers the DEEP LINK even unconfigured, and even rate
+     * limited. It used to answer JSON, which renders as raw text in whatever
+     * browser Zalo had just redirected, with no way back to the app — the
+     * person who tapped a button is looking at a mobile browser.
+     *
+     * The name is safe here and not on `start`: reaching this route means Zalo
+     * already redirected a browser to it.
+     */
+    const back = await callback(app, { code: 'x', state: 'y' });
+    expect(back.statusCode).toBe(302);
+    expect(landed(back.headers.location as string).get('error')).toBe('zalo_not_configured');
     /**
      * The ticket route is deliberately NOT in that list. It never talks to
      * Zalo, and on a deployment with no Zalo app nobody was ever issued a
@@ -362,6 +436,286 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
     const spent = await exchange(app, 'a-ticket-nobody-was-issued');
     expect(spent.statusCode, spent.body).toBe(401);
     expect(spent.json().constraint).toBe('zalo_ticket_spent');
+  });
+
+  /**
+   * A failed Zalo sign-in has to leave a row. The audit of `e4bf1fb` found it
+   * left nothing (F2): only success wrote `collector.login`, so the trail could
+   * not say whether the thousand refused callbacks above had happened — and
+   * `ratelimit.ts` states that row is *the* recovery path from a sustained
+   * attack. The phone routes have written it since the limiter existed.
+   *
+   * Filed under the source address, because a `state` and a ticket are
+   * credentials and `audit_events` is append-only. `%.login_failed` is exempt
+   * from `audit_events_attributed_check` by action, so there is no migration.
+   */
+  const failures = async () => {
+    const d = await db();
+    const rows = await d.execute(sql`
+      select target_id, target_table, actor_role, after
+        from audit_events
+       where action = 'collector.login_failed'
+       order by occurred_at`);
+    return [...rows] as {
+      target_id: string;
+      target_table: string;
+      actor_role: string;
+      after: { source: string; outcome: string };
+    }[];
+  };
+
+  it('leaves a named failed-sign-in row for a refused callback, and for a refused ticket', async () => {
+    const app = await api(client(fakeZalo().fetch));
+
+    // A callback naming a state this server never wrote.
+    const forged = await callback(app, { code: 'c', state: 'not-a-state-this-server-wrote' });
+    expect(landed(forged.headers.location as string).get('error')).toBe('zalo_state_unknown');
+
+    // A ticket nobody was issued.
+    const ticket = await exchange(app, 'a-ticket-that-was-never-issued');
+    expect(ticket.statusCode).toBe(401);
+
+    const rows = await failures();
+    expect(rows.map((r) => r.after.outcome)).toEqual(['zalo_state_unknown', 'zalo_ticket_spent']);
+    for (const row of rows) {
+      // The address, and never the state or the ticket that was tried.
+      expect(row.after.source).toBeTruthy();
+      expect(row.target_id).toBe(row.after.source);
+      expect(row.target_table).toBe('collectors');
+      expect(row.actor_role).toBe('collector');
+    }
+    const text = JSON.stringify(rows);
+    expect(text).not.toContain('not-a-state-this-server-wrote');
+    expect(text).not.toContain('a-ticket-that-was-never-issued');
+  });
+
+  /**
+   * A shared carrier address must not run out of sign-ins.
+   *
+   * Both audits of `4a32929` reproduced this: the hop is three requests and
+   * each charges the shared address budget, but only ONE was refunded on
+   * success, so every completed sign-in cost two of the thirty per five
+   * minutes. Codex measured login 15 blocked for 300 seconds. Behind
+   * Vietnamese carrier NAT one address is a province, so that is a province
+   * locked out by fifteen people signing in.
+   *
+   * Twenty consecutive successful sign-ins, which is 60 charges against a
+   * budget of 30. It passes only if a success gives back everything it spent.
+   */
+  it('does not spend the shared address budget on sign-ins that succeed', async () => {
+    const app = await api(client(fakeZalo().fetch));
+
+    for (let n = 0; n < 20; n += 1) {
+      const opened = await start(app);
+      expect(opened.statusCode, `start ${n + 1}: ${opened.body}`).toBe(200);
+      const { state } = opened.json() as { state: string };
+
+      const back = await callback(app, { code: `code-${n}`, state });
+      expect(back.statusCode, `callback ${n + 1}: ${back.body}`).toBe(302);
+      const ticket = landed(back.headers.location as string).get('ticket');
+      expect(ticket, `callback ${n + 1} gave no ticket`).toBeTruthy();
+
+      const signedIn = await exchange(app, ticket!);
+      expect(signedIn.statusCode, `ticket ${n + 1}: ${signedIn.body}`).toBe(200);
+    }
+
+    // And the same person throughout, so this is twenty sign-ins and not
+    // twenty collectors quietly created.
+    const d = await db();
+    const [count] = await d.execute<{ n: number }>(sql`select count(*)::int as n from collectors`);
+    expect(count?.n).toBe(1);
+  });
+
+  it('sends a rate-limited callback home to the app, not a JSON body to a browser', async () => {
+    const app = await api(client(fakeZalo().fetch));
+    // Past the shared address budget with starts, which cost but never refund
+    // because none of them completes.
+    for (let n = 0; n < 40; n += 1) await start(app);
+
+    const back = await callback(app, { code: 'x', state: 'y' });
+    expect(back.statusCode).toBe(302);
+    /**
+     * `rate_limited`, which the app already maps to `signIn.rateLimited`. A
+     * refusal earns its own name when its answer is different, and "wait a few
+     * minutes" is the same sentence whichever route said it.
+     */
+    expect(landed(back.headers.location as string).get('error')).toBe('rate_limited');
+  });
+
+  it('leaves one rate-limited row per window, not one per refused request', async () => {
+    const app = await api(client(fakeZalo().fetch));
+
+    /**
+     * The shared address budget is 30 per five minutes and the Zalo hop spends
+     * three of it, so this walks past the limit and then keeps knocking. The
+     * assertion that matters is the SECOND number: `noteRefusal` gates the row
+     * to once per window, because three hundred refused requests once wrote
+     * three hundred permanent rows in 783 ms.
+     */
+    let refusals = 0;
+    for (let i = 0; i < 40; i += 1) {
+      const res = await start(app);
+      if (res.statusCode === 429) refusals += 1;
+    }
+    expect(refusals, 'the address budget refused nothing').toBeGreaterThan(1);
+
+    const rows = (await failures()).filter((r) => r.after.outcome === 'rate_limited');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.target_id).toBe(rows[0]!.after.source);
+  });
+
+  /**
+   * The OAuth code and state must not reach the log.
+   *
+   * Codex reproduced this against `4a32929` and printed both verbatim:
+   * Fastify's default `req` serializer logs `req.url`, and the callback carries
+   * `code` and `state` in exactly that query, so every deployed server with
+   * `PLAYERONE_LOG` on wrote a live authorization code into its container log
+   * on every sign-in.
+   *
+   * Asserted against the serializer rather than by capturing a live log
+   * stream: the serializer is what decides, and driving pino's transport in a
+   * test would prove the plumbing rather than the rule. The shape is pinned
+   * too, so a Fastify upgrade that adds a field is noticed rather than
+   * silently dropping one from every deployed log.
+   */
+  it('redacts the code and the state out of the request log, keeping the parameter names', () => {
+    const line = loggedRequest({
+      method: 'GET',
+      url: `${ZALO_CALLBACK_PATH}?code=zalo-auth-code&state=the-live-state`,
+      headers: {},
+      host: 'demo.example.vn',
+      ip: '127.0.0.1',
+      socket: { remotePort: 51234 },
+    } as unknown as Parameters<typeof loggedRequest>[0]);
+
+    expect(String(line['url'])).not.toContain('zalo-auth-code');
+    expect(String(line['url'])).not.toContain('the-live-state');
+    // The names survive: "a code was present" is not the secret, and it is
+    // what somebody reads when working out why a sign-in failed.
+    expect(line['url']).toBe(`${ZALO_CALLBACK_PATH}?code=REDACTED&state=REDACTED`);
+    expect(Object.keys(line).sort()).toEqual([
+      'host',
+      'method',
+      'remoteAddress',
+      'remotePort',
+      'url',
+      'version',
+    ]);
+
+    // Every name, and a URL with nothing to redact is returned untouched.
+    for (const name of REDACTED_QUERY_PARAMS) {
+      expect(redactQuery(`/x?${name}=secret-value`)).toBe(`/x?${name}=REDACTED`);
+    }
+    expect(redactQuery('/api/me/profile')).toBe('/api/me/profile');
+    expect(redactQuery('/episodes?limit=20')).toBe('/episodes?limit=20');
+  });
+
+  /**
+   * The link route, and the thing it exists to undo.
+   *
+   * Both audits of `4a32929` found this: a collector an operator enrolled at a
+   * centre, who then signs in with Zalo, becomes a SECOND row — a `prospect`
+   * with a Zalo id and no phone, beside their real `qualified` row. Nothing in
+   * the service can connect them, so that person can never claim work while
+   * their real account sits there qualified.
+   *
+   * `POST /api/collectors/:id/zalo-link` is an operator's fix and is
+   * administrator-guarded (`backoffice-role.test.ts` pins the guard). This
+   * proves the end state a collector actually cares about: after the link,
+   * signing in with the same Zalo account lands on the QUALIFIED row.
+   */
+  it('links a Zalo account onto an enrolled collector, consuming the stray prospect', async () => {
+    const d = await db();
+    const app = await api(client(fakeZalo().fetch));
+
+    // The real collector, as BO-03 makes one.
+    const enrolled = randomUUID();
+    await d.execute(sql`
+      insert into collectors (id, external_ref, status, phone, exam_result, exam_decided_at)
+        values (${enrolled}, 'col-enrolled', 'qualified', '+84900000123', 'pass', now())`);
+
+    // They sign in with Zalo, and get a second row: the bug.
+    const first = (await start(app)).json() as { state: string };
+    const back = await callback(app, { code: 'c1', state: first.state });
+    const ticket = landed(back.headers.location as string).get('ticket')!;
+    expect((await exchange(app, ticket)).statusCode).toBe(200);
+    const [stray] = await d.execute<{ id: string; status: string }>(
+      sql`select id, status from collectors where zalo_id = ${ZALO_ID}`,
+    );
+    expect(stray?.id).not.toBe(enrolled);
+    expect(stray?.status).toBe('prospect');
+
+    const linked = await admin(app, `/api/collectors/${enrolled}/zalo-link`, { zalo_id: ZALO_ID });
+    expect(linked.statusCode, linked.body).toBe(200);
+    expect(linked.json().consumed_collector_id).toBe(stray!.id);
+
+    /**
+     * The id is on the qualified row and the stray is suspended, not deleted:
+     * "where did this row go" has to stay answerable.
+     */
+    const [after] = await d.execute<{ id: string; status: string }>(
+      sql`select id, status from collectors where zalo_id = ${ZALO_ID}`,
+    );
+    expect(after?.id).toBe(enrolled);
+    const [consumed] = await d.execute<{ status: string; external_ref: string }>(
+      sql`select status, external_ref from collectors where id = ${stray!.id}`,
+    );
+    expect(consumed?.status).toBe('suspended');
+    expect(consumed?.external_ref).toBeTruthy();
+
+    // PLT-07: an operator did this, and the row names both sides.
+    const [event] = await d.execute<{ after: Record<string, unknown>; actor_role: string }>(
+      sql`select after, actor_role from audit_events where action = 'collector.zalo_link'`,
+    );
+    expect(event?.actor_role).toBe('operator');
+    expect(event?.after['consumed_collector_id']).toBe(stray!.id);
+
+    /**
+     * And the point of all of it: the same Zalo account now signs in as the
+     * qualified collector, so this person can claim work again.
+     */
+    const second = (await start(app)).json() as { state: string };
+    const again = await callback(app, { code: 'c2', state: second.state });
+    const ticket2 = landed(again.headers.location as string).get('ticket')!;
+    const session = await exchange(app, ticket2);
+    expect(session.statusCode, session.body).toBe(200);
+    const claims = verifyToken(SECRET, session.json().token as string) as { collectorId: string };
+    expect(claims.collectorId).toBe(enrolled);
+  });
+
+  it('refuses a link that would move an id off a real collector, or onto a linked one', async () => {
+    const d = await db();
+    const app = await api(client(fakeZalo().fetch));
+    const a = randomUUID();
+    const b = randomUUID();
+    await d.execute(sql`
+      insert into collectors (id, external_ref, status, zalo_id) values
+        (${a}, 'col-a', 'qualified', ${ZALO_ID}),
+        (${b}, 'col-b', 'qualified', null)`);
+
+    // The id belongs to a qualified collector, not a stray prospect. Refusing
+    // is the whole point: this would take somebody's account away.
+    const stolen = await admin(app, `/api/collectors/${b}/zalo-link`, { zalo_id: ZALO_ID });
+    expect(stolen.statusCode, stolen.body).toBe(409);
+    expect(stolen.json().constraint).toBe('collector_zalo_link_not_prospect');
+
+    // And a collector who already has one is refused rather than overwritten.
+    const twice = await admin(app, `/api/collectors/${a}/zalo-link`, { zalo_id: '111111111111' });
+    expect(twice.statusCode, twice.body).toBe(409);
+    expect(twice.json().constraint).toBe('collector_already_zalo_linked');
+
+    // Nothing moved.
+    const [held] = await d.execute<{ id: string }>(
+      sql`select id from collectors where zalo_id = ${ZALO_ID}`,
+    );
+    expect(held?.id).toBe(a);
+
+    // A pasted URL or a trimmed id is a 400, not a row nothing can ever match.
+    for (const bad of ['', 'zalo:123', '12345', 'https://zalo.me/9876543210']) {
+      const res = await admin(app, `/api/collectors/${b}/zalo-link`, { zalo_id: bad });
+      expect(res.statusCode, `${bad}: ${res.body}`).toBe(400);
+    }
   });
 
   it('never puts the app secret, the code or the session token in the redirect', async () => {

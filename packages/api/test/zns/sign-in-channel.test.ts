@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -300,6 +300,37 @@ describe('the OA access token', () => {
     expect(quiet.calls).toHaveLength(0);
   });
 
+  /**
+   * The mode on `writeFileSync` applies only when the file is CREATED, which
+   * the audit of `e4bf1fb` found (F5). The first refresh token arrives by an
+   * operator seeding this file by hand, so the common case is a file that
+   * already exists at whatever their umask gave — usually 0644 — holding a
+   * live rotating credential, and it stayed 0644 through every rotation.
+   *
+   * POSIX only. Windows `chmod` toggles a read-only bit and nothing else, so
+   * the assertion would be meaningless there rather than failing usefully.
+   */
+  it.skipIf(process.platform === 'win32')(
+    'tightens a pre-seeded 0644 token file to 0600 on every write, not only the first',
+    async () => {
+      const { path, store: held } = store();
+      writeFileSync(path, JSON.stringify({ refreshToken: 'REFRESH-1' }), { mode: 0o644 });
+      chmodSync(path, 0o644);
+      expect(statSync(path).mode & 0o777).toBe(0o644);
+
+      const zalo = recorder([issued('ACCESS-1', 'REFRESH-2')]);
+      const token = oaToken({
+        appId: 'app',
+        appSecret: 'secret',
+        store: held,
+        fetch: zalo.fetch,
+        warn: () => {},
+      });
+      expect(await token.get()).toBe('ACCESS-1');
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+    },
+  );
+
   it('is loud when the chain is broken, because only a person can mend it', async () => {
     const { store: held } = store();
     const zalo = recorder([{ body: { error: -14005, error_name: 'Invalid oauthorized code' } }]);
@@ -382,6 +413,47 @@ describe('a ZNS send on a refreshable token', () => {
     );
     expect(err.refusal).toBe('zns_credentials_rejected');
     expect(zalo.calls).toHaveLength(3);
+  });
+
+  /**
+   * `PLAYERONE_ZNS_ENV=sandbox` has to actually be a sandbox.
+   *
+   * Codex found that the environment was read for the boot checks and then
+   * never reached the request, so a credentialed sandbox deployment ran every
+   * send as PRODUCTION: real money off the ZBS balance and a real message to a
+   * real collector, which is the opposite of what the word promises whoever
+   * set it. Zalo documents no separate sandbox endpoint — the only sandbox is
+   * `mode: "development"` on the same request.
+   */
+  it('sends mode=development on sandbox, and no mode at all on production', async () => {
+    for (const [zenv, expected] of [
+      ['sandbox', 'development'],
+      ['production', undefined],
+    ] as const) {
+      const zalo = recorder([{ body: { error: 0, message: 'Success' } }]);
+      const send = signInCodeSenderFromEnv({
+        PLAYERONE_SIGN_IN_CHANNEL: 'zns',
+        PLAYERONE_ZNS_ENV: zenv,
+        PLAYERONE_ZNS_ACCESS_TOKEN: 'token',
+        PLAYERONE_ZNS_TEMPLATE_ID: 'tpl',
+        PLAYERONE_ZNS_BASE_URL: 'https://business.openapi.zalo.me',
+      });
+      // The env reader builds the real sender, so the fetch is swapped in only
+      // to read the body it would have sent.
+      const direct = znsSender({
+        accessToken: 'token',
+        templateId: 'tpl',
+        env: zenv,
+        fetch: zalo.fetch,
+        warn: () => {},
+      });
+      expect(typeof send).toBe('function');
+      await direct(PHONE, CODE);
+      const body = JSON.parse(zalo.calls[0]!.body) as { mode?: string; template_data: unknown };
+      expect(body.mode, zenv).toBe(expected);
+      // And the rest of the request is unchanged either way.
+      expect(body.template_data).toEqual({ otp: CODE });
+    }
   });
 
   it('does not retry a static token, because there is nothing to refresh', async () => {

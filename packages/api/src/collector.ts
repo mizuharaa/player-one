@@ -5,7 +5,9 @@ import type { FastifyInstance } from 'fastify';
 import { schema, type Db } from '@playerone/store';
 import { auditLogin, mutate } from './audit.ts';
 import { hashCredential, signToken, verifyCredential, type CollectorClaims } from './credentials.ts';
+import type { EngineeringCapabilities } from './engineering.ts';
 import { rateLimited, signInAttempt, type SignInLimiter } from './ratelimit.ts';
+import { SmsDeliveryError, type SmsRefusal } from './sms.ts';
 import {
   APP_DEEP_LINK,
   codeChallengeFor,
@@ -67,6 +69,30 @@ export const CODE_TTL_MS = 5 * 60_000;
 export const CODE_ATTEMPTS = 5;
 
 /**
+ * How many of the shared address budget one Zalo sign-in spends, and therefore
+ * how many a successful one gives back.
+ *
+ * The hop is three requests — start, callback, ticket — and each one charges
+ * the limiter, because leaving any of them unmetered would leave a credential
+ * unmetered with it. But it is ONE sign-in, and before this only one charge
+ * was refunded on success: a completed sign-in cost two, so a shared carrier
+ * address ran out of the thirty-per-five-minutes at about the fifteenth
+ * collector and blocked everyone behind it for 300 seconds. Both audits of
+ * `4a32929` reproduced that.
+ *
+ * So a success refunds exactly what the flow spent, and no more. The rule
+ * `succeeded` states — a shared counter gives back this one attempt, never a
+ * clear, so one valid account cannot wipe the count for every guess sprayed
+ * from the same address — is about not giving back more than was taken. Three
+ * requests took three.
+ *
+ * A FAILED hop still costs one to three, which is the point: it is the failures
+ * the budget exists to cap, and `ratelimit.ts` names the shared-address ceiling
+ * behind carrier NAT as a known one.
+ */
+export const ZALO_HOP_REQUESTS = 3;
+
+/**
  * The floor both routes answer no faster than.
  *
  * Measured on the org PC before this was here: `hashCredential` costs 92 ms on
@@ -125,6 +151,20 @@ const newCode = (): string => String(randomInt(0, 1_000_000)).padStart(6, '0');
 export type SendSignInCode = (phone: string, code: string) => Promise<void>;
 
 /**
+ * Which channel a deployment is actually sending on, for the audit row.
+ *
+ * The same union `engineering.ts` reports as `signInDeliveryMode`, reused
+ * rather than declared a second time: `bin/serve.ts` already computes it from
+ * `PLAYERONE_SIGN_IN_CHANNEL`, and two values for one fact would be two values
+ * to disagree. `unknown` is what an embedded caller that injects a sender
+ * without naming it gets, and writing that down is more honest than guessing.
+ */
+export type SignInDeliveryChannel = EngineeringCapabilities['signInDeliveryMode'];
+
+/** What `collector.sign_in_code` records: sent, or the named refusal from either adapter. */
+export type DeliveryOutcome = 'sent' | ZnsRefusal | SmsRefusal;
+
+/**
  * Deliver the code, then record what happened. Runs after the reply.
  *
  * ## Why this is audited at all
@@ -159,21 +199,41 @@ export type SendSignInCode = (phone: string, code: string) => Promise<void>;
 function deliverAndRecord(
   db: Db,
   send: SendSignInCode,
+  channel: SignInDeliveryChannel,
   collector: { id: string; epoch: number },
   phone: string,
   code: string,
 ): void {
   void (async () => {
-    let outcome: 'sent' | ZnsRefusal = 'sent';
+    let outcome: DeliveryOutcome = 'sent';
     try {
       await send(phone, code);
     } catch (err) {
       /**
+       * Both adapters, because there are two now.
+       *
+       * `SmsDeliveryError` is a different class from `ZnsDeliveryError`, so
+       * before this branch existed every SMS failure fell through to
+       * `zns_unreachable`: all six named SMS refusals collapsed into one ZNS
+       * name, and into a *temporary* one. The three that need a human —
+       * credentials, brandname, template — read to an operator as "ask them to
+       * try again", and the `bo.refused.sms_*` sentences were unreachable from
+       * any code path. The completeness test did not catch it because it
+       * compares the refusal set against the catalogue and never a route.
+       *
        * A sender that throws anything else is a sender we cannot ask what went
-       * wrong. `zns_unreachable` is the honest name for that and it is one of
-       * the temporary ones, so a bug in a sender strands nobody permanently.
+       * wrong, and the honest name for that depends on which channel is
+       * configured: both are temporary, so a bug in a sender strands nobody
+       * permanently either way.
        */
-      outcome = err instanceof ZnsDeliveryError ? err.refusal : 'zns_unreachable';
+      outcome =
+        err instanceof ZnsDeliveryError
+          ? err.refusal
+          : err instanceof SmsDeliveryError
+            ? err.refusal
+            : channel === 'sms'
+              ? 'sms_unreachable'
+              : 'zns_unreachable';
     }
     try {
       await mutate(
@@ -183,7 +243,13 @@ function deliverAndRecord(
           action: 'collector.sign_in_code',
           targetTable: 'collectors',
           targetId: collector.id,
-          after: { channel: 'zns', outcome },
+          /**
+           * The channel that was actually configured, not the literal `'zns'`
+           * this used to write. An operator reading "channel: zns, outcome:
+           * zns_unreachable" for a deployment that has been sending SMS all
+           * week is being told about a system that does not exist.
+           */
+          after: { channel, outcome },
         },
         async () => outcome,
       );
@@ -363,8 +429,18 @@ async function zaloCollector(db: Db, identity: ZaloIdentity): Promise<CollectorC
       action: 'collector.sign_up',
       targetTable: 'collectors',
       targetId: collectorId,
-      // The Zalo id is not written here. It is on the row this names, and an
-      // audit trail is not the place to make a third copy of an identifier.
+      /**
+       * `external_ref` carries the Zalo id, because that is what it IS:
+       * `zalo:<id>`. An earlier version of this comment claimed the id was not
+       * written here, directly above the line that writes it — the audit of
+       * `e4bf1fb` caught it, and a comment that contradicts the line under it
+       * is worse than none, because it is why a reader stops checking.
+       *
+       * Not a leak: the same string is on `collectors.external_ref`, which is
+       * the reference an operator reads, and `collectors.zalo_id` holds the
+       * bare id. This row names where the person came from, which is the one
+       * thing an audit trail of a sign-up is for.
+       */
       after: { status: 'prospect', external_ref: externalRef, channel: 'zalo' },
     },
     async (tx): Promise<CollectorClaims | undefined> => {
@@ -399,6 +475,17 @@ async function zaloCollector(db: Db, identity: ZaloIdentity): Promise<CollectorC
 const CREDENTIALS = { error: 'credentials', reason: 'credentials' };
 
 /**
+ * What a route answers when this deployment cannot do it at all.
+ *
+ * Deliberately says nothing about WHY. `POST /auth/collector/zalo/start` used
+ * to answer `zalo_not_configured`, which told any anonymous caller which
+ * deployments hold Zalo credentials — a configuration oracle Codex named. The
+ * app decides to hide the button on the 503 STATUS, so the name costs nothing
+ * to give up, and it is the same shape `request-code` already answers with.
+ */
+const UNAVAILABLE = { error: 'sign-in is not available on this deployment' };
+
+/**
  * A named refusal, in the shape the app's HTTP client already reads.
  *
  * `reason` as well as `error` because that is what `CREDENTIALS` does and the
@@ -425,31 +512,68 @@ export function registerCollectorAuth(
      */
     demoPhone?: string;
     /**
-     * Zalo Login (OAuth v4), owner's decision of 2026-09-16. Absent, the three
-     * routes below answer 503 `zalo_not_configured` for every caller — the same
-     * answer, and for the same reason, `request-code` gives a deployment with
-     * no code sender. `bin/serve.ts` reads `zaloLoginFromEnv`.
+     * Which channel `sendSignInCode` actually is, for the audit row it writes.
+     *
+     * The same value `engineering.ts` reports, so the trail and the diagnostic
+     * cannot disagree. Absent, the row says `unknown`, which is what an
+     * embedded caller injecting an unnamed sender honestly is.
+     */
+    signInChannel?: SignInDeliveryChannel;
+    /**
+     * Zalo Login (OAuth v4), owner's decision of 2026-09-16. Absent, the two
+     * routes that need it — start and callback — answer 503
+     * `zalo_not_configured`, the same answer and for the same reason
+     * `request-code` gives a deployment with no code sender. The ticket route
+     * has no config check on purpose: it never talks to Zalo, and on a
+     * deployment with no Zalo app no ticket was ever issued, so its ordinary
+     * 401 is both true and the answer that says less. `bin/serve.ts` reads
+     * `zaloLoginFromEnv`.
      */
     zaloLogin?: ZaloLogin;
   },
 ): void {
+  /** Written into every `collector.sign_in_code` row. See the option above. */
+  const channel: SignInDeliveryChannel = options.signInChannel ?? 'unknown';
+  /**
+   * A Zalo sign-in that did not happen, under the address it came from.
+   *
+   * `signInAttempt` cannot be used for these three routes: it files its refusal
+   * against the reference the caller named, and a `state` or a ticket IS the
+   * credential — putting either in `audit_events.target_id` would write a live
+   * credential into an append-only table nobody can prune. So the row is filed
+   * under the source address, which is the only identifier these requests carry
+   * that is not a secret.
+   *
+   * `%.login_failed` is exempt from `audit_events_attributed_check` by action
+   * (0002, widened in 0009), exactly as it is for the phone routes, so this
+   * needs no migration and names no operator that may not exist.
+   *
+   * It is awaited before the reply, the way `attempt.wrong()` is on `verify`
+   * and unlike `deliverAndRecord`: nothing here has answered the caller yet, so
+   * a failure to write is a 500 rather than a silently missing row.
+   */
+  const auditRefusal = (source: string, outcome: ZaloLoginRefusal | 'rate_limited'): Promise<void> =>
+    auditLogin(db, 'collector.login_failed', 'collectors', source, { source, outcome });
+
   /**
    * The sign-in budget for a route whose credential names nobody.
-   *
-   * `signInAttempt` files its refusal against the reference the caller named,
-   * and none of the three Zalo routes has one: a `state` and a ticket are
-   * credentials, so putting either in `audit_events.target_id` would write a
-   * live credential into an append-only table. So these three count against
-   * the address only, and the audit row a Zalo sign-in leaves is the
-   * `collector.login` the ticket route writes once it knows who signed in.
    *
    * Check and count in one call, for the reason `signInAttempt` gives: a route
    * that checks the limit and forgets to count against it is a limit that
    * stops nobody.
+   *
+   * The refusal leaves a row, and `noteRefusal` gates it to once per window
+   * rather than once per repeat — the same discipline and the same measured
+   * reason as `signInAttempt.blocked()`: three hundred refused requests wrote
+   * three hundred permanent rows in 783 ms, into a table an append-only trigger
+   * will not let anybody delete from.
    */
-  const addressBudget = (source: string): number | null => {
+  const addressBudget = async (source: string): Promise<number | null> => {
     const wait = options.limiter.refusedFor(source, []);
-    if (wait !== null) return wait;
+    if (wait !== null) {
+      if (options.limiter.noteRefusal(source, [])) await auditRefusal(source, 'rate_limited');
+      return wait;
+    }
     options.limiter.attempted(source, []);
     return null;
   };
@@ -581,7 +705,7 @@ export function registerCollectorAuth(
        * visible in how long this reply took, because only an enrolled number
        * ever reaches this line.
        */
-      deliverAndRecord(db, send, collector, phone, code);
+      deliverAndRecord(db, send, channel, collector, phone, code);
       if (options.demoPhone !== undefined && phone === options.demoPhone) demoCode = code;
     });
 
@@ -733,9 +857,20 @@ export function registerCollectorAuth(
    */
   app.post('/auth/collector/zalo/start', async (req, reply) => {
     const zalo = options.zaloLogin;
-    if (zalo === undefined) return reply.code(503).send(refusal('zalo_not_configured'));
+    /**
+     * The same 503 and the same name `request-code` gives a deployment with no
+     * code sender, and NOT `zalo_not_configured`.
+     *
+     * Codex called the specific name a configuration oracle, and it was one:
+     * it told any anonymous caller which deployments hold Zalo credentials.
+     * `sign_in_unavailable` says the only thing a caller may act on — this way
+     * in is not available here — and the app already knows that name from the
+     * phone route and already has a sentence for it. The app decides to hide
+     * the button on the STATUS, not on the name.
+     */
+    if (zalo === undefined) return reply.code(503).send(UNAVAILABLE);
 
-    const wait = addressBudget(req.ip);
+    const wait = await addressBudget(req.ip);
     if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
 
     /**
@@ -773,13 +908,49 @@ export function registerCollectorAuth(
    */
   app.get('/auth/collector/zalo/callback', async (req, reply) => {
     const zalo = options.zaloLogin;
-    if (zalo === undefined) return reply.code(503).send(refusal('zalo_not_configured'));
-
-    const wait = addressBudget(req.ip);
-    if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
-
     const home = (params: Record<string, string>): never =>
       reply.redirect(`${APP_DEEP_LINK}?${new URLSearchParams(params).toString()}`, 302) as never;
+
+    /**
+     * EVERY answer from this route is the deep link, including the two that
+     * used to be JSON.
+     *
+     * Codex found that an unconfigured deployment answered a 503 body and a
+     * rate-limited one a 429 body — both rendered as raw JSON in whatever
+     * browser Zalo had just redirected, with no way back to the app. The
+     * person who tapped a button is looking at a mobile browser: the only
+     * useful answer is the scheme that returns them to the screen they
+     * started on, with a name the app has a Vietnamese sentence for.
+     *
+     * `zalo_not_configured` is safe to send HERE, unlike on `start`: reaching
+     * this route means Zalo already redirected a browser to it, so the caller
+     * has been through Zalo's own screens and learns nothing from the name
+     * that the redirect did not already tell them.
+     */
+    if (zalo === undefined) return home({ error: 'zalo_not_configured' });
+
+    const wait = await addressBudget(req.ip);
+    /**
+     * `rate_limited`, which `zalo.tsx` already maps to `signIn.rateLimited` —
+     * not a new `zalo_rate_limited`. A refusal name earns its own sentence
+     * when its answer is different, and "wait a few minutes" is the same
+     * sentence whichever route said it.
+     */
+    if (wait !== null) return home({ error: 'rate_limited' });
+    /**
+     * Every named refusal leaves a row and then goes home.
+     *
+     * Before this, a failed Zalo sign-in left nothing at all: only success
+     * wrote `collector.login`, so the trail could not say whether the
+     * thousand refused callbacks above had happened — which is what makes the
+     * rate limit unverifiable after the fact, and which the phone routes have
+     * done since the limiter was written. Zalo Login is the first-class
+     * channel now, so PLT-07's "every outcome attributed" has to hold for it.
+     */
+    const refused = async (name: ZaloLoginRefusal): Promise<never> => {
+      await auditRefusal(req.ip, name);
+      return home({ error: name });
+    };
 
     const { code, state } = (req.query ?? {}) as Record<string, unknown>;
     /**
@@ -788,8 +959,8 @@ export function registerCollectorAuth(
      * `docs/sign-in-channels.md`), so the absence of a code is what this reads,
      * which is true whatever the parameter turns out to be called.
      */
-    if (typeof code !== 'string' || code === '') return home({ error: 'zalo_denied' });
-    if (typeof state !== 'string' || state === '') return home({ error: 'zalo_state_unknown' });
+    if (typeof code !== 'string' || code === '') return refused('zalo_denied');
+    if (typeof state !== 'string' || state === '') return refused('zalo_state_unknown');
 
     /**
      * Spend the state, and spend it BEFORE the exchange.
@@ -810,8 +981,8 @@ export function registerCollectorAuth(
         codeVerifier: schema.zaloSignIns.codeVerifier,
         expiresAt: schema.zaloSignIns.expiresAt,
       });
-    if (attempt === undefined) return home({ error: 'zalo_state_unknown' });
-    if (attempt.expiresAt.getTime() <= Date.now()) return home({ error: 'zalo_state_expired' });
+    if (attempt === undefined) return refused('zalo_state_unknown');
+    if (attempt.expiresAt.getTime() <= Date.now()) return refused('zalo_state_expired');
 
     let identity: ZaloIdentity;
     try {
@@ -824,11 +995,11 @@ export function registerCollectorAuth(
        */
       const named = err instanceof ZaloLoginError ? err.refusal : 'zalo_unreachable';
       req.log.error(err);
-      return home({ error: named });
+      return refused(named);
     }
 
     const claims = await zaloCollector(db, identity);
-    if (claims === null) return home({ error: 'zalo_profile_refused' });
+    if (claims === null) return refused('zalo_profile_refused');
 
     /**
      * The ticket. Hashed on the way in for the reason
@@ -840,8 +1011,27 @@ export function registerCollectorAuth(
       .set({ ticketHash: ticketDigest(ticket), collectorId: claims.collectorId })
       .where(and(eq(schema.zaloSignIns.state, state), isNull(schema.zaloSignIns.ticketHash)))
       .returning({ state: schema.zaloSignIns.state });
-    if (minted === undefined) return home({ error: 'zalo_state_unknown' });
-    return home({ ticket });
+    if (minted === undefined) return refused('zalo_state_unknown');
+    /**
+     * The state travels back with the ticket, and it is what binds the ticket
+     * to the attempt the app started.
+     *
+     * Without it the app redeemed ANY `playerone://signed-in?ticket=…` the OS
+     * handed it, so a second app claiming the scheme — or anything that could
+     * make the phone open one link — could sign a collector into an
+     * ATTACKER'S account. That is login-CSRF, and both audits of `4a32929`
+     * found it. The app now compares this against the state it stored before
+     * it opened the browser and drops the link on any mismatch.
+     *
+     * Safe to echo: the state was spent by the UPDATE above, so it opens
+     * nothing on its own, and it was minted by this server — the app is
+     * recognising its own value, not trusting ours.
+     *
+     * It rides ONLY with a ticket. An `?error=` carries no state, because an
+     * error cannot sign anybody in and requiring a match there would let a
+     * forged callback suppress a real `zalo_denied` the collector needs to see.
+     */
+    return home({ ticket, state });
   });
 
   /**
@@ -860,8 +1050,22 @@ export function registerCollectorAuth(
       return reply.code(400).send({ error: 'missing ticket' });
     }
 
-    const wait = addressBudget(req.ip);
+    const wait = await addressBudget(req.ip);
     if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
+
+    /**
+     * The one 401, and the row behind it.
+     *
+     * A ticket is a credential, so a ticket that does not work is the same
+     * event `attempt.wrong()` records on `verify` — and the strongest attack
+     * signal these three routes have, because guessing tickets is the only
+     * thing here worth guessing. One name for never-issued, expired, used and
+     * collector-deleted, so the row says no more than the reply does.
+     */
+    const spent = async (): Promise<never> => {
+      await auditRefusal(req.ip, 'zalo_ticket_spent');
+      return reply.code(401).send(refusal('zalo_ticket_spent')) as never;
+    };
 
     /**
      * Spent by the statement that reads it, and only the winner of
@@ -881,12 +1085,8 @@ export function registerCollectorAuth(
         collectorId: schema.zaloSignIns.collectorId,
         expiresAt: schema.zaloSignIns.expiresAt,
       });
-    if (used === undefined || used.collectorId === null) {
-      return reply.code(401).send(refusal('zalo_ticket_spent'));
-    }
-    if (used.expiresAt.getTime() <= Date.now()) {
-      return reply.code(401).send(refusal('zalo_ticket_spent'));
-    }
+    if (used === undefined || used.collectorId === null) return spent();
+    if (used.expiresAt.getTime() <= Date.now()) return spent();
 
     /**
      * The epoch is read now and not at the callback: a collector whose tokens
@@ -898,12 +1098,18 @@ export function registerCollectorAuth(
       .select({ id: schema.collectors.id, epoch: schema.collectors.tokenEpoch })
       .from(schema.collectors)
       .where(eq(schema.collectors.id, used.collectorId));
-    if (collector === undefined) return reply.code(401).send(refusal('zalo_ticket_spent'));
+    if (collector === undefined) return spent();
 
     await auditLogin(db, 'collector.login', 'collectors', collector.id, {
       collectorId: collector.id,
     });
-    options.limiter.succeeded(req.ip, []);
+    /**
+     * Give back all three, not one. See `ZALO_HOP_REQUESTS`: this hop charged
+     * the address once per request, and refunding a third of it made every
+     * completed sign-in cost two — which is what filled a shared carrier
+     * address at roughly the fifteenth collector.
+     */
+    for (let spent = 0; spent < ZALO_HOP_REQUESTS; spent += 1) options.limiter.succeeded(req.ip, []);
     return {
       token: signToken(options.tokenSecret, {
         kind: 'collector',

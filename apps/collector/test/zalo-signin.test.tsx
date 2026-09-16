@@ -188,7 +188,7 @@ it('opens Zalo, takes the ticket off the deep link, and signs in', async () => {
   // Nothing is signed in yet: the ticket has not come back.
   expect(signedIn).not.toHaveBeenCalled();
 
-  await act(async () => link.deliver('playerone://signed-in?ticket=TICKET-1'));
+  await act(async () => link.deliver('playerone://signed-in?ticket=TICKET-1&state=s1'));
   expect(tokens.value).toBe('collector-token');
   expect(signedIn).toHaveBeenCalledTimes(1);
 
@@ -196,8 +196,57 @@ it('opens Zalo, takes the ticket off the deep link, and signs in', async () => {
    * A second delivery of the same link — Android can hand the `url` event to a
    * screen that is already mounted — must not spend the ticket twice.
    */
-  await act(async () => link.deliver('playerone://signed-in?ticket=TICKET-1'));
+  await act(async () => link.deliver('playerone://signed-in?ticket=TICKET-1&state=s1'));
   expect(fetchFn.mock.calls.filter(([u]) => String(u).endsWith('/ticket'))).toHaveLength(1);
+});
+
+/**
+ * Login-CSRF, found by both audits of `4a32929` and the worst thing in the
+ * lane: the app used to redeem ANY `playerone://signed-in?ticket=…` the OS
+ * handed it. `apps/collector/src/zalo.tsx` says the scheme is claimed by the
+ * demo build as well as the Play build, and Android does not verify a custom
+ * scheme — so a second app could hand the phone a ticket for an ATTACKER'S
+ * account and the collector would be signed into it, recording under somebody
+ * else's name and earning them the money.
+ *
+ * The state that comes back beside the ticket is compared against the one
+ * stored before the browser opened. Both branches are here because only having
+ * the first would pass with the check deleted.
+ */
+it('refuses a forwarded ticket whose state is not the one it started with', async () => {
+  fetchFn.mockImplementation(async (input) => {
+    if (String(input).endsWith('/auth/collector/zalo/start')) return json({ url: AUTHORIZE, state: 's1' });
+    throw new Error(`unexpected request to ${String(input)}`);
+  });
+  await mount();
+  await press(copy['signIn.zalo']);
+  expect(link.opened).toEqual([AUTHORIZE]);
+
+  // Another app's link: a real ticket shape, a state this phone never had.
+  await act(async () => link.deliver('playerone://signed-in?ticket=ATTACKER-TICKET&state=forged'));
+  // Nothing was sent, nothing was stored, nobody was signed in.
+  expect(fetchFn.mock.calls.filter(([u]) => String(u).endsWith('/ticket'))).toHaveLength(0);
+  expect(tokens.value).toBeNull();
+  expect(signedIn).not.toHaveBeenCalled();
+
+  // A link with no state at all is the same refusal.
+  await act(async () => link.deliver('playerone://signed-in?ticket=ATTACKER-TICKET-2'));
+  expect(fetchFn.mock.calls.filter(([u]) => String(u).endsWith('/ticket'))).toHaveLength(0);
+  expect(signedIn).not.toHaveBeenCalled();
+
+  /**
+   * And the forgery must not have consumed the attempt: the real link arriving
+   * a second later still works. A refusal that also broke the genuine sign-in
+   * would be a denial of service anybody could trigger.
+   */
+  fetchFn.mockImplementation(async (input) => {
+    if (String(input).endsWith('/auth/collector/zalo/start')) return json({ url: AUTHORIZE, state: 's1' });
+    if (String(input).endsWith('/auth/collector/ticket')) return json({ token: 'collector-token' });
+    throw new Error(`unexpected request to ${String(input)}`);
+  });
+  await act(async () => link.deliver('playerone://signed-in?ticket=TICKET-1&state=s1'));
+  expect(tokens.value).toBe('collector-token');
+  expect(signedIn).toHaveBeenCalledTimes(1);
 });
 
 it('says what Zalo refused, by name, and leaves the number field usable', async () => {

@@ -158,9 +158,14 @@ const app = buildApi({
   /**
    * Zalo Login (OAuth v4), from PLAYERONE_ZALO_APP_ID, PLAYERONE_ZALO_APP_SECRET
    * and PLAYERONE_PUBLIC_ORIGIN (which falls back to PLAYERONE_PUBLIC_URL).
-   * Undefined when none of them is set, and then the three Zalo routes answer
-   * 503 naming `zalo_not_configured`; a PARTIAL configuration throws by name,
-   * the same rule as the ZNS and ZaloPay readers above.
+   * Undefined when none of them is set, and then TWO of the three Zalo routes
+   * refuse: `start` with a generic 503 that does not name Zalo (naming it was
+   * a configuration oracle), and `callback` with a redirect to the app's deep
+   * link carrying `zalo_not_configured`. The ticket route has no config check
+   * at all — it never talks to Zalo, and on a deployment with no Zalo app no
+   * ticket was ever issued, so its ordinary 401 is both true and the answer
+   * that says less. A PARTIAL configuration throws by name, the same rule as
+   * the ZNS and ZaloPay readers above.
    *
    * Owner's decision of 2026-09-16: this is the route a collector with an
    * ordinary Zalo account signs in through, because VNG's ZNS Official Account

@@ -9,7 +9,7 @@ export function configuration(args) {
       'storage-key', 'storage-secret', 'quota-bytes', 'output',
       // Sign-in channels, owner's decision 2026-09-16. All optional: omitted,
       // they stay empty in cloud.env and the deployment behaves as it did.
-      'sign-in-channel', 'zalo-app-id', 'zalo-app-secret'].map(k => [k, { type: 'string' }]),
+      'sign-in-channel', 'zalo-app-id', 'zalo-app-secret', 'demo-phone'].map(k => [k, { type: 'string' }]),
     ...['local-db', 'http-local'].map(k => [k, { type: 'boolean' }]),
   ]) });
   for (const k of ['domain', 'acme-email', 'storage-endpoint', 'storage-bucket', 'storage-key', 'storage-secret', 'quota-bytes']) {
@@ -22,6 +22,12 @@ export function configuration(args) {
   if (Boolean(v['local-db']) === Boolean(v['database-url'])) throw new Error('Choose --local-db OR --database-url (migration owner URL)');
   if (v['http-local'] && v.domain !== 'localhost') throw new Error('--http-local is only for localhost Docker proof');
   if (!['https:', ...(v['http-local'] ? ['http:'] : [])].includes(new URL(v['storage-endpoint']).protocol)) throw new Error('Storage endpoint must use HTTPS outside local proof');
+  // One Vietnamese mobile number, in any of the three spellings zns.ts
+  // normalises. Validated here because it decides whose one-time code this
+  // deployment is allowed to write into its own log.
+  if (v['demo-phone'] !== undefined && !/^(\+?84|0)[35789][0-9]{8}$/.test(v['demo-phone'])) {
+    throw new Error('--demo-phone must be one Vietnamese mobile number (0…, 84… or +84…)');
+  }
   // Allowed characters rather than forbidden ones. A Zalo app id is digits and
   // its secret is hex, so anything outside this set is a paste that went wrong
   // and a positive rule cannot be defeated by a separator nobody thought of.
@@ -69,6 +75,20 @@ export function configuration(args) {
     PLAYERONE_SIGN_IN_CHANNEL: v['sign-in-channel'] ?? '',
     PLAYERONE_ZALO_APP_ID: v['zalo-app-id'] ?? '',
     PLAYERONE_ZALO_APP_SECRET: v['zalo-app-secret'] ?? '',
+    /**
+     * The only number whose sign-in code this deployment may write to its own
+     * log. Empty unless asked for: the log sender is what a sandbox with no ZNS
+     * credentials falls back to, which is this kit's own default, and before
+     * the allowlist existed it printed every collector's code.
+     *
+     * Deliberately NOT also `PLAYERONE_DEMO_PHONE`, which is a different thing
+     * with a stricter rule: that one makes the API echo the code in the HTTP
+     * RESPONSE, which is an enrolment oracle for that number, and
+     * `check.test.ts` bans it from this template outright. A log an operator
+     * reads on the VM and a response the internet can ask for are not the same
+     * disclosure, and one flag setting both would have quietly undone that ban.
+     */
+    PLAYERONE_DEMO_PHONES: v['demo-phone'] ?? '',
   };
 }
 
