@@ -64,6 +64,38 @@ test('the sign-in channel and the Zalo app are optional, validated, and empty by
   assert.throws(() => configuration([...inputs, '--zalo-app-secret', 'abc']));
   assert.throws(() => configuration([...inputs, '--sign-in-channel', 'sms\nSTORAGE_KEY=stolen']));
 });
+/**
+ * Whose one-time code this deployment may write into its own log.
+ *
+ * The log sender is what a sandbox with no ZNS credentials falls back to, which
+ * is this kit's own default, and before the allowlist it printed EVERY number's
+ * code — so a public demo put real collectors' codes where anyone with log
+ * access could read them. Both audits of `4a32929` found it.
+ */
+test('the demo phone is empty by default, validated, and never turns on the response echo', () => {
+  const plain = configuration(inputs);
+  assert.equal(plain.PLAYERONE_DEMO_PHONES, '');
+
+  const env = configuration([...inputs, '--demo-phone', '0900000001']);
+  assert.equal(env.PLAYERONE_DEMO_PHONES, '0900000001');
+  /**
+   * And it does NOT set `PLAYERONE_DEMO_PHONE`, which makes the API echo the
+   * code in the HTTP response. `check.test.ts` bans that from the cloud
+   * template because it is an enrolment oracle on a public hostname; a log an
+   * operator reads on the VM is a different disclosure from a response the
+   * internet can ask for, and one flag setting both would undo that ban.
+   */
+  assert.equal(env.PLAYERONE_DEMO_PHONE, undefined);
+  for (const spelling of ['+84900000001', '84900000001']) {
+    assert.equal(configuration([...inputs, '--demo-phone', spelling]).PLAYERONE_DEMO_PHONES, spelling);
+  }
+
+  // Not a list, not a foreign number, not a typo: a wrong value here is a
+  // deployment that logs nobody's code and looks like it logs one.
+  for (const bad of ['0900000001,0900000002', '+8613800138000', '090000000', 'demo', '0100000001']) {
+    assert.throws(() => configuration([...inputs, '--demo-phone', bad]), undefined, bad);
+  }
+});
 test('CLI refuses a second write and prints secrets only on the first creation', () => {
   const directory = mkdtempSync(join(tmpdir(), 'playerone-cloud-config-'));
   const output = join(directory, 'cloud.env');

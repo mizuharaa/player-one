@@ -245,15 +245,67 @@ describe('configuration by environment', () => {
     PLAYERONE_ZNS_TEMPLATE_ID: 'tpl',
   };
 
+  /**
+   * The development sender is what the pilot runs on before VNG issues an
+   * account, and it says loudly that nothing was sent — but it no longer says
+   * WHAT was not sent unless the deployment named the number.
+   *
+   * It used to print every number's code, and `cloud.env.example` selects it
+   * (sandbox, no credentials), so a public deployment wrote real collectors'
+   * one-time codes into its container log. Both audits of `4a32929` found it.
+   * The allowlist is empty by default, so a deployment that has not thought
+   * about this discloses nothing.
+   */
   it('gives the development sender when nothing is set, rather than crashing', async () => {
     const lines: string[] = [];
     expect(() => signInCodeSenderFromEnv({})).not.toThrow();
-    // The development sender is what the pilot runs on before VNG issues an
-    // account, and it says loudly that nothing was sent.
     await devLogSender((l) => lines.push(l))(PHONE, CODE);
     expect(lines).toHaveLength(1);
+    // Still loud: silence is the dangerous outcome this sender exists to avoid.
     expect(lines[0]).toContain('NOT SENT');
-    expect(lines[0]).toContain(CODE);
+    // But no code, and no whole number — three digits, enough to recognise
+    // your own handset and not enough to harvest who is signing in.
+    expect(lines[0]).not.toContain(CODE);
+    expect(lines[0]).not.toContain(PHONE);
+    expect(lines[0]).toContain('PLAYERONE_DEMO_PHONES');
+  });
+
+  it('writes the code only for a number the deployment named, in any spelling of it', async () => {
+    for (const named of ['+84900000001', '0900000001', '84900000001', ' 0900000001 ']) {
+      const lines: string[] = [];
+      await devLogSender((l) => lines.push(l), [named])(PHONE, CODE);
+      // The format is load-bearing: a smoke script reads the code off it.
+      expect(lines[0], named).toContain(`sign-in code for ${PHONE} is ${CODE}`);
+    }
+
+    // A different number on the same deployment still gets nothing.
+    const other: string[] = [];
+    await devLogSender((l) => other.push(l), ['+84900000001'])('+84900000002', CODE);
+    expect(other[0]).not.toContain(CODE);
+  });
+
+  it('refuses the log channel on a production environment or a public origin', () => {
+    // Naming the channel must not be a way around the guard the old
+    // PLAYERONE_ZNS_ENV=production check already applied.
+    expect(() =>
+      signInCodeSenderFromEnv({ PLAYERONE_SIGN_IN_CHANNEL: 'log', PLAYERONE_ZNS_ENV: 'production' }),
+    ).toThrow(/cannot be used with PLAYERONE_ZNS_ENV=production/);
+    expect(() =>
+      signInCodeSenderFromEnv({
+        PLAYERONE_SIGN_IN_CHANNEL: 'log',
+        PLAYERONE_PUBLIC_URL: 'https://demo.203-0-113-4.sslip.io',
+      }),
+    ).toThrow(/public origin/);
+
+    // Localhost is the case it exists for, and so is a LAN centre with no
+    // public URL at all.
+    expect(() =>
+      signInCodeSenderFromEnv({
+        PLAYERONE_SIGN_IN_CHANNEL: 'log',
+        PLAYERONE_PUBLIC_URL: 'http://localhost:8080',
+      }),
+    ).not.toThrow();
+    expect(() => signInCodeSenderFromEnv({ PLAYERONE_SIGN_IN_CHANNEL: 'log' })).not.toThrow();
   });
 
   it('fails closed on half a configuration, naming what is missing', () => {

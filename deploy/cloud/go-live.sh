@@ -10,7 +10,7 @@ ip=$1; shift
 domain=; bucket=; acme_email=luong.alois@gmail.com; ssh_port=234; ssh_user=ubuntu; ssh_key=~/.ssh/id_rsa_playerone; quota=1250000000; dry_run=0; force=
 # Zalo Login, owner's decision 2026-09-16. Empty leaves the three cloud.env
 # values empty, and code delivery stays exactly as it is today.
-zalo_app_id=; zalo_app_secret=; sign_in_channel=
+zalo_app_id=; zalo_app_secret=; sign_in_channel=; demo_phone=
 while [[ $# -gt 0 ]]; do
   case $1 in
     --domain) domain=$2; shift 2 ;;
@@ -24,6 +24,7 @@ while [[ $# -gt 0 ]]; do
     --zalo-app-id) zalo_app_id=$2; shift 2 ;;
     --zalo-app-secret) zalo_app_secret=$2; shift 2 ;;
     --sign-in-channel) sign_in_channel=$2; shift 2 ;;
+    --demo-phone) demo_phone=$2; shift 2 ;;   # the ONE number whose code may be logged
     --dry-run|--plan) dry_run=1; shift ;;
     *) usage ;;
   esac
@@ -116,6 +117,7 @@ provision_script=$(mktemp)
   zalo_args=()
   [[ -z $zalo_app_id ]] || zalo_args+=(--zalo-app-id "$zalo_app_id" --zalo-app-secret "$zalo_app_secret")
   [[ -z $sign_in_channel ]] || zalo_args+=(--sign-in-channel "$sign_in_channel")
+  [[ -z $demo_phone ]] || zalo_args+=(--demo-phone "$demo_phone")
   printf 'bash deploy/cloud/provision.sh --domain %q --acme-email %q --local-db --storage-endpoint %q --storage-bucket %q --storage-key %q --storage-secret %q --quota-bytes %q %s %s\n' \
     "$domain" "$acme_email" "$STORAGE_ENDPOINT" "$bucket" "$STORAGE_KEY" "$STORAGE_SECRET" "$quota" "$force" "$(printf '%q ' ${zalo_args[@]+"${zalo_args[@]}"})"
 } > "$provision_script"
