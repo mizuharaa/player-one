@@ -1084,3 +1084,14 @@ it('recognises a connection lost while reading the response body', async () => {
   await expect(api.tasks()).rejects.toMatchObject({ code: 'server_unreachable' });
   expect(store.value).toBe('retained');
 });
+
+
+it('preserves sandbox provenance in both income adapters', async () => {
+  const api = new HttpCollectorApi(BASE, fakeStore(), () => {}, async () => new Response(JSON.stringify({
+    simulation: true,
+    episodes: [{ episode_id: 'sandbox-paid', effective_minutes: '1', amount: '1200', confirmed: true, state: 'paid' }],
+    cycle: { label: 'Sandbox cycle', confirmedVnd: '1200', estimatedVnd: '0', totalVnd: '1200' },
+  })));
+  expect(await api.income()).toEqual([expect.objectContaining({ settlementState: 'paid', simulation: true })]);
+  expect(await api.incomeCycle()).toEqual(expect.objectContaining({ simulation: true }));
+});

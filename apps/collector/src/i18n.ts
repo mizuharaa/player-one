@@ -475,7 +475,7 @@ const vi = {
   'payout.awaiting': 'Chờ xác minh',
   'payout.awaitingPayment': 'Chờ thanh toán. Nơi nhận tiền chưa xác minh.',
   'payout.simulationLabel': 'Mô phỏng',
-  'payout.simulation': 'Mô phỏng. Không chuyển tiền thật.',
+  'payout.simulation': 'Mô phỏng. Không có chuyển tiền thật.',
   'payout.paidReference': 'Đã thanh toán. Mã giao dịch: {reference}',
   'payout.none': 'Chưa khai báo — liên hệ điểm hỗ trợ',
   'payout.unknown': 'Chưa rõ bạn sẽ nhận tiền ở đâu. Hỏi điểm hỗ trợ giúp bạn.',

@@ -298,10 +298,11 @@ export function Uploads() {
         {episodes.isPending ? <Loading /> : null}
       </View>}
       empty={episodes.isPending || episodes.isError ? null : <Hatch action={tt('common.retry')} onPress={() => { setSearch(''); setFilter(null); void episodes.refetch(); }} text={tt(search.trim() || filter ? 'uploads.noMatches' : 'uploads.empty')} />}
-      renderItem={episode => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(episode.episodeId)}. ${tt(`state.${episode.state}`)}`}
+      renderItem={episode => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(episode.episodeId)}. ${tt(`state.${episode.state}`)}${amounts.get(episode.episodeId)?.simulation ? `. ${tt('payout.simulation')}` : ''}`}
         onPress={() => setSelectedEpisode(episode.episodeId)}
         style={({ pressed }) => ({ paddingVertical: c.cardPad, borderBottomWidth: 1, borderBottomColor: c.line,
-          flexDirection: 'row', alignItems: 'center', gap: c.cardGap, backgroundColor: pressed ? c.surface : undefined })}>
+          gap: c.cardGap, backgroundColor: pressed ? c.surface : undefined })}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: c.cardGap }}>
         <View style={{ width: 44, height: 44, borderRadius: c.radius.pill, borderWidth: 1, borderColor: c.line, backgroundColor: stateColors(theme, episode.state).bg, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ fontFamily: face(theme), ...c.type.h2, color: stateColors(theme, episode.state).fg }}>{stateMarks[episode.state]}</Text>
         </View>
@@ -310,6 +311,8 @@ export function Uploads() {
           <Text style={{ fontFamily: face(theme), ...c.type.body, color: amounts.get(episode.episodeId)?.kind === 'confirmed' ? c.greenInk : c.ink }}>{amounts.get(episode.episodeId)?.amountVnd == null ? '—' : dong(amounts.get(episode.episodeId)!.amountVnd!)}</Text>
           {amounts.has(episode.episodeId) ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.muted }}>{tt(amounts.get(episode.episodeId)!.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')}</Text> : null}
         </View>
+        </View>
+        {amounts.get(episode.episodeId)?.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
       </Pressable>} />
     <Modal visible={open} animationType="none" onRequestClose={close}>
       <Screen title={outcome ? tt(`delivery.${outcome.state}`) : tt(running ? 'uploads.sending' : deliveryStage === 2 ? 'uploads.confirmTitle' : 'uploads.deliverTitle')}

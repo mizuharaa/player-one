@@ -51,7 +51,7 @@ const settlementLabel = (tt: (key: MessageKey) => string, state: string): string
   return key === undefined ? state : tt(key);
 };
 
-/** The settlement states that mean money actually moved. */
+/** States recorded as paid; simulation provenance still determines whether money moved. */
 const PAID = new Set(['manually_paid', 'paid']);
 
 /**
@@ -136,6 +136,7 @@ export function Income() {
           <Text style={{ fontFamily: face(theme), ...c.type.body, color: c.ink }}>{tt('income.confirmed')}</Text>
           {cycleData ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.ink }}>{tt('home.cycleWithEstimate').replace('{amount}', dong(cycleData.totalVnd))}</Text> :
             <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.ink }}>{tt(cycle.isPending ? 'common.loading' : 'home.cycleUnavailable')}</Text>}
+          {cycleData?.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
         </Card>}
         <View style={{ flexDirection: 'row', gap: c.cardGap, alignItems: 'flex-start' }}>
           {([
@@ -164,7 +165,7 @@ export function Income() {
         {income.isPending ? <Loading /> : null}
       </View>}
       empty={options || income.isPending || income.isError ? null : <Hatch action={tt('common.retry')} onPress={() => void income.refetch()} text={tt('income.empty')} />}
-      renderItem={entry => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(entry.episodeId)}. ${tt(entry.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')}`}
+      renderItem={entry => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(entry.episodeId)}. ${tt(entry.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')}${entry.simulation ? `. ${tt('payout.simulation')}` : ''}`}
         onPress={() => { setSelectedId(entry.episodeId); setDetails(false); }}
         style={({ pressed }) => ({ borderBottomWidth: 1, borderBottomColor: c.line, paddingVertical: c.cardPad, gap: c.cardGap, backgroundColor: pressed ? c.surface : undefined })}>
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: c.cardGap }}>
@@ -174,6 +175,7 @@ export function Income() {
           </View>
           <Text style={{ fontFamily: face(theme), ...c.type.h2, color: entry.kind === 'confirmed' ? c.greenInk : c.ink, fontVariant: ['tabular-nums'] }}>{entry.amountVnd === null ? NOTHING : dong(entry.amountVnd)}</Text>
         </View>
+        {entry.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
         <Tag label={tt(entry.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')} fg={c.ink} bg={c.surface} mark={entry.kind === 'confirmed' ? '✓' : '~'} />
       </Pressable>} />
     <Modal visible={selected !== undefined} animationType="none" onRequestClose={() => setSelectedId(null)}>
@@ -184,6 +186,7 @@ export function Income() {
           <Chip label={tt('income.progress')} selected={!details} onPress={() => setDetails(false)} />
           <Chip label={tt('income.details')} selected={details} onPress={() => setDetails(true)} />
         </View>
+        {selected.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
         {details ? <>
           <Row label={tt('income.minutes')} value={selected.effectiveMinutes === null ? NOTHING : quantity(selected.effectiveMinutes)} />
           <Row label={tt('income.settlement')} value={selected.settlementState ? settlementLabel(tt, selected.settlementState) : tt('settlement.unknown')} />
@@ -198,6 +201,7 @@ export function Income() {
           <Row label={tt('income.confirmed')} value={dong(cycleData.confirmedVnd)} />
           <Row label={tt('income.estimated')} value={dong(cycleData.estimatedVnd)} />
           <Row label={tt('income.total')} value={dong(cycleData.totalVnd)} />
+          {cycleData.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
         </> : cycle.isPending ? <Loading /> : <Note text={tt('home.cycleUnavailable')} onRetry={() => void cycle.refetch()} busy={cycle.isFetching} />}
       </Screen>
     </Modal>

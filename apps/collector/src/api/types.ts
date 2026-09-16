@@ -154,6 +154,7 @@ export interface EpisodeUpload {
 }
 
 export interface IncomeEntry {
+  simulation?: boolean;
   episodeId: string;
   /** Server-computed. `null` until the server has anything to say. */
   effectiveMinutes: string | null;
@@ -172,6 +173,7 @@ export interface IncomeEntry {
  * do.
  */
 export interface IncomeCycle {
+  simulation?: boolean;
   /** The server's own words, e.g. `17/08 – 23/08`. */
   label: string;
   confirmedVnd: string;
