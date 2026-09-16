@@ -7,8 +7,7 @@ import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { useGuideTarget } from '../guide/Guide.tsx';
-import { Body, Button, face, Chip, Hatch, NavRow, ListScreen, Loading, Note, Row, Screen, Tag, Timeline } from '../ui.tsx';
-import { HeaderGradient } from '../ui/HeaderGradient.tsx';
+import { Body, Button, Card, face, Chip, Hatch, NavRow, ListScreen, Loading, Note, Row, Screen, Tag, Timeline } from '../ui.tsx';
 import { useNav } from '../nav.tsx';
 import { dong, quantity, shortId } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
@@ -128,13 +127,13 @@ export function Income() {
     <ListScreen title={tt('income.title')} data={options ? [] : income.data ?? []} keyOf={entry => entry.episodeId}
       refresh={{ refreshing: income.isFetching || cycle.isFetching || payout.isFetching, onRefresh: () => { void income.refetch(); void cycle.refetch(); void payout.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.sectionGap }}>
-        <HeaderGradient>
-          <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.paper }}>{cycleData?.label ? `${tt('home.cycleTitle')} · ${cycleData.label}` : tt('home.cycleTitle')}</Text>
-          {cycle.isPending ? <Loading kind="number" /> : <Text style={{ fontFamily: face(theme), ...c.type.money, color: c.paper, fontVariant: ['tabular-nums'] }}>{cycleData ? dong(cycleData.confirmedVnd) : NOTHING}</Text>}
-          <Text style={{ fontFamily: face(theme), ...c.type.body, color: c.paper }}>{tt('income.confirmed')}</Text>
-          {cycleData ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.paper }}>{tt('home.cycleWithEstimate').replace('{amount}', dong(cycleData.totalVnd))}</Text> :
-            <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.paper }}>{tt(cycle.isPending ? 'common.loading' : 'home.cycleUnavailable')}</Text>}
-        </HeaderGradient>
+        <Card>
+          <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.ink }}>{cycleData?.label ? `${tt('home.cycleTitle')} · ${cycleData.label}` : tt('home.cycleTitle')}</Text>
+          {cycle.isPending ? <Loading kind="number" /> : <Text style={{ fontFamily: face(theme), ...c.type.money, color: c.ink, fontVariant: ['tabular-nums'] }}>{cycleData ? dong(cycleData.confirmedVnd) : NOTHING}</Text>}
+          <Text style={{ fontFamily: face(theme), ...c.type.body, color: c.ink }}>{tt('income.confirmed')}</Text>
+          {cycleData ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.ink }}>{tt('home.cycleWithEstimate').replace('{amount}', dong(cycleData.totalVnd))}</Text> :
+            <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.ink }}>{tt(cycle.isPending ? 'common.loading' : 'home.cycleUnavailable')}</Text>}
+        </Card>
         {cycle.isError ? <Failure error={cycle.error} tone="error" text={tt('common.loadFailed')} onRetry={() => void cycle.refetch()} busy={cycle.isFetching} /> : null}
         <View style={{ flexDirection: 'row', gap: c.cardGap, alignItems: 'flex-start' }}>
           {([

@@ -1,3 +1,4 @@
+import { CardScrollContext } from '../ui/CardSheen.tsx';
 import { Failure } from '../ui/StatePanel.tsx';
 import { useToast } from '../ui/Toast.tsx';
 import { useEffect, useRef, useState } from 'react';
@@ -209,12 +210,11 @@ export function TaskDetail() {
   );
 
   return (
-    <View style={ground}>
+    <CardScrollContext.Provider value={scrollY}><View style={ground}>
       <Animated.ScrollView scrollEventThrottle={16} onScroll={reduced ? undefined : Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: Platform.OS !== 'web' })}
         contentContainerStyle={{ paddingBottom: footer + theme.space[6], gap: c.cardGap }}
       >
-        {/* 3/2 rather than 16/9 so the rate card is above the fold at 320×640
-            without letterboxing the still. */}
+        {/* The task card photo remains 4:3 here, with scroll-driven parallax. */}
         <View style={{ width: '100%', aspectRatio: 4 / 3, backgroundColor: c.line, overflow: 'hidden' }}>
           <Animated.View style={{ width: '100%', height: '100%', transform: [{ translateY: reduced ? 0 : scrollY.interpolate({ inputRange: [0, 600], outputRange: [0, 180], extrapolate: 'clamp' }) }] }}><Image
             // `assets.d.ts` types a bundled import as React Native's source —
@@ -382,6 +382,6 @@ export function TaskDetail() {
           />
         ) : null}
       </View>
-    </View>
+    </View></CardScrollContext.Provider>
   );
 }

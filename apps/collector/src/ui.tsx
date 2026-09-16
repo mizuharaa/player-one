@@ -1,3 +1,4 @@
+import { CardScrollContext, CardSheen, paperCard } from './ui/CardSheen.tsx';
 import { EmptyTasks } from './ui/illustrations/index.tsx';
 import { useReducedMotion } from './ui/motion.ts';
 import { Skeleton } from './ui/Skeleton.tsx';
@@ -127,6 +128,7 @@ export function Screen({
   refresh?: { refreshing: boolean; onRefresh: () => void };
   children: ReactNode;
 }) {
+  const scroll = useRef(new Animated.Value(0)).current;
   const theme = useTheme();
   const nav = useNav();
   const insets = useInsets();
@@ -134,8 +136,8 @@ export function Screen({
   const [footerHeight, setFooterHeight] = useState(0);
   return (
     // `background` is the page — the warm paper everything above it stands on.
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background }}>
-      <ScrollView
+    <CardScrollContext.Provider value={scroll}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background }}>
+      <Animated.ScrollView scrollEventThrottle={16} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scroll } } }], { useNativeDriver: Platform.OS !== 'web' })}
         refreshControl={refresh ? <RefreshControl {...refresh} /> : undefined}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
@@ -148,7 +150,7 @@ export function Screen({
       >
         <Header title={title} right={right} onBack={onBack} progress={progress} />
         {children}
-      </ScrollView>
+      </Animated.ScrollView>
       {footer === undefined ? null : (
         <View
           onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}
@@ -172,7 +174,7 @@ export function Screen({
           {footer}
         </View>
       )}
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingView></CardScrollContext.Provider>
   );
 }
 
@@ -205,17 +207,18 @@ export function ListScreen<T>({
   empty?: ReactNode;
   refresh?: { refreshing: boolean; onRefresh: () => void };
 }) {
+  const scroll = useRef(new Animated.Value(0)).current;
   const theme = useTheme();
   const nav = useNav();
   const insets = useInsets();
   const reserve = useTabBarReserve();
   return (
-    <View style={{ flex: 1, backgroundColor: theme.color.background }}>
-      <FlatList
+    <CardScrollContext.Provider value={scroll}><View style={{ flex: 1, backgroundColor: theme.color.background }}>
+      <Animated.FlatList<T> scrollEventThrottle={16} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scroll } } }], { useNativeDriver: Platform.OS !== 'web' })}
         refreshing={refresh?.refreshing}
         onRefresh={refresh?.onRefresh}
         keyboardShouldPersistTaps="handled"
-        data={data as T[]}
+        data={data as unknown as Animated.WithAnimatedValue<T[]>}
         keyExtractor={keyOf}
         // Views and not fragments: `VirtualizedList` clones each of these with
         // an `onLayout`, and a fragment cannot take one — which React reports
@@ -231,7 +234,7 @@ export function ListScreen<T>({
           gap: theme.space[3],
         }}
       />
-    </View>
+    </View></CardScrollContext.Provider>
   );
 }
 
@@ -249,10 +252,7 @@ export function Frost({ fill }: { fill: number }) {
 
 /** The box a card is, minus its fill — shared by `Card` and `CardLink`. */
 const cardBox = (theme: NativeTheme) => ({
-  backgroundColor: theme.collector.surface,
-  borderColor: theme.color.border,
-  borderWidth: 1,
-  borderRadius: theme.radius.lg,
+  ...paperCard,
   padding: theme.space[4],
   gap: theme.space[2],
   // The frost layer is absolutely positioned and has to be cut to the radius.
@@ -263,6 +263,7 @@ export function Card({ children }: { children: ReactNode }) {
   const theme = useTheme();
   return (
     <View style={cardBox(theme)}>
+      <CardSheen />
       {children}
     </View>
   );
@@ -324,19 +325,11 @@ export function CardLink({
       accessibilityLabel={label}
       accessibilityHint={hint}
       onPress={onPress}
-      style={({ pressed }) => ({
-        ...cardBox(theme),
-        // Pressed, the glass clears and the muted fill under it shows through.
-        // A denser frost would have been the prettier idea and is not a press:
-        // measured, 0.62 and 0.78 of white over the lavender page are #F8F9FC
-        // and #FBFBFD, which nobody's thumb can tell apart.
-        backgroundColor: pressed ? theme.color.muted : theme.collector.surface,
-        borderColor: pressed ? theme.color.borderStrong : theme.color.border,
-      })}
+      style={cardBox(theme)}
     >
       {({ pressed }) => (
         <>
-
+          <CardSheen pressed={pressed} />
           {children}
         </>
       )}

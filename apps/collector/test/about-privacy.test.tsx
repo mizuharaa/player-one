@@ -91,12 +91,9 @@ it('About names both companies, what the app is for, and the build', async () =>
   expect(page()).toContain(m['about.build']);
 });
 
-it('About draws the header from the three token stops, not a fourth ramp', async () => {
+it('About keeps a paper header; the lavender wash belongs only to Home', async () => {
   await mount(<About />);
-  // SPEC.md: the gradient lives on three surfaces and is three stops in one
-  // hue family. A screen that wrote its own hexes would be the fourth.
-  const gradient = document.body.querySelector('[data-colors]');
-  expect(gradient?.getAttribute('data-colors')).toBe(collector.gradient.join(','));
+  expect(document.querySelector('[data-testid="home-header-wash"]')).toBeNull();
 });
 
 it('About only offers the document that has a screen', async () => {

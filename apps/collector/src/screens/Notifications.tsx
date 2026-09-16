@@ -360,7 +360,7 @@ function NotificationRow({ item }: { item: CollectorNotification }) {
       {item.read ? null : (
         <View
           importantForAccessibility="no"
-          style={{ width: theme.space[2], height: theme.space[2], borderRadius: c.radius.pill, backgroundColor: c.plum, marginTop: theme.space[2] }}
+          style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: c.plum, marginTop: theme.space[2] }}
         />
       )}
     </View>

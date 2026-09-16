@@ -1,6 +1,6 @@
+import { CardSheen, paperCard } from './CardSheen.tsx';
 import { StyleSheet, Text, View } from 'react-native';
 import { Image, type ImageSource } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import type { Task } from '../api/types.ts';
 import { useT } from '../locale.tsx';
 import { vnd } from '../money.ts';
@@ -14,7 +14,7 @@ export function TaskCard({ task, onPress, hint }: { task: Task; onPress: () => v
   const badge = task.type === 'office' ? 'scenario.office' : task.type === 'shop' ? 'scenario.shop' : task.type === 'warehouse' ? 'taskCard.warehouse' : 'taskCard.default';
   return <PhantomPressable pressedScale={.98} accessibilityRole="button" accessibilityLabel={task.title}
     accessibilityHint={hint ?? tt('explore.openTask')} onPress={onPress}
-    style={{ backgroundColor: c.surface, borderRadius: 20, overflow: 'hidden' }}>
+    style={{ ...paperCard, overflow: 'hidden' }}>
     {({ pressed }) => <>
       <View style={{ aspectRatio: 4 / 3, borderRadius: 16, overflow: 'hidden' }}>
         <Image source={taskImage(task.type) as unknown as ImageSource} contentFit="cover" style={{ width: '100%', height: '100%' }} accessible={false} />
@@ -27,7 +27,7 @@ export function TaskCard({ task, onPress, hint }: { task: Task; onPress: () => v
         <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{`${task.targetMinutes} ${tt('detail.minutes')} \u00b7 ${tt('taskCard.slots').replace('{count}', String(task.remainingSlots))}`}</Text>
         <Text style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme), fontWeight: '700', fontVariant: ['tabular-nums'] }}>{`${vnd(task.unitPriceVndPerMinute)} ${tt('hall.perMinute')}`}</Text>
       </View>
-      {pressed ? <LinearGradient pointerEvents="none" colors={['rgba(108,75,214,.06)', 'rgba(255,127,17,.06)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} /> : null}
+      <CardSheen pressed={pressed} />
     </>}
   </PhantomPressable>;
 }

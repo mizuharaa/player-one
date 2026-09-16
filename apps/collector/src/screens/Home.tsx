@@ -1,3 +1,4 @@
+import { HeaderGradient } from '../ui/HeaderGradient.tsx';
 import { Failure } from '../ui/StatePanel.tsx';
 import { BrandSlot } from '../shell/BrandSlot.tsx';
 import { FlatList, Pressable, Text, View, useWindowDimensions } from 'react-native';
@@ -42,6 +43,7 @@ export function Home() {
       style={{ minWidth: 48, minHeight: 48, borderRadius: c.radius.pill, backgroundColor: c.plum, alignItems: 'center', justifyContent: 'center' }}>
       <Text style={{ ...c.type.body, fontFamily: face(theme), color: c.surface }}>{initials || '-'}</Text>
     </Pressable>}>
+    <HeaderGradient>
     <BrandSlot />
     <Text style={{ ...c.type.h1, fontFamily: face(theme), color: c.ink }}>{profile.data?.name ?? ''}</Text>
     {profile.isError ? <Failure error={profile.error} tone="error" text={tt('common.loadFailed')} onRetry={() => void profile.refetch()} busy={profile.isFetching} /> : null}
@@ -51,6 +53,7 @@ export function Home() {
       {cycle.data ? <Body muted>{`${tt('income.confirmed')} · ${tt('home.cycleWithEstimate').replace('{amount}', dong(cycle.data.totalVnd))}`}</Body> : cycle.isPending ? null : <Body muted>{tt('home.cycleUnavailable')}</Body>}
       {cycle.isError ? <Failure error={cycle.error} tone="error" text={tt('common.loadFailed')} onRetry={() => void cycle.refetch()} busy={cycle.isFetching} /> : null}
     </View>
+    </HeaderGradient>
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2] }}>
       <Chip label={tt('uploads.title')} onPress={() => nav.selectTab('uploads')} />
       <Chip label={tt('home.myTasks')} onPress={() => nav.push({ name: 'myTasks' })} />
