@@ -218,6 +218,22 @@ export type ZnsConfig = {
   accessToken: string | OaToken;
   /** The approved one-time-code template. */
   templateId: string;
+  /**
+   * `sandbox` sends Zalo's documented `mode: "development"`; `production`
+   * sends nothing and is a real, charged send.
+   *
+   * It was missing entirely, which Codex found: a credentialed
+   * `PLAYERONE_ZNS_ENV=sandbox` deployment ran every send as PRODUCTION.
+   * "Sandbox" would have meant real money, a real message to a real
+   * collector, and a real deduction from the ZBS balance — the exact opposite
+   * of what the word promises whoever set it.
+   *
+   * Development mode reaches only administrators of the app or the OA (`-127`
+   * otherwise), which is why it is not the default for a deployment that says
+   * production: `docs/sign-in-channels.md` records that there is no separate
+   * sandbox endpoint, only this flag.
+   */
+  env?: 'sandbox' | 'production';
   /** The `template_data` key the six digits go in. Whatever the approved template names. */
   codeParam?: string;
   baseUrl?: string;
@@ -275,6 +291,9 @@ export function znsSender(config: ZnsConfig): CodeSender {
           phone: to,
           template_id: config.templateId,
           template_data: { [codeParam]: code },
+          // Omitted entirely on production; Zalo documents no value meaning
+          // "not development", so sending one would be inventing a parameter.
+          ...(config.env === 'sandbox' ? { mode: 'development' } : {}),
         }),
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -444,11 +463,17 @@ function znsSenderFromEnv(env: Record<string, string | undefined>): CodeSender {
       `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not set, so no ZNS message can be sent`,
     );
   }
+  /**
+   * `sandbox` unless the deployment says otherwise, which matches what the
+   * variable's absence has always meant everywhere else in this file.
+   */
+  const zenv = env['PLAYERONE_ZNS_ENV'] === 'production' ? 'production' : 'sandbox';
   return znsSender({
     accessToken: token ?? env['PLAYERONE_ZNS_ACCESS_TOKEN']!,
     templateId: env['PLAYERONE_ZNS_TEMPLATE_ID']!,
     codeParam: env['PLAYERONE_ZNS_CODE_PARAM'],
     baseUrl: env['PLAYERONE_ZNS_BASE_URL'],
+    env: zenv,
   });
 }
 

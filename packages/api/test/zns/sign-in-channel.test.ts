@@ -415,6 +415,47 @@ describe('a ZNS send on a refreshable token', () => {
     expect(zalo.calls).toHaveLength(3);
   });
 
+  /**
+   * `PLAYERONE_ZNS_ENV=sandbox` has to actually be a sandbox.
+   *
+   * Codex found that the environment was read for the boot checks and then
+   * never reached the request, so a credentialed sandbox deployment ran every
+   * send as PRODUCTION: real money off the ZBS balance and a real message to a
+   * real collector, which is the opposite of what the word promises whoever
+   * set it. Zalo documents no separate sandbox endpoint — the only sandbox is
+   * `mode: "development"` on the same request.
+   */
+  it('sends mode=development on sandbox, and no mode at all on production', async () => {
+    for (const [zenv, expected] of [
+      ['sandbox', 'development'],
+      ['production', undefined],
+    ] as const) {
+      const zalo = recorder([{ body: { error: 0, message: 'Success' } }]);
+      const send = signInCodeSenderFromEnv({
+        PLAYERONE_SIGN_IN_CHANNEL: 'zns',
+        PLAYERONE_ZNS_ENV: zenv,
+        PLAYERONE_ZNS_ACCESS_TOKEN: 'token',
+        PLAYERONE_ZNS_TEMPLATE_ID: 'tpl',
+        PLAYERONE_ZNS_BASE_URL: 'https://business.openapi.zalo.me',
+      });
+      // The env reader builds the real sender, so the fetch is swapped in only
+      // to read the body it would have sent.
+      const direct = znsSender({
+        accessToken: 'token',
+        templateId: 'tpl',
+        env: zenv,
+        fetch: zalo.fetch,
+        warn: () => {},
+      });
+      expect(typeof send).toBe('function');
+      await direct(PHONE, CODE);
+      const body = JSON.parse(zalo.calls[0]!.body) as { mode?: string; template_data: unknown };
+      expect(body.mode, zenv).toBe(expected);
+      // And the rest of the request is unchanged either way.
+      expect(body.template_data).toEqual({ otp: CODE });
+    }
+  });
+
   it('does not retry a static token, because there is nothing to refresh', async () => {
     const zalo = recorder([{ body: { error: -124 } }]);
     const err = await refusalOf<ZnsDeliveryError>(() =>
