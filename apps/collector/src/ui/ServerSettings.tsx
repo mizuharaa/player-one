@@ -1,3 +1,4 @@
+import { polish } from '../theme.tsx';
 import { useState } from 'react';
 import { Modal, ScrollView, View } from 'react-native';
 import { API_BASE_URL, BUILD_PROFILE } from '../api/config.ts';
@@ -22,7 +23,7 @@ export function ServerSettings({ onClose }: { onClose: () => void }) {
     finally { setSaving(false); }
   };
   return <Modal visible animationType="slide" onRequestClose={onClose}>
-    <ScrollView keyboardShouldPersistTaps="handled" style={{ backgroundColor: '#F6F2EA' }} contentContainerStyle={{ padding: 24, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24, gap: 20 }}>
+    <ScrollView keyboardShouldPersistTaps="handled" style={{ backgroundColor: polish.paper }} contentContainerStyle={{ padding: 24, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24, gap: 20 }}>
       <Body muted>{`${tt('profile.title')} / ${tt('profile.about')}`}</Body>
       <Title>{tt('server.title')}</Title>
       {BUILD_PROFILE === 'play' ? <Body>{getApiOrigin()}</Body> : <>

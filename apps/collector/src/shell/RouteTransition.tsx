@@ -1,3 +1,4 @@
+import { polish } from '../theme.tsx';
 import { useRef, type ReactNode } from 'react';
 import { View } from 'react-native';
 import Animated, { useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
@@ -28,5 +29,5 @@ export function RouteTransition({ route, isTabRoot, children }: { route: Route; 
     'worklet';
     return { initialValues: { opacity: 1, transform: [{ translateX: 0 }] }, animations: { opacity: withTiming(direction.value === 0 ? 0 : .96, { duration: 220 }), transform: [{ translateX: withSpring(direction.value === 0 ? 0 : direction.value < 0 ? values.windowWidth : -values.windowWidth * .25, spring) }] } };
   };
-  return <View style={{ flex: 1, backgroundColor: '#05070A' }}><Animated.View key={key} testID="route-transition" entering={entering} exiting={exiting} style={{ flex: 1, backgroundColor: '#F6F2EA' }}>{children}</Animated.View></View>;
+  return <View style={{ flex: 1, backgroundColor: polish.openingCover }}><Animated.View key={key} testID="route-transition" entering={entering} exiting={exiting} style={{ flex: 1, backgroundColor: polish.paper }}>{children}</Animated.View></View>;
 }

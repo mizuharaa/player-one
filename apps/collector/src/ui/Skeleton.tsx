@@ -1,3 +1,4 @@
+import { polish } from '../theme.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, View } from 'react-native';
 import { useReducedMotion } from './motion.ts';
@@ -13,7 +14,7 @@ export function Skeleton({ ratio, lines = 1, radius = 16 }: { ratio?: number; li
   }, [reduced, progress]);
   return <View testID="skeleton" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
     onLayout={event => setWidth(event.nativeEvent.layout.width)}
-    style={{ width: '100%', aspectRatio: ratio, height: ratio ? undefined : lines * 16, backgroundColor: '#F6F2EA', borderRadius: radius, overflow: 'hidden' }}>
-    {!reduced ? <Animated.View style={{ position: 'absolute', top: 0, bottom: 0, width: '45%', backgroundColor: 'rgba(5,7,10,.08)', transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [-width * .45, width] }) }] }} /> : null}
+    style={{ width: '100%', aspectRatio: ratio, height: ratio ? undefined : lines * 16, backgroundColor: polish.paper, borderRadius: radius, overflow: 'hidden' }}>
+    {!reduced ? <Animated.View style={{ position: 'absolute', top: 0, bottom: 0, width: '45%', backgroundColor: polish.skeletonBand, transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [-width * .45, width] }) }] }} /> : null}
   </View>;
 }
