@@ -240,3 +240,9 @@ it('preserves fractional effective minutes while formatting detail hours', async
   expect(page()).toContain(`2 ${m['taskCard.hours']} 1.1 ${m['detail.minutes']}`);
   expect(page()).not.toContain('1.099999');
 });
+
+it('discloses that the task hero is an illustrative stock photo', async () => {
+  await qualify(); await mount();
+  expect(host.querySelectorAll('[data-testid="task-photo-label"]')).toHaveLength(1);
+  expect(page()).toContain(m['hall.imageLabel']);
+});

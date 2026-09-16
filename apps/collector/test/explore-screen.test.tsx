@@ -396,6 +396,7 @@ it('renders a seeded task title, exact price and type badge in the shared card',
   expect(price.style.whiteSpace).not.toBe('nowrap');
   expect(price.style.textOverflow).not.toBe('ellipsis');
   expect(page()).toContain(m['taskCard.home']);
+  expect(page()).toContain(m['hall.imageLabel']);
 });
 
 it.each([120, 121, 3000])('formats a server duration of %s minutes without losing the remainder', async targetMinutes => {

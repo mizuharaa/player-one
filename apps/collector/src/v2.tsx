@@ -159,29 +159,6 @@ export function PriceChip({ value, unit }: { value: string; unit: string }) {
   );
 }
 
-/** The disclosure §21.2 requires beside any stand-in photograph. */
-export function ImageLabel({ floating = false }: { floating?: boolean }) {
-  const theme = useTheme();
-  const tt = useT();
-  return (
-    <View
-      pointerEvents="none"
-      style={{
-        alignSelf: 'flex-start',
-        maxWidth: '100%',
-        backgroundColor: floating ? theme.color.discover.surface : undefined,
-        borderRadius: theme.radius.pill,
-        paddingVertical: floating ? theme.space[1] : 0,
-        paddingHorizontal: floating ? theme.space[3] : 0,
-      }}
-    >
-      <Text style={{ ...textStyle(theme, 'micro'), color: theme.color.discover.muted }}>
-        {tt('hall.imageLabel')}
-      </Text>
-    </View>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // The warm-paper shell
 

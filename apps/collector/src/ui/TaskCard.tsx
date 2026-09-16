@@ -1,3 +1,4 @@
+import { TaskPhotoLabel } from './TaskPhotoLabel.tsx';
 import { taskDuration } from '../duration.ts';
 import { polish } from '../theme.tsx';
 import { CardSheen, paperCard } from './CardSheen.tsx';
@@ -21,6 +22,7 @@ export function TaskCard({ task, onPress, hint }: { task: Task; onPress: () => v
     {({ pressed }) => <>
       <View style={{ aspectRatio: 4 / 3, borderRadius: 16, overflow: 'hidden' }}>
         <Image source={taskImage(task) as unknown as ImageSource} contentFit="cover" style={{ width: '100%', height: '100%' }} accessible={false} />
+        <TaskPhotoLabel />
         <View style={{ position: 'absolute', top: 12, left: 12, maxWidth: '85%', backgroundColor: polish.badge, borderRadius: 24, paddingHorizontal: 12, paddingVertical: 6 }}>
           <Text style={{ ...c.type.caption, color: c.ink, fontFamily: face(theme), fontWeight: '600' }}>{tt(badge)}</Text>
         </View>

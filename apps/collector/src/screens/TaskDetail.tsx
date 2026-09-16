@@ -1,3 +1,4 @@
+import { TaskPhotoLabel } from '../ui/TaskPhotoLabel.tsx';
 import { taskDuration } from '../duration.ts';
 import { CardScrollContext, useCardScroll } from '../ui/CardSheen.tsx';
 import { Failure } from '../ui/StatePanel.tsx';
@@ -240,6 +241,7 @@ export function TaskDetail() {
           />
           </Animated.View>
           <Scrim stops={HEAD_SCRIM} />
+          <TaskPhotoLabel />
           <View
             style={{
               position: 'absolute',
@@ -266,7 +268,7 @@ export function TaskDetail() {
             </Pressable>
           </View>
           <View
-            style={{ position: 'absolute', left: c.gutter, right: c.gutter, bottom: c.cardPad }}
+            style={{ position: 'absolute', left: c.gutter, right: c.gutter, bottom: c.cardPad + 28 }}
           >
             <Text
               accessibilityRole="header"
