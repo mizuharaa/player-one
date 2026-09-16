@@ -176,7 +176,7 @@ export class MockCollectorApi implements CollectorApi {
         kind: 'confirmed',
         settlementState: 'pending_settlement',
       },
-      { episodeId: 'ego1-20260819-0640', effectiveMinutes: '0', amountVnd: '0', kind: 'confirmed', settlementState: null },
+      { episodeId: 'ego1-20260819-0640', effectiveMinutes: '0', amountVnd: '0', kind: 'confirmed', settlementState: 'not_paid' },
       // Estimated: uploaded but not yet decided. Server's estimate, not ours.
       { episodeId: 'ego1-20260820-1830', effectiveMinutes: '52', amountVnd: '62400', kind: 'estimated', settlementState: null },
     ];

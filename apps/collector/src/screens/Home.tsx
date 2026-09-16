@@ -40,7 +40,7 @@ export function Home() {
   const nextTarget = useGuideTarget('home.next');
   const today = new Date().toDateString();
   const todaySession = sessions.data?.find(session => new Date(session.createdAt).toDateString() === today);
-  const awaiting = income.data?.find(entry => entry.kind === 'confirmed' && ['pending_settlement', 'bill_generated', 'approved', 'not_paid', 'on_a_bill', 'waiting_on_us'].includes(entry.settlementState ?? ''));
+  const awaiting = income.data?.find(entry => entry.kind === 'confirmed' && ['pending_settlement', 'bill_generated', 'approved', 'on_a_bill', 'waiting_on_us'].includes(entry.settlementState ?? ''));
   const claimable = (tasks.data ?? []).filter(task => task.claimable);
   const initials = (profile.data?.name ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => Array.from(part)[0]).join('').toLocaleUpperCase();
   return <Screen refresh={{ refreshing: [profile, devices, episodes, tasks, sessions, income, cycle].some(q => q.isRefetching), onRefresh: () => { for (const q of [profile, devices, episodes, tasks, sessions, income, cycle]) void q.refetch(); } }} title={tt(`greeting.${mascotStateAt()}`)} right={

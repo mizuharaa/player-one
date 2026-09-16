@@ -9,7 +9,7 @@ import { useTheme } from '../theme.tsx';
 import { useGuideTarget } from '../guide/Guide.tsx';
 import { Body, Button, Card, face, Chip, Hatch, NavRow, ListScreen, Loading, Note, Row, Screen, Tag, Timeline } from '../ui.tsx';
 import { useNav } from '../nav.tsx';
-import { dong, quantity, shortId } from '../money.ts';
+import { dong, incomeStatus, quantity, shortId } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
 
 /**
@@ -73,6 +73,7 @@ const lifecycle = (
   entry: IncomeEntry,
 ): { key: string; label: string; done: boolean; current?: boolean; note?: string }[] => {
   const reviewed = entry.kind === 'confirmed';
+  const nonpayable = incomeStatus(entry).startsWith('settlement.');
   const paid = entry.settlementState !== null && PAID.has(entry.settlementState);
   const steps = [
     { key: 'uploaded', label: tt('income.step.uploaded'), done: entry.settlementState !== null && entry.settlementState !== 'unknown' },
@@ -84,14 +85,14 @@ const lifecycle = (
     },
     {
       key: 'paid',
-      label: tt('income.step.paid'),
+      label: nonpayable ? tt(incomeStatus(entry)) : tt('income.step.paid'),
       done: paid,
       note:
-        entry.settlementState === null ? undefined : settlementLabel(tt, entry.settlementState),
+        nonpayable || entry.settlementState === null ? undefined : settlementLabel(tt, entry.settlementState),
     },
   ];
   const current = steps.findIndex(step => !step.done);
-  return steps.map((step, index) => ({ ...step, current: index === current }));
+  return steps.map((step, index) => ({ ...step, current: !nonpayable && index === current }));
 };
 
 export function Income() {
@@ -165,7 +166,7 @@ export function Income() {
         {income.isPending ? <Loading /> : null}
       </View>}
       empty={options || income.isPending || income.isError ? null : <Hatch action={tt('common.retry')} onPress={() => void income.refetch()} text={tt('income.empty')} />}
-      renderItem={entry => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(entry.episodeId)}. ${tt(entry.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')}${entry.simulation ? `. ${tt('payout.simulation')}` : ''}`}
+      renderItem={entry => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(entry.episodeId)}. ${tt(incomeStatus(entry))}${entry.simulation ? `. ${tt('payout.simulation')}` : ''}`}
         onPress={() => { setSelectedId(entry.episodeId); setDetails(false); }}
         style={({ pressed }) => ({ borderBottomWidth: 1, borderBottomColor: c.line, paddingVertical: c.cardPad, gap: c.cardGap, backgroundColor: c.surface, opacity: pressed ? .85 : 1 })}>
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: c.cardGap }}>
@@ -173,15 +174,15 @@ export function Income() {
             <Body>{shortId(entry.episodeId)}</Body>
             <Body muted>{entry.settlementState ? settlementLabel(tt, entry.settlementState) : tt('settlement.unknown')}</Body>
           </View>
-          <Text style={{ fontFamily: face(theme), ...c.type.h2, color: entry.kind === 'confirmed' ? c.greenInk : c.ink, fontVariant: ['tabular-nums'] }}>{entry.amountVnd === null ? NOTHING : dong(entry.amountVnd)}</Text>
+          <Text style={{ fontFamily: face(theme), ...c.type.h2, color: incomeStatus(entry) === 'income.confirmed' ? c.greenInk : c.muted, fontVariant: ['tabular-nums'] }}>{entry.amountVnd === null ? NOTHING : dong(entry.amountVnd)}</Text>
         </View>
         {entry.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
-        <Tag label={tt(entry.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')} fg={c.ink} bg={c.surface} mark={entry.kind === 'confirmed' ? '✓' : '~'} />
+        <Tag label={tt(incomeStatus(entry))} fg={c.ink} bg={c.surface} mark={incomeStatus(entry) === 'income.confirmed' ? '✓' : entry.kind === 'estimated' ? '~' : undefined} />
       </Pressable>} />
     <Modal visible={selected !== undefined} animationType="none" onRequestClose={() => setSelectedId(null)}>
       {selected ? <Screen title={shortId(selected.episodeId)} onBack={() => setSelectedId(null)}>
-        <Text style={{ fontFamily: face(theme), ...c.type.money, color: selected.kind === 'confirmed' ? c.greenInk : c.ink, fontVariant: ['tabular-nums'] }}>{selected.amountVnd === null ? NOTHING : dong(selected.amountVnd)}</Text>
-        <Tag label={tt(selected.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')} fg={c.ink} bg={c.surface} mark={selected.kind === 'confirmed' ? '✓' : '~'} />
+        <Text style={{ fontFamily: face(theme), ...c.type.money, color: incomeStatus(selected) === 'income.confirmed' ? c.greenInk : c.muted, fontVariant: ['tabular-nums'] }}>{selected.amountVnd === null ? NOTHING : dong(selected.amountVnd)}</Text>
+        <Tag label={tt(incomeStatus(selected))} fg={c.ink} bg={c.surface} mark={incomeStatus(selected) === 'income.confirmed' ? '✓' : selected.kind === 'estimated' ? '~' : undefined} />
         <View style={{ flexDirection: 'row', gap: c.cardGap }}>
           <Chip label={tt('income.progress')} selected={!details} onPress={() => setDetails(false)} />
           <Chip label={tt('income.details')} selected={details} onPress={() => setDetails(true)} />

@@ -1,3 +1,5 @@
+import type { IncomeEntry } from './api/types.ts';
+
 /**
  * Printing a figure the server sent. The app's only contact with a money
  * string, deliberately in a file with no React and no react-native in it so
@@ -72,3 +74,10 @@ export const shortId = (id: string): string => (id.length <= 12 ? id : `…${id.
  * line or an upload total needs the magnitude and not the byte.
  */
 export const gb = (bytes: number): string => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+
+/** A review decision includes rejection; only the server decides payability. */
+export function incomeStatus(entry: IncomeEntry | undefined, reviewFailed = false) {
+  if (reviewFailed || entry?.settlementState === 'not_paid') return 'settlement.not_paid';
+  if (entry?.settlementState === 'cannot_be_paid') return 'settlement.cannot_be_paid';
+  return entry?.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated';
+}
