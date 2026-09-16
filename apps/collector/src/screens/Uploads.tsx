@@ -229,7 +229,8 @@ export function Uploads() {
       } };
       if (resuming !== null) {
         activeRecord.current = resuming;
-        return await runPhoneDelivery(deps, resuming, signal, { resume: true, report: setStep });
+        // A cancel can precede registration. Replaying the same ID also resumes registered uploads.
+        return await runPhoneDelivery(deps, resuming, signal, { report: setStep });
       }
       if (picked === null || sessionId === null) throw new ApiError('upload_not_ready');
       const files = await hashSession(picked.files, (done, total) => setHashed({ done, total }), signal);

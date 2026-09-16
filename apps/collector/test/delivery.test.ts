@@ -714,3 +714,29 @@ it('cancels a stalled part, keeps the batch and resumes the same upload without 
   expect(calls.filter(call => call.path === '/api/me/uploads')).toHaveLength(1);
   expect(peek()).toBeNull();
 });
+
+
+it('can replay the retained record after cancellation before registration', async () => {
+  const batch = record([]);
+  const { store, peek } = memoryStore();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const set = store.set;
+  store.set = vi.fn(async value => { await gate; await set(value); });
+  const { fn, calls } = fakeFetch({
+    'POST /api/me/uploads': { status: 200, body: { upload_id: UPLOAD_ID, state: 'registered', files: [] } },
+    [`POST /api/me/uploads/${UPLOAD_ID}/complete`]: { status: 200, body: { upload_id: UPLOAD_ID, state: 'ingested', episode_id: 'ep-1' } },
+  });
+  const deps = { api: api(fn), store, transport: fakeTransport().transport };
+  const controller = new AbortController();
+  const pending = runPhoneDelivery(deps, batch, controller.signal);
+  const rejected = expect(pending).rejects.toMatchObject({ code: 'upload_cancelled' });
+  controller.abort(); await rejected; release();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(calls).toHaveLength(0);
+  expect(peek()).toEqual(batch);
+  await runPhoneDelivery(deps, batch, new AbortController().signal);
+  expect(calls[0]?.body).toMatchObject({ id: UPLOAD_ID });
+  expect(calls.some(call => call.method === 'GET')).toBe(false);
+  expect(peek()).toBeNull();
+});

@@ -69,7 +69,7 @@ it('requires folder, server session and explicit confirmation; repeated presses 
     await tap(MESSAGES.vi['common.retry']);
     await vi.waitFor(() => expect(runDelivery).toHaveBeenCalledTimes(2));
     expect(vi.mocked(runDelivery).mock.calls[1]?.[1]).toEqual(vi.mocked(runDelivery).mock.calls[0]?.[1]);
-    expect(vi.mocked(runDelivery).mock.calls[1]?.[2]?.resume).toBe(true);
+    expect(vi.mocked(runDelivery).mock.calls[1]?.[2]?.resume).toBeUndefined();
     await vi.waitFor(() => expect(button(MESSAGES.vi['common.cancel'])).toBeDefined());
     await tap(MESSAGES.vi['common.cancel']);
     await vi.waitFor(() => expect(button(MESSAGES.vi['common.close']).disabled).toBe(false));
