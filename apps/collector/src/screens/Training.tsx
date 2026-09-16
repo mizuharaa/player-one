@@ -1,4 +1,6 @@
-import { StatePanel } from '../ui/StatePanel.tsx';
+import { useQuery } from '@tanstack/react-query';
+import { useApi } from '../api/context.tsx';
+import { Failure, StatePanel } from '../ui/StatePanel.tsx';
 import { Image, View } from 'react-native';
 import { useNav } from '../nav.tsx';
 import { useLocale, useT } from '../locale.tsx';
@@ -11,11 +13,15 @@ import header from '../../assets/discover/work-wide.webp';
 /** Supplied headset guidance remains readable; an unavailable course cannot be completed. */
 export function Training() {
   const nav = useNav();
+  const api = useApi();
+  const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
+  const needsExam = profile.data?.examPassed === false;
   const tt = useT();
   const theme = useTheme();
   const { locale } = useLocale();
   return (
     <Screen title={tt('training.title')}>
+      {profile.isError ? <Failure error={profile.error} text={tt('common.loadFailed')} onRetry={() => void profile.refetch()} busy={profile.isFetching} /> : null}
       {/*
         An `aspectRatio` box with `resizeMode="cover"`, never a width/height
         pair — that pair is exactly how the previous build stretched things.
@@ -38,7 +44,7 @@ export function Training() {
       </View>
       <Body>{HEADSET_COPY.intro[locale]}</Body>
       <HeadsetGuidance />
-      <StatePanel title={tt('state.unavailable')} text={tt('training.placeholder')} action={tt('common.back')} onPress={() => nav.back()} />
+      <StatePanel title={tt('state.unavailable')} text={tt('training.placeholder')} action={tt(needsExam ? 'exam.title' : 'common.back')} onPress={() => needsExam ? nav.push({ name: 'exam' }) : nav.back()} />
     </Screen>
   );
 }

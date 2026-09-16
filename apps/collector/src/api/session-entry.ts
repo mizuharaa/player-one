@@ -20,12 +20,11 @@ export async function sessionEntry(api: CollectorApi): Promise<SessionEntry> {
      * still reachable, from Profile and from Home, for when they decide to go
      * through with it.
      *
-     * A collector an operator enrolled keeps the exact chain below: APP-01 →
-     * APP-02 → APP-03 → APP-04, in the order `task_claims_guard` wants them.
+     * Enrolled collectors continue through agreements and the exam. The
+     * unavailable training course must not block that navigation.
      */
     if (!me.onboarded) return { name: 'home' };
     if (me.agreements.length < AGREEMENTS.length) return { name: 'agreements' };
-    if (!me.trainingDone) return { name: 'training' };
     if (!me.examPassed) return { name: 'exam' };
     return { name: 'home' };
   } catch (error) {

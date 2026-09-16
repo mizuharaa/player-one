@@ -49,7 +49,7 @@ export function Agreements() {
   const accept = useMutation({
     mutationFn: () =>
       api.acceptAgreements(AGREEMENTS.map((a) => ({ agreementId: a.id, version: a.version }))),
-    onSuccess: () => { if (mounted.current) nav.push({ name: 'training' }); },
+    onSuccess: () => { if (mounted.current) nav.push({ name: 'exam' }); },
     onSettled: () => { submitting.current = false; },
   });
 

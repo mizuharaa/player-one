@@ -76,6 +76,7 @@ export function Harness() {
     if (state === 'simulation' && key === 'income') return async () => [{ episodeId: 'sandbox-paid', kind: 'confirmed', amountVnd: '1200', effectiveMinutes: '1', settlementState: 'paid', simulation: true }];
     if (state === 'simulation' && key === 'incomeCycle') return async () => ({ label: 'Sandbox cycle', confirmedVnd: '1200', estimatedVnd: '0', totalVnd: '1200', simulation: true });
     if (state === 'simulation' && key === 'episodes') return async () => [{ episodeId: 'sandbox-paid', sessionId: 'sandbox-session', sizeBytes: 1200, state: 'review_passed' }];
+    if (state === 'enrolling' && key === 'profile') return async () => ({ ...await target.profile(), trainingDone: false, examPassed: false });
     if (state === 'refusal' && key === 'claimTask') return async () => { throw new ApiError('collector_not_onboarded'); };
     if (loading && ['tasks', 'task', 'myClaims', 'boundDevices', 'episodes', 'income', 'incomeCycle', 'sessions', 'notifications'].includes(String(key))) return () => new Promise(() => {});
     if (['offline', 'error'].includes(state ?? '') && ['tasks', 'task', 'myClaims', 'boundDevices', 'episodes', 'income', 'incomeCycle', 'sessions', 'notifications', 'profile', 'payout', 'requestSignInCode'].includes(String(key))) return async () => { throw new ApiError(state === 'offline' ? 'server_unreachable' : 'server_error'); };

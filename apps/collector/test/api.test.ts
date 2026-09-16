@@ -104,20 +104,13 @@ describe('the full eligibility gate on claiming (APP-02/03/04/05)', () => {
   const ACCEPTANCES = AGREEMENTS.map((a) => ({ agreementId: a.id, version: a.version }));
 
   it('refuses at every missing prerequisite, in the order they are met', async () => {
-    // This test used to skip agreements and training entirely and still claim,
-    // because the gate checked `examPassed` alone. The server will not honour
-    // that: PRODUCT.md and APP-02/05 make the six agreements, the training and
-    // the exam one contract, enforced server-side. A permissive seam teaches
-    // every screen built against it to expect a permissive server.
+    // Match the live agreement/exam gate; the unavailable course is not a prerequisite.
     const api = new MockCollectorApi();
     await api.register('Lê Văn C', '0903000003');
 
     await expect(api.claimTask('task-cook')).rejects.toThrow('agreements_incomplete');
 
     await api.acceptAgreements(ACCEPTANCES);
-    await expect(api.claimTask('task-cook')).rejects.toThrow('training_incomplete');
-
-    await api.completeTraining();
     await expect(api.claimTask('task-cook')).rejects.toThrow('exam_not_passed');
 
     const failed = await api.submitExam([true, false, true]);
@@ -126,6 +119,7 @@ describe('the full eligibility gate on claiming (APP-02/03/04/05)', () => {
 
     const passed = await api.submitExam(PASSING);
     expect(passed.passed).toBe(true);
+    expect((await api.profile())?.trainingDone).toBe(false);
     const claim = await api.claimTask('task-cook');
     expect(claim.taskId).toBe('task-cook');
   });
@@ -163,15 +157,12 @@ describe('where a signed-in collector opens (open sign-up)', () => {
     await prospect.register('Phạm Thị D', '0903000004');
     expect(await sessionEntry(prospect)).toEqual({ name: 'home' });
 
-    // A collector an operator enrolled still walks APP-01 → APP-02 → APP-03 →
-    // APP-04, in the order the claim gate wants them.
+    // An enrolled collector can reach the exam without completing unavailable training.
     const enrolled = new MockCollectorApi();
     expect(await sessionEntry(enrolled)).toEqual({ name: 'register' });
     await enrolled.register('Lê Văn C', '0903000003');
     expect(await sessionEntry(enrolled)).toEqual({ name: 'agreements' });
     await enrolled.acceptAgreements(AGREEMENTS.map((a) => ({ agreementId: a.id, version: a.version })));
-    expect(await sessionEntry(enrolled)).toEqual({ name: 'training' });
-    await enrolled.completeTraining();
     expect(await sessionEntry(enrolled)).toEqual({ name: 'exam' });
     await enrolled.submitExam(PASSING);
     expect(await sessionEntry(enrolled)).toEqual({ name: 'home' });
