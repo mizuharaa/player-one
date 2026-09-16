@@ -3,8 +3,8 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 import { addLowPowerModeListener } from 'expo-battery';
-import { withDelay, withTiming } from 'react-native-reanimated';
-vi.mock('react-native-reanimated', async importOriginal => ({ ...await importOriginal<object>(), withDelay: vi.fn((_delay, value) => value), withTiming: vi.fn(value => value) }));
+import { withDelay, withTiming, withSpring } from 'react-native-reanimated';
+vi.mock('react-native-reanimated', async importOriginal => ({ ...await importOriginal<object>(), withSpring: vi.fn(value => value), withDelay: vi.fn((_delay, value) => value), withTiming: vi.fn(value => value) }));
 import { AccessibilityInfo, Platform } from 'react-native';
 vi.mock('react-native', async () => ({ ...await import('react-native-web'),
   AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
@@ -22,7 +22,9 @@ it.each([false, true])('finishes exactly once by the deadline; reduced=%s', asyn
   await act(async () => root.render(<BootIntro onDone={done} />));
   expect(done).toHaveBeenCalledTimes(reduced ? 1 : 0);
   if (!reduced) {
-    expect(vi.mocked(withDelay).mock.calls.map(call => call[0])).toEqual([850, 900, 900, 1700, 2450, 2450]);
+    expect(vi.mocked(withDelay).mock.calls.map(call => call[0])).toEqual([850, 1050, 1950, 2500, 2500]);
+    expect(withSpring).not.toHaveBeenCalled();
+    expect(vi.mocked(withTiming).mock.calls.every(call => call[1]?.easing !== undefined)).toBe(true);
     expect(vi.mocked(withTiming).mock.calls).toContainEqual([1, expect.objectContaining({ duration: 500 })]);
     await act(async () => vi.advanceTimersByTime(2600));
     expect(done).not.toHaveBeenCalled();

@@ -63,7 +63,7 @@ try {
       await page.screenshot({ path: `${out}/${width}-photo-credits.png`, fullPage: true }); count++;
     }
     await page.close();
-    if (!groupsOnly) for (const [beat, time] of [['ring',600], ['one',1500], ['plate',2200], ['wipe',2900]]) {
+    if (!groupsOnly) for (const [beat, time] of [['ring',600], ['one',1750], ['player',2350], ['dock',3150]]) {
       const intro = await browser.newPage({ viewport: { width, height: 932 }, reducedMotion: 'no-preference' });
       intro.on('pageerror', error => errors.push(error.message));
       await intro.goto(`${base}/?screen=home&ready=1&intro=1&lang=vi`);
