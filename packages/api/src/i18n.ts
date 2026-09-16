@@ -229,9 +229,10 @@ const en = {
   'state.leaseExpired.body':
     'The claim on it expired and another reviewer may now hold it. The verdict you were preparing has been discarded.',
   'state.leaseExpired.action': 'Claim the next episode',
-  'state.playbackWithheld.title': 'Review is not open on this session yet',
+  'state.playbackWithheld.title': 'Raw playback is off on this deployment',
   'state.playbackWithheld.body':
-    'Remote playback of raw footage is not authorised yet, so there is nothing to review here. No episode has been taken off the queue, and no verdict can be given without watching the footage. This screen will work as soon as the playback arrangement is approved.',
+    'This is how this deployment is configured, not a fault. Remote playback of raw footage is withheld from a reviewer seat for data residency (PLAYERONE_REVIEWER_MEDIA is off), so this session gets review metadata and no bytes, and the server refuses its claim and its verdict rather than offering a button that cannot honestly be pressed. Nothing has been taken off the queue. The review itself is done by an operator inside Vietnam, at the machine holding the files.',
+  'state.playbackWithheld.metadata': 'Next in the queue, metadata only',
   'state.mediaFailed.title': 'The footage will not play',
   'state.mediaFailed.body':
     'The media is recorded in the store but this machine cannot read it. That is a fault on this machine, not with the recording.',
@@ -1936,9 +1937,10 @@ const zh: Record<MessageKey, string> = {
   'state.leaseExpired.title': '该片段已被重新分配',
   'state.leaseExpired.body': '认领已过期，可能已由其他审核员接手。您正在填写的结果已被丢弃。',
   'state.leaseExpired.action': '领取下一条',
-  'state.playbackWithheld.title': '本会话暂未开放审核',
+  'state.playbackWithheld.title': '本部署已关闭原始素材播放',
   'state.playbackWithheld.body':
-    '原始素材的远程播放尚未获得授权，因此此处暂无可审核的内容。系统未从队列中取走任何片段；未观看素材即不可提交审核结论。播放方案获批后本页即可使用。',
+    '这是本部署的设定，不是故障。出于数据驻留要求，审核席位不提供原始素材的远程播放（PLAYERONE_REVIEWER_MEDIA 未开启），因此本会话只获得审核元数据而没有素材字节；服务端会拒绝它的领取和审核结论，而不是摆出一个无法诚实点击的按钮。队列中没有任何片段被取走。审核本身由越南境内、持有文件的那台机器上的操作员完成。',
+  'state.playbackWithheld.metadata': '队列中的下一条，仅元数据',
   'state.mediaFailed.title': '素材无法播放',
   'state.mediaFailed.body': '记录已存在于数据库中，但本机无法读取该文件。这是本机的问题，与录制内容无关。',
   'state.mediaFailed.action': '跳过该片段',
@@ -3215,9 +3217,10 @@ const vi: Record<MessageKey, string> = {
   'state.leaseExpired.body':
     'Lượt nhận đã hết hạn và người duyệt khác có thể đang giữ nó. Kết luận bạn đang chuẩn bị đã bị bỏ.',
   'state.leaseExpired.action': 'Nhận phiên tiếp theo',
-  'state.playbackWithheld.title': 'Phiên này chưa mở để duyệt',
+  'state.playbackWithheld.title': 'Bản triển khai này tắt phát tư liệu gốc',
   'state.playbackWithheld.body':
-    'Việc phát tư liệu gốc từ xa chưa được cho phép, nên ở đây chưa có gì để duyệt. Không phiên nào bị lấy khỏi hàng đợi, và không thể đưa kết luận khi chưa xem tư liệu. Màn hình này sẽ hoạt động ngay khi phương án phát được duyệt.',
+    'Đây là thiết lập của bản triển khai, không phải lỗi. Vì yêu cầu lưu trú dữ liệu, chỗ ngồi của người duyệt không được phát tư liệu gốc từ xa (PLAYERONE_REVIEWER_MEDIA đang tắt), nên phiên này chỉ nhận dữ liệu mô tả chứ không nhận tư liệu; máy chủ từ chối cả lượt nhận và kết luận, thay vì đưa ra một nút không thể bấm một cách trung thực. Không phiên nào bị lấy khỏi hàng đợi. Việc duyệt do một nhân viên tại Việt Nam thực hiện, ngay trên máy đang giữ tệp.',
+  'state.playbackWithheld.metadata': 'Phiên kế tiếp trong hàng đợi, chỉ dữ liệu mô tả',
   'state.mediaFailed.title': 'Tư liệu không phát được',
   'state.mediaFailed.body':
     'Bản ghi có trong kho nhưng máy này không đọc được tệp. Đó là lỗi của máy này, không phải của bản ghi.',
