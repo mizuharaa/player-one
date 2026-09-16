@@ -1,5 +1,6 @@
 import { schema, type Db } from '@playerone/store';
 import type { AuditActor } from './actor.ts';
+import type { ZaloLoginRefusal } from './zalo-login.ts';
 
 /**
  * PLT-07, PLT-08, SEC-04, SEC-05.
@@ -174,7 +175,19 @@ export async function auditLogin(
      */
     collectorId?: string;
     source?: string;
-    outcome?: 'credentials' | 'rate_limited';
+    /**
+     * Why it failed, and it is a closed union on purpose: the whole value of
+     * this row is the name, and a `string` here would be somewhere a caller
+     * could put the credential that was tried.
+     *
+     * `ZaloLoginRefusal` joined the two originals on 2026-09-16. A Zalo
+     * sign-in fails for eight named reasons and none of them is "the
+     * credential was wrong": `zalo_state_expired` and `zalo_code_refused`
+     * want different people to do different things, and collapsing them
+     * into `credentials` would leave the trail saying only that somebody,
+     * somewhere, did not get in.
+     */
+    outcome?: 'credentials' | 'rate_limited' | ZaloLoginRefusal;
   },
 ): Promise<void> {
   await db.insert(schema.auditEvents).values({

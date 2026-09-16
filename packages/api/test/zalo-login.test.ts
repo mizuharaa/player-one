@@ -364,6 +364,79 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
     expect(spent.json().constraint).toBe('zalo_ticket_spent');
   });
 
+  /**
+   * A failed Zalo sign-in has to leave a row. The audit of `e4bf1fb` found it
+   * left nothing (F2): only success wrote `collector.login`, so the trail could
+   * not say whether the thousand refused callbacks above had happened — and
+   * `ratelimit.ts` states that row is *the* recovery path from a sustained
+   * attack. The phone routes have written it since the limiter existed.
+   *
+   * Filed under the source address, because a `state` and a ticket are
+   * credentials and `audit_events` is append-only. `%.login_failed` is exempt
+   * from `audit_events_attributed_check` by action, so there is no migration.
+   */
+  const failures = async () => {
+    const d = await db();
+    const rows = await d.execute(sql`
+      select target_id, target_table, actor_role, after
+        from audit_events
+       where action = 'collector.login_failed'
+       order by occurred_at`);
+    return [...rows] as {
+      target_id: string;
+      target_table: string;
+      actor_role: string;
+      after: { source: string; outcome: string };
+    }[];
+  };
+
+  it('leaves a named failed-sign-in row for a refused callback, and for a refused ticket', async () => {
+    const app = await api(client(fakeZalo().fetch));
+
+    // A callback naming a state this server never wrote.
+    const forged = await callback(app, { code: 'c', state: 'not-a-state-this-server-wrote' });
+    expect(landed(forged.headers.location as string).get('error')).toBe('zalo_state_unknown');
+
+    // A ticket nobody was issued.
+    const ticket = await exchange(app, 'a-ticket-that-was-never-issued');
+    expect(ticket.statusCode).toBe(401);
+
+    const rows = await failures();
+    expect(rows.map((r) => r.after.outcome)).toEqual(['zalo_state_unknown', 'zalo_ticket_spent']);
+    for (const row of rows) {
+      // The address, and never the state or the ticket that was tried.
+      expect(row.after.source).toBeTruthy();
+      expect(row.target_id).toBe(row.after.source);
+      expect(row.target_table).toBe('collectors');
+      expect(row.actor_role).toBe('collector');
+    }
+    const text = JSON.stringify(rows);
+    expect(text).not.toContain('not-a-state-this-server-wrote');
+    expect(text).not.toContain('a-ticket-that-was-never-issued');
+  });
+
+  it('leaves one rate-limited row per window, not one per refused request', async () => {
+    const app = await api(client(fakeZalo().fetch));
+
+    /**
+     * The shared address budget is 30 per five minutes and the Zalo hop spends
+     * three of it, so this walks past the limit and then keeps knocking. The
+     * assertion that matters is the SECOND number: `noteRefusal` gates the row
+     * to once per window, because three hundred refused requests once wrote
+     * three hundred permanent rows in 783 ms.
+     */
+    let refusals = 0;
+    for (let i = 0; i < 40; i += 1) {
+      const res = await start(app);
+      if (res.statusCode === 429) refusals += 1;
+    }
+    expect(refusals, 'the address budget refused nothing').toBeGreaterThan(1);
+
+    const rows = (await failures()).filter((r) => r.after.outcome === 'rate_limited');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.target_id).toBe(rows[0]!.after.source);
+  });
+
   it('never puts the app secret, the code or the session token in the redirect', async () => {
     const zalo = fakeZalo();
     const app = await api(client(zalo.fetch));

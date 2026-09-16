@@ -490,22 +490,45 @@ export function registerCollectorAuth(
   /** Written into every `collector.sign_in_code` row. See the option above. */
   const channel: SignInDeliveryChannel = options.signInChannel ?? 'unknown';
   /**
-   * The sign-in budget for a route whose credential names nobody.
+   * A Zalo sign-in that did not happen, under the address it came from.
    *
-   * `signInAttempt` files its refusal against the reference the caller named,
-   * and none of the three Zalo routes has one: a `state` and a ticket are
-   * credentials, so putting either in `audit_events.target_id` would write a
-   * live credential into an append-only table. So these three count against
-   * the address only, and the audit row a Zalo sign-in leaves is the
-   * `collector.login` the ticket route writes once it knows who signed in.
+   * `signInAttempt` cannot be used for these three routes: it files its refusal
+   * against the reference the caller named, and a `state` or a ticket IS the
+   * credential — putting either in `audit_events.target_id` would write a live
+   * credential into an append-only table nobody can prune. So the row is filed
+   * under the source address, which is the only identifier these requests carry
+   * that is not a secret.
+   *
+   * `%.login_failed` is exempt from `audit_events_attributed_check` by action
+   * (0002, widened in 0009), exactly as it is for the phone routes, so this
+   * needs no migration and names no operator that may not exist.
+   *
+   * It is awaited before the reply, the way `attempt.wrong()` is on `verify`
+   * and unlike `deliverAndRecord`: nothing here has answered the caller yet, so
+   * a failure to write is a 500 rather than a silently missing row.
+   */
+  const auditRefusal = (source: string, outcome: ZaloLoginRefusal | 'rate_limited'): Promise<void> =>
+    auditLogin(db, 'collector.login_failed', 'collectors', source, { source, outcome });
+
+  /**
+   * The sign-in budget for a route whose credential names nobody.
    *
    * Check and count in one call, for the reason `signInAttempt` gives: a route
    * that checks the limit and forgets to count against it is a limit that
    * stops nobody.
+   *
+   * The refusal leaves a row, and `noteRefusal` gates it to once per window
+   * rather than once per repeat — the same discipline and the same measured
+   * reason as `signInAttempt.blocked()`: three hundred refused requests wrote
+   * three hundred permanent rows in 783 ms, into a table an append-only trigger
+   * will not let anybody delete from.
    */
-  const addressBudget = (source: string): number | null => {
+  const addressBudget = async (source: string): Promise<number | null> => {
     const wait = options.limiter.refusedFor(source, []);
-    if (wait !== null) return wait;
+    if (wait !== null) {
+      if (options.limiter.noteRefusal(source, [])) await auditRefusal(source, 'rate_limited');
+      return wait;
+    }
     options.limiter.attempted(source, []);
     return null;
   };
@@ -791,7 +814,7 @@ export function registerCollectorAuth(
     const zalo = options.zaloLogin;
     if (zalo === undefined) return reply.code(503).send(refusal('zalo_not_configured'));
 
-    const wait = addressBudget(req.ip);
+    const wait = await addressBudget(req.ip);
     if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
 
     /**
@@ -831,11 +854,25 @@ export function registerCollectorAuth(
     const zalo = options.zaloLogin;
     if (zalo === undefined) return reply.code(503).send(refusal('zalo_not_configured'));
 
-    const wait = addressBudget(req.ip);
+    const wait = await addressBudget(req.ip);
     if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
 
     const home = (params: Record<string, string>): never =>
       reply.redirect(`${APP_DEEP_LINK}?${new URLSearchParams(params).toString()}`, 302) as never;
+    /**
+     * Every named refusal leaves a row and then goes home.
+     *
+     * Before this, a failed Zalo sign-in left nothing at all: only success
+     * wrote `collector.login`, so the trail could not say whether the
+     * thousand refused callbacks above had happened — which is what makes the
+     * rate limit unverifiable after the fact, and which the phone routes have
+     * done since the limiter was written. Zalo Login is the first-class
+     * channel now, so PLT-07's "every outcome attributed" has to hold for it.
+     */
+    const refused = async (name: ZaloLoginRefusal): Promise<never> => {
+      await auditRefusal(req.ip, name);
+      return home({ error: name });
+    };
 
     const { code, state } = (req.query ?? {}) as Record<string, unknown>;
     /**
@@ -844,8 +881,8 @@ export function registerCollectorAuth(
      * `docs/sign-in-channels.md`), so the absence of a code is what this reads,
      * which is true whatever the parameter turns out to be called.
      */
-    if (typeof code !== 'string' || code === '') return home({ error: 'zalo_denied' });
-    if (typeof state !== 'string' || state === '') return home({ error: 'zalo_state_unknown' });
+    if (typeof code !== 'string' || code === '') return refused('zalo_denied');
+    if (typeof state !== 'string' || state === '') return refused('zalo_state_unknown');
 
     /**
      * Spend the state, and spend it BEFORE the exchange.
@@ -866,8 +903,8 @@ export function registerCollectorAuth(
         codeVerifier: schema.zaloSignIns.codeVerifier,
         expiresAt: schema.zaloSignIns.expiresAt,
       });
-    if (attempt === undefined) return home({ error: 'zalo_state_unknown' });
-    if (attempt.expiresAt.getTime() <= Date.now()) return home({ error: 'zalo_state_expired' });
+    if (attempt === undefined) return refused('zalo_state_unknown');
+    if (attempt.expiresAt.getTime() <= Date.now()) return refused('zalo_state_expired');
 
     let identity: ZaloIdentity;
     try {
@@ -880,11 +917,11 @@ export function registerCollectorAuth(
        */
       const named = err instanceof ZaloLoginError ? err.refusal : 'zalo_unreachable';
       req.log.error(err);
-      return home({ error: named });
+      return refused(named);
     }
 
     const claims = await zaloCollector(db, identity);
-    if (claims === null) return home({ error: 'zalo_profile_refused' });
+    if (claims === null) return refused('zalo_profile_refused');
 
     /**
      * The ticket. Hashed on the way in for the reason
@@ -896,7 +933,7 @@ export function registerCollectorAuth(
       .set({ ticketHash: ticketDigest(ticket), collectorId: claims.collectorId })
       .where(and(eq(schema.zaloSignIns.state, state), isNull(schema.zaloSignIns.ticketHash)))
       .returning({ state: schema.zaloSignIns.state });
-    if (minted === undefined) return home({ error: 'zalo_state_unknown' });
+    if (minted === undefined) return refused('zalo_state_unknown');
     return home({ ticket });
   });
 
@@ -916,8 +953,22 @@ export function registerCollectorAuth(
       return reply.code(400).send({ error: 'missing ticket' });
     }
 
-    const wait = addressBudget(req.ip);
+    const wait = await addressBudget(req.ip);
     if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
+
+    /**
+     * The one 401, and the row behind it.
+     *
+     * A ticket is a credential, so a ticket that does not work is the same
+     * event `attempt.wrong()` records on `verify` — and the strongest attack
+     * signal these three routes have, because guessing tickets is the only
+     * thing here worth guessing. One name for never-issued, expired, used and
+     * collector-deleted, so the row says no more than the reply does.
+     */
+    const spent = async (): Promise<never> => {
+      await auditRefusal(req.ip, 'zalo_ticket_spent');
+      return reply.code(401).send(refusal('zalo_ticket_spent')) as never;
+    };
 
     /**
      * Spent by the statement that reads it, and only the winner of
@@ -937,12 +988,8 @@ export function registerCollectorAuth(
         collectorId: schema.zaloSignIns.collectorId,
         expiresAt: schema.zaloSignIns.expiresAt,
       });
-    if (used === undefined || used.collectorId === null) {
-      return reply.code(401).send(refusal('zalo_ticket_spent'));
-    }
-    if (used.expiresAt.getTime() <= Date.now()) {
-      return reply.code(401).send(refusal('zalo_ticket_spent'));
-    }
+    if (used === undefined || used.collectorId === null) return spent();
+    if (used.expiresAt.getTime() <= Date.now()) return spent();
 
     /**
      * The epoch is read now and not at the callback: a collector whose tokens
@@ -954,7 +1001,7 @@ export function registerCollectorAuth(
       .select({ id: schema.collectors.id, epoch: schema.collectors.tokenEpoch })
       .from(schema.collectors)
       .where(eq(schema.collectors.id, used.collectorId));
-    if (collector === undefined) return reply.code(401).send(refusal('zalo_ticket_spent'));
+    if (collector === undefined) return spent();
 
     await auditLogin(db, 'collector.login', 'collectors', collector.id, {
       collectorId: collector.id,
