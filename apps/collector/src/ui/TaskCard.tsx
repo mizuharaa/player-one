@@ -1,0 +1,33 @@
+import { StyleSheet, Text, View } from 'react-native';
+import { Image, type ImageSource } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import type { Task } from '../api/types.ts';
+import { useT } from '../locale.tsx';
+import { vnd } from '../money.ts';
+import { useTheme } from '../theme.tsx';
+import { face } from '../ui.tsx';
+import { PhantomPressable } from './PhantomPressable.tsx';
+import { taskImage } from './taskImage.ts';
+
+export function TaskCard({ task, onPress, hint }: { task: Task; onPress: () => void; hint?: string }) {
+  const theme = useTheme(), tt = useT(), c = theme.collector;
+  const badge = task.type === 'office' ? 'scenario.office' : task.type === 'shop' ? 'scenario.shop' : task.type === 'warehouse' ? 'taskCard.warehouse' : 'taskCard.default';
+  return <PhantomPressable pressedScale={.98} accessibilityRole="button" accessibilityLabel={task.title}
+    accessibilityHint={hint ?? tt('explore.openTask')} onPress={onPress}
+    style={{ backgroundColor: c.surface, borderRadius: 20, overflow: 'hidden' }}>
+    {({ pressed }) => <>
+      <View style={{ aspectRatio: 4 / 3, borderRadius: 16, overflow: 'hidden' }}>
+        <Image source={taskImage(task.type) as unknown as ImageSource} contentFit="cover" style={{ width: '100%', height: '100%' }} accessible={false} />
+        <View style={{ position: 'absolute', top: 12, left: 12, maxWidth: '85%', backgroundColor: '#F6F2EAF2', borderRadius: 24, paddingHorizontal: 12, paddingVertical: 6 }}>
+          <Text style={{ ...c.type.caption, color: c.ink, fontFamily: face(theme), fontWeight: '600' }}>{tt(badge)}</Text>
+        </View>
+      </View>
+      <View style={{ padding: 16, gap: 8 }}>
+        <Text numberOfLines={2} style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme) }}>{task.title}</Text>
+        <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{`${task.targetMinutes} ${tt('detail.minutes')} \u00b7 ${tt('taskCard.slots').replace('{count}', String(task.remainingSlots))}`}</Text>
+        <Text style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme), fontWeight: '700', fontVariant: ['tabular-nums'] }}>{`${vnd(task.unitPriceVndPerMinute)} ${tt('hall.perMinute')}`}</Text>
+      </View>
+      {pressed ? <LinearGradient pointerEvents="none" colors={['rgba(108,75,214,.06)', 'rgba(255,127,17,.06)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} /> : null}
+    </>}
+  </PhantomPressable>;
+}

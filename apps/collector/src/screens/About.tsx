@@ -1,9 +1,11 @@
+import { PhantomPressable } from '../ui/PhantomPressable.tsx';
+import { TASK_PHOTO_CREDITS } from '../ui/taskImage.ts';
 import { ServerSettings } from '../ui/ServerSettings.tsx';
 import { useState } from 'react';
 import { LanguageChoices, LOCALE_NAME } from './Profile.tsx';
 import { Sheet } from './TaskHall.tsx';
 import { useNav } from '../nav.tsx';
-import { Image, Platform, Text, View, useWindowDimensions } from 'react-native';
+import { Image, Linking, Platform, Text, View, useWindowDimensions } from 'react-native';
 import { HeaderGradient } from '../ui/HeaderGradient.tsx';
 import { useLocale, useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
@@ -26,6 +28,7 @@ import app from '../../app.json';
  * caller's handler rather than pretending to open something.
  */
 export function About({ onPrivacy }: { onPrivacy?: () => void } = {}) {
+  const [credits, setCredits] = useState(false);
   const [server, setServer] = useState(false);
   const [language, setLanguage] = useState(false);
   const { fontScale } = useWindowDimensions();
@@ -81,6 +84,15 @@ export function About({ onPrivacy }: { onPrivacy?: () => void } = {}) {
         <NavRow label={tt('legal.privacy')} subtitle={tt('profile.privacySub')} onPress={openDocument} />
       </View>
 
+      <NavRow label={tt('photos.title')} onPress={() => setCredits(!credits)} />
+      {credits ? <Card>
+        <Body muted>{tt('photos.edited')}</Body>
+        {TASK_PHOTO_CREDITS.map(photo => <View key={photo.source} style={{ gap: 8 }}>
+          <PhantomPressable accessibilityRole="link" accessibilityLabel={photo.title} onPress={() => void Linking.openURL(photo.source)} style={{ minHeight: 44, minWidth: 44, justifyContent: 'center' }}><Text style={{ ...c.type.body, color: c.plum, fontFamily: face(theme), textDecorationLine: 'underline' }}>{photo.title}</Text></PhantomPressable>
+          <Body>{photo.author}</Body>
+          <PhantomPressable accessibilityRole="link" accessibilityLabel={photo.license} onPress={() => void Linking.openURL(photo.licenseUrl)} style={{ minHeight: 44, minWidth: 44, justifyContent: 'center' }}><Text style={{ ...c.type.caption, color: c.plum, fontFamily: face(theme), textDecorationLine: 'underline' }}>{photo.license}</Text></PhantomPressable>
+        </View>)}
+      </Card> : null}
       <NavRow label={tt('server.title')} onPress={() => setServer(true)} />
       {server ? <ServerSettings onClose={() => setServer(false)} /> : null}
       <NavRow label={tt('profile.language')} subtitle={LOCALE_NAME[locale]} onPress={() => setLanguage(true)} />

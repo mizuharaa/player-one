@@ -42,6 +42,16 @@ try {
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${out}/${width}-signin-server.png`, fullPage: true }); count++;
     }
+    if (section === 'section-6' || section === 'section-7') {
+      await page.goto('http://127.0.0.1:5177/?screen=home&ready=1&lang=vi');
+      await page.waitForTimeout(500);
+      await page.evaluate(() => { const scroller = [...document.querySelectorAll('div')].find(node => getComputedStyle(node).overflowY === 'auto' && node.scrollHeight > node.clientHeight); if (!scroller) throw new Error('Home scroller missing'); scroller.scrollTop = 620; });
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${out}/${width}-home-carousel.png` }); count++;
+      await page.goto('http://127.0.0.1:5177/?screen=about&lang=en');
+      await page.getByRole('button', { name: 'Photo credits', exact: true }).click();
+      await page.screenshot({ path: `${out}/${width}-photo-credits.png`, fullPage: true }); count++;
+    }
     await page.close();
     for (const [beat, time] of [['ring',600], ['one',1500], ['plate',2200], ['wipe',2900]]) {
       const intro = await browser.newPage({ viewport: { width, height: 932 }, reducedMotion: 'no-preference' });

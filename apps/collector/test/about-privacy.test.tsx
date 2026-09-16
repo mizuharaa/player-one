@@ -178,3 +178,11 @@ it('About opens the existing language picker and applies the selected language',
   expect(page()).toContain(MESSAGES.vi['profile.about']);
   expect(document.body.querySelector('[role="radio"]')).toBeNull();
 });
+
+it('shows the bundled photo authors and licenses in About', async () => {
+  await mount(<About />);
+  await act(async () => named(m['photos.title'])!.click());
+  for (const author of ['Ann0611', 'amanderson2', 'Axisadman', 'Frank McKenna']) expect(page()).toContain(author);
+  expect(page()).toContain(m['photos.edited']);
+  expect(document.querySelectorAll('[role="link"]').length).toBeGreaterThanOrEqual(8);
+});

@@ -110,7 +110,7 @@ export class MockCollectorApi implements CollectorApi {
       {
         id: 'task-cook',
         title: 'Nấu ăn tại nhà',
-        scenario: 'home', published: true, claimable: true, claimedByMe: false, remainingSlots: 3, currency: 'VND',
+        scenario: 'home', type: 'home', published: true, claimable: true, claimedByMe: false, remainingSlots: 3, currency: 'VND',
         unitPriceVndPerMinute: '1200',
         targetMinutes: 3000,
         claimedMinutes: 420,
@@ -124,7 +124,7 @@ export class MockCollectorApi implements CollectorApi {
       {
         id: 'task-office',
         title: 'Làm việc văn phòng',
-        scenario: 'office', published: true, claimable: false, claimedByMe: false, remainingSlots: 0, currency: 'VND',
+        scenario: 'office', type: 'office', published: true, claimable: false, claimedByMe: false, remainingSlots: 0, currency: 'VND',
         unitPriceVndPerMinute: '1000',
         targetMinutes: 6000,
         claimedMinutes: 5800,
@@ -138,7 +138,7 @@ export class MockCollectorApi implements CollectorApi {
       {
         id: 'task-warehouse',
         title: 'Sắp xếp kho hàng',
-        scenario: 'warehouse', published: true, claimable: true, claimedByMe: false, remainingSlots: 8, currency: 'VND',
+        scenario: 'warehouse', type: 'warehouse', published: true, claimable: true, claimedByMe: false, remainingSlots: 8, currency: 'VND',
         unitPriceVndPerMinute: '1500',
         targetMinutes: 9000,
         claimedMinutes: 0,

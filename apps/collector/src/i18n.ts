@@ -644,6 +644,15 @@ const vi = {
   "state.unavailable": "Tính năng chưa sẵn sàng",
   "state.unavailableBody": "Bạn có thể tiếp tục khám phá các nhiệm vụ.",
 
+  // v3 task cards
+  "taskCard.slots": "Còn {count} chỗ",
+  "taskCard.default": "Nhiệm vụ",
+  "taskCard.warehouse": "Kho",
+  "home.recommended": "Gợi ý cho bạn",
+
+  "photos.title": "Nguồn ảnh",
+  "photos.edited": "Ảnh đã được cắt và đổi kích thước. Giấy phép bên dưới cũng áp dụng cho các bản ảnh này.",
+
 };
 
 export type MessageKey = keyof typeof vi;
@@ -1221,6 +1230,15 @@ const en: Record<MessageKey, string> = {
   "state.unavailable": "This feature is not available yet",
   "state.unavailableBody": "You can keep exploring available tasks.",
 
+  // v3 task cards
+  "taskCard.slots": "{count} spots left",
+  "taskCard.default": "Task",
+  "taskCard.warehouse": "Warehouse",
+  "home.recommended": "Recommended for you",
+
+  "photos.title": "Photo credits",
+  "photos.edited": "Photos have been cropped and resized. The licenses below also apply to these edited copies.",
+
 };
 
 /**
@@ -1781,6 +1799,15 @@ const zh: Record<MessageKey, string> = {
   "state.emptyBody": "有更新时会显示在这里。",
   "state.unavailable": "此功能暂未开放",
   "state.unavailableBody": "你可以继续浏览可参加的任务。",
+
+  // v3 task cards
+  "taskCard.slots": "剩余 {count} 个名额",
+  "taskCard.default": "任务",
+  "taskCard.warehouse": "仓库",
+  "home.recommended": "为你推荐",
+
+  "photos.title": "图片来源",
+  "photos.edited": "图片已裁剪并调整尺寸。以下许可证同样适用于这些编辑后的副本。",
 
 };
 

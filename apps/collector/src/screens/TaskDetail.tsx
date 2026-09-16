@@ -1,7 +1,7 @@
 import { Failure } from '../ui/StatePanel.tsx';
 import { useToast } from '../ui/Toast.tsx';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { Image, type ImageSource } from 'expo-image';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
@@ -20,8 +20,9 @@ import {
   Tag,
   face,
   useInsets,
+  useReducedMotion,
 } from '../ui.tsx';
-import { taskImage } from '../v2.tsx';
+import { taskImage } from '../ui/taskImage.ts';
 import { dong } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
 
@@ -101,6 +102,8 @@ export function TaskDetail() {
   /** The sticky footer's own measured height, so content clears it exactly. */
   const [footer, setFooter] = useState(0);
 
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const reduced = useReducedMotion();
   const task = useQuery({ queryKey: ['task', taskId], queryFn: () => api.task(taskId) });
   const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
   const claims = useQuery({ queryKey: ['claims'], queryFn: () => api.myClaims() });
@@ -207,21 +210,22 @@ export function TaskDetail() {
 
   return (
     <View style={ground}>
-      <ScrollView
+      <Animated.ScrollView scrollEventThrottle={16} onScroll={reduced ? undefined : Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: Platform.OS !== 'web' })}
         contentContainerStyle={{ paddingBottom: footer + theme.space[6], gap: c.cardGap }}
       >
         {/* 3/2 rather than 16/9 so the rate card is above the fold at 320×640
             without letterboxing the still. */}
-        <View style={{ width: '100%', aspectRatio: 3 / 2, backgroundColor: c.line }}>
-          <Image
+        <View style={{ width: '100%', aspectRatio: 4 / 3, backgroundColor: c.line, overflow: 'hidden' }}>
+          <Animated.View style={{ width: '100%', height: '100%', transform: [{ translateY: reduced ? 0 : scrollY.interpolate({ inputRange: [0, 600], outputRange: [0, 180], extrapolate: 'clamp' }) }] }}><Image
             // `assets.d.ts` types a bundled import as React Native's source —
             // a module number under Metro, a URL string under Vite — and
             // `expo-image` takes both. The cast is that one fact.
-            source={taskImage(data.scenario, data.type) as unknown as ImageSource}
+            source={taskImage(data.type) as unknown as ImageSource}
             contentFit="cover"
             style={{ width: '100%', height: '100%' }}
             accessible={false}
           />
+          </Animated.View>
           <Scrim stops={HEAD_SCRIM} />
           <View
             style={{
@@ -329,7 +333,7 @@ export function TaskDetail() {
 
           {section('detail.where', data.privacyNotice)}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* Sticky Accept, green because §2 makes affirmative green and this is
           the one affirmative action in the app. Its refusal takes its place. */}

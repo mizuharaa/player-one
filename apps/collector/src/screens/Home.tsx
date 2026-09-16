@@ -10,7 +10,7 @@ import { nextLocale } from '../i18n.ts';
 import { useTheme } from '../theme.tsx';
 import { useGuide, useGuideTarget } from '../guide/Guide.tsx';
 import { Body, Button, Card, Chip, Hatch, Loading, NavRow, Note, Screen, Title, face } from '../ui.tsx';
-import { TaskCard } from '../v2.tsx';
+import { TaskCard } from '../ui/TaskCard.tsx';
 import { dong, shortId } from '../money.ts';
 
 export function Home() {
@@ -60,7 +60,7 @@ export function Home() {
       <Button label={tt('session.title')} onPress={() => nav.push({ name: 'sessionReminder' })} />
       <FlatList horizontal data={['device', 'today', 'awaiting'] as const} keyExtractor={item => item}
         showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: c.cardGap }} renderItem={({ item }) =>
-          <View style={{ width: (width - 2 * c.gutter) * 0.86 }}><Card>
+          <View style={{ width: (width - 2 * c.gutter) * 0.76 }}><Card>
             {item === 'device' ? <>
               <NavRow label={tt('home.devices')} subtitle={devices.data?.[0]?.serial} onPress={() => nav.push({ name: 'devices' })} />
               {devices.isError ? <Failure error={devices.error} tone="error" text={tt('common.loadFailed')} onRetry={() => void devices.refetch()} busy={devices.isFetching} /> : devices.isPending ? <Loading /> : devices.data?.length === 0 ? <Body muted>{tt('session.needDevice')}</Body> : null}
@@ -74,12 +74,12 @@ export function Home() {
           </Card></View>} />
     </View>
     <View ref={tasksTarget} collapsable={false} style={{ gap: c.cardGap }}>
-      <Title>{tt('home.claimable')}</Title>
+      <Title>{tt('home.recommended')}</Title>
       {tasks.isError ? <Failure error={tasks.error} tone="error" text={tt(tasks.data ? 'common.refreshFailed' : 'common.loadFailed')} onRetry={() => void tasks.refetch()} busy={tasks.isFetching} /> : null}
       {tasks.isPending ? <Loading /> : claimable.length === 0 && !tasks.isError ? <Hatch action={tt('hall.title')} onPress={() => nav.push({ name: 'taskHall' })} text={tt('home.claimableEmpty')} /> :
-        <FlatList horizontal data={claimable} keyExtractor={task => task.id} showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: c.cardGap }} renderItem={({ item }) => <View style={{ width: (width - 2 * c.gutter) * 0.86 }}>
-            <TaskCard task={item} variant="tile" hint={tt('detail.title')} onPress={() => nav.push({ name: 'taskDetail', taskId: item.id })} />
+        <FlatList horizontal snapToInterval={(width - 2 * c.gutter) * 0.76 + c.cardGap} decelerationRate="fast" disableIntervalMomentum data={claimable} keyExtractor={task => task.id} showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: c.cardGap }} renderItem={({ item }) => <View style={{ width: (width - 2 * c.gutter) * 0.76 }}>
+            <TaskCard task={item} hint={tt('detail.title')} onPress={() => nav.push({ name: 'taskDetail', taskId: item.id })} />
           </View>} />}
     </View>
     <View style={{ gap: c.cardGap, paddingTop: c.sectionGap }}>
