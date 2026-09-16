@@ -212,7 +212,7 @@ export class HttpCollectorApi implements CollectorApi {
       method,
       headers,
       body,
-      signal: this.lifetime.signal,
+      signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(method === 'GET' ? 20_000 : 60_000)]),
     }).catch(() => { this.active(); throw new ApiError('server_unreachable'); });
     this.active();
     return response;

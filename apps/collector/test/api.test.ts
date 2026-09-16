@@ -1095,3 +1095,25 @@ it('preserves sandbox provenance in both income adapters', async () => {
   expect(await api.income()).toEqual([expect.objectContaining({ settlementState: 'paid', simulation: true })]);
   expect(await api.incomeCycle()).toEqual(expect.objectContaining({ simulation: true }));
 });
+
+
+it.each([['read', 20_000], ['write', 60_000]] as const)('bounds a hung %s request and keeps the session', async (kind, deadline) => {
+  vi.useFakeTimers();
+  const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(ms => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), ms);
+    return controller.signal;
+  });
+  const store = fakeStore('retained');
+  const api = new HttpCollectorApi(BASE, store, vi.fn(), async (_url, init) => new Promise((_resolve, reject) => {
+    init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason), { once: true });
+  }));
+  try {
+    const pending = kind === 'read' ? api.income() : api.claimTask('task-hung');
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'server_unreachable' });
+    await vi.advanceTimersByTimeAsync(deadline);
+    await rejected;
+    expect(timeout).toHaveBeenCalledWith(deadline);
+    expect(await store.get()).toBe('retained');
+  } finally { vi.restoreAllMocks(); vi.useRealTimers(); }
+});
