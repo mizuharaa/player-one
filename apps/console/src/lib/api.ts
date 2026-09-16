@@ -807,6 +807,8 @@ export interface PayoutBatch {
   period_start: string;
   period_end: string;
   mode: PayoutMode;
+  /** The start day of the most recent period that holds a bill, or null when none does. */
+  latest_bill_period: string | null;
   bills: PayoutBill[];
 }
 
