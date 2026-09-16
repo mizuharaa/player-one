@@ -289,3 +289,18 @@ vi.mock('react-native-safe-area-context', async () => ({
 vi.mock('../src/ui/HeaderGradient.tsx', () => ({ HeaderGradient: ({ children }: { children: import('react').ReactNode }) => children }));
 
 vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
+
+// Native illustration rendering is covered by the web captures.
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));
+
+it('shows the unreachable state before authentication and opens the shared Server setting', async () => {
+  fetchFn.mockRejectedValueOnce(new TypeError('offline'));
+  await mount();
+  await tap(copy['signIn.sendCode']);
+  await settle(() => expect(container.textContent).toContain(copy['state.offline']));
+  expect(codeRow()).toBeNull();
+  await tap(copy['server.title']);
+  await settle(() => expect(document.body.textContent).toContain(copy['server.address']));
+  expect(document.body.textContent).toContain(copy['profile.about']);
+  expect(tokens.value).toBeNull();
+});

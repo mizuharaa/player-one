@@ -1,3 +1,4 @@
+import { ServerSettings } from '../ui/ServerSettings.tsx';
 import { useState } from 'react';
 import { LanguageChoices, LOCALE_NAME } from './Profile.tsx';
 import { Sheet } from './TaskHall.tsx';
@@ -25,6 +26,7 @@ import app from '../../app.json';
  * caller's handler rather than pretending to open something.
  */
 export function About({ onPrivacy }: { onPrivacy?: () => void } = {}) {
+  const [server, setServer] = useState(false);
   const [language, setLanguage] = useState(false);
   const { fontScale } = useWindowDimensions();
   const { locale } = useLocale();
@@ -79,6 +81,8 @@ export function About({ onPrivacy }: { onPrivacy?: () => void } = {}) {
         <NavRow label={tt('legal.privacy')} subtitle={tt('profile.privacySub')} onPress={openDocument} />
       </View>
 
+      <NavRow label={tt('server.title')} onPress={() => setServer(true)} />
+      {server ? <ServerSettings onClose={() => setServer(false)} /> : null}
       <NavRow label={tt('profile.language')} subtitle={LOCALE_NAME[locale]} onPress={() => setLanguage(true)} />
       <Sheet open={language} onClose={() => setLanguage(false)} title={tt('profile.language')}>
         <LanguageChoices stacked={fontScale > 1.2} onPicked={() => setLanguage(false)} />

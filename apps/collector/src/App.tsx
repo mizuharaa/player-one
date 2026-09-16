@@ -1,3 +1,5 @@
+import { Failure, StatePanel } from './ui/StatePanel.tsx';
+import { ApiError } from './api/types.ts';
 import { RouteTransition } from './shell/RouteTransition.tsx';
 import { sessionEntry, type SessionEntry } from './api/session-entry.ts';
 import { TransportProvider } from './device/transport-context.tsx';
@@ -274,16 +276,16 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
   }, [api, queryClient, restore]);
 
   if (state === null || state === 'leaving') return <Restoring />;
+  if (state === 'offline') return <SignOutProvider signOut={(options) => void leave(options?.landing === true)}><View style={{ flex: 1, backgroundColor: theme.collector.paper, paddingTop: 48, paddingHorizontal: 24 }}><Failure error={new ApiError('server_unreachable')} text={tt('common.loadFailed')} onServerClose={() => void enter()} /></View></SignOutProvider>;
   if (state === 'unavailable' || state === 'clearFailed') return (
     <View style={{ flex: 1, backgroundColor: theme.color.surface, padding: theme.space[4], gap: theme.space[3] }}>
-      <Body>{tt(state === 'clearFailed' ? 'signIn.clearFailed' : 'common.loadFailed')}</Body>
-      <Button label={tt('common.retry')} onPress={() => void (state === 'clearFailed' ? leave() : enter())} />
+      <StatePanel error title={tt('common.loadFailed')} text={tt(state === 'clearFailed' ? 'signIn.clearFailed' : 'common.actionFailed')} action={tt('common.retry')} onPress={() => void (state === 'clearFailed' ? leave() : enter())} />
       {state === 'unavailable' ? <Button variant='ghost' label={tt('signIn.signOut')} onPress={() => void leave()} /> : null}
     </View>
   );
 
   return (
-    <ToastProvider><ApiProvider value={api}>
+    <ToastProvider><SignOutProvider signOut={(options) => void leave(options?.landing === true)}><ApiProvider value={api}>
       <QueryClientProvider client={queryClient}>
         <View style={{ flex: 1 }}>
           {state === 'out' ? (
@@ -314,17 +316,15 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
             </NavProvider>
           ) : (
             /* Home draws it; see `session.tsx` for why it is not here. */
-            <SignOutProvider signOut={(options) => void leave(options?.landing === true)}>
               <NavProvider key='in' initial={state}>
                 <GuideProvider>
                   <Current />
                 </GuideProvider>
               </NavProvider>
-            </SignOutProvider>
           )}
         </View>
       </QueryClientProvider>
-    </ApiProvider></ToastProvider>
+    </ApiProvider></SignOutProvider></ToastProvider>
   );
 }
 

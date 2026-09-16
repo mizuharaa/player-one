@@ -1,3 +1,4 @@
+import { Failure } from '../ui/StatePanel.tsx';
 import { useToast } from '../ui/Toast.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
@@ -12,7 +13,7 @@ import {
   Button,
   Card,
   Loading,
-  Note,
+  Header,
   Progress,
   Row,
   Scrim,
@@ -130,7 +131,8 @@ export function TaskDetail() {
     return (
       <View style={ground}>
         <View style={{ padding: c.gutter, paddingTop: insets.top + theme.space[4] }}>
-          <Note
+          <Header title={tt('detail.title')} />
+          <Failure error={[task, profile, claims].find(query => query.isError)?.error}
             text={tt('common.loadFailed')}
             tone="error"
             busy={task.isFetching || profile.isFetching || claims.isFetching}
@@ -354,7 +356,7 @@ export function TaskDetail() {
             busy={claim.isPending}
             onPress={() => { if (submitting.current) return; submitting.current = true; claim.mutate(); }}
           />
-        ) : (
+        ) : claim.isError ? <Failure error={claim.error} text={tt(refusal)} onRetry={() => { if (!submitting.current) { submitting.current = true; claim.mutate(); } }} busy={claim.isPending} /> : (
           <View accessibilityLiveRegion="polite">
             <Text
               style={{

@@ -1,3 +1,4 @@
+import { EmptyTasks } from './ui/illustrations/index.tsx';
 import { useReducedMotion } from './ui/motion.ts';
 import { Skeleton } from './ui/Skeleton.tsx';
 import { PhantomPressable as Pressable } from './ui/PhantomPressable.tsx';
@@ -618,10 +619,14 @@ export function FeatureBlock({
 }
 
 
-export function Hatch({ text }: { text: string }) {
+export function Hatch({ text, action, onPress }: { text: string; action?: string; onPress?: () => void }) {
   const theme = useTheme();
+  const tt = useT();
   return <View style={{ padding: theme.space[6], gap: theme.space[3], alignItems: 'center' }}>
-    <Text style={{ ...theme.collector.type.body, color: theme.color.mutedForeground, fontFamily: face(theme), textAlign: 'center' }}>{text}</Text>
+    <EmptyTasks size={104} />
+    <Title>{text}</Title>
+    <Body muted>{tt('state.emptyBody')}</Body>
+    {action && onPress ? <Button label={action} onPress={onPress} variant="secondary" /> : null}
   </View>;
 }
 

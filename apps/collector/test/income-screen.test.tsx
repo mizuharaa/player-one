@@ -58,3 +58,6 @@ it('shows skeletons instead of a zero while server money is pending', async () =
     expect(host.textContent).not.toContain(dong('0'));
   } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
 });
+
+// Native illustration rendering is covered by the web captures.
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));

@@ -1,3 +1,4 @@
+import { Failure, StatePanel } from '../ui/StatePanel.tsx';
 import { useToast } from '../ui/Toast.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
@@ -202,7 +203,7 @@ export function SessionCreate() {
 
   const queries = [claims, tasks, devices];
   if (queries.some((q) => q.isError)) {
-    return <Screen title={tt('session.title')}><Note text={tt('common.loadFailed')} /><Button label={tt('common.retry')} disabled={queries.some((q) => q.isFetching)} onPress={() => { for (const q of queries) void q.refetch(); }} /></Screen>;
+    return <Screen title={tt('session.title')}><Failure error={queries.find(query => query.isError)?.error} text={tt('common.loadFailed')} busy={queries.some((q) => q.isFetching)} onRetry={() => { for (const q of queries) void q.refetch(); }} /></Screen>;
   }
   if (queries.some((q) => q.isPending)) {
     return <Screen title={tt('session.title')}><Loading /></Screen>;
@@ -266,7 +267,7 @@ export function SessionCreate() {
       busy={create.isPending} disabled={!ready || create.isPending} onPress={next} />}>
     {step === 0 ? <>
       <Body muted>{tt('session.intro')}</Body>
-      {claimedTasks.length === 0 ? <><Note text={tt('session.needClaim')} /><Button label={tt('hall.title')} variant="secondary" onPress={() => nav.push({ name: 'taskHall' })} /></> : null}
+      {claimedTasks.length === 0 ? <StatePanel title={tt('state.empty')} text={tt('session.needClaim')} action={tt('hall.title')} onPress={() => nav.push({ name: 'taskHall' })} /> : null}
       {pick(claimedTasks, t => t.id, t => t.title, tt('session.task'), taskId, setTaskId)}
     </> : null}
     {step === 1 ? <>
@@ -274,7 +275,7 @@ export function SessionCreate() {
       {pick([...SCENARIOS], s => s, s => tt(`scenario.${s}`), tt('session.scenario'), scenario, s => setScenario(s as Scenario))}
     </> : null}
     {step === 2 ? <>
-      {(devices.data ?? []).length === 0 ? <><Note text={tt('session.needDevice')} /><Button label={tt('home.devices')} variant="secondary" onPress={() => nav.push({ name: 'devices' })} /></> : null}
+      {(devices.data ?? []).length === 0 ? <StatePanel title={tt('state.empty')} text={tt('session.needDevice')} action={tt('home.devices')} onPress={() => nav.push({ name: 'devices' })} /> : null}
       {pick(devices.data ?? [], d => d.serial, d => d.serial, tt('session.device'), deviceSerial, setDeviceSerial)}
       {/*
         * APP-19, on the last step before the two APP-17b declarations. It is on
@@ -290,7 +291,7 @@ export function SessionCreate() {
     {step === 4 ? <YesNo question={tt('session.sensitiveTitle')} value={sensitive} disabled={create.isPending}
       onChange={v => { if (!submitting.current) setSensitive(v); }} /> : null}
     {step >= 3 && (others === null || sensitive === null) ? <Body muted>{tt('session.needDeclarations')}</Body> : null}
-    {create.isError ? <Note tone="error" text={tt(SESSION_ERRORS[create.error.message] ?? 'common.actionFailed')} /> : null}
+    {create.isError ? <Failure error={create.error} tone="error" text={tt(SESSION_ERRORS[create.error.message] ?? 'common.actionFailed')} /> : null}
     <Body muted>{tt('session.noRecord')}</Body>
   </Screen>;
 }

@@ -1,3 +1,4 @@
+import { Failure } from '../ui/StatePanel.tsx';
 import { BrandSlot } from '../shell/BrandSlot.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -195,7 +196,8 @@ export function SignIn({
   /** One message per named refusal, and one fallback that admits nothing. */
   const failed = (err: unknown): void => {
     const refusal = err instanceof ApiError ? err.code : '';
-    if (refusal === 'rate_limited') setProblem('signIn.rateLimited');
+    if (refusal === 'server_unreachable') setProblem('state.offline');
+    else if (refusal === 'rate_limited') setProblem('signIn.rateLimited');
     else if (refusal === 'sign_in_unavailable') setProblem('signIn.unavailable');
     else if (refusal === 'credentials') setProblem('signIn.badCode');
     else setProblem('common.actionFailed');
@@ -403,7 +405,7 @@ fontWeight: theme.fontWeight.medium,
               >
                 {tt('signIn.checking')}
               </Text>
-            ) : problem !== null ? (
+            ) : problem === 'state.offline' ? <Failure error={new ApiError('server_unreachable')} text={tt(problem)} /> : problem !== null ? (
               <Text
                 accessibilityLiveRegion="polite"
                 style={{
@@ -641,7 +643,7 @@ fontWeight: theme.fontWeight.medium,
           */}
           <LegalLine />
 
-          {problem !== null ? <Note text={tt(problem)} /> : null}
+          {problem !== null ? <Failure error={problem === 'state.offline' ? new ApiError('server_unreachable') : undefined} text={tt(problem)} /> : null}
 
           <View style={{ marginTop: 'auto', paddingTop: theme.space[5] }}>
             <Button label={tt('signIn.sendCode')} disabled={pending} onPress={sendCode} />

@@ -227,3 +227,6 @@ describe('guidance in the collector flow', () => {
 });
 
 vi.mock('../src/ui/illustrations/index.tsx', () => ({ HowCharge: () => null, HowWear: () => null, HowPressDevice: () => null, HowHandOver: () => null }));
+
+// Native illustration rendering is covered by the web captures.
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null, HowCharge: () => null, HowWear: () => null, HowPressDevice: () => null, HowHandOver: () => null }));

@@ -14,7 +14,7 @@ import { GuideProvider } from '../src/guide/Guide.tsx';
 import { ToastProvider } from '../src/ui/Toast.tsx';
 import { TabBar } from '../src/shell/TabBar.tsx';
 import { View } from 'react-native';
-import { AGREEMENTS } from '../src/api/types.ts';
+import { AGREEMENTS, ApiError } from '../src/api/types.ts';
 import { ThemeProvider } from '../src/theme.tsx';
 import { Landing } from '../src/screens/Landing.tsx';
 import { SignIn } from '../src/screens/SignIn.tsx';
@@ -56,7 +56,7 @@ function Locale({ lang, children }: { lang: LocaleName; children: ReactNode }) {
 const PREVIEW_INSETS = { top: 59, bottom: 34, left: 0, right: 0 }; // the demo handset is an iPhone with a Dynamic Island and home indicator
 const api = new MockCollectorApi();
 /** `SignIn` sends its two requests through react-query, exactly as in `App`. */
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 function RoutedScreen() {
   const nav = useNav();
@@ -68,11 +68,14 @@ function RoutedScreen() {
 export function Harness() {
   const params = new URLSearchParams(window.location.search);
   const screen = params.get('screen');
-  const loading = params.get('state') === 'loading';
+  const state = params.get('state');
+  const loading = state === 'loading';
   const previewApi = useMemo(() => new Proxy(api, { get(target, key) {
-    if (loading && ['tasks', 'task', 'claims', 'boundDevices', 'episodes', 'income', 'incomeCycle', 'sessions', 'notifications'].includes(String(key))) return () => new Promise(() => {});
+    if (loading && ['tasks', 'task', 'myClaims', 'boundDevices', 'episodes', 'income', 'incomeCycle', 'sessions', 'notifications'].includes(String(key))) return () => new Promise(() => {});
+    if (['offline', 'error'].includes(state ?? '') && ['tasks', 'task', 'myClaims', 'boundDevices', 'episodes', 'income', 'incomeCycle', 'sessions', 'notifications', 'profile', 'payout', 'requestSignInCode'].includes(String(key))) return async () => { throw new ApiError(state === 'offline' ? 'server_unreachable' : 'server_error'); };
+    if (state === 'empty' && ['tasks', 'myClaims', 'boundDevices', 'episodes', 'income', 'sessions', 'notifications'].includes(String(key))) return async () => [];
     const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value;
-  } }), [loading]);
+  } }), [loading, state]);
   const [intro, setIntro] = useState(params.get('intro') === '1');
   const asked = params.get('lang');
   const readyRequested = params.get('ready') === '1';

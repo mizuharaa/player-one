@@ -150,3 +150,6 @@ it('prints the session total size and the connection sentence before the deliver
     expect(runDelivery).not.toHaveBeenCalled();
   } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); }
 });
+
+// Native illustration rendering is covered by the web captures.
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));

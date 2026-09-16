@@ -171,3 +171,5 @@ it('recovers a rejected reduced-motion query without leaving the film permanentl
     expect(useVideoPlayer).toHaveBeenCalled();
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
+
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null }));

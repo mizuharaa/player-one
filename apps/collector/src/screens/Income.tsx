@@ -1,3 +1,4 @@
+import { Failure } from '../ui/StatePanel.tsx';
 import { useState } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
@@ -115,7 +116,7 @@ export function Income() {
   const status = payout.data?.status ?? null;
   const statusKey: MessageKey = status === 'verified' ? 'payout.verified' : status === 'none' ? 'payout.none' : 'payout.awaiting';
   const destination = <>
-    {payout.isPending ? <Loading /> : payout.isError ? <Note tone="error" text={tt('common.loadFailed')} onRetry={() => void payout.refetch()} busy={payout.isFetching} /> : <>
+    {payout.isPending ? <Loading /> : payout.isError ? <Failure error={payout.error} tone="error" text={tt('common.loadFailed')} onRetry={() => void payout.refetch()} busy={payout.isFetching} /> : <>
       <Tag label={status === 'verified' && payout.data?.verification_simulation ? `${tt(statusKey)} - ${tt('payout.simulationLabel')}` : tt(statusKey)} fg={c.ink} bg={c.paper} mark={status === 'verified' ? '✓' : '?'} />
       <Body>{status === null ? tt('payout.unknown') : payout.data?.masked ? `${tt('payout.zalopay')} · ${payout.data.masked}` : tt('payout.zalopay')}</Body>
       {status === 'awaiting' ? <Body muted>{tt('payout.awaitingPayment')}</Body> : null}
@@ -134,7 +135,7 @@ export function Income() {
           {cycleData ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.paper }}>{tt('home.cycleWithEstimate').replace('{amount}', dong(cycleData.totalVnd))}</Text> :
             <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.paper }}>{tt(cycle.isPending ? 'common.loading' : 'home.cycleUnavailable')}</Text>}
         </HeaderGradient>
-        {cycle.isError ? <Note tone="error" text={tt('common.loadFailed')} onRetry={() => void cycle.refetch()} busy={cycle.isFetching} /> : null}
+        {cycle.isError ? <Failure error={cycle.error} tone="error" text={tt('common.loadFailed')} onRetry={() => void cycle.refetch()} busy={cycle.isFetching} /> : null}
         <View style={{ flexDirection: 'row', gap: c.cardGap, alignItems: 'flex-start' }}>
           {([
             ['uploads.title', '↑', () => nav.selectTab('uploads')],
@@ -158,10 +159,10 @@ export function Income() {
           <NavRow label={tt('profile.help')} subtitle={tt('profile.helpSub')} onPress={() => setExtra('help')} />
         </> : null}
         <Body muted>{tt('income.intro')}</Body>
-        {income.isError ? <Note tone="error" text={tt(income.data ? 'income.stale' : 'common.loadFailed')} onRetry={() => void income.refetch()} busy={income.isFetching} /> : null}
+        {income.isError ? <Failure error={income.error} tone="error" text={tt(income.data ? 'income.stale' : 'common.loadFailed')} onRetry={() => void income.refetch()} busy={income.isFetching} /> : null}
         {income.isPending ? <Loading /> : null}
       </View>}
-      empty={options || income.isPending || income.isError ? null : <Hatch text={tt('income.empty')} />}
+      empty={options || income.isPending || income.isError ? null : <Hatch action={tt('common.retry')} onPress={() => void income.refetch()} text={tt('income.empty')} />}
       renderItem={entry => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(entry.episodeId)}. ${tt(entry.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')}`}
         onPress={() => { setSelectedId(entry.episodeId); setDetails(false); }}
         style={({ pressed }) => ({ borderBottomWidth: 1, borderBottomColor: c.line, paddingVertical: c.cardPad, gap: c.cardGap, backgroundColor: pressed ? c.surface : undefined })}>

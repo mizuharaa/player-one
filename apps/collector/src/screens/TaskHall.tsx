@@ -1,3 +1,4 @@
+import { Failure } from '../ui/StatePanel.tsx';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Modal,
@@ -455,7 +456,7 @@ export function TaskHall() {
                 blocking error is inline next to the control with a way out and
                 never a toast on a timer (§3.4). */}
             {tasks.isError && tasks.data !== undefined ? (
-              <Note
+              <Failure error={tasks.error}
                 text={tt('common.refreshFailed')}
                 tone="pending"
                 busy={tasks.isFetching}
@@ -488,7 +489,7 @@ export function TaskHall() {
         }
         empty={
           tasks.isPending ? null : tasks.isError ? (
-            <Note text={tt('common.loadFailed')} tone="error" onRetry={() => void tasks.refetch()} busy={tasks.isFetching} />
+            <Failure error={tasks.error} text={tt('common.loadFailed')} tone="error" onRetry={() => void tasks.refetch()} busy={tasks.isFetching} />
           ) : (
             <EmptyHall
               cleared={filtered}
@@ -497,6 +498,7 @@ export function TaskHall() {
                 setAvailableOnly(false);
                 setOnlyMine(false);
                 savePrefs(NO_PREFERENCES);
+                void tasks.refetch();
               }}
             />
           )
@@ -855,7 +857,7 @@ function EmptyHall({ cleared, onClear }: { cleared: boolean; onClear: () => void
       {/* The CTA only exists when there is something to undo. An empty hall is
           not the collector's doing and a button that clears nothing is worse
           than no button. */}
-      {cleared ? <Button label={tt('explore.emptyAction')} variant="secondary" onPress={onClear} /> : null}
+      <Button label={tt(cleared ? 'explore.emptyAction' : 'common.retry')} variant="secondary" onPress={onClear} />
     </View>
   );
 }

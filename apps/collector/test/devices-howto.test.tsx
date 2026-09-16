@@ -129,3 +129,18 @@ function hexToRgb(hex: string): string {
   const n = Number.parseInt(hex.slice(1), 16);
   return `rgb(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255})`;
 }
+
+it('shows a failed device scan and an illustrated empty result after retry', async () => {
+  const { Provisioning } = await import('../src/screens/Provisioning.tsx');
+  const { MockDeviceTransport } = await import('../src/device/transport.ts');
+  const { TransportProvider } = await import('../src/device/transport-context.tsx');
+  const transport = new MockDeviceTransport();
+  vi.spyOn(transport, 'scan').mockRejectedValueOnce(new Error('Bluetooth unavailable')).mockResolvedValueOnce([]);
+  await act(async () => root.render(<ThemeProvider><LocaleProvider><TransportProvider value={transport}><NavProvider initial={{ name: 'provisioning' }}><Provisioning /></NavProvider></TransportProvider></LocaleProvider></ThemeProvider>));
+  const press = async (label: string) => { await act(async () => (document.querySelector(`[aria-label="${label}"]`) as HTMLElement).click()); };
+  await press(m['prov.scan']);
+  expect(page()).toContain('Bluetooth unavailable');
+  await press(m['common.retry']);
+  expect(page()).toContain(m['state.empty']);
+  expect(page()).not.toContain('Bluetooth unavailable');
+});
