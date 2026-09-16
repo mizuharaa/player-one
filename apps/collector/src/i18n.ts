@@ -89,11 +89,12 @@ const vi = {
 
   'signIn.title': 'Đăng nhập',
   'signIn.intro':
-    'Nhập số điện thoại. Mã dùng một lần sẽ gửi qua Zalo. Không cần mật khẩu.',
+    'Nhập số điện thoại. Mã dùng một lần sẽ gửi qua Zalo hoặc tin nhắn SMS. Không cần mật khẩu.',
   'signIn.phone': 'Số điện thoại',
   'signIn.sendCode': 'Gửi mã',
   'signIn.resendCode': 'Gửi lại mã',
-  'signIn.codeSent': 'Nếu số này đã đăng ký, mã sẽ tới Zalo trong ít phút. Mở Zalo để xem mã.',
+  'signIn.codeSent':
+    'Nếu số này đã đăng ký, mã sẽ tới trong ít phút. Xem trong Zalo, hoặc trong tin nhắn SMS.',
   'signIn.demoFilled': 'Bản trình diễn tự điền sẵn mã.',
   'signIn.code': 'Mã dùng một lần',
   'signIn.submit': 'Đăng nhập',
@@ -752,11 +753,12 @@ const en: Record<MessageKey, string> = {
 
   'signIn.title': 'Sign in',
   'signIn.intro':
-    'Enter your phone number. We send a one-time code over Zalo. There is no password.',
+    'Enter your phone number. We send a one-time code over Zalo or by SMS. There is no password.',
   'signIn.phone': 'Phone number',
   'signIn.sendCode': 'Send code',
   'signIn.resendCode': 'Resend code',
-  'signIn.codeSent': 'If this number is registered, a code will arrive over Zalo shortly. Open Zalo to read it.',
+  'signIn.codeSent':
+    'If this number is registered, a code will arrive shortly. Look in Zalo, or in your SMS messages.',
   'signIn.demoFilled': 'The server is in demonstration mode and filled the code in.',
   'signIn.code': 'One-time code',
   'signIn.submit': 'Sign in',
@@ -1366,10 +1368,10 @@ const zh: Record<MessageKey, string> = {
   'greeting.nightOwl': '夜班辛苦',
 
   'signIn.title': '登录',
-  'signIn.intro': '输入你的手机号。我们通过 Zalo 发送一次性验证码。不需要密码。',
+  'signIn.intro': '输入你的手机号。我们通过 Zalo 或短信发送一次性验证码。不需要密码。',
   'signIn.phone': '手机号',
   'signIn.sendCode': '发送验证码',
-  'signIn.codeSent': '如果这个号码已注册，验证码会通过 Zalo 很快送达。请打开 Zalo 查看。',
+  'signIn.codeSent': '如果这个号码已注册，验证码很快就会送达。请在 Zalo 或短信里查看。',
   'signIn.code': '一次性验证码',
   'signIn.submit': '登录',
   'signIn.badCode': '验证码错误或已过期。请重新获取。',

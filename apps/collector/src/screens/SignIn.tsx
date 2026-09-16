@@ -17,7 +17,7 @@ import poster from '../../assets/hero/login-poster.jpg';
 import loginFilm from '../../assets/hero/login.mp4';
 
 /**
- * APP-01. The number, then the code that comes back over Zalo.
+ * APP-01. The number, then the code that comes back.
  *
  * SPEC.md §3 and §4. Two steps, still one component and still not a route:
  * this is not somewhere a collector navigates to, it is what the app is when
@@ -36,16 +36,27 @@ import loginFilm from '../../assets/hero/login.mp4';
  * and a refusal always says the same sentence. A more helpful message here
  * would undo the reason those routes are shaped that way.
  *
- * A collector whose number has no Zalo account cannot receive a code at all —
- * the named refusal `zns_no_zalo_account`, recorded server-side against the
- * collector so an operator can find them. The app cannot see that and must not
- * pretend to: `signIn.codeSent` tells them to check Zalo, and the way out is a
- * person at a counter.
+ * A collector whose number has no Zalo account cannot receive a ZNS code at
+ * all — the named refusal `zns_no_zalo_account`, recorded server-side against
+ * the collector so an operator can find them. The app cannot see that and must
+ * not pretend to; the way out is SMS, Zalo Login, or a person at a counter.
+ *
+ * **`signIn.codeSent` names BOTH places to look, and does not promise one.**
+ * The server chooses the channel from `PLAYERONE_SIGN_IN_CHANNEL` and the app
+ * cannot see which: all three locales used to say the code arrives over Zalo,
+ * so on an SMS deployment a collector waited in the wrong app and the fallback
+ * looked broken. Audit 3 of `3f9bb17` found it.
+ *
+ * Naming both rather than asking the server which is deliberate — the reason
+ * is in the commit, and the short version is that a deployment can be
+ * configured for ZNS and still deliver nothing (no verified Official Account),
+ * where a sentence promising Zalo would be confidently wrong and one naming
+ * both is merely broad.
  *
  * **The hint comes before the press, not after it.** §3, and it is the most
  * consistent habit in the whole reference pass: `signIn.codeSent` is rendered
- * above the button rather than revealed by it, so the Zalo channel is
- * disclosed before a collector commits a phone number rather than after. It is
+ * above the button rather than revealed by it, so where to look is disclosed
+ * before a collector commits a phone number rather than after. It is
  * conditional by construction ("Nếu số này đã được đăng ký…") and therefore
  * says nothing the 204 is protecting.
  *
