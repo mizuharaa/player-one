@@ -475,6 +475,17 @@ async function zaloCollector(db: Db, identity: ZaloIdentity): Promise<CollectorC
 const CREDENTIALS = { error: 'credentials', reason: 'credentials' };
 
 /**
+ * What a route answers when this deployment cannot do it at all.
+ *
+ * Deliberately says nothing about WHY. `POST /auth/collector/zalo/start` used
+ * to answer `zalo_not_configured`, which told any anonymous caller which
+ * deployments hold Zalo credentials — a configuration oracle Codex named. The
+ * app decides to hide the button on the 503 STATUS, so the name costs nothing
+ * to give up, and it is the same shape `request-code` already answers with.
+ */
+const UNAVAILABLE = { error: 'sign-in is not available on this deployment' };
+
+/**
  * A named refusal, in the shape the app's HTTP client already reads.
  *
  * `reason` as well as `error` because that is what `CREDENTIALS` does and the
@@ -846,7 +857,18 @@ export function registerCollectorAuth(
    */
   app.post('/auth/collector/zalo/start', async (req, reply) => {
     const zalo = options.zaloLogin;
-    if (zalo === undefined) return reply.code(503).send(refusal('zalo_not_configured'));
+    /**
+     * The same 503 and the same name `request-code` gives a deployment with no
+     * code sender, and NOT `zalo_not_configured`.
+     *
+     * Codex called the specific name a configuration oracle, and it was one:
+     * it told any anonymous caller which deployments hold Zalo credentials.
+     * `sign_in_unavailable` says the only thing a caller may act on — this way
+     * in is not available here — and the app already knows that name from the
+     * phone route and already has a sentence for it. The app decides to hide
+     * the button on the STATUS, not on the name.
+     */
+    if (zalo === undefined) return reply.code(503).send(UNAVAILABLE);
 
     const wait = await addressBudget(req.ip);
     if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
@@ -886,13 +908,35 @@ export function registerCollectorAuth(
    */
   app.get('/auth/collector/zalo/callback', async (req, reply) => {
     const zalo = options.zaloLogin;
-    if (zalo === undefined) return reply.code(503).send(refusal('zalo_not_configured'));
-
-    const wait = await addressBudget(req.ip);
-    if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
-
     const home = (params: Record<string, string>): never =>
       reply.redirect(`${APP_DEEP_LINK}?${new URLSearchParams(params).toString()}`, 302) as never;
+
+    /**
+     * EVERY answer from this route is the deep link, including the two that
+     * used to be JSON.
+     *
+     * Codex found that an unconfigured deployment answered a 503 body and a
+     * rate-limited one a 429 body — both rendered as raw JSON in whatever
+     * browser Zalo had just redirected, with no way back to the app. The
+     * person who tapped a button is looking at a mobile browser: the only
+     * useful answer is the scheme that returns them to the screen they
+     * started on, with a name the app has a Vietnamese sentence for.
+     *
+     * `zalo_not_configured` is safe to send HERE, unlike on `start`: reaching
+     * this route means Zalo already redirected a browser to it, so the caller
+     * has been through Zalo's own screens and learns nothing from the name
+     * that the redirect did not already tell them.
+     */
+    if (zalo === undefined) return home({ error: 'zalo_not_configured' });
+
+    const wait = await addressBudget(req.ip);
+    /**
+     * `rate_limited`, which `zalo.tsx` already maps to `signIn.rateLimited` —
+     * not a new `zalo_rate_limited`. A refusal name earns its own sentence
+     * when its answer is different, and "wait a few minutes" is the same
+     * sentence whichever route said it.
+     */
+    if (wait !== null) return home({ error: 'rate_limited' });
     /**
      * Every named refusal leaves a row and then goes home.
      *

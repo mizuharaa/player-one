@@ -402,12 +402,31 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
     expect(logins?.n).toBe(1);
   });
 
-  it('says it is not configured on the two routes that need a Zalo app', async () => {
+  it('says only that sign-in is unavailable, and never names Zalo, on an unconfigured start', async () => {
     const app = await api(undefined);
-    for (const res of [await start(app), await callback(app, { code: 'x', state: 'y' })]) {
-      expect(res.statusCode, res.body).toBe(503);
-      expect(res.json().constraint).toBe('zalo_not_configured');
-    }
+    /**
+     * A 503 with a GENERIC body. `zalo_not_configured` here was a
+     * configuration oracle — it told any anonymous caller which deployments
+     * hold Zalo credentials — and the app hides the button on the STATUS, so
+     * the name costs nothing to give up.
+     */
+    const opened = await start(app);
+    expect(opened.statusCode, opened.body).toBe(503);
+    expect(opened.body).not.toContain('zalo');
+    expect(opened.body).not.toContain('Zalo');
+
+    /**
+     * The callback answers the DEEP LINK even unconfigured, and even rate
+     * limited. It used to answer JSON, which renders as raw text in whatever
+     * browser Zalo had just redirected, with no way back to the app — the
+     * person who tapped a button is looking at a mobile browser.
+     *
+     * The name is safe here and not on `start`: reaching this route means Zalo
+     * already redirected a browser to it.
+     */
+    const back = await callback(app, { code: 'x', state: 'y' });
+    expect(back.statusCode).toBe(302);
+    expect(landed(back.headers.location as string).get('error')).toBe('zalo_not_configured');
     /**
      * The ticket route is deliberately NOT in that list. It never talks to
      * Zalo, and on a deployment with no Zalo app nobody was ever issued a
@@ -505,6 +524,22 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
     const d = await db();
     const [count] = await d.execute<{ n: number }>(sql`select count(*)::int as n from collectors`);
     expect(count?.n).toBe(1);
+  });
+
+  it('sends a rate-limited callback home to the app, not a JSON body to a browser', async () => {
+    const app = await api(client(fakeZalo().fetch));
+    // Past the shared address budget with starts, which cost but never refund
+    // because none of them completes.
+    for (let n = 0; n < 40; n += 1) await start(app);
+
+    const back = await callback(app, { code: 'x', state: 'y' });
+    expect(back.statusCode).toBe(302);
+    /**
+     * `rate_limited`, which the app already maps to `signIn.rateLimited`. A
+     * refusal earns its own name when its answer is different, and "wait a few
+     * minutes" is the same sentence whichever route said it.
+     */
+    expect(landed(back.headers.location as string).get('error')).toBe('rate_limited');
   });
 
   it('leaves one rate-limited row per window, not one per refused request', async () => {
