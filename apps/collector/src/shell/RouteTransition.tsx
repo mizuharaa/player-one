@@ -1,5 +1,5 @@
 import { polish } from '../theme.tsx';
-import { useRef, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { View } from 'react-native';
 import Animated, { useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { type Route } from '../nav.tsx';
@@ -10,15 +10,17 @@ export function RouteTransition({ route, isTabRoot, children }: { route: Route; 
   const key = JSON.stringify(route);
   const history = useRef<string[]>([]);
   const direction = useSharedValue(0);
+  const nextDirection = useRef(0);
   const previousRoot = useRef(isTabRoot);
   if (history.current.at(-1) !== key) {
     const previous = history.current.at(-1);
     const tab = isTabRoot && (!previous || previousRoot.current);
     const back = history.current.includes(key);
-    direction.value = tab ? 0 : back ? -1 : 1;
+    nextDirection.current = tab ? 0 : back ? -1 : 1;
     history.current = isTabRoot ? [key] : back ? history.current.slice(0, history.current.indexOf(key) + 1) : [...history.current, key];
   }
   previousRoot.current = isTabRoot;
+  useLayoutEffect(() => { direction.value = nextDirection.current; }, [key, direction]);
   const entering = (values: { windowWidth: number }) => {
     'worklet';
     const tab = direction.value === 0;

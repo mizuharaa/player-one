@@ -1,3 +1,4 @@
+import { MotionProvider } from '../src/ui/motion.ts';
 // @vitest-environment jsdom
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
@@ -61,7 +62,7 @@ it('keeps the poster until power is known and never starts a decoder in low-powe
     const host = document.createElement('div'); document.body.append(host);
     const root = createRoot(host);
     try {
-      await act(async () => root.render(<Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login film" fade={0} />));
+      await act(async () => root.render(<MotionProvider><Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login film" fade={0} /></MotionProvider>));
       expect(useVideoPlayer).not.toHaveBeenCalled();
       expect(host.querySelector('[role="img"]')).not.toBeNull();
       await act(async () => resolvePower(lowPower));
@@ -120,7 +121,7 @@ it('keeps a slow decoder mounted over the poster and removes it on an actual err
   const host = document.createElement('div'); document.body.append(host);
   const root = createRoot(host);
   try {
-    await act(async () => root.render(<Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login film" fade={0} />));
+    await act(async () => root.render(<MotionProvider><Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login film" fade={0} /></MotionProvider>));
     await act(async () => vi.advanceTimersByTime(500));
     expect(host.querySelector('[role="img"]')).not.toBeNull();
     expect(remove).not.toHaveBeenCalled();
@@ -167,7 +168,7 @@ it('recovers a rejected reduced-motion query without leaving the film permanentl
   const host = document.createElement('div'); document.body.append(host);
   const root = createRoot(host);
   try {
-    await act(async () => root.render(<Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login" fade={0} />));
+    await act(async () => root.render(<MotionProvider><Film source="login.mp4" poster={{ uri: 'poster.jpg' }} label="Login" fade={0} /></MotionProvider>));
     expect(useVideoPlayer).toHaveBeenCalled();
   } finally { await act(async () => root.unmount()); host.remove(); }
 });

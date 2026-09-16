@@ -1,3 +1,4 @@
+import { MotionProvider } from './ui/motion.ts';
 import { createContext, useContext, type ReactNode } from 'react';
 import { nativeTheme, type NativeTheme } from '@playerone/design/native';
 
@@ -24,6 +25,6 @@ const theme: NativeTheme = {
 };
 const ThemeContext = createContext<NativeTheme>(theme);
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={theme}><MotionProvider>{children}</MotionProvider></ThemeContext.Provider>;
 }
 export const useTheme = (): NativeTheme => useContext(ThemeContext);

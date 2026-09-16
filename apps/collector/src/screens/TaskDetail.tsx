@@ -1,4 +1,4 @@
-import { CardScrollContext } from '../ui/CardSheen.tsx';
+import { CardScrollContext, useCardScroll } from '../ui/CardSheen.tsx';
 import { Failure } from '../ui/StatePanel.tsx';
 import { useToast } from '../ui/Toast.tsx';
 import { useEffect, useRef, useState } from 'react';
@@ -103,7 +103,8 @@ export function TaskDetail() {
   /** The sticky footer's own measured height, so content clears it exactly. */
   const [footer, setFooter] = useState(0);
 
-  const scrollY = useRef(new Animated.Value(0)).current;
+  const scroll = useCardScroll();
+  const scrollY = scroll.scroll;
   const reduced = useReducedMotion();
   const task = useQuery({ queryKey: ['task', taskId], queryFn: () => api.task(taskId) });
   const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
@@ -210,8 +211,8 @@ export function TaskDetail() {
   );
 
   return (
-    <CardScrollContext.Provider value={scrollY}><View style={ground}>
-      <Animated.ScrollView scrollEventThrottle={16} onScroll={reduced ? undefined : Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: Platform.OS !== 'web' })}
+    <CardScrollContext.Provider value={scroll}><View style={ground}>
+      <Animated.ScrollView scrollEventThrottle={16} onScroll={reduced ? undefined : scroll.onScroll}
         contentContainerStyle={{ paddingBottom: footer + theme.space[6], gap: c.cardGap }}
       >
         {claim.isError && refusal ? <Failure error={claim.error} text={tt(refusal)} onRetry={() => { if (!submitting.current) { submitting.current = true; claim.mutate(); } }} busy={claim.isPending} /> : null}
