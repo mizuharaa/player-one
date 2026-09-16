@@ -405,8 +405,18 @@ async function zaloCollector(db: Db, identity: ZaloIdentity): Promise<CollectorC
       action: 'collector.sign_up',
       targetTable: 'collectors',
       targetId: collectorId,
-      // The Zalo id is not written here. It is on the row this names, and an
-      // audit trail is not the place to make a third copy of an identifier.
+      /**
+       * `external_ref` carries the Zalo id, because that is what it IS:
+       * `zalo:<id>`. An earlier version of this comment claimed the id was not
+       * written here, directly above the line that writes it — the audit of
+       * `e4bf1fb` caught it, and a comment that contradicts the line under it
+       * is worse than none, because it is why a reader stops checking.
+       *
+       * Not a leak: the same string is on `collectors.external_ref`, which is
+       * the reference an operator reads, and `collectors.zalo_id` holds the
+       * bare id. This row names where the person came from, which is the one
+       * thing an audit trail of a sign-up is for.
+       */
       after: { status: 'prospect', external_ref: externalRef, channel: 'zalo' },
     },
     async (tx): Promise<CollectorClaims | undefined> => {
