@@ -96,6 +96,24 @@ test('the demo phone is empty by default, validated, and never turns on the resp
     assert.throws(() => configuration([...inputs, '--demo-phone', bad]), undefined, bad);
   }
 });
+
+test('the demo bypass key is optional, floored at 32 characters, and empty by default', () => {
+  // Omitted, POST /auth/collector/demo answers 404 and the deployment has no
+  // bypass. Owner's request 2026-09-16, for debugging and the demonstration.
+  assert.equal(configuration(inputs).PLAYERONE_DEMO_BYPASS_KEY, '');
+
+  // What `openssl rand -base64 48` actually produces: 64 characters including
+  // `+`, `/` and `=`, none of which the Zalo character rule allows.
+  const key = 'aB3+/cD4=' + 'x'.repeat(55);
+  assert.equal(configuration([...inputs, '--demo-bypass-key', key]).PLAYERONE_DEMO_BYPASS_KEY, key);
+
+  // The same floor the API enforces at boot, caught before the VM is touched.
+  assert.throws(() => configuration([...inputs, '--demo-bypass-key', 'x'.repeat(31)]));
+  // A space, a newline that would inject a second variable, and a shell quote.
+  assert.throws(() => configuration([...inputs, '--demo-bypass-key', 'x'.repeat(40) + ' y']));
+  assert.throws(() => configuration([...inputs, '--demo-bypass-key', 'x'.repeat(40) + '\nSTORAGE_KEY=stolen']));
+  assert.throws(() => configuration([...inputs, '--demo-bypass-key', 'x'.repeat(40) + "'"]));
+});
 test('CLI refuses a second write and prints secrets only on the first creation', () => {
   const directory = mkdtempSync(join(tmpdir(), 'playerone-cloud-config-'));
   const output = join(directory, 'cloud.env');

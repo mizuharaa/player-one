@@ -664,6 +664,19 @@ const vi = {
   "photos.title": "Nguồn ảnh",
   "photos.edited": "Ảnh đã được cắt và đổi kích thước. Giấy phép bên dưới cũng áp dụng cho các bản ảnh này.",
 
+  // v3 block, appended -- the demo bypass sheet (owner's request 2026-09-16).
+  // Debugging and the Thursday demonstration only: one administrator key for
+  // the seeded demo collector's ordinary session, so the pipelines can be shown
+  // when no sign-in channel delivers a code. The entry is absent on the Play
+  // profile, so a collector never reads any of these lines.
+  'demo.entry': 'Chế độ demo',
+  'demo.title': 'Chế độ demo',
+  'demo.body': 'Chỉ dùng để trình diễn. Nhập mã quản trị để vào bằng tài khoản demo.',
+  'demo.key': 'Mã quản trị',
+  'demo.enter': 'Vào demo',
+  'demo.badKey': 'Mã không đúng.',
+  'demo.unavailable': 'Máy chủ này không bật chế độ demo.',
+  'demo.unseeded': 'Máy chủ chưa có tài khoản demo. Chạy seed trước đã.',
 };
 
 export type MessageKey = keyof typeof vi;
@@ -1260,6 +1273,19 @@ const en: Record<MessageKey, string> = {
   "photos.title": "Photo credits",
   "photos.edited": "Photos have been cropped and resized. The licenses below also apply to these edited copies.",
 
+  // v3 block, appended -- the demo bypass sheet (owner's request 2026-09-16).
+  // Debugging and the Thursday demonstration only: one administrator key for
+  // the seeded demo collector's ordinary session, so the pipelines can be shown
+  // when no sign-in channel delivers a code. The entry is absent on the Play
+  // profile, so a collector never reads any of these lines.
+  'demo.entry': 'Demo mode',
+  'demo.title': 'Demo mode',
+  'demo.body': 'For demonstration only. Enter the admin key to sign in as the demo account.',
+  'demo.key': 'Admin key',
+  'demo.enter': 'Enter demo',
+  'demo.badKey': 'That key is not right.',
+  'demo.unavailable': 'This server has no demo mode.',
+  'demo.unseeded': 'This server has no demo account yet. Run the seed first.',
 };
 
 /**
@@ -1840,6 +1866,19 @@ const zh: Record<MessageKey, string> = {
   "photos.title": "图片来源",
   "photos.edited": "图片已裁剪并调整尺寸。以下许可证同样适用于这些编辑后的副本。",
 
+  // v3 block, appended -- the demo bypass sheet (owner's request 2026-09-16).
+  // Debugging and the Thursday demonstration only: one administrator key for
+  // the seeded demo collector's ordinary session, so the pipelines can be shown
+  // when no sign-in channel delivers a code. The entry is absent on the Play
+  // profile, so a collector never reads any of these lines.
+  'demo.entry': '演示模式',
+  'demo.title': '演示模式',
+  'demo.body': '仅用于演示。输入管理密钥，以演示账号登录。',
+  'demo.key': '管理密钥',
+  'demo.enter': '进入演示',
+  'demo.badKey': '密钥不正确。',
+  'demo.unavailable': '此服务器未开启演示模式。',
+  'demo.unseeded': '此服务器还没有演示账号。请先运行种子脚本。',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { vi, en, zh };

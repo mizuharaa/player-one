@@ -20,7 +20,11 @@ export {
   EXAM_ANSWERS,
 } from './collector-app.ts';
 import { registerCollectorApp } from './collector-app.ts';
-import { registerCollectorAuth, type SendSignInCode } from './collector.ts';
+import {
+  DEMO_BYPASS_MIN_KEY,
+  registerCollectorAuth,
+  type SendSignInCode,
+} from './collector.ts';
 import type { ZaloLogin } from './zalo-login.ts';
 export {
   MAX_DELIVERY_BYTES,
@@ -97,6 +101,8 @@ export { SIGN_IN_RATE_LIMITED, signInLimiter, type SignInLimiter } from './ratel
 export {
   CODE_ATTEMPTS,
   CODE_TTL_MS,
+  DEMO_BYPASS_COLLECTOR_REF,
+  DEMO_BYPASS_MIN_KEY,
   ZALO_HOP_REQUESTS,
   type DeliveryOutcome,
   type SendSignInCode,
@@ -363,6 +369,18 @@ export type ApiOptions = {
   /** One phone number whose sign-in code comes back in the response. See `collector.ts`. */
   demoPhone?: string;
   /**
+   * The demo bypass key, owner's request of 2026-09-16 — for debugging and the
+   * Thursday demonstration, and nothing else. Absent here,
+   * `POST /auth/collector/demo` answers 404 for every caller, which is what
+   * every deployment that was not deliberately given a key gets.
+   *
+   * Shorter than `DEMO_BYPASS_MIN_KEY` throws below rather than being padded
+   * or ignored: this one string is the whole credential, so a weak one is a
+   * configuration mistake and not a degraded mode. `bin/serve.ts` reads
+   * `PLAYERONE_DEMO_BYPASS_KEY`, and `collector.ts` argues the rest.
+   */
+  demoBypassKey?: string;
+  /**
    * Zalo Login (OAuth v4), owner's decision of 2026-09-16 overriding the
    * ZNS-only rule: VNG's ZNS Official Account is not available, so a sign-in
    * that depends on a code arriving in Zalo delivers nothing.
@@ -519,6 +537,7 @@ export function buildApi({
   sendSignInCode,
   signInDeliveryMode,
   demoPhone,
+  demoBypassKey,
   zaloLogin,
   now,
   payout = payoutOptionsFromEnv(),
@@ -545,6 +564,19 @@ export function buildApi({
    * The message names the environment variable although this is a library,
    * because the only thing anybody will do with the error is set it.
    */
+  /**
+   * The bypass key's floor, as a service invariant for the reason the two
+   * above are one: an embedded caller must not be able to assemble the weak
+   * combination either. Named so the only action anybody can take is obvious.
+   */
+  if (demoBypassKey !== undefined && demoBypassKey.length < DEMO_BYPASS_MIN_KEY) {
+    throw new Error(
+      `demoBypassKey must be at least ${DEMO_BYPASS_MIN_KEY} characters ` +
+        '(PLAYERONE_DEMO_BYPASS_KEY; generate one with `openssl rand -base64 48`). ' +
+        'It is the only credential on POST /auth/collector/demo, so a short one is ' +
+        'a configuration mistake rather than a weaker mode.',
+    );
+  }
   if (reviewerMediaEnabled && !secureCookies) {
     throw new Error(
       'reviewerMediaEnabled requires secureCookies: streaming raw footage to a remote ' +
@@ -1070,6 +1102,7 @@ export function buildApi({
     // The same value engineering.ts reports, so the audit row and the
     // diagnostic cannot say different things about one deployment.
     signInChannel: signInDeliveryMode,
+    demoBypassKey,
     zaloLogin,
   });
 
