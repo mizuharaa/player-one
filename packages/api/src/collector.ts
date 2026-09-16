@@ -944,7 +944,26 @@ export function registerCollectorAuth(
       .where(and(eq(schema.zaloSignIns.state, state), isNull(schema.zaloSignIns.ticketHash)))
       .returning({ state: schema.zaloSignIns.state });
     if (minted === undefined) return refused('zalo_state_unknown');
-    return home({ ticket });
+    /**
+     * The state travels back with the ticket, and it is what binds the ticket
+     * to the attempt the app started.
+     *
+     * Without it the app redeemed ANY `playerone://signed-in?ticket=…` the OS
+     * handed it, so a second app claiming the scheme — or anything that could
+     * make the phone open one link — could sign a collector into an
+     * ATTACKER'S account. That is login-CSRF, and both audits of `4a32929`
+     * found it. The app now compares this against the state it stored before
+     * it opened the browser and drops the link on any mismatch.
+     *
+     * Safe to echo: the state was spent by the UPDATE above, so it opens
+     * nothing on its own, and it was minted by this server — the app is
+     * recognising its own value, not trusting ours.
+     *
+     * It rides ONLY with a ticket. An `?error=` carries no state, because an
+     * error cannot sign anybody in and requiring a match there would let a
+     * forged callback suppress a real `zalo_denied` the collector needs to see.
+     */
+    return home({ ticket, state });
   });
 
   /**

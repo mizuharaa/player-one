@@ -11,7 +11,7 @@ import { MockCollectorApi } from './api/mock.ts';
 import { HttpCollectorApi } from './api/http.ts';
 import { USE_MOCK_API } from './api/config.ts';
 import { getApiOrigin, loadApiOrigin } from './api/origin.ts';
-import { secureOriginStore, secureTokenStore } from './api/token-store.ts';
+import { secureOriginStore, secureTokenStore, secureZaloStateStore } from './api/token-store.ts';
 import { type CollectorApi, type CollectorProfile } from './api/types.ts';
 import { ApiProvider } from './api/context.tsx';
 import { LocaleProvider } from './locale.tsx';
@@ -172,7 +172,16 @@ function Restoring() {
 type ApiFactory = (onUnauthorized: () => void) => CollectorApi;
 const createApi: ApiFactory = (onUnauthorized) => USE_MOCK_API
   ? new MockCollectorApi()
-  : new HttpCollectorApi(getApiOrigin(), secureTokenStore, onUnauthorized);
+  : new HttpCollectorApi(
+      getApiOrigin(),
+      secureTokenStore,
+      onUnauthorized,
+      // `undefined` keeps the real `fetch`; the keystore is the fifth argument
+      // because a Zalo state has to outlive a process Android may kill while
+      // the person is still on Zalo's permission screen.
+      undefined,
+      secureZaloStateStore,
+    );
 
 /**
  * A new client, cache and navigation stack for every signed-in identity.

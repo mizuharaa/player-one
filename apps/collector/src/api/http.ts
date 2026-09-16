@@ -1,4 +1,26 @@
 import type { TokenStore } from './token-store.ts';
+
+/**
+ * A `TokenStore` that forgets when the process does.
+ *
+ * The default for the Zalo state, and fail-closed on purpose: a deep link that
+ * arrives after a restart finds nothing to match and is dropped, so the
+ * collector taps the button again. Dropping a good ticket is a retry;
+ * redeeming a bad one is somebody else's account. `App.tsx` passes the
+ * keystore, which is what makes the restart case work in the shipped app.
+ */
+const memoryStore = (): TokenStore => {
+  let held: string | null = null;
+  return {
+    get: async () => held,
+    set: async (value) => {
+      held = value;
+    },
+    clear: async () => {
+      held = null;
+    },
+  };
+};
 import {
   DELIVERY_STATES,
   type DeliveryOutcome,
@@ -147,6 +169,22 @@ export class HttpCollectorApi implements CollectorApi {
      * strategy, not configuration, and there is no second implementation.
      */
     private readonly fetchFn: typeof fetch = fetch,
+    /**
+     * Where the `state` of a Zalo sign-in in flight is kept, so the ticket that
+     * comes back can be proved to belong to the attempt this phone started.
+     *
+     * It has to OUTLIVE THE PROCESS: Android can kill the app while the person
+     * is on Zalo's permission screen and then relaunch it on the deep link, so
+     * an in-memory value would be gone at exactly the moment it is needed.
+     * `App.tsx` passes the keystore.
+     *
+     * The in-memory default is fail-closed and deliberate: a caller that
+     * supplies none can still start a sign-in, and a deep link arriving after
+     * a restart finds nothing to match and is dropped. The collector taps the
+     * button again. Dropping a good ticket is a retry; redeeming a bad one is
+     * somebody else's account.
+     */
+    private readonly zaloState: TokenStore = memoryStore(),
   ) {}
 
   // -- the wire ------------------------------------------------------------
@@ -260,10 +298,39 @@ export class HttpCollectorApi implements CollectorApi {
     if (typeof body?.url !== 'string' || typeof body.state !== 'string') {
       throw new ApiError('server_error');
     }
+    /**
+     * Remembered BEFORE the browser opens, because the browser may never come
+     * back to this process. Written before the URL is returned so the caller
+     * cannot open Zalo on a state that was not stored.
+     */
+    await this.persistState(body.state);
     return { url: body.url, state: body.state };
   }
 
-  async signInWithTicket(ticket: string): Promise<void> {
+  /**
+   * Trade the deep link's ticket for the token — but only if the link belongs
+   * to the sign-in this phone started.
+   *
+   * The `state` comes back beside the ticket and is compared, byte for byte,
+   * against the one stored by `startZaloSignIn`. Without this the app redeemed
+   * ANY `playerone://signed-in?ticket=…` the OS handed it: a second app
+   * claiming the scheme could sign the collector into an attacker's account,
+   * which is login-CSRF and is what both audits of `4a32929` found.
+   *
+   * Throws `ApiError('zalo_state_unknown')` on a mismatch or a missing stored
+   * state, and does NOT clear the stored value — a forged link must not be
+   * able to make the real one that arrives a second later fail too.
+   */
+  async signInWithTicket(ticket: string, state: string): Promise<void> {
+    const expected = await this.zaloState.get();
+    this.active();
+    if (expected === null || state === '' || state !== expected) {
+      throw new ApiError('zalo_state_unknown');
+    }
+    // Matched, so this attempt is over however the exchange goes: a ticket is
+    // single-use, and leaving the state behind would let a replay of the same
+    // link pass this check again.
+    await this.persistState(null);
     const res = await this.send('/auth/collector/ticket', 'POST', { ticket });
     // NOT `req`: a refused ticket is not an expired session, and there is no
     // stored token here to clear.
@@ -278,6 +345,11 @@ export class HttpCollectorApi implements CollectorApi {
     this.token = value;
     await this.persist(() => this.tokens.set(value));
     this.active();
+  }
+
+  /** Serialised with the token writes, for the reason `persist` gives. */
+  private persistState(state: string | null): Promise<void> {
+    return this.persist(() => (state === null ? this.zaloState.clear() : this.zaloState.set(state)));
   }
 
   async restoreSession(): Promise<boolean> {

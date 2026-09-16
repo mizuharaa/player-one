@@ -179,7 +179,7 @@ export function useZaloSignIn({ onSignedIn }: { onSignedIn: () => void }): ZaloS
   }, []);
 
   const redeem = useCallback(
-    async (ticket: string) => {
+    async (ticket: string, state: string) => {
       if (presented.current.has(ticket)) return;
       presented.current.add(ticket);
       if (alive.current) {
@@ -187,7 +187,7 @@ export function useZaloSignIn({ onSignedIn }: { onSignedIn: () => void }): ZaloS
         setProblem(null);
       }
       try {
-        await api.signInWithTicket(ticket);
+        await api.signInWithTicket(ticket, state);
         if (alive.current) onSignedIn();
       } catch (err) {
         if (alive.current) setProblem(sentenceFor(err instanceof ApiError ? err.code : null));
@@ -211,7 +211,18 @@ export function useZaloSignIn({ onSignedIn }: { onSignedIn: () => void }): ZaloS
       const params = new URLSearchParams(mark === -1 ? '' : url.slice(mark + 1));
       const ticket = params.get('ticket');
       if (ticket !== null && ticket !== '') {
-        void redeem(ticket);
+        /**
+         * The state rides back with the ticket, and the client compares it
+         * against the one it stored before the browser opened. This screen
+         * does not do the comparison itself: the stored value lives in the
+         * keystore behind the client, and a check here would be a second copy
+         * of the rule in the place with no access to the fact.
+         *
+         * A link with no state, or the wrong one, is refused as
+         * `zalo_state_unknown` — it is not this phone's sign-in, and redeeming
+         * it would put the collector into whichever account forged it.
+         */
+        void redeem(ticket, params.get('state') ?? '');
         return;
       }
       if (alive.current) {

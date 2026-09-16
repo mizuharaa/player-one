@@ -179,8 +179,17 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
 
     const back = await callback(app, { code: 'zalo-auth-code', state });
     expect(back.statusCode, back.body).toBe(302);
-    const ticket = landed(back.headers.location as string).get('ticket');
+    const arrived = landed(back.headers.location as string);
+    const ticket = arrived.get('ticket');
     expect(ticket).toBeTruthy();
+    /**
+     * The state rides back WITH the ticket, and that is what lets the app
+     * prove the link belongs to the sign-in it started. Without it the app
+     * redeemed any forwarded `playerone://signed-in?ticket=…` — login-CSRF,
+     * which both audits of `4a32929` found. Safe to echo because the UPDATE
+     * above already spent it.
+     */
+    expect(arrived.get('state')).toBe(state);
 
     // The exchange sent the code, the verifier and the secret in its header.
     const token = zalo.calls[0]!;

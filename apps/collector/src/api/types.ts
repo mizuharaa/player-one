@@ -295,11 +295,18 @@ export interface CollectorApi extends DeliveryApi {
   /**
    * APP-01. Trade the deep link's one-time ticket for the token, and keep it.
    *
+   * `state` is the value the deep link carried beside the ticket, and it is
+   * compared against the one `startZaloSignIn` stored before the browser
+   * opened. A mismatch throws `ApiError('zalo_state_unknown')` and nothing is
+   * sent: without that comparison the app redeemed any forwarded
+   * `playerone://signed-in?ticket=…`, which would sign the collector into
+   * whichever account the forger held.
+   *
    * Throws `ApiError('zalo_ticket_spent')` for a ticket that was never issued,
    * one that has expired and one already used — one refusal, because
    * `POST /auth/collector/ticket` answers one 401 for all three.
    */
-  signInWithTicket(ticket: string): Promise<void>;
+  signInWithTicket(ticket: string, state: string): Promise<void>;
   /**
    * NFR-03/NFR-04. Cold start: is there a stored token, and does it still work?
    *
