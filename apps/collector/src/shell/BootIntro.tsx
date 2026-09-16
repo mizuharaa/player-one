@@ -9,7 +9,7 @@ const Ring = Animated.createAnimatedComponent(Circle);
 const FilledRing = Animated.createAnimatedComponent(Path);
 const ease = Easing.bezier(.22, 1, .36, 1);
 let seen = false;
-/** Olus timing overlaps the text reveal and wipe to keep the hard 2.6s deadline. */
+/** Hold the fully revealed One for 300ms before the plate rises. */
 export function BootIntro({ onDone }: { onDone: () => void }) {
   const { width, height } = useWindowDimensions();
   const done = useRef(onDone); done.current = onDone;
@@ -20,7 +20,7 @@ export function BootIntro({ onDone }: { onDone: () => void }) {
     let active = true;
     const finish = () => { if (active) { active = false; seen = true; done.current(); } };
     if (seen) { finish(); return; }
-    const timeout = setTimeout(finish, 2600);
+    const timeout = setTimeout(finish, 3300);
     const state = AppState.addEventListener('change', value => { if (value !== 'active') finish(); });
     const reduce = AccessibilityInfo.addEventListener('reduceMotionChanged', value => { if (value) finish(); });
     const power = Platform.OS === 'web' ? null : addLowPowerModeListener(value => { if (value.lowPowerMode) finish(); });
@@ -31,9 +31,9 @@ export function BootIntro({ onDone }: { onDone: () => void }) {
       fill.value = withDelay(850, withTiming(1, { duration: 350 }));
       reveal.value = withDelay(900, withTiming(1, { duration: 500, easing: ease }));
       centre.value = withDelay(900, withSpring(-62, { damping: 18 }));
-      plate.value = withDelay(1050, withTiming(1, { duration: 350, easing: ease }));
-      wipe.value = withDelay(1800, withTiming(1, { duration: 800, easing: Easing.inOut(Easing.exp) }));
-      dock.value = withDelay(1800, withTiming(1, { duration: 800, easing: Easing.inOut(Easing.exp) }));
+      plate.value = withDelay(1700, withTiming(1, { duration: 350, easing: ease }));
+      wipe.value = withDelay(2450, withTiming(1, { duration: 800, easing: Easing.inOut(Easing.exp) }));
+      dock.value = withDelay(2450, withTiming(1, { duration: 800, easing: Easing.inOut(Easing.exp) }));
     }).catch(finish);
     const measure = setTimeout(() => {
       if (brandFrame) { targetX.value = brandFrame.x + brandFrame.width / 2; targetY.value = brandFrame.y + brandFrame.height / 2; }
@@ -66,11 +66,11 @@ export function BootChrome({ children, step = 0 }: { children: ReactNode; step?:
     if (seen) { progress.value = 1; return; }
     let active = true;
     const finish = () => { active = false; progress.value = 1; };
-    const deadline = setTimeout(finish, 2600);
+    const deadline = setTimeout(finish, 3300);
     const state = AppState.addEventListener('change', value => { if (value !== 'active') finish(); });
     const reducedChange = AccessibilityInfo.addEventListener('reduceMotionChanged', value => { if (value) finish(); });
     void Promise.all([AccessibilityInfo.isReduceMotionEnabled(), isLowPowerModeEnabledAsync()]).then(([reduced, lowPower]) => {
-      if (active) progress.value = reduced || lowPower || AppState.currentState !== 'active' ? 1 : withDelay(1850 + step * 50, withTiming(1, { duration: 250, easing: ease }));
+      if (active) progress.value = reduced || lowPower || AppState.currentState !== 'active' ? 1 : withDelay(2500 + step * 50, withTiming(1, { duration: 250, easing: ease }));
     }).catch(() => { if (active) progress.value = 1; });
     return () => { active = false; clearTimeout(deadline); state.remove(); reducedChange?.remove(); };
   }, []);

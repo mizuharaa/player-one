@@ -20,7 +20,7 @@ try {
       await page.screenshot({ path: `${out}/${width}-${screen}-loading.png`, fullPage: true }); count++;
     }
     await page.close();
-    for (const [beat, time] of [['ring',600], ['one',1300], ['plate',1700], ['wipe',2250]]) {
+    for (const [beat, time] of [['ring',600], ['one',1500], ['plate',2200], ['wipe',2900]]) {
       const intro = await browser.newPage({ viewport: { width, height: 932 }, reducedMotion: 'no-preference' });
       intro.on('pageerror', error => errors.push(error.message));
       await intro.goto('http://127.0.0.1:5177/?screen=home&ready=1&intro=1&lang=vi');
