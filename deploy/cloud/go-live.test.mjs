@@ -79,6 +79,20 @@ test('passes the Zalo app through to provision.sh, and masks its secret like the
   assert.match(out, /--zalo-app-secret \*\*\*/);
 });
 
+test('passes the demo bypass key through to provision.sh, and masks it', () => {
+  // Absent, nothing is added: the demonstration door does not exist on a
+  // deployment nobody asked for it on.
+  assert.doesNotMatch(dryRun(['203.0.113.7']), /--demo-bypass-key/);
+
+  const key = 'bypass-key-never-printed-and-long-enough-xxxxxxxx';
+  const out = dryRun(['203.0.113.7', '--demo-bypass-key', key]);
+  // It is a credential — one string trades for a collector session — so it
+  // reaches the VM inside the stdin script and is masked wherever the dry run
+  // would otherwise show it, exactly like the storage and Zalo secrets.
+  assert.doesNotMatch(out, new RegExp(key));
+  assert.match(out, /--demo-bypass-key \*\*\*/);
+});
+
 test('the bundle it ships clones into a checkout provision.sh can run from', () => {
   // The only step that runs for real here: everything after it needs the VM.
   const scratch = mkdtempSync(join(tmpdir(), 'playerone-go-live-bundle-'));

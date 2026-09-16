@@ -113,6 +113,17 @@ eSMS brandname exists (5–10 business days, business licence required — the
 steps are in `docs/sign-in-channels.md`); with no channel named, code delivery
 stays exactly as it is today.
 
+**The demo bypass, for the demonstration only.** `--demo-bypass-key <key>` on
+either script sets `PLAYERONE_DEMO_BYPASS_KEY`, and then
+`POST /auth/collector/demo` trades that one key for the seeded demo collector's
+ordinary session — which is how the claim, session, ingestion and upload
+pipelines are shown when no sign-in channel delivers a code. Generate the key
+at deploy time with `openssl rand -base64 48`; it is a credential, so it
+travels in the stdin script like the storage secret and `--dry-run` masks it,
+and it is in no file in this repository. Omit the flag and the route answers 404
+for every caller; remove the line from `cloud.env` when the demonstration is
+over.
+
 Nothing here has been exercised against a live Zalo app. The request shapes are
 fixture-tested; whether Zalo accepts the registered URL is the first thing to
 check on the real domain.

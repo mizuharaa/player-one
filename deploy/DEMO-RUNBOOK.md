@@ -744,6 +744,34 @@ demo-ready fallback:
 - [ ] **5. One uninterrupted rehearsal** of the centre-PC variant, start to
       finish, no fixes mid-run. Rehearsed on ______ by ______: PASS / FAIL
 
+## Fallback B0 — sign-in delivery fails: the demo bypass
+
+Triggered by: the phone gets no code. ZNS is not issued, the eSMS brandname is
+still in approval, and Zalo Login has never been exercised against a live app —
+so on the day this is the likeliest single failure, and it happens before any of
+the four pipelines is on screen.
+
+The way through is `POST /auth/collector/demo`, gated on one key. On the phone:
+**Sign in** (Đăng nhập) → **Chế độ demo** at the foot of the sheet → paste the
+key → **Vào demo**. The app lands on Home as the same seeded demo collector
+`+84900000001` the script uses, so every beat after 0:14 reads exactly as
+rehearsed — the token is the ordinary thirty-day collector token, the claim and
+the session are the seeded ones, and the upload goes through the normal path
+with the normal size and format limits. Nothing is loosened; only the credential
+is skipped.
+
+Set it up with `--demo-bypass-key "$(openssl rand -base64 48)"` on
+`provision.sh` or `go-live.sh` (`docs/cloud-go-live.md`), keep the key off every
+command line you will screenshare, and take the line out of `cloud.env` when the
+demonstration is over. Without the key the route answers 404 and the control does
+nothing; the control itself is absent from a Play build.
+
+**The narrator says:** "no sign-in code channel is live yet, so an administrator
+key is standing in for the code. Everything after this is the platform doing its
+own work — a real collector could not sign in this way, and this key does not
+ship." Do not let it be read as collector self-service sign-in, which is already
+on the "not claimable on Thursday" list.
+
 ## Fallback B — handset upload failure: the debug-delivery page
 
 Triggered by: the phone cannot reach the origin, the upload stalls, or the app

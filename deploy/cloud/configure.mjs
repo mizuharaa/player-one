@@ -9,7 +9,10 @@ export function configuration(args) {
       'storage-key', 'storage-secret', 'quota-bytes', 'output',
       // Sign-in channels, owner's decision 2026-09-16. All optional: omitted,
       // they stay empty in cloud.env and the deployment behaves as it did.
-      'sign-in-channel', 'zalo-app-id', 'zalo-app-secret'].map(k => [k, { type: 'string' }]),
+      'sign-in-channel', 'zalo-app-id', 'zalo-app-secret',
+      // The demo bypass key, owner's request 2026-09-16. Optional; omitted, it
+      // stays empty in cloud.env and POST /auth/collector/demo answers 404.
+      'demo-bypass-key'].map(k => [k, { type: 'string' }]),
     ...['local-db', 'http-local'].map(k => [k, { type: 'boolean' }]),
   ]) });
   for (const k of ['domain', 'acme-email', 'storage-endpoint', 'storage-bucket', 'storage-key', 'storage-secret', 'quota-bytes']) {
@@ -37,6 +40,18 @@ export function configuration(args) {
   // missing; catching it here means finding out before the VM is touched.
   if (Boolean(v['zalo-app-id']) !== Boolean(v['zalo-app-secret'])) {
     throw new Error('Supply both --zalo-app-id and --zalo-app-secret, or neither');
+  }
+  // Its own character class, because `openssl rand -base64 48` emits `+`, `/`
+  // and `=` and the rule above has neither of the last two. Still allowed
+  // characters rather than forbidden ones, and still one line.
+  if (v['demo-bypass-key'] !== undefined && !/^[\w+/=.:@-]*$/.test(v['demo-bypass-key'])) {
+    throw new Error('--demo-bypass-key has characters it should not');
+  }
+  // The same floor packages/api/src/collector.ts enforces at boot (32). Caught
+  // here so a short key is found before the VM is touched, rather than as a
+  // container that will not start.
+  if (v['demo-bypass-key'] && v['demo-bypass-key'].length < 32) {
+    throw new Error('--demo-bypass-key must be at least 32 characters; use `openssl rand -base64 48`');
   }
   const secret = () => randomBytes(32).toString('hex');
   const ownerPassword = secret(), appPassword = secret(), machine = secret(), admin = secret();
@@ -69,6 +84,14 @@ export function configuration(args) {
     PLAYERONE_SIGN_IN_CHANNEL: v['sign-in-channel'] ?? '',
     PLAYERONE_ZALO_APP_ID: v['zalo-app-id'] ?? '',
     PLAYERONE_ZALO_APP_SECRET: v['zalo-app-secret'] ?? '',
+    /**
+     * Empty unless asked for, and empty is what every deployment gets: without
+     * it POST /auth/collector/demo answers 404 and there is no bypass. Owner's
+     * request 2026-09-16, for debugging and the Thursday demonstration only.
+     * The value is generated at deploy time and is in no file in this
+     * repository.
+     */
+    PLAYERONE_DEMO_BYPASS_KEY: v['demo-bypass-key'] ?? '',
   };
 }
 
