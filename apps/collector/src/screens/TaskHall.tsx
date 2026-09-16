@@ -433,12 +433,12 @@ export function TaskHall() {
                 data and says so — and carries its own Retry, because a
                 blocking error is inline next to the control with a way out and
                 never a toast on a timer (§3.4). */}
-            {tasks.isError && tasks.data !== undefined ? (
-              <Failure error={tasks.error}
+            {tasks.isError || profile.isError ? (
+              <Failure error={tasks.error ?? profile.error}
                 text={tt('common.refreshFailed')}
                 tone="pending"
-                busy={tasks.isFetching}
-                onRetry={() => void tasks.refetch()}
+                busy={tasks.isFetching || profile.isFetching}
+                onRetry={() => { void tasks.refetch(); void profile.refetch(); }}
               />
             ) : null}
             {/* The skeleton grid, while the first read is in flight. Two
@@ -466,9 +466,7 @@ export function TaskHall() {
           </View>
         }
         empty={
-          tasks.isPending ? null : tasks.isError ? (
-            <Failure error={tasks.error} text={tt('common.loadFailed')} tone="error" onRetry={() => void tasks.refetch()} busy={tasks.isFetching} />
-          ) : (
+          tasks.isPending || tasks.isError ? null : (
             <EmptyHall
               cleared={filtered}
               onClear={() => {

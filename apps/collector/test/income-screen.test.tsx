@@ -61,3 +61,16 @@ it('shows skeletons instead of a zero while server money is pending', async () =
 
 // Native illustration rendering is covered by the web captures.
 vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));
+
+
+it('shows one recovery panel when every Income query fails', async () => {
+  const api = new MockCollectorApi();
+  for (const method of ['income', 'incomeCycle', 'payout'] as const) vi.spyOn(api, method).mockRejectedValue(new Error('offline'));
+  const host = document.createElement('div'), root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'income' }}><Income /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+    expect(host.querySelectorAll('[aria-live="polite"]')).toHaveLength(1);
+  } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
+});

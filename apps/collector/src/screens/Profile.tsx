@@ -137,8 +137,8 @@ export function Profile() {
         </View>
 
         {profile.isPending ? <Loading /> : null}
-        {profile.isError ? (
-          <Failure error={profile.error} text={tt('common.loadFailed')} tone="error" onRetry={() => void profile.refetch()} busy={profile.isFetching} />
+        {profile.isError || tasks.isError ? (
+          <Failure error={profile.error ?? tasks.error} text={tt('common.loadFailed')} tone="error" onRetry={() => { void profile.refetch(); void tasks.refetch(); }} busy={profile.isFetching || tasks.isFetching} />
         ) : null}
 
         {group('profile.account', [
