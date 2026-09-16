@@ -11,13 +11,14 @@ import { taskImage } from './taskImage.ts';
 
 export function TaskCard({ task, onPress, hint }: { task: Task; onPress: () => void; hint?: string }) {
   const theme = useTheme(), tt = useT(), c = theme.collector;
-  const badge = task.type === 'office' ? 'scenario.office' : task.type === 'shop' ? 'scenario.shop' : task.type === 'warehouse' ? 'taskCard.warehouse' : 'taskCard.default';
+  const type = task.scenario ?? task.type;
+  const badge = type === 'home' || type === 'kitchen' ? 'taskCard.home' : type === 'office' ? 'scenario.office' : type === 'shop' ? 'scenario.shop' : type === 'warehouse' ? 'taskCard.warehouse' : 'taskCard.default';
   return <PhantomPressable pressedScale={.98} accessibilityRole="button" accessibilityLabel={task.title}
     accessibilityHint={hint ?? tt('explore.openTask')} onPress={onPress}
     style={{ ...paperCard, overflow: 'hidden' }}>
     {({ pressed }) => <>
       <View style={{ aspectRatio: 4 / 3, borderRadius: 16, overflow: 'hidden' }}>
-        <Image source={taskImage(task.type) as unknown as ImageSource} contentFit="cover" style={{ width: '100%', height: '100%' }} accessible={false} />
+        <Image source={taskImage(task) as unknown as ImageSource} contentFit="cover" style={{ width: '100%', height: '100%' }} accessible={false} />
         <View style={{ position: 'absolute', top: 12, left: 12, maxWidth: '85%', backgroundColor: '#F6F2EAF2', borderRadius: 24, paddingHorizontal: 12, paddingVertical: 6 }}>
           <Text style={{ ...c.type.caption, color: c.ink, fontFamily: face(theme), fontWeight: '600' }}>{tt(badge)}</Text>
         </View>

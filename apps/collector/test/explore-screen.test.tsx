@@ -390,5 +390,5 @@ it('renders a seeded task title, exact price and type badge in the shared card',
   await act(async () => root.render(<ThemeProvider><LocaleProvider><TaskCard task={seed} onPress={() => {}} /></LocaleProvider></ThemeProvider>));
   expect(page()).toContain('Office task');
   expect(page()).toContain(`${vnd('1234.5678')} ${m['hall.perMinute']}`);
-  expect(page()).toContain(m['scenario.office']);
+  expect(page()).toContain(m['taskCard.home']);
 });

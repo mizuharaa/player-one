@@ -220,7 +220,7 @@ export function TaskDetail() {
             // `assets.d.ts` types a bundled import as React Native's source —
             // a module number under Metro, a URL string under Vite — and
             // `expo-image` takes both. The cast is that one fact.
-            source={taskImage(data.type) as unknown as ImageSource}
+            source={taskImage(data) as unknown as ImageSource}
             contentFit="cover"
             style={{ width: '100%', height: '100%' }}
             accessible={false}
