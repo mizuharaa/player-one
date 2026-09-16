@@ -156,6 +156,22 @@ const app = buildApi({
   // reads it; `scripts/seed-demo.mjs` reads it too, which is the point of it.
   demoPhone: env['PLAYERONE_DEMO_PHONE'],
   /**
+   * The demo bypass key, owner's request of 2026-09-16 — debugging and the
+   * Thursday demonstration only. Unset, `POST /auth/collector/demo` answers
+   * 404 for every caller and this server has no bypass; a value shorter than
+   * `DEMO_BYPASS_MIN_KEY` refuses to start rather than running weakly.
+   *
+   * `||` and not `??`, for the reason `zaloLoginFromEnv` writes out:
+   * `deploy/cloud/cloud.env.example` ships `PLAYERONE_DEMO_BYPASS_KEY=` with no
+   * value, so every cloud deployment hands this an EMPTY STRING rather than
+   * `undefined` — and an empty string must mean "no bypass", not "a key of
+   * length zero", which the length check would then refuse to boot on.
+   *
+   * The key itself is generated at deploy time (`openssl rand -base64 48`) and
+   * exists nowhere in this repository.
+   */
+  demoBypassKey: env['PLAYERONE_DEMO_BYPASS_KEY'] || undefined,
+  /**
    * Zalo Login (OAuth v4), from PLAYERONE_ZALO_APP_ID, PLAYERONE_ZALO_APP_SECRET
    * and PLAYERONE_PUBLIC_ORIGIN (which falls back to PLAYERONE_PUBLIC_URL).
    * Undefined when none of them is set, and then the three Zalo routes answer

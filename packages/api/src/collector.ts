@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from 'node:crypto';
+import { randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -399,6 +399,61 @@ async function zaloCollector(db: Db, identity: ZaloIdentity): Promise<CollectorC
 const CREDENTIALS = { error: 'credentials', reason: 'credentials' };
 
 /**
+ * The demo bypass. Owner's request, 2026-09-16, and it is a debugging door
+ * rather than a product feature.
+ *
+ * The Thursday demonstration has to show the four pipelines — claim, session,
+ * ingestion, upload — and none of the three sign-in channels can be relied on
+ * to deliver on the day: VNG's ZNS Official Account does not exist, the eSMS
+ * brandname is still in approval, and Zalo Login has never been exercised
+ * against a live app. So there is one more way in, it is gated on a key the
+ * owner generates at deploy time, and it signs in as **the collector the
+ * demonstration already uses** rather than as a new kind of session.
+ *
+ * ## What it deliberately is NOT
+ *
+ * It is not a second upload path and it loosens no limit. The token it issues
+ * is the ordinary thirty-day collector token, so `/api/me/uploads` applies the
+ * same size, format and basename rules it applies to everybody, and
+ * `task_claims_guard` still decides whether that collector may hold work. The
+ * bypass skips the *credential*, and nothing else: an unqualified collector
+ * reached this way would still be refused work by name.
+ *
+ * It is also not a mode. There is no `PLAYERONE_DEMO_MODE`; there is one
+ * variable holding one secret, and a deployment that does not set it does not
+ * have this route at all — the 404 below is indistinguishable from a build
+ * without the code in it.
+ *
+ * ## Which collector, and why it is looked up rather than named
+ *
+ * `scripts/seed-demo.mjs` already creates exactly the collector this needs and
+ * marks it with this reference: qualified, exam passed, six agreements
+ * accepted, a device bound, one live claim, and `seed-demo-work.mjs` hangs a
+ * collection session and episodes off it. So the route reads that row instead
+ * of a second seeded identity — a `demo-bypass` collector would be a second
+ * thing to keep onboarded, and the first demonstration where the two drifted
+ * would be the one in front of the room.
+ *
+ * `collectors_external_ref_key` is unique, so this is one row or none. None is
+ * a 503 and not a 404: by then the key has already been checked, so saying
+ * "the feature is on and nobody seeded the demo" tells the operator the one
+ * thing they can act on and tells a stranger nothing.
+ */
+export const DEMO_BYPASS_COLLECTOR_REF = 'demo-collector';
+
+/**
+ * How short a bypass key may not be. 32 characters, because this key is the
+ * *only* thing between an unauthenticated caller and a signed-in collector —
+ * there is no second factor, no code and no rate-limited six digits behind it.
+ * `openssl rand -base64 48` gives 64; the floor is what stops a deployment
+ * being gated on a word somebody typed.
+ *
+ * Enforced in `buildApi`, so an embedded caller cannot assemble the weak
+ * combination either, and a server handed a short one refuses to start.
+ */
+export const DEMO_BYPASS_MIN_KEY = 32;
+
+/**
  * A named refusal, in the shape the app's HTTP client already reads.
  *
  * `reason` as well as `error` because that is what `CREDENTIALS` does and the
@@ -424,6 +479,13 @@ export function registerCollectorAuth(
      * here — see "Demo sign-in" in `docs/RUNNING.md`.
      */
     demoPhone?: string;
+    /**
+     * The demo bypass key. Absent, `POST /auth/collector/demo` answers 404 for
+     * every caller and this deployment has no bypass. See the block above
+     * `DEMO_BYPASS_COLLECTOR_REF`; `bin/serve.ts` reads
+     * `PLAYERONE_DEMO_BYPASS_KEY`.
+     */
+    demoBypassKey?: string;
     /**
      * Zalo Login (OAuth v4), owner's decision of 2026-09-16. Absent, the three
      * routes below answer 503 `zalo_not_configured` for every caller — the same
@@ -704,6 +766,83 @@ export function registerCollectorAuth(
      * the token rather than off this response.
      */
     return { token: signToken(options.tokenSecret, claims) };
+  });
+
+  /**
+   * The demo bypass. Owner's request, 2026-09-16, for debugging and the
+   * Thursday demonstration only. Argued at `DEMO_BYPASS_COLLECTOR_REF`.
+   *
+   * ## What each answer says, and what none of them says
+   *
+   * 404 when this deployment holds no key, which is every deployment that was
+   * not deliberately given one. Not 503 like the Zalo routes: those are a
+   * button the app hides on a named refusal, and this is a door that should
+   * not be discoverable at all — a 404 is what a caller gets from a build
+   * with none of this code in it.
+   *
+   * 401 for a wrong key, a missing key and a key of the wrong shape alike.
+   * There is no 400 here on purpose: a 400 for a malformed body would answer
+   * "the feature is on" to somebody who never had the key.
+   *
+   * ## Why there is no `constantLatency`
+   *
+   * A key is 32+ characters of the owner's own random bytes, so there is no
+   * enrolment oracle to hide and nothing a timing difference could narrow
+   * down. What the comparison still must not leak is *how much* of the key
+   * was right, which is what `timingSafeEqual` over two fixed-length digests
+   * is for — digests rather than the strings themselves so that a key of the
+   * wrong length compares in constant time instead of throwing.
+   *
+   * `ticketDigest` is reused rather than reimplemented: it is sha256-to-hex of
+   * a string, which is exactly this, and a second copy of that one line is a
+   * second place for it to be wrong.
+   */
+  app.post('/auth/collector/demo', async (req, reply) => {
+    const key = options.demoBypassKey;
+    if (key === undefined) return reply.code(404).send({ error: 'not found' });
+
+    const wait = addressBudget(req.ip);
+    if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
+
+    const offered = (req.body ?? {}) as Record<string, unknown>;
+    const presented = typeof offered['key'] === 'string' ? offered['key'] : '';
+    const same = timingSafeEqual(
+      Buffer.from(ticketDigest(presented), 'hex'),
+      Buffer.from(ticketDigest(key), 'hex'),
+    );
+    if (!same) return reply.code(401).send(CREDENTIALS);
+
+    const [collector] = await db
+      .select({ id: schema.collectors.id, epoch: schema.collectors.tokenEpoch })
+      .from(schema.collectors)
+      .where(eq(schema.collectors.externalRef, DEMO_BYPASS_COLLECTOR_REF));
+    if (collector === undefined) {
+      return reply.code(503).send({
+        error: 'demo_collector_absent',
+        reason: 'demo_collector_absent',
+        constraint: 'demo_collector_absent',
+      });
+    }
+
+    /**
+     * PLT-07, and the same row every other sign-in writes — `collector.login`
+     * against `collectors`, which is the shape `audit_events_attributed_check`
+     * already holds. `source` names the door, because an auditor asking "how
+     * did this collector sign in on Thursday" must be able to tell a bypass
+     * from a collector who presented a credential.
+     */
+    await auditLogin(db, 'collector.login', 'collectors', collector.id, {
+      collectorId: collector.id,
+      source: 'demo_bypass',
+    });
+    options.limiter.succeeded(req.ip, []);
+    return {
+      token: signToken(options.tokenSecret, {
+        kind: 'collector',
+        collectorId: collector.id,
+        epoch: collector.epoch,
+      }),
+    };
   });
 
   /* ------------------------------------------------------------------ *
