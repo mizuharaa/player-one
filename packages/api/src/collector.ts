@@ -614,7 +614,10 @@ export function registerCollectorAuth(
    * and unlike `deliverAndRecord`: nothing here has answered the caller yet, so
    * a failure to write is a 500 rather than a silently missing row.
    */
-  const auditRefusal = (source: string, outcome: ZaloLoginRefusal | 'rate_limited'): Promise<void> =>
+  const auditRefusal = (
+    source: string,
+    outcome: ZaloLoginRefusal | 'rate_limited' | 'credentials' | 'demo_collector_absent',
+  ): Promise<void> =>
     auditLogin(db, 'collector.login_failed', 'collectors', source, { source, outcome });
 
   /**
@@ -934,13 +937,39 @@ export function registerCollectorAuth(
       Buffer.from(ticketDigest(presented), 'hex'),
       Buffer.from(ticketDigest(key), 'hex'),
     );
-    if (!same) return reply.code(401).send(CREDENTIALS);
+    /**
+     * A wrong key leaves a row, under the address that offered it.
+     *
+     * It used to return 401 and write nothing, so somebody probing this door
+     * below the limiter's threshold — 30 attempts per five minutes is plenty
+     * of room — left no trace at all, and the only evidence of an attack was
+     * the rate-limit row that a patient attacker never triggers. That is the
+     * same gap `ratelimit.ts` says the phone routes' `login_failed` row exists
+     * to close, and audit 3 of `3f9bb17` found it open here.
+     *
+     * `credentials`, the same outcome `verify` writes, and filed under the
+     * source address because there is nobody to name: the caller offered a key
+     * and no identity. **The key is never written, and neither is any part of
+     * it** — not its length, not a prefix, not a digest. A trail an attacker
+     * can read their own progress out of is a way in, not a control.
+     */
+    if (!same) {
+      await auditRefusal(req.ip, 'credentials');
+      return reply.code(401).send(CREDENTIALS);
+    }
 
     const [collector] = await db
       .select({ id: schema.collectors.id, epoch: schema.collectors.tokenEpoch })
       .from(schema.collectors)
       .where(eq(schema.collectors.externalRef, DEMO_BYPASS_COLLECTOR_REF));
     if (collector === undefined) {
+      /**
+       * The key was RIGHT and the deployment has no demo collector. That is
+       * the more alarming of the two refusals — somebody holds a live bypass
+       * key and the deployment it belongs to is misconfigured — so it is
+       * recorded rather than answered and forgotten.
+       */
+      await auditRefusal(req.ip, 'demo_collector_absent');
       return reply.code(503).send({
         error: 'demo_collector_absent',
         reason: 'demo_collector_absent',

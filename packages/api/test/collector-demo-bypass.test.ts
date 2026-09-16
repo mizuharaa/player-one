@@ -243,6 +243,78 @@ describe.skipIf(!hasDb())('POST /auth/collector/demo', () => {
   });
 
   /**
+   * A wrong key leaves a trace, and the trace carries no piece of the key.
+   *
+   * Audit 3 of `3f9bb17` found the 401 returning with no audit row at all, so
+   * somebody probing this door below the limiter's threshold — thirty per five
+   * minutes is a lot of room — left nothing behind, and the only evidence of
+   * an attack was the rate-limit row a patient attacker never triggers.
+   *
+   * Both halves are asserted, because the first without the second would be a
+   * trail an attacker can read their own progress out of.
+   */
+  it('records exactly one row for a refused key, and no fragment of the key', async () => {
+    await seed();
+    const app = await api(KEY);
+    /** Distinctive, so a fragment of it in the table cannot be a coincidence. */
+    const offered = 'Wr0ngKeyZzQq' + 'x'.repeat(40);
+    const res = await post(app, { key: offered });
+    expect(res.statusCode, res.body).toBe(401);
+    await app.close();
+
+    const d = await db();
+    const rows = await d.execute(sql`
+      select action, actor_role, target_table, target_id, after
+        from audit_events order by occurred_at`);
+    // Exactly one, and it is the failed-sign-in row the phone routes write.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'collector.login_failed',
+      actor_role: 'collector',
+      target_table: 'collectors',
+    });
+    // Filed under the source address, because the caller named no identity.
+    const after = rows[0]!['after'] as { source: string; outcome: string };
+    expect(after.outcome).toBe('credentials');
+    expect(after.source).toBeTruthy();
+    expect(rows[0]!['target_id']).toBe(after.source);
+
+    /**
+     * Not the key, not a prefix of it, not its length, not a digest. Every
+     * eight-character window of what was offered is searched for, so a partial
+     * write would fail this rather than only a whole one.
+     */
+    const text = JSON.stringify(rows);
+    expect(text).not.toContain(offered);
+    for (let at = 0; at + 8 <= offered.length; at += 1) {
+      expect(text, `audit_events carries offered[${at}..${at + 8}]`).not.toContain(
+        offered.slice(at, at + 8),
+      );
+    }
+    expect(text).not.toContain(String(offered.length));
+  });
+
+  /**
+   * The key was RIGHT and the deployment has no demo collector — the more
+   * alarming of the two refusals, because somebody holds a live bypass key and
+   * the deployment it belongs to is misconfigured. It is recorded too.
+   */
+  it('records a correct key that found no demo collector', async () => {
+    const d = await db();
+    await d.execute(sql`
+      insert into collectors (id, external_ref, status, phone)
+      values (${ids.other}, 'col-other', 'qualified', '+84900000002')`);
+    const app = await api(KEY);
+    expect((await post(app, { key: KEY })).statusCode).toBe(503);
+    await app.close();
+
+    const rows = await d.execute(sql`select after from audit_events`);
+    expect(rows).toHaveLength(1);
+    expect((rows[0]!['after'] as { outcome: string }).outcome).toBe('demo_collector_absent');
+    expect(JSON.stringify(rows)).not.toContain(KEY);
+  });
+
+  /**
    * The bypass is one door into the ordinary session, so the ordinary limiter
    * counts it. Thirty attempts per address is the source budget; what matters
    * here is that a burst of wrong keys is refused rather than checked for ever.

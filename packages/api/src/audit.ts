@@ -187,7 +187,7 @@ export async function auditLogin(
      * into `credentials` would leave the trail saying only that somebody,
      * somewhere, did not get in.
      */
-    outcome?: 'credentials' | 'rate_limited' | ZaloLoginRefusal;
+    outcome?: 'credentials' | 'rate_limited' | 'demo_collector_absent' | ZaloLoginRefusal;
   },
 ): Promise<void> {
   await db.insert(schema.auditEvents).values({
