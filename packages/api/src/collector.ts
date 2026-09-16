@@ -5,7 +5,9 @@ import type { FastifyInstance } from 'fastify';
 import { schema, type Db } from '@playerone/store';
 import { auditLogin, mutate } from './audit.ts';
 import { hashCredential, signToken, verifyCredential, type CollectorClaims } from './credentials.ts';
+import type { EngineeringCapabilities } from './engineering.ts';
 import { rateLimited, signInAttempt, type SignInLimiter } from './ratelimit.ts';
+import { SmsDeliveryError, type SmsRefusal } from './sms.ts';
 import {
   APP_DEEP_LINK,
   codeChallengeFor,
@@ -125,6 +127,20 @@ const newCode = (): string => String(randomInt(0, 1_000_000)).padStart(6, '0');
 export type SendSignInCode = (phone: string, code: string) => Promise<void>;
 
 /**
+ * Which channel a deployment is actually sending on, for the audit row.
+ *
+ * The same union `engineering.ts` reports as `signInDeliveryMode`, reused
+ * rather than declared a second time: `bin/serve.ts` already computes it from
+ * `PLAYERONE_SIGN_IN_CHANNEL`, and two values for one fact would be two values
+ * to disagree. `unknown` is what an embedded caller that injects a sender
+ * without naming it gets, and writing that down is more honest than guessing.
+ */
+export type SignInDeliveryChannel = EngineeringCapabilities['signInDeliveryMode'];
+
+/** What `collector.sign_in_code` records: sent, or the named refusal from either adapter. */
+export type DeliveryOutcome = 'sent' | ZnsRefusal | SmsRefusal;
+
+/**
  * Deliver the code, then record what happened. Runs after the reply.
  *
  * ## Why this is audited at all
@@ -159,21 +175,41 @@ export type SendSignInCode = (phone: string, code: string) => Promise<void>;
 function deliverAndRecord(
   db: Db,
   send: SendSignInCode,
+  channel: SignInDeliveryChannel,
   collector: { id: string; epoch: number },
   phone: string,
   code: string,
 ): void {
   void (async () => {
-    let outcome: 'sent' | ZnsRefusal = 'sent';
+    let outcome: DeliveryOutcome = 'sent';
     try {
       await send(phone, code);
     } catch (err) {
       /**
+       * Both adapters, because there are two now.
+       *
+       * `SmsDeliveryError` is a different class from `ZnsDeliveryError`, so
+       * before this branch existed every SMS failure fell through to
+       * `zns_unreachable`: all six named SMS refusals collapsed into one ZNS
+       * name, and into a *temporary* one. The three that need a human —
+       * credentials, brandname, template — read to an operator as "ask them to
+       * try again", and the `bo.refused.sms_*` sentences were unreachable from
+       * any code path. The completeness test did not catch it because it
+       * compares the refusal set against the catalogue and never a route.
+       *
        * A sender that throws anything else is a sender we cannot ask what went
-       * wrong. `zns_unreachable` is the honest name for that and it is one of
-       * the temporary ones, so a bug in a sender strands nobody permanently.
+       * wrong, and the honest name for that depends on which channel is
+       * configured: both are temporary, so a bug in a sender strands nobody
+       * permanently either way.
        */
-      outcome = err instanceof ZnsDeliveryError ? err.refusal : 'zns_unreachable';
+      outcome =
+        err instanceof ZnsDeliveryError
+          ? err.refusal
+          : err instanceof SmsDeliveryError
+            ? err.refusal
+            : channel === 'sms'
+              ? 'sms_unreachable'
+              : 'zns_unreachable';
     }
     try {
       await mutate(
@@ -183,7 +219,13 @@ function deliverAndRecord(
           action: 'collector.sign_in_code',
           targetTable: 'collectors',
           targetId: collector.id,
-          after: { channel: 'zns', outcome },
+          /**
+           * The channel that was actually configured, not the literal `'zns'`
+           * this used to write. An operator reading "channel: zns, outcome:
+           * zns_unreachable" for a deployment that has been sending SMS all
+           * week is being told about a system that does not exist.
+           */
+          after: { channel, outcome },
         },
         async () => outcome,
       );
@@ -425,14 +467,28 @@ export function registerCollectorAuth(
      */
     demoPhone?: string;
     /**
-     * Zalo Login (OAuth v4), owner's decision of 2026-09-16. Absent, the three
-     * routes below answer 503 `zalo_not_configured` for every caller — the same
-     * answer, and for the same reason, `request-code` gives a deployment with
-     * no code sender. `bin/serve.ts` reads `zaloLoginFromEnv`.
+     * Which channel `sendSignInCode` actually is, for the audit row it writes.
+     *
+     * The same value `engineering.ts` reports, so the trail and the diagnostic
+     * cannot disagree. Absent, the row says `unknown`, which is what an
+     * embedded caller injecting an unnamed sender honestly is.
+     */
+    signInChannel?: SignInDeliveryChannel;
+    /**
+     * Zalo Login (OAuth v4), owner's decision of 2026-09-16. Absent, the two
+     * routes that need it — start and callback — answer 503
+     * `zalo_not_configured`, the same answer and for the same reason
+     * `request-code` gives a deployment with no code sender. The ticket route
+     * has no config check on purpose: it never talks to Zalo, and on a
+     * deployment with no Zalo app no ticket was ever issued, so its ordinary
+     * 401 is both true and the answer that says less. `bin/serve.ts` reads
+     * `zaloLoginFromEnv`.
      */
     zaloLogin?: ZaloLogin;
   },
 ): void {
+  /** Written into every `collector.sign_in_code` row. See the option above. */
+  const channel: SignInDeliveryChannel = options.signInChannel ?? 'unknown';
   /**
    * The sign-in budget for a route whose credential names nobody.
    *
@@ -581,7 +637,7 @@ export function registerCollectorAuth(
        * visible in how long this reply took, because only an enrolled number
        * ever reaches this line.
        */
-      deliverAndRecord(db, send, collector, phone, code);
+      deliverAndRecord(db, send, channel, collector, phone, code);
       if (options.demoPhone !== undefined && phone === options.demoPhone) demoCode = code;
     });
 

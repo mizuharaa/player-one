@@ -343,7 +343,15 @@ export type ApiOptions = {
    * It is not awaited on the request's clock. See `SendSignInCode`.
    */
   sendSignInCode?: SendSignInCode;
-  /** Diagnostic provenance only; injected senders are unknown unless identified. */
+  /**
+   * Which channel `sendSignInCode` actually is.
+   *
+   * Diagnostic provenance only until 2026-09-16; it is now also the
+   * `channel` written into every `collector.sign_in_code` audit row, so the
+   * engineering page and the trail cannot describe different systems. An
+   * injected sender is `unknown` unless identified, and the row says so
+   * rather than guessing.
+   */
   signInDeliveryMode?: EngineeringCapabilities['signInDeliveryMode'];
   /** One phone number whose sign-in code comes back in the response. See `collector.ts`. */
   demoPhone?: string;
@@ -980,7 +988,16 @@ export function buildApi({
    */
   registerSessionRoutes(app, db, { tokenSecret, secureCookies, limiter });
   /** The collector's phone sign-in. Same limiter, same failed-sign-in rows. */
-  registerCollectorAuth(app, db, { tokenSecret, limiter, sendSignInCode, demoPhone, zaloLogin });
+  registerCollectorAuth(app, db, {
+    tokenSecret,
+    limiter,
+    sendSignInCode,
+    demoPhone,
+    // The same value engineering.ts reports, so the audit row and the
+    // diagnostic cannot say different things about one deployment.
+    signInChannel: signInDeliveryMode,
+    zaloLogin,
+  });
 
   /**
    * Who the caller is. Proves both-tokens and centre scope on its own, with no
