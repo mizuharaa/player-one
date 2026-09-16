@@ -310,11 +310,11 @@ export function Uploads() {
   };
   return <>
     <ListScreen title={tt('uploads.title')} data={visible} keyOf={episode => episode.episodeId}
+      right={<Button label={tt('session.title')} variant="ghost" onPress={() => nav.push({ name: 'sessionReminder' })} />}
       refresh={{ refreshing: episodes.isFetching || income.isFetching, onRefresh: () => { void episodes.refetch(); void income.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.cardGap }}>
         {failed ? <Failure error={failed.error} text={tt(failed.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} onRetry={() => { void episodes.refetch(); void income.refetch(); }} busy={episodes.isFetching || income.isFetching} /> : null}
         <Button label={tt('uploads.deliverTitle')} onPress={() => setOpen(true)} />
-        <Button label={tt('session.title')} variant="secondary" onPress={() => nav.push({ name: 'sessionReminder' })} />
         <Field label={tt('uploads.search')} value={search} onChangeText={setSearch} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: theme.space[2] }}>
           <Chip label={tt('hall.all')} selected={filter === null} onPress={() => setFilter(null)} />
