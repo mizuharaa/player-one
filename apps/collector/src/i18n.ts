@@ -48,6 +48,7 @@ const vi = {
 
   'common.back': 'Quay lại',
   'common.cancel': 'Hủy',
+  'uploads.cancelled': 'Đã hủy tải lên. Bạn có thể tiếp tục sau; tệp gốc vẫn được giữ.',
   'common.loading': 'Đang tải…',
   'common.language': 'English',
   'common.retry': 'Thử lại',
@@ -711,6 +712,7 @@ const en: Record<MessageKey, string> = {
 
   'common.back': 'Back',
   'common.cancel': 'Cancel',
+  'uploads.cancelled': 'Upload cancelled. You can resume later; source files are kept.',
   'common.loading': 'Loading…',
   // The chip names the language it switches TO, in that language: the cycle is
   // vi → en → zh → vi, so English offers Chinese and Chinese offers Vietnamese.
@@ -1329,6 +1331,7 @@ const zh: Record<MessageKey, string> = {
 
   'common.back': '返回',
   'common.cancel': '取消',
+  'uploads.cancelled': '上传已取消。可稍后继续，原始文件仍保留。',
   'common.loading': '加载中…',
   'common.language': 'Tiếng Việt',
   'common.retry': '重试',

@@ -1,5 +1,6 @@
+import { runPhoneDelivery } from '../src/upload/run-phone-delivery.ts';
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { HttpCollectorApi } from '../src/api/http.ts';
 import type { TokenStore } from '../src/api/token-store.ts';
 import { ApiError } from '../src/api/types.ts';
@@ -682,4 +683,34 @@ describe('an ingest the server has not finished', () => {
     expect(calls.filter((c) => c.method === 'GET')).toHaveLength(2);
     expect(peek()).not.toBeNull();
   });
+});
+
+
+it('cancels a stalled part, keeps the batch and resumes the same upload without completing early', async () => {
+  const batch = record([file('camera_01.mp4', 2 * PART)]);
+  const { store, peek } = memoryStore();
+  const { fn, calls } = fakeFetch({
+    'POST /api/me/uploads': { status: 200, body: { upload_id: UPLOAD_ID, state: 'registered', files: [inParts('camera_01.mp4', [1, 2])] } },
+    [`GET /api/me/uploads/${UPLOAD_ID}`]: { status: 200, body: { upload_id: UPLOAD_ID, state: 'registered', files: [inParts('camera_01.mp4', [2])] } },
+    [`POST /api/me/uploads/${UPLOAD_ID}/complete`]: { status: 200, body: { upload_id: UPLOAD_ID, state: 'ingested', episode_id: 'ep-1' } },
+  });
+  const controller = new AbortController();
+  let finishPart!: (status: number) => void;
+  const stalled = vi.fn(() => new Promise<number>(resolve => { finishPart = resolve; }));
+  const pending = runPhoneDelivery({ api: api(fn), store, transport: { putFile: stalled, putRange: stalled } }, batch, controller.signal);
+  const rejected = expect(pending).rejects.toMatchObject({ code: 'upload_cancelled' });
+  await vi.waitFor(() => expect(stalled).toHaveBeenCalledTimes(1));
+  controller.abort(new ApiError('upload_cancelled'));
+  await rejected;
+  finishPart(200);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(stalled).toHaveBeenCalledTimes(1);
+  expect(calls.some(call => call.path.endsWith('/complete'))).toBe(false);
+  expect(peek()).toEqual(batch);
+  const { transport, sent } = fakeTransport();
+  await runPhoneDelivery({ api: api(fn), store, transport }, peek()!, new AbortController().signal, { resume: true });
+  expect(sent).toHaveLength(1);
+  expect(sent[0]?.start).toBe(PART);
+  expect(calls.filter(call => call.path === '/api/me/uploads')).toHaveLength(1);
+  expect(peek()).toBeNull();
 });

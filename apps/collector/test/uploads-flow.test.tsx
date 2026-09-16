@@ -16,7 +16,7 @@ vi.mock('react-native', async () => ({ ...await import('react-native-web'), Moda
 vi.mock('../src/guide/Guide.tsx', () => ({ useGuideTarget: () => undefined }));
 vi.mock('../src/ui.tsx', () => ({
   ListScreen: ({ title, header, empty, refresh }: { title: string; header: ReactNode; empty: ReactNode; refresh?: { onRefresh: () => void } }) => <main><h1>{title}</h1>{header}{empty}{refresh ? <button onClick={refresh.onRefresh}>Refresh</button> : null}</main>,
-  Screen: ({ title, children, footer }: { title: string; children: ReactNode; footer: ReactNode }) => <section><h1>{title}</h1>{children}{footer}</section>,
+  Screen: ({ title, children, footer, onBack, right }: { title: string; children: ReactNode; footer: ReactNode; onBack?: () => void; right?: ReactNode }) => <section><h1>{title}</h1><button onClick={onBack}>Back</button>{right}{children}{footer}</section>,
   Body: ({ children }: { children: ReactNode }) => <p>{children}</p>,
   Title: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
   Card: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -28,7 +28,7 @@ vi.mock('../src/ui.tsx', () => ({
   Button: ({ label, disabled, busy, onPress }: { label: string; disabled?: boolean; busy?: boolean; onPress: () => void }) => <button disabled={disabled || busy} onClick={onPress}>{label}</button>,
   Choice: ({ label, onPress }: { label: string; onPress: () => void }) => <button onClick={onPress}>{label}</button>,
 }));
-vi.mock('@playerone/delivery', () => ({ runDelivery: vi.fn() }));
+vi.mock('@playerone/delivery', async original => ({ ...await original<typeof import('@playerone/delivery')>(), runDelivery: vi.fn() }));
 vi.mock('../src/upload/delivery-native.ts', () => ({
   nativeDeliveryStore: { get: vi.fn(async () => null) }, nativeTransport: {},
   pickSessionDirectory: vi.fn(async () => ({ directoryUri: 'content://session', sessionBasename: 'session_20260914_120000', files: [] })),
@@ -62,6 +62,19 @@ it('requires folder, server session and explicit confirmation; repeated presses 
     await act(async () => { button(MESSAGES.vi['uploads.start']).click(); button(MESSAGES.vi['uploads.start']).click(); });
     await vi.waitFor(() => expect(runDelivery).toHaveBeenCalledTimes(1));
     expect(vi.mocked(runDelivery).mock.calls[0]?.[1].collectionSessionId).toBe('session-a');
+    await vi.waitFor(() => expect(button(MESSAGES.vi['common.cancel'])).toBeDefined());
+    await tap(MESSAGES.vi['common.cancel']);
+    await vi.waitFor(() => expect(button(MESSAGES.vi['common.close']).disabled).toBe(false));
+    await vi.waitFor(() => expect(button(MESSAGES.vi['common.retry'])).toBeDefined());
+    await tap(MESSAGES.vi['common.retry']);
+    await vi.waitFor(() => expect(runDelivery).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(runDelivery).mock.calls[1]?.[1]).toEqual(vi.mocked(runDelivery).mock.calls[0]?.[1]);
+    expect(vi.mocked(runDelivery).mock.calls[1]?.[2]?.resume).toBe(true);
+    await vi.waitFor(() => expect(button(MESSAGES.vi['common.cancel'])).toBeDefined());
+    await tap(MESSAGES.vi['common.cancel']);
+    await vi.waitFor(() => expect(button(MESSAGES.vi['common.close']).disabled).toBe(false));
+    await tap('Back');
+    expect(host.querySelector('section')).toBeNull();
   } finally {
     await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks();
   }
