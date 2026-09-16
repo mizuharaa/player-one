@@ -1,3 +1,4 @@
+import { PhantomPressable as Pressable } from './ui/PhantomPressable.tsx';
 import { useContext, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   AccessibilityInfo,
@@ -9,7 +10,6 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,

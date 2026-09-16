@@ -12,7 +12,7 @@ import {
  * importing it pulls the native modules that screen reaches. Stubbed rather
  * than rendered: this file asserts about the catalogue, not about the UI.
  */
-vi.mock('react-native', () => ({ Text: () => null, View: () => null }));
+vi.mock('react-native', () => ({ Text: () => null, View: () => null, Pressable: () => null }));
 /**
  * `expo-video` reaches `expo-modules-core`, which asks the native runtime for
  * its `EventEmitter` at module load and throws in node. Same reason

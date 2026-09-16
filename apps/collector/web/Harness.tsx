@@ -1,3 +1,4 @@
+import { RouteTransition } from '../src/shell/RouteTransition.tsx';
 import { BootIntro } from '../src/shell/BootIntro.tsx';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { Onboarding } from '../src/screens/Onboarding.tsx';
@@ -61,7 +62,7 @@ function RoutedScreen() {
   const nav = useNav();
   const Screen = SCREENS[nav.route.name];
   const preview = nav.route.name === 'notifications' && new URLSearchParams(window.location.search).get('simulation') === '1';
-  return <View style={{ flex: 1 }}>{preview ? <Notifications previewItems={NOTIFICATION_PREVIEW} /> : <Screen />}{nav.isTabRoot ? <TabBar /> : null}</View>;
+  return <View style={{ flex: 1 }}>{preview ? <Notifications previewItems={NOTIFICATION_PREVIEW} /> : <RouteTransition route={nav.route} isTabRoot={nav.isTabRoot}><Screen /></RouteTransition>}{nav.isTabRoot ? <TabBar /> : null}</View>;
 }
 
 export function Harness() {

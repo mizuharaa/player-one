@@ -1,3 +1,4 @@
+import { RouteTransition } from './shell/RouteTransition.tsx';
 import { sessionEntry, type SessionEntry } from './api/session-entry.ts';
 import { TransportProvider } from './device/transport-context.tsx';
 import { MockDeviceTransport, UnavailableDeviceTransport } from './device/transport.ts';
@@ -93,7 +94,7 @@ function Current() {
   if (nav.route.name === 'home' && guide.offered && intro) return <Onboarding onDone={() => { setIntro(false); guide.decline(); }} />;
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.surface }}>
-      <Screen />
+      <RouteTransition route={nav.route} isTabRoot={nav.isTabRoot}><Screen /></RouteTransition>
       {nav.isTabRoot ? (
         <View
           ref={tabsTarget}
