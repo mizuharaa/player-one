@@ -1309,32 +1309,40 @@ function GatedFilm({
   const player = useVideoPlayer(source, (p) => {
     p.muted = true;
     p.loop = true;
+    p.timeUpdateEventInterval = 1;
     p.play();
   });
   const shown = useRef(new Animated.Value(0)).current;
 
+  const arrived = useRef(false);
+  const arrive = useCallback(() => {
+    if (arrived.current) return;
+    arrived.current = true;
+    Animated.timing(shown, { toValue: 1, duration: fade, useNativeDriver: true }).start();
+  }, [shown, fade]);
   useEffect(() => {
-    let done = false;
-    const arrive = () => {
-      if (done) return;
-      done = true;
-      Animated.timing(shown, { toValue: 1, duration: fade, useNativeDriver: true }).start();
-    };
     const sub = player.addListener('statusChange', ({ status }) => {
-      if (status === 'readyToPlay') arrive();
       if (status === 'error') onFail();
     });
-    if (player.status === 'readyToPlay') arrive();
     if (player.status === 'error') onFail();
-    return () => sub.remove();
-  }, [player, fade, shown, onFail]);
+    let deadline = setTimeout(onFail, 8000);
+    let previous = player.currentTime;
+    const progress = player.addListener('timeUpdate', ({ currentTime }) => {
+      if (!arrived.current || currentTime === previous) return;
+      previous = currentTime;
+      clearTimeout(deadline);
+      deadline = setTimeout(onFail, 8000);
+    });
+    return () => { clearTimeout(deadline); sub.remove(); progress.remove(); };
+  }, [player, onFail]);
 
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, { opacity: shown }]}>
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: shown }]}>
       <VideoView
         player={player}
         contentFit={contentFit}
         nativeControls={false}
+        onFirstFrameRender={arrive}
         accessibilityLabel={label}
         style={StyleSheet.absoluteFill}
       />
@@ -1349,8 +1357,10 @@ export function Film({
   contentFit = 'cover',
   fade,
   active = true,
+  style = StyleSheet.absoluteFill,
 }: {
   active?: boolean;
+  style?: StyleProp<ViewStyle>;
   source: string | number;
   poster: ImageSourcePropType;
   label: string;
@@ -1358,6 +1368,9 @@ export function Film({
   fade: number;
 }) {
   const reduced = useReducedMotion();
+  const tt = useT();
+  const insets = useInsets();
+  const [requested, setRequested] = useState(false);
   const [failed, setFailed] = useState(false);
   const fail = useCallback(() => setFailed(true), []);
   const [lowPower, setLowPower] = useState(true);
@@ -1369,9 +1382,10 @@ export function Film({
     const state = AppState.addEventListener('change', value => setForeground(value === 'active'));
     return () => { mounted = false; power?.remove(); state.remove(); };
   }, []);
-  const live = active && foreground && !reduced && !lowPower && !failed;
+  const live = active && foreground && (requested || (!reduced && !lowPower)) && !failed;
   return (
     <>
+      <View pointerEvents="none" style={style}>
       <Image
         source={poster}
         resizeMode={contentFit}
@@ -1381,6 +1395,12 @@ export function Film({
       />
       {live ? (
         <GatedFilm source={source} label={label} contentFit={contentFit} fade={fade} onFail={fail} />
+      ) : null}
+      </View>
+      {active && foreground && !live ? (
+        <View style={{ position: 'absolute', top: insets.top + 48, right: 16, zIndex: 2 }}>
+          <Button label={tt(failed ? 'landing.retryFilm' : 'landing.playFilm')} onDark onPress={() => { setFailed(false); setRequested(true); }} />
+        </View>
       ) : null}
     </>
   );
