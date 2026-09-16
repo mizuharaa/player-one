@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 
@@ -115,20 +115,56 @@ export function configuration(args) {
   };
 }
 
+/**
+ * Which variables a release needs that an existing cloud.env has never heard of.
+ *
+ * `provision.sh --force` keeps the credentials a deployment is already using
+ * and used to skip this file entirely, so every variable added after the first
+ * provision silently never reached the VM. Measured on 2026-09-16: the demo
+ * bypass key, the log allowlist and the three Zalo values were all absent from
+ * a redeploy of the right revision, and `POST /auth/collector/demo` answered
+ * 404 as though the feature had not shipped.
+ *
+ * Only names that are missing are returned. A variable already in the file is
+ * left exactly as it is, because its value may be a credential this deployment
+ * is running on; changing one is an edit to cloud.env, not a re-provision.
+ */
+export const missingFrom = (existing, env) => {
+  const held = new Set([...existing.matchAll(/^([A-Z_][A-Z0-9_]*)=/gm)].map(m => m[1]));
+  return Object.keys(env).filter(k => !held.has(k));
+};
+
 // Compose single quotes preserve literal dollars and backslashes; never source this as shell code.
 export const dotenv = values => Object.entries(values).map(([k, v]) => `${k}='${v.replaceAll("'", "\\'")}'`).join('\n') + '\n';
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const args = process.argv.slice(2), values = configuration(args);
+    /**
+     * `--merge` is the re-provision path: keep what is there, add what is new.
+     * Without it the write still refuses to touch an existing file (`wx`).
+     */
+    const argv = process.argv.slice(2);
+    const merge = argv.includes('--merge');
+    const args = argv.filter(a => a !== '--merge'), values = configuration(args);
     const output = args.includes('--output') ? args[args.indexOf('--output') + 1] : new URL('cloud.env', import.meta.url);
     const template = readFileSync(new URL('cloud.env.example', import.meta.url), 'utf8');
     const fixed = Object.fromEntries(template.split(/\r?\n/).filter(l => /^[A-Z_]+=/.test(l)).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
     const env = { ...fixed, ...values };
     if (Object.values(env).some(v => v.includes('REPLACE_'))) throw new Error('An unfilled template value remains');
-    writeFileSync(output, dotenv(env), { flag: 'wx', mode: 0o600 });
-    console.log('PASS configuration written; save these credentials (printed only on creation):');
-    for (const k of ['PLAYERONE_TOKEN_SECRET', 'PLAYERONE_MACHINE_SECRET', 'PLAYERONE_APP_PASSWORD', 'POSTGRES_PASSWORD',
-      'PLAYERONE_DEMO_ADMIN_SECRET', 'PLAYERONE_DEMO_FINANCE_SECRET', 'PLAYERONE_DEMO_REVIEWER_SECRET']) console.log(`${k}=${env[k]}`);
+    if (merge && existsSync(output)) {
+      const missing = missingFrom(readFileSync(output, 'utf8'), env);
+      // Names only: a value here could be a credential, and this runs on every redeploy.
+      if (missing.length === 0) console.log('PASS cloud.env already carries every variable this release needs');
+      else {
+        appendFileSync(output, dotenv(Object.fromEntries(missing.map(k => [k, env[k]]))));
+        console.log(`PASS cloud.env gained ${missing.length} variable(s) this release added: ${missing.join(', ')}`);
+        console.log('PASS values already in cloud.env were left as they are; edit the file to change one');
+      }
+    } else {
+      writeFileSync(output, dotenv(env), { flag: 'wx', mode: 0o600 });
+      console.log('PASS configuration written; save these credentials (printed only on creation):');
+      for (const k of ['PLAYERONE_TOKEN_SECRET', 'PLAYERONE_MACHINE_SECRET', 'PLAYERONE_APP_PASSWORD', 'POSTGRES_PASSWORD',
+        'PLAYERONE_DEMO_ADMIN_SECRET', 'PLAYERONE_DEMO_FINANCE_SECRET', 'PLAYERONE_DEMO_REVIEWER_SECRET']) console.log(`${k}=${env[k]}`);
+    }
   } catch (error) { console.error(`FAIL configuration: ${error.message}`); process.exitCode = 1; }
 }

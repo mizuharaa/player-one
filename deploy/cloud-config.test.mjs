@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { configuration, dotenv } from './cloud/configure.mjs';
-import { mkdtempSync, readFileSync, rmSync, rmdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -114,6 +114,47 @@ test('the demo bypass key is optional, floored at 32 characters, and empty by de
   assert.throws(() => configuration([...inputs, '--demo-bypass-key', 'x'.repeat(40) + '\nSTORAGE_KEY=stolen']));
   assert.throws(() => configuration([...inputs, '--demo-bypass-key', 'x'.repeat(40) + "'"]));
 });
+/**
+ * A re-provision keeps the credentials a deployment runs on. Before this test
+ * it also kept the ABSENCE of every variable added since that file was
+ * written: on 2026-09-16 a redeploy of the right revision left
+ * PLAYERONE_DEMO_BYPASS_KEY out entirely and the route answered 404 as though
+ * the feature had never shipped.
+ */
+test('a re-provision adds the variables a release added and touches nothing it already holds', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'playerone-cloud-merge-'));
+  const output = join(directory, 'cloud.env');
+  const key = 'k'.repeat(40);
+  try {
+    // A cloud.env from an older release: these two variables, and nothing else.
+    writeFileSync(output, `PLAYERONE_TOKEN_SECRET='kept-secret'
+PLAYERONE_DEMO_BYPASS_KEY=''
+`);
+    const args = ['deploy/cloud/configure.mjs', ...inputs, '--output', output, '--merge'];
+    const first = spawnSync(process.execPath, [...args, '--demo-bypass-key', key], { encoding: 'utf8' });
+    assert.equal(first.status, 0, first.stderr);
+    const merged = readFileSync(output, 'utf8');
+
+    // What it already held is byte-identical, the credential included.
+    assert.match(merged, /^PLAYERONE_TOKEN_SECRET='kept-secret'$/m);
+    // Held variables are left alone even when a flag would have set one.
+    assert.match(merged, /^PLAYERONE_DEMO_BYPASS_KEY=''$/m);
+    assert.doesNotMatch(merged, new RegExp(key));
+    // And what the release has since added is now there.
+    assert.match(merged, /^POSTGRES_PASSWORD=/m);
+    assert.match(merged, /^PLAYERONE_DEMO_PHONES=/m);
+    assert.match(first.stdout, /cloud\.env gained \d+ variable/);
+    // Names, never values: this runs on every redeploy.
+    assert.doesNotMatch(first.stdout, /kept-secret/);
+
+    // Run it again and there is nothing left to add.
+    const second = spawnSync(process.execPath, args, { encoding: 'utf8' });
+    assert.equal(second.status, 0, second.stderr);
+    assert.match(second.stdout, /already carries every variable/);
+    assert.equal(readFileSync(output, 'utf8'), merged);
+  } finally { rmSync(output, { force: true }); rmdirSync(directory); }
+});
+
 test('CLI refuses a second write and prints secrets only on the first creation', () => {
   const directory = mkdtempSync(join(tmpdir(), 'playerone-cloud-config-'));
   const output = join(directory, 'cloud.env');

@@ -40,6 +40,11 @@ if [[ ! -e $target/deploy/cloud/cloud.env ]]; then
   docker run --rm -v "$target:/kit" -w /kit node:22-bookworm-slim \
     node deploy/cloud/configure.mjs "${args[@]}"
 else
+  # Keep the credentials this deployment runs on, and add any variable the
+  # release has added since it was written. Skipping this is how a redeploy of
+  # the right revision shipped without the demo bypass key on 2026-09-16.
+  docker run --rm -v "$target:/kit" -w /kit node:22-bookworm-slim \
+    node deploy/cloud/configure.mjs --merge "${args[@]}"
   echo 'PASS existing cloud.env retained; no secrets rotated or printed'
 fi
 chmod 600 "$target/deploy/cloud/cloud.env"
