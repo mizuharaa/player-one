@@ -12,7 +12,7 @@ export {
   type HeartbeatApp,
   type HeartbeatConfig,
 } from './heartbeat.ts';
-export { API_REFUSALS, REFUSALS } from './backoffice.ts';
+export { API_REFUSALS, PROSPECT_MUST_BE_EMPTY_IN, REFUSALS } from './backoffice.ts';
 export { COUNTER_REFUSALS } from './counter.ts';
 export {
   COLLECTOR_API_REFUSALS,

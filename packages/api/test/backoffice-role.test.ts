@@ -166,6 +166,15 @@ describe.skipIf(!hasDb())('the back-office administrator role', () => {
         collector_id: ids.collector,
         valid_from: new Date().toISOString(),
       }],
+      /**
+       * Attaching a Zalo account to a collector is shaping who that collector
+       * IS, so it carries the same guard as qualification and not the
+       * finance-or-admin read gate. A clerk who could link would be a clerk
+       * who could point somebody else's Zalo account at a qualified row.
+       */
+      ['collector.zalo_link', 'POST', `/api/collectors/${ids.collector}/zalo-link`, {
+        zalo_id: '9876543210123456789',
+      }],
     ] as const;
 
   it('refuses a counter clerk every administrator action, by name and with the role it needs', async () => {

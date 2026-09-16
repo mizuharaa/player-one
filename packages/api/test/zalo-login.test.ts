@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -6,6 +7,7 @@ import {
   codeChallengeFor,
   SIGN_IN_TTL_MS,
   verifyToken,
+  hashCredential,
   ZALO_AUTHORIZE_PATH,
   ZALO_CALLBACK_PATH,
   ZALO_LOGIN_REFUSALS,
@@ -131,6 +133,47 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
     });
   const exchange = (app: Api, ticket: string) =>
     app.inject({ method: 'POST', url: '/auth/collector/ticket', payload: { ticket } });
+
+  /**
+   * An administrator's POST, both tokens, as `backoffice-role.test.ts` does it.
+   * Seeded here rather than in `seed()` because only the link tests need it.
+   */
+  const admin = async (app: Api, url: string, payload: Record<string, unknown>) => {
+    const d = await db();
+    const centre = randomUUID();
+    const hash = await hashCredential('pw');
+    await d.execute(sql`
+      insert into upload_centres (id, region, name, status)
+        values (${centre}, 'HCM', ${`centre-${centre.slice(0, 8)}`}, 'active')
+      on conflict do nothing`);
+    const machine = `M-${centre.slice(0, 8)}`;
+    const ref = `admin-${centre.slice(0, 8)}`;
+    await d.execute(sql`
+      insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash)
+        values (${randomUUID()}, ${centre}, ${machine}, 'active', ${hash})`);
+    await d.execute(sql`
+      insert into operators (id, upload_centre_id, external_ref, role, credential_hash)
+        values (${randomUUID()}, ${centre}, ${ref}, 'administrator', ${hash})`);
+    const m = await app.inject({
+      method: 'POST',
+      url: '/auth/machine',
+      payload: { machine_identifier: machine, secret: 'pw' },
+    });
+    const o = await app.inject({
+      method: 'POST',
+      url: '/auth/operator',
+      payload: { external_ref: ref, secret: 'pw' },
+    });
+    return app.inject({
+      method: 'POST',
+      url,
+      payload,
+      headers: {
+        'x-machine-token': `Bearer ${m.json().token}`,
+        authorization: `Bearer ${o.json().token}`,
+      },
+    });
+  };
 
   /** The deep link's parameters, so a test reads `ticket` or `error` by name. */
   const landed = (location: string): URLSearchParams => {
@@ -531,6 +574,113 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
     }
     expect(redactQuery('/api/me/profile')).toBe('/api/me/profile');
     expect(redactQuery('/episodes?limit=20')).toBe('/episodes?limit=20');
+  });
+
+  /**
+   * The link route, and the thing it exists to undo.
+   *
+   * Both audits of `4a32929` found this: a collector an operator enrolled at a
+   * centre, who then signs in with Zalo, becomes a SECOND row — a `prospect`
+   * with a Zalo id and no phone, beside their real `qualified` row. Nothing in
+   * the service can connect them, so that person can never claim work while
+   * their real account sits there qualified.
+   *
+   * `POST /api/collectors/:id/zalo-link` is an operator's fix and is
+   * administrator-guarded (`backoffice-role.test.ts` pins the guard). This
+   * proves the end state a collector actually cares about: after the link,
+   * signing in with the same Zalo account lands on the QUALIFIED row.
+   */
+  it('links a Zalo account onto an enrolled collector, consuming the stray prospect', async () => {
+    const d = await db();
+    const app = await api(client(fakeZalo().fetch));
+
+    // The real collector, as BO-03 makes one.
+    const enrolled = randomUUID();
+    await d.execute(sql`
+      insert into collectors (id, external_ref, status, phone, exam_result, exam_decided_at)
+        values (${enrolled}, 'col-enrolled', 'qualified', '+84900000123', 'pass', now())`);
+
+    // They sign in with Zalo, and get a second row: the bug.
+    const first = (await start(app)).json() as { state: string };
+    const back = await callback(app, { code: 'c1', state: first.state });
+    const ticket = landed(back.headers.location as string).get('ticket')!;
+    expect((await exchange(app, ticket)).statusCode).toBe(200);
+    const [stray] = await d.execute<{ id: string; status: string }>(
+      sql`select id, status from collectors where zalo_id = ${ZALO_ID}`,
+    );
+    expect(stray?.id).not.toBe(enrolled);
+    expect(stray?.status).toBe('prospect');
+
+    const linked = await admin(app, `/api/collectors/${enrolled}/zalo-link`, { zalo_id: ZALO_ID });
+    expect(linked.statusCode, linked.body).toBe(200);
+    expect(linked.json().consumed_collector_id).toBe(stray!.id);
+
+    /**
+     * The id is on the qualified row and the stray is suspended, not deleted:
+     * "where did this row go" has to stay answerable.
+     */
+    const [after] = await d.execute<{ id: string; status: string }>(
+      sql`select id, status from collectors where zalo_id = ${ZALO_ID}`,
+    );
+    expect(after?.id).toBe(enrolled);
+    const [consumed] = await d.execute<{ status: string; external_ref: string }>(
+      sql`select status, external_ref from collectors where id = ${stray!.id}`,
+    );
+    expect(consumed?.status).toBe('suspended');
+    expect(consumed?.external_ref).toBeTruthy();
+
+    // PLT-07: an operator did this, and the row names both sides.
+    const [event] = await d.execute<{ after: Record<string, unknown>; actor_role: string }>(
+      sql`select after, actor_role from audit_events where action = 'collector.zalo_link'`,
+    );
+    expect(event?.actor_role).toBe('operator');
+    expect(event?.after['consumed_collector_id']).toBe(stray!.id);
+
+    /**
+     * And the point of all of it: the same Zalo account now signs in as the
+     * qualified collector, so this person can claim work again.
+     */
+    const second = (await start(app)).json() as { state: string };
+    const again = await callback(app, { code: 'c2', state: second.state });
+    const ticket2 = landed(again.headers.location as string).get('ticket')!;
+    const session = await exchange(app, ticket2);
+    expect(session.statusCode, session.body).toBe(200);
+    const claims = verifyToken(SECRET, session.json().token as string) as { collectorId: string };
+    expect(claims.collectorId).toBe(enrolled);
+  });
+
+  it('refuses a link that would move an id off a real collector, or onto a linked one', async () => {
+    const d = await db();
+    const app = await api(client(fakeZalo().fetch));
+    const a = randomUUID();
+    const b = randomUUID();
+    await d.execute(sql`
+      insert into collectors (id, external_ref, status, zalo_id) values
+        (${a}, 'col-a', 'qualified', ${ZALO_ID}),
+        (${b}, 'col-b', 'qualified', null)`);
+
+    // The id belongs to a qualified collector, not a stray prospect. Refusing
+    // is the whole point: this would take somebody's account away.
+    const stolen = await admin(app, `/api/collectors/${b}/zalo-link`, { zalo_id: ZALO_ID });
+    expect(stolen.statusCode, stolen.body).toBe(409);
+    expect(stolen.json().constraint).toBe('collector_zalo_link_not_prospect');
+
+    // And a collector who already has one is refused rather than overwritten.
+    const twice = await admin(app, `/api/collectors/${a}/zalo-link`, { zalo_id: '111111111111' });
+    expect(twice.statusCode, twice.body).toBe(409);
+    expect(twice.json().constraint).toBe('collector_already_zalo_linked');
+
+    // Nothing moved.
+    const [held] = await d.execute<{ id: string }>(
+      sql`select id from collectors where zalo_id = ${ZALO_ID}`,
+    );
+    expect(held?.id).toBe(a);
+
+    // A pasted URL or a trimmed id is a 400, not a row nothing can ever match.
+    for (const bad of ['', 'zalo:123', '12345', 'https://zalo.me/9876543210']) {
+      const res = await admin(app, `/api/collectors/${b}/zalo-link`, { zalo_id: bad });
+      expect(res.statusCode, `${bad}: ${res.body}`).toBe(400);
+    }
   });
 
   it('never puts the app secret, the code or the session token in the redirect', async () => {

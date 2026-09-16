@@ -134,6 +134,50 @@ const CollectorBody = z.object({
   agreements: z.array(Agreement).optional(),
 });
 
+/**
+ * `POST /api/collectors/:id/zalo-link`. One field, and it is Zalo's own `id`
+ * from `graph.zalo.me/v2.0/me` — digits, and long. Bounded and pattern-checked
+ * rather than a bare string, because it goes into a unique index an operator
+ * types into: a pasted URL or a trimmed-off character must be a 400 here and
+ * not a row that can never be matched by a real sign-in.
+ */
+const ZaloLink = z.object({ zalo_id: z.string().regex(/^[0-9]{6,32}$/) }).strict();
+
+/**
+ * Every table that must hold no row for a prospect before its `zalo_id` may be
+ * repointed onto a real collector.
+ *
+ * It is every foreign key into `collectors` with ONE exception, and the
+ * exception is the reason the list is written out rather than inferred here:
+ * `audit_events.collector_id` always has rows for the prospect — its own
+ * `collector.sign_up` and `collector.login` — and it must keep them. The trail
+ * has to go on naming the id that existed; that is what a trail is for.
+ *
+ * Every other reference means somebody's work, agreement, notification or
+ * payout account, and a row carrying any of them is not the empty shell this
+ * route is allowed to consume.
+ *
+ * `backoffice.test.ts` reads `pg_constraint` and fails if this list is not
+ * exactly the discovered set minus that exception, so the check cannot rot
+ * quietly when a table is added. The interpolation is safe because both halves
+ * come from this constant and never from a request; the id is a `uuid` column
+ * value that Postgres itself produced.
+ */
+export const PROSPECT_MUST_BE_EMPTY_IN = [
+  ['bills', 'collector_id'],
+  ['collection_sessions', 'collector_id'],
+  ['collector_agreements', 'collector_id'],
+  ['collector_notifications', 'collector_id'],
+  ['collector_uploads', 'collector_id'],
+  ['commitment_events', 'collector_id'],
+  ['device_assignments', 'collector_id'],
+  ['devices', 'bound_collector_id'],
+  ['handovers', 'collector_id'],
+  ['payout_accounts', 'collector_id'],
+  ['payout_events', 'collector_id'],
+  ['task_claims', 'collector_id'],
+] as const;
+
 const CollectorPatch = z
   .object({
     status: z.enum(['pending', 'qualified', 'suspended']).optional(),
@@ -288,6 +332,18 @@ export const REFUSALS = new Set([
  */
 export const API_REFUSALS = new Set([
   'device_already_bound',
+  /**
+   * `POST /api/collectors/:id/zalo-link`, and the four things it refuses.
+   * None is a constraint: three are facts about rows the operator named, and
+   * the fourth is a safety check on what is attached to the row being
+   * consumed. 0035's `collectors_zalo_id_key` is the only constraint in the
+   * path and it is declared unreachable, because this route reads both sides
+   * under a lock first.
+   */
+  'collector_already_zalo_linked',
+  'collector_zalo_id_taken',
+  'collector_zalo_link_not_prospect',
+  'collector_zalo_link_has_work',
   /*
    * Sent as a 409 by the assignment route, which writes the name itself rather
    * than reading it off a constraint. It was put in `REFUSALS` when the
@@ -942,6 +998,168 @@ export function registerBackOffice(
     if (!attempt.ok) return refused(reply, attempt.constraint);
     if (attempt.value === undefined) return reply.code(404).send({ error: 'no such collector' });
     return reply.send({ id, status: attempt.value.status, exam_result: attempt.value.examResult });
+  });
+
+  /**
+   * BO-03 extended. Attach a Zalo account to a collector who already exists.
+   *
+   * ## The problem this exists for
+   *
+   * Zalo Login does not give us the person's phone number (`zalo-login.ts`),
+   * so a collector who was enrolled at a centre by an operator and then signs
+   * in with Zalo becomes a SECOND row: a `prospect` with a `zalo_id` and no
+   * phone, beside their real `qualified` row with a phone and no `zalo_id`.
+   * Nothing in the service can connect the two — guessing from a display name
+   * would attach one person's earnings to another — so that person is
+   * permanently unable to claim work (`task_claims_onboarding_gate`) while
+   * their real account sits there qualified. Both audits of `4a32929` found it.
+   *
+   * ## Why an operator and not the app
+   *
+   * An in-app "I already have an account" flow would have to prove that
+   * whoever holds this Zalo account also holds that phone number. The only
+   * proof of a phone number this service has is a code sent to it — which is
+   * the channel that does not work, and the entire reason Zalo Login exists.
+   * So in-app linking is either impossible or it links on an unproven claim,
+   * and an unproven claim is account takeover by typing somebody's number.
+   *
+   * An operator at a collection centre has already met the person and checked
+   * them; that is what BO-03 is. The trust exists there and nowhere else yet.
+   * When SMS works an in-app flow becomes possible — prove the number with an
+   * SMS code while holding a live Zalo session, then link — and this route
+   * stays as the operator's way to fix the ones that went wrong.
+   *
+   * ## What it refuses, and why it is a repoint rather than a merge
+   *
+   * Both sides are read `FOR UPDATE` before anything is written, so the unique
+   * index is never the thing that refuses:
+   *
+   *   - the collector already has one -> `collector_already_zalo_linked`
+   *   - the Zalo id is on a row that is not a prospect -> `collector_zalo_link_not_prospect`
+   *   - that prospect has work attached -> `collector_zalo_link_has_work`
+   *   - the id could not be freed under the lock -> `collector_zalo_id_taken`
+   *
+   * A prospect created by a Zalo sign-in is EMPTY by construction: the
+   * onboarding gate refuses it every claim, so it can hold no claims, no
+   * sessions and no bills. That is what makes moving its `zalo_id` onto the
+   * real collector a repoint and not a merge — there is nothing to merge. The
+   * emptiness is nonetheless checked in SQL rather than trusted from the
+   * trigger, so a later change that gave a prospect work cannot make this
+   * route destroy it: it refuses instead.
+   *
+   * The consumed prospect is `suspended` and kept, never deleted. It keeps its
+   * `external_ref`, so "where did this row go" stays answerable, and the audit
+   * row names both ids.
+   */
+  app.post('/api/collectors/:id/zalo-link', admin, async (req, reply) => {
+    const id = pathId(req);
+    if (id === null) return reply.code(400).send({ error: 'invalid id' });
+    const body = ZaloLink.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid body', detail: body.error.issues });
+    const zaloId = body.data.zalo_id;
+
+    /** Filled inside the transaction, so the audit row says what actually moved. */
+    const before: Record<string, unknown> = {};
+    const after: Record<string, unknown> = { zalo_id: zaloId };
+    let problem: string | null = null;
+
+    const attempt = await guarded(() =>
+      mutate(
+        db,
+        actorOf(req),
+        {
+          action: 'collector.zalo_link',
+          targetTable: 'collectors',
+          targetId: id,
+          before,
+          after,
+        },
+        async (tx) => {
+          const [held] = await tx
+            .select()
+            .from(schema.collectors)
+            .where(eq(schema.collectors.id, id))
+            .for('update');
+          if (held === undefined) return undefined;
+          Object.assign(before, { zalo_id: held.zaloId, status: held.status });
+          if (held.zaloId !== null) {
+            problem = 'collector_already_zalo_linked';
+            return undefined;
+          }
+
+          /**
+           * The other side, under the same lock. Read before the update so the
+           * refusal is a sentence rather than a unique-index violation, and so
+           * two operators linking the same id serialise here.
+           */
+          const [other] = await tx
+            .select()
+            .from(schema.collectors)
+            .where(eq(schema.collectors.zaloId, zaloId))
+            .for('update');
+          if (other !== undefined) {
+            if (other.id === id) return held;
+            if (other.status !== 'prospect') {
+              problem = 'collector_zalo_link_not_prospect';
+              return undefined;
+            }
+            /**
+             * Emptiness, checked and not assumed. A prospect cannot claim, so
+             * every one of these is zero today; if a later change ever lets one
+             * hold anything, this refuses rather than quietly suspending a row
+             * with a collector's work on it.
+             *
+             * `PROSPECT_MUST_BE_EMPTY_IN` is every table with a foreign key to
+             * `collectors` except `audit_events`, and
+             * `backoffice.test.ts` DISCOVERS that list from the catalogue
+             * rather than trusting this one — so a table added next month fails
+             * a test instead of escaping the check.
+             */
+            const counts = await tx.execute(sql`
+              select ${sql.raw(
+                PROSPECT_MUST_BE_EMPTY_IN.map(
+                  ([table, column]) =>
+                    `(select count(*) from ${table} where ${column} = '${other.id}')`,
+                ).join(' + '),
+              )}::int as n`);
+            if (((counts[0] as { n: number } | undefined)?.n ?? 0) > 0) {
+              problem = 'collector_zalo_link_has_work';
+              return undefined;
+            }
+            const [freed] = await tx
+              .update(schema.collectors)
+              .set({ zaloId: null, status: 'suspended', updatedAt: new Date() })
+              .where(and(eq(schema.collectors.id, other.id), eq(schema.collectors.zaloId, zaloId)))
+              .returning({ id: schema.collectors.id });
+            if (freed === undefined) {
+              problem = 'collector_zalo_id_taken';
+              return undefined;
+            }
+            after['consumed_collector_id'] = other.id;
+            after['consumed_external_ref'] = other.externalRef;
+          }
+
+          const [row] = await tx
+            .update(schema.collectors)
+            .set({ zaloId, updatedAt: new Date() })
+            .where(and(eq(schema.collectors.id, id), isNull(schema.collectors.zaloId)))
+            .returning();
+          if (row === undefined) {
+            problem = 'collector_already_zalo_linked';
+            return undefined;
+          }
+          return row;
+        },
+      ),
+    );
+    if (!attempt.ok) return refused(reply, attempt.constraint);
+    if (problem !== null) return refused(reply, problem);
+    if (attempt.value === undefined) return reply.code(404).send({ error: 'no such collector' });
+    return reply.send({
+      id,
+      zalo_id: zaloId,
+      consumed_collector_id: (after['consumed_collector_id'] as string | undefined) ?? null,
+    });
   });
 
   // -- devices (BO-04, SEC-04) ----------------------------------------------

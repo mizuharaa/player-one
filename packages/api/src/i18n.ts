@@ -1199,6 +1199,18 @@ const en = {
   'bo.refused.zalo_ticket_spent':
     'This sign-in has already been completed, or it expired before the app collected it. Start the sign-in again from the app.',
 
+  // `POST /api/collectors/:id/zalo-link`, the operator's fix for a collector
+  // who was enrolled at a centre and then signed in with Zalo, becoming a
+  // second row nothing could connect to the first. See backoffice.ts.
+  'bo.refused.collector_already_zalo_linked':
+    'This collector already has a Zalo account attached, so nothing was changed. Detach the existing one first if it is the wrong account.',
+  'bo.refused.collector_zalo_link_not_prospect':
+    'That Zalo account already belongs to an enrolled collector, so it was not moved. Linking it here would take the account away from them — check the Zalo id, and if two records really are the same person, escalate rather than relinking.',
+  'bo.refused.collector_zalo_link_has_work':
+    'The app account for that Zalo id has work, agreements or a payout account on it, so it was not absorbed. It needs a person to look at both records rather than an automatic link.',
+  'bo.refused.collector_zalo_id_taken':
+    'That Zalo account was claimed by another record while this link was being saved. Reload the collector and try again.',
+
   // The three ZNS codes the current (ZBS) table added, and the ones this
   // deployment meets first — the OA wall above all.
   'bo.refused.zns_oa_not_verified':
@@ -2644,6 +2656,17 @@ const zh: Record<MessageKey, string> = {
   'bo.refused.zalo_ticket_spent':
     '这次登录已经完成，或者在应用取回之前就过期了。请在应用里重新开始登录。',
 
+  // `POST /api/collectors/:id/zalo-link`：采集者先在服务点登记、之后又用 Zalo
+  // 登录，于是出现了第二条无法与第一条关联的记录，这是运营人员的修正手段。
+  'bo.refused.collector_already_zalo_linked':
+    '这位采集者已经关联了一个 Zalo 账号，因此没有做任何更改。如果关联的账号不对，请先解除现有关联。',
+  'bo.refused.collector_zalo_link_not_prospect':
+    '该 Zalo 账号已属于一位已登记的采集者，因此没有转移。在这里关联会把账号从对方手中夺走——请核对 Zalo id；如果两条记录确实是同一个人，请上报而不要强行关联。',
+  'bo.refused.collector_zalo_link_has_work':
+    '该 Zalo id 对应的应用账号上已有任务、协议或收款账户，因此没有并入。需要有人同时查看两条记录，而不是自动关联。',
+  'bo.refused.collector_zalo_id_taken':
+    '保存这次关联时，该 Zalo 账号已被另一条记录占用。请重新加载该采集者后再试。',
+
   // 现行 ZBS 错误表新增的三个 ZNS 代码，其中 OA 未认证是首先会遇到的那个。
   'bo.refused.zns_oa_not_verified':
     'Zalo 不允许这个公众号发送消息，因为它未认证或仍在免费套餐。在 VNG 完成公众号认证之前，没有人能通过 Zalo 收到登录验证码。请改用 Zalo 登录，或把发送渠道切换为短信。',
@@ -4025,6 +4048,18 @@ const vi: Record<MessageKey, string> = {
     'Không kết nối được tới Zalo nên chưa ai đăng nhập. Hãy để cộng tác viên thử lại; nếu vẫn vậy thì đường tới Zalo đang mất.',
   'bo.refused.zalo_ticket_spent':
     'Lần đăng nhập này đã xong, hoặc đã hết hạn trước khi ứng dụng lấy được. Hãy mở lại phần đăng nhập trong ứng dụng.',
+
+  // `POST /api/collectors/:id/zalo-link`: cách vận hành viên sửa trường hợp
+  // cộng tác viên đã đăng ký ở điểm thu rồi lại đăng nhập bằng Zalo, tạo ra
+  // một hồ sơ thứ hai mà hệ thống không nối được với hồ sơ đầu.
+  'bo.refused.collector_already_zalo_linked':
+    'Cộng tác viên này đã gắn một tài khoản Zalo nên không có gì thay đổi. Nếu đó là tài khoản sai, hãy bỏ liên kết cũ trước.',
+  'bo.refused.collector_zalo_link_not_prospect':
+    'Tài khoản Zalo đó đã thuộc về một cộng tác viên đã đăng ký nên không được chuyển. Gắn ở đây sẽ lấy tài khoản khỏi người ta — hãy kiểm tra lại Zalo id; nếu hai hồ sơ đúng là một người thì hãy báo lên thay vì tự gắn.',
+  'bo.refused.collector_zalo_link_has_work':
+    'Hồ sơ trong ứng dụng của Zalo id đó đã có nhiệm vụ, thỏa thuận hoặc tài khoản nhận tiền nên không được gộp. Cần người xem cả hai hồ sơ chứ không gắn tự động.',
+  'bo.refused.collector_zalo_id_taken':
+    'Tài khoản Zalo đó vừa bị một hồ sơ khác nhận trong lúc đang lưu liên kết này. Hãy tải lại cộng tác viên rồi thử lại.',
 
   // Ba mã ZNS mới trong bảng ZBS hiện hành; mã OA chưa xác thực là mã sẽ gặp trước nhất.
   'bo.refused.zns_oa_not_verified':
