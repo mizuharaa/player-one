@@ -603,7 +603,7 @@ fixed:
 - **The confirmed total** becomes the new bill's total, not `64.800 ₫`.
 - The **"Approved, awaiting a bill"** row (`32.400 ₫`, below) is absorbed into
   the new bill and becomes the pending-verification state instead — the same
-  wording as the two rows already described as "Needs something from you".
+  wording as the two rows already described as **"Payment setup pending"**.
 - **The transaction list grows** by the newly billed episode(s); it is not a
   fixed count.
 
@@ -630,8 +630,8 @@ fixture may seed it.
 **Optional verified sandbox variant.** Use this only after Fable has a real sandbox response and a finance-route declaration persisted with a matching nonempty provider name (and usable wallet ID where applicable). Refresh the console and phone: the destination says Verified with its Simulation label; its notification must also say Simulation. Read it as "destination verified in the sandbox; payment still awaiting." A successful wallet lookup that returns only an ID remains unverified under migration 0032. The read-only smoke never transfers money, and no fixture can unlock this variant. A real manual transfer needs its actual reference and an eligible finance actor; a funded sandbox transfer needs a separate owner decision. See `docs/payout-demo-state.md` for the command and evidence boundary.
 
 **The transaction rows.** Five episodes, each with its own settlement word. The
-two on the bill the operator generated read **"Needs something from you"** (Cần
-bạn xử lý) at `21.600 ₫` and `43.200 ₫`. Read that honestly rather than
+two on the bill the operator generated read **"Payment setup pending"** (Chờ
+xác minh nơi nhận tiền) at `21.600 ₫` and `43.200 ₫`. Read that honestly rather than
 literally — the server's own longer sentence behind it is *"We cannot pay this
 yet. Your ZaloPay payout account is missing or not verified."* **It is the
 platform, not the collector, that has something to do here**, and the narrator
