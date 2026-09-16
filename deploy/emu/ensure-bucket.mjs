@@ -15,7 +15,9 @@ if (!endpoint || !bucket || !key || !secret) {
 
 const client = new S3Client({
   endpoint,
-  region: 'auto',
+  // ponytail: us-east-1 makes the SDK send no LocationConstraint; vStorage rejects 'auto' with
+  // InvalidLocationConstraint and MinIO ignores the value either way.
+  region: 'us-east-1',
   forcePathStyle: true,
   credentials: { accessKeyId: key, secretAccessKey: secret },
 });
