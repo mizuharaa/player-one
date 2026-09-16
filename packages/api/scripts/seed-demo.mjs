@@ -147,7 +147,14 @@ try {
      * an account, it does not authenticate one — so it belongs in the demo
      * environment beside PLAYERONE_DEMO_PHONE rather than in a secret store.
      */
-    const zaloId = process.env['PLAYERONE_DEMO_ZALO_ID'] ?? null;
+    /*
+     * Unset and set-but-empty are the same thing: no Zalo id. cloud.env ships
+     * the variable with an empty value on purpose, so `?? null` alone read ''
+     * as a wrong id and refused — which is exactly how the live deployment's
+     * seed aborted, and the whole stack with it, on 2026-09-16.
+     */
+    const configuredZaloId = (process.env['PLAYERONE_DEMO_ZALO_ID'] ?? '').trim();
+    const zaloId = configuredZaloId === '' ? null : configuredZaloId;
     if (zaloId !== null && !/^[0-9]{6,32}$/.test(zaloId)) {
       fail(
         `PLAYERONE_DEMO_ZALO_ID must be 6-32 digits — Zalo's own numeric id from ` +

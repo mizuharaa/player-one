@@ -116,3 +116,19 @@ describe('the period the seeded bill owns, against the one the demo asks for', (
     expect(runbook).toContain(`"period_start":"${day(demo.start)}","period_end":"${day(demo.end)}"`);
   });
 });
+
+/**
+ * cloud.env ships PLAYERONE_DEMO_ZALO_ID with an empty value, and `up.sh` runs
+ * this seed. Reading '' as a wrong id rather than as no id took the whole live
+ * deployment down on 2026-09-16: the seed refused, `up` failed with it, and the
+ * API never came back until the stack was brought up again.
+ */
+it('reads an empty PLAYERONE_DEMO_ZALO_ID as no id at all', () => {
+  const script = source('packages', 'api', 'scripts', 'seed-demo.mjs');
+  // The empty check comes before the digits check, so '' can never reach it.
+  const empty = script.indexOf("configuredZaloId === ''");
+  const digits = script.indexOf('/^[0-9]{6,32}$/');
+  expect(empty, 'the empty-string check exists').toBeGreaterThan(-1);
+  expect(digits, 'the digits check exists').toBeGreaterThan(-1);
+  expect(empty).toBeLessThan(digits);
+});
