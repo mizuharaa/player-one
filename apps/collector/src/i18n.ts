@@ -1,12 +1,6 @@
 /**
- * Every user-facing string in the collector app, Vietnamese first.
- *
- * LOC-01: the collector app is in Vietnamese, P0. English and Simplified
- * Chinese ride along — English because the pilot's own staff read it, Chinese
- * because PaXini's people do — and the completeness check holds all three to
- * the same standard as the base. Same mechanism as
- * `packages/api/src/i18n.ts`, which this file deliberately mirrors: a flat
- * map of dotted keys, every locale holding every key, asserted by a test.
+ * Every user-facing string in English, Vietnamese and Simplified Chinese.
+ * English is the default. Every locale holds the same flat dotted keys.
  *
  * Vietnamese is the BASE locale: `MessageKey` derives from `vi`, so a key
  * added in English only does not typecheck, and a key missing from English
@@ -16,7 +10,7 @@
 export const LOCALES = ['vi', 'en', 'zh'] as const;
 export type Locale = (typeof LOCALES)[number];
 
-export const DEFAULT_LOCALE: Locale = 'vi';
+export const DEFAULT_LOCALE: Locale = 'en';
 
 const vi = {
   'hall.search': 'Tìm nhiệm vụ hoặc địa điểm',

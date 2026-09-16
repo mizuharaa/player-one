@@ -43,3 +43,19 @@ it.each([false, true])('shows one header error and preserves the cached-data dis
     if (cached) { expect(header).toContain('Cached collector'); expect(header).toContain(dong('9001')); }
   } finally { await act(async () => root.unmount()); client.clear(); }
 });
+
+it('offers the language switch in the Home header and cycles every locale', async () => {
+  const api = new MockCollectorApi();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'home' }}><Home /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    for (const locale of ['en', 'zh', 'vi'] as const) {
+      const header = host.querySelector('[role="heading"]')!.parentElement!.parentElement!;
+      const toggle = [...header.querySelectorAll<HTMLElement>('[role="button"]')].find(node => node.getAttribute('aria-label') === `${MESSAGES[locale]['profile.language']} / ${locale.toUpperCase()}`);
+      expect(toggle, `language switch visible in ${locale} header`).toBeDefined();
+      await act(async () => toggle!.click());
+    }
+    expect(host.textContent).toContain(MESSAGES.en['home.cycleTitle']);
+  } finally { await act(async () => root.unmount()); client.clear(); }
+});

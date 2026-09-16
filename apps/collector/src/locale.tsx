@@ -2,7 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react';
 import { DEFAULT_LOCALE, t, type Locale, type MessageKey } from './i18n.ts';
 
 /**
- * Vietnamese by default for the demo (LOC-01). The toggle keeps the English catalogue
+ * English by default, per the owner. The toggle keeps the English catalogue
  * is reachable and therefore honest, not decoration.
  */
 const LocaleContext = createContext<{

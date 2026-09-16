@@ -43,11 +43,12 @@ export function Home() {
   const awaiting = income.data?.find(entry => entry.kind === 'confirmed' && ['pending_settlement', 'bill_generated', 'approved', 'on_a_bill', 'waiting_on_us'].includes(entry.settlementState ?? ''));
   const claimable = (tasks.data ?? []).filter(task => task.claimable);
   const initials = (profile.data?.name ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => Array.from(part)[0]).join('').toLocaleUpperCase();
-  return <Screen refresh={{ refreshing: [profile, devices, episodes, tasks, sessions, income, cycle].some(q => q.isRefetching), onRefresh: () => { for (const q of [profile, devices, episodes, tasks, sessions, income, cycle]) void q.refetch(); } }} title={tt(`greeting.${mascotStateAt()}`)} right={
+  return <Screen refresh={{ refreshing: [profile, devices, episodes, tasks, sessions, income, cycle].some(q => q.isRefetching), onRefresh: () => { for (const q of [profile, devices, episodes, tasks, sessions, income, cycle]) void q.refetch(); } }} title={tt(`greeting.${mascotStateAt()}`)} right={<View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[2] }}>
+    <Button label={`${tt('profile.language')} / ${locale.toUpperCase()}`} variant="ghost" onPress={() => setLocale(nextLocale(locale))} />
     <Pressable accessibilityRole="button" accessibilityLabel={tt('tab.profile')} onPress={() => nav.selectTab('profile')}
       style={{ minWidth: 48, minHeight: 48, borderRadius: c.radius.pill, backgroundColor: c.plum, alignItems: 'center', justifyContent: 'center' }}>
       <Text style={{ ...c.type.body, fontFamily: face(theme), color: c.surface }}>{initials || '-'}</Text>
-    </Pressable>}>
+    </Pressable></View>}>
     {failed ? <Failure error={failed.error} text={failureText(failed)} onRetry={retry} busy={queries.some(q => q.isFetching)} /> : null}
     <HeaderGradient>
     <BrandSlot />
@@ -104,7 +105,6 @@ export function Home() {
       <NavRow label={tt('forum.title')} onPress={() => nav.push({ name: 'forum' })} />
       <NavRow label={tt('groups.title')} onPress={() => nav.push({ name: 'groupChats' })} />
       <NavRow label={tt('home.training')} onPress={() => nav.push({ name: 'training' })} />
-      <Chip label={tt('common.language')} onPress={() => setLocale(nextLocale(locale))} />
       <Chip label={tt('guide.open')} onPress={guide.accept} />
     </View>
     {guide.offered ? <Card><Title>{tt('guide.offerTitle')}</Title><Body muted>{tt('guide.offerBody')}</Body>
