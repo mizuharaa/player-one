@@ -1,3 +1,4 @@
+import { ThemeProvider, polish, useTheme } from '../src/theme.tsx';
 import { MotionProvider } from '../src/ui/motion.ts';
 // @vitest-environment jsdom
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
@@ -191,4 +192,24 @@ it.each(['screen', 'list'])('reserves safe areas outside the %s scrolling viewpo
     const header = host.querySelector<HTMLElement>('[role="heading"]')!.parentElement!.parentElement!;
     expect(header.style.paddingTop).toBe('8px');
   } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it('keeps secondary text readable on paper, white cards and every Home gradient stop', async () => {
+  const host = document.createElement('div'); const root = createRoot(host);
+  let theme!: ReturnType<typeof useTheme>;
+  function Probe() { theme = useTheme(); return null; }
+  const luminance = (hex: string) => [0, 2, 4].map((offset, index) => {
+    const channel = parseInt(hex.slice(offset + 1, offset + 3), 16) / 255;
+    return (channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4) * [0.2126, 0.7152, 0.0722][index]!;
+  }).reduce((a, b) => a + b);
+  const ratio = (a: string, b: string) => (Math.max(luminance(a), luminance(b)) + .05) / (Math.min(luminance(a), luminance(b)) + .05);
+  try {
+    await act(async () => root.render(<ThemeProvider><Probe /></ThemeProvider>));
+    expect(polish.card).toBe(theme.collector.surface);
+    for (const ground of [theme.collector.paper, polish.card, ...polish.homeGradient]) {
+      for (const ink of [theme.collector.muted, theme.color.mutedForeground]) expect(ratio(ink, ground), `${ink} on ${ground}`).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(ratio(polish.hairline, theme.collector.paper)).toBeGreaterThanOrEqual(1.5);
+    expect(ratio(polish.homeBorder, theme.collector.paper)).toBeGreaterThanOrEqual(3);
+  } finally { await act(async () => root.unmount()); }
 });

@@ -328,7 +328,7 @@ export function Uploads() {
       renderItem={episode => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(episode.episodeId)}. ${tt(`state.${episode.state}`)}${amounts.get(episode.episodeId)?.simulation ? `. ${tt('payout.simulation')}` : ''}`}
         onPress={() => setSelectedEpisode(episode.episodeId)}
         style={({ pressed }) => ({ paddingVertical: c.cardPad, borderBottomWidth: 1, borderBottomColor: c.line,
-          gap: c.cardGap, backgroundColor: pressed ? c.surface : undefined })}>
+          gap: c.cardGap, backgroundColor: c.surface, opacity: pressed ? .85 : 1 })}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: c.cardGap }}>
         <View style={{ width: 44, height: 44, borderRadius: c.radius.pill, borderWidth: 1, borderColor: c.line, backgroundColor: stateColors(theme, episode.state).bg, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ fontFamily: face(theme), ...c.type.h2, color: stateColors(theme, episode.state).fg }}>{stateMarks[episode.state]}</Text>

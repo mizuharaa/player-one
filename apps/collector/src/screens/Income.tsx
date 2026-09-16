@@ -167,7 +167,7 @@ export function Income() {
       empty={options || income.isPending || income.isError ? null : <Hatch action={tt('common.retry')} onPress={() => void income.refetch()} text={tt('income.empty')} />}
       renderItem={entry => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(entry.episodeId)}. ${tt(entry.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')}${entry.simulation ? `. ${tt('payout.simulation')}` : ''}`}
         onPress={() => { setSelectedId(entry.episodeId); setDetails(false); }}
-        style={({ pressed }) => ({ borderBottomWidth: 1, borderBottomColor: c.line, paddingVertical: c.cardPad, gap: c.cardGap, backgroundColor: pressed ? c.surface : undefined })}>
+        style={({ pressed }) => ({ borderBottomWidth: 1, borderBottomColor: c.line, paddingVertical: c.cardPad, gap: c.cardGap, backgroundColor: c.surface, opacity: pressed ? .85 : 1 })}>
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: c.cardGap }}>
           <View style={{ flex: 1, minWidth: theme.space[24], gap: theme.space[1] }}>
             <Body>{shortId(entry.episodeId)}</Body>
