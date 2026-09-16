@@ -10,6 +10,9 @@ import {
   ZALO_CALLBACK_PATH,
   ZALO_LOGIN_REFUSALS,
   ZALO_PROFILE_PATH,
+  REDACTED_QUERY_PARAMS,
+  loggedRequest,
+  redactQuery,
   ZALO_TOKEN_PATH,
   zaloLogin,
   zaloLoginFromEnv,
@@ -444,6 +447,53 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
     const rows = (await failures()).filter((r) => r.after.outcome === 'rate_limited');
     expect(rows).toHaveLength(1);
     expect(rows[0]!.target_id).toBe(rows[0]!.after.source);
+  });
+
+  /**
+   * The OAuth code and state must not reach the log.
+   *
+   * Codex reproduced this against `4a32929` and printed both verbatim:
+   * Fastify's default `req` serializer logs `req.url`, and the callback carries
+   * `code` and `state` in exactly that query, so every deployed server with
+   * `PLAYERONE_LOG` on wrote a live authorization code into its container log
+   * on every sign-in.
+   *
+   * Asserted against the serializer rather than by capturing a live log
+   * stream: the serializer is what decides, and driving pino's transport in a
+   * test would prove the plumbing rather than the rule. The shape is pinned
+   * too, so a Fastify upgrade that adds a field is noticed rather than
+   * silently dropping one from every deployed log.
+   */
+  it('redacts the code and the state out of the request log, keeping the parameter names', () => {
+    const line = loggedRequest({
+      method: 'GET',
+      url: `${ZALO_CALLBACK_PATH}?code=zalo-auth-code&state=the-live-state`,
+      headers: {},
+      host: 'demo.example.vn',
+      ip: '127.0.0.1',
+      socket: { remotePort: 51234 },
+    } as unknown as Parameters<typeof loggedRequest>[0]);
+
+    expect(String(line['url'])).not.toContain('zalo-auth-code');
+    expect(String(line['url'])).not.toContain('the-live-state');
+    // The names survive: "a code was present" is not the secret, and it is
+    // what somebody reads when working out why a sign-in failed.
+    expect(line['url']).toBe(`${ZALO_CALLBACK_PATH}?code=REDACTED&state=REDACTED`);
+    expect(Object.keys(line).sort()).toEqual([
+      'host',
+      'method',
+      'remoteAddress',
+      'remotePort',
+      'url',
+      'version',
+    ]);
+
+    // Every name, and a URL with nothing to redact is returned untouched.
+    for (const name of REDACTED_QUERY_PARAMS) {
+      expect(redactQuery(`/x?${name}=secret-value`)).toBe(`/x?${name}=REDACTED`);
+    }
+    expect(redactQuery('/api/me/profile')).toBe('/api/me/profile');
+    expect(redactQuery('/episodes?limit=20')).toBe('/episodes?limit=20');
   });
 
   it('never puts the app secret, the code or the session token in the redirect', async () => {

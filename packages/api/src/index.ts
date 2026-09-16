@@ -387,6 +387,55 @@ export type ApiOptions = {
   risk?: RiskConfig;
 };
 
+/**
+ * Query parameters that must never reach a log, by NAME rather than by route.
+ *
+ * A route added next month is covered without anybody remembering to add it,
+ * which is the same argument the `/api/me/` prefix guard makes. `code` and
+ * `state` are Zalo's callback; `ticket` is ours; `token` and `secret` are here
+ * because a query string is the wrong place for either and the day one appears
+ * there it should be redacted rather than discovered.
+ */
+export const REDACTED_QUERY_PARAMS = ['code', 'state', 'ticket', 'token', 'secret'] as const;
+
+/**
+ * The same URL with any sensitive parameter's VALUE replaced.
+ *
+ * The parameter name survives on purpose: "a `code` was present and this is
+ * what it was" and "no `code` was present" are different facts when somebody is
+ * working out why a sign-in failed, and only the second half is a secret.
+ */
+export function redactQuery(url: string): string {
+  const mark = url.indexOf('?');
+  if (mark === -1) return url;
+  const query = new URLSearchParams(url.slice(mark + 1));
+  let redacted = false;
+  for (const name of REDACTED_QUERY_PARAMS) {
+    if (!query.has(name)) continue;
+    query.set(name, 'REDACTED');
+    redacted = true;
+  }
+  return redacted ? `${url.slice(0, mark)}?${query.toString()}` : url;
+}
+
+/**
+ * Fastify's own `req` serializer, field for field, with `url` redacted.
+ *
+ * Copied rather than wrapped because Fastify does not export it; the shape is
+ * pinned by a test so a Fastify upgrade that adds a field is noticed instead of
+ * silently dropping one from every deployed log.
+ */
+export function loggedRequest(req: FastifyRequest): Record<string, unknown> {
+  return {
+    method: req.method,
+    url: redactQuery(req.url),
+    version: req.headers?.['accept-version'],
+    host: req.host,
+    remoteAddress: req.ip,
+    remotePort: req.socket?.remotePort,
+  };
+}
+
 /** What a reviewer session may reach. Everything else answers 403. */
 const REVIEW_SCOPE = '/api/review/';
 /** Raw footage. In scope for a reviewer only behind `reviewerMediaEnabled`. */
@@ -496,7 +545,25 @@ export function buildApi({
         'with TLS terminated in front of this process)',
     );
   }
-  const app = Fastify({ logger, trustProxy: trustLoopbackProxy ? ['127.0.0.1/32', '::1/128'] : false });
+  const app = Fastify({
+    /**
+     * A request logger, with the query string redacted.
+     *
+     * Fastify's default `req` serializer logs `req.url` verbatim, and the Zalo
+     * callback carries the OAuth `code` and `state` in exactly that query — so
+     * every deployed server with `PLAYERONE_LOG` on wrote a live authorization
+     * code into its container log, in clear, on every sign-in. Codex reproduced
+     * it against `4a32929` and printed both values. A code is single-use and
+     * expires in ten minutes, but a container log is read by more people than a
+     * credential store is, is shipped to whatever aggregator the VM has, and
+     * survives in a backup long after the code does.
+     *
+     * The rest of Fastify's shape is kept field for field, so an operator's
+     * existing log reading does not change — only the values disappear.
+     */
+    logger: logger ? { serializers: { req: loggedRequest } } : false,
+    trustProxy: trustLoopbackProxy ? ['127.0.0.1/32', '::1/128'] : false,
+  });
 
   /**
    * Every unhandled throw leaves through here, and the reason is one measured
