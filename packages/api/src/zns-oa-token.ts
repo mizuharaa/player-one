@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 
 /**
  * Keeping the ZNS Official Account access token alive.
@@ -259,6 +259,24 @@ export function fileTokenStore(path: string, warn: (line: string) => void = cons
     },
     write(tokens) {
       writeFileSync(path, `${JSON.stringify(tokens, null, 2)}\n`, { mode: 0o600 });
+      /**
+       * `mode` on `writeFileSync` applies only when the file is CREATED. An
+       * operator who seeds `zns-oa-token.json` by hand — which is exactly how
+       * the first refresh token arrives — leaves it at whatever their umask
+       * gives, usually 0644, and it keeps 0644 through every rotation after
+       * that. The file holds a live rotating credential, so the permission is
+       * tightened on every write and not only the first.
+       *
+       * Best effort: a filesystem with no POSIX modes (a Windows checkout, a
+       * bind mount) throws here, and a token that was written successfully
+       * must not become a failed sign-in because the mode could not be set.
+       * The audit of `e4bf1fb` found the missing tightening (F5).
+       */
+      try {
+        chmodSync(path, 0o600);
+      } catch (err) {
+        warn(`[zns:oa] could not set 0600 on ${path}: ${String(err)}`);
+      }
     },
   };
 }
