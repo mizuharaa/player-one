@@ -15,6 +15,15 @@ Owner screen-specific Impeccable briefs override this file. Product and server t
 ## Visual world
 
 Modern native utility with warm paper, dark readable ink and selective frosted chrome.
+Build-50 correction: the collector world is off-white fog (`#F5F6F3`), charcoal
+(`#202827`) and restrained eucalyptus (`#286454`), not purple/black or beige.
+Secondary text is `#445048`: measured 4.74:1 over the darkest allowed glass
+composite (`#C2C2C2`), and stronger over the opaque paper/card surfaces.
+The five permanent dock labels accompany ISC-licensed Lucide vectors. Native
+iOS blur belongs to chrome; Reduce Transparency starts opaque and stays opaque
+until the system setting is known. Android uses the opaque material fallback.
+Home uses compact photographic task rows; Income uses a borderless statement
+hierarchy and inset transaction rows, with no oversized circular emoji actions.
 Wise supplies money hierarchy and row discipline; Klarna supplies translucent materials;
 Fiverr supplies browsing density and action hierarchy. Luma controls the named flows.
 The gallery is the explicitly requested photographic exception to the restrained app surfaces.
@@ -64,5 +73,9 @@ Reduce Transparency must use an opaque fallback; motion settings must not hide c
 Each item gets its own commit and root typecheck, collector tests and release gate.
 Capture affected screens at390/430; browser captures do not prove native playback or blur.
 Reports: one message to w1:p8 and identical new UTC-named file in C:/build/astra-reports.
+Current orchestrator overrides the old terminal handoff: report directly to the
+root agent, run combined QA before release, and do not queue another build until
+the complete requested screen batch is reviewed. Browser previews are mocked
+visual/interaction evidence, never live upload or payout proof.
 No push or emulator. Build49 follows a clean, reviewed batch; report Expo, submission and Apple availability separately.
 B10 footage-examples work remains deferred tonight.

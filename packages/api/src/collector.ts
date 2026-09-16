@@ -984,9 +984,11 @@ export function registerCollectorAuth(
      * did this collector sign in on Thursday" must be able to tell a bypass
      * from a collector who presented a credential.
      */
+    const demoRunId = randomUUID();
     await auditLogin(db, 'collector.login', 'collectors', collector.id, {
       collectorId: collector.id,
       source: 'demo_bypass',
+      demoRunId,
     });
     options.limiter.succeeded(req.ip, []);
     return {
@@ -994,6 +996,7 @@ export function registerCollectorAuth(
         kind: 'collector',
         collectorId: collector.id,
         epoch: collector.epoch,
+        demoRunId,
       }),
     };
   });

@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { pickSessionDirectory, nativeTransport } from '../src/upload/delivery-native.ts';
-const native = vi.hoisted(() => ({ signals: [] as AbortSignal[], deleted: [] as string[], size: 4, failCopy: false }));
+const native = vi.hoisted(() => ({ signals: [] as AbortSignal[], deleted: [] as string[], size: 4, failCopy: false, progress: undefined as undefined | ((value: {bytesSent: number; totalBytes: number}) => void), sessionType: undefined as string | undefined }));
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 vi.mock('expo-image-picker', () => ({ UIImagePickerPreferredAssetRepresentationMode: { Current: 'current' }, VideoExportPreset: { Passthrough: 0 }, requestMediaLibraryPermissionsAsync: vi.fn(), launchImageLibraryAsync: vi.fn(), requestCameraPermissionsAsync: vi.fn(), launchCameraAsync: vi.fn() }));
 vi.mock('expo-secure-store', () => ({}));
@@ -16,12 +16,28 @@ vi.mock('expo-file-system', () => ({
     create() {}
     open() { return { offset: 0, readBytes: (size: number) => new Uint8Array(size), writeBytes() {}, close() {} }; }
     delete() { native.deleted.push(this.uri); }
-    upload(_url: string, { signal }: { signal: AbortSignal }) {
+    upload(_url: string, { signal, onProgress, sessionType }: { signal: AbortSignal; onProgress?: typeof native.progress; sessionType?: string }) {
       native.signals.push(signal);
+      native.progress = onProgress; native.sessionType = sessionType;
       return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('Native task cancelled')), { once: true }));
     }
   },
 }));
+it('reports measured bytes during a single-file upload and allows progress beyond one minute', async () => {
+  vi.useFakeTimers(); native.signals.length = 0;
+  const controller = new AbortController(), report = vi.fn();
+  const pending = nativeTransport.putFile('source://camera.mp4', 'https://test', controller.signal, report);
+  const rejected = expect(pending).rejects.toMatchObject({ code: 'upload_cancelled' });
+  try {
+    expect(native.sessionType).toBe('foreground');
+    expect(native.progress).toBeTypeOf('function');
+    await vi.advanceTimersByTimeAsync(40_000);
+    native.progress!({bytesSent: 1, totalBytes: 4});
+    expect(report).toHaveBeenCalledWith(1);
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(native.signals[0]!.aborted).toBe(false);
+  } finally { controller.abort(); await rejected; vi.useRealTimers(); }
+});
 it.each(['whole', 'part'] as const)('cancels the native %s PUT, preserving source media', async kind => {
   native.signals.length = 0; native.deleted.length = 0;
   const controller = new AbortController();
@@ -35,15 +51,15 @@ it.each(['whole', 'part'] as const)('cancels the native %s PUT, preserving sourc
   expect(native.deleted.some(uri => uri.startsWith('source:'))).toBe(false);
   expect(native.deleted).toHaveLength(kind === 'part' ? 1 : 0);
 });
-it('aborts a stalled native PUT at its deadline', async () => {
+it('aborts a stalled native PUT after one minute without advancing bytes', async () => {
   vi.useFakeTimers(); native.signals.length = 0;
-  vi.spyOn(AbortSignal, 'timeout').mockImplementation(ms => {
-    const controller = new AbortController(); setTimeout(() => controller.abort(), ms); return controller.signal;
-  });
   try {
     const pending = nativeTransport.putFile('source://camera.mp4', 'https://test');
     const rejected = expect(pending).rejects.toMatchObject({ code: 'server_unreachable' });
-    await vi.advanceTimersByTimeAsync(60_000); await rejected;
+    native.progress!({ bytesSent: 1, totalBytes: 4 });
+    await vi.advanceTimersByTimeAsync(40_000);
+    native.progress!({ bytesSent: 1, totalBytes: 4 });
+    await vi.advanceTimersByTimeAsync(20_000); await rejected;
     expect(native.signals[0]!.aborted).toBe(true);
   } finally { vi.restoreAllMocks(); vi.useRealTimers(); }
 });

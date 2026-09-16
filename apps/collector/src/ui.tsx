@@ -34,6 +34,7 @@ import { useNav } from './nav.tsx';
 import { useT } from './locale.tsx';
 import type { MessageKey } from './i18n.ts';
 import { useTheme } from './theme.tsx';
+import { Icon } from './ui/Icon.tsx';
 
 
 
@@ -80,7 +81,7 @@ export function useTabBarReserve() {
     () => measuredTabHeight,
   );
   const insets = useInsets();
-  return insets.bottom + theme.space[6] + (measuredTabHeight || barHeight(theme)) + theme.space[5];
+  return insets.bottom + theme.space[2] + (measuredTabHeight || barHeight(theme)) + theme.space[3];
 }
 
 export function Header({ title, right, onBack, progress, insetTop = true }: { title: string; right?: ReactNode; onBack?: () => void; progress?: ReactNode; insetTop?: boolean }) {
@@ -95,7 +96,7 @@ export function Header({ title, right, onBack, progress, insetTop = true }: { ti
     {back ? <><View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
       <Pressable accessibilityRole="button" accessibilityLabel={tt('common.back')} onPress={back}
         style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }}>
-        <Text style={{ ...theme.collector.type.h2, color: theme.collector.ink }}>←</Text>
+        <Icon name="arrowLeft" color={theme.collector.ink} />
       </Pressable>{progress}{right}</View>{heading}</> :
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[3] }}>{heading}{right}</View>}
   </View>;
@@ -390,7 +391,7 @@ export function NavRow({ label, subtitle, icon, onPress }: { label: string; subt
       <Text style={{ ...theme.collector.type.body, color: theme.color.foreground, fontFamily: face(theme) }}>{label}</Text>
       {subtitle ? <Text style={{ ...theme.collector.type.caption, color: theme.color.mutedForeground, fontFamily: face(theme) }}>{subtitle}</Text> : null}
     </View>
-    <Text importantForAccessibility="no" style={{ color: theme.color.mutedForeground, ...theme.collector.type.h2 }}>›</Text>
+    <Icon name="chevronRight" size={18} color={theme.color.mutedForeground} />
   </Pressable>;
 }
 
@@ -450,8 +451,8 @@ export function Button({ label, onPress, disabled = false, busy = false, variant
   const [focused, setFocused] = useState(false);
   const blocked = disabled || busy;
   const outline = onDark ? c.glow : c.plum;
-  const fill = variant === 'primary' ? c.sun : variant === 'affirmative' ? c.green : variant === 'destructive' ? c.red : undefined;
-  const ink = variant === 'destructive' ? c.surface : fill ? c.night : outline;
+  const fill = variant === 'primary' ? (onDark ? c.surface : c.night) : variant === 'affirmative' ? c.greenBg : variant === 'destructive' ? c.red : undefined;
+  const ink = variant === 'destructive' || (variant === 'primary' && !onDark) ? c.surface : fill ? c.night : outline;
   return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityHint={accessibilityHint}
     accessibilityState={{ disabled: blocked, busy }} aria-busy={busy} disabled={blocked} onPress={onPress}
     onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
@@ -939,7 +940,7 @@ export function Tag({ label, fg, bg, mark }: { label: string; fg: string; bg: st
         maxWidth: '100%',
       }}
     >
-      {mark === undefined ? null : (
+      {mark === '✓' || mark === '?' || mark === '!' || mark === '×' ? <Icon name={mark === '✓' ? 'check' : mark === '?' ? 'help' : mark === '×' ? 'close' : 'info'} color={fg} size={16} /> : mark === undefined ? null : (
         <Text
           importantForAccessibility="no"
           style={{ color: fg, fontFamily: face(theme), fontSize: theme.collector.type.caption.fontSize,
@@ -968,7 +969,7 @@ export function Tag({ label, fg, bg, mark }: { label: string; fg: string; bg: st
  * How far along something measured is: a task's claimed minutes, a session's
  * files hashed, a delivery's files sent.
  *
- * The collector's sun fill sits on a contrasting muted track. The measured
+ * The charcoal fill sits on a lighter neutral track. The measured
  * fraction never animates; an activity indicator can show work within a file.
  *
  * **The figure is never the bar alone.** `label` and `value` print above it
@@ -993,11 +994,11 @@ export function Progress({ label, value, fraction, busy = false }: { label: stri
         style={{
           height: theme.space[1.5],
           borderRadius: theme.space[1],
-          backgroundColor: theme.collector.muted,
+          backgroundColor: theme.collector.line,
           overflow: 'hidden',
         }}
       >
-        <View style={{ width: `${clamped * 100}%`, height: '100%', backgroundColor: theme.collector.sun }} />
+        <View style={{ width: `${clamped * 100}%`, height: '100%', backgroundColor: theme.collector.ink }} />
       </View>
     </View>
   );
@@ -1072,19 +1073,7 @@ export function Timeline({
                 justifyContent: 'center',
               }}
             >
-              {step.done ? (
-                <Text
-                  style={{
-                    color: theme.color.background,
-                    fontFamily: face(theme),
-                    fontSize: theme.collector.type.caption.fontSize,
-          lineHeight: theme.collector.type.caption.lineHeight,
-
-                  }}
-                >
-                  ✓
-                </Text>
-              ) : null}
+              {step.done ? <Icon name="check" size={15} color={theme.color.background} /> : null}
             </View>
             {i === last ? null : (
               <View

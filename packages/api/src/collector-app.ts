@@ -242,6 +242,7 @@ type Profile = {
 type TaskRow = {
   id: string;
   name: string;
+  instructions: string;
   type: string | null;
   unit_price: string;
   target_effective_duration_s: string | null;
@@ -588,23 +589,9 @@ export function registerCollectorApp(
   // -- the task hall (APP-08; APP-09 is NOT met, see below) -----------------
 
   /**
-   * ponytail: APP-09 IS NOT BUILT, and this route was described as meeting it.
-   *
-   * The brief asks a task detail for instructions, scenario, a privacy notice
-   * and a payment rule. `tasks` has no column for any of the four — it holds
-   * id, name, type, unit_price, target_effective_duration_s,
-   * max_concurrent_claimants and status — so four of the eleven fields on the
-   * app's own `Task` type have no server source and the phone fills them from
-   * its bundled placeholder text. `type` is not `scenario`: it is
-   * 'home_cooking' where the app's `Scenario` union is 'home' | 'office' |
-   * 'shop' | 'warehouse', and scenarios are keyed to a SESSION, not to a task.
-   *
-   * Columns are deliberately not added for them. Instructions, a privacy notice
-   * and a payment rule are text somebody has to write and legal has to approve
-   * — PaXini and legal owe that copy the way PaXini owes the exam questions —
-   * and a nullable column per field would let the back office ship a task with
-   * an empty privacy notice, which is worse than a task the app knows is
-   * incomplete. Build it when there is copy to put in it.
+   * Task-specific instructions now have a server source (0036). APP-09 is still
+   * incomplete: privacy/payment policy copy is not invented, and task type is
+   * not the collection session's declared scenario.
    */
 
   /**
@@ -628,7 +615,7 @@ export function registerCollectorApp(
    */
   async function taskRows(me: string, taskId?: string): Promise<TaskRow[]> {
     return (await db.execute(sql`
-      select t.id, t.name, t.type, t.unit_price, t.target_effective_duration_s,
+      select t.id, t.name, t.instructions, t.type, t.unit_price, t.target_effective_duration_s,
              t.max_concurrent_claimants,
              (t.status = 'published') as published,
              (select count(*)::int from task_claims c

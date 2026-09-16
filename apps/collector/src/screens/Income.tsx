@@ -5,9 +5,11 @@ import { useQuery } from '@tanstack/react-query';
 import type { IncomeEntry } from '../api/types.ts';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
-import { useTheme } from '../theme.tsx';
+import { polish, useTheme } from '../theme.tsx';
+import { Icon } from '../ui/Icon.tsx';
+import { GlassSurface } from '../ui/GlassSurface.tsx';
 import { useGuideTarget } from '../guide/Guide.tsx';
-import { Body, Button, Card, face, Chip, Hatch, NavRow, ListScreen, Loading, Note, Row, Screen, Tag, Timeline } from '../ui.tsx';
+import { Body, face, Chip, Hatch, NavRow, ListScreen, Loading, Note, Row, Screen, Tag, Timeline } from '../ui.tsx';
 import { useNav } from '../nav.tsx';
 import { dong, incomeStatus, isLivePaid, quantity, shortId } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
@@ -131,52 +133,53 @@ export function Income() {
       refresh={{ refreshing: income.isFetching || cycle.isFetching || payout.isFetching, onRefresh: () => { void income.refetch(); void cycle.refetch(); void payout.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.sectionGap }}>
         {failed ? <Failure error={failed.error} text={tt(failed.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} onRetry={() => { for (const q of queries) void q.refetch(); }} busy={queries.some(q => q.isFetching)} /> : null}
-        {cycle.isError && cycle.data === undefined ? <Body muted>{tt('home.cycleTitle')} —</Body> : <Card>
-          <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.ink }}>{cycleData?.label ? `${tt('home.cycleTitle')} · ${cycleData.label}` : tt('home.cycleTitle')}</Text>
+        {cycle.isError && cycle.data === undefined ? <Body muted>{tt('home.cycleTitle')} —</Body> : <View style={{ paddingVertical: 8, gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Icon name="wallet" color={c.muted} size={18} /><Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.muted }}>{cycleData?.label ? `${tt('home.cycleTitle')} · ${cycleData.label}` : tt('home.cycleTitle')}</Text></View>
           {cycle.isPending ? <Loading kind="number" /> : <Text style={{ fontFamily: face(theme), ...c.type.money, color: c.ink, fontVariant: ['tabular-nums'] }}>{cycleData ? dong(cycleData.confirmedVnd) : NOTHING}</Text>}
-          <Text style={{ fontFamily: face(theme), ...c.type.body, color: c.ink }}>{tt('income.confirmed')}</Text>
-          {cycleData ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.ink }}>{tt('home.cycleWithEstimate').replace('{amount}', dong(cycleData.totalVnd))}</Text> :
+          <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.ink, fontWeight: '600' }}>{tt('income.confirmed')}</Text>
+          {cycleData ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.muted }}>{tt('home.cycleWithEstimate').replace('{amount}', dong(cycleData.totalVnd))}</Text> :
             <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.ink }}>{tt(cycle.isPending ? 'common.loading' : 'home.cycleUnavailable')}</Text>}
-          {cycleData?.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
-        </Card>}
-        <View style={{ flexDirection: 'row', gap: c.cardGap, alignItems: 'flex-start' }}>
+          {cycleData?.simulation ? <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', paddingTop: 4 }}><Icon name="info" size={15} color={c.muted} /><Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted, flexShrink: 1 }}>{tt('payout.simulation')}</Text></View> : null}
+        </View>}
+        <GlassSurface style={{ flexDirection: 'row', flexWrap: 'wrap', padding: 6 }}>
           {([
-            ['uploads.title', '↑', () => nav.selectTab('uploads')],
-            ['income.statement', '≡', () => setExtra('statement')],
-            ['payout.title', '↗', () => setShowDestination(true)],
-            ['profile.help', '?', () => setExtra('help')],
-          ] as const).map(([label, mark, press]) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={tt(label)}
-            onPress={press} style={{ flex: 1, minHeight: 48, alignItems: 'center', gap: theme.space[2] }}>
-            <View style={{ width: 52, height: 52, borderRadius: c.radius.pill, backgroundColor: c.surface, borderWidth: 1, borderColor: c.line, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ ...c.type.h2, color: c.plum, fontFamily: face(theme) }}>{mark}</Text>
-            </View><Text style={{ ...c.type.caption, color: c.ink, fontFamily: face(theme), textAlign: 'center' }}>{tt(label)}</Text>
+            ['uploads.title', 'camera', () => nav.selectTab('uploads')],
+            ['income.statement', 'file', () => setExtra('statement')],
+            ['payout.title', 'wallet', () => setShowDestination(true)],
+            ['profile.help', 'help', () => setExtra('help')],
+          ] as const).map(([label, icon, press]) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={tt(label)}
+            onPress={press} style={({ pressed }) => ({ width: '50%', minHeight: 52, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? .65 : 1 })}>
+            <Icon name={icon} color={c.plum} size={20} /><Text style={{ ...c.type.caption, color: c.ink, fontFamily: face(theme), flexShrink: 1 }}>{tt(label)}</Text>
           </Pressable>)}
-        </View>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space[2], padding: theme.space[1], borderRadius: c.radius.pill, backgroundColor: c.line }}>
-          <Chip label={tt('income.transactions')} selected={!options} onPress={() => setOptions(false)} />
-          <Chip label={tt('income.options')} selected={options} onPress={() => setOptions(true)} />
+        </GlassSurface>
+        <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: c.line }}>
+          {(['income.transactions', 'income.options'] as const).map((key, index) => <Pressable key={key} accessibilityRole="button" accessibilityState={{ selected: options === Boolean(index) }} onPress={() => setOptions(Boolean(index))}
+            style={{ minHeight: 48, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: options === Boolean(index) ? c.ink : 'transparent' }}>
+            <Text style={{ ...c.type.body, color: options === Boolean(index) ? c.ink : c.muted, fontFamily: face(theme), fontWeight: options === Boolean(index) ? '600' : '400' }}>{tt(key)}</Text>
+          </Pressable>)}
         </View>
         {options ? <>
           <NavRow label={tt('income.statement')} onPress={() => setExtra('statement')} />
           <NavRow label={tt('payout.title')} onPress={() => setShowDestination(true)} />
           <NavRow label={tt('profile.help')} subtitle={tt('profile.helpSub')} onPress={() => setExtra('help')} />
         </> : null}
-        <Body muted>{tt('income.intro')}</Body>
+        {options ? null : <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{tt('income.intro')}</Text>}
         {income.isError && income.data === undefined ? <Body muted>{tt('income.transactions')} —</Body> : null}
         {income.isPending ? <Loading /> : null}
       </View>}
       empty={options || income.isPending || income.isError ? null : <Hatch action={tt('common.retry')} onPress={() => void income.refetch()} text={tt('income.empty')} />}
       renderItem={entry => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(entry.episodeId)}. ${tt(incomeStatus(entry))}${entry.simulation ? `. ${tt('payout.simulation')}` : ''}`}
         onPress={() => { setSelectedId(entry.episodeId); setDetails(false); }}
-        style={({ pressed }) => ({ borderBottomWidth: 1, borderBottomColor: c.line, paddingVertical: c.cardPad, gap: c.cardGap, backgroundColor: c.surface, opacity: pressed ? .85 : 1 })}>
+        style={({ pressed }) => ({ padding: 16, borderRadius: 20, gap: 10, backgroundColor: c.surface, opacity: pressed ? .85 : 1 })}>
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: c.cardGap }}>
+          <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', backgroundColor: polish.selection, borderRadius: 12 }}><Icon name={entry.kind === 'confirmed' ? 'file' : 'clock'} color={c.ink} size={20} /></View>
           <View style={{ flex: 1, minWidth: theme.space[24], gap: theme.space[1] }}>
             <Body>{shortId(entry.episodeId)}</Body>
-            <Body muted>{entry.settlementState ? settlementLabel(tt, entry.settlementState) : tt('settlement.unknown')}</Body>
+            <Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted }}>{entry.settlementState ? settlementLabel(tt, entry.settlementState) : tt('settlement.unknown')}</Text>
           </View>
           <Text style={{ fontFamily: face(theme), ...c.type.h2, color: isLivePaid(entry) ? c.greenInk : c.muted, fontVariant: ['tabular-nums'] }}>{entry.amountVnd === null ? NOTHING : dong(entry.amountVnd)}</Text>
         </View>
-        {entry.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
+        {entry.simulation ? <Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted }}>{tt('payout.simulation')}</Text> : null}
         <Tag label={tt(incomeStatus(entry))} fg={c.ink} bg={c.surface} mark={incomeStatus(entry) === 'income.confirmed' ? '✓' : entry.kind === 'estimated' ? '~' : undefined} />
       </Pressable>} />
     <Modal visible={selected !== undefined} animationType="none" onRequestClose={() => setSelectedId(null)}>

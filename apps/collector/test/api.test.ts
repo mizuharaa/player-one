@@ -371,6 +371,7 @@ describe('collector wire truth and cold-start recovery', () => {
       target_effective_duration_s: '3600', collected_effective_s: '120',
       max_concurrent_claimants: 10, claimants: 1, remaining_slots: 9,
       published: false, claimed_by_me: true, claimable: false, currency: 'USD',
+      instructions: 'Arrange the table for a meal, keeping hands and objects in view.',
     };
     const { fn } = fakeFetch({
       'GET /api/me/tasks': { status: 200, body: { tasks: [wire] } },
@@ -382,6 +383,11 @@ describe('collector wire truth and cold-start recovery', () => {
     const [task] = await api.tasks();
     expect(task).toMatchObject({ published: false, claimable: false, claimedByMe: true, remainingSlots: 9, currency: 'USD', unitPriceVndPerMinute: '123.4500', scenario: null, type: 'home_cooking' });
     expect(await api.task('held-task')).toEqual(task);
+    expect(task?.instructions).toBe(wire.instructions);
+    const older = new HttpCollectorApi(BASE, fakeStore(), () => {}, fakeFetch({
+      'GET /api/me/tasks/held-task': { status: 200, body: { ...wire, instructions: undefined } },
+    }).fn);
+    expect((await older.task('held-task')).instructions).toBe('');
     expect((await api.myClaims())[0]?.taskName).toBe('Held task');
     expect((await api.boundDevices())[0]?.status).toBe('faulty');
   });

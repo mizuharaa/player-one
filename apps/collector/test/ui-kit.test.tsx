@@ -28,7 +28,8 @@ it('shows activity and a visible track while the first file is still sending', a
     const bars = host.querySelectorAll<HTMLElement>('[role="progressbar"]');
     expect(bars.length).toBe(2); // Activity indicator plus the measured-file track.
     const progress = bars[1]!;
-    expect(progress.style.backgroundColor).toBe('rgb(81, 75, 99)');
+    expect(progress.style.backgroundColor).toBe('rgb(184, 194, 185)');
+    expect((progress.firstElementChild as HTMLElement).style.backgroundColor).toBe('rgb(32, 40, 39)');
     expect((progress.firstElementChild as HTMLElement).style.width).toBe('0%');
     expect(host.textContent).toContain('0/1 files');
   } finally { await act(async () => root.unmount()); }

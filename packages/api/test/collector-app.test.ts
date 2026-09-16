@@ -397,6 +397,17 @@ describe.skipIf(!hasDb())('the collector app', () => {
 
   // -- the task hall (APP-08, APP-09) ---------------------------------------
 
+  it('returns task instructions in list and detail, leaving older tasks empty', async () => {
+    const h = await harness();
+    const instructions = 'Arrange plates and cups, keeping your hands and each item in view.';
+    await (await db()).execute(sql`update tasks set instructions = ${instructions} where id = ${h.ids.task}`);
+    const listing = (await h.get('/api/me/tasks')).json().tasks;
+    expect(listing.find((task: { id: string }) => task.id === h.ids.task).instructions).toBe(instructions);
+    expect(listing.find((task: { id: string }) => task.id === h.ids.taskFull).instructions).toBe('');
+    expect((await h.get(`/api/me/tasks/${h.ids.task}`)).json().instructions).toBe(instructions);
+    expect((await h.get(`/api/me/tasks/${h.ids.taskFull}`)).json().instructions).toBe('');
+  });
+
   it('lists published tasks with type, price, target, progress and slots', async () => {
     const h = await harness();
     const body = (await h.get('/api/me/tasks')).json();

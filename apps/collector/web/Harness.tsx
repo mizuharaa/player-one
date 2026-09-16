@@ -79,6 +79,11 @@ export function Harness() {
     };
     if (state === 'upload-stalled' && key === 'sessions') return async () => [{ id: 'preview-session', scenario: 'home', createdAt: '2026-09-16T12:00:00Z' }];
     if (state === 'upload-stalled' && key === 'registerDelivery') return async (record: { files: { relativePath: string }[] }) => ({ state: 'registered', files: record.files.map(file => ({ relativePath: file.relativePath, done: false, putUrl: 'https://preview.invalid/upload', parts: [] })) });
+    if (state === 'upload-stalled' && key === 'completeDelivery') return async () => {
+      const result = new URLSearchParams(window.location.search).get('uploadResult');
+      if (result === 'verifying') return new Promise(() => {});
+      return { state: result === 'held' ? 'held' : 'ingested', episodeId: result === 'held' ? null : 'preview-only', heldReason: result === 'held' ? 'checksum_mismatch' : null, failedReason: null };
+    };
     if (state === 'simulation' && key === 'income') return async () => [{ episodeId: 'sandbox-paid', kind: 'confirmed', amountVnd: '1200', effectiveMinutes: '1', settlementState: 'paid', simulation: true }];
     if (state === 'simulation' && key === 'incomeCycle') return async () => ({ label: 'Sandbox cycle', confirmedVnd: '1200', estimatedVnd: '0', totalVnd: '1200', simulation: true });
     if (state === 'simulation' && key === 'episodes') return async () => [{ episodeId: 'sandbox-paid', sessionId: 'sandbox-session', sizeBytes: 1200, state: 'review_passed' }];

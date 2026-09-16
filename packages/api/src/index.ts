@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
 import { schema, seedCatalogues, type Db } from '@playerone/store';
 import { registerAlerts } from './alerts.ts';
-import { auditLogin } from './audit.ts';
+import { auditLogin, mutate } from './audit.ts';
 import { registerBackOffice } from './backoffice.ts';
 
 export { readAlerts, type Alert, type AlertState } from './alerts.ts';
@@ -1147,6 +1147,31 @@ export function buildApi({
    * its own token and has no reason to leave its scope to ask who it is.
    */
   app.get(COLLECTOR_SCOPE, { preHandler: requireActor }, whoami);
+
+  // A demo key authorizes preview navigation, never an administrator role or a domain write.
+  const demoSteps = new Set(['intro', 'register', 'agreements', 'training', 'exam', 'home',
+    'taskHall', 'taskDetail', 'myTasks', 'devices', 'provisioning', 'sessionReminder',
+    'sessionCreate', 'sessionCreate.task', 'sessionCreate.scenario', 'sessionCreate.device',
+    'sessionCreate.others', 'sessionCreate.sensitive', 'uploads']);
+  const demoRun = (req: FastifyRequest) => demoBypassKey ? req.collector?.demoRunId : undefined;
+  app.get('/api/me/demo', { preHandler: requireActor }, async (req) => ({ runId: demoRun(req) ?? null }));
+  app.post('/api/me/demo/skip', { preHandler: requireActor }, async (req, reply) => {
+    const runId = demoRun(req);
+    if (!runId) return reply.code(403).send({ error: 'refused', constraint: 'demo_unavailable' });
+    const body = req.body as Record<string, unknown> | null;
+    if (!body || Array.isArray(body) || Object.keys(body).length !== 2 ||
+        typeof body['from'] !== 'string' || typeof body['to'] !== 'string' ||
+        !demoSteps.has(body['from']) || !demoSteps.has(body['to'])) {
+      return reply.code(400).send({ error: 'refused', constraint: 'demo_step_invalid' });
+    }
+    // ponytail: online-only acknowledgement; failed audit means no navigation, no local outbox.
+    const event = { runId, from: body['from'], to: body['to'], outcome: 'preview_only' as const };
+    await mutate(db, { collector: req.collector! }, {
+      action: 'collector.demo_skip', targetTable: 'collectors', targetId: req.collector!.collectorId,
+      after: event,
+    }, async () => event);
+    return event;
+  });
 
   return app;
 }

@@ -76,6 +76,12 @@ export interface CollectorProfile {
   onboarded: boolean;
 }
 
+export type DemoStep = 'intro' | 'register' | 'agreements' | 'training' | 'exam' | 'home'
+  | 'taskHall' | 'taskDetail' | 'myTasks' | 'devices' | 'provisioning' | 'sessionReminder'
+  | 'sessionCreate' | 'sessionCreate.task' | 'sessionCreate.scenario' | 'sessionCreate.device'
+  | 'sessionCreate.others' | 'sessionCreate.sensitive' | 'uploads';
+export type DemoContext = { runId: string | null };
+
 /** Existing codes documented by POST /api/me/sessions; server validates availability. */
 export const SCENARIOS = ['home', 'office', 'shop', 'warehouse'] as const;
 export type Scenario = (typeof SCENARIOS)[number];
@@ -321,6 +327,9 @@ export interface CollectorApi extends DeliveryApi {
    * `POST /auth/collector/demo` answers one 401 for every way it can fail.
    */
   signInWithDemoKey(key: string): Promise<void>;
+  demoContext(): Promise<DemoContext>;
+  /** Audit preview navigation only. Never records completion of a real step. */
+  skipDemoStep(from: DemoStep, to: DemoStep): Promise<void>;
   /**
    * NFR-03/NFR-04. Cold start: is there a stored token, and does it still work?
    *

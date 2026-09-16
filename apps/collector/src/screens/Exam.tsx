@@ -4,6 +4,7 @@ import { Animated, Pressable, Switch, Text, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
 import { EXAM_QUESTION_COUNT } from '../api/mock.ts';
 import { useApi } from '../api/context.tsx';
+import { DemoSkip } from '../ui/DemoSkip.tsx';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
@@ -74,6 +75,7 @@ export function Exam() {
   return (
     <Screen
       title={tt('exam.title')}
+      right={<DemoSkip from="exam" to="home" disabled={submit.isPending} onSkipped={() => nav.reset({ name: 'home' })} />}
       footer={
         <>
           {submit.isError ? <Failure onRetry={sendAnswers} busy={submit.isPending} error={submit.error} text={tt('common.actionFailed')} /> : null}

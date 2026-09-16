@@ -392,11 +392,24 @@ it('renders a seeded task title, exact price and type badge in the shared card',
   expect(page()).toContain(vnd('1234.5678'));
   expect(page()).toContain(m['hall.perMinute']);
   const price = document.body.querySelector<HTMLElement>('[data-testid="task-price"]')!;
-  expect(price.style.fontSize).toBe('22px');
+  expect(price.style.fontSize).toBe('20px');
   expect(price.style.whiteSpace).not.toBe('nowrap');
   expect(price.style.textOverflow).not.toBe('ellipsis');
   expect(page()).toContain(m['taskCard.home']);
   expect(page()).toContain(m['hall.imageLabel']);
+});
+
+it('offers eight distinct demo tasks with original instructions and no imported competitor imagery', async () => {
+  const tasks = await api.tasks();
+  expect(tasks).toHaveLength(8);
+  expect(new Set(tasks.map(task => task.id)).size).toBe(8);
+  for (const title of ['Set a Table', 'Fold Clothes', 'Tidy Room', 'Vacuum Room', 'Load Dishwasher']) {
+    const task = tasks.find(row => row.title === title)!;
+    expect(task.instructions.length).toBeGreaterThan(60);
+    expect(task.claimable).toBe(true);
+    expect(task).not.toHaveProperty('imageUrl');
+    expect(await api.task(task.id)).toEqual(task);
+  }
 });
 
 it.each([120, 121, 3000])('formats a server duration of %s minutes without losing the remainder', async targetMinutes => {

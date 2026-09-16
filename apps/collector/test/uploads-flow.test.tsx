@@ -16,7 +16,9 @@ import { hashSession, nativeDeliveryStore, pickSessionDirectory } from '../src/u
 
 vi.mock('react-native', async () => ({ ...await import('react-native-web'), Modal: ({ visible, children }: { visible: boolean; children: ReactNode }) => visible ? children : null }));
 vi.mock('../src/guide/Guide.tsx', () => ({ useGuideTarget: () => undefined }));
+vi.mock('../src/ui/Icon.tsx', () => ({ Icon: ({ name }: { name: string }) => <span data-icon={name} /> }));
 vi.mock('../src/ui.tsx', () => ({
+  face: () => 'sans-serif',
   ListScreen: ({ title, header, empty, refresh }: { title: string; header: ReactNode; empty: ReactNode; refresh?: { onRefresh: () => void } }) => <main><h1>{title}</h1>{header}{empty}{refresh ? <button onClick={refresh.onRefresh}>Refresh</button> : null}</main>,
   Screen: ({ title, children, footer, onBack, right }: { title: string; children: ReactNode; footer: ReactNode; onBack?: () => void; right?: ReactNode }) => <section><h1>{title}</h1><button onClick={onBack}>Back</button>{right}{children}{footer}</section>,
   Body: ({ children }: { children: ReactNode }) => <p>{children}</p>,
@@ -26,7 +28,7 @@ vi.mock('../src/ui.tsx', () => ({
   Note: ({ text }: { text: string }) => <p>{text}</p>,
   Hatch: ({ text }: { text: string }) => <p>{text}</p>,
   Loading: () => <p>Loading</p>,
-  Progress: () => null, Tag: () => null, Chip: () => null, Field: () => null,
+  Progress: ({ label, value }: { label: string; value: string }) => <p>{label}: {value}</p>, Tag: () => null, Chip: () => null, Field: () => null,
   Button: ({ label, disabled, busy, onPress }: { label: string; disabled?: boolean; busy?: boolean; onPress: () => void }) => <button disabled={disabled || busy} onClick={onPress}>{label}</button>,
   Choice: ({ label, onPress }: { label: string; onPress: () => void }) => <button onClick={onPress}>{label}</button>,
 }));
@@ -37,6 +39,80 @@ vi.mock('../src/upload/delivery-native.ts', () => ({
   hashSession: vi.fn(async () => []),
 }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+it('renders measured single-file progress, then cloud verification without claiming completion', async () => {
+  const api = new MockCollectorApi();
+  const record = { uploadId: 'progress-upload', collectionSessionId: 'session-a', directoryUri: 'content://session', sessionBasename: 'session_20260914_120000', files: [{ uri: 'content://session/video.mp4', relativePath: 'video.mp4', bytes: 4096, sha256: 'a'.repeat(64) }] };
+  vi.mocked(nativeDeliveryStore.get).mockResolvedValue(record);
+  let report: NonNullable<NonNullable<Parameters<typeof runDelivery>[2]>['report']>;
+  vi.mocked(runDelivery).mockImplementation(async (_deps, _record, options) => {
+    report = options!.report!;
+    return new Promise(() => {});
+  });
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host), client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const m = MESSAGES.en;
+  const tap = async (label: string) => { await act(async () => Array.from(host.querySelectorAll('button')).find(b => b.textContent === label)!.click()); };
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="en"><NavProvider initial={{ name: 'uploads', openDelivery: true }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await tap(m['uploads.byPhone']); await tap(m['common.next']);
+    await vi.waitFor(() => expect(host.textContent).toContain(m['uploads.resume']));
+    await tap(m['uploads.resume']);
+    await vi.waitFor(() => expect(report).toBeDefined());
+    await act(async () => report({ state: 'registered', phase: 'sending', currentFile: 'video.mp4', sentFiles: 0, totalFiles: 1, sentBytes: 1024, totalBytes: 4096 }));
+    expect(host.textContent).toContain('25%');
+    expect(host.textContent).toContain('1.0 KB / 4.0 KB');
+    expect(host.textContent).toContain('video.mp4');
+    expect(host.textContent).toContain('0/1 Files');
+    await act(async () => report({ state: 'registered', phase: 'verifying', sentFiles: 1, totalFiles: 1, sentBytes: 4096, totalBytes: 4096 }));
+    expect(host.querySelector('section')?.textContent).toContain(m['uploads.verifying']);
+    expect(host.querySelector('section')?.textContent).not.toContain(m['uploads.sending']);
+    expect(host.querySelector('section')?.textContent).not.toContain('100%');
+    expect(host.querySelector('[data-icon="circleCheck"]')).toBeNull();
+    await tap(m['common.cancel']);
+    await vi.waitFor(() => expect(host.textContent).toContain(m['uploads.cancelled']));
+  } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.mocked(nativeDeliveryStore.get).mockResolvedValue(null); }
+});
+
+it('never guesses among multiple collection sessions', async () => {
+  const api = new MockCollectorApi();
+  const base = { collectorId: 'collector-a', taskId: 'task-a', deviceSerial: 'EGO', scenario: 'home' as const, othersInFrame: false, sensitiveInfo: false, createdAt: '2026-09-14T12:00:00Z' };
+  vi.spyOn(api, 'sessions').mockResolvedValue([{ ...base, id: 'one' }, { ...base, id: 'two' }]);
+  vi.mocked(nativeDeliveryStore.get).mockResolvedValue(null);
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host), client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const m = MESSAGES.en;
+  const button = (label: string) => Array.from(host.querySelectorAll('button')).find(b => b.textContent === label)!;
+  const tap = async (label: string) => { await act(async () => button(label).click()); };
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="en"><NavProvider initial={{ name: 'uploads', openDelivery: true }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await tap(m['uploads.byPhone']); await tap(m['common.next']);
+    await vi.waitFor(() => expect(button(m['uploads.pick']).disabled).toBe(false));
+    await tap(m['uploads.pick']);
+    await vi.waitFor(() => expect(button(m['common.next'])).toBeDefined());
+    expect(button(m['common.next']).disabled).toBe(true);
+    expect(host.textContent).not.toContain(m['uploads.sessionMatched']);
+  } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); }
+});
+
+it.each(['ingested', 'ingesting', 'held'] as const)('distinguishes the %s server outcome with the correct SVG icon', async state => {
+  vi.mocked(nativeDeliveryStore.get).mockResolvedValue({ uploadId: 'outcome-upload', collectionSessionId: 'session-a', directoryUri: 'content://session', sessionBasename: 'session_20260914_120000', files: [] });
+  vi.mocked(runDelivery).mockResolvedValue({ state, episodeId: state === 'ingested' ? 'episode-a' : null, heldReason: state === 'held' ? 'checksum_mismatch' : null, failedReason: null });
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host), client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const m = MESSAGES.en;
+  const tap = async (label: string) => { await act(async () => Array.from(host.querySelectorAll('button')).find(b => b.textContent === label)!.click()); };
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={new MockCollectorApi()}><LocaleProvider initialLocale="en"><NavProvider initial={{ name: 'uploads', openDelivery: true }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await tap(m['uploads.byPhone']); await tap(m['common.next']);
+    await vi.waitFor(() => expect(host.textContent).toContain(m['uploads.resume']));
+    await tap(m['uploads.resume']);
+    await vi.waitFor(() => expect(host.querySelector('section')?.textContent).toContain(m[`delivery.${state}`]));
+    expect(host.querySelector(`section [data-icon="${state === 'ingested' ? 'circleCheck' : state === 'held' ? 'close' : 'clock'}"]`)).not.toBeNull();
+    if (state !== 'ingested') expect(host.querySelector('section [data-icon="circleCheck"]')).toBeNull();
+    if (state === 'held') expect(host.textContent).toContain(m['uploads.reasonChecksum']);
+  } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.mocked(nativeDeliveryStore.get).mockResolvedValue(null); }
+});
 
 it.each(['hashing', 'sending'])('keeps the upload mounted during %s until explicitly cancelled', async phase => {
   const api = new MockCollectorApi();
@@ -104,7 +180,8 @@ it('requires folder, server session and explicit confirmation; repeated presses 
     await tap(MESSAGES.vi['uploads.pick']);
     expect(pickSessionDirectory).toHaveBeenCalledTimes(1);
     await vi.waitFor(() => expect(button(MESSAGES.vi['common.next'])).toBeDefined());
-    expect(button(MESSAGES.vi['common.next']).disabled).toBe(true);
+    expect(button(MESSAGES.vi['common.next']).disabled).toBe(false);
+    expect(host.textContent).toContain(MESSAGES.vi['uploads.sessionMatched']);
     await tap(`${MESSAGES.vi['scenario.home']} · 2026-09-14`);
     await tap(MESSAGES.vi['common.next']);
     expect(runDelivery).not.toHaveBeenCalled();

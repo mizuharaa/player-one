@@ -98,7 +98,7 @@ export function ImageBox({
         maxWidth: '100%',
         borderRadius: radius,
         overflow: 'hidden',
-        backgroundColor: theme.color.discover.soft,
+        backgroundColor: theme.collector.line,
       }}
     >
       <Image
@@ -184,7 +184,7 @@ export function ScreenTitle({
       accessibilityRole="header"
       style={{
         ...textStyle(theme, compact ? 'section' : 'title'),
-        color: theme.color.discover.ink,
+        color: theme.collector.ink,
         fontWeight: theme.fontWeight.display,
       }}
     >
@@ -205,7 +205,7 @@ export function WarmScreen({ children, tabRoot = true }: { children: ReactNode; 
   const theme = useTheme();
   const reserve = useTabBarReserve();
   return (
-    <View style={{ flex: 1, backgroundColor: theme.color.discover.paper }}>
+    <View style={{ flex: 1, backgroundColor: theme.collector.paper }}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
@@ -241,7 +241,7 @@ export function WarmList<T>({
   const theme = useTheme();
   const reserve = useTabBarReserve();
   return (
-    <View style={{ flex: 1, backgroundColor: theme.color.discover.paper }}>
+    <View style={{ flex: 1, backgroundColor: theme.collector.paper }}>
       <FlatList
         key={numColumns === undefined ? 'one' : `cols-${numColumns}`}
         data={data as T[]}
@@ -284,7 +284,7 @@ export function WarmCard({
       collapsable={false}
       style={[
         {
-          backgroundColor: theme.color.discover.surface,
+          backgroundColor: theme.collector.surface,
           borderRadius: theme.radius.xl,
           padding: theme.space[5],
           gap: theme.space[3],
@@ -340,7 +340,7 @@ export function EmptyState({
       <Text
         style={{
           ...textStyle(theme, 'body'),
-          color: theme.color.discover.muted,
+          color: theme.collector.muted,
           textAlign: 'center',
         }}
       >
@@ -359,7 +359,7 @@ export function LoadFailed({ onRetry }: { onRetry: () => void }) {
   const tt = useT();
   return (
     <View style={{ gap: theme.space[4], paddingVertical: theme.space[8] }}>
-      <Text style={{ ...textStyle(theme, 'body'), color: theme.color.discover.ink, textAlign: 'center' }}>
+      <Text style={{ ...textStyle(theme, 'body'), color: theme.collector.ink, textAlign: 'center' }}>
         {tt('common.loadFailed')}
       </Text>
       <Button label={tt('common.retry')} onPress={onRetry} />
@@ -489,7 +489,7 @@ export function LimeTrack({ fraction }: { fraction: number }) {
         height: theme.space[1.5],
         alignSelf: 'stretch',
         borderRadius: theme.radius.pill,
-        backgroundColor: theme.color.discover.soft,
+        backgroundColor: theme.collector.line,
         overflow: 'hidden',
       }}
     >

@@ -1,7 +1,7 @@
 import { Failure, StatePanel } from '../ui/StatePanel.tsx';
 import { useToast } from '../ui/Toast.tsx';
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { Image, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, EPISODE_STATES, type EpisodeState } from '../api/types.ts';
 import { uuid } from '../api/http.ts';
@@ -24,6 +24,8 @@ import {
 } from '../upload/delivery-native.ts';
 import { dong, incomeStatus, isLivePaid, gb, shortId } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
+import { Icon, type IconName } from '../ui/Icon.tsx';
+import { taskImage } from '../ui/taskImage.ts';
 
 
 const stateColors = (theme: NativeTheme, state: EpisodeState): { fg: string; bg: string } => {
@@ -61,23 +63,14 @@ const stateColors = (theme: NativeTheme, state: EpisodeState): { fg: string; bg:
   }
 };
 
-/**
- * The shape each state carries as well as its fill.
- *
- * `DESIGN.md`: "never colour alone — every verdict carries a shape too, because
- * red/green colour blindness is common and this axis decides whether somebody is
- * paid". §13 goes further and gives all six states a glyph, because three of
- * them now share one fill: an arrow for the bytes not yet moved and the bytes
- * moving, a light tick for arrived, an eye for a human holding it, a heavy tick
- * for passed and a cross for failed.
- */
-const stateMarks: Record<EpisodeState, string> = {
-  pending_upload: '↑',
-  uploading: '⬆',
-  uploaded: '✓',
-  under_review: '◉',
-  review_passed: '✔',
-  review_failed: '✕',
+/** Text and SVG shapes distinguish pending work from a human verdict, without relying on colour. */
+const stateMarks: Record<EpisodeState, IconName> = {
+  pending_upload: 'upload',
+  uploading: 'upload',
+  uploaded: 'clock',
+  under_review: 'clock',
+  review_passed: 'circleCheck',
+  review_failed: 'close',
 };
 
 /**
@@ -102,17 +95,8 @@ const deliveryColors = (theme: NativeTheme, state: DeliveryState): { fg: string;
   }
 };
 
-/**
- * The delivery's own verdict marks, on the same argument as `stateMarks`.
- * `ingested` is the cloud copy proven and accepted; `held` and `failed` are
- * refusals. `registered`, `verified` and `ingesting` are work in progress and
- * carry no mark.
- */
-const deliveryMarks: Partial<Record<DeliveryState, string>> = {
-  ingested: '✓',
-  held: '✕',
-  failed: '✕',
-};
+/** Preserve useful precision for a photo or sidecar; GB alone rounds small uploads to zero. */
+const bytesText = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(1)} KB` : bytes < 1024 ** 3 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : gb(bytes);
 
 /**
  * The server's reason, in the collector's language when this app has a sentence
@@ -193,14 +177,24 @@ export function Uploads() {
   const [picked, setPicked] = useState<PickedSession | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   /** Files hashed so far. The slow part, so it is the part that is reported. */
-  const [hashed, setHashed] = useState<{ done: number; total: number } | null>(null);
+  const [hashed, setHashed] = useState<{ done: number; total: number; file?: string; bytes?: number; totalBytes?: number } | null>(null);
   const [step, setStep] = useState<DeliveryStep | null>(null);
+  const timing = useRef({ started: 0, progress: 0 });
+  const [now, setNow] = useState(0);
+  const reportStep = (next: DeliveryStep) => {
+    timing.current.progress = Date.now();
+    setStep(next);
+  };
   const listTarget = useGuideTarget('uploads.list');
 
   const episodes = useQuery({ queryKey: ['episodes'], queryFn: () => api.episodes() });
   const income = useQuery({ queryKey: ['income'], queryFn: () => api.income() });
   const failed = [episodes, income].find(q => q.isError && q.data === undefined) ?? [episodes, income].find(q => q.isError);
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: () => api.sessions(), enabled: open });
+  useEffect(() => {
+    // Only one explicit server session is unambiguous. Never guess among several.
+    if (open && sessions.isSuccess && !sessions.isError && !sessionId && sessions.data.length === 1) setSessionId(sessions.data[0]!.id);
+  }, [open, sessions.isSuccess, sessions.isError, sessions.data, sessionId]);
   /**
    * The delivery this phone was interrupted in the middle of, if any.
    *
@@ -244,17 +238,20 @@ export function Uploads() {
     mutationFn: async (resuming: DeliveryRecord | null) => {
       const signal = transfer.current!.signal;
       const deps = { api, store: nativeDeliveryStore, transport: {
-        putFile: (uri: string, url: string) => nativeTransport.putFile(uri, url, signal),
-        putRange: (uri: string, url: string, start: number, end: number) => nativeTransport.putRange(uri, url, start, end, signal),
+        putFile: (uri: string, url: string, report?: (bytes: number) => void) => nativeTransport.putFile(uri, url, signal, report),
+        putRange: (uri: string, url: string, start: number, end: number, report?: (bytes: number) => void) => nativeTransport.putRange(uri, url, start, end, signal, report),
       } };
       if (resuming !== null) {
         activeRecord.current = resuming;
         // A cancel can precede registration. Replaying the same ID also resumes registered uploads.
-        return await runPhoneDelivery(deps, resuming, signal, { report: setStep });
+        return await runPhoneDelivery(deps, resuming, signal, { report: reportStep });
       }
       if (picked === null || sessionId === null) throw new ApiError('upload_not_ready');
       setHashed({ done: 0, total: picked.files.length });
-      const files = await hashSession(picked.files, (done, total) => setHashed({ done, total }), signal);
+      const files = await hashSession(picked.files, (done, total, progress) => {
+        timing.current.progress = Date.now();
+        setHashed({ done, total, ...progress });
+      }, signal);
       if (signal.aborted) throw new ApiError('upload_cancelled');
       const record: DeliveryRecord = {
         // Client-generated and persisted before the first byte moves, so a
@@ -266,7 +263,7 @@ export function Uploads() {
         files,
       };
       activeRecord.current = record;
-      return await runPhoneDelivery(deps, record, signal, { report: setStep });
+      return await runPhoneDelivery(deps, record, signal, { report: reportStep });
     },
     onSuccess: outcome => { if (outcome.state === 'ingested') toast(tt('delivery.ingested')); },
     onSettled: () => {
@@ -278,6 +275,11 @@ export function Uploads() {
 
   const outcome = deliver.data ?? null;
   const running = deliver.isPending;
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [running]);
   const resumable = held.data ?? null;
   /**
    * How many bytes the picked session directory holds, which is what a
@@ -306,10 +308,20 @@ export function Uploads() {
   const visible = (episodes.data ?? []).filter(episode => (filter === null || episode.state === filter) &&
     `${episode.episodeId} ${tt(`state.${episode.state}`)}`.toLocaleLowerCase(locale).includes(needle));
   const selected = episodes.data?.find(episode => episode.episodeId === selectedEpisode);
+  const selectedSession = sessions.data?.find(session => session.id === sessionId);
+  const sessionLabel = selectedSession ? `${tt(`scenario.${selectedSession.scenario}`)} · ${selectedSession.createdAt.slice(0, 10)}` : sessionId ?? '';
+  const phase = step?.phase ?? (step ? 'sending' : 'hashing');
+  const phaseLabel = tt(phase === 'hashing' ? 'uploads.hashing' : phase === 'registering' ? 'uploads.registering' : phase === 'verifying' ? 'uploads.verifying' : phase === 'ingesting' ? 'delivery.ingesting' : 'uploads.sending');
+  const progressBytes = step ? step.sentBytes : hashed?.bytes;
+  const progressTotal = step ? step.totalBytes : hashed?.totalBytes;
+  const measurable = (phase === 'hashing' || phase === 'sending') && progressBytes !== undefined && !!progressTotal;
+  const elapsed = Math.max(0, Math.floor((now - timing.current.started) / 1000));
   const start = (record: DeliveryRecord | null) => {
     if (sending.current) return;
     sending.current = true;
     activeRecord.current = record;
+    setStep(null); setHashed(null);
+    timing.current = { started: Date.now(), progress: Date.now() }; setNow(Date.now());
     transfer.current = new AbortController();
     deliver.mutate(record);
   };
@@ -324,10 +336,18 @@ export function Uploads() {
       refresh={{ refreshing: episodes.isFetching || income.isFetching, onRefresh: () => { void episodes.refetch(); void income.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.cardGap }}>
         {failed ? <Failure error={failed.error} text={tt(failed.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} onRetry={() => { void episodes.refetch(); void income.refetch(); }} busy={episodes.isFetching || income.isFetching} /> : null}
+        <View style={{ borderRadius: c.radius.card, overflow: 'hidden', backgroundColor: c.paper }}>
+          <Image source={taskImage({ scenario: 'home' })} accessible={false} style={{ width: '100%', height: 156 }} resizeMode="cover" />
+          <View style={{ padding: c.cardPad, gap: theme.space[2] }}>
+            <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.muted }}>{tt('landing.illustrativeScenes')}</Text>
+            <Title>{tt('uploads.journeyTitle')}</Title>
+            <Body muted>{tt('uploads.journeyBody')}</Body>
+          </View>
+        </View>
         <Button label={tt('uploads.deliverTitle')} onPress={() => setOpen(true)} />
         <Field label={tt('uploads.search')} value={search} onChangeText={setSearch} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: theme.space[2] }}>
-          <Chip label={tt('hall.all')} selected={filter === null} onPress={() => setFilter(null)} />
+          <Chip label={tt('uploads.all')} selected={filter === null} onPress={() => setFilter(null)} />
           {EPISODE_STATES.map(state => <Chip key={state} label={tt(`state.${state}`)} selected={filter === state} onPress={() => setFilter(state)} />)}
         </ScrollView>
         {income.isError && income.data === undefined ? <Body muted>{tt('income.title')} —</Body> : null}
@@ -341,7 +361,7 @@ export function Uploads() {
           gap: c.cardGap, backgroundColor: c.surface, opacity: pressed ? .85 : 1 })}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: c.cardGap }}>
         <View style={{ width: 44, height: 44, borderRadius: c.radius.pill, borderWidth: 1, borderColor: c.line, backgroundColor: stateColors(theme, episode.state).bg, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontFamily: face(theme), ...c.type.h2, color: stateColors(theme, episode.state).fg }}>{stateMarks[episode.state]}</Text>
+          <Icon name={stateMarks[episode.state]} color={stateColors(theme, episode.state).fg} size={22} />
         </View>
         <View style={{ flex: 1, gap: theme.space[1] }}><Body>{shortId(episode.episodeId)}</Body><Body muted>{tt(`state.${episode.state}`)}</Body></View>
         <View style={{ flexShrink: 1, alignItems: 'flex-end' }}>
@@ -352,7 +372,7 @@ export function Uploads() {
         {amounts.get(episode.episodeId)?.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
       </Pressable>} />
     <Modal visible={open} animationType="none" onRequestClose={close}>
-      <Screen title={outcome ? tt(`delivery.${outcome.state}`) : tt(running ? 'uploads.sending' : deliveryStage === 2 ? 'uploads.confirmTitle' : 'uploads.deliverTitle')}
+      <Screen title={outcome ? tt(`delivery.${outcome.state}`) : deliver.isError ? tt('uploads.paused') : tt(!running && deliveryStage === 2 ? 'uploads.confirmTitle' : 'uploads.deliverTitle')}
         onBack={() => { if (!running) { pickerRequest.current?.abort(); pick.reset(); } if (!running && !outcome && !deliver.isError && deliveryStage > -1) { deliver.reset(); setDeliveryStage(deliveryStage - 1); } else close(); }}
         right={<Button label={tt('common.close')} variant="ghost" disabled={running} onPress={close} />}
         footer={running ? <Button label={tt('common.cancel')} variant="secondary" onPress={() => transfer.current?.abort()} /> : outcome ?
@@ -365,9 +385,24 @@ export function Uploads() {
         {Platform.OS === 'ios' && deliveryStage >= 0 ? <Note text={tt('uploads.libraryUnmeasured')} /> : null}
         {running || outcome || deliver.isError ? <>
           {running ? <Note text={tt('uploads.keepOpen')} /> : null}
-          {hashed ? <Progress label={tt('uploads.hashing')} value={`${hashed.done}/${hashed.total} ${tt('uploads.files')}`} fraction={hashed.total ? hashed.done / hashed.total : 0} busy={running && !step} /> : null}
-          {step ? <Progress label={tt('uploads.sending')} value={`${step.sentFiles}/${step.totalFiles} ${tt('uploads.files')}`} fraction={step.totalFiles ? step.sentFiles / step.totalFiles : 0} busy={running} /> : null}
-          {outcome ? <><Tag label={tt(`delivery.${outcome.state}`)} fg={deliveryColors(theme, outcome.state).fg} bg={deliveryColors(theme, outcome.state).bg} mark={deliveryMarks[outcome.state]} />
+          {!outcome ? <Card>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[3] }}>
+              <Icon name={phase === 'sending' ? 'upload' : phase === 'hashing' ? 'file' : 'clock'} color={c.ink} size={28} />
+              <View style={{ flex: 1 }}><Title>{phaseLabel}</Title></View>
+            </View>
+            {measurable ? <Progress label={step?.currentFile ?? hashed?.file ?? phaseLabel} value={`${Math.floor(Math.min(1, progressBytes / progressTotal) * 100)}%`} fraction={Math.min(1, progressBytes / progressTotal)} /> : null}
+            {progressBytes !== undefined && progressTotal !== undefined ? <Body>{bytesText(progressBytes)} / {bytesText(progressTotal)}</Body> : null}
+            {!measurable && (step?.currentFile || (!step && hashed?.file)) ? <Body>{step?.currentFile ?? hashed?.file}</Body> : null}
+            {step || hashed ? <Body muted>{step ? `${step.sentFiles}/${step.totalFiles}` : `${hashed!.done}/${hashed!.total}`} {tt('uploads.files')}</Body> : null}
+            {phase === 'verifying' || phase === 'ingesting' ? <Body muted>{tt('uploads.verifyingBody')}</Body> : null}
+            {running ? <Body muted>{tt('uploads.elapsed')} {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</Body> : null}
+          </Card> : null}
+          {running && now - timing.current.progress >= 15_000 ? <Note tone="pending" text={tt('uploads.waitingProgress')} /> : null}
+          {outcome ? <><View style={{ alignItems: 'center', paddingVertical: theme.space[5], gap: theme.space[3] }}>
+            <Icon name={outcome.state === 'ingested' ? 'circleCheck' : outcome.state === 'held' || outcome.state === 'failed' ? 'close' : 'clock'} size={64} color={deliveryColors(theme, outcome.state).fg} />
+            <Title>{tt(`delivery.${outcome.state}`)}</Title>
+            {outcome.state !== 'ingested' && outcome.state !== 'held' && outcome.state !== 'failed' ? <Body muted>{tt('uploads.verifyingBody')}</Body> : null}
+          </View>
             {outcome.heldReason ? <Note tone="pending" text={reasonText(tt, outcome.heldReason)} /> : null}
             {outcome.failedReason ? <Note tone="error" text={reasonText(tt, outcome.failedReason)} /> : null}</> : null}
           {deliver.isError ? <Failure error={deliver.error} text={deliver.error instanceof ApiError ? reasonText(tt, deliver.error.code) : tt('common.actionFailed')}
@@ -386,6 +421,8 @@ export function Uploads() {
           {pick.isError ? <Failure error={pick.error} text={pick.error instanceof ApiError ? reasonText(tt, pick.error.code) : tt('uploads.pickFailed')} onRetry={() => pick.mutate(pick.variables)} busy={pick.isPending} /> : null}
         </> : deliveryStage === 1 ? <>
           <Title>{tt('uploads.chooseSession')}</Title>
+          <Body muted>{tt('uploads.sessionWhy')}</Body>
+          {sessions.data?.length === 1 && sessionId ? <Note text={tt('uploads.sessionMatched')} /> : null}
           {sessions.isPending ? <Loading /> : null}
           {sessions.isError && sessions.data === undefined ? <Body muted>{tt('uploads.chooseSession')} —</Body> : null}
           {(sessions.data ?? []).map(session => <Choice key={session.id} label={`${tt(`scenario.${session.scenario}`)} · ${session.createdAt.slice(0, 10)}`}
@@ -412,7 +449,7 @@ export function Uploads() {
             <Row label={tt('uploads.files')} value={String(picked?.files.length ?? 0)} />
             <Row label={tt('prechecks.totalSize')} value={gb(totalBytes)} />
             <Button label={tt('common.change')} variant="ghost" onPress={() => setDeliveryStage(0)} /></Card>
-          <Card><Row label={tt('uploads.session')} value={sessionId ?? ''} />
+          <Card><Row label={tt('uploads.session')} value={sessionLabel} />
             <Button label={tt('common.change')} variant="ghost" onPress={() => setDeliveryStage(1)} /></Card>
           <Note text={tt('prechecks.connection').replace('{size}', gb(totalBytes))} />
         </>}
@@ -420,7 +457,7 @@ export function Uploads() {
     </Modal>
     <Modal visible={selected !== undefined} animationType="none" onRequestClose={() => setSelectedEpisode(null)}>
       {selected ? <Screen title={shortId(selected.episodeId)} onBack={() => setSelectedEpisode(null)}>
-        <Tag label={tt(`state.${selected.state}`)} fg={stateColors(theme, selected.state).fg} bg={stateColors(theme, selected.state).bg} mark={stateMarks[selected.state]} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[2] }}><Icon name={stateMarks[selected.state]} color={stateColors(theme, selected.state).fg} /><Tag label={tt(`state.${selected.state}`)} fg={stateColors(theme, selected.state).fg} bg={stateColors(theme, selected.state).bg} /></View>
         <Row label={tt('uploads.size')} value={selected.sizeBytes === null ? tt('uploads.sizeUnknown') : gb(selected.sizeBytes)} />
         {selected.rejectReason ? <Note tone="error" text={selected.rejectReason} /> : null}
         {selected.state === 'under_review' ? <Note tone="pending" text={tt('uploads.waitingReviewer')} /> : null}

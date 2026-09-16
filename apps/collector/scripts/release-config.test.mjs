@@ -112,23 +112,23 @@ test('every installable profile in eas.json names a non-placeholder origin', () 
   }
 });
 
-test('the TestFlight profile is a store-distributed demo at version 49', () => {
+test('the TestFlight profile is a store-distributed demo at version 50', () => {
   // The three installable profiles ship the same build and must carry the
   // same Play/App Store version code, or one of them ships stale.
   for (const name of ['demo', 'store', 'testflight']) {
-    assert.equal(profileEnv(name).PLAYERONE_VERSION_CODE, '49', `${name} must be at version 49`);
+    assert.equal(profileEnv(name).PLAYERONE_VERSION_CODE, '50', `${name} must be at version 50`);
   }
 
   assert.equal(eas.build.testflight.distribution, 'store');
   assert.equal(eas.build.testflight.pnpm, eas.build.demo.pnpm);
   const env = profileEnv('testflight');
   assert.equal(env.PLAYERONE_BUILD_PROFILE, 'demo');
-  assert.equal(env.PLAYERONE_VERSION_CODE, '49');
+  assert.equal(env.PLAYERONE_VERSION_CODE, '50');
   // What Expo hands the native build: iOS reads the build number, Android the
   // version code, and both come from the one variable.
   const value = config(env);
-  assert.equal(value.ios.buildNumber, '49');
-  assert.equal(value.android.versionCode, 49);
+  assert.equal(value.ios.buildNumber, '50');
+  assert.equal(value.android.versionCode, 50);
   assert.equal(value.ios.bundleIdentifier, 'vn.vng.playerone.collector.demo');
   // A demo build talks to a laptop over plain HTTP once the origin is
   // overridden at runtime, so it keeps arbitrary loads and cleartext.

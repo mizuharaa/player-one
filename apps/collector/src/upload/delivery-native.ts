@@ -140,10 +140,12 @@ const yieldToUi = (): Promise<void> => new Promise((resolve) => setTimeout(resol
  */
 export async function hashSession(
   files: readonly PickedFile[],
-  report: (hashedFiles: number, totalFiles: number) => void = () => {},
+  report: (hashedFiles: number, totalFiles: number, progress?: { file: string; bytes: number; totalBytes: number }) => void = () => {},
   signal?: AbortSignal,
 ): Promise<DeclaredFile[]> {
   const declared: DeclaredFile[] = [];
+  let bytes = 0;
+  const totalBytes = files.reduce((sum, file) => sum + file.bytes, 0);
   for (const file of files) {
     if (signal?.aborted) throw new ApiError('upload_cancelled');
     const handle = new File(file.uri).open(FileMode.ReadOnly);
@@ -154,33 +156,48 @@ export async function hashSession(
         const chunk = handle.readBytes(CHUNK);
         if (chunk.length === 0) break;
         hash.update(chunk);
+        bytes += chunk.length;
+        report(declared.length, files.length, { file: file.relativePath, bytes, totalBytes });
         await yieldToUi();
       }
       declared.push({ ...file, sha256: hash.digest() });
     } finally {
       handle.close();
     }
-    report(declared.length, files.length);
+    report(declared.length, files.length, { file: file.relativePath, bytes, totalBytes });
     await yieldToUi();
   }
   return declared;
 }
 
-async function upload(file: File, url: string, signal?: AbortSignal): Promise<number> {
-  const deadline = AbortSignal.timeout(60_000);
-  const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
-  if (combined.aborted) throw new ApiError(signal?.aborted ? 'upload_cancelled' : 'server_unreachable');
+async function upload(file: File, url: string, signal?: AbortSignal, report?: (bytesSent: number) => void): Promise<number> {
+  const idle = new AbortController();
+  const combined = signal ? AbortSignal.any([signal, idle.signal]) : idle.signal;
+  if (combined.aborted) throw new ApiError('upload_cancelled');
+  let lastBytes = 0;
+  let timer = setTimeout(() => idle.abort(), 60_000);
+  let abort!: () => void;
+  const stopped = new Promise<never>((_, reject) => {
+    abort = () => reject(new ApiError(signal?.aborted ? 'upload_cancelled' : 'server_unreachable'));
+    combined.addEventListener('abort', abort, { once: true });
+  });
   try {
-    const result = await file.upload(url, {
-      httpMethod: 'PUT', uploadType: UploadType.BINARY_CONTENT, signal: combined,
-    });
+    const result = await Promise.race([file.upload(url, {
+      httpMethod: 'PUT', uploadType: UploadType.BINARY_CONTENT, sessionType: 'foreground', signal: combined,
+      onProgress: ({ bytesSent }) => {
+        if (combined.aborted || !Number.isFinite(bytesSent) || bytesSent <= lastBytes) return;
+        lastBytes = bytesSent;
+        clearTimeout(timer); timer = setTimeout(() => idle.abort(), 60_000);
+        report?.(bytesSent);
+      },
+    }), stopped]);
     if (combined.aborted) throw new ApiError(signal?.aborted ? 'upload_cancelled' : 'server_unreachable');
     return result.status;
   } catch (error) {
     if (signal?.aborted) throw new ApiError('upload_cancelled');
-    if (deadline.aborted) throw new ApiError('server_unreachable');
+    if (idle.signal.aborted) throw new ApiError('server_unreachable');
     throw error;
-  }
+  } finally { clearTimeout(timer); combined.removeEventListener('abort', abort); }
 }
 
 export const nativeTransport = {
@@ -192,8 +209,8 @@ export const nativeTransport = {
    * request adds no headers of its own and must not: an unexpected signed
    * header is a 403 and looks exactly like an expired URL.
    */
-  async putFile(uri: string, url: string, signal?: AbortSignal) {
-    return upload(new File(uri), url, signal);
+  async putFile(uri: string, url: string, signal?: AbortSignal, report?: (bytesSent: number) => void) {
+    return upload(new File(uri), url, signal, report);
   },
 
   /**
@@ -213,7 +230,7 @@ export const nativeTransport = {
    * upgrade path is unchanged and is the Kotlin foreground-service uploader
    * that Path A always owed (`App.tsx`), which can seek the source directly.
    */
-  async putRange(uri: string, url: string, start: number, end: number, signal?: AbortSignal) {
+  async putRange(uri: string, url: string, start: number, end: number, signal?: AbortSignal, report?: (bytesSent: number) => void) {
     if (signal?.aborted) throw new ApiError('upload_cancelled');
     const part = new File(Paths.cache, `playerone-part-${uuid()}`);
     part.create({ overwrite: true, intermediates: true });
@@ -233,7 +250,7 @@ export const nativeTransport = {
           }
         } finally { sink.close(); }
       } finally { source.close(); }
-      return await upload(part, url, signal);
+      return await upload(part, url, signal, report);
     } finally {
       try {
         part.delete();

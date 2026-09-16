@@ -23,6 +23,30 @@ const root = join(import.meta.dirname, '..', '..', '..');
 const source = (...parts: string[]) => readFileSync(join(root, ...parts), 'utf8');
 
 describe('the demo seed against the app it seeds for', () => {
+  it('offers eight tasks without changing the IDs or rates of the existing four', () => {
+    const base = source('packages', 'api', 'scripts', 'seed-demo.mjs');
+    expect(base).toContain("task: '00000000-0000-4000-8000-00000000d002'");
+    expect(base).toContain("const TASK_NAME = 'Demo housework'");
+    expect(base).toContain("${TASK_NAME}, 1200.0000, 5, 'published'");
+    const seed = source('packages', 'api', 'scripts', 'seed-demo-work.mjs');
+    const rows = [...seed.matchAll(/\{ n: (\d+), name: '([^']+)', type: '([^']+)', price: '([^']+)', target: '([^']+)'(?:, instructions: '[^']+')? \}/g)]
+      .map(([, n, name, type, price, target]) => ({ n: Number(n), name, type, price, target }));
+    expect(rows).toHaveLength(7);
+    expect(rows.slice(0, 3)).toEqual([
+      { n: 1, name: 'Một buổi làm việc', type: 'office', price: '3800.0000', target: '14400.000000' },
+      { n: 2, name: 'Đi chợ buổi sáng', type: 'shop', price: '5200.0000', target: '10800.000000' },
+      { n: 3, name: 'Ca kho hàng', type: 'warehouse', price: '6000.0000', target: '21600.000000' },
+    ]);
+    expect(rows.slice(3).map(row => row.name)).toEqual(['Set a Table', 'Fold Clothes', 'Tidy Room', 'Vacuum Room']);
+    expect(rows.map(row => row.n)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(seed).toContain('`00000000-0000-4000-8000-0000000a000${n}`');
+    expect(seed).toContain('on conflict (id) do nothing');
+    expect(seed).toContain('held.name !== t.name');
+    const instructions = [...seed.matchAll(/instructions: '([^']+)'/g)].map(match => match[1]!);
+    expect(instructions).toHaveLength(4);
+    expect(instructions.every(text => text.length > 50 && !/https?:\/\//.test(text))).toBe(true);
+  });
+
   it('creates only scenario codes the app accepts', () => {
     const app = source('apps', 'collector', 'src', 'api', 'types.ts');
     const list = /export const SCENARIOS = \[([^\]]+)\] as const;/.exec(app);

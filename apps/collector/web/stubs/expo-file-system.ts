@@ -56,8 +56,16 @@ export class File {
     return unavailable();
   }
 
-  upload(_url: string, options: { signal: AbortSignal }): Promise<never> {
-    if (stalledPreview()) return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('Preview cancelled')), { once: true }));
+  upload(_url: string, options: { signal: AbortSignal; onProgress?: (value: { bytesSent: number; totalBytes: number }) => void }): Promise<{ status: number }> {
+    if (stalledPreview() && new URLSearchParams(window.location.search).has('uploadResult')) {
+      options.onProgress?.({ bytesSent: 4, totalBytes: 4 });
+      return Promise.resolve({ status: 200 });
+    }
+    // Explicit browser fixture: one measured sample, then a stalled connection. Not native upload evidence.
+    if (stalledPreview()) return new Promise((_resolve, reject) => {
+      options.onProgress?.({ bytesSent: 1, totalBytes: 4 });
+      options.signal.addEventListener('abort', () => reject(new Error('Preview cancelled')), { once: true });
+    });
     return unavailable();
   }
 

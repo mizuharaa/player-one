@@ -72,7 +72,7 @@ it('keeps confirmed cycle and awaiting money neutral because neither proves paym
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
     for (const value of ['9001', '1234']) {
       const amount = [...host.querySelectorAll<HTMLElement>('*')].find(node => !node.children.length && node.textContent === dong(value))!;
-      expect(amount.style.color).toBe('rgb(26, 22, 48)');
+      expect(amount.style.color).toBe('rgb(32, 40, 39)');
     }
   } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
 });

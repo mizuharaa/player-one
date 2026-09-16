@@ -379,6 +379,13 @@
       "when": 1789070070000,
       "tag": "0035_zalo_sign_in",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1789070080000,
+      "tag": "0036_task_instructions",
+      "breakpoints": true
     }
   ]
 }

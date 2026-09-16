@@ -115,7 +115,7 @@ it.each(['vi', 'en', 'zh'] as const)('keeps nonpayable zero neutral in the incom
       const neutralMoney = (parent: HTMLElement) => {
         const amounts = [...parent.querySelectorAll<HTMLElement>('*')].filter(node => !node.children.length && node.textContent === dong('0.0000'));
         expect(amounts.length).toBeGreaterThan(0);
-        for (const amount of amounts) expect(amount.style.color).toBe('rgb(81, 75, 99)');
+        for (const amount of amounts) expect(amount.style.color).toBe('rgb(68, 80, 72)');
       };
       neutralMoney(row);
       await act(async () => row.click());
@@ -143,7 +143,7 @@ it.each(['vi', 'en', 'zh'] as const)('keeps the failed-review Uploads row neutra
     expect(row.textContent).toContain(MESSAGES[locale]['settlement.not_paid']);
     expect(row.textContent).not.toContain(MESSAGES[locale]['income.confirmed']);
     const money = [...row.querySelectorAll<HTMLElement>('*')].find(node => !node.children.length && node.textContent === dong('0.0000'))!;
-    expect(money.style.color).toBe('rgb(81, 75, 99)');
+    expect(money.style.color).toBe('rgb(68, 80, 72)');
   } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); }
 });
 
@@ -165,7 +165,7 @@ it.each(['income', 'uploads'] as const)('uses green only for a nonzero live paym
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const assertMoney = (scope: HTMLElement) => {
       const amount = [...scope.querySelectorAll<HTMLElement>('*')].find(node => !node.children.length && node.textContent === dong(amountVnd))!;
-      expect(amount.style.color, `${settlementState}/${amountVnd}/simulation=${simulation}`).toBe(paid ? 'rgb(8, 122, 56)' : 'rgb(81, 75, 99)');
+      expect(amount.style.color, `${settlementState}/${amountVnd}/simulation=${simulation}`).toBe(paid ? 'rgb(8, 122, 56)' : 'rgb(68, 80, 72)');
     };
     try {
       await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: screen }}>{screen === 'income' ? <Income /> : <Uploads />}</NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));

@@ -129,7 +129,7 @@ export type ReviewerClaims = { kind: 'reviewer'; reviewerId: string };
  * because the check has to compare two values: what the token was issued under,
  * and what the row says now.
  */
-export type CollectorClaims = { kind: 'collector'; collectorId: string; epoch: number };
+export type CollectorClaims = { kind: 'collector'; collectorId: string; epoch: number; demoRunId?: string };
 export type Claims = MachineClaims | OperatorClaims | ReviewerClaims | CollectorClaims;
 
 /**
@@ -197,6 +197,9 @@ export function verifyToken(
   // The epoch is required, and `0` is not a stand-in for "absent": the column
   // starts at 1, so a token claiming epoch 0 matches no row and is refused a
   // moment later anyway. Checking the type here keeps that a shape failure.
-  if (c.kind === 'collector' && c.collectorId && typeof c.epoch === 'number') return c;
+  if (c.kind === 'collector' && c.collectorId && typeof c.epoch === 'number') {
+    if (c.demoRunId !== undefined && (typeof c.demoRunId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(c.demoRunId))) return null;
+    return c;
+  }
   return null;
 }

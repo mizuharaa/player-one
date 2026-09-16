@@ -13,7 +13,7 @@
  *
  * What it adds, and why each piece is needed to look at a screen:
  *
- * - **Three more published tasks**, with different unit prices and a `type`
+ * - **Seven more published tasks**, with different unit prices and a `type`
  *   drawn from the four scenario codes. `GET /api/me/tasks` sends `type` and
  *   no scenario, and SPEC §21.2 picks a task's placeholder photograph from it,
  *   so without these the hall is one tile and one photograph.
@@ -79,13 +79,19 @@ const UNIT_PRICE = '1200.0000';
 /**
  * The extra tasks. `type` is one of `SCENARIOS`, which is what §21.2's
  * placeholder map reads; the prices differ so the hall's price chips are not
- * four copies of one figure, and the targets differ so the claim bars are not
- * four copies of one shape.
+ * copies of one figure, and the targets differ so the claim bars are not
+ * copies of one shape. Preserve n/name/price for existing demo claims.
+ * New task instructions are independently phrased demo recording guidance.
+ * No copied images or instructions are seeded.
  */
 const TASKS = [
   { n: 1, name: 'Một buổi làm việc', type: 'office', price: '3800.0000', target: '14400.000000' },
   { n: 2, name: 'Đi chợ buổi sáng', type: 'shop', price: '5200.0000', target: '10800.000000' },
   { n: 3, name: 'Ca kho hàng', type: 'warehouse', price: '6000.0000', target: '21600.000000' },
+  { n: 4, name: 'Set a Table', type: 'home', price: '1200.0000', target: '14400.000000', instructions: 'Arrange plates, cups and cutlery for a meal. Keep your hands and the items you move visible as you place each setting.' },
+  { n: 5, name: 'Fold Clothes', type: 'home', price: '1200.0000', target: '14400.000000', instructions: 'Fold a small pile of clean clothes and put them away. Show each garment and your hand movements without including private documents or screens.' },
+  { n: 6, name: 'Tidy Room', type: 'home', price: '1200.0000', target: '14400.000000', instructions: 'Return everyday objects to their usual places and clear a small area. Move naturally and keep the objects you handle in view.' },
+  { n: 7, name: 'Vacuum Room', type: 'home', price: '1200.0000', target: '14400.000000', instructions: 'Vacuum an accessible area of floor, working around furniture safely. Show how you guide the vacuum and move objects out of its path.' },
 ];
 
 const phone = process.env['PLAYERONE_DEMO_PHONE'];
@@ -139,9 +145,9 @@ try {
         fail(`tasks ${TASK(t.n)} is held by "${held.name}". Refusing rather than overwriting it.`);
       }
       await tx.execute(sql`
-        insert into tasks (id, name, type, unit_price, target_effective_duration_s,
+        insert into tasks (id, name, instructions, type, unit_price, target_effective_duration_s,
                            max_concurrent_claimants, status)
-        values (${TASK(t.n)}, ${t.name}, ${t.type}, ${t.price}, ${t.target}, 5, 'published')
+        values (${TASK(t.n)}, ${t.name}, ${t.instructions ?? ''}, ${t.type}, ${t.price}, ${t.target}, 5, 'published')
         on conflict (id) do nothing`);
     }
     // The task the collector already claimed gets a type and a target too, so
@@ -315,7 +321,7 @@ try {
   });
 
   console.log(
-    'Demo work seeded: 4 published tasks, 5 episodes, 1 bill over ' +
+    `Demo work seeded: ${TASKS.length + 1} published tasks, 5 episodes, 1 bill over ` +
       BILL_PERIOD.start.slice(0, 10) + ' - ' + BILL_PERIOD.end.slice(0, 10) + '.',
   );
   console.log('No payout account, on purpose: /api/me/payout answers "none" and never "verified".');

@@ -40,6 +40,8 @@ import {
   type CollectorApi,
   type CollectorNotificationRow,
   type CollectorProfile,
+  type DemoContext,
+  type DemoStep,
   type EpisodeState,
   type EpisodeUpload,
   type IncomeCycle,
@@ -378,6 +380,18 @@ export class HttpCollectorApi implements CollectorApi {
     this.token = value;
     await this.persist(() => this.tokens.set(value));
     this.active();
+  }
+
+  async demoContext(): Promise<DemoContext> {
+    const result = await this.req('GET', '/api/me/demo') as { runId?: unknown };
+    return { runId: typeof result?.runId === 'string' && result.runId !== '' ? result.runId : null };
+  }
+
+  async skipDemoStep(from: DemoStep, to: DemoStep): Promise<void> {
+    const result = await this.req('POST', '/api/me/demo/skip', { from, to }) as { runId?: unknown; from?: unknown; to?: unknown; outcome?: unknown };
+    if (typeof result?.runId !== 'string' || !result.runId || result.from !== from || result.to !== to || result.outcome !== 'preview_only') {
+      throw new ApiError('server_error');
+    }
   }
 
   async restoreSession(): Promise<boolean> {
@@ -745,6 +759,7 @@ const PAYOUT_STATUSES = ['verified', 'awaiting', 'none'] as const;
 interface RawTask {
   id: string;
   name: string;
+  instructions?: string | null;
   type: string | null;
   unit_price: string;
   target_effective_duration_s: string | null;
@@ -946,20 +961,8 @@ const toTask = (raw: RawTask): Task => ({
   claimedMinutes: minutes(raw.collected_effective_s),
   maxClaimants: raw.max_concurrent_claimants,
   claimants: raw.claimants,
-  /**
-   * ponytail: APP-09 IS NOT BUILT ON THE SERVER and these three have no source.
-   *
-   * `tasks` holds id, name, type, unit_price, target, max claimants and status
-   * — no instructions, no privacy notice, no payment rule. `collector-app.ts`
-   * declines to add nullable columns for them because a task shipped with an
-   * empty privacy notice is worse than a task the app knows is incomplete:
-   * that copy is text legal has to approve, and PaXini owes it.
-   *
-   * Empty rather than invented. `TaskDetail.tsx` prints `detail.notSupplied`
-   * for an empty one, which is true, instead of placeholder prose a collector
-   * would read as the real instructions.
-   */
-  instructions: '',
+  // Older deployments omit instructions; approved privacy/payment copy is still absent.
+  instructions: typeof raw.instructions === 'string' ? raw.instructions : '',
   privacyNotice: '',
   paymentRule: '',
 });

@@ -4,6 +4,7 @@ import { Pressable, Switch, Text, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
 import { AGREEMENTS, type AgreementId } from '../api/types.ts';
 import { useApi } from '../api/context.tsx';
+import { DemoSkip } from '../ui/DemoSkip.tsx';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
@@ -68,6 +69,7 @@ export function Agreements() {
   return (
     <Screen
       title={tt('agreements.title')}
+      right={<DemoSkip from="agreements" to="training" disabled={accept.isPending} onSkipped={() => nav.push({ name: 'training' })} />}
       footer={
         <>
           {!allChecked ? <Note text={tt('agreements.incomplete')} /> : null}
