@@ -4,7 +4,7 @@ import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { Onboarding } from '../src/screens/Onboarding.tsx';
 import { Notifications } from '../src/screens/Notifications.tsx';
 import { NOTIFICATION_PREVIEW } from './notification-preview.ts';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App, SCREENS } from '../src/App.tsx';
 import { LOCALES, type Locale as LocaleName } from '../src/i18n.ts';
@@ -68,6 +68,11 @@ function RoutedScreen() {
 export function Harness() {
   const params = new URLSearchParams(window.location.search);
   const screen = params.get('screen');
+  const loading = params.get('state') === 'loading';
+  const previewApi = useMemo(() => new Proxy(api, { get(target, key) {
+    if (loading && ['tasks', 'task', 'claims', 'boundDevices', 'episodes', 'income', 'incomeCycle', 'sessions', 'notifications'].includes(String(key))) return () => new Promise(() => {});
+    const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value;
+  } }), [loading]);
   const [intro, setIntro] = useState(params.get('intro') === '1');
   const asked = params.get('lang');
   const readyRequested = params.get('ready') === '1';
@@ -104,7 +109,7 @@ export function Harness() {
     <ThemeProvider>
       <LocaleProvider>
         <Locale lang={lang}>
-          <ApiProvider value={api}>
+          <ApiProvider value={previewApi}>
             <QueryClientProvider client={queryClient}>
               <ToastProvider><NavProvider initial={initial}>
                 {screen === 'onboarding' ? <GuideProvider><Onboarding onDone={() => {}} /></GuideProvider> : routed ? <GuideProvider><RoutedScreen /></GuideProvider> : screen === 'signin' ? (

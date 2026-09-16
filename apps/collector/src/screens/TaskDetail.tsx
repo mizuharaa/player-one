@@ -149,7 +149,7 @@ export function TaskDetail() {
     return (
       <View style={ground}>
         <View style={{ padding: c.gutter, paddingTop: insets.top + theme.space[4] }}>
-          <Loading />
+          <Loading kind="body" />
         </View>
       </View>
     );

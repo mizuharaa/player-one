@@ -1,3 +1,5 @@
+import { useReducedMotion } from './ui/motion.ts';
+import { Skeleton } from './ui/Skeleton.tsx';
 import { PhantomPressable as Pressable } from './ui/PhantomPressable.tsx';
 import { useContext, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
@@ -11,6 +13,7 @@ import {
   Modal,
   Platform,
   ScrollView,
+  RefreshControl,
   StatusBar,
   StyleSheet,
   Text,
@@ -53,22 +56,7 @@ export const face = (theme: NativeTheme): string =>
  * promise and the change event needs unsubscribing, and getting either wrong
  * in six places is how one screen keeps moving after the setting is turned on.
  */
-export function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(true);
-  useEffect(() => {
-    let live = true;
-    void AccessibilityInfo.isReduceMotionEnabled().then((v) => {
-      if (live) setReduced(v);
-    }).catch(() => { if (live) setReduced(false); });
-    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
-    return () => {
-      live = false;
-      // Not every platform's implementation returns a subscription here.
-      sub?.remove();
-    };
-  }, []);
-  return reduced;
-}
+export { useReducedMotion } from './ui/motion.ts';
 
 /** Dock content height; its measured value replaces this first-frame reserve. */
 const barHeight = (theme: NativeTheme): number => theme.space[12] + theme.space[4];
@@ -116,6 +104,7 @@ export function Screen({
   onBack,
   progress,
   footer,
+  refresh,
   children,
 }: {
   title: string;
@@ -134,6 +123,7 @@ export function Screen({
    * list under the control that acts on it.
    */
   footer?: ReactNode;
+  refresh?: { refreshing: boolean; onRefresh: () => void };
   children: ReactNode;
 }) {
   const theme = useTheme();
@@ -145,6 +135,7 @@ export function Screen({
     // `background` is the page — the warm paper everything above it stands on.
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background }}>
       <ScrollView
+        refreshControl={refresh ? <RefreshControl {...refresh} /> : undefined}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           padding: theme.collector.gutter,
@@ -1021,13 +1012,13 @@ export function Progress({ label, value, fraction }: { label: string; value: str
  * screen reader has to be told to read it, the way `Note` is. Every one of
  * those eight copies was silent to TalkBack.
  */
-export function Loading() {
+export function Loading({ kind = 'rows' }: { kind?: 'rows' | 'number' | 'body' }) {
   const tt = useT();
-  return (
-    <View accessibilityLiveRegion="polite">
-      <Body muted>{tt('common.loading')}</Body>
-    </View>
-  );
+  return <View accessibilityLiveRegion="polite" accessibilityLabel={tt('common.loading')} accessibilityState={{ busy: true }} style={{ gap: 12 }}>
+    {kind === 'body' ? <Skeleton ratio={4 / 3} /> : null}
+    <Skeleton lines={kind === 'number' ? 3 : 2} />
+    {kind !== 'number' ? <><Skeleton lines={2} /><Skeleton lines={2} /></> : null}
+  </View>;
 }
 
 

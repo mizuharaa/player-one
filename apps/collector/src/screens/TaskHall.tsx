@@ -393,6 +393,7 @@ export function TaskHall() {
   return (
     <View style={{ flex: 1 }}>
       <ListScreen
+        refresh={{ refreshing: tasks.isRefetching || profile.isRefetching, onRefresh: () => { void tasks.refetch(); void profile.refetch(); } }}
         title={tt('hall.title')}
         data={rows}
         keyOf={(row) => row.map((task) => task.id).join('+')}

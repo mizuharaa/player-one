@@ -36,7 +36,7 @@ export function Home() {
   const awaiting = income.data?.find(entry => entry.kind === 'confirmed' && ['pending_settlement', 'bill_generated', 'approved', 'not_paid', 'on_a_bill', 'waiting_on_us'].includes(entry.settlementState ?? ''));
   const claimable = (tasks.data ?? []).filter(task => task.claimable);
   const initials = (profile.data?.name ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => Array.from(part)[0]).join('').toLocaleUpperCase();
-  return <Screen title={tt(`greeting.${mascotStateAt()}`)} right={
+  return <Screen refresh={{ refreshing: [profile, devices, episodes, tasks, sessions, income, cycle].some(q => q.isRefetching), onRefresh: () => { for (const q of [profile, devices, episodes, tasks, sessions, income, cycle]) void q.refetch(); } }} title={tt(`greeting.${mascotStateAt()}`)} right={
     <Pressable accessibilityRole="button" accessibilityLabel={tt('tab.profile')} onPress={() => nav.selectTab('profile')}
       style={{ minWidth: 48, minHeight: 48, borderRadius: c.radius.pill, backgroundColor: c.plum, alignItems: 'center', justifyContent: 'center' }}>
       <Text style={{ ...c.type.body, fontFamily: face(theme), color: c.surface }}>{initials || '-'}</Text>
@@ -46,7 +46,7 @@ export function Home() {
     {profile.isError ? <Note tone="error" text={tt('common.loadFailed')} onRetry={() => void profile.refetch()} busy={profile.isFetching} /> : null}
     <View ref={earningsTarget} collapsable={false} style={{ gap: theme.space[2], paddingVertical: c.cardPad }}>
       <Body muted>{cycle.data?.label ? `${tt('home.cycleTitle')} · ${cycle.data.label}` : tt('home.cycleTitle')}</Body>
-      {cycle.isPending ? <Loading /> : <Text style={{ ...c.type.money, fontFamily: face(theme), color: c.greenInk, fontVariant: ['tabular-nums'] }}>{cycle.data ? dong(cycle.data.confirmedVnd) : '—'}</Text>}
+      {cycle.isPending ? <Loading kind="number" /> : <Text style={{ ...c.type.money, fontFamily: face(theme), color: c.greenInk, fontVariant: ['tabular-nums'] }}>{cycle.data ? dong(cycle.data.confirmedVnd) : '—'}</Text>}
       {cycle.data ? <Body muted>{`${tt('income.confirmed')} · ${tt('home.cycleWithEstimate').replace('{amount}', dong(cycle.data.totalVnd))}`}</Body> : cycle.isPending ? null : <Body muted>{tt('home.cycleUnavailable')}</Body>}
       {cycle.isError ? <Note tone="error" text={tt('common.loadFailed')} onRetry={() => void cycle.refetch()} busy={cycle.isFetching} /> : null}
     </View>

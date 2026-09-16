@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { Platform, Pressable, ScrollView, RefreshControl, Text, View, useWindowDimensions } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '../api/context.tsx';
 import { BUILD_PROFILE } from '../api/config.ts';
@@ -136,7 +136,7 @@ export function Profile() {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.paper }}>
-      <ProfileScroll reserve={reserve}>
+      <ProfileScroll reserve={reserve} refresh={{ refreshing: profile.isRefetching || tasks.isRefetching, onRefresh: () => { void profile.refetch(); void tasks.refetch(); } }}>
         {/* Header: the mark, the name, what the account is. Centred, because a
             single identity block is the one thing on this screen that is not a
             list and centring is how the reference separates it from one. */}
@@ -266,12 +266,12 @@ export function Profile() {
  * `reserve` is `useTabBarReserve()`, measured, so the version line clears the
  * floating dock instead of sitting under it.
  */
-function ProfileScroll({ reserve, children }: { reserve: number; children: ReactNode }) {
+function ProfileScroll({ reserve, children, refresh }: { reserve: number; children: ReactNode; refresh: { refreshing: boolean; onRefresh: () => void } }) {
   const theme = useTheme();
   const insets = useInsets();
   const c = theme.collector;
   return (
-    <ScrollView
+    <ScrollView refreshControl={<RefreshControl {...refresh} />}
       contentContainerStyle={{
         paddingHorizontal: c.gutter,
         paddingTop: insets.top + theme.space[4],

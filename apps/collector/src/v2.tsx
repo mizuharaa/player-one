@@ -504,50 +504,7 @@ export function WarmCard({
  *
  * **Reduced motion:** a static block at 0.8.
  */
-export function Skeleton({
-  ratio,
-  lines,
-  radius,
-}: {
-  ratio?: number;
-  /** Height in `space` steps, when the block is a strip rather than an image. */
-  lines?: number;
-  radius?: number;
-}) {
-  const theme = useTheme();
-  const reduced = useReducedMotion();
-  const pulse = useRef(new Animated.Value(0.8)).current;
-  useEffect(() => {
-    if (reduced) {
-      pulse.setValue(0.8);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: SKELETON_MS, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0.6, duration: SKELETON_MS, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse, reduced]);
-  return (
-    <Animated.View
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      style={{
-        opacity: pulse,
-        width: '100%',
-        aspectRatio: ratio,
-        height: ratio === undefined ? theme.space[4] * (lines ?? 1) : undefined,
-        borderRadius: radius ?? theme.radius.lg,
-        backgroundColor: theme.color.discover.soft,
-      }}
-    />
-  );
-}
-/** §0.5 rule 7's third named exception: the skeleton pulse is 900ms. */
-const SKELETON_MS = 900;
+export { Skeleton } from './ui/Skeleton.tsx';
 
 /** `common.loading`, announced rather than printed (§17). */
 export function LoadingRegion({ children }: { children: ReactNode }) {
