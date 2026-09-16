@@ -9,7 +9,6 @@ import washing from '../../assets/discover/work-wide.webp';
 import folding from '../../assets/discover/work-portrait.webp';
 import packing from '../../assets/discover/work-detail.webp';
 import kitchen from '../../assets/discover/setting-kitchen.jpg';
-import { TaskPhotoLabel } from '../ui/TaskPhotoLabel.tsx';
 
 const photos = [
   { source: folding, x: -.10, y: .03, size: .34, tilt: '-9deg' },
@@ -39,11 +38,11 @@ export function LandingGallery({ ready, onContinue }: { ready: boolean; onContin
       {photos.map((photo, index) => <View key={index} style={{ position: 'absolute', left: width * photo.x, top: fieldHeight * photo.y, width: width * photo.size, aspectRatio: 1, padding: 7, borderRadius: 20, backgroundColor: polish.galleryFrame, borderWidth: 1, borderColor: theme.collector.surface, transform: [{ rotate: photo.tilt }], shadowColor: theme.collector.ink, shadowOpacity: .14, shadowRadius: 16, shadowOffset: { width: 0, height: 12 }, elevation: 5 }}>
         <View style={{ flex: 1, borderRadius: 13, overflow: 'hidden' }}>
           <Image source={photo.source} accessible={false} resizeMode="cover" style={{ width: '100%', height: '100%' }} />
-          <TaskPhotoLabel />
         </View>
       </View>)}
     </Animated.View>
-    <View style={{ alignItems: 'center', paddingHorizontal: 24, gap: 20, paddingTop: 32 }}>
+    <View style={{ alignItems: 'center', paddingHorizontal: 24, gap: theme.space[4], paddingTop: theme.space[4] }}>
+      <Text style={{ ...theme.collector.type.caption, fontFamily: face(theme), color: theme.collector.muted, textAlign: 'center' }}>{tt('landing.illustrativeScenes')}</Text>
       <View><BrandSlot /></View>
       <Text accessibilityRole="header" style={{ fontFamily: face(theme), fontSize: 38, lineHeight: 48, fontWeight: '700', letterSpacing: -1.2, textAlign: 'center', color: theme.collector.ink }}>{tt('landing.slogan1')}{'\n'}{tt('landing.slogan2')}</Text>
       <Pressable accessibilityRole="button" accessibilityLabel={tt('common.next')} onPress={onContinue} style={{ width: 64, height: 64, borderRadius: 32, overflow: 'hidden' }}>

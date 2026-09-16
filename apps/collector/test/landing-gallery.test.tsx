@@ -19,6 +19,8 @@ it('reveals the existing film and sign-in with the gallery arrow or scrolling, w
  try {
   await act(async () => root.render(<Landing onSignIn={signIn} onSignedIn={() => {}} />));
   expect(host.querySelector('[data-testid="landing-gallery"]')).not.toBeNull();
+  expect(host.textContent?.split(MESSAGES.en['landing.illustrativeScenes'])).toHaveLength(2);
+  expect(host.querySelector('[data-testid="task-photo-label"]')).toBeNull();
   expect(host.querySelector('[data-testid="film-active"]')?.textContent).toBe('false');
   const next = host.querySelector<HTMLElement>(`[aria-label="${MESSAGES.en['common.next']}"]`);
   expect(next).not.toBeNull();
