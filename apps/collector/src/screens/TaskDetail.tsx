@@ -1,3 +1,4 @@
+import { taskDuration } from '../duration.ts';
 import { CardScrollContext, useCardScroll } from '../ui/CardSheen.tsx';
 import { Failure } from '../ui/StatePanel.tsx';
 import { useToast } from '../ui/Toast.tsx';
@@ -331,12 +332,12 @@ export function TaskDetail() {
               {tt('detail.rates')}
             </Text>
             <Row label={tt('hall.perMinute')} value={dong(data.unitPriceVndPerMinute)} />
-            <Row label={tt('detail.target')} value={`${data.targetMinutes} ${tt('detail.minutes')}`} />
-            <Row label={tt('detail.claimedMinutes')} value={`${data.claimedMinutes} ${tt('detail.minutes')}`} />
+            <Row label={tt('detail.target')} value={taskDuration(data.targetMinutes, tt)} />
+            <Row label={tt('detail.claimedMinutes')} value={taskDuration(data.claimedMinutes, tt)} />
             <Row label={tt('detail.slotsLeft')} value={`${data.remainingSlots}`} />
             <Progress
               label={tt('hall.progress')}
-              value={`${data.claimedMinutes}/${data.targetMinutes}`}
+              value={`${taskDuration(data.claimedMinutes, tt)} / ${taskDuration(data.targetMinutes, tt)}`}
               fraction={taken}
             />
             <Body muted>{tt('detail.noTotal')}</Body>

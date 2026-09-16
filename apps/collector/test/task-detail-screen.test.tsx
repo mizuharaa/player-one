@@ -110,8 +110,8 @@ it('shows only the rates the server sent, and never a projected total', async ()
   expect(page()).toContain(m['detail.rates']);
   // The rate as sent, and each count as sent.
   expect(page()).toContain(dong('1200'));
-  expect(page()).toContain(`3000 ${m['detail.minutes']}`);
-  expect(page()).toContain(`420 ${m['detail.minutes']}`);
+  expect(page()).toContain(`50 ${m['taskCard.hours']}`);
+  expect(page()).toContain(`7 ${m['taskCard.hours']}`);
   // 1200 x 3000 = 3,600,000. The one figure this screen must never print, in
   // any of the shapes `vnd` can produce it.
   expect(page()).not.toContain('3.600.000');
@@ -224,4 +224,19 @@ it('does not navigate after an accepted task resolves on a screen the collector 
   await act(async () => host.querySelector('button')!.click());
   await act(async () => finish());
   await vi.waitFor(() => expect(host.querySelector('output')?.textContent).toBe('home'));
+});
+
+it('formats the detail target with the same hour units as task cards', async () => {
+  await qualify(); await mount('task-warehouse');
+  expect(page()).toContain(`150 ${m['taskCard.hours']}`);
+  expect(page()).not.toContain(`9000 ${m['detail.minutes']}`);
+});
+
+it('preserves fractional effective minutes while formatting detail hours', async () => {
+  await qualify();
+  const task = await api.task('task-warehouse');
+  vi.spyOn(api, 'task').mockResolvedValue({ ...task, claimedMinutes: 121.1 });
+  await mount('task-warehouse');
+  expect(page()).toContain(`2 ${m['taskCard.hours']} 1.1 ${m['detail.minutes']}`);
+  expect(page()).not.toContain('1.099999');
 });

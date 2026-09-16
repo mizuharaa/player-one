@@ -1,3 +1,4 @@
+import { taskDuration } from '../duration.ts';
 import { polish } from '../theme.tsx';
 import { CardSheen, paperCard } from './CardSheen.tsx';
 import { StyleSheet, Text, View } from 'react-native';
@@ -12,8 +13,6 @@ import { taskImage } from './taskImage.ts';
 
 export function TaskCard({ task, onPress, hint }: { task: Task; onPress: () => void; hint?: string }) {
   const theme = useTheme(), tt = useT(), c = theme.collector;
-  const minutes = task.targetMinutes;
-  const duration = minutes > 120 ? `${Math.floor(minutes / 60)} ${tt('taskCard.hours')}${minutes % 60 ? ` ${minutes % 60} ${tt('detail.minutes')}` : ''}` : `${minutes} ${tt('detail.minutes')}`;
   const type = task.scenario ?? task.type;
   const badge = type === 'home' || type === 'kitchen' ? 'taskCard.home' : type === 'office' ? 'scenario.office' : type === 'shop' ? 'scenario.shop' : type === 'warehouse' ? 'taskCard.warehouse' : 'taskCard.default';
   return <PhantomPressable pressedScale={.98} accessibilityRole="button" accessibilityLabel={task.title}
@@ -29,7 +28,7 @@ export function TaskCard({ task, onPress, hint }: { task: Task; onPress: () => v
       <View style={{ padding: 16, gap: 8, overflow: 'hidden' }}>
         <CardSheen pressed={pressed} />
         <Text numberOfLines={2} style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme) }}>{task.title}</Text>
-        <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{`${duration} \u00b7 ${tt('taskCard.slots').replace('{count}', String(task.remainingSlots))}`}</Text>
+        <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{`${taskDuration(task.targetMinutes, tt)} \u00b7 ${tt('taskCard.slots').replace('{count}', String(task.remainingSlots))}`}</Text>
         <Text testID="task-price" style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme), fontWeight: '700', fontVariant: ['tabular-nums'] }}>{vnd(task.unitPriceVndPerMinute)}</Text>
         <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{tt('hall.perMinute')}</Text>
       </View>
