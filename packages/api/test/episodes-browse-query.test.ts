@@ -66,9 +66,15 @@ describe('BO-05 strict query, without a database', () => {
     const h = harness();
     await h.get(new URLSearchParams({ from: FROM, to: TO }).toString());
     const { sql, params } = h.compiled();
-    expect(sql).toContain('e.first_seen_at >= $2::timestamptz');
-    expect(sql).toContain('e.first_seen_at < $3::timestamptz');
-    expect(params).toEqual([UUID, FROM, TO]);
+    expect(sql).toContain('e.first_seen_at >= $3::timestamptz');
+    expect(sql).toContain('e.first_seen_at < $4::timestamptz');
+    /**
+      * The centre appears TWICE: the scope is "reached a handover this centre
+      * owns", and an episode can arrive through its upload batch or through
+      * the handover its session names, so each branch carries the id. The
+      * time parameters therefore start at $3.
+      */
+    expect(params).toEqual([UUID, UUID, FROM, TO]);
     // Evaluate the emitted operators at each boundary, not a separate filter helper.
     const matches = (at: number) => [...sql.matchAll(/e\.first_seen_at (>=|<) \$(\d+)::timestamptz/g)].every((m) => {
       const boundary = Date.parse(String(params[Number(m[2]) - 1]));
@@ -84,8 +90,18 @@ describe('BO-05 strict query, without a database', () => {
     const h = harness();
     await h.get(new URLSearchParams(filters).toString());
     const { sql } = h.compiled();
-    expect(sql).toContain('where h.upload_centre_id = $1');
-    for (const join of ['join upload_batches b on b.id = e.upload_batch_id', 'join handovers h on h.id = b.handover_id',
+    /**
+      * SEC-02 through either chain. It was one inner join on `upload_batches`,
+      * which silently excluded every episode delivered from a phone — those
+      * have no batch, and their session still names the handover an operator
+      * declared at this centre. Measured on the stakeholder seed: five such
+      * episodes, and the screen said "No episodes match these filters".
+      */
+    for (const scope of ['where (exists (', 'where b.id = e.upload_batch_id', 'where h2.id = s.handover_id']) {
+      expect(sql).toContain(scope);
+    }
+    expect([...sql.matchAll(/h2?\.upload_centre_id = \$\d+/g)]).toHaveLength(2);
+    for (const join of ['join handovers h on h.id = b.handover_id',
       'left join collection_sessions s on s.id = e.collection_session_id', 'left join tasks t on t.id = s.task_id',
       'left join collectors c on c.id = s.collector_id', 'left join collection_session_devices sd on sd.collection_session_id = s.id',
       'left join devices d on d.id = sd.device_id']) expect(sql).toContain(join);
