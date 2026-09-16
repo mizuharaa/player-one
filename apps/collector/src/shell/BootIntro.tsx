@@ -43,7 +43,7 @@ export function BootIntro({ onDone }: { onDone: () => void }) {
   const ring = useAnimatedProps(() => ({ strokeDashoffset: 345.6 * (1 - draw.value), fillOpacity: fill.value, strokeOpacity: 1 - fill.value }), [draw, fill]);
   const filledRing = useAnimatedProps(() => ({ fillOpacity: fill.value }), [fill]);
   const cover = useAnimatedStyle(() => ({ height: height * (1 - wipe.value) }), [height, wipe]);
-  const group = useAnimatedStyle(() => ({ opacity: (1 - plate.value * .65) * (1 - dock.value), transform: [{ translateX: centre.value }] }), [plate, dock, centre]);
+  const group = useAnimatedStyle(() => ({ opacity: (1 - plate.value * .88) * (1 - dock.value), transform: [{ translateX: centre.value }, { scale: 1 - plate.value * .08 }] }), [plate, dock, centre]);
   const letters = useAnimatedStyle(() => ({ width: 150 * reveal.value }), [reveal]);
   const word = useAnimatedStyle(() => ({ opacity: plate.value, transform: [{ translateY: 132 * (1 - plate.value) }] }), [plate]);
   const morph = useAnimatedStyle(() => ({ transform: [{ translateX: (targetX.value - width / 2) * dock.value }, { translateY: (targetY.value - height / 2) * dock.value }, { scale: Math.min(1, (width - 48) / 660) * (1 - dock.value) + targetScale.value * dock.value }] }), [width, height, targetX, targetY, targetScale, dock]);
