@@ -56,6 +56,56 @@ stopping at the first failure, naming the step. It never prints
 would otherwise show them. `--dry-run` (or `--plan`) prints every command it
 would run, masked the same way, without touching the VM or the bucket.
 
+## Zalo sign-in: one owner step, and it has to happen after the domain is known
+
+Owner's decision, 2026-09-16 (`docs/sign-in-channels.md`): a collector signs in
+with their ordinary Zalo account, because VNG's ZNS Official Account is not
+available. Zalo Login needs nothing but a callback URL registered against the
+developer app — no Official Account, no template, no quota — and the URL is
+derived from the domain, so it cannot be registered before the VM has one.
+
+The domain is whatever `go-live.sh` derived. For the IP `14.225.1.2` that is
+`api.14-225-1-2.sslip.io`, and the callback URL is therefore:
+
+```text
+https://api.14-225-1-2.sslip.io/auth/collector/zalo/callback
+```
+
+**It must match byte for byte** — scheme, host, path, no trailing slash. A
+mismatch is refused at the token exchange and the app shows
+`zalo_code_refused`, which is the same symptom as a wrong app secret.
+
+Owner steps, at developers.zalo.me:
+
+1. Open the app (**3849367142822243338**) and select **Đăng nhập** in its
+   settings.
+2. **Thêm nền tảng** → **Web**, paste the callback URL above into the
+   **callback url** field, and **Lưu**. Repeat for each domain that will ever
+   redirect here; the value is `redirect_uri` and nothing else is accepted.
+3. Leave **check App Secret Key** switched ON. This server does implement
+   server side and sends the secret in a `secret_key` header; turning the check
+   off is what makes PKCE mandatory for apps that cannot hold a secret, and we
+   are not one.
+4. Confirm the app's state is **Đang hoạt động**. A suspended app answers every
+   authorize request with an error page.
+5. Copy the app id and the app secret from that same page and pass them to
+   provisioning:
+
+```bash
+bash deploy/cloud/provision.sh ... \
+  --zalo-app-id 3849367142822243338 --zalo-app-secret <secret>
+```
+
+Both or neither: half a Zalo app is refused by `configure.mjs` before the VM is
+touched, and by the server at boot. Add `--sign-in-channel sms` only once an
+eSMS brandname exists (5–10 business days, business licence required — the
+steps are in `docs/sign-in-channels.md`); with no channel named, code delivery
+stays exactly as it is today.
+
+Nothing here has been exercised against a live Zalo app. The request shapes are
+fixture-tested; whether Zalo accepts the registered URL is the first thing to
+check on the real domain.
+
 For managed Postgres, replace `--local-db` with `--database-url 'postgres://OWNER:PASSWORD@HOST/po_demo_cloud?sslmode=require'`; pre-create that demo database and grant the owner migration, role, database-creation and checkpoint privileges.
 Generated secrets print once and remain in `/srv/playerone/deploy/cloud/cloud.env` (600). Staff: `op-1`, `fin-1`, `rev-1`; corresponding `PLAYERONE_DEMO_*_SECRET` values are in that file.
 A provision rerun needs `--force`, which preserves credentials. `up.sh --pull` uses the configured runtime/migration image pair. Never run e2e directly on the demo DB.
@@ -76,4 +126,4 @@ SKIPPED Vietnam residency and remote reviewer network: owner verification requir
 ```
 
 Before go-live, rerun verification on the real domain, name the VN VM/DB/bucket, ingest the real card, and sign in from the reviewer location. Follow the [scoped certificate re-issue rehearsal](../deploy/cloud/README.md#certificate-re-issue-rehearsal-real-domain-only); preserve the ACME account and other domains.
-Provisioning uses [Docker's signed Ubuntu repository](https://docs.docker.com/engine/install/ubuntu/). Local tests do not prove DNS/ACME, GreenNode CORS, residency, remote connectivity, ZNS delivery or a real payment.
+Provisioning uses [Docker's signed Ubuntu repository](https://docs.docker.com/engine/install/ubuntu/). Local tests do not prove DNS/ACME, GreenNode CORS, residency, remote connectivity, Zalo Login against a live app, ZNS or SMS delivery, or a real payment.

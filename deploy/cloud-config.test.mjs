@@ -41,6 +41,29 @@ test('plain HTTP requires explicit local proof mode', () => {
   assert.equal(env.PLAYERONE_PUBLIC_URL, 'http://localhost');
   assert.equal(env.PLAYERONE_SECURE_COOKIES, '0');
 });
+test('the sign-in channel and the Zalo app are optional, validated, and empty by default', () => {
+  // Omitted, they are empty, which is what keeps today's behaviour the default.
+  const plain = configuration(inputs);
+  assert.equal(plain.PLAYERONE_SIGN_IN_CHANNEL, '');
+  assert.equal(plain.PLAYERONE_ZALO_APP_ID, '');
+  assert.equal(plain.PLAYERONE_ZALO_APP_SECRET, '');
+
+  const env = configuration([...inputs, '--sign-in-channel', 'sms',
+    '--zalo-app-id', '3849367142822243338', '--zalo-app-secret', 'abc123']);
+  assert.equal(env.PLAYERONE_SIGN_IN_CHANNEL, 'sms');
+  assert.equal(env.PLAYERONE_ZALO_APP_ID, '3849367142822243338');
+  // The redirect URI is derived from the public URL, so there is nothing else
+  // to pass — and the callback URL registered at developers.zalo.me has to be
+  // exactly this string.
+  assert.equal(env.PLAYERONE_PUBLIC_URL + '/auth/collector/zalo/callback',
+    'https://console.example.vn/auth/collector/zalo/callback');
+
+  // A channel the API does not accept, half a Zalo app, and an injected line.
+  assert.throws(() => configuration([...inputs, '--sign-in-channel', 'zalo']));
+  assert.throws(() => configuration([...inputs, '--zalo-app-id', '123']));
+  assert.throws(() => configuration([...inputs, '--zalo-app-secret', 'abc']));
+  assert.throws(() => configuration([...inputs, '--sign-in-channel', 'sms\nSTORAGE_KEY=stolen']));
+});
 test('CLI refuses a second write and prints secrets only on the first creation', () => {
   const directory = mkdtempSync(join(tmpdir(), 'playerone-cloud-config-'));
   const output = join(directory, 'cloud.env');
