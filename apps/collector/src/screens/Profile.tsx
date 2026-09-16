@@ -232,15 +232,15 @@ function ProfileScroll({ reserve, children, refresh }: { reserve: number; childr
   const insets = useInsets();
   const c = theme.collector;
   return (
-    <ScrollView refreshControl={<RefreshControl {...refresh} />}
+    <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: reserve }}><ScrollView refreshControl={<RefreshControl {...refresh} />}
       contentContainerStyle={{
         paddingHorizontal: c.gutter,
-        paddingTop: insets.top + theme.space[4],
-        paddingBottom: theme.space[4] + reserve,
+        paddingTop: theme.space[4],
+        paddingBottom: theme.space[4],
       }}
     >
       {children}
-    </ScrollView>
+    </ScrollView></View>
   );
 }
 

@@ -1,7 +1,7 @@
 import { Failure, StatePanel } from '../ui/StatePanel.tsx';
 import { useToast } from '../ui/Toast.tsx';
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, EPISODE_STATES, type EpisodeState } from '../api/types.ts';
 import { uuid } from '../api/http.ts';
@@ -151,6 +151,9 @@ export const REASON_KEYS: Record<string, MessageKey> = {
    */
   storage_unavailable: 'uploads.reasonStorageDown',
   upload_cancelled: 'uploads.cancelled',
+  upload_photos_denied: 'uploads.photosDenied',
+  upload_camera_denied: 'uploads.cameraDenied',
+  upload_media_unreadable: 'uploads.mediaUnreadable',
 };
 
 function reasonText(tt: (key: MessageKey) => string, reason: string): string {
@@ -165,7 +168,8 @@ export function Uploads() {
   const sending = useRef(false);
   const transfer = useRef<AbortController | null>(null);
   const activeRecord = useRef<DeliveryRecord | null>(null);
-  useEffect(() => () => transfer.current?.abort(), []);
+  const pickerRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => { transfer.current?.abort(); pickerRequest.current?.abort(); }, []);
   const [deliveryStage, setDeliveryStage] = useState(-1);
   const [deliveryMode, setDeliveryMode] = useState<'phone' | 'card' | null>(null);
   const { locale } = useLocale();
@@ -203,8 +207,15 @@ export function Uploads() {
   const held = useQuery({ queryKey: ['delivery', 'held'], queryFn: () => nativeDeliveryStore.get() });
 
   const pick = useMutation({
-    mutationFn: () => pickSessionDirectory(),
+    mutationFn: async (source?: 'library' | 'camera') => {
+      pickerRequest.current?.abort();
+      const controller = new AbortController();
+      pickerRequest.current = controller;
+      try { return await pickSessionDirectory(source, controller.signal); }
+      catch (error) { if (controller.signal.aborted) return null; throw error; }
+    },
     onSuccess: (session) => {
+      if (!session || pickerRequest.current?.signal.aborted) return;
       setPicked(session);
       setDeliveryStage(1);
       setStep(null);
@@ -294,15 +305,16 @@ export function Uploads() {
   };
   const close = () => {
     if (running) return;
+    pickerRequest.current?.abort(); pick.reset();
     setOpen(false); setPicked(null); setSessionId(null); setStep(null); setHashed(null); setDeliveryStage(-1); setDeliveryMode(null); deliver.reset();
   };
   return <>
     <ListScreen title={tt('uploads.title')} data={visible} keyOf={episode => episode.episodeId}
+      right={<Button label={tt('session.title')} variant="ghost" onPress={() => nav.push({ name: 'sessionReminder' })} />}
       refresh={{ refreshing: episodes.isFetching || income.isFetching, onRefresh: () => { void episodes.refetch(); void income.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.cardGap }}>
         {failed ? <Failure error={failed.error} text={tt(failed.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} onRetry={() => { void episodes.refetch(); void income.refetch(); }} busy={episodes.isFetching || income.isFetching} /> : null}
         <Button label={tt('uploads.deliverTitle')} onPress={() => setOpen(true)} />
-        <Button label={tt('session.title')} variant="secondary" onPress={() => nav.push({ name: 'sessionReminder' })} />
         <Field label={tt('uploads.search')} value={search} onChangeText={setSearch} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: theme.space[2] }}>
           <Chip label={tt('hall.all')} selected={filter === null} onPress={() => setFilter(null)} />
@@ -331,15 +343,16 @@ export function Uploads() {
       </Pressable>} />
     <Modal visible={open} animationType="none" onRequestClose={close}>
       <Screen title={outcome ? tt(`delivery.${outcome.state}`) : tt(running ? 'uploads.sending' : deliveryStage === 2 ? 'uploads.confirmTitle' : 'uploads.deliverTitle')}
-        onBack={() => { if (!running && !outcome && !deliver.isError && deliveryStage > -1) { deliver.reset(); setDeliveryStage(deliveryStage - 1); } else close(); }}
+        onBack={() => { if (!running) { pickerRequest.current?.abort(); pick.reset(); } if (!running && !outcome && !deliver.isError && deliveryStage > -1) { deliver.reset(); setDeliveryStage(deliveryStage - 1); } else close(); }}
         right={<Button label={tt('common.close')} variant="ghost" disabled={running} onPress={close} />}
         footer={running ? <Button label={tt('common.cancel')} variant="secondary" onPress={() => transfer.current?.abort()} /> : outcome ?
           <Button label={tt('common.done')} onPress={close} /> : deliver.isError ? null : deliveryStage === -1 ?
           <Button label={tt(deliveryMode === 'card' ? 'common.done' : 'common.next')} disabled={deliveryMode === null} onPress={() => deliveryMode === 'card' ? close() : setDeliveryStage(0)} /> : deliveryStage === 2 ?
           <Button label={tt('uploads.start')} disabled={!picked || !sessionId} onPress={() => start(null)} /> : deliveryStage === 1 ?
           <Button label={tt('common.next')} disabled={!sessionId || sessions.isError || sessions.isPending} onPress={() => setDeliveryStage(2)} /> :
-          <Button label={tt('uploads.pick')} busy={pick.isPending} disabled={held.isPending || held.isError} onPress={() => pick.mutate()} />}>
+          Platform.OS === 'ios' ? null : <Button label={tt('uploads.pick')} busy={pick.isPending} disabled={held.isPending || held.isError} onPress={() => pick.mutate()} />}>
           {!running && !outcome && !deliver.isError && (deliveryStage === 0 || deliveryStage === 1) && [held, sessions].some(q => q.isError) ? <Failure error={[held, sessions].find(q => q.isError)?.error} text={tt('common.loadFailed')} onRetry={() => { void held.refetch(); void sessions.refetch(); }} busy={held.isFetching || sessions.isFetching} /> : null}
+        {Platform.OS === 'ios' && deliveryStage >= 0 ? <Note text={tt('uploads.libraryUnmeasured')} /> : null}
         {running || outcome || deliver.isError ? <>
           {hashed ? <Progress label={tt('uploads.hashing')} value={`${hashed.done}/${hashed.total}`} fraction={hashed.total ? hashed.done / hashed.total : 0} /> : null}
           {step ? <Progress label={tt('uploads.sending')} value={`${step.sentFiles}/${step.totalFiles}`} fraction={step.totalFiles ? step.sentFiles / step.totalFiles : 0} /> : null}
@@ -353,10 +366,13 @@ export function Uploads() {
           <Choice label={tt('uploads.byCard')} selected={deliveryMode === 'card'} onPress={() => setDeliveryMode('card')} />
           {deliveryMode === 'card' ? <Note text={HEADSET_GUIDANCE.map(section => section.items).flat().find(item => item.id === 'handover')!.text[locale]} /> : null}
         </> : deliveryStage === 0 ? <>
-          <Body>{tt('uploads.deliverBody')}</Body><Note text={tt('uploads.confirmBody')} />
+          {Platform.OS === 'ios' ? <>
+            <Button label={tt('uploads.takePhoto')} variant="secondary" disabled={pick.isPending || held.isPending || held.isError} onPress={() => pick.mutate('camera')} />
+            <Button label={tt('uploads.chooseLibrary')} busy={pick.isPending} disabled={held.isPending || held.isError} onPress={() => pick.mutate('library')} />
+          </> : <><Body>{tt('uploads.deliverBody')}</Body><Note text={tt('uploads.confirmBody')} /></>}
           {held.isError && held.data === undefined ? <Body muted>{tt('uploads.resume')} —</Body> : null}
           {resumable ? <Card><Row label={tt('uploads.session')} value={resumable.sessionBasename} /><Button label={tt('uploads.resume')} variant="secondary" onPress={() => start(resumable)} /></Card> : null}
-          {pick.isError ? <Failure error={pick.error} text={pick.error instanceof ApiError ? reasonText(tt, pick.error.code) : tt('uploads.pickFailed')} onRetry={() => pick.mutate()} busy={pick.isPending} /> : null}
+          {pick.isError ? <Failure error={pick.error} text={pick.error instanceof ApiError ? reasonText(tt, pick.error.code) : tt('uploads.pickFailed')} onRetry={() => pick.mutate(pick.variables)} busy={pick.isPending} /> : null}
         </> : deliveryStage === 1 ? <>
           <Title>{tt('uploads.chooseSession')}</Title>
           {sessions.isPending ? <Loading /> : null}

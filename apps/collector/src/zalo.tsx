@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, Text, View } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import { ActivityIndicator, Image, Linking, Pressable, Text, View } from 'react-native';
+import zaloLogo from '../assets/zalo.png';
 import { ApiError } from './api/types.ts';
 import { useApi } from './api/context.tsx';
 import { useT } from './locale.tsx';
@@ -85,46 +85,16 @@ export const resetLaunchLink = (): void => {
 export const ZALO_BLUE = '#0068FF';
 const ZALO_INK = '#FFFFFF';
 
-/**
- * The Zalo mark, on the blue.
- *
- * `react-native-svg` IS a dependency (`DEVICE_DEPS.md`, and
- * `src/ui/illustrations/` already draws with it) — the note in `SignIn.tsx`
- * saying otherwise predates that and describes the small hint mark, which is
- * still drawn in theme ink. This one is the brand lockup on Zalo's own blue,
- * so it is the mark and not an approximation in our palette.
- *
- * The bubble with its tail, and the Z inside it: the part that reads at 20 dp,
- * not a reproduction of the wordmark.
- */
-export function ZaloMark({ size, ink, label }: { size: number; ink: string; label?: string }) {
-  return (
-    <Svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      accessibilityRole="image"
-      accessibilityLabel={label}
-    >
-      <Path
-        d="M7 3h10a5 5 0 0 1 5 5v5a5 5 0 0 1-5 5h-6l-5 4v-4.4A5 5 0 0 1 2 13V8a5 5 0 0 1 5-5z"
-        fill={ink}
-      />
-      <Path
-        d="M8.5 8.5h7l-7 6h7"
-        stroke={ZALO_BLUE}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </Svg>
-  );
+/** Official, unmodified asset from zalo.me's CDN; keep its blue on white. */
+export function ZaloMark({ size, label }: { size: number; label?: string }) {
+  return <View style={{ padding: 4, backgroundColor: ZALO_INK, borderRadius: 4 }}>
+    <Image source={zaloLogo} style={{ width: size * 77 / 28, height: size }} resizeMode="contain" accessibilityLabel={label} />
+  </View>;
 }
 
 /** What the hook is showing: nothing, a spinner, or a named refusal. */
 export type ZaloSignInState = {
-  /** False once the server has said this deployment holds no Zalo app. */
+  /** True only after the mount-time availability probe succeeds. */
   available: boolean;
   busy: boolean;
   problem: MessageKey | null;
@@ -154,7 +124,7 @@ function sentenceFor(name: string | null): MessageKey {
 
 export function useZaloSignIn({ onSignedIn }: { onSignedIn: () => void }): ZaloSignInState {
   const api = useApi();
-  const [available, setAvailable] = useState(true);
+  const [available, setAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<MessageKey | null>(null);
   const alive = useRef(true);
@@ -177,6 +147,17 @@ export function useZaloSignIn({ onSignedIn }: { onSignedIn: () => void }): ZaloS
       alive.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    // The existing start route is the only availability signal. A probe must
+    // not replace the persisted state of a login returning from Zalo.
+    void api.startZaloSignIn({ probeOnly: true }).then(
+      () => { if (active) setAvailable(true); },
+      () => {},
+    );
+    return () => { active = false; };
+  }, [api]);
 
   const redeem = useCallback(
     async (ticket: string, state: string) => {
@@ -254,9 +235,6 @@ export function useZaloSignIn({ onSignedIn }: { onSignedIn: () => void }): ZaloS
       } catch (err) {
         if (!alive.current) return;
         const code = err instanceof ApiError ? err.code : null;
-        // The one refusal that changes the screen rather than explaining
-        // itself: a control that cannot work should not be offered twice.
-        if (code === 'zalo_not_configured') setAvailable(false);
         setProblem(code === 'zalo_not_configured' ? 'signIn.zaloUnavailable' : sentenceFor(code));
       } finally {
         /**
@@ -327,7 +305,7 @@ export function ZaloButton({
       {busy ? (
         <ActivityIndicator color={ZALO_INK} />
       ) : (
-        <ZaloMark size={theme.space[5]} ink={ZALO_INK} />
+        <ZaloMark size={theme.space[5]} />
       )}
       <Text
         style={{
@@ -362,17 +340,17 @@ export function ZaloSignIn({
 }) {
   const theme = useTheme();
   const tt = useT();
-  if (!state.available) return null;
+  if (!state.available && !state.busy && state.problem === null) return null;
   const muted = onDark ? theme.collector.glow : theme.color.mutedForeground;
   return (
     <View style={{ gap: theme.space[2] }}>
-      <ZaloButton onPress={state.open} busy={state.busy} onDark={onDark} />
+      {state.available ? <ZaloButton onPress={state.open} busy={state.busy} onDark={onDark} /> : null}
       {/*
         A reserved height, so a refusal or a spinner sentence does not shove
         the phone field down the screen under the collector's thumb. The same
         rule §4 applies to the code screen's error slot.
       */}
-      <View style={{ minHeight: Math.round(theme.fontSize.sm * 1.4) }}>
+      <View style={{ minHeight: Math.round(theme.fontSize.sm * 1.4) * 2 }}>
         {state.busy ? (
           <Text
             accessibilityLiveRegion="polite"

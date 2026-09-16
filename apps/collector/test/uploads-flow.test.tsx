@@ -3,6 +3,8 @@ import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { expect, it, vi } from 'vitest';
+import { Platform } from 'react-native';
+import { ApiError } from '../src/api/types.ts';
 import { Uploads } from '../src/screens/Uploads.tsx';
 import { ApiProvider } from '../src/api/context.tsx';
 import { MockCollectorApi } from '../src/api/mock.ts';
@@ -179,4 +181,31 @@ it('shows one failure sentence when both upload list queries fail', async () => 
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
     expect(host.textContent?.split(MESSAGES.en['common.loadFailed'])).toHaveLength(2);
   } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
+});
+
+it.each(['vi', 'en', 'zh'] as const)('labels iOS media as unmeasured, keeps empty picks on the source step and retries the chosen camera in %s', async locale => {
+  const previous = Platform.OS;
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'ios' });
+  vi.mocked(nativeDeliveryStore.get).mockResolvedValue(null);
+  vi.mocked(pickSessionDirectory).mockReset().mockResolvedValueOnce(null).mockRejectedValue(new ApiError('upload_camera_denied'));
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host), client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const m = MESSAGES[locale];
+  const button = (label: string) => Array.from(host.querySelectorAll('button')).find(b => b.textContent === label)!;
+  const tap = async (label: string) => { await act(async () => button(label).click()); };
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={new MockCollectorApi()}><LocaleProvider initialLocale={locale}><NavProvider initial={{ name: 'uploads', openDelivery: true }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await tap(m['uploads.byPhone']); await tap(m['common.next']);
+    await vi.waitFor(() => expect(button(m['uploads.chooseLibrary']).disabled).toBe(false));
+    expect(host.textContent).toContain(m['uploads.libraryUnmeasured']);
+    expect(button(m['uploads.pick'])).toBeUndefined();
+    await tap(m['uploads.chooseLibrary']);
+    await vi.waitFor(() => expect(pickSessionDirectory).toHaveBeenCalledWith('library', expect.any(AbortSignal)));
+    expect(button(m['uploads.chooseLibrary'])).toBeDefined();
+    await tap(m['uploads.takePhoto']);
+    await vi.waitFor(() => expect(host.textContent).toContain(m['uploads.cameraDenied']));
+    await tap(m['common.retry']);
+    await vi.waitFor(() => expect(pickSessionDirectory).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(pickSessionDirectory).mock.calls.slice(1).every(call => call[0] === 'camera')).toBe(true);
+  } finally { await act(async () => root.unmount()); client.clear(); host.remove(); Object.defineProperty(Platform, 'OS', { configurable: true, value: previous }); }
 });

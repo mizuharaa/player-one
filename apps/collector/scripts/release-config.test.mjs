@@ -134,3 +134,11 @@ test('the TestFlight profile is a store-distributed demo at version 47', () => {
   // overridden at runtime, so it keeps arbitrary loads and cleartext.
   assert.equal(value.ios.infoPlist.NSAppTransportSecurity.NSAllowsArbitraryLoads, true);
 });
+
+test('native builds include Photos and camera purpose strings without adding microphone access', () => {
+  const plugin = config(demo).plugins.find(p => Array.isArray(p) && p[0] === 'expo-image-picker');
+  assert.ok(plugin);
+  assert.match(plugin[1].photosPermission, /unmeasured/);
+  assert.match(plugin[1].cameraPermission, /Take Photo/);
+  assert.equal(plugin[1].microphonePermission, false);
+});

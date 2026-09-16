@@ -263,17 +263,42 @@ it('says what Zalo refused, by name, and leaves the number field usable', async 
   expect(control(copy['signIn.phone'])).toBeTruthy();
 });
 
-it('hides the control on a deployment with no Zalo app, rather than offering it twice', async () => {
-  fetchFn.mockImplementation(async (input) => {
-    if (String(input).endsWith('/auth/collector/zalo/start')) return json({ error: 'zalo' }, 503);
-    throw new Error(`unexpected request to ${String(input)}`);
-  });
+it('probes before offering Zalo and never offers an unavailable deployment', async () => {
+  let resolve!: (value: Response) => void;
+  fetchFn.mockImplementation(() => new Promise<Response>(done => { resolve = done; }));
   await mount();
-  expect(container.textContent).toContain(copy['signIn.zalo']);
-
-  await press(copy['signIn.zalo']);
-  expect(link.opened).toEqual([]);
   expect(container.textContent).not.toContain(copy['signIn.zalo']);
-  // And the number is still there, which is the whole point of hiding it.
+  await act(async () => resolve(json({ error: 'sign_in_unavailable' }, 503)));
+  expect(container.textContent).not.toContain(copy['signIn.zalo']);
+  expect(link.opened).toEqual([]);
+  expect(control(copy['signIn.phone'])).toBeTruthy();
+});
+
+it('keeps an offered Zalo control and explains a tap-time refusal', async () => {
+  fetchFn.mockResolvedValueOnce(json({ url: AUTHORIZE, state: 'probe' }));
+  await mount();
+  const button = control(copy['signIn.zalo']);
+  fetchFn.mockResolvedValueOnce(json({ error: 'sign_in_unavailable' }, 503));
+  await press(copy['signIn.zalo']);
+  expect(control(copy['signIn.zalo'])).toBe(button);
+  expect(container.textContent).toContain(copy['signIn.zaloUnavailable']);
+  expect(control(copy['signIn.phone'])).toBeTruthy();
+  expect(link.opened).toEqual([]);
+});
+
+it('does not replace a returning login state when checking availability', async () => {
+  const stateStore = { value: 'returning-state', async get() { return this.value; }, async set(value: string) { this.value = value; }, async clear() { this.value = ''; } };
+  fetchFn.mockResolvedValue(json({ url: AUTHORIZE, state: 'probe-state' }));
+  const api = new HttpCollectorApi('https://collector.test', tokens, () => {}, fetchFn, stateStore);
+  await api.startZaloSignIn({ probeOnly: true });
+  expect(stateStore.value).toBe('returning-state');
+  expect(tokens.value).toBeNull();
+});
+
+it('shows a returning Zalo refusal even when the availability probe fails', async () => {
+  link.launchUrl = 'playerone://signed-in?error=zalo_denied';
+  fetchFn.mockResolvedValue(json({ error: 'sign_in_unavailable' }, 503));
+  await mount();
+  expect(container.textContent).toContain(copy['signIn.zaloDenied']);
   expect(control(copy['signIn.phone'])).toBeTruthy();
 });

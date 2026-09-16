@@ -65,11 +65,11 @@ export function Home() {
       <Chip label={tt('home.myTasks')} onPress={() => nav.push({ name: 'myTasks' })} />
       <Chip label={tt('uploads.deliverTitle')} onPress={() => nav.push({ name: 'uploads', openDelivery: true })} />
     </View>
-    <View ref={nextTarget} collapsable={false} style={{ gap: c.cardGap, paddingVertical: c.cardPad }}>
+    <View ref={nextTarget} collapsable={false} style={{ gap: c.cardGap, paddingTop: c.cardPad }}>
       <Button label={tt('session.title')} onPress={() => nav.push({ name: 'sessionReminder' })} />
-      <FlatList horizontal data={['device', 'today', 'awaiting'] as const} keyExtractor={item => item}
+      <FlatList horizontal style={{ flexGrow: 0 }} data={['device', 'today', 'awaiting'] as const} keyExtractor={item => item}
         showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: c.cardGap }} renderItem={({ item }) =>
-          <View style={{ width: (width - 2 * c.gutter) * 0.76 }}><Card>
+          <View style={{ width: (width - 2 * c.gutter) * 0.76, flex: 1 }}><Card style={{ flex: 1 }}>
             {item === 'device' ? <>
               <NavRow label={tt('home.devices')} subtitle={devices.data?.[0]?.serial} onPress={() => nav.push({ name: 'devices' })} />
               {devices.isError ? <Body muted>{failureText(devices)}</Body> : devices.isPending ? <Loading /> : devices.data?.length === 0 ? <Body muted>{tt('session.needDevice')}</Body> : null}
@@ -92,14 +92,14 @@ export function Home() {
             <TaskCard task={item} hint={tt('detail.title')} onPress={() => nav.push({ name: 'taskDetail', taskId: item.id })} />
           </View>} />}
     </View>
-    <View style={{ gap: c.cardGap, paddingTop: c.sectionGap }}>
+    <View style={{ gap: c.cardGap, paddingTop: theme.space[3] }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}><Title>{tt('uploads.title')}</Title><Button label={tt('common.seeAll')} variant="ghost" onPress={() => nav.selectTab('uploads')} /></View>
       {episodes.isPending ? <Loading /> : null}
       {episodes.isError ? <Body muted>{failureText(episodes)}</Body> : null}
       {(episodes.data ?? []).slice(0, 3).map(episode => <NavRow key={episode.episodeId} label={shortId(episode.episodeId)} subtitle={tt(`state.${episode.state}`)} onPress={() => nav.selectTab('uploads')} />)}
       {episodes.data?.length === 0 ? <Hatch action={tt('hall.title')} onPress={() => nav.push({ name: 'taskHall' })} text={tt('uploads.empty')} /> : null}
     </View>
-    <View style={{ gap: c.cardGap, paddingTop: c.sectionGap }}>
+    <View style={{ gap: c.cardGap, paddingTop: theme.space[3] }}>
       <NavRow label={tt('tab.profile')} onPress={() => nav.selectTab('profile')} />
       <NavRow label={tt('forum.title')} onPress={() => nav.push({ name: 'forum' })} />
       <NavRow label={tt('groups.title')} onPress={() => nav.push({ name: 'groupChats' })} />
