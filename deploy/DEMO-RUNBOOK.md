@@ -61,6 +61,30 @@ fault.
 Fill in the names before Wednesday's rehearsal. An unnamed row is an unowned
 step.
 
+## Where everything is, on the day
+
+Everything below runs on the GreenNode VM in Ho Chi Minh; no laptop is in the
+path, and nobody needs to be on the same network as anybody else.
+
+| What | Value |
+| --- | --- |
+| API, operator console, finance and reviewer | `https://api.49-213-71-116.sslip.io` |
+| The phone's **Profile › About › Server** row | `api.49-213-71-116.sslip.io` |
+| Operator sign-in | machine `demo-machine-1`, reference `op-1` |
+| Role secrets (`op-1`, `fin-1`, `rev-1`) | printed once on the VM by `seed-stakeholder.mjs`; never in this file |
+| Demo bypass key | the owner holds it; it is in no file in this repository |
+
+The certificate is a real Let's Encrypt one, so the console opens in any
+browser without a warning. `sslip.io` resolves the address out of the hostname
+itself, so there is no DNS record to propagate and nothing to break on the day.
+
+**Sign-in codes are not delivered.** VNG's Zalo Official Account is not
+verified yet and the SMS brandname is still in approval, so the collector on
+stage gets in through **Fallback B0 — the demo bypass**, which is the rehearsed
+path and not an improvisation. Say nothing about it on stage; it is a debugging
+door, and the beat it serves is the app reaching the same cloud everybody else
+in the room is looking at.
+
 ## T-60 minutes — preflight, before anybody is in the room
 
 ```bash
