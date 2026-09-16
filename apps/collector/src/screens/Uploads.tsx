@@ -22,7 +22,7 @@ import {
   pickSessionDirectory,
   type PickedSession,
 } from '../upload/delivery-native.ts';
-import { dong, gb, shortId } from '../money.ts';
+import { dong, incomeStatus, gb, shortId } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
 
 
@@ -328,15 +328,15 @@ export function Uploads() {
       renderItem={episode => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(episode.episodeId)}. ${tt(`state.${episode.state}`)}${amounts.get(episode.episodeId)?.simulation ? `. ${tt('payout.simulation')}` : ''}`}
         onPress={() => setSelectedEpisode(episode.episodeId)}
         style={({ pressed }) => ({ paddingVertical: c.cardPad, borderBottomWidth: 1, borderBottomColor: c.line,
-          gap: c.cardGap, backgroundColor: pressed ? c.surface : undefined })}>
+          gap: c.cardGap, backgroundColor: c.surface, opacity: pressed ? .85 : 1 })}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: c.cardGap }}>
         <View style={{ width: 44, height: 44, borderRadius: c.radius.pill, borderWidth: 1, borderColor: c.line, backgroundColor: stateColors(theme, episode.state).bg, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ fontFamily: face(theme), ...c.type.h2, color: stateColors(theme, episode.state).fg }}>{stateMarks[episode.state]}</Text>
         </View>
         <View style={{ flex: 1, gap: theme.space[1] }}><Body>{shortId(episode.episodeId)}</Body><Body muted>{tt(`state.${episode.state}`)}</Body></View>
         <View style={{ flexShrink: 1, alignItems: 'flex-end' }}>
-          <Text style={{ fontFamily: face(theme), ...c.type.body, color: amounts.get(episode.episodeId)?.kind === 'confirmed' ? c.greenInk : c.ink }}>{amounts.get(episode.episodeId)?.amountVnd == null ? '—' : dong(amounts.get(episode.episodeId)!.amountVnd!)}</Text>
-          {amounts.has(episode.episodeId) ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.muted }}>{tt(amounts.get(episode.episodeId)!.kind === 'confirmed' ? 'income.confirmed' : 'income.estimated')}</Text> : null}
+          <Text style={{ fontFamily: face(theme), ...c.type.body, color: incomeStatus(amounts.get(episode.episodeId), episode.state === 'review_failed') === 'income.confirmed' ? c.greenInk : c.muted }}>{amounts.get(episode.episodeId)?.amountVnd == null ? '—' : dong(amounts.get(episode.episodeId)!.amountVnd!)}</Text>
+          {amounts.has(episode.episodeId) ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.muted }}>{tt(incomeStatus(amounts.get(episode.episodeId), episode.state === 'review_failed'))}</Text> : null}
         </View>
         </View>
         {amounts.get(episode.episodeId)?.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}

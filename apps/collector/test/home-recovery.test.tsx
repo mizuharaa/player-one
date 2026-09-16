@@ -9,7 +9,7 @@ import { NavProvider } from '../src/nav.tsx';
 import { LocaleProvider } from '../src/locale.tsx';
 import { Home } from '../src/screens/Home.tsx';
 import { dong, shortId } from '../src/money.ts';
-import { MESSAGES } from '../src/i18n.ts';
+import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
 
 vi.mock('react-native', async () => ({ ...await import('react-native-web'), Modal: ({ visible, children }: { visible: boolean; children: ReactNode }) => visible ? children : null }));
 vi.mock('expo-image', () => ({ Image: () => null }));
@@ -37,9 +37,9 @@ it.each([false, true])('shows one header error and preserves the cached-data dis
     await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'home' }}><Home /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
     const header = host.querySelector('[data-testid="home-header-wash"]')!.textContent!;
-    const message = MESSAGES.en[cached ? 'common.refreshFailed' : 'common.loadFailed'];
+    const message = MESSAGES[DEFAULT_LOCALE][cached ? 'common.refreshFailed' : 'common.loadFailed'];
     expect(header.split(message)).toHaveLength(2);
-    expect(header).not.toContain(MESSAGES.en[cached ? 'common.loadFailed' : 'common.refreshFailed']);
+    expect(header).not.toContain(MESSAGES[DEFAULT_LOCALE][cached ? 'common.loadFailed' : 'common.refreshFailed']);
     if (cached) { expect(header).toContain('Cached collector'); expect(header).toContain(dong('9001')); }
   } finally { await act(async () => root.unmount()); client.clear(); }
 });

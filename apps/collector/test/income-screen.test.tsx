@@ -7,11 +7,12 @@ import { ApiProvider } from '../src/api/context.tsx';
 import { MockCollectorApi } from '../src/api/mock.ts';
 import { NavProvider } from '../src/nav.tsx';
 import { LocaleProvider } from '../src/locale.tsx';
+import { Uploads } from '../src/screens/Uploads.tsx';
 import { Income } from '../src/screens/Income.tsx';
 import { dong, shortId } from '../src/money.ts';
-import { MESSAGES } from '../src/i18n.ts';
+import { DEFAULT_LOCALE, MESSAGES } from '../src/i18n.ts';
 
-vi.mock('react-native', async () => ({ ...await import('react-native-web'), Modal: ({ visible, children }: { visible: boolean; children: ReactNode }) => visible ? children : null }));
+vi.mock('react-native', async () => ({ ...await import('react-native-web'), Modal: ({ visible, children }: { visible: boolean; children: ReactNode }) => visible ? <div data-testid="modal">{children}</div> : null }));
 vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({}) }));
 vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
 vi.mock('react-native-safe-area-context', async () => ({ initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null) }));
@@ -37,7 +38,7 @@ it.each(['on_a_bill', null])('preserves server money and timeline evidence for %
     expect(host.textContent).toContain(dong('9001'));
     expect(host.textContent).toContain(dong('9802'));
     expect(host.textContent).toContain(dong('1234'));
-    const entry = Array.from(host.querySelectorAll<HTMLElement>('[role="button"]')).find(node => node.getAttribute('aria-label') === `${shortId('episode-confirmed')}. ${MESSAGES.en[kind === 'confirmed' ? 'income.confirmed' : 'income.estimated']}`)!;
+    const entry = Array.from(host.querySelectorAll<HTMLElement>('[role="button"]')).find(node => node.getAttribute('aria-label') === `${shortId('episode-confirmed')}. ${MESSAGES[DEFAULT_LOCALE][kind === 'confirmed' ? 'income.confirmed' : 'income.estimated']}`)!;
     await act(async () => entry.click());
     expect(host.querySelector('[data-step="reviewed"]')?.getAttribute('data-done')).toBe(String(kind === 'confirmed'));
     expect(host.querySelector('[data-step="uploaded"]')?.getAttribute('data-done')).toBe(String(settlementState !== null));
@@ -72,8 +73,8 @@ it('shows one recovery panel when every Income query fails', async () => {
     await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'income' }}><Income /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
     expect(host.querySelectorAll('[aria-live="polite"]')).toHaveLength(1);
-    expect(host.textContent?.split(MESSAGES.en['common.loadFailed'])).toHaveLength(2);
-    expect(host.textContent).not.toContain(MESSAGES.en['common.actionFailed']);
+    expect(host.textContent?.split(MESSAGES[DEFAULT_LOCALE]['common.loadFailed'])).toHaveLength(2);
+    expect(host.textContent).not.toContain(MESSAGES[DEFAULT_LOCALE]['common.actionFailed']);
   } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
 });
 
@@ -94,5 +95,54 @@ it.each(['vi', 'en', 'zh'] as const)('labels simulated paid rows, details and cy
     expect(host.textContent?.split(notice)).toHaveLength(3);
     await act(async () => row.click());
     expect(host.textContent?.split(notice)).toHaveLength(4);
+  } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); }
+});
+
+it.each(['vi', 'en', 'zh'] as const)('keeps nonpayable zero neutral in the income row and detail in %s', async locale => {
+  for (const settlementState of ['not_paid', 'cannot_be_paid'] as const) {
+    const api = new MockCollectorApi();
+    vi.spyOn(api, 'incomeCycle').mockResolvedValue(null);
+    vi.spyOn(api, 'income').mockResolvedValue([{ episodeId: 'rejected', kind: 'confirmed', amountVnd: '0.0000', effectiveMinutes: '0', settlementState }]);
+    const host = document.createElement('div'); document.body.append(host);
+    const root = createRoot(host);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale={locale}><NavProvider initial={{ name: 'income' }}><Income /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+      const row = [...host.querySelectorAll<HTMLElement>('[role="button"]')].find(node => node.getAttribute('aria-label')?.startsWith('rejected.'))!;
+      expect(row.getAttribute('aria-label')).toContain(MESSAGES[locale][`settlement.${settlementState}`]);
+      expect(row.textContent).not.toContain(MESSAGES[locale]['income.confirmed']);
+      const neutralMoney = (parent: HTMLElement) => {
+        const amounts = [...parent.querySelectorAll<HTMLElement>('*')].filter(node => !node.children.length && node.textContent === dong('0.0000'));
+        expect(amounts.length).toBeGreaterThan(0);
+        for (const amount of amounts) expect(amount.style.color).toBe('rgb(81, 75, 99)');
+      };
+      neutralMoney(row);
+      await act(async () => row.click());
+      neutralMoney(host);
+      expect(host.querySelector('[data-testid="modal"]')!.textContent).not.toContain(MESSAGES[locale]['income.confirmed']);
+      expect(host.querySelector('[data-step="reviewed"]')?.getAttribute('data-done')).toBe('true');
+      expect(host.querySelector('[data-step="paid"]')?.getAttribute('data-done')).toBe('false');
+      expect(host.querySelector('[data-step="paid"]')?.getAttribute('data-current')).toBe('false');
+    } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); }
+  }
+});
+
+vi.mock('../src/upload/delivery-native.ts', () => ({ nativeDeliveryStore: { get: async () => null }, nativeTransport: {}, pickSessionDirectory: vi.fn(), hashSession: vi.fn() }));
+it.each(['vi', 'en', 'zh'] as const)('keeps the failed-review Uploads row neutral in %s', async locale => {
+  const api = new MockCollectorApi();
+  vi.spyOn(api, 'episodes').mockResolvedValue([{ episodeId: 'rejected', sessionId: 'session', sizeBytes: 10, state: 'review_failed' }]);
+  vi.spyOn(api, 'income').mockResolvedValue([{ episodeId: 'rejected', kind: 'confirmed', amountVnd: '0.0000', effectiveMinutes: '0', settlementState: null }]);
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale={locale}><NavProvider initial={{ name: 'uploads' }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+    const row = [...host.querySelectorAll<HTMLElement>('[role="button"]')].find(node => node.getAttribute('aria-label')?.startsWith('rejected.'))!;
+    expect(row.textContent).toContain(MESSAGES[locale]['settlement.not_paid']);
+    expect(row.textContent).not.toContain(MESSAGES[locale]['income.confirmed']);
+    const money = [...row.querySelectorAll<HTMLElement>('*')].find(node => !node.children.length && node.textContent === dong('0.0000'))!;
+    expect(money.style.color).toBe('rgb(81, 75, 99)');
   } finally { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); }
 });

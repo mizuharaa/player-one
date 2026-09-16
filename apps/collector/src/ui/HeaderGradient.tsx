@@ -8,7 +8,7 @@ import grain from '../../assets/grain.png';
 /** Soft lavender wash for the Home header only. */
 export function HeaderGradient({ children }: { children: ReactNode }) {
   const theme = useTheme();
-  return <View testID="home-header-wash" style={{ borderRadius: polish.cardRadius, overflow: 'hidden' }}>
+  return <View testID="home-header-wash" style={{ borderRadius: polish.cardRadius, borderWidth: 2, borderColor: polish.homeBorder, overflow: 'hidden' }}>
     <LinearGradient colors={polish.homeGradient} locations={[0, 0.65, 1]}
       style={{ padding: theme.space[6], gap: theme.space[4] }}>
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
