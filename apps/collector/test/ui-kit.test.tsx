@@ -9,7 +9,7 @@ import { expect, it, vi } from 'vitest';
 import { AccessibilityInfo } from 'react-native';
 import { ToastProvider, useToast } from '../src/ui/Toast.tsx';
 import { Splash } from '../src/screens/Splash.tsx';
-import { Button, Film, Header, LegalLine, Note, useTabBarReserve } from '../src/ui.tsx';
+import { Button, Film, Header, LegalLine, Note, Screen, ListScreen, useTabBarReserve } from '../src/ui.tsx';
 import { useVideoPlayer } from 'expo-video';
 import { isLowPowerModeEnabledAsync } from 'expo-battery';
 
@@ -174,3 +174,18 @@ it('recovers a rejected reduced-motion query without leaving the film permanentl
 });
 
 vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null }));
+
+it.each(['screen', 'list'])('reserves the dock outside the %s scrolling viewport', async kind => {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  function Probe() { return <output>{useTabBarReserve()}</output>; }
+  try {
+    await act(async () => root.render(<SafeAreaInsetsContext.Provider value={{ top: 59, bottom: 34, left: 0, right: 0 }}><NavProvider initial={{ name: 'home' }}>
+      {kind === 'screen' ? <Screen title="Home"><Probe /></Screen> : <ListScreen title="Rows" data={['row']} keyOf={item => item} renderItem={() => <Probe />} />}
+    </NavProvider></SafeAreaInsetsContext.Provider>));
+    const viewport = [...host.querySelectorAll('div')].find(node => getComputedStyle(node).overflowY === 'auto')!;
+    const reserve = Number(host.querySelector('output')!.textContent);
+    expect(reserve).toBeGreaterThan(98);
+    expect(viewport.parentElement!.style.paddingBottom).toBe(`${reserve}px`);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});

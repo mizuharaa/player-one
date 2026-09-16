@@ -136,7 +136,7 @@ export function Screen({
   const [footerHeight, setFooterHeight] = useState(0);
   return (
     // `background` is the page — the warm paper everything above it stands on.
-    <CardScrollContext.Provider value={scroll}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background }}>
+    <CardScrollContext.Provider value={scroll}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background, paddingBottom: nav.isTabRoot ? reserve : 0 }}>
       <Animated.ScrollView scrollEventThrottle={16} onScroll={scroll.onScroll}
         refreshControl={refresh ? <RefreshControl {...refresh} /> : undefined}
         keyboardShouldPersistTaps="handled"
@@ -144,7 +144,7 @@ export function Screen({
           padding: theme.collector.gutter,
           paddingTop: 0,
           paddingBottom:
-            theme.space[4] + footerHeight + (nav.isTabRoot ? reserve : Math.max(insets.bottom, theme.space[6])),
+            theme.space[4] + footerHeight + (nav.isTabRoot ? 0 : Math.max(insets.bottom, theme.space[6])),
           gap: theme.space[3],
         }}
       >
