@@ -21,6 +21,7 @@ import {
   buildApi,
   s3StoreFromEnv,
   signInCodeSenderFromEnv,
+  zaloLoginFromEnv,
   startHeartbeat,
 } from '../src/index.ts';
 import { riskConfigFromEnv } from '../src/risk/config.ts';
@@ -139,6 +140,18 @@ const app = buildApi({
   // One number, or nothing. `serve.ts` is the only file under src/ or bin/ that
   // reads it; `scripts/seed-demo.mjs` reads it too, which is the point of it.
   demoPhone: env['PLAYERONE_DEMO_PHONE'],
+  /**
+   * Zalo Login (OAuth v4), from PLAYERONE_ZALO_APP_ID, PLAYERONE_ZALO_APP_SECRET
+   * and PLAYERONE_PUBLIC_ORIGIN (which falls back to PLAYERONE_PUBLIC_URL).
+   * Undefined when none of them is set, and then the three Zalo routes answer
+   * 503 naming `zalo_not_configured`; a PARTIAL configuration throws by name,
+   * the same rule as the ZNS and ZaloPay readers above.
+   *
+   * Owner's decision of 2026-09-16: this is the route a collector with an
+   * ordinary Zalo account signs in through, because VNG's ZNS Official Account
+   * is not available and the code channel therefore delivers nothing.
+   */
+  zaloLogin: zaloLoginFromEnv(env) ?? undefined,
   /**
    * The console's debug-delivery page. One value, `1`, and nothing else turns
    * it on — the same shape as every other switch read here, so a deployment

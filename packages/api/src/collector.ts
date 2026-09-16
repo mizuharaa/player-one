@@ -6,6 +6,18 @@ import { schema, type Db } from '@playerone/store';
 import { auditLogin, mutate } from './audit.ts';
 import { hashCredential, signToken, verifyCredential, type CollectorClaims } from './credentials.ts';
 import { rateLimited, signInAttempt, type SignInLimiter } from './ratelimit.ts';
+import {
+  APP_DEEP_LINK,
+  codeChallengeFor,
+  newCodeVerifier,
+  newOpaqueToken,
+  SIGN_IN_TTL_MS,
+  ticketDigest,
+  ZaloLoginError,
+  type ZaloIdentity,
+  type ZaloLogin,
+  type ZaloLoginRefusal,
+} from './zalo-login.ts';
 import { ZnsDeliveryError, type ZnsRefusal } from './zns.ts';
 
 /**
@@ -302,8 +314,99 @@ async function signUpAndSignIn(
   return claims ?? null;
 }
 
+/**
+ * The collector Zalo says this is, signing them up if nobody has that id yet.
+ *
+ * Owner's decision, 2026-09-16 (`zalo-login.ts` argues it): sign-in has to work
+ * for anybody holding an ordinary Zalo account, because VNG's ZNS Official
+ * Account is not available and the code channel therefore delivers nothing.
+ *
+ * ## Why the lookup is `zalo_id` and not the phone
+ *
+ * Zalo Login does not give us the person's phone number — reading it needs a
+ * separate approved permission we do not hold (`docs/sign-in-channels.md`) — so
+ * a collector who arrives this way has NO phone on their row, and
+ * `collectors_phone_key` cannot find them again. `collectors_zalo_id_key`
+ * (0035) is the second unique index that can, and it has the same property the
+ * sign-in depends on: one row or none, never a first row.
+ *
+ * The cost, stated so nobody discovers it in the pilot: **a person who signs up
+ * with Zalo and a person who signs up with their number are two collectors**
+ * until an operator merges them, because nothing this server holds connects
+ * them. That is a counter procedure and not code: guessing the link from a
+ * display name would attach somebody's earnings to a stranger.
+ *
+ * `status = 'prospect'` and `external_ref = 'zalo:<id>'`, the same shape open
+ * sign-up (0034) uses for `app:<uuid>` and for the same reason — a reference
+ * that says where this person came from rather than a number invented to fill a
+ * NOT NULL unique column.
+ *
+ * If the insert loses a race with another tab of the same sign-in, the conflict
+ * is on `zalo_id` and the winner's row is read back, so both tabs sign the same
+ * person in rather than one of them failing.
+ */
+async function zaloCollector(db: Db, identity: ZaloIdentity): Promise<CollectorClaims | null> {
+  const found = await db
+    .select({ id: schema.collectors.id, epoch: schema.collectors.tokenEpoch })
+    .from(schema.collectors)
+    .where(eq(schema.collectors.zaloId, identity.zaloId));
+  if (found[0] !== undefined) {
+    return { kind: 'collector', collectorId: found[0].id, epoch: found[0].epoch };
+  }
+
+  const collectorId = randomUUID();
+  const externalRef = `zalo:${identity.zaloId}`;
+  const claims = await mutate(
+    db,
+    { collector: { kind: 'collector', collectorId, epoch: 1 } },
+    {
+      action: 'collector.sign_up',
+      targetTable: 'collectors',
+      targetId: collectorId,
+      // The Zalo id is not written here. It is on the row this names, and an
+      // audit trail is not the place to make a third copy of an identifier.
+      after: { status: 'prospect', external_ref: externalRef, channel: 'zalo' },
+    },
+    async (tx): Promise<CollectorClaims | undefined> => {
+      const [row] = await tx
+        .insert(schema.collectors)
+        .values({
+          id: collectorId,
+          externalRef,
+          status: 'prospect',
+          zaloId: identity.zaloId,
+          name: identity.name,
+        })
+        // Targeted at the Zalo id, which is the index that can actually clash:
+        // the id and the reference were both made a line ago.
+        .onConflictDoNothing({ target: schema.collectors.zaloId })
+        .returning({ id: schema.collectors.id, epoch: schema.collectors.tokenEpoch });
+      if (row === undefined) return undefined;
+      return { kind: 'collector', collectorId: row.id, epoch: row.epoch };
+    },
+  );
+  if (claims !== undefined) return claims;
+
+  // The other tab won. Its row is the person; read it rather than refuse.
+  const [raced] = await db
+    .select({ id: schema.collectors.id, epoch: schema.collectors.tokenEpoch })
+    .from(schema.collectors)
+    .where(eq(schema.collectors.zaloId, identity.zaloId));
+  return raced === undefined ? null : { kind: 'collector', collectorId: raced.id, epoch: raced.epoch };
+}
+
 /** One 401 body for every way `verify` can fail. */
 const CREDENTIALS = { error: 'credentials', reason: 'credentials' };
+
+/**
+ * A named refusal, in the shape the app's HTTP client already reads.
+ *
+ * `reason` as well as `error` because that is what `CREDENTIALS` does and the
+ * console reads; `constraint` because `apps/collector/src/api/http.ts` turns
+ * that field into an `ApiError` code, which is how a Vietnamese sentence gets
+ * chosen for it.
+ */
+const refusal = (name: ZaloLoginRefusal) => ({ error: name, reason: name, constraint: name });
 
 export function registerCollectorAuth(
   app: FastifyInstance,
@@ -321,8 +424,35 @@ export function registerCollectorAuth(
      * here — see "Demo sign-in" in `docs/RUNNING.md`.
      */
     demoPhone?: string;
+    /**
+     * Zalo Login (OAuth v4), owner's decision of 2026-09-16. Absent, the three
+     * routes below answer 503 `zalo_not_configured` for every caller — the same
+     * answer, and for the same reason, `request-code` gives a deployment with
+     * no code sender. `bin/serve.ts` reads `zaloLoginFromEnv`.
+     */
+    zaloLogin?: ZaloLogin;
   },
 ): void {
+  /**
+   * The sign-in budget for a route whose credential names nobody.
+   *
+   * `signInAttempt` files its refusal against the reference the caller named,
+   * and none of the three Zalo routes has one: a `state` and a ticket are
+   * credentials, so putting either in `audit_events.target_id` would write a
+   * live credential into an append-only table. So these three count against
+   * the address only, and the audit row a Zalo sign-in leaves is the
+   * `collector.login` the ticket route writes once it knows who signed in.
+   *
+   * Check and count in one call, for the reason `signInAttempt` gives: a route
+   * that checks the limit and forgets to count against it is a limit that
+   * stops nobody.
+   */
+  const addressBudget = (source: string): number | null => {
+    const wait = options.limiter.refusedFor(source, []);
+    if (wait !== null) return wait;
+    options.limiter.attempted(source, []);
+    return null;
+  };
   /**
    * APP-01. Ask for a code.
    *
@@ -574,5 +704,212 @@ export function registerCollectorAuth(
      * the token rather than off this response.
      */
     return { token: signToken(options.tokenSecret, claims) };
+  });
+
+  /* ------------------------------------------------------------------ *
+   * Zalo Login (OAuth v4). Owner's decision, 2026-09-16.
+   *
+   * Three requests, because the middle one is not the app's: it arrives from
+   * Zalo's servers on a browser redirect with no token on it. `zalo_sign_ins`
+   * (0035) is the state between them and one row is one attempt.
+   *
+   *   start     the app asks where to send the browser
+   *   callback  Zalo sends the browser back here with a code
+   *   ticket    the app trades the callback's one-time ticket for its token
+   *
+   * The third request is what keeps the session token out of a URL. A redirect
+   * carrying `?token=` puts a thirty-day credential in the browser's history,
+   * in the Android system log and in every referrer; a ticket that is dead the
+   * moment it is used, and that only the app can use, costs one more round
+   * trip and none of that.
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Where to send the browser, and the attempt to match it against.
+   *
+   * Answers 503 when this deployment holds no Zalo credentials. It is the one
+   * place the app can learn that, and it has to be able to: the button is
+   * hidden on a deployment where it cannot work.
+   */
+  app.post('/auth/collector/zalo/start', async (req, reply) => {
+    const zalo = options.zaloLogin;
+    if (zalo === undefined) return reply.code(503).send(refusal('zalo_not_configured'));
+
+    const wait = addressBudget(req.ip);
+    if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
+
+    /**
+     * The verifier stays here and the challenge goes to Zalo. That asymmetry
+     * is the whole of PKCE: the callback's `code` travels through a browser we
+     * do not control, and without the verifier it cannot be exchanged.
+     */
+    const state = newOpaqueToken();
+    const codeVerifier = newCodeVerifier();
+    await db.insert(schema.zaloSignIns).values({
+      state,
+      codeVerifier,
+      expiresAt: new Date(Date.now() + SIGN_IN_TTL_MS),
+    });
+    return {
+      url: zalo.authorizeUrl({ state, codeChallenge: codeChallengeFor(codeVerifier) }),
+      state,
+    };
+  });
+
+  /**
+   * Zalo's answer. Always a redirect to the app, carrying a ticket or a name.
+   *
+   * A redirect and not a JSON body or an HTML page, because the thing reading
+   * this is a browser the collector is looking at: the app's scheme is the only
+   * way back to the screen they started on. The failure case redirects too,
+   * with `?error=<name>`, so a refused sign-in lands on a Vietnamese sentence
+   * in the app rather than on whatever a mobile browser renders for a 400.
+   *
+   * ponytail: no HTML fallback for a device with the app uninstalled. The only
+   * way to reach this URL is from the app's own button, so the app is
+   * installed; a `playerone://` link that goes nowhere would need a page, and a
+   * page is a second surface to design and translate. If a QR-code sign-in is
+   * ever wanted, that is when it earns one.
+   */
+  app.get('/auth/collector/zalo/callback', async (req, reply) => {
+    const zalo = options.zaloLogin;
+    if (zalo === undefined) return reply.code(503).send(refusal('zalo_not_configured'));
+
+    const wait = addressBudget(req.ip);
+    if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
+
+    const home = (params: Record<string, string>): never =>
+      reply.redirect(`${APP_DEEP_LINK}?${new URLSearchParams(params).toString()}`, 302) as never;
+
+    const { code, state } = (req.query ?? {}) as Record<string, unknown>;
+    /**
+     * No code is a refusal at Zalo's own screen — the person pressed no, or
+     * closed it. Zalo's parameter for that is not documented (see
+     * `docs/sign-in-channels.md`), so the absence of a code is what this reads,
+     * which is true whatever the parameter turns out to be called.
+     */
+    if (typeof code !== 'string' || code === '') return home({ error: 'zalo_denied' });
+    if (typeof state !== 'string' || state === '') return home({ error: 'zalo_state_unknown' });
+
+    /**
+     * Spend the state, and spend it BEFORE the exchange.
+     *
+     * Only the winner of `callback_at is null` continues, so a replayed
+     * callback — the browser's back button, a forged link, a retry of the same
+     * URL — is refused rather than exchanging the code a second time. It costs
+     * one thing and it is the right thing to cost: a network failure at Zalo
+     * burns the attempt and the collector taps the button again. The
+     * alternative, spending it after a successful exchange, is a window in
+     * which one `code` can be presented twice.
+     */
+    const [attempt] = await db
+      .update(schema.zaloSignIns)
+      .set({ callbackAt: new Date() })
+      .where(and(eq(schema.zaloSignIns.state, state), isNull(schema.zaloSignIns.callbackAt)))
+      .returning({
+        codeVerifier: schema.zaloSignIns.codeVerifier,
+        expiresAt: schema.zaloSignIns.expiresAt,
+      });
+    if (attempt === undefined) return home({ error: 'zalo_state_unknown' });
+    if (attempt.expiresAt.getTime() <= Date.now()) return home({ error: 'zalo_state_expired' });
+
+    let identity: ZaloIdentity;
+    try {
+      identity = await zalo.identify({ code, codeVerifier: attempt.codeVerifier });
+    } catch (err) {
+      /**
+       * A client that throws something else is a client we cannot ask what
+       * went wrong. `zalo_unreachable` is the honest name and it is one of the
+       * temporary ones, so a bug here strands nobody permanently.
+       */
+      const named = err instanceof ZaloLoginError ? err.refusal : 'zalo_unreachable';
+      req.log.error(err);
+      return home({ error: named });
+    }
+
+    const claims = await zaloCollector(db, identity);
+    if (claims === null) return home({ error: 'zalo_profile_refused' });
+
+    /**
+     * The ticket. Hashed on the way in for the reason
+     * `zalo_sign_ins.ticket_hash` gives, and handed to the browser once.
+     */
+    const ticket = newOpaqueToken();
+    const [minted] = await db
+      .update(schema.zaloSignIns)
+      .set({ ticketHash: ticketDigest(ticket), collectorId: claims.collectorId })
+      .where(and(eq(schema.zaloSignIns.state, state), isNull(schema.zaloSignIns.ticketHash)))
+      .returning({ state: schema.zaloSignIns.state });
+    if (minted === undefined) return home({ error: 'zalo_state_unknown' });
+    return home({ ticket });
+  });
+
+  /**
+   * The ticket, for the token. APP-01.
+   *
+   * One 401 for a ticket that was never issued, one that has expired and one
+   * that has already been used, for the reason `verify` gives: telling them
+   * apart tells somebody holding a stolen ticket which of their guesses was
+   * worth repeating. There is no `constantLatency` here and it is not an
+   * oversight — a ticket is 256 random bits, so there is no enrolment oracle
+   * to hide and nothing a timing difference could narrow down.
+   */
+  app.post('/auth/collector/ticket', async (req, reply) => {
+    const { ticket } = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof ticket !== 'string' || ticket === '') {
+      return reply.code(400).send({ error: 'missing ticket' });
+    }
+
+    const wait = addressBudget(req.ip);
+    if (wait !== null) return reply.code(429).header('retry-after', String(wait)).send(rateLimited(wait));
+
+    /**
+     * Spent by the statement that reads it, and only the winner of
+     * `ticket_used_at is null` proceeds: two requests carrying the same ticket
+     * do not both get a token. Same shape as the sign-in code's single use.
+     */
+    const [used] = await db
+      .update(schema.zaloSignIns)
+      .set({ ticketUsedAt: new Date() })
+      .where(
+        and(
+          eq(schema.zaloSignIns.ticketHash, ticketDigest(ticket)),
+          isNull(schema.zaloSignIns.ticketUsedAt),
+        ),
+      )
+      .returning({
+        collectorId: schema.zaloSignIns.collectorId,
+        expiresAt: schema.zaloSignIns.expiresAt,
+      });
+    if (used === undefined || used.collectorId === null) {
+      return reply.code(401).send(refusal('zalo_ticket_spent'));
+    }
+    if (used.expiresAt.getTime() <= Date.now()) {
+      return reply.code(401).send(refusal('zalo_ticket_spent'));
+    }
+
+    /**
+     * The epoch is read now and not at the callback: a collector whose tokens
+     * were revoked in the seconds between the two must not be handed a token
+     * carrying the old number. It is also how a collector deleted in that
+     * window becomes a refusal rather than a token naming nobody.
+     */
+    const [collector] = await db
+      .select({ id: schema.collectors.id, epoch: schema.collectors.tokenEpoch })
+      .from(schema.collectors)
+      .where(eq(schema.collectors.id, used.collectorId));
+    if (collector === undefined) return reply.code(401).send(refusal('zalo_ticket_spent'));
+
+    await auditLogin(db, 'collector.login', 'collectors', collector.id, {
+      collectorId: collector.id,
+    });
+    options.limiter.succeeded(req.ip, []);
+    return {
+      token: signToken(options.tokenSecret, {
+        kind: 'collector',
+        collectorId: collector.id,
+        epoch: collector.epoch,
+      }),
+    };
   });
 }

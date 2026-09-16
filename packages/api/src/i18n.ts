@@ -1174,6 +1174,30 @@ const en = {
     'Zalo could not be reached, so no sign-in code was sent. Ask the collector to try again; if it keeps happening, the link to Zalo is down.',
   'bo.refused.zns_refused':
     'Zalo refused to send the code and gave a reason this server does not recognise. The reason is in the server log; ask the collector to try again while somebody reads it.',
+
+  // ---------------------------------------------------------------------
+  // Zalo Login: `ZALO_LOGIN_REFUSALS` in `zalo-login.ts`. Owner's decision of
+  // 2026-09-16, which replaced ZNS as the way a collector gets in. Unlike the
+  // ZNS names above, these DO reach the collector — the callback redirects
+  // into the app carrying one — so each sentence has to be true for a person
+  // who is holding the phone as well as for an operator reading a log.
+
+  'bo.refused.zalo_not_configured':
+    'This server holds no Zalo app credentials, so signing in with Zalo is not available on it. Set PLAYERONE_ZALO_APP_ID and PLAYERONE_ZALO_APP_SECRET, or have the collector sign in with a code instead.',
+  'bo.refused.zalo_denied':
+    'Zalo was not given permission, so nobody was signed in. Nothing is wrong: start again and press Allow on Zalo\u2019s screen, or sign in with a code.',
+  'bo.refused.zalo_state_unknown':
+    'That sign-in link does not belong to any attempt this server started, or it has already been used. Start the sign-in again from the app.',
+  'bo.refused.zalo_state_expired':
+    'This sign-in attempt took longer than ten minutes, so it was discarded. Start it again from the app.',
+  'bo.refused.zalo_code_refused':
+    'Zalo refused to exchange the sign-in for an access token. The usual cause is the callback URL registered in the Zalo app\u2019s settings not matching this server\u2019s address exactly, or a wrong app secret.',
+  'bo.refused.zalo_profile_refused':
+    'Zalo issued an access token and then would not say who it belongs to, so nobody was signed in. Ask the collector to try again; if it keeps happening, the app\u2019s Zalo permissions need checking.',
+  'bo.refused.zalo_unreachable':
+    'Zalo could not be reached, so nobody was signed in. Ask the collector to try again; if it keeps happening, the link to Zalo is down.',
+  'bo.refused.zalo_ticket_spent':
+    'This sign-in has already been completed, or it expired before the app collected it. Start the sign-in again from the app.',
   /**
    * Shown under a failed write that the server could not explain, next to the
    * id it logged the failure against. The operator reads it out; whoever has
@@ -2571,6 +2595,27 @@ const zh: Record<MessageKey, string> = {
     '无法连接 Zalo，因此未发送验证码。请让采集者再试一次；如果反复出现，说明与 Zalo 的链路已中断。',
   'bo.refused.zns_refused':
     'Zalo 拒绝发送验证码，给出的原因本服务器无法识别。原因记录在服务器日志中；请一边查阅日志一边让采集者再试。',
+
+  // Zalo 登录（zalo-login.ts 中的 ZALO_LOGIN_REFUSALS）。2026-09-16 的决定，
+  // 取代 ZNS 成为采集者登录的方式。与上面的 ZNS 名称不同，这些会直接呈现给
+  // 采集者：回调会带着其中一个跳回应用。
+
+  'bo.refused.zalo_not_configured':
+    '本服务器没有配置 Zalo 应用凭据，因此无法使用 Zalo 登录。请设置 PLAYERONE_ZALO_APP_ID 和 PLAYERONE_ZALO_APP_SECRET，或改用验证码登录。',
+  'bo.refused.zalo_denied':
+    '未在 Zalo 上授予权限，因此没有人登录。这不是故障：请重新开始并在 Zalo 的页面上点击“允许”，或改用验证码登录。',
+  'bo.refused.zalo_state_unknown':
+    '这个登录链接不属于本服务器发起的任何一次登录，或者已经被用过了。请在应用里重新开始登录。',
+  'bo.refused.zalo_state_expired':
+    '这次登录超过了十分钟，已被丢弃。请在应用里重新开始登录。',
+  'bo.refused.zalo_code_refused':
+    'Zalo 拒绝用这次登录换取访问令牌。常见原因是 Zalo 应用设置里登记的回调地址与本服务器的地址不完全一致，或者应用密钥不对。',
+  'bo.refused.zalo_profile_refused':
+    'Zalo 发放了访问令牌，却不肯说明它属于谁，因此没有人登录。请让采集者再试一次；如果一直如此，需要检查应用的 Zalo 权限。',
+  'bo.refused.zalo_unreachable':
+    '无法连接 Zalo，因此没有人登录。请让采集者再试一次；如果一直如此，说明与 Zalo 的链路中断了。',
+  'bo.refused.zalo_ticket_spent':
+    '这次登录已经完成，或者在应用取回之前就过期了。请在应用里重新开始登录。',
   // 控制台改版自己的字符串（ui.b.*）：两个深色区块里数字旁边的句子。
   'ui.b.settle.total.sentence':
     '本批次将要发出的金额。每一笔转账由服务端决定，账单在支付的那一刻仍可能被拒绝。',
@@ -3908,6 +3953,28 @@ const vi: Record<MessageKey, string> = {
     'Không kết nối được tới Zalo nên không gửi được mã. Hãy nhờ cộng tác viên thử lại; nếu vẫn vậy thì đường tới Zalo đang hỏng.',
   'bo.refused.zns_refused':
     'Zalo từ chối gửi mã với một lý do máy chủ này không hiểu. Lý do nằm trong nhật ký máy chủ; hãy nhờ cộng tác viên thử lại trong khi có người đọc nhật ký.',
+
+  // Đăng nhập bằng Zalo (ZALO_LOGIN_REFUSALS trong zalo-login.ts). Quyết định
+  // ngày 2026-09-16, thay ZNS làm cách cộng tác viên đăng nhập. Khác với các
+  // tên ZNS ở trên, những câu này đến tận tay cộng tác viên: trang callback
+  // chuyển về ứng dụng kèm theo một trong số chúng.
+
+  'bo.refused.zalo_not_configured':
+    'Máy chủ này chưa có thông tin ứng dụng Zalo nên không dùng được cách đăng nhập bằng Zalo. Hãy đặt PLAYERONE_ZALO_APP_ID và PLAYERONE_ZALO_APP_SECRET, hoặc để cộng tác viên đăng nhập bằng mã.',
+  'bo.refused.zalo_denied':
+    'Zalo chưa được cấp quyền nên chưa ai đăng nhập. Không có lỗi gì: hãy làm lại và bấm Cho phép trên màn hình Zalo, hoặc đăng nhập bằng mã.',
+  'bo.refused.zalo_state_unknown':
+    'Liên kết đăng nhập này không thuộc lần đăng nhập nào máy chủ đã mở, hoặc đã dùng rồi. Hãy mở lại phần đăng nhập trong ứng dụng.',
+  'bo.refused.zalo_state_expired':
+    'Lần đăng nhập này quá mười phút nên đã bị bỏ. Hãy làm lại trong ứng dụng.',
+  'bo.refused.zalo_code_refused':
+    'Zalo không đổi lần đăng nhập này thành access token. Thường là do địa chỉ callback khai trong phần cài đặt ứng dụng Zalo không trùng khớp với địa chỉ máy chủ này, hoặc app secret sai.',
+  'bo.refused.zalo_profile_refused':
+    'Zalo đã cấp access token nhưng không cho biết token đó của ai nên chưa ai đăng nhập. Hãy để cộng tác viên thử lại; nếu vẫn vậy thì cần kiểm tra quyền Zalo của ứng dụng.',
+  'bo.refused.zalo_unreachable':
+    'Không kết nối được tới Zalo nên chưa ai đăng nhập. Hãy để cộng tác viên thử lại; nếu vẫn vậy thì đường tới Zalo đang mất.',
+  'bo.refused.zalo_ticket_spent':
+    'Lần đăng nhập này đã xong, hoặc đã hết hạn trước khi ứng dụng lấy được. Hãy mở lại phần đăng nhập trong ứng dụng.',
   // Chuỗi riêng của bản dựng lại giao diện (ui.b.*): câu đứng cạnh hai con số trên nền mực.
   'ui.b.settle.total.sentence':
     'Số tiền lô này sẽ gửi. Máy chủ quyết định từng lần chuyển, và một hóa đơn vẫn có thể bị từ chối ngay lúc chi trả.',
