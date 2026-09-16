@@ -112,6 +112,34 @@ long or short codes, no two-way, no numbers to buy; DLRs SMSC-ack only.
   520 VND) for the numbers ZNS cannot reach — no Zalo account (`-118`) or the
   channel refused (`-139`/`-141`). Start the eSMS paperwork now: 5–10 days.
 
+## Stated costs — owner decisions, not defects
+
+Both audits of `4a32929` raised these and neither is a bug to fix in code. They
+are consequences of the design that the owner should decide about knowingly.
+
+**The ticket travels over a custom scheme Android does not verify.** The server
+redirects to `playerone://signed-in?ticket=…&state=…`, and any installed app
+may register that scheme — the demo and Play builds already both claim it, so a
+phone with both gets a chooser. The ticket is now bound to a `state` the app
+stored before it opened the browser, which is what stops a FORWARDED ticket
+signing a collector into somebody else's account, but binding does not stop the
+reverse: an app that wins the chooser can read a genuine ticket and spend it
+first. The fix is Android App Links — an `assetlinks.json` on the API host, so
+the OS verifies the domain owns the app — or `expo-web-browser`, so the
+redirect returns in-process and never touches the OS scheme table. Both are
+owner calls: the first needs the Play signing certificate fingerprint published
+on the API domain, the second adds a native module to `apps/collector`.
+
+**A Zalo display name is written into `collectors.name`.** The column
+pre-exists and was operator-typed (BO-03); this is the first path that acquires
+a person's name with nobody typing it, and a Zalo display name is usually a
+real name. No consent copy was added, which is right — the product rule says
+capture the two APP-17b declarations and no third — but that rule is about the
+form, not about what the platform quietly stores. The owner should say whether
+APP-17b covers a name obtained from Zalo, and if it does not, the line to
+delete is one field in `zaloCollector`: the sign-in works without it, and an
+operator would then see `zalo:<id>` instead of a name.
+
 ## What could not be verified
 
 **Zalo Login:** whether `localhost` or a custom scheme is an acceptable callback
