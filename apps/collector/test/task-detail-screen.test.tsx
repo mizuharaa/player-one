@@ -186,6 +186,8 @@ it('shows the server’s onboarding refusal in place of the control', async () =
   expect(named(m['detail.claim'])).toBeUndefined();
   expect(named(m['common.retry'])).toBeDefined();
   expect(host.querySelector('[data-testid="task-detail-footer"]')?.contains(named(m['common.retry'])!)).toBe(false);
+  expect(page().split(m['detail.needOnboarding'])).toHaveLength(2);
+  expect(host.querySelector('[data-testid="task-detail-footer"]')?.textContent).not.toContain(m['detail.needOnboarding']);
 });
 
 it('offers retry rather than an action when a read failed', async () => {

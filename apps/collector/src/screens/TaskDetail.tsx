@@ -214,7 +214,18 @@ export function TaskDetail() {
       <Animated.ScrollView scrollEventThrottle={16} onScroll={reduced ? undefined : scroll.onScroll}
         contentContainerStyle={{ paddingBottom: footer + theme.space[6], gap: c.cardGap }}
       >
-        {claim.isError && refusal ? <Failure error={claim.error} text={tt(refusal)} onRetry={() => { if (!submitting.current) { submitting.current = true; claim.mutate(); } }} busy={claim.isPending} /> : null}
+        {claim.isError && refusal ? <Failure error={claim.error} text={tt(refusal)} onRetry={() => { if (!submitting.current) { submitting.current = true; claim.mutate(); } }} busy={claim.isPending} /> : refusal ? <View accessibilityLiveRegion="polite">
+            <Text
+              style={{
+                ...c.type.body,
+                color: c.muted,
+                fontFamily: face(theme),
+                textAlign: 'center',
+              }}
+            >
+              {tt(refusal)}
+            </Text>
+          </View> : null}
         {/* The task card photo remains 4:3 here, with scroll-driven parallax. */}
         <View style={{ width: '100%', aspectRatio: 4 / 3, backgroundColor: c.line, overflow: 'hidden' }}>
           <Animated.View style={{ width: '100%', height: '100%', transform: [{ translateY: reduced ? 0 : scrollY.interpolate({ inputRange: [0, 600], outputRange: [0, 180], extrapolate: 'clamp' }) }] }}><Image
@@ -362,20 +373,7 @@ export function TaskDetail() {
             busy={claim.isPending}
             onPress={() => { if (submitting.current) return; submitting.current = true; claim.mutate(); }}
           />
-        ) : (
-          <View accessibilityLiveRegion="polite">
-            <Text
-              style={{
-                ...c.type.body,
-                color: c.muted,
-                fontFamily: face(theme),
-                textAlign: 'center',
-              }}
-            >
-              {tt(refusal)}
-            </Text>
-          </View>
-        )}
+        ) : null}
         {alreadyClaimed ? (
           <Button
             label={tt('session.title')}
