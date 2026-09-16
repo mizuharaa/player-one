@@ -21,7 +21,7 @@ import {
   type ZaloLogin,
 } from '../src/index.ts';
 import { MESSAGES } from '../src/i18n.ts';
-import { appDb, closeDb, db, hasDb, truncate, useDatabase } from '../../store/test/db.ts';
+import { appDb, closeDb, db, hasDb, truncate, useDatabase, violates } from '../../store/test/db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('zalo_login');
@@ -716,6 +716,90 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
       const res = await admin(app, `/api/collectors/${b}/zalo-link`, { zalo_id: bad });
       expect(res.statusCode, `${bad}: ${res.body}`).toBe(400);
     }
+  });
+
+  /**
+   * 0035's own invariants, in the database and not in TypeScript.
+   *
+   * Audit 2 of `3f9bb17` (LOW): five of the six things `zalo_sign_ins`
+   * guarantees had no raw-SQL rejection test — only `collectors_zalo_id_key`
+   * did — so a weakened CHECK could ship and every route test above would
+   * still pass, because the routes never write the shapes these forbid. That
+   * is exactly the case `violates()` exists for: `rejects.toThrow(/name/)`
+   * matches drizzle's wrapper and passes for any failure, including a typo in
+   * the test's own SQL.
+   *
+   * Each one is the shape it forbids, by name, with the application nowhere in
+   * the path. `packages/store/drizzle/0035_zalo_sign_in.sql` argues why each
+   * exists; this proves each fires.
+   */
+  it('holds every zalo_sign_ins invariant in the database, not in TypeScript', async () => {
+    const d = await db();
+    const verifier = 'v'.repeat(43);
+    const live = async (state: string, extra = sql``) =>
+      d.execute(sql`
+        insert into zalo_sign_ins (state, code_verifier, expires_at)
+        values (${state}, ${verifier}, now() + interval '10 minutes')${extra}`);
+
+    // A blank state is a row the callback's lookup could never find.
+    await violates('zalo_sign_ins_state_check', live('   '));
+
+    /** RFC 7636 §4.1: 43 to 128 characters, and both ends are held. */
+    await violates(
+      'zalo_sign_ins_verifier_check',
+      d.execute(sql`
+        insert into zalo_sign_ins (state, code_verifier, expires_at)
+        values ('s-short', ${'v'.repeat(42)}, now())`),
+    );
+    await violates(
+      'zalo_sign_ins_verifier_check',
+      d.execute(sql`
+        insert into zalo_sign_ins (state, code_verifier, expires_at)
+        values ('s-long', ${'v'.repeat(129)}, now())`),
+    );
+
+    await live('s-pair');
+    /**
+     * A ticket and the collector it signs in are one fact. Half of the pair is
+     * either a ticket that signs in nobody, or a name with no way to present
+     * it — and `spent()` reads both, so a half-written row would be a 500.
+     */
+    await violates(
+      'zalo_sign_ins_ticket_check',
+      d.execute(sql`update zalo_sign_ins set ticket_hash = 'h' where state = 's-pair'`),
+    );
+    await violates(
+      'zalo_sign_ins_ticket_check',
+      d.execute(sql`update zalo_sign_ins set collector_id = ${randomUUID()} where state = 's-pair'`),
+    );
+
+    // A ticket cannot exist before the callback that minted it.
+    await violates(
+      'zalo_sign_ins_ticket_order_check',
+      d.execute(sql`
+        update zalo_sign_ins set ticket_hash = 'h', collector_id = ${randomUUID()}
+         where state = 's-pair'`),
+    );
+
+    // And cannot be spent before it exists.
+    await violates(
+      'zalo_sign_ins_used_order_check',
+      d.execute(sql`update zalo_sign_ins set ticket_used_at = now() where state = 's-pair'`),
+    );
+
+    /**
+     * The whole pair together, in the order the callback writes it, is
+     * accepted — so the four refusals above are about the shapes and not about
+     * the columns being unwritable.
+     */
+    await d.execute(sql`
+      update zalo_sign_ins
+         set callback_at = now(), ticket_hash = 'h', collector_id = ${randomUUID()}
+       where state = 's-pair'`);
+    await d.execute(sql`update zalo_sign_ins set ticket_used_at = now() where state = 's-pair'`);
+
+    // One row or none per state, never a first row: the callback looks up by it.
+    await violates('zalo_sign_ins_pkey', live('s-pair'));
   });
 
   it('never puts the app secret, the code or the session token in the redirect', async () => {

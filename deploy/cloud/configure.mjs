@@ -12,8 +12,11 @@ export function configuration(args) {
       'sign-in-channel', 'zalo-app-id', 'zalo-app-secret', 'demo-phone',
       // The demo bypass key, owner's request 2026-09-16. Optional; omitted, it
       // stays empty in cloud.env and POST /auth/collector/demo answers 404.
-      'demo-bypass-key'].map(k => [k, { type: 'string' }]),
-    ...['local-db', 'http-local'].map(k => [k, { type: 'boolean' }]),
+      'demo-bypass-key',
+      // eSMS.vn, the SMS fallback. Three credentials, all or none, and
+      // mandatory when --sign-in-channel is sms.
+      'sms-api-key', 'sms-secret-key', 'sms-brandname'].map(k => [k, { type: 'string' }]),
+    ...['local-db', 'http-local', 'sms-sandbox'].map(k => [k, { type: 'boolean' }]),
   ]) });
   for (const k of ['domain', 'acme-email', 'storage-endpoint', 'storage-bucket', 'storage-key', 'storage-secret', 'quota-bytes']) {
     if (!v[k] || /[\r\n\0]/.test(v[k])) throw new Error(`--${k} is required and must be one line`);
@@ -41,6 +44,42 @@ export function configuration(args) {
   // typo here would otherwise become a server that refuses to start on the VM.
   if (v['sign-in-channel'] && !['zns', 'sms', 'log'].includes(v['sign-in-channel'])) {
     throw new Error('--sign-in-channel must be zns, sms or log');
+  }
+  /**
+   * `--sign-in-channel sms` had no way to supply eSMS credentials, so it
+   * wrote them EMPTY and `smsSenderFromEnv` then refused to start naming what
+   * was missing. Following this kit's own documented SMS rollout produced a VM
+   * whose API container would not boot. Audit 3 of `3f9bb17` found it.
+   *
+   * Refused HERE and not at boot, which is the whole value of the change: a
+   * message on the laptop before anything is provisioned, rather than a dead
+   * container on a machine somebody has to ssh into to read the reason.
+   *
+   * All three or none, even when the channel is something else, because two
+   * of three is a paste that went wrong and an empty secret beside a real key
+   * is the configuration that looks done and is not.
+   */
+  const smsFlags = ['sms-api-key', 'sms-secret-key', 'sms-brandname'];
+  const smsMissing = smsFlags.filter(k => !v[k]);
+  if (v['sign-in-channel'] === 'sms' && smsMissing.length > 0) {
+    throw new Error(`--sign-in-channel sms needs ${smsMissing.map(k => '--' + k).join(', ')}; without them the API refuses to start`);
+  }
+  if (smsMissing.length > 0 && smsMissing.length < smsFlags.length) {
+    throw new Error(`Supply all of --sms-api-key, --sms-secret-key and --sms-brandname, or none: ${smsMissing.map(k => '--' + k).join(', ')} missing`);
+  }
+  // eSMS's own limit is 11 characters; a longer value is a registration that
+  // does not exist, so it is a typo caught now and not `CodeResult 104` in a
+  // demo. Space, dot, underscore and hyphen are the specials eSMS allows.
+  if (v['sms-brandname'] !== undefined && !/^[A-Za-z0-9 ._-]{1,11}$/.test(v['sms-brandname'])) {
+    throw new Error('--sms-brandname is at most 11 characters: letters, digits and space . _ - only');
+  }
+  for (const k of ['sms-api-key', 'sms-secret-key']) {
+    if (v[k] !== undefined && !/^[\w.:@+-]+$/.test(v[k])) throw new Error(`--${k} has characters it should not`);
+  }
+  // eSMS's test mode is a property of sending over SMS, so it means nothing
+  // on another channel and saying so beats ignoring it.
+  if (v['sms-sandbox'] && v['sign-in-channel'] !== 'sms') {
+    throw new Error('--sms-sandbox only means something with --sign-in-channel sms');
   }
   // Half of a Zalo app is a server that refuses to start naming what is
   // missing; catching it here means finding out before the VM is touched.
@@ -112,6 +151,24 @@ export function configuration(args) {
      * repository.
      */
     PLAYERONE_DEMO_BYPASS_KEY: v['demo-bypass-key'] ?? '',
+    /**
+     * eSMS.vn, the fallback for the numbers ZNS structurally cannot reach —
+     * no Zalo account, or the channel refused. Empty unless asked for, and
+     * refused above if the channel is `sms` and any of the three is missing.
+     *
+     * None of these reaches the printed credential list below. The API key and
+     * secret key are credentials; the brandname is not, but there is nothing
+     * to gain from echoing it either. `cloud.env` is 0600 and is where they
+     * live.
+     *
+     * The sandbox flag is eSMS's own test mode — charged nothing, delivered
+     * nowhere — which is the documented way to exercise the whole request path
+     * while the brandname is still inside its 5-10 business-day approval.
+     */
+    PLAYERONE_SMS_API_KEY: v['sms-api-key'] ?? '',
+    PLAYERONE_SMS_SECRET_KEY: v['sms-secret-key'] ?? '',
+    PLAYERONE_SMS_BRANDNAME: v['sms-brandname'] ?? '',
+    PLAYERONE_SMS_SANDBOX: v['sms-sandbox'] ? '1' : '0',
   };
 }
 
