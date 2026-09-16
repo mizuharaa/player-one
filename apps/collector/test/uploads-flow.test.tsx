@@ -166,3 +166,17 @@ it('prints the session total size and the connection sentence before the deliver
 
 // Native illustration rendering is covered by the web captures.
 vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));
+
+
+it('shows one failure sentence when both upload list queries fail', async () => {
+  const api = new MockCollectorApi();
+  vi.spyOn(api, 'episodes').mockRejectedValue(new Error('offline'));
+  vi.spyOn(api, 'income').mockRejectedValue(new Error('offline'));
+  const host = document.createElement('div'), root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="en"><NavProvider initial={{ name: 'uploads' }}><Uploads /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+    expect(host.textContent?.split(MESSAGES.en['common.loadFailed'])).toHaveLength(2);
+  } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
+});

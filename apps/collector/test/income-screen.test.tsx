@@ -72,7 +72,7 @@ it('shows one recovery panel when every Income query fails', async () => {
     await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'income' }}><Income /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
     expect(host.querySelectorAll('[aria-live="polite"]')).toHaveLength(1);
-    expect(host.textContent).toContain(MESSAGES.en['common.loadFailed']);
+    expect(host.textContent?.split(MESSAGES.en['common.loadFailed'])).toHaveLength(2);
     expect(host.textContent).not.toContain(MESSAGES.en['common.actionFailed']);
   } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }
 });

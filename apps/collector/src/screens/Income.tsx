@@ -108,7 +108,7 @@ export function Income() {
   const cycle = useQuery({ queryKey: ['income', 'cycle'], queryFn: () => api.incomeCycle() });
   const payout = useQuery({ queryKey: ['payout'], queryFn: () => api.payout() });
   const queries = [income, cycle, payout];
-  const failed = queries.find(q => q.isError);
+  const failed = queries.find(q => q.isError && q.data === undefined) ?? queries.find(q => q.isError);
   const listTarget = useGuideTarget('income.list');
 
   const c = theme.collector;
@@ -129,8 +129,8 @@ export function Income() {
     <ListScreen title={tt('income.title')} data={options ? [] : income.data ?? []} keyOf={entry => entry.episodeId}
       refresh={{ refreshing: income.isFetching || cycle.isFetching || payout.isFetching, onRefresh: () => { void income.refetch(); void cycle.refetch(); void payout.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.sectionGap }}>
-        {failed ? <Failure error={failed.error} text={tt('common.loadFailed')} onRetry={() => { for (const q of queries) void q.refetch(); }} busy={queries.some(q => q.isFetching)} /> : null}
-        {cycle.isError ? <Body muted>{tt('common.loadFailed')}</Body> : <Card>
+        {failed ? <Failure error={failed.error} text={tt(failed.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} onRetry={() => { for (const q of queries) void q.refetch(); }} busy={queries.some(q => q.isFetching)} /> : null}
+        {cycle.isError && cycle.data === undefined ? <Body muted>{tt('home.cycleTitle')} —</Body> : <Card>
           <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.ink }}>{cycleData?.label ? `${tt('home.cycleTitle')} · ${cycleData.label}` : tt('home.cycleTitle')}</Text>
           {cycle.isPending ? <Loading kind="number" /> : <Text style={{ fontFamily: face(theme), ...c.type.money, color: c.ink, fontVariant: ['tabular-nums'] }}>{cycleData ? dong(cycleData.confirmedVnd) : NOTHING}</Text>}
           <Text style={{ fontFamily: face(theme), ...c.type.body, color: c.ink }}>{tt('income.confirmed')}</Text>
@@ -161,7 +161,7 @@ export function Income() {
           <NavRow label={tt('profile.help')} subtitle={tt('profile.helpSub')} onPress={() => setExtra('help')} />
         </> : null}
         <Body muted>{tt('income.intro')}</Body>
-        {income.isError ? <Body muted>{tt('common.loadFailed')}</Body> : null}
+        {income.isError && income.data === undefined ? <Body muted>{tt('income.transactions')} —</Body> : null}
         {income.isPending ? <Loading /> : null}
       </View>}
       empty={options || income.isPending || income.isError ? null : <Hatch action={tt('common.retry')} onPress={() => void income.refetch()} text={tt('income.empty')} />}

@@ -186,6 +186,7 @@ export function Uploads() {
 
   const episodes = useQuery({ queryKey: ['episodes'], queryFn: () => api.episodes() });
   const income = useQuery({ queryKey: ['income'], queryFn: () => api.income() });
+  const failed = [episodes, income].find(q => q.isError && q.data === undefined) ?? [episodes, income].find(q => q.isError);
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: () => api.sessions(), enabled: open });
   /**
    * The delivery this phone was interrupted in the middle of, if any.
@@ -298,7 +299,7 @@ export function Uploads() {
     <ListScreen title={tt('uploads.title')} data={visible} keyOf={episode => episode.episodeId}
       refresh={{ refreshing: episodes.isFetching || income.isFetching, onRefresh: () => { void episodes.refetch(); void income.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.cardGap }}>
-        {[episodes, income].some(q => q.isError) ? <Failure error={[episodes, income].find(q => q.isError)?.error} text={tt('common.loadFailed')} onRetry={() => { void episodes.refetch(); void income.refetch(); }} busy={episodes.isFetching || income.isFetching} /> : null}
+        {failed ? <Failure error={failed.error} text={tt(failed.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} onRetry={() => { void episodes.refetch(); void income.refetch(); }} busy={episodes.isFetching || income.isFetching} /> : null}
         <Button label={tt('uploads.deliverTitle')} onPress={() => setOpen(true)} />
         <Button label={tt('session.title')} variant="secondary" onPress={() => nav.push({ name: 'sessionReminder' })} />
         <Field label={tt('uploads.search')} value={search} onChangeText={setSearch} />
@@ -306,8 +307,8 @@ export function Uploads() {
           <Chip label={tt('hall.all')} selected={filter === null} onPress={() => setFilter(null)} />
           {EPISODE_STATES.map(state => <Chip key={state} label={tt(`state.${state}`)} selected={filter === state} onPress={() => setFilter(state)} />)}
         </ScrollView>
-        {income.isError ? <Body muted>{tt('common.loadFailed')}</Body> : null}
-        {episodes.isError ? <Body muted>{tt('common.loadFailed')}</Body> : null}
+        {income.isError && income.data === undefined ? <Body muted>{tt('income.title')} —</Body> : null}
+        {episodes.isError && episodes.data === undefined ? <Body muted>{tt('uploads.title')} —</Body> : null}
         {episodes.isPending ? <Loading /> : null}
       </View>}
       empty={episodes.isPending || episodes.isError ? null : <Hatch action={tt('common.retry')} onPress={() => { setSearch(''); setFilter(null); void episodes.refetch(); }} text={tt(search.trim() || filter ? 'uploads.noMatches' : 'uploads.empty')} />}
@@ -352,13 +353,13 @@ export function Uploads() {
           {deliveryMode === 'card' ? <Note text={HEADSET_GUIDANCE.map(section => section.items).flat().find(item => item.id === 'handover')!.text[locale]} /> : null}
         </> : deliveryStage === 0 ? <>
           <Body>{tt('uploads.deliverBody')}</Body><Note text={tt('uploads.confirmBody')} />
-          {held.isError ? <Body muted>{tt('common.loadFailed')}</Body> : null}
+          {held.isError && held.data === undefined ? <Body muted>{tt('uploads.resume')} —</Body> : null}
           {resumable ? <Card><Row label={tt('uploads.session')} value={resumable.sessionBasename} /><Button label={tt('uploads.resume')} variant="secondary" onPress={() => start(resumable)} /></Card> : null}
           {pick.isError ? <Failure error={pick.error} text={pick.error instanceof ApiError ? reasonText(tt, pick.error.code) : tt('uploads.pickFailed')} onRetry={() => pick.mutate()} busy={pick.isPending} /> : null}
         </> : deliveryStage === 1 ? <>
           <Title>{tt('uploads.chooseSession')}</Title>
           {sessions.isPending ? <Loading /> : null}
-          {sessions.isError ? <Body muted>{tt('common.loadFailed')}</Body> : null}
+          {sessions.isError && sessions.data === undefined ? <Body muted>{tt('uploads.chooseSession')} —</Body> : null}
           {(sessions.data ?? []).map(session => <Choice key={session.id} label={`${tt(`scenario.${session.scenario}`)} · ${session.createdAt.slice(0, 10)}`}
             describedBy={tt('uploads.session')} selected={sessionId === session.id} onPress={() => setSessionId(session.id)} />)}
           {!sessions.isPending && !sessions.isError && sessions.data?.length === 0 ? <StatePanel title={tt('state.empty')} text={tt('uploads.noSessions')} action={tt('session.title')} onPress={() => { close(); nav.push({ name: 'sessionCreate' }); }} /> : null}
