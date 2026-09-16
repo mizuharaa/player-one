@@ -138,6 +138,23 @@ test('--force reaches provision.sh and --ssh-user changes the login', () => {
   assert.match(out, /root@203\.0\.113\.7/);
 });
 
+// A run with no optional flags emitted `--force ''` — one empty positional,
+// because `${arr[@]+"${arr[@]}"}` on an empty array expands to a single empty
+// word in this bash, and `printf %q` then wrote it out as two quotes.
+// provision.sh forwarded it to configure.mjs, which refuses positionals:
+// "FAIL configuration: Unexpected argument ''". It failed a real deploy after
+// the bundle had already been copied. The older assertion above matched a
+// prefix, so it stayed green through the whole thing.
+test('the provision command line carries no empty positional argument', () => {
+  for (const args of [['203.0.113.7'], ['203.0.113.7', '--force'],
+    ['203.0.113.7', '--force', '--sign-in-channel', 'sms']]) {
+    const line = dryRun(args).split('\n').find(l => l.includes('provision.sh --domain'));
+    assert.ok(line, `provision.sh line is printed for ${args.join(' ')}`);
+    assert.doesNotMatch(line, /''/, `no empty positional for ${args.join(' ')}: ${line}`);
+    assert.doesNotMatch(line, /\s+$/, `no trailing whitespace for ${args.join(' ')}`);
+  }
+});
+
 test('runs the steps in order: bucket, bundle, copy, provision, up, verify', () => {
   const out = dryRun(['203.0.113.7']);
   const at = (label) => out.indexOf(`DRY-RUN ${label}:`);

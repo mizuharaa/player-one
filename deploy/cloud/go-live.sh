@@ -136,6 +136,7 @@ provision_script=$(mktemp)
   # Built as an array so an absent optional value adds no empty argument, which
   # provision.sh would forward to configure.mjs as a flag with no value.
   opt_args=()
+  [[ -z $force ]] || opt_args+=("$force")
   [[ -z $zalo_app_id ]] || opt_args+=(--zalo-app-id "$zalo_app_id" --zalo-app-secret "$zalo_app_secret")
   [[ -z $sign_in_channel ]] || opt_args+=(--sign-in-channel "$sign_in_channel")
   [[ -z $demo_bypass_key ]] || opt_args+=(--demo-bypass-key "$demo_bypass_key")
@@ -144,8 +145,15 @@ provision_script=$(mktemp)
   [[ -z $sms_secret_key ]] || opt_args+=(--sms-secret-key "$sms_secret_key")
   [[ -z $sms_brandname ]] || opt_args+=(--sms-brandname "$sms_brandname")
   [[ -z $sms_sandbox ]] || opt_args+=("$sms_sandbox")
-  printf 'bash deploy/cloud/provision.sh --domain %q --acme-email %q --local-db --storage-endpoint %q --storage-bucket %q --storage-key %q --storage-secret %q --quota-bytes %q %s %s\n' \
-    "$domain" "$acme_email" "$STORAGE_ENDPOINT" "$bucket" "$STORAGE_KEY" "$STORAGE_SECRET" "$quota" "$force" "$(printf '%q ' ${opt_args[@]+"${opt_args[@]}"})"
+  # `printf %q` must not run over an empty array. `${opt_args[@]+"${opt_args[@]}"}`
+  # expands to one empty word in this bash rather than to nothing, and printf
+  # writes that as `''` — a positional argument configure.mjs refuses by name
+  # ("Unexpected argument"), which failed a real deploy after the bundle was
+  # already on the VM. Build the tail only when there is something in it.
+  tail_args=
+  if (( ${#opt_args[@]} > 0 )); then tail_args=" $(printf '%q ' "${opt_args[@]}")"; tail_args=${tail_args% }; fi
+  printf 'bash deploy/cloud/provision.sh --domain %q --acme-email %q --local-db --storage-endpoint %q --storage-bucket %q --storage-key %q --storage-secret %q --quota-bytes %q%s\n' \
+    "$domain" "$acme_email" "$STORAGE_ENDPOINT" "$bucket" "$STORAGE_KEY" "$STORAGE_SECRET" "$quota" "$tail_args"
 } > "$provision_script"
 step_stdin provision "$provision_script" ssh "${ssh_opts[@]}" "$ssh_user@$ip" sudo bash -s
 
