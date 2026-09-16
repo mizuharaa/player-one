@@ -238,6 +238,7 @@ export function SignIn({
     onError: (error, attempt) => {
       if (mounted.current && attempt.revision === revision.current) {
         failed(error);
+        if (!(error instanceof ApiError && error.code === 'server_unreachable')) { setFilled(false); setCode(''); }
         setRefused((n) => n + 1);
       }
     },
@@ -660,7 +661,7 @@ fontWeight: theme.fontWeight.medium,
           */}
           <LegalLine />
 
-          {problem !== null ? <Failure error={problem === 'state.offline' ? new ApiError('server_unreachable') : undefined} text={tt(problem)} onRetry={() => verify.isError ? submitCode(code) : sendCode()} busy={pending} /> : null}
+          {problem !== null ? <Failure error={problem === 'state.offline' ? new ApiError('server_unreachable') : undefined} text={tt(problem)} onRetry={problem === 'state.offline' ? () => verify.isError ? submitCode(code) : sendCode() : undefined} busy={pending} /> : null}
 
           <View style={{ marginTop: 'auto', paddingTop: theme.space[5] }}>
             <Button label={tt('signIn.sendCode')} disabled={pending} onPress={sendCode} />

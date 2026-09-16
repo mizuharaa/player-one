@@ -173,9 +173,9 @@ it('prints the rate the server sent and never a total', async () => {
 
   // The three seeded tasks, each with its own unit price, rendered from the
   // server's own decimal string through `dong` and nothing else.
-  expect(page()).toContain(`${vnd('1200')} ${m['hall.perMinute']}`);
-  expect(page()).toContain(`${vnd('1000')} ${m['hall.perMinute']}`);
-  expect(page()).toContain(`${vnd('1500')} ${m['hall.perMinute']}`);
+  expect(page()).toContain(vnd('1200'));
+  expect(page()).toContain(vnd('1000'));
+  expect(page()).toContain(vnd('1500'));
   expect(page()).toContain(m['hall.perMinute']);
 
   // 1200 x 3000 = 3,600,000 — the projection this screen must never show.
@@ -389,8 +389,14 @@ it('renders a seeded task title, exact price and type badge in the shared card',
   const seed = { ...(await api.tasks())[0]!, title: 'Office task', type: 'office', unitPriceVndPerMinute: '1234.5678' };
   await act(async () => root.render(<ThemeProvider><LocaleProvider><TaskCard task={seed} onPress={() => {}} /></LocaleProvider></ThemeProvider>));
   expect(page()).toContain('Office task');
-  expect(page()).toContain(`${vnd('1234.5678')} ${m['hall.perMinute']}`);
+  expect(page()).toContain(vnd('1234.5678'));
+  expect(page()).toContain(m['hall.perMinute']);
+  const price = document.body.querySelector<HTMLElement>('[data-testid="task-price"]')!;
+  expect(price.style.fontSize).toBe('22px');
+  expect(price.style.whiteSpace).not.toBe('nowrap');
+  expect(price.style.textOverflow).not.toBe('ellipsis');
   expect(page()).toContain(m['taskCard.home']);
+  expect(page()).toContain(m['hall.imageLabel']);
 });
 
 it.each([120, 121, 3000])('formats a server duration of %s minutes without losing the remainder', async targetMinutes => {

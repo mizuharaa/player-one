@@ -340,3 +340,40 @@ it('retries an offline new request after an earlier verification refusal', async
   await tap(copy['common.retry']);
   expect(fetchFn).toHaveBeenCalledTimes(4);
 });
+
+it('does not offer automatic Retry for a refused code request', async () => {
+  fetchFn.mockResolvedValueOnce(new Response(null, { status: 429 }));
+  await mount(); await tap(copy['signIn.sendCode']);
+  await settle(() => expect(container.textContent).toContain(copy['signIn.rateLimited']));
+  expect(container.textContent).not.toContain(copy['common.retry']);
+  expect(fetchFn).toHaveBeenCalledTimes(1);
+});
+it('returns a rejected demo code to entry without spending another attempt', async () => {
+  fetchFn.mockResolvedValueOnce(json({ demo_code: '123456' }))
+    .mockResolvedValueOnce(new Response(null, { status: 401 }))
+    .mockResolvedValueOnce(json({ token: 'accepted-new-code' }));
+  await mount(); await tap(copy['signIn.sendCode']);
+  await settle(() => expect(codeRow()).not.toBeNull());
+  await tap(copy['signIn.submit']);
+  await settle(() => expect(container.textContent).toContain(copy['signIn.badCode']));
+  expect(codeRow()!.value).toBe('');
+  expect([...container.querySelectorAll('button')].some(n => n.textContent === copy['signIn.submit'] || n.textContent === copy['common.retry'])).toBe(false);
+  expect(fetchFn).toHaveBeenCalledTimes(2);
+  await edit(copy['signIn.code'], '654321');
+  await settle(() => expect(signedIn).toHaveBeenCalledTimes(1));
+  expect(fetchFn).toHaveBeenCalledTimes(3);
+});
+it('retries the preserved code only after a transport failure', async () => {
+  fetchFn.mockResolvedValueOnce(json({ demo_code: '123456' }))
+    .mockRejectedValueOnce(new TypeError('offline'))
+    .mockResolvedValueOnce(json({ token: 'accepted-after-retry' }));
+  await mount(); await tap(copy['signIn.sendCode']);
+  await settle(() => expect(codeRow()).not.toBeNull());
+  await tap(copy['signIn.submit']);
+  await settle(() => expect(container.textContent).toContain(copy['state.offline']));
+  expect(codeRow()!.value).toBe('123456');
+  await tap(copy['common.retry']);
+  await settle(() => expect(signedIn).toHaveBeenCalledTimes(1));
+  expect(fetchFn).toHaveBeenCalledTimes(3);
+  expect(JSON.parse(String(fetchFn.mock.calls[2]?.[1]?.body)).code).toBe('123456');
+});
