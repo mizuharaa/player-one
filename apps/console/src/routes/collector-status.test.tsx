@@ -112,7 +112,11 @@ it('draws a prospect row with the word and with its own option selected', async 
       </QueryClientProvider>,
     ),
   );
-  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+  // Retried rather than slept: a fixed 10 ms measures the runner under load.
+  await vi.waitFor(async () => {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(host.textContent ?? '').toContain(MESSAGES.en['bo.collector.status.prospect']);
+  });
 
   const text = host.textContent ?? '';
   expect(text).toContain(MESSAGES.en['bo.collector.status.prospect']);

@@ -119,8 +119,21 @@ describe('the attention panel with an unusable recording on it', () => {
         </QueryClientProvider>,
       ),
     );
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+    /*
+     * A fixed sleep here measured the runner, not the code: one CI run of
+     * 4a1f142 reported "the unusable episode has no row" while three runs of
+     * the same tree passed alone. `vi.waitFor` is what the payout tests in
+     * this app already use for the same wait.
+     */
+    const findRow = () =>
+      [...host.querySelectorAll('tbody tr')].find((tr) =>
+        (tr.textContent ?? '').includes(EXCEPTIONS.unusable[0]!.episode_id),
+      );
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(findRow(), 'the unusable episode has no row in the attention panel').toBeDefined();
     });
 
     /*
@@ -128,10 +141,7 @@ describe('the attention panel with an unusable recording on it', () => {
      * read `blocking` alone, which is empty here, so there was no row at all
      * and the panel drew its empty state.
      */
-    const row = [...host.querySelectorAll('tbody tr')].find((tr) =>
-      (tr.textContent ?? '').includes(EXCEPTIONS.unusable[0]!.episode_id),
-    );
-    expect(row, 'the unusable episode has no row in the attention panel').toBeDefined();
+    const row = findRow();
 
     const line = row!.textContent ?? '';
     // Honest, and distinct from the unattributed case: this episode has a
