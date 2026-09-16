@@ -740,3 +740,11 @@ it('can replay the retained record after cancellation before registration', asyn
   expect(calls.some(call => call.method === 'GET')).toBe(false);
   expect(peek()).toBeNull();
 });
+
+it('registers a library batch through the existing unmeasured wire contract only', async () => {
+  const { fn, calls } = fakeFetch({ 'POST /api/me/uploads': { status: 200, body: { upload_id: UPLOAD_ID, state: 'registered', files: [], part_size: PART } } });
+  const batch = { ...record([file('1-phone.mov', 1024)]), sessionBasename: 'library_batch-id_20260916_120000' };
+  await api(fn).registerDelivery(batch);
+  expect(calls[0]?.body).toEqual({ id: UPLOAD_ID, collection_session_id: SESSION_ID, session_basename: batch.sessionBasename,
+    files: [{ relative_path: '1-phone.mov', bytes: 1024, sha256: batch.files[0]!.sha256 }] });
+});

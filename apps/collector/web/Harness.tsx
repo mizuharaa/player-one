@@ -13,7 +13,9 @@ import { NavProvider, useNav, type Route, type RouteName } from '../src/nav.tsx'
 import { GuideProvider } from '../src/guide/Guide.tsx';
 import { ToastProvider } from '../src/ui/Toast.tsx';
 import { TabBar } from '../src/shell/TabBar.tsx';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
+// Preview iOS-only source controls without opening a native picker.
+if (new URLSearchParams(window.location.search).get('platform') === 'ios') Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
 import { AGREEMENTS, ApiError } from '../src/api/types.ts';
 import { ThemeProvider } from '../src/theme.tsx';
 import { Landing } from '../src/screens/Landing.tsx';

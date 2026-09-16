@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { uuid } from '../api/http.ts';
 import * as SecureStore from 'expo-secure-store';
 import { Directory, File, FileMode, Paths, UploadType } from 'expo-file-system';
@@ -11,25 +12,16 @@ import {
   type DeliveryStore,
 } from '@playerone/delivery';
 
-/**
- * The phone's half of Path A that only exists on a phone.
- *
- * `expo-file-system` is the ONE native module this lane adds, and everything it
- * is used for is here so that nothing else in the app imports it: the state
- * machine in `delivery.ts` is pure and testable under Node, and this file is
- * the part that cannot be. `web/vite.config.ts` aliases the module to a stub
- * for the browser harness, the same way it already does for
- * `expo-secure-store`.
- *
- * Cancellation is covered with a native-module fake. Device I/O still needs
- * a real Android handset with a recorded session directory — see `docs/agents/lanes/` and the
- * "what a real phone would still need to prove" list in the commit message.
+/** Native picking, durable media copies, hashing and upload transport.
+ * Android uses a session directory; iOS uses Photos/camera without Ego sidecars.
+ * Native-module fakes cover branches; picker and device I/O still need a handset.
  */
 
 /** One file the picker found, before anything has hashed it. */
 export type PickedFile = { relativePath: string; uri: string; bytes: number };
 
 export type PickedSession = {
+  source?: 'library' | 'camera';
   directoryUri: string;
   sessionBasename: string;
   files: PickedFile[];
@@ -51,7 +43,43 @@ export type PickedSession = {
  * separator in it, so a nested file could not be delivered even if it were
  * collected here.
  */
-export async function pickSessionDirectory(): Promise<PickedSession> {
+export async function pickSessionDirectory(source?: 'library' | 'camera', signal?: AbortSignal): Promise<PickedSession | null> {
+  if (Platform.OS === 'ios') {
+    const picker = await import('expo-image-picker');
+    const camera = source === 'camera';
+    const permission = camera ? await picker.requestCameraPermissionsAsync() : await picker.requestMediaLibraryPermissionsAsync();
+    if (signal?.aborted) return null;
+    if (!permission.granted) throw new ApiError(camera ? 'upload_camera_denied' : 'upload_photos_denied');
+    const result = camera
+      ? await picker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 })
+      : await picker.launchImageLibraryAsync({ mediaTypes: ['images', 'videos'], allowsMultipleSelection: true, allowsEditing: false, quality: 1, preferredAssetRepresentationMode: picker.UIImagePickerPreferredAssetRepresentationMode.Current, videoExportPreset: picker.VideoExportPreset.Passthrough, shouldDownloadFromNetwork: true });
+    if (signal?.aborted || result.canceled || !result.assets?.length) return null;
+    const originals = result.assets.map((asset, index) => {
+      const file = new File(asset.uri);
+      const name = nameFromUri(asset.uri);
+      if (!name || /[\\/\0]/.test(name) || !Number.isSafeInteger(file.size) || file.size < 0) throw new ApiError('upload_media_unreadable');
+      return { file, relativePath: `${index + 1}-${name}`, bytes: file.size };
+    });
+    // Same ceiling as registerUnmeasured; do not compress to evade it.
+    if (originals.reduce((sum, file) => sum + file.bytes, 0) > 200 * 1024 * 1024) throw new ApiError('upload_payload_too_large');
+    const now = new Date().toISOString().replace(/[-:]/g, '');
+    // Transport batch identity only, never an Ego serial or a measurement.
+    const sessionBasename = `library_${uuid()}_${now.slice(0, 8)}_${now.slice(9, 15)}`;
+    const directory = new Directory(Paths.document, sessionBasename);
+    directory.create({ intermediates: true });
+    try {
+      const files = originals.map(({ file, relativePath, bytes }) => {
+        const saved = new File(directory, relativePath);
+        file.copy(saved);
+        return { relativePath, uri: saved.uri, bytes };
+      });
+      return { source: camera ? 'camera' : 'library', directoryUri: directory.uri, sessionBasename, files };
+    } catch (error) {
+      // Only this new app-owned copy, never originals or an earlier resumable batch.
+      try { directory.delete(); } catch { /* Preserve the copy failure. */ }
+      throw error;
+    }
+  }
   const directory = await Directory.pickDirectoryAsync();
   const sessionBasename = nameFromUri(directory.uri);
   /**
