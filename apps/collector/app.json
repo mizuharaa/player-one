@@ -4,6 +4,7 @@
   "expo": {
     "name": "Player One",
     "slug": "playerone-collector",
+    "scheme": "playerone",
     "version": "0.0.1",
     "orientation": "portrait",
     "android": {

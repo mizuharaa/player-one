@@ -129,18 +129,32 @@ describe('every failure ZNS can return', () => {
     }
   });
 
-  it('covers all six classes the pilot has to be able to act on', () => {
+  /**
+   * Re-transcribed 2026-09-16 against the current (ZBS) table, which is where
+   * `zns_oa_not_verified`, `zns_user_refused` and `zns_development_only` come
+   * from — see `ZNS_ERROR_CODES` and `docs/sign-in-channels.md`.
+   *
+   * `zns_unreachable` is deliberately NOT asserted here any more. No error code
+   * maps to it: it is what a timeout, a reset or a body that is not a ZNS
+   * envelope produces, and the tests above cover those. It was in this list
+   * while `-115` was mistakenly mapped to it, and `-115` is out of quota.
+   */
+  it('covers every class the pilot has to be able to act on', () => {
     const mapped = new Set(ZNS_ERROR_CODES.values());
     for (const refusal of [
       'zns_no_zalo_account',
+      'zns_phone_not_vietnamese',
+      'zns_oa_not_verified',
+      'zns_user_refused',
+      'zns_development_only',
       'zns_template_rejected',
       'zns_quota_exhausted',
       'zns_rate_limited',
       'zns_credentials_rejected',
-      'zns_unreachable',
     ] as const) {
       expect(mapped.has(refusal), refusal).toBe(true);
     }
+    expect(mapped.has('zns_unreachable'), 'no code means "could not be reached"').toBe(false);
   });
 
   it('is loud about a code no table knows, and treats it as temporary', async () => {
@@ -280,10 +294,14 @@ describe('configuration by environment', () => {
 // ---------------------------------------------------------------------------
 
 describe('the refusal names', () => {
-  it('are the eight the sender can produce, and nothing else', () => {
+  it('are the eleven the sender can produce, and nothing else', () => {
     const produced: ZnsRefusal[] = [
       'zns_no_zalo_account',
       'zns_phone_not_vietnamese',
+      // Added 2026-09-16 with the re-transcribed ZBS table.
+      'zns_oa_not_verified',
+      'zns_user_refused',
+      'zns_development_only',
       'zns_template_rejected',
       'zns_quota_exhausted',
       'zns_rate_limited',

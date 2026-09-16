@@ -281,6 +281,26 @@ export interface CollectorApi extends DeliveryApi {
    */
   signIn(phone: string, code: string): Promise<void>;
   /**
+   * APP-01. Start a Zalo sign-in: where to send the browser.
+   *
+   * Owner's decision of 2026-09-16. The `url` is Zalo's own permission screen
+   * and the PKCE verifier behind it never leaves the server, so there is
+   * nothing here for the app to keep — it opens the URL and waits for the
+   * `playerone://signed-in` deep link.
+   *
+   * Throws `ApiError('zalo_not_configured')` when this deployment holds no
+   * Zalo app credentials, which is how the screen knows to hide the button.
+   */
+  startZaloSignIn(): Promise<{ url: string; state: string }>;
+  /**
+   * APP-01. Trade the deep link's one-time ticket for the token, and keep it.
+   *
+   * Throws `ApiError('zalo_ticket_spent')` for a ticket that was never issued,
+   * one that has expired and one already used — one refusal, because
+   * `POST /auth/collector/ticket` answers one 401 for all three.
+   */
+  signInWithTicket(ticket: string): Promise<void>;
+  /**
    * NFR-03/NFR-04. Cold start: is there a stored token, and does it still work?
    *
    * True means the app opens where the collector left it. False means the

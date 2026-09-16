@@ -318,6 +318,11 @@ is the reason the rule is "reproduce", not "obey".
   `audit_events` so an operator can find those people. Do not build SMS as
   well; if a second channel is ever needed it is a second `SendSignInCode`, not
   a change to the route. `packages/api/src/zns.ts`.
+- **Overridden 2026-09-16 (owner):** collector sign-in must work for anybody
+  with an ordinary Zalo account — Zalo Login (OAuth v4, `zalo-login.ts`) is now
+  the first-class route and a third-party SMS one-time code
+  (`PLAYERONE_SIGN_IN_CHANNEL=sms`, `sms.ts`) is the required fallback, because
+  VNG's ZNS Official Account is not available.
 - **Do not invent extra collector consent fields beyond APP-17b.** Privacy is
   legal's problem and collectors wear masks; capture the two APP-17b
   declarations and add no third. That is the whole of this rule, and it is

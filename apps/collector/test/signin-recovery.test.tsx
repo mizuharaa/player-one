@@ -24,6 +24,16 @@ vi.mock('react-native', async () => ({ ...await import('react-native-web') }));
  * `Film`, and every file that reaches `ui.tsx` therefore reaches this.
  */
 vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({ addListener: () => ({ remove: () => {} }), status: 'idle' }) }));
+/**
+ * `react-native-svg` publishes Flow source, which vitest cannot parse. The
+ * same stub as `explore-screen.test.tsx` and three other screen tests: this
+ * screen reaches it through `zalo.tsx`'s Zalo mark, which the sign-in screen
+ * carries since the 2026-09-16 Zalo Login decision.
+ */
+vi.mock('react-native-svg', () => {
+  const Stub = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
+  return { default: Stub, Svg: Stub, Path: Stub, Circle: Stub, Rect: Stub, Line: Stub, G: Stub };
+});
 vi.mock('../src/ui.tsx', async (original) => ({
   ...await original<Record<string, unknown>>(),
   Body: ({ children }: { children: ReactNode }) => <p>{children}</p>,

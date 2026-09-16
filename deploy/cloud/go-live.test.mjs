@@ -59,6 +59,26 @@ test('never prints the storage key or secret, and masks them with ***', () => {
   assert.match(out, /--storage-secret \*\*\*/);
 });
 
+test('passes the Zalo app through to provision.sh, and masks its secret like the others', () => {
+  // Absent, nothing is added — the whole point of the default being today's
+  // behaviour. An empty argument here would reach configure.mjs as a flag with
+  // no value and refuse the provisioning run.
+  const plain = dryRun(['203.0.113.7']);
+  assert.doesNotMatch(plain, /--zalo-app-id|--sign-in-channel/);
+
+  const out = dryRun(['203.0.113.7',
+    '--zalo-app-id', '3849367142822243338',
+    '--zalo-app-secret', 'zalo-secret-never-printed',
+    '--sign-in-channel', 'sms']);
+  assert.match(out, /--zalo-app-id 3849367142822243338/);
+  assert.match(out, /--sign-in-channel sms/);
+  // The app id is not a credential and stays readable; the secret is one and is
+  // masked wherever the dry run would otherwise show it. It also never reaches
+  // a command line — it is inside the stdin script, like the storage secret.
+  assert.doesNotMatch(out, /zalo-secret-never-printed/);
+  assert.match(out, /--zalo-app-secret \*\*\*/);
+});
+
 test('the bundle it ships clones into a checkout provision.sh can run from', () => {
   // The only step that runs for real here: everything after it needs the VM.
   const scratch = mkdtempSync(join(tmpdir(), 'playerone-go-live-bundle-'));

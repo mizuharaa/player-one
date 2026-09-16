@@ -4,6 +4,7 @@ import { Animated, Image, Text, View } from 'react-native';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { Button, Film, LegalLine, Scrim, face, useInsets, useReducedMotion } from '../ui.tsx';
+import { ZaloSignIn, useZaloSignIn } from '../zalo.tsx';
 import film from '../../assets/hero/login.mp4';
 import poster from '../../assets/hero/login-poster.jpg';
 
@@ -60,7 +61,18 @@ function Rise({ step, children }: { step: number; children: React.ReactNode }) {
   );
 }
 
-export function Landing({ onSignIn }: { onSignIn: () => void }) {
+export function Landing({
+  onSignIn,
+  onSignedIn,
+}: {
+  onSignIn: () => void;
+  /**
+   * A finished Zalo sign-in, which can land here as well as on §3: the deep
+   * link can relaunch a killed app, and then the welcome is what is on screen.
+   * Same callback the sign-in screen is given.
+   */
+  onSignedIn: () => void;
+}) {
   const theme = useTheme();
   const insets = useInsets();
   const tt = useT();
@@ -68,6 +80,8 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
   const [explaining, setExplaining] = useState(false);
   /** The ink the scrim was measured against. Fixed: the film is not themed. */
   const onFilm = theme.color.discover.surface;
+  /** See `zalo.tsx`. Owner's decision, 2026-09-16. */
+  const zalo = useZaloSignIn({ onSignedIn });
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.background }}>
@@ -160,6 +174,13 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
 
           <Rise step={2}>
             <View style={{ gap: theme.space[3] }}>
+              {/*
+                First, above the app's own primary: it is the way in that works
+                for anybody with a Zalo account, and it is also what catches
+                the deep link when Zalo relaunched a killed app onto this
+                screen rather than onto §3.
+              */}
+              <ZaloSignIn state={zalo} onDark />
               <Button label={tt('landing.signIn')} onDark onPress={onSignIn} />
               {/*
                 Outlined, not a bare ghost: on footage an unbordered label is

@@ -8,6 +8,9 @@ usage() { echo "Usage: bash deploy/cloud/go-live.sh <ip> [--domain D] [--bucket 
 [[ $# -ge 1 ]] || usage
 ip=$1; shift
 domain=; bucket=; acme_email=luong.alois@gmail.com; ssh_port=234; ssh_user=ubuntu; ssh_key=~/.ssh/id_rsa_playerone; quota=1250000000; dry_run=0; force=
+# Zalo Login, owner's decision 2026-09-16. Empty leaves the three cloud.env
+# values empty, and code delivery stays exactly as it is today.
+zalo_app_id=; zalo_app_secret=; sign_in_channel=
 while [[ $# -gt 0 ]]; do
   case $1 in
     --domain) domain=$2; shift 2 ;;
@@ -18,6 +21,9 @@ while [[ $# -gt 0 ]]; do
     --ssh-key) ssh_key=$2; shift 2 ;;
     --force) force=--force; shift ;;   # provision.sh refuses a re-run without it
     --quota-bytes) quota=$2; shift 2 ;;
+    --zalo-app-id) zalo_app_id=$2; shift 2 ;;
+    --zalo-app-secret) zalo_app_secret=$2; shift 2 ;;
+    --sign-in-channel) sign_in_channel=$2; shift 2 ;;
     --dry-run|--plan) dry_run=1; shift ;;
     *) usage ;;
   esac
@@ -48,7 +54,11 @@ for v in STORAGE_ENDPOINT STORAGE_KEY STORAGE_SECRET; do
   [[ -n ${!v} ]] || { echo "FAIL $v missing from $env_file"; exit 1; }
 done
 
-mask() { local s=$1; s=${s//$STORAGE_SECRET/***}; [[ -z $STORAGE_KEY ]] || s=${s//$STORAGE_KEY/***}; printf '%s' "$s"; }
+mask() { local s=$1; s=${s//$STORAGE_SECRET/***}; [[ -z $STORAGE_KEY ]] || s=${s//$STORAGE_KEY/***};
+  # The Zalo app secret is a credential like the other two and reaches the VM
+  # the same way: inside the stdin script, never on a command line, masked in
+  # a dry run. The app id is not a secret and stays readable on purpose.
+  [[ -z $zalo_app_secret ]] || s=${s//$zalo_app_secret/***}; printf '%s' "$s"; }
 
 # step <label> <argv...>: streams and exits naming the step on failure; in
 # --dry-run/--plan it only prints the (masked) command it would have run.
@@ -101,8 +111,13 @@ provision_script=$(mktemp)
   printf 'rm -rf %q\n' "$remote_src"
   printf 'git clone /tmp/cloud-provision.bundle %q\n' "$remote_src"
   printf 'cd %q\n' "$remote_src"
-  printf 'bash deploy/cloud/provision.sh --domain %q --acme-email %q --local-db --storage-endpoint %q --storage-bucket %q --storage-key %q --storage-secret %q --quota-bytes %q %s\n' \
-    "$domain" "$acme_email" "$STORAGE_ENDPOINT" "$bucket" "$STORAGE_KEY" "$STORAGE_SECRET" "$quota" "$force"
+  # Built as an array so an absent Zalo app adds no empty argument, which
+  # provision.sh would forward to configure.mjs as a flag with no value.
+  zalo_args=()
+  [[ -z $zalo_app_id ]] || zalo_args+=(--zalo-app-id "$zalo_app_id" --zalo-app-secret "$zalo_app_secret")
+  [[ -z $sign_in_channel ]] || zalo_args+=(--sign-in-channel "$sign_in_channel")
+  printf 'bash deploy/cloud/provision.sh --domain %q --acme-email %q --local-db --storage-endpoint %q --storage-bucket %q --storage-key %q --storage-secret %q --quota-bytes %q %s %s\n' \
+    "$domain" "$acme_email" "$STORAGE_ENDPOINT" "$bucket" "$STORAGE_KEY" "$STORAGE_SECRET" "$quota" "$force" "$(printf '%q ' ${zalo_args[@]+"${zalo_args[@]}"})"
 } > "$provision_script"
 step_stdin provision "$provision_script" ssh "${ssh_opts[@]}" "$ssh_user@$ip" sudo bash -s
 

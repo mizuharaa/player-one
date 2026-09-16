@@ -15,7 +15,8 @@ export type EngineeringCapabilities = {
   mediaRoot: boolean;
   verificationGate: 'local' | 'cloud';
   reviewerMediaEnabled: boolean;
-  signInDeliveryMode: 'zns' | 'dev_log' | 'unconfigured' | 'unknown';
+  /** `sms` joined the list with PLAYERONE_SIGN_IN_CHANNEL (2026-09-16). */
+  signInDeliveryMode: 'zns' | 'sms' | 'dev_log' | 'unconfigured' | 'unknown';
   payoutMode: 'manual' | 'api';
   payoutEnvironment?: 'sandbox' | 'production';
   payoutClient: boolean;
@@ -194,7 +195,7 @@ export function registerEngineering(
         {
           id: 'sign_in_delivery',
           state:
-            cap.signInDeliveryMode === 'zns'
+            cap.signInDeliveryMode === 'zns' || cap.signInDeliveryMode === 'sms'
               ? 'configured_unprobed'
               : cap.signInDeliveryMode === 'unknown'
                 ? 'unknown'
@@ -204,7 +205,9 @@ export function registerEngineering(
               ? 'Development logging adapter only; codes are NOT delivered.'
               : cap.signInDeliveryMode === 'zns'
                 ? 'ZNS adapter configured; delivery not probed.'
-                : 'Delivery adapter unavailable or type unknown.',
+                : cap.signInDeliveryMode === 'sms'
+                  ? 'SMS adapter configured; delivery not probed.'
+                  : 'Delivery adapter unavailable or type unknown.',
         },
         {
           id: 'jobs',

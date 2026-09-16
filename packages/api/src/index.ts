@@ -21,6 +21,7 @@ export {
 } from './collector-app.ts';
 import { registerCollectorApp } from './collector-app.ts';
 import { registerCollectorAuth, type SendSignInCode } from './collector.ts';
+import type { ZaloLogin } from './zalo-login.ts';
 export {
   MAX_DELIVERY_BYTES,
   MAX_UNMEASURED_DELIVERY_BYTES,
@@ -101,15 +102,65 @@ export {
   ZNS_REFUSALS,
   ZNS_SEND_PATH,
   ZnsDeliveryError,
+  SIGN_IN_CHANNELS,
   devLogSender,
   signInCodeSenderFromEnv,
   toZnsPhone,
   znsSender,
   type CodeSender,
+  type SignInChannel,
   type ZnsConfig,
   type ZnsRefusal,
   type ZnsWarning,
 } from './zns.ts';
+export {
+  DEFAULT_SMS_TEMPLATE,
+  DEFAULT_SMS_TIMEOUT_MS,
+  SMS_ACCEPTED,
+  SMS_BASE_URL,
+  SMS_CODE_RESULTS,
+  SMS_REFUSALS,
+  SMS_SEND_PATH,
+  SmsDeliveryError,
+  smsSender,
+  smsSenderFromEnv,
+  type SmsConfig,
+  type SmsRefusal,
+  type SmsWarning,
+} from './sms.ts';
+export {
+  OA_REFRESH_SKEW_MS,
+  OA_TOKEN_URL,
+  OaTokenError,
+  fileTokenStore,
+  oaToken,
+  type OaToken,
+  type OaTokenConfig,
+  type StoredTokens,
+  type TokenStore,
+} from './zns-oa-token.ts';
+export {
+  APP_DEEP_LINK,
+  SIGN_IN_TTL_MS,
+  ZALO_AUTHORIZE_PATH,
+  ZALO_CALLBACK_PATH,
+  ZALO_GRAPH_BASE_URL,
+  ZALO_LOGIN_REFUSALS,
+  ZALO_OAUTH_BASE_URL,
+  ZALO_PROFILE_PATH,
+  ZALO_TOKEN_PATH,
+  ZaloLoginError,
+  codeChallengeFor,
+  newCodeVerifier,
+  newOpaqueToken,
+  ticketDigest,
+  zaloLogin,
+  zaloLoginFromEnv,
+  type ZaloIdentity,
+  type ZaloLogin,
+  type ZaloLoginConfig,
+  type ZaloLoginRefusal,
+} from './zalo-login.ts';
 export { PAYOUT_API_REFUSALS, PAYOUT_REFUSALS } from './payout/routes/payout.ts';
 export { SETTLE_API_REFUSALS } from './settle.ts';
 export { assertPayoutBootInvariants, payoutOptionsFromEnv, type PayoutOptions } from './payout/domain/config.ts';
@@ -297,6 +348,18 @@ export type ApiOptions = {
   /** One phone number whose sign-in code comes back in the response. See `collector.ts`. */
   demoPhone?: string;
   /**
+   * Zalo Login (OAuth v4), owner's decision of 2026-09-16 overriding the
+   * ZNS-only rule: VNG's ZNS Official Account is not available, so a sign-in
+   * that depends on a code arriving in Zalo delivers nothing.
+   *
+   * Absent here, the three `/auth/collector/zalo/...` routes answer 503
+   * `zalo_not_configured` — not defaulted inside `buildApi` for the same
+   * reason `sendSignInCode` is not: a route that answers as though it worked is
+   * worse than one that says it is not configured. `bin/serve.ts` reads
+   * `zaloLoginFromEnv()`.
+   */
+  zaloLogin?: ZaloLogin;
+  /**
    * The clock the sign-in limiter counts on. Same seam, and same rule, as
    * `signInLimiter(now)`: it exists so a five-minute window and a one-minute
    * send cooldown can be tested without waiting for them. It is not
@@ -392,6 +455,7 @@ export function buildApi({
   sendSignInCode,
   signInDeliveryMode,
   demoPhone,
+  zaloLogin,
   now,
   payout = payoutOptionsFromEnv(),
   risk = riskConfigFromEnv(),
@@ -916,7 +980,7 @@ export function buildApi({
    */
   registerSessionRoutes(app, db, { tokenSecret, secureCookies, limiter });
   /** The collector's phone sign-in. Same limiter, same failed-sign-in rows. */
-  registerCollectorAuth(app, db, { tokenSecret, limiter, sendSignInCode, demoPhone });
+  registerCollectorAuth(app, db, { tokenSecret, limiter, sendSignInCode, demoPhone, zaloLogin });
 
   /**
    * Who the caller is. Proves both-tokens and centre scope on its own, with no

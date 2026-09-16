@@ -246,6 +246,40 @@ export class HttpCollectorApi implements CollectorApi {
     this.active();
   }
 
+  // -- sign in with Zalo (APP-01, owner's decision 2026-09-16) -------------
+
+  async startZaloSignIn(): Promise<{ url: string; state: string }> {
+    const res = await this.send('/auth/collector/zalo/start', 'POST');
+    if (res.status === 429) throw new ApiError('rate_limited');
+    // No Zalo app on this deployment. The screen hides the button on this
+    // rather than showing a control that cannot work.
+    if (res.status === 503) throw new ApiError('zalo_not_configured');
+    if (res.status < 200 || res.status >= 300) throw new ApiError('server_error');
+    const body = (await this.body(res)) as { url?: unknown; state?: unknown } | undefined;
+    this.active();
+    if (typeof body?.url !== 'string' || typeof body.state !== 'string') {
+      throw new ApiError('server_error');
+    }
+    return { url: body.url, state: body.state };
+  }
+
+  async signInWithTicket(ticket: string): Promise<void> {
+    const res = await this.send('/auth/collector/ticket', 'POST', { ticket });
+    // NOT `req`: a refused ticket is not an expired session, and there is no
+    // stored token here to clear.
+    if (res.status === 401) throw new ApiError('zalo_ticket_spent');
+    if (res.status === 429) throw new ApiError('rate_limited');
+    if (res.status < 200 || res.status >= 300) throw new ApiError('server_error');
+
+    const token = (await this.body(res)) as { token?: unknown } | undefined;
+    this.active();
+    if (typeof token?.token !== 'string') throw new ApiError('server_error');
+    const value = token.token;
+    this.token = value;
+    await this.persist(() => this.tokens.set(value));
+    this.active();
+  }
+
   async restoreSession(): Promise<boolean> {
     this.active();
     const stored = await this.tokens.get();

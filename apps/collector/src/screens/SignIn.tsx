@@ -9,6 +9,7 @@ import { useT } from '../locale.tsx';
 import { e164 } from '../phone.ts';
 import { Button, Film, Choice, CodeBoxes, Field, LegalLine, Note, Scrim, face, useInsets, } from '../ui.tsx';
 import { useTheme } from '../theme.tsx';
+import { ZaloSignIn, useZaloSignIn } from '../zalo.tsx';
 import type { MessageKey } from '../i18n.ts';
 import poster from '../../assets/hero/login-poster.jpg';
 import loginFilm from '../../assets/hero/login.mp4';
@@ -182,6 +183,13 @@ export function SignIn({
   /** §4's shake fires on a count, not a flag: two wrong codes shake twice. */
   const [refused, setRefused] = useState(0);
   const [left, setLeft] = useState(0);
+  /**
+   * Zalo Login, owner's decision of 2026-09-16 — the first-class way in, with
+   * the code path below it as the fallback. It owns the whole browser hop,
+   * including the `playerone://signed-in` link coming back, so this screen only
+   * places it and hands it the same `onSignedIn` the code path calls.
+   */
+  const zalo = useZaloSignIn({ onSignedIn });
   const mounted = useRef(true);
   const revision = useRef(0);
   const submitting = useRef<'request' | 'verify' | null>(null);
@@ -533,6 +541,14 @@ fontWeight: theme.fontWeight.medium,
           >
             {tt('signIn.intro')}
           </Text>
+
+          {/*
+            Above the phone field, because it is the way in that works for
+            anybody with a Zalo account and the code path is the fallback
+            underneath it. The "hoặc dùng số điện thoại" line the block ends
+            with is what says so, rather than a heading over the field.
+          */}
+          <ZaloSignIn state={zalo} />
 
           {/*
             The code and the number share one row, the way a phone number is

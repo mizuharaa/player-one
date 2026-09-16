@@ -6,7 +6,10 @@ import { pathToFileURL } from 'node:url';
 export function configuration(args) {
   const { values: v } = parseArgs({ args, options: Object.fromEntries([
     ...['domain', 'acme-email', 'database-url', 'storage-endpoint', 'storage-bucket',
-      'storage-key', 'storage-secret', 'quota-bytes', 'output'].map(k => [k, { type: 'string' }]),
+      'storage-key', 'storage-secret', 'quota-bytes', 'output',
+      // Sign-in channels, owner's decision 2026-09-16. All optional: omitted,
+      // they stay empty in cloud.env and the deployment behaves as it did.
+      'sign-in-channel', 'zalo-app-id', 'zalo-app-secret'].map(k => [k, { type: 'string' }]),
     ...['local-db', 'http-local'].map(k => [k, { type: 'boolean' }]),
   ]) });
   for (const k of ['domain', 'acme-email', 'storage-endpoint', 'storage-bucket', 'storage-key', 'storage-secret', 'quota-bytes']) {
@@ -19,6 +22,22 @@ export function configuration(args) {
   if (Boolean(v['local-db']) === Boolean(v['database-url'])) throw new Error('Choose --local-db OR --database-url (migration owner URL)');
   if (v['http-local'] && v.domain !== 'localhost') throw new Error('--http-local is only for localhost Docker proof');
   if (!['https:', ...(v['http-local'] ? ['http:'] : [])].includes(new URL(v['storage-endpoint']).protocol)) throw new Error('Storage endpoint must use HTTPS outside local proof');
+  // Allowed characters rather than forbidden ones. A Zalo app id is digits and
+  // its secret is hex, so anything outside this set is a paste that went wrong
+  // and a positive rule cannot be defeated by a separator nobody thought of.
+  for (const k of ['sign-in-channel', 'zalo-app-id', 'zalo-app-secret']) {
+    if (v[k] !== undefined && !/^[\w.:@+-]*$/.test(v[k])) throw new Error(`--${k} has characters it should not`);
+  }
+  // The same three names packages/api/src/zns.ts accepts, and nothing else: a
+  // typo here would otherwise become a server that refuses to start on the VM.
+  if (v['sign-in-channel'] && !['zns', 'sms', 'log'].includes(v['sign-in-channel'])) {
+    throw new Error('--sign-in-channel must be zns, sms or log');
+  }
+  // Half of a Zalo app is a server that refuses to start naming what is
+  // missing; catching it here means finding out before the VM is touched.
+  if (Boolean(v['zalo-app-id']) !== Boolean(v['zalo-app-secret'])) {
+    throw new Error('Supply both --zalo-app-id and --zalo-app-secret, or neither');
+  }
   const secret = () => randomBytes(32).toString('hex');
   const ownerPassword = secret(), appPassword = secret(), machine = secret(), admin = secret();
   const owner = new URL(v['database-url'] ?? `postgres://postgres:${ownerPassword}@postgres:5432/po_demo_cloud?sslmode=disable`);
@@ -41,6 +60,15 @@ export function configuration(args) {
     STORAGE_ENDPOINT: v['storage-endpoint'], STORAGE_BUCKET: v['storage-bucket'],
     STORAGE_KEY: v['storage-key'], STORAGE_SECRET: v['storage-secret'],
     PLAYERONE_STORAGE_QUOTA_BYTES: v['quota-bytes'],
+    /**
+     * Empty unless asked for, which is what keeps the default behaviour the
+     * default. The redirect URI is built from PLAYERONE_PUBLIC_URL above, so
+     * there is no separate origin to pass; the callback URL registered at
+     * developers.zalo.me has to equal it plus /auth/collector/zalo/callback.
+     */
+    PLAYERONE_SIGN_IN_CHANNEL: v['sign-in-channel'] ?? '',
+    PLAYERONE_ZALO_APP_ID: v['zalo-app-id'] ?? '',
+    PLAYERONE_ZALO_APP_SECRET: v['zalo-app-secret'] ?? '',
   };
 }
 

@@ -306,7 +306,10 @@ function Session({ factory, restore, onExited }: { factory: ApiFactory; restore:
              */
             <NavProvider key='out' initial={{ name: 'register' }}>
               {restore && !signingIn ? (
-                <Landing onSignIn={() => setSigningIn(true)} />
+                <Landing
+                  onSignIn={() => setSigningIn(true)}
+                  onSignedIn={() => { if (alive.current && !signingOut.current) void enter(); }}
+                />
               ) : (
                 <SignIn
                   onSignedIn={() => { if (alive.current && !signingOut.current) void enter(); }}
