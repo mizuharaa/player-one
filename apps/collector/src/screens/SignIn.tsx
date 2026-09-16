@@ -248,6 +248,7 @@ export function SignIn({
     // A synchronous guard also covers two taps before React rerenders disabled.
     if (submitting.current) return;
     submitting.current = 'request';
+    verify.reset();
     setProblem(null);
     setCode('');
     setFilled(false);
