@@ -139,7 +139,7 @@ describe('APP-02 agreement recovery', () => {
     expect(native.push).not.toHaveBeenCalled();
     await press(copy['common.retry']);
     await settle(() => expect(native.push).toHaveBeenCalledTimes(1));
-    expect(native.push).toHaveBeenCalledWith({ name: 'training' });
+    expect(native.push).toHaveBeenCalledWith({ name: 'exam' });
     expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(String(fetchFn.mock.calls[0]?.[0])).toBe('https://collector.test/api/me/agreements');
     expect(body()).toEqual({ agreements: AGREEMENTS.map((a) => ({ agreement: a.id, version: a.version })) });

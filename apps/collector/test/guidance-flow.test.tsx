@@ -1,3 +1,5 @@
+import { Agreements } from '../src/screens/Agreements.tsx';
+import { HttpCollectorApi } from '../src/api/http.ts';
 // @vitest-environment jsdom
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -5,7 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiProvider } from '../src/api/context.tsx';
 import { MockCollectorApi } from '../src/api/mock.ts';
-import { AGREEMENTS } from '../src/api/types.ts';
+import { AGREEMENTS, type CollectorApi } from '../src/api/types.ts';
 import { HEADSET_COPY, HEADSET_GUIDANCE } from '../src/headset-guidance.ts';
 import { MESSAGES } from '../src/i18n.ts';
 import { LocaleProvider, useLocale } from '../src/locale.tsx';
@@ -18,6 +20,7 @@ import { SessionReminder } from '../src/screens/SessionReminder.tsx';
 // navigation run unchanged; the browser harness separately checks real controls.
 vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
+  Switch: ({ value, onValueChange }: { value: boolean; onValueChange: (value: boolean) => void }) => <input type="checkbox" checked={value} onChange={event => onValueChange(event.target.checked)} />,
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => <button onClick={onPress}>{children}</button>,
@@ -33,6 +36,7 @@ vi.mock('react-native', () => ({
 vi.mock('expo-battery', () => ({ getBatteryLevelAsync: async () => 0.9, isLowPowerModeEnabledAsync: async () => false }));
 vi.mock('../src/upload/delivery-native.ts', () => ({ freeDiskBytes: () => 8 * 1024 ** 3 }));
 vi.mock('../src/ui.tsx', () => ({
+  face: () => 'System',
   Body: ({ children }: { children: ReactNode }) => <p>{children}</p>,
   Title: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
   Card: ({ children }: { children: ReactNode }) => <section>{children}</section>,
@@ -66,15 +70,15 @@ function Flow() {
     <button onClick={() => nav.back()}>Back in test</button>
     <button onClick={() => nav.push({ name: 'training' })}>Training in test</button>
     <button onClick={() => setLocale('en')}>English in test</button>
-    {nav.route.name === 'training' ? <Training /> : nav.route.name === 'sessionCreate' ? <SessionCreate /> :
+    {nav.route.name === 'agreements' ? <Agreements /> : nav.route.name === 'training' ? <Training /> : nav.route.name === 'sessionCreate' ? <SessionCreate /> :
       nav.route.name === 'sessionReminder' ? <SessionReminder /> :
       <><h1>{nav.route.name}</h1><button onClick={() => nav.push({ name: 'sessionReminder' })}>Prepare in test</button></>}
   </>;
 }
 
-async function mount(route: Route) {
+async function mount(route: Route, value: CollectorApi = api) {
   await act(async () => root.render(
-    <QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider initialLocale="vi">
+    <QueryClientProvider client={client}><ApiProvider value={value}><LocaleProvider initialLocale="vi">
       <NavProvider initial={route}><Flow /></NavProvider>
     </LocaleProvider></ApiProvider></QueryClientProvider>,
   ));
@@ -126,15 +130,16 @@ describe('guidance in the collector flow', () => {
     expect((await api.profile())?.trainingDone).toBe(false);
   });
 
-  it('cannot complete unavailable training or enter the exam from the placeholder', async () => {
+  it('can leave the training placeholder for the exam without completing training', async () => {
     const complete = vi.spyOn(api, 'completeTraining');
     await mount({ name: 'home' });
     await tap('Training in test');
     expect(container.textContent).toContain(MESSAGES.vi['training.placeholder']);
     expect(container.textContent).not.toContain(MESSAGES.vi['training.done']);
     expect(container.querySelector('footer')?.textContent).toBe('');
-    await tap('Back in test');
-    expect(container.querySelector('h1')?.textContent).toBe('home');
+    await settle(() => expect(button(MESSAGES.vi['exam.title'])).toBeDefined());
+    await tap(MESSAGES.vi['exam.title']);
+    expect(container.querySelector('h1')?.textContent).toBe('exam');
     expect(complete).not.toHaveBeenCalled();
     expect((await api.profile())?.trainingDone).toBe(false);
   });
@@ -200,3 +205,37 @@ vi.mock('../src/ui/illustrations/index.tsx', () => ({ HowCharge: () => null, How
 
 // Native illustration rendering is covered by the web captures.
 vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null, HowCharge: () => null, HowWear: () => null, HowPressDevice: () => null, HowHandOver: () => null }));
+
+
+it('walks the six Agreements into the exam route', async () => {
+  api = new MockCollectorApi(); await api.register('Collector', '0903000001');
+  const complete = vi.spyOn(api, 'completeTraining');
+  await mount({ name: 'agreements' });
+  for (const input of container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) await act(async () => input.click());
+  await tap(MESSAGES.vi['agreements.submit']);
+  await settle(() => expect(container.querySelector('h1')?.textContent).toBe('exam'));
+  expect((await api.profile())?.agreements).toHaveLength(AGREEMENTS.length);
+  expect(complete).not.toHaveBeenCalled();
+});
+
+it('never posts training completion when continuing from the placeholder', async () => {
+  const fetchFn = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ id: 'collector', name: 'Collector', phone: '0903000001', agreements: [], training_done: false, exam_passed: false, onboarded: true })));
+  const http = new HttpCollectorApi('https://collector.test', { get: async () => 'collector-token', set: async () => {}, clear: async () => {} }, () => {}, fetchFn);
+  await http.restoreSession();
+  await mount({ name: 'training' }, http);
+  await settle(() => expect(button(MESSAGES.vi['exam.title'])).toBeDefined());
+  await tap(MESSAGES.vi['exam.title']);
+  expect(container.querySelector('h1')?.textContent).toBe('exam');
+  expect(fetchFn).toHaveBeenCalled();
+  expect(fetchFn.mock.calls.every(([url, init]) => String(url).endsWith('/api/me/profile') && init?.method === 'GET')).toBe(true);
+});
+
+
+it('keeps Back on the training placeholder when the exam is already passed', async () => {
+  await api.submitExam([true, true, true]);
+  await mount({ name: 'home' }); await tap('Training in test');
+  await settle(() => expect(button(MESSAGES.vi['common.back'])).toBeDefined());
+  expect(Array.from(container.querySelectorAll('button')).some(node => node.textContent === MESSAGES.vi['exam.title'])).toBe(false);
+  await tap(MESSAGES.vi['common.back']);
+  expect(container.querySelector('h1')?.textContent).toBe('home');
+});

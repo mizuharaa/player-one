@@ -332,7 +332,6 @@ export class MockCollectorApi implements CollectorApi {
         throw new ApiError('agreements_incomplete');
       }
     }
-    if (!me.trainingDone) throw new ApiError('training_incomplete');
     if (!me.examPassed) throw new ApiError('exam_not_passed');
     return me;
   }
