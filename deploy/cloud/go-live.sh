@@ -4,10 +4,10 @@
 # on the VM over SSH. See docs/cloud-go-live.md "From the laptop with one IP".
 set -euo pipefail
 
-usage() { echo "Usage: bash deploy/cloud/go-live.sh <ip> [--domain D] [--bucket B] [--acme-email E] [--ssh-port N] [--ssh-user U] [--quota-bytes N] [--force] [--dry-run|--plan]" >&2; exit 2; }
+usage() { echo "Usage: bash deploy/cloud/go-live.sh <ip> [--domain D] [--bucket B] [--acme-email E] [--ssh-port N] [--ssh-user U] [--ssh-key PATH] [--quota-bytes N] [--force] [--dry-run|--plan]" >&2; exit 2; }
 [[ $# -ge 1 ]] || usage
 ip=$1; shift
-domain=; bucket=; acme_email=luong.alois@gmail.com; ssh_port=234; ssh_user=ubuntu; quota=1250000000; dry_run=0; force=
+domain=; bucket=; acme_email=luong.alois@gmail.com; ssh_port=234; ssh_user=ubuntu; ssh_key=~/.ssh/id_rsa_playerone; quota=1250000000; dry_run=0; force=
 while [[ $# -gt 0 ]]; do
   case $1 in
     --domain) domain=$2; shift 2 ;;
@@ -15,6 +15,7 @@ while [[ $# -gt 0 ]]; do
     --acme-email) acme_email=$2; shift 2 ;;
     --ssh-port) ssh_port=$2; shift 2 ;;
     --ssh-user) ssh_user=$2; shift 2 ;;
+    --ssh-key) ssh_key=$2; shift 2 ;;
     --force) force=--force; shift ;;   # provision.sh refuses a re-run without it
     --quota-bytes) quota=$2; shift 2 ;;
     --dry-run|--plan) dry_run=1; shift ;;
@@ -25,7 +26,7 @@ done
 echo "Domain: $domain (sslip.io needs no DNS record; Caddy's ACME resolves it directly)"
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-ssh_key=~/.ssh/id_ed25519         # fable-playerone-vm
+# fable-playerone-vm: the RSA key the GreenNode console accepted (ed25519 was refused).
 # The login user is an assumption (Ubuntu cloud images: "ubuntu", passwordless
 # sudo); the first real run tests it. --ssh-user overrides.
 remote_src=/root/playerone-src
