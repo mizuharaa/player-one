@@ -301,6 +301,18 @@ export interface CollectorApi extends DeliveryApi {
    */
   signInWithTicket(ticket: string): Promise<void>;
   /**
+   * The demo bypass. Owner's request of 2026-09-16, for debugging and the
+   * Thursday demonstration only: one administrator key trades for the ordinary
+   * collector session of the seeded demo collector, so the pipelines can be
+   * shown when no sign-in channel delivers a code.
+   *
+   * Throws `ApiError('demo_unavailable')` on a deployment that holds no key,
+   * which is every deployment nobody asked for one on, and
+   * `ApiError('credentials')` for a wrong key -- one refusal, because
+   * `POST /auth/collector/demo` answers one 401 for every way it can fail.
+   */
+  signInWithDemoKey(key: string): Promise<void>;
+  /**
    * NFR-03/NFR-04. Cold start: is there a stored token, and does it still work?
    *
    * True means the app opens where the collector left it. False means the

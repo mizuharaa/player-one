@@ -1,9 +1,11 @@
+import { DemoBypass } from '../ui/DemoBypass.tsx';
 import { Failure } from '../ui/StatePanel.tsx';
 import { BrandSlot } from '../shell/BrandSlot.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
 import { ApiError } from '../api/types.ts';
+import { BUILD_PROFILE } from '../api/config.ts';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
 import { e164 } from '../phone.ts';
@@ -190,6 +192,11 @@ export function SignIn({
    * places it and hands it the same `onSignedIn` the code path calls.
    */
   const zalo = useZaloSignIn({ onSignedIn });
+  /**
+   * The demo bypass sheet, owner's request of 2026-09-16. See `DemoBypass.tsx`.
+   * State and not a route, for the reason this whole screen is not one.
+   */
+  const [demo, setDemo] = useState(false);
   const mounted = useRef(true);
   const revision = useRef(0);
   const submitting = useRef<'request' | 'verify' | null>(null);
@@ -659,6 +666,24 @@ fontWeight: theme.fontWeight.medium,
             above the button at the foot of the sheet.
           */}
           <LegalLine />
+
+          {/*
+            The demo bypass, owner's request of 2026-09-16, and the ONLY way
+            into it. Debugging and the Thursday demonstration: the pipelines
+            have to be showable when no sign-in channel delivers a code.
+
+            Not rendered at all on the Play profile — the same gate the Server
+            row in `Profile.tsx` uses, and the same reason: a control that must
+            not exist in a shipped app is better absent than disabled. It is a
+            ghost under the legal line rather than a third button in the stack
+            above, because it is not a way in for a collector and must not read
+            as one; `test/demo-bypass.test.tsx` measures both the presence and
+            the absence.
+          */}
+          {BUILD_PROFILE === 'play' ? null : (
+            <Button label={tt('demo.entry')} variant="ghost" onPress={() => setDemo(true)} />
+          )}
+          {demo ? <DemoBypass onSignedIn={onSignedIn} onClose={() => setDemo(false)} /> : null}
 
           {problem !== null ? <Failure error={problem === 'state.offline' ? new ApiError('server_unreachable') : undefined} text={tt(problem)} onRetry={() => verify.isError ? submitCode(code) : sendCode()} busy={pending} /> : null}
 

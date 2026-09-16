@@ -209,6 +209,15 @@ export class MockCollectorApi implements CollectorApi {
 
   async signInWithTicket(): Promise<void> {}
 
+  /**
+   * Same rule again: the seam's shape, not a second implementation. There is
+   * no key for a mock to hold, so it answers the refusal a deployment with no
+   * bypass answers -- which is also what the browser harness should show.
+   */
+  async signInWithDemoKey(): Promise<void> {
+    throw new ApiError('demo_unavailable');
+  }
+
   async signOut(): Promise<void> {
     this.me = null;
     this.claims = [];

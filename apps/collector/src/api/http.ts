@@ -280,6 +280,34 @@ export class HttpCollectorApi implements CollectorApi {
     this.active();
   }
 
+  // -- the demo bypass (owner's request 2026-09-16) ------------------------
+
+  /**
+   * One key for the ordinary collector token. Same token handling as the two
+   * routes above -- NOT `req`, because a refused key is not an expired session
+   * and there is no stored token to clear.
+   *
+   * A 404 means this deployment has no bypass, and is exactly what a server
+   * without the route answers; the sheet says so rather than offering another
+   * try.
+   */
+  async signInWithDemoKey(key: string): Promise<void> {
+    const res = await this.send('/auth/collector/demo', 'POST', { key });
+    if (res.status === 404) throw new ApiError('demo_unavailable');
+    if (res.status === 401) throw new ApiError('credentials');
+    if (res.status === 429) throw new ApiError('rate_limited');
+    if (res.status === 503) throw new ApiError('demo_collector_absent');
+    if (res.status < 200 || res.status >= 300) throw new ApiError('server_error');
+
+    const token = (await this.body(res)) as { token?: unknown } | undefined;
+    this.active();
+    if (typeof token?.token !== 'string') throw new ApiError('server_error');
+    const value = token.token;
+    this.token = value;
+    await this.persist(() => this.tokens.set(value));
+    this.active();
+  }
+
   async restoreSession(): Promise<boolean> {
     this.active();
     const stored = await this.tokens.get();
