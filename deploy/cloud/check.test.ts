@@ -90,6 +90,8 @@ describe('the Caddyfile, the compose file and the env template agree', () => {
     }
     expect(handled).toContain('/episodes/*');
     expect(handled).not.toContain('/episodes');
+    expect(isApiPath('/episodes/attention')).toBe(false);
+    expect(caddyfile).toMatch(/handle \/episodes\/attention\s*\{\s*root \* "\{\$PLAYERONE_CONSOLE_ROOT\}"\s*rewrite \* \/index\.html\s*file_server/);
     for (const matcher of ['api', 'media']) expect(caddyfile).toMatch(new RegExp(`handle @${matcher} \\{\\s+reverse_proxy 127\\.0\\.0\\.1:`));
   });
 

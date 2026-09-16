@@ -18,7 +18,7 @@ const MIME = {
 };
 
 export function isApiPath(pathname) {
-  return pathname.startsWith('/episodes/') || API_ROOTS.some((root) => pathname === root || pathname.startsWith(`${root}/`));
+  return (pathname.startsWith('/episodes/') && pathname !== '/episodes/attention') || API_ROOTS.some((root) => pathname === root || pathname.startsWith(`${root}/`));
 }
 
 function cleanHeaders(headers) {

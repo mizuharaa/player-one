@@ -53,6 +53,8 @@ test('showcase routing, session transport and static media boundaries', async (t
     assert.equal(page.status, 200);
     assert.match(page.body, /PlayerOne SPA/);
     assert.equal(page.headers['cache-control'], 'no-store');
+    const attention = await fetchRaw(port, '/episodes/attention');
+    assert.match(attention.body, /PlayerOne SPA/);
     for (const path of ['/episodes/stuck', '/api/tasks', '/auth/login', '/media/video', '/reference/sync', '/handovers', '/upload-batches']) {
       const response = await fetchRaw(port, `${path}?page=2`);
       assert.equal(JSON.parse(response.body).url, `${path}?page=2`);

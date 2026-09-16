@@ -20,7 +20,9 @@ check web dc run --rm --no-deps -T ops node deploy/cloud/probe.mjs web
 # SDK PUT + read-back SHA-256 and probe cleanup, never metadata-only evidence.
 check bucket dc run --rm --no-deps -T ops node deploy/cloud/probe.mjs bucket
 origin=$(setting PLAYERONE_PUBLIC_URL)
-if dc run --rm --no-deps -T ops node packages/api/scripts/bucket-cors.mjs "$origin"; then
+aliases=$(dc --profile tools config --format json | "$python" -c 'import json,sys; print(json.load(sys.stdin)["services"]["ops"]["environment"].get("PLAYERONE_PUBLIC_ALIASES", ""))')
+read -r -a cors_aliases <<< "$aliases"
+if dc run --rm --no-deps -T ops node packages/api/scripts/bucket-cors.mjs "$origin" "${cors_aliases[@]}"; then
   echo 'PASS bucket-cors.mjs applied and read back'
 else
   status=$?

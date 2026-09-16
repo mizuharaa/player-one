@@ -63,6 +63,12 @@
 	}
 
 	# Match the showcase proxy's API roots, including counter intake writes.
+	# This nested route belongs to the console, not the legacy episodes API.
+	handle /episodes/attention {
+		root * "{$PLAYERONE_CONSOLE_ROOT}"
+		rewrite * /index.html
+		file_server
+	}
 	# /episodes itself stays a console route; only descendants belong to the API.
 	@api path /api /api/* /auth /auth/* /whoami /whoami/* /reference /reference/* /handovers /handovers/* /upload-batches /upload-batches/* /episodes/*
 	handle @api {
