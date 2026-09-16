@@ -280,12 +280,17 @@ export function zaloLogin(config: ZaloLoginConfig): ZaloLogin {
       url.searchParams.set('redirect_uri', redirectUri);
       url.searchParams.set('code_challenge', codeChallenge);
       /**
-       * S256 is the only method Zalo Login v4 documents and the only one worth
-       * having — `plain` puts the verifier in the browser. Sent explicitly
-       * rather than relied on as a default: a default we cannot see change is
-       * a downgrade nobody would notice.
+       * `state` last, and there is deliberately NO `code_challenge_method`.
+       *
+       * Zalo Login v4 documents four parameters — `app_id`, `redirect_uri`,
+       * `code_challenge`, `state` — and its own PHP SDK builds exactly those.
+       * S256 is implicit and there is no `plain` to be downgraded to. An
+       * earlier version of this file sent `code_challenge_method=S256` on the
+       * OAuth habit; it is accepted and echoed through the redirect, but
+       * nothing documents that it is read, so sending it was a parameter whose
+       * meaning we were inventing. `docs/sign-in-channels.md` records where
+       * that was verified.
        */
-      url.searchParams.set('code_challenge_method', 'S256');
       url.searchParams.set('state', state);
       return url.toString();
     },

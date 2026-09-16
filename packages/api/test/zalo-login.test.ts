@@ -150,8 +150,18 @@ describe.skipIf(!hasDb())('signing in with Zalo', () => {
     expect(authorize.origin + authorize.pathname).toBe(`https://oauth.zaloapp.com${ZALO_AUTHORIZE_PATH}`);
     expect(authorize.searchParams.get('app_id')).toBe(APP_ID);
     expect(authorize.searchParams.get('redirect_uri')).toBe(ORIGIN + ZALO_CALLBACK_PATH);
-    expect(authorize.searchParams.get('code_challenge_method')).toBe('S256');
     expect(authorize.searchParams.get('state')).toBe(state);
+    /**
+     * And nothing else. Zalo Login v4 documents four parameters and its own
+     * SDK sends four; `code_challenge_method` is not one of them, and this is
+     * what stops it being added back on OAuth habit.
+     */
+    expect([...authorize.searchParams.keys()].sort()).toEqual([
+      'app_id',
+      'code_challenge',
+      'redirect_uri',
+      'state',
+    ]);
 
     /**
      * The verifier is in the database and the challenge is in the URL, and the
