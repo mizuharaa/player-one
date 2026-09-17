@@ -35,6 +35,7 @@ import { IconKeyboard, IconPartial, IconPass, IconReject } from '../components/i
 import { MESSAGES } from '@playerone/api/i18n';
 import { api, ApiError, type Claim, type DemoReviewAction, type ReasonCode, type ReviewQueue, type ReviewCatalogItem, type Verdict } from '../lib/api.ts';
 import { ReviewCatalog, RecordingPreview, DemoReviewControls, optimizedUrl } from './ReviewCatalog.tsx';
+import { Scrubber, markInSpan, markOutSpan, clearSpanAt, type Span } from './ReviewTimeline.tsx';
 import { commitFailure, type CommitFailure } from './refusal.ts';
 import { duration, money, signedPercent, signedSeconds } from '../lib/format.ts';
 import { cn } from '../lib/cn.ts';
@@ -42,11 +43,6 @@ import { uuid } from '../lib/uuid.ts';
 
 const RATES = [0.5, 0.75, 1, 1.5, 2, 3, 4] as const;
 const HEARTBEAT_MS = 60_000;
-
-interface Span {
-  start: number;
-  end: number | null;
-}
 
 export function ReviewScreen() {
   const { t, i18n } = useTranslation();
@@ -279,36 +275,16 @@ export function ReviewScreen() {
      ------------------------------------------------------------------ */
 
   const markIn = useCallback(() => {
-    setSpans((current) => {
-      /** An unclosed span already open: move its start rather than stacking. */
-      const open = current.findIndex((s) => s.end === null);
-      if (open >= 0) {
-        const copy = [...current];
-        copy[open] = { start: position, end: null };
-        return copy;
-      }
-      return [...current, { start: position, end: null }];
-    });
+    setSpans(current => markInSpan(current, position));
     setDecision('partial');
   }, [position]);
 
   const markOut = useCallback(() => {
-    setSpans((current) => {
-      const open = current.findIndex((s) => s.end === null);
-      /** An out with no in is not an error the reviewer should have to undo. */
-      if (open < 0) return current;
-      const start = current[open]!.start;
-      if (position <= start) return current;
-      const copy = [...current];
-      copy[open] = { start, end: position };
-      return copy;
-    });
+    setSpans(current => markOutSpan(current, position));
   }, [position]);
 
   const clearAtPlayhead = useCallback(() => {
-    setSpans((current) =>
-      current.filter((s) => !(position >= s.start && position <= (s.end ?? Infinity))),
-    );
+    setSpans(current => clearSpanAt(current, position));
   }, [position]);
 
   const closed = useMemo(() => spans.filter((s): s is { start: number; end: number } => s.end !== null), [spans]);
@@ -512,7 +488,13 @@ export function ReviewScreen() {
   const catalogView = <ReviewCatalog data={catalog.data ?? undefined} pending={catalog.isPending} error={catalog.error}
     selected={selected?.episode_id ?? null} busy={claim.isPending || commit.isPending || hold.isPending || demo.isPending}
     onSelect={item => { commit.reset(); hold.reset(); demo.reset(); requestClaim(item.queue, item); }}
-    onRefresh={() => { void catalog.refetch(); }} />;
+    onRefresh={() => {
+      const lane = queue;
+      void catalog.refetch().then(({ data }) => {
+        if (queueRef.current !== lane || claiming.current || !data) return;
+        setSelected(current => current ? data.items.find(item => item.episode_id === current.episode_id) ?? current : null);
+      });
+    }} />;
   const demoControls = selected ? <DemoReviewControls key={`demo:${selected.episode_id}`} item={selected}
     busy={demo.isPending || claim.isPending || commit.isPending || hold.isPending} error={demo.error}
     onAction={(action, reason) => { if (claiming.current) return; claiming.current = true; demo.mutate({ item: selected, action, reason }); }} /> : null;
@@ -559,12 +541,11 @@ export function ReviewScreen() {
       <AppShell {...shellProps} bleed>
         {queueSelector}
         {catalogView}
-        {demoControls}
-        {selected?.claimable && !selected.demo_override ? <Nothing
+        {selected?.claimable && !selected.demo_override ? <>{demoControls}<Nothing
           title={t('state.leaseExpired.title')}
           body={t('review.catalog.taken')}
           action={<Button variant="outline" onClick={() => requestClaim()}>{t('queue.refresh')}</Button>}
-        /> : selected ? <RecordingPreview key={`${selected.episode_id}:${selected.preview_url}`} item={selected} /> : null}
+        /></> : selected ? <RecordingPreview key={`${selected.episode_id}:${selected.preview_url}`} item={selected} actions={demoControls} /> : null}
       </AppShell>
     );
   }
@@ -573,7 +554,6 @@ export function ReviewScreen() {
     <AppShell {...shellProps} bleed>
       {queueSelector}
       {catalogView}
-      {demoControls}
       <div className="review-workbench">
         {/* ---------------- The theatre ---------------- */}
         <section className="on-stage flex min-w-0 flex-col">
@@ -699,6 +679,7 @@ export function ReviewScreen() {
 
         {/* ---------------- The rail: what the machine knows, then the decision ---------------- */}
         <aside className="flex flex-col border-l border-[var(--border)] bg-[var(--background)]">
+          {demoControls}
           {lost === 'lease' ? (
             <div className="p-4">
               <Problem
@@ -972,71 +953,6 @@ export function ReviewScreen() {
 
       {showShortcuts ? <Shortcuts onClose={() => setShowShortcuts(false)} /> : null}
     </AppShell>
-  );
-}
-
-/**
- * The scrubber, with marked spans drawn into it.
- *
- * The spans are the point: a reviewer needs to see what they have already
- * awarded without reading a list. An open span (in, no out) is drawn hatched to
- * its current end so it is visibly unfinished rather than looking like a short
- * award.
- */
-function Scrubber({
-  position,
-  measured,
-  spans,
-  onSeek,
-}: {
-  position: number;
-  measured: number;
-  spans: Span[];
-  onSeek: (seconds: number) => void;
-}) {
-  const pct = (seconds: number) => (measured > 0 ? (seconds / measured) * 100 : 0);
-
-  return (
-    <div
-      className="relative h-9 cursor-pointer select-none"
-      onClick={(e) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        onSeek(((e.clientX - rect.left) / rect.width) * measured);
-      }}
-      role="slider"
-      tabIndex={0}
-      aria-label="Playhead"
-      aria-valuemin={0}
-      aria-valuemax={Math.round(measured)}
-      aria-valuenow={Math.round(position)}
-      aria-valuetext={duration(position)}
-    >
-      <div className="absolute inset-x-0 top-3.5 h-2 rounded-full bg-[var(--stage-line)]" />
-
-      {spans.map((s, i) => (
-        <div
-          key={i}
-          className={cn(
-            'absolute top-3.5 h-2 rounded-full',
-            s.end === null ? 'opacity-55' : '',
-          )}
-          style={{
-            left: `${pct(s.start)}%`,
-            width: `${Math.max(pct((s.end ?? position) - s.start), 0.4)}%`,
-            background:
-              s.end === null
-                ? 'repeating-linear-gradient(90deg, var(--partial) 0 4px, transparent 4px 8px)'
-                : 'var(--partial)',
-          }}
-        />
-      ))}
-
-      {/* Amber, because it has to stay visible over arbitrary footage. */}
-      <div
-        className="pointer-events-none absolute top-1.5 h-6 w-0.5 rounded-full bg-[var(--lime-500)]"
-        style={{ left: `${pct(position)}%` }}
-      />
-    </div>
   );
 }
 

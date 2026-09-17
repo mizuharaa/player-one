@@ -1,5 +1,18 @@
 # Design
 
+## Review editor correction — 16 September 2026
+
+The owner requests a desktop video-review workbench inspired by the supplied
+CapCut and iMovie layouts: near-black player and inspector, orange transport and
+timeline controls, a zoomable time ruler and mark-in/out ranges. Reuse existing
+stage and sun tokens and the shared review timeline; keep the surrounding console
+navigation unchanged. This scoped request supersedes the light review rail and
+mark-only orange restrictions below. Real recording metadata and footage remain
+the content; do not fabricate waveforms or repeat a poster as sampled frames.
+Phone previews expose the same viewing tools. Their marks are local inspection
+notes, not payable minutes. Admin demo decisions stay visibly simulated, separate
+from real verdicts, and alongside the player rather than above its scroll target.
+
 ## Current public direction: immersive media with warm framing
 
 Latest refinement: [kinetic landing](docs/design/kinetic-landing-2026-09-10.md) adds scroll-linked serif emphasis, shared photo/copy alignment, a stationary metallic CSS phone, stronger localized slogans and numbered FAQ interaction with pausable optical accents. Keep the white intro and exact PLAYER ONE shuffle intact. Decorative optics may rotate; the wordmark and phone do not loop or swing.

@@ -30,6 +30,16 @@ const mountTarget = (service: string, volume: string): string | undefined =>
     ?.split(':')[1];
 
 describe('the cloud listener and the console listener send the same headers', () => {
+  it('revalidates HTML including SPA fallbacks without changing media or asset caching', () => {
+    const htmlPolicy = /header\s*\{\s*Cache-Control "no-cache"\s*match header Content-Type text\/html\*\s*\}/;
+    const match = htmlPolicy.exec(caddyfile);
+    expect(match, 'HTML response matching also covers /review and /episodes/attention after rewriting').not.toBeNull();
+    expect(match!.index).toBeLessThan(caddyfile.indexOf('handle /healthz'));
+    const withoutHtmlPolicy = caddyfile.replace(htmlPolicy, '');
+    expect(withoutHtmlPolicy).not.toMatch(/Cache-Control\s+"?no-cache/);
+    expect(withoutHtmlPolicy).toContain('header Cache-Control no-store');
+  });
+
   it('carries the console CSP verbatim, and the other three headers', async () => {
     const server = await read(join('..', 'http-server.mjs'));
     const csp = /content-security-policy', "([^"]+)"/.exec(server)?.[1];

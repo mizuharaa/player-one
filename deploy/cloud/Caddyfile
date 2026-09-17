@@ -44,6 +44,13 @@
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	}
 
+	# Match the final response, including rewritten SPA routes, not the URL.
+	# HTML revalidates after releases; video ranges and hashed assets keep their policy.
+	header {
+		Cache-Control "no-cache"
+		match header Content-Type text/html*
+	}
+
 	# `deploy/http-server.mjs` answers /healthz by asking the API for /whoami
 	# with no credentials and treating 401 as ready: that one status proves the
 	# process is up, its routes are mounted and its database-backed

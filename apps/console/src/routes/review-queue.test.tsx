@@ -17,7 +17,7 @@ it('browses without claiming, claims only the selection, releases before switchi
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   const response = (body: unknown, status = 200) => new Response(status === 204 ? null : JSON.stringify(body), { status });
   const rows = [
-    { episode_id: 'ego-1', session_folder: 'Ego recording', collector_label: 'Mai', collector_ref: 'col-1', recorded_at: '20260916_142300', uploaded_at: '2026-09-16T08:00:00Z', duration_seconds: 20, source: 'ego', state: 'pending', queue: 'standard', claimable: true, preview_url: null, blocker: null },
+    { episode_id: 'ego-1', session_folder: 'Ego recording', collector_label: 'Mai', collector_ref: 'col-1', recorded_at: '20260916_142300', uploaded_at: '2026-09-16T08:00:00Z', duration_seconds: 20, source: 'ego', state: 'pending', queue: 'standard', claimable: true, preview_url: null, blocker: null, demo_override_allowed: true },
     { episode_id: 'phone-1', session_folder: 'Phone recording', collector_label: 'Linh', collector_ref: 'col-2', recorded_at: null, uploaded_at: '2026-09-16T08:00:00Z', duration_seconds: 8, source: 'phone', state: 'quarantined', queue: 'privacy', claimable: false, preview_url: '/phone.mp4', blocker: 'requires_camera_metadata' },
   ];
   const episode = { episode_id: 'ego-1', session_folder: 'Ego recording', measured_duration_seconds: '20', claimed_duration_seconds: null,
@@ -64,7 +64,7 @@ it('browses without claiming, claims only the selection, releases before switchi
     await act(async () => cards()[1]!.click());
     await vi.waitFor(async () => { await flush(); expect(host.querySelector('.review-preview-only video')).not.toBeNull(); });
     expect(host.querySelector('[role=radio]')).toBeNull(); expect(host.querySelector('textarea')).toBeNull();
-    expect(host.querySelector('.review-preview-only select')).toBeNull();
+    expect(host.querySelector('.review-preview-only select')?.getAttribute('aria-label')).toBe(MESSAGES.en['player.rate']);
     expect(host.querySelector('.review-preview-only video')?.getAttribute('src')).toBe('/phone.mp4');
     expect(calls.filter(c => c.path.includes('/release/'))).toHaveLength(2);
     expect(calls.filter(c => c.path.includes('/claim'))).toHaveLength(1);
@@ -74,6 +74,8 @@ it('browses without claiming, claims only the selection, releases before switchi
     await vi.waitFor(async () => { await flush(); expect(calls.filter(c => c.path.includes('/claim'))).toHaveLength(2); });
     expect(host.querySelector('.review-preview-only')).toBeNull();
     expect(host.textContent).toContain(MESSAGES.en['state.leaseExpired.title']);
+    expect(host.querySelector('.review-demo')).not.toBeNull();
+    expect([...host.querySelectorAll('.review-demo button')].some(button => button.textContent === MESSAGES.en['review.demo.move'])).toBe(true);
     expect(host.textContent).not.toContain(MESSAGES.en['review.catalog.viewOnlyHint']);
     const retry = [...host.querySelectorAll('button')].filter(button => button.textContent === MESSAGES.en['queue.refresh']).at(-1)!;
     await act(async () => retry.click()); await flush();
@@ -123,6 +125,7 @@ it('moves an admin phone preview into a persistent demo lane and only uses audit
     await vi.waitFor(async () => { await flush(); expect(host.querySelector('.review-recording')).not.toBeNull(); });
     await act(async () => host.querySelector<HTMLButtonElement>('.review-recording')!.click()); await flush();
     expect(host.textContent).toContain(MESSAGES.en['review.demo.hint']);
+    expect(host.querySelector('.review-preview-only aside .review-demo')).not.toBeNull();
     await act(async () => button(MESSAGES.en['review.demo.move']).click());
     await vi.waitFor(async () => { await flush(); expect(host.textContent).toContain('Demo permission denied'); });
     catalogGate = new Promise<void>(resolve => { resumeCatalog = resolve; });
@@ -146,6 +149,11 @@ it('moves an admin phone preview into a persistent demo lane and only uses audit
     }
     expect(calls.filter(call => call.path.includes('/demo/')).at(-1)?.body).toBe(JSON.stringify({ action: 'flag', reason: 'Training example' }));
     expect(calls.some(call => /\/(claim|verdict|hold|release)\b/.test(call.path))).toBe(false);
+    // Another admin changes the demo result; Check again must refresh the selected inspector too.
+    row = { ...row, demo_override: { decision: 'accepted', original_queue: 'privacy' } };
+    await act(async () => button(MESSAGES.en['queue.refresh']).click());
+    await vi.waitFor(async () => { await flush(); expect(host.querySelector('.review-demo [role=status]')?.textContent).toContain('Accepted'); });
+    row = { ...row, demo_override: { decision: 'flagged', original_queue: 'privacy' } };
     await act(async () => root.render(null)); client.clear(); await mount();
     await vi.waitFor(async () => { await flush(); expect(host.querySelector('.review-recording')?.textContent).toContain('Flagged'); });
     await act(async () => host.querySelector<HTMLButtonElement>('.review-recording')!.click()); await flush();
