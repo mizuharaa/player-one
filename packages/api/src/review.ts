@@ -8,7 +8,7 @@ import { schema, type Db } from '@playerone/store';
 import { mutate } from './audit.ts';
 import { notify } from './notifications.ts';
 import { phonePreview, previewDuration, registerPhonePreview, reviewPoster } from './review-phone-preview.ts';
-import { type Actor } from './actor.ts';
+import { roleOf, type Actor } from './actor.ts';
 import { REFUSALS, constraintOf } from './backoffice.ts';
 import {
   REVIEW_STATE,
@@ -177,6 +177,8 @@ export const REVIEW_API_REFUSALS = new Set([
 ]);
 
 export type ReviewOptions = {
+  /** Audit-only administrator simulation; never changes review or payment facts. */
+  demoReviewEnabled?: boolean;
   /**
    * The directory holding the imported `ego_*` session folders. Media is served
    * from here and from nowhere else.
@@ -953,6 +955,7 @@ export function registerReview(
 
   async function catalogRows(req: FastifyRequest, lane: Lane, episodeId?: string) {
     const reviewer = reviewerOf(req.actor!);
+    const demoAdmin = options.demoReviewEnabled === true && await roleOf(db, req.actor) === 'administrator';
     return await db.execute(sql`
       select episodes.episode_id, coalesce(c.name,c.external_ref,'Unassigned') as collector_label,
              c.external_ref as collector_ref, t.name as task_name,
@@ -961,7 +964,8 @@ export function registerReview(
              episode_ingests.measured_duration_s as duration_seconds,
              episode_ingests.state as ingest_state, episodes.verification_state,
              coalesce(r.review_state,episode_ingests.state) as state,
-             coalesce(r.queue,${derivedLane}) as queue,
+             coalesce(d.after->>'queue',r.queue,${derivedLane}) as queue,
+             ${demoAdmin} as demo_override_allowed, d.after as demo_override,
              (${eligible} and (r.id is null or (r.review_state='pending'
                and (r.reviewer_ref is null or r.lease_expires_at<now() or r.reviewer_ref=${reviewer})))
                and ${notOwnSecondReview(sql`r.dispute_id`, reviewer)}) as claimable
@@ -973,7 +977,11 @@ export function registerReview(
         left join lateral (select * from episode_reviews candidate
           where candidate.episode_id=episodes.episode_id and candidate.ingest_id=episodes.latest_ingest_id
           order by candidate.created_at desc limit 1) r on true
-       where ${catalogScope(req)} and coalesce(r.queue,${derivedLane})=${lane}
+        left join lateral (select a.after from audit_events a
+          where ${demoAdmin} and a.action='review.demo_override' and a.target_table='episodes'
+            and a.target_id=episodes.episode_id::text and a.after->>'ingest_id'=episodes.latest_ingest_id::text
+          order by a.id desc limit 1) d on true
+       where ${catalogScope(req)} and coalesce(d.after->>'queue',r.queue,${derivedLane})=${lane}
          and ${episodeId ? sql`episodes.episode_id=${episodeId}` : sql`true`}
          and (r.assignee_ref is null or r.assignee_ref=${reviewer})
          and ${notOwnSecondReview(sql`r.dispute_id`, reviewer)}
@@ -982,12 +990,38 @@ export function registerReview(
       episode_id: string; collector_label: string; collector_ref: string | null; task_name: string | null;
       session_folder: string; recorded_at: string; uploaded_at: string; duration_seconds: string;
       ingest_state: string; verification_state: string; state: string; queue: string; claimable: boolean;
+      demo_override_allowed: boolean; demo_override: { decision: string | null; original_queue: string; queue: string } | null;
     }[];
   }
 
   registerPhonePreview(app, db, requireActor, options, async (req, episodeId) => {
     const lane = laneOf(req);
-    return lane !== null && (await catalogRows(req, lane, episodeId)).length > 0;
+    const [row] = lane === null ? [] : await catalogRows(req, lane, episodeId);
+    return row ? { demoStandard: row.demo_override_allowed && row.demo_override?.queue === 'standard' } : null;
+  });
+
+  app.post('/api/review/demo/:id', opts, async (req, reply) => {
+    if (!options.demoReviewEnabled) return reply.code(404).send({ error: 'demo review disabled' });
+    if (await roleOf(db, req.actor) !== 'administrator') return reply.code(403).send({ error: 'administrator required' });
+    const id = z.string().uuid().safeParse((req.params as { id: string }).id);
+    const body = z.object({ action: z.enum(['move_standard','accept','deny','flag']), reason: z.string().trim().min(1).max(1000).optional() }).strict().safeParse(req.body);
+    if (!id.success || !body.success) return reply.code(400).send({ error: 'bad demo override' });
+    // ponytail: the existing append-only audit is the demo projection. Lock the
+    // episode to serialize decisions; never update its review/privacy/money rows.
+    const result = await mutate(db, req.actor!, value => ({ action: 'review.demo_override', targetTable: 'episodes', targetId: id.data,
+      after: value, reason: body.data.reason ?? 'Internal demo admin override' }), async tx => {
+      const [episode] = await tx.execute(sql`select episodes.latest_ingest_id, coalesce((select queue from episode_reviews r
+        where r.episode_id=episodes.episode_id and r.ingest_id=episodes.latest_ingest_id order by created_at desc limit 1),${derivedLane}) as original_queue
+        from episodes where episodes.episode_id=${id.data} and ${catalogScope(req)} for update`);
+      if (!episode) return undefined;
+      const [prior] = await tx.execute(sql`select "after" from audit_events where action='review.demo_override' and target_table='episodes'
+        and target_id=${id.data} and "after"->>'ingest_id'=${episode.latest_ingest_id}::text order by id desc limit 1`);
+      const previous = prior?.after as { queue?: string; decision?: string | null } | undefined;
+      return { demo_only: true, ingest_id: episode.latest_ingest_id, original_queue: episode.original_queue,
+        queue: body.data.action === 'move_standard' ? 'standard' : previous?.queue ?? episode.original_queue,
+        decision: body.data.action === 'move_standard' ? previous?.decision ?? null : ({accept:'accepted',deny:'denied',flag:'flagged'} as const)[body.data.action] };
+    });
+    return result ? reply.send(result) : reply.code(404).send({ error: 'episode unavailable' });
   });
 
   app.get('/api/review/catalog', opts, async (req, reply) => {
@@ -1001,13 +1035,15 @@ export function registerReview(
       const source = row.session_folder.startsWith('library_') ? 'phone' : 'ego';
       const file = source === 'phone' && mayWatch(req) ? await phonePreview(db, row.episode_id, options.mediaRoot) : null;
       const preview = file && (!req.actor?.operator || file.centre_id === req.actor.operator.uploadCentreId);
-      const poster = mayWatch(req) && (preview || (source === 'ego' && row.claimable))
+      const demoEgo = source === 'ego' && row.demo_override_allowed && row.verification_state === 'verified';
+      const poster = mayWatch(req) && (preview || demoEgo || (source === 'ego' && row.claimable))
         ? await reviewPoster(options.mediaRoot, row.session_folder) : null;
       items.push({ ...row, source,
         filename: file?.filename ?? null,
         duration_seconds: preview ? await previewDuration(file.path) : Number(row.duration_seconds) || null,
-        claimable: source === 'phone' ? false : row.claimable && mayWatch(req),
-        preview_url: preview ? `/api/review/phone-preview/${row.episode_id}?queue=${lane}` : null,
+        claimable: source === 'phone' || row.demo_override ? false : row.claimable && mayWatch(req),
+        preview_url: preview ? `/api/review/phone-preview/${row.episode_id}?queue=${lane}`
+          : demoEgo ? `/media/episode/${row.episode_id}/part/0?quality=preview` : null,
         thumbnail_url: poster ? `/api/review/thumbnail/${row.episode_id}?queue=${lane}` : null,
         blocker: source === 'phone' ? 'Phone preview only — not an Ego recording; not eligible for payment.'
           : !mayWatch(req) ? 'Reviewer playback is not enabled.'
@@ -1029,7 +1065,8 @@ export function registerReview(
     const [row] = await catalogRows(req, lane, id.data);
     if (!row) return reply.code(404).send({ error: 'thumbnail unavailable' });
     const phone = row.session_folder.startsWith('library_');
-    const allowed = phone ? await phonePreview(db, row.episode_id, options.mediaRoot) : row.claimable;
+    const allowed = phone ? await phonePreview(db, row.episode_id, options.mediaRoot)
+      : row.claimable || (row.demo_override_allowed && row.verification_state === 'verified');
     const poster = allowed ? await reviewPoster(options.mediaRoot, row.session_folder) : null;
     if (!poster) return reply.code(404).send({ error: 'thumbnail unavailable' });
     await mutate(db, req.actor!, { action: 'review.thumbnail', targetTable: 'episodes', targetId: row.episode_id,

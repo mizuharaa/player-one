@@ -83,3 +83,108 @@ it('browses without claiming, claims only the selection, releases before switchi
     await act(async () => root.unmount()); client.clear(); host.remove(); play.mockRestore(); vi.unstubAllGlobals();
   }
 });
+
+it('moves an admin phone preview into a persistent demo lane and only uses audited demo decisions', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+  let row = { episode_id: 'phone-demo', session_folder: 'Demo phone', collector_label: 'Alois', collector_ref: 'col-demo', recorded_at: null, uploaded_at: null, duration_seconds: 8,
+    source: 'phone', state: 'quarantined', queue: 'privacy', claimable: false, preview_url: '/phone.mp4?queue=privacy', blocker: 'requires_camera_metadata', demo_override_allowed: true,
+    demo_override: null as null | { decision: string | null; original_queue: string } };
+  const calls: { path: string; body?: string }[] = [];
+  let fail = true;
+  vi.stubGlobal('fetch', vi.fn(async (path: string, init?: RequestInit) => {
+    calls.push({ path, body: init?.body as string | undefined });
+    if (path.endsWith('/reasons')) return response({ reasons: [] });
+    if (path.includes('/catalog?')) {
+      const items = path.endsWith(`queue=${row.queue}`) ? [row] : [];
+      return response({ items, counts: { total: items.length, claimable: 0, phone: items.length, blocked: items.length } });
+    }
+    if (path === '/api/review/demo/phone-demo') {
+      if (fail) { fail = false; return response({ error: 'Demo permission denied' }, 403); }
+      const body = JSON.parse(String(init?.body)) as { action: string };
+      const decision = body.action === 'accept' ? 'accepted' : body.action === 'deny' ? 'denied' : body.action === 'flag' ? 'flagged' : null;
+      row = { ...row, queue: 'standard', preview_url: '/phone.mp4?queue=standard', demo_override: { decision, original_queue: 'privacy' } };
+      return response({ demo_only: true, queue: row.queue, ...row.demo_override });
+    }
+    throw new Error(`Forbidden live request: ${path}`);
+  }));
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const flush = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+  const button = (text: string) => [...host.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === text)!;
+  const mount = () => act(async () => root.render(<QueryClientProvider client={client}><ReviewScreen /></QueryClientProvider>));
+  try {
+    await mount(); await flush();
+    await act(async () => [...host.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent?.startsWith('Privacy review'))!.click());
+    await vi.waitFor(async () => { await flush(); expect(host.querySelector('.review-recording')).not.toBeNull(); });
+    await act(async () => host.querySelector<HTMLButtonElement>('.review-recording')!.click()); await flush();
+    expect(host.textContent).toContain(MESSAGES.en['review.demo.hint']);
+    await act(async () => button(MESSAGES.en['review.demo.move']).click());
+    await vi.waitFor(async () => { await flush(); expect(host.textContent).toContain('Demo permission denied'); });
+    await act(async () => button(MESSAGES.en['review.demo.move']).click());
+    await vi.waitFor(async () => { await flush(); expect(button('Accept')).toBeDefined(); });
+    expect(host.querySelector('.review-preview-only video')?.getAttribute('src')).toBe('/phone.mp4?queue=standard');
+    expect([...host.querySelectorAll('button[aria-pressed=true]')].some(node => node.textContent?.startsWith('Standard'))).toBe(true);
+    const field = host.querySelector<HTMLInputElement>('.review-demo input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, 'Training example');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    for (const [label, state] of [['Accept', 'accepted'], ['Deny', 'denied'], ['Flag', 'flagged']] as const) {
+      await act(async () => button(label).click());
+      await vi.waitFor(async () => { await flush(); expect(host.querySelector('.review-demo [role=status]')?.textContent).toContain(MESSAGES.en[`review.demo.${state}`]); });
+    }
+    expect(calls.filter(call => call.path.includes('/demo/')).at(-1)?.body).toBe(JSON.stringify({ action: 'flag', reason: 'Training example' }));
+    expect(calls.some(call => /\/(claim|verdict|hold|release)\b/.test(call.path))).toBe(false);
+    await act(async () => root.render(null)); client.clear(); await mount();
+    await vi.waitFor(async () => { await flush(); expect(host.querySelector('.review-recording')?.textContent).toContain('Flagged'); });
+    await act(async () => host.querySelector<HTMLButtonElement>('.review-recording')!.click()); await flush();
+    expect(host.querySelector('.review-demo [role=status]')?.textContent).toContain('Flagged');
+    expect(host.querySelector('[role=radio]')).toBeNull();
+  } finally {
+    await act(async () => root.unmount()); client.clear(); host.remove(); vi.unstubAllGlobals();
+  }
+});
+
+it('releases an owned Ego lease before moving to demo and stops if release fails', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+  let moved = false, releaseFails = true;
+  const calls: string[] = [];
+  const row = () => ({ episode_id: 'ego-demo', session_folder: 'Ego', collector_label: 'Mai', source: 'ego', queue: moved ? 'standard' : 'privacy', state: 'pending', claimable: !moved,
+    preview_url: moved ? '/ego-demo.mp4' : null, duration_seconds: 20, demo_override_allowed: true, demo_override: moved ? { decision: null, original_queue: 'privacy' } : null });
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => {
+    calls.push(path);
+    if (path.endsWith('/reasons')) return response({ reasons: [] });
+    if (path.includes('/catalog?')) return response({ items: [row()], counts: { total: 1, claimable: moved ? 0 : 1, phone: 0, blocked: 0 } });
+    if (path.includes('/claim?')) return response({ episode_id: 'ego-demo', session_folder: 'Ego', measured_duration_seconds: '20', claimed_duration_seconds: null,
+      task: null, collector: null, declared: null, device: { serial: 'Ego' }, flags: [], media: { parts: [{ url: '/ego.mp4', index: 0 }] }, queue_depth: 1 });
+    if (path.includes('/release/')) { if (releaseFails) { releaseFails = false; return response({ error: 'Release failed' }, 503); } return response({ released: true }); }
+    if (path === '/api/review/demo/ego-demo') { moved = true; return response({ demo_only: true, queue: 'standard', decision: null, original_queue: 'privacy' }); }
+    throw new Error(`Forbidden live decision: ${path}`);
+  }));
+  Object.defineProperty(navigator, 'sendBeacon', { configurable: true, value: vi.fn(() => true) });
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const flush = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+  const move = () => [...host.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === MESSAGES.en['review.demo.move'])!;
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><ReviewScreen /></QueryClientProvider>));
+    await vi.waitFor(async () => { await flush(); expect(host.querySelector('.review-recording')).not.toBeNull(); });
+    await act(async () => host.querySelector<HTMLButtonElement>('.review-recording')!.click());
+    await vi.waitFor(async () => { await flush(); expect(host.querySelector('[data-guide="review.player"]')).not.toBeNull(); });
+    await act(async () => move().click());
+    await vi.waitFor(async () => { await flush(); expect(host.textContent).toContain('Release failed'); });
+    expect(calls.some(path => path.includes('/demo/'))).toBe(false);
+    expect(host.querySelector('[data-guide="review.player"]')).not.toBeNull();
+    await act(async () => move().click());
+    await vi.waitFor(async () => { await flush(); expect(host.querySelector('.review-preview-only video')?.getAttribute('src')).toBe('/ego-demo.mp4'); });
+    expect(calls.indexOf('/api/review/demo/ego-demo')).toBeGreaterThan(calls.findLastIndex(path => path.includes('/release/')));
+    expect(host.querySelector('[role=radio]')).toBeNull();
+    expect(calls.filter(path => path.includes('/claim?'))).toHaveLength(1);
+  } finally {
+    await act(async () => root.unmount()); client.clear(); host.remove(); vi.unstubAllGlobals();
+  }
+});

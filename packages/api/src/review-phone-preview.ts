@@ -62,16 +62,17 @@ export async function reviewPoster(mediaRoot: string | undefined, source: string
   return info?.isFile() ? path : null;
 }
 
-export function registerPhonePreview(app: FastifyInstance, db: Db, requireActor: (req: FastifyRequest, reply: { code: (n: number) => { send: (body: unknown) => unknown } }) => Promise<unknown>, options: ReviewOptions, inCatalog: (req: FastifyRequest, episodeId: string) => Promise<boolean>) {
+export function registerPhonePreview(app: FastifyInstance, db: Db, requireActor: (req: FastifyRequest, reply: { code: (n: number) => { send: (body: unknown) => unknown } }) => Promise<unknown>, options: ReviewOptions, inCatalog: (req: FastifyRequest, episodeId: string) => Promise<{demoStandard:boolean} | null>) {
   app.get('/api/review/phone-preview/:id', { preHandler: requireActor }, async (req, reply) => {
     if (req.actor?.reviewer && !options.reviewerMediaEnabled) return reply.code(451).send({ error: 'playback_unauthorised' });
     const id = z.string().uuid().safeParse((req.params as { id: string }).id);
     if (!id.success) return reply.code(400).send({ error: 'bad episode id' });
-    if (!(await inCatalog(req, id.data))) return reply.code(404).send({ error: 'preview unavailable' });
+    const access = await inCatalog(req, id.data);
+    if (!access) return reply.code(404).send({ error: 'preview unavailable' });
     const file = await phonePreview(db, id.data, options.mediaRoot);
     if (!file || (req.actor?.operator && file.centre_id !== req.actor.operator.uploadCentreId)) return reply.code(404).send({ error: 'preview unavailable' });
     // Privacy is opt-in here just as it is in the ordinary review queue.
-    if (file.privacy && (req.query as { queue?: string }).queue !== 'privacy') return reply.code(404).send({ error: 'preview unavailable' });
+    if (file.privacy && (req.query as { queue?: string }).queue !== 'privacy' && !access.demoStandard) return reply.code(404).send({ error: 'preview unavailable' });
     const range = parseRange(req.headers.range, file.size);
     if (range === 'unsatisfiable') return reply.code(416).header('content-range', `bytes */${file.size}`).send();
     await mutate(db, req.actor!, { action: 'review.phone_preview', targetTable: 'episodes', targetId: id.data, after: { filename: file.filename, preview_only: true, payable: false } }, async () => true);

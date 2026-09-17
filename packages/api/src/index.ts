@@ -1048,7 +1048,8 @@ export function buildApi({
      */
     mediaRoot,
   });
-  registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate, reviewerMediaEnabled });
+  registerReview(app, db, requireActor, { mediaRoot, currency, verificationGate, reviewerMediaEnabled,
+    demoReviewEnabled: !!demoBypassKey && (payout.zaloPayEnv ?? 'sandbox') === 'sandbox' });
   registerOperatorProfile(app, db, requireActor);
   registerShowcaseFootage(app, db, requireActor);
   registerEngineering(app, db, requireActor, {

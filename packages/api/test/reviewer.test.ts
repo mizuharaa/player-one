@@ -42,7 +42,7 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
   afterAll(closeDb);
 
   async function harness(
-    options: { mediaRoot?: string; reviewerMediaEnabled?: boolean; basenameA?: string } = {},
+    options: { mediaRoot?: string; reviewerMediaEnabled?: boolean; basenameA?: string; demo?: boolean; production?: boolean } = {},
   ) {
     const d = await db();
     const ids = {
@@ -107,6 +107,9 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
       tokenSecret: SECRET,
       mediaRoot: options.mediaRoot,
       reviewerMediaEnabled: options.reviewerMediaEnabled,
+      demoBypassKey: options.demo ? 'test-demo-key-'.repeat(5) : undefined,
+      payout: { zaloPayEnv: options.production ? 'production' : 'sandbox',
+        credentialsPresent: options.production ? { appId:true,paymentId:true,key1:true,publicKey:true } : undefined },
       // `buildApi` refuses reviewer media with the session cookie in clear, so
       // the flag brings TLS with it here exactly as it must in a deployment.
       secureCookies: options.reviewerMediaEnabled === true,
@@ -254,6 +257,49 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
    */
   const lane = () => harness({ reviewerMediaEnabled: true });
 
+  it('admin demo overrides persist only in audit and never change reviewer lanes or money', async () => {
+    const h = await harness({ demo: true, reviewerMediaEnabled: true });
+    try {
+      const [ep] = await h.d.execute(sql`select episode_id from episodes where collection_session_id=${h.cards[0]!.session}`);
+      const url = `/api/review/demo/${ep!.episode_id}`;
+      await h.d.execute(sql`update collection_sessions set others_in_frame=true where id=${h.cards[0]!.session}`);
+      expect((await h.send('POST',url,{action:'accept'})).statusCode).toBe(403);
+      expect((await h.send('POST',url,{action:'accept'},h.reviewerHeaders)).statusCode).toBe(403);
+      await h.d.execute(sql`update operators set role='administrator' where id in (${h.ids.operatorA},${h.ids.operatorB})`);
+      expect((await h.send('POST',url,{action:'accept'},h.headersB)).statusCode).toBe(404);
+      const before = await h.d.execute(sql`select row_to_json(e) as episode from episodes e where episode_id=${ep!.episode_id}`);
+      expect((await h.send('POST',url,{action:'move_standard'})).statusCode).toBe(200);
+      for (const [action,decision] of [['accept','accepted'],['deny','denied'],['flag','flagged']]) {
+        const result = await h.send('POST',url,{action});
+        expect(result.statusCode,result.body).toBe(200);
+        expect(result.json()).toMatchObject({demo_only:true,queue:'standard',decision,original_queue:'privacy'});
+        const catalog = await h.send('GET','/api/review/catalog?queue=standard');
+        expect(catalog.json().items[0]).toMatchObject({demo_override_allowed:true,claimable:false,demo_override:{decision,original_queue:'privacy'}});
+      }
+      expect((await h.send('GET','/api/review/catalog?queue=privacy')).json().items).toHaveLength(0);
+      const reviewer = (await h.send('GET','/api/review/catalog?queue=privacy',undefined,h.reviewerHeaders)).json().items;
+      expect(reviewer.find((i:{episode_id:string})=>i.episode_id===ep!.episode_id)).toMatchObject({demo_override_allowed:false,demo_override:null,queue:'privacy'});
+      expect((await h.send('GET','/api/review/catalog?queue=standard',undefined,h.reviewerHeaders)).json().items.some((i:{episode_id:string})=>i.episode_id===ep!.episode_id)).toBe(false);
+      expect(await h.d.execute(sql`select row_to_json(e) as episode from episodes e where episode_id=${ep!.episode_id}`)).toEqual(before);
+      expect((await h.d.execute(sql`select others_in_frame from collection_sessions where id=${h.cards[0]!.session}`))[0]!.others_in_frame).toBe(true);
+      expect((await h.d.execute(sql`select count(*)::int n from episode_reviews`))[0]!.n).toBe(0);
+      expect((await h.d.execute(sql`select count(*)::int n from settlements`))[0]!.n).toBe(0);
+      expect((await h.d.execute(sql`select count(*)::int n from audit_events where action='review.demo_override' and target_id=${ep!.episode_id}`))[0]!.n).toBe(4);
+      await h.d.execute(sql`update operators set role='centre_operator' where id=${h.ids.operatorA}`);
+      expect((await h.send('POST',url,{action:'accept'})).statusCode).toBe(403);
+      expect((await h.send('GET','/api/review/catalog?queue=privacy')).json().items[0].demo_override).toBe(null);
+    } finally { await h.app.close(); }
+  });
+
+  it.each([{demo:false,production:false},{demo:true,production:true}])('demo review stays disabled outside configured sandbox: %j', async options => {
+    const h = await harness(options);
+    try {
+      await h.d.execute(sql`update operators set role='administrator' where id=${h.ids.operatorA}`);
+      expect((await h.send('POST',`/api/review/demo/${uid()}`,{action:'accept'})).statusCode).toBe(404);
+      expect((await h.send('GET','/api/review/catalog')).json().items[0].demo_override_allowed).toBe(false);
+    } finally { await h.app.close(); }
+  });
+
   it('catalog scopes centres and selected claim never substitutes another recording', async () => {
     const root = await mkdtemp(join(tmpdir(), 'review-posters-'));
     const h = await harness({ reviewerMediaEnabled: true, mediaRoot: root });
@@ -303,7 +349,7 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
     await writeFile(join(root, folder, '00-first.png'), imageBytes);
     await mkdir(join(root,'.previews',folder),{recursive:true});
     await writeFile(join(root,'.previews',folder,'poster.jpg'),Buffer.from('phone-jpeg'));
-    const h = await harness({ reviewerMediaEnabled: true, mediaRoot: root });
+    const h = await harness({ reviewerMediaEnabled: true, mediaRoot: root, demo:true });
     try {
       const rows = await h.d.execute(sql`select episode_id,latest_ingest_id from episodes where collection_session_id=${h.cards[0]!.session}`);
       const ep = rows[0]!;
@@ -338,6 +384,18 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
       expect(reviews[0]!.n).toBe(0);
       const audit = await h.d.execute(sql`select actor_role from audit_events where action='review.phone_preview' and target_id=${ep.episode_id}`);
       expect(audit.map(a=>a.actor_role).sort()).toEqual(['operator','reviewer']);
+      await h.d.execute(sql`update operators set role='administrator' where id=${h.ids.operatorA}`);
+      expect((await h.send('POST',`/api/review/demo/${ep.episode_id}`,{action:'move_standard'})).statusCode).toBe(200);
+      const demoItem = (await h.send('GET','/api/review/catalog?queue=standard')).json().items[0];
+      expect(demoItem).toMatchObject({claimable:false,demo_override_allowed:true,demo_override:{original_queue:'privacy',decision:null}});
+      expect((await h.send('GET',demoItem.preview_url)).body).toBe(bytes.toString());
+      expect((await h.send('GET',demoItem.thumbnail_url)).body).toBe('phone-jpeg');
+      expect((await h.send('GET',demoItem.preview_url,undefined,h.reviewerHeaders)).statusCode).toBe(404);
+      expect((await h.send('GET',demoItem.thumbnail_url,undefined,h.reviewerHeaders)).statusCode).toBe(404);
+      expect((await h.send('POST',`/api/review/demo/${ep.episode_id}`,{action:'accept'})).json().decision).toBe('accepted');
+      expect((await h.d.execute(sql`select count(*)::int n from settlements`))[0]!.n).toBe(0);
+      await h.d.execute(sql`update operators set role='centre_operator' where id=${h.ids.operatorA}`);
+      expect((await h.send('GET',demoItem.preview_url)).statusCode).toBe(404);
       await h.d.execute(sql`insert into episode_reviews(id,episode_id,ingest_id,measured_duration_s,review_state,queue,assignee_ref)
         values(${uid()},${ep.episode_id},${ep.latest_ingest_id},0,'pending','privacy',${h.ids.reviewerB})`);
       const assignedCatalog = await h.send('GET','/api/review/catalog?queue=privacy',undefined,h.reviewerHeaders);

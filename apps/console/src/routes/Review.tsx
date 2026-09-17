@@ -33,8 +33,8 @@ import { Field, FlagRow, Problem, Skeleton } from '../components/ui/primitives.t
 import { guideBlocksKeys } from '../components/guide/useGuide.ts';
 import { IconKeyboard, IconPartial, IconPass, IconReject } from '../components/icons.tsx';
 import { MESSAGES } from '@playerone/api/i18n';
-import { api, ApiError, type Claim, type ReasonCode, type ReviewQueue, type ReviewCatalogItem, type Verdict } from '../lib/api.ts';
-import { ReviewCatalog, RecordingPreview, optimizedUrl } from './ReviewCatalog.tsx';
+import { api, ApiError, type Claim, type DemoReviewAction, type ReasonCode, type ReviewQueue, type ReviewCatalogItem, type Verdict } from '../lib/api.ts';
+import { ReviewCatalog, RecordingPreview, DemoReviewControls, optimizedUrl } from './ReviewCatalog.tsx';
 import { commitFailure, type CommitFailure } from './refusal.ts';
 import { duration, money, signedPercent, signedSeconds } from '../lib/format.ts';
 import { cn } from '../lib/cn.ts';
@@ -144,7 +144,7 @@ export function ReviewScreen() {
       adopt(null);
       setSelected(item ?? null);
       if (!mounted.current) return null;
-      return item?.claimable ? api.claimNext(nextQueue, item.episode_id) : null;
+      return item?.claimable && !item.demo_override ? api.claimNext(nextQueue, item.episode_id) : null;
     },
     onSuccess: (next) => {
       if (mounted.current) adopt(next);
@@ -165,6 +165,27 @@ export function ReviewScreen() {
     setQueue(nextQueue);
     claimMutate({ nextQueue, item });
   }, [claimMutate]);
+
+  const demo = useMutation({
+    mutationFn: async ({ item, action, reason }: { item: ReviewCatalogItem; action: DemoReviewAction; reason: string }) => {
+      // A simulated decision never shares the live verdict's lease or mutation.
+      if (episodeRef.current) await api.release(episodeRef.current);
+      adopt(null);
+      const result = await api.demoReview(item.episode_id, action, reason);
+      if (!result) throw new Error('Demo action returned no result');
+      queueRef.current = result.queue;
+      setQueue(result.queue);
+      setSelected({ ...item, queue: result.queue, claimable: false, demo_override: { decision: result.decision, original_queue: result.original_queue } });
+      await queryClient.invalidateQueries({ queryKey: ['review', 'catalog'] });
+      const fresh = await api.reviewCatalog(result.queue);
+      if (fresh) {
+        queryClient.setQueryData(['review', 'catalog', result.queue], fresh);
+        const updated = fresh.items.find(row => row.episode_id === item.episode_id);
+        if (updated) setSelected(updated);
+      }
+    },
+    onSettled: () => { claiming.current = false; },
+  });
 
   /** Browsing does not take a lease. Claim only the recording the reviewer selects. */
   useEffect(() => {
@@ -310,7 +331,7 @@ export function ReviewScreen() {
 
   const commit = useMutation({
     mutationFn: async () => {
-      if (episode === null || decision === null) return null;
+      if (episode === null || decision === null || selected?.demo_override || claiming.current) return null;
       return api.verdict({
         verdict_id: verdictId,
         episode_id: episode.episode_id,
@@ -385,6 +406,8 @@ export function ReviewScreen() {
     !claim.isPending &&
     !claim.isError &&
     !commit.isPending &&
+    !demo.isPending &&
+    !selected?.demo_override &&
     (decision !== 'partial' || closed.length > 0) &&
     (decision !== 'bad' || reasons.length > 0);
 
@@ -480,16 +503,19 @@ export function ReviewScreen() {
     <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border)] bg-[var(--background)] px-4 py-3">
       <span className="text-sm font-semibold">{t('queue.select')}</span>
       {queues.map((lane, index) => <Button key={lane} variant={queue === lane ? 'primary' : 'outline'}
-        aria-pressed={queue === lane} disabled={claim.isPending || commit.isPending || hold.isPending}
-        onClick={() => { commit.reset(); hold.reset(); requestClaim(lane); }}>
+        aria-pressed={queue === lane} disabled={claim.isPending || commit.isPending || hold.isPending || demo.isPending}
+        onClick={() => { commit.reset(); hold.reset(); demo.reset(); requestClaim(lane); }}>
         {t(lane === 'second_review' ? 'queue.secondReview' : `queue.${lane}`)} · {catalogs[index]?.data?.counts.total ?? '—'}
       </Button>)}
     </div>
   );
   const catalogView = <ReviewCatalog data={catalog.data ?? undefined} pending={catalog.isPending} error={catalog.error}
-    selected={selected?.episode_id ?? null} busy={claim.isPending || commit.isPending || hold.isPending}
-    onSelect={item => { commit.reset(); hold.reset(); requestClaim(item.queue, item); }}
+    selected={selected?.episode_id ?? null} busy={claim.isPending || commit.isPending || hold.isPending || demo.isPending}
+    onSelect={item => { commit.reset(); hold.reset(); demo.reset(); requestClaim(item.queue, item); }}
     onRefresh={() => { void catalog.refetch(); }} />;
+  const demoControls = selected ? <DemoReviewControls key={`demo:${selected.episode_id}`} item={selected}
+    busy={demo.isPending || claim.isPending || commit.isPending || hold.isPending} error={demo.error}
+    onAction={(action, reason) => { if (claiming.current) return; claiming.current = true; demo.mutate({ item: selected, action, reason }); }} /> : null;
 
   /**
    * Playback is not authorised for this session, so there is no review to do.
@@ -533,7 +559,8 @@ export function ReviewScreen() {
       <AppShell {...shellProps} bleed>
         {queueSelector}
         {catalogView}
-        {selected?.claimable ? <Nothing
+        {demoControls}
+        {selected?.claimable && !selected.demo_override ? <Nothing
           title={t('state.leaseExpired.title')}
           body={t('review.catalog.taken')}
           action={<Button variant="outline" onClick={() => requestClaim()}>{t('queue.refresh')}</Button>}
@@ -546,6 +573,7 @@ export function ReviewScreen() {
     <AppShell {...shellProps} bleed>
       {queueSelector}
       {catalogView}
+      {demoControls}
       <div className="review-workbench">
         {/* ---------------- The theatre ---------------- */}
         <section className="on-stage flex min-w-0 flex-col">

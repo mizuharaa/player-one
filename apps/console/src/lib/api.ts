@@ -41,6 +41,7 @@ export const browseEpisodes = (search: string) =>
 
 export type Verdict = 'good' | 'partial' | 'bad';
 export type ReviewQueue = 'standard' | 'privacy' | 'second_review';
+export type DemoReviewAction = 'move_standard' | 'accept' | 'deny' | 'flag';
 
 export interface ReviewCatalogItem {
   episode_id: string;
@@ -59,6 +60,8 @@ export interface ReviewCatalogItem {
   claimable: boolean;
   preview_url: string | null;
   blocker: string | null;
+  demo_override_allowed?: boolean;
+  demo_override?: { decision: 'accepted' | 'denied' | 'flagged' | null; original_queue: string } | null;
 }
 export interface ReviewCatalog {
   items: ReviewCatalogItem[];
@@ -609,6 +612,9 @@ export const api = {
   }),
 
   reviewCatalog: (queue: ReviewQueue) => call<ReviewCatalog>(`/api/review/catalog?queue=${queue}`),
+  demoReview: (id: string, action: DemoReviewAction, reason?: string) => call<{ demo_only: true; queue: ReviewQueue; decision: 'accepted' | 'denied' | 'flagged' | null; original_queue: string }>(`/api/review/demo/${encodeURIComponent(id)}`, {
+    method: 'POST', body: JSON.stringify({ action, ...(reason ? { reason } : {}) }),
+  }),
 
   /** Metadata without claiming — this is what warms the next video element. */
   episode: (id: string) => call<Episode>(`/api/review/episode/${id}`),

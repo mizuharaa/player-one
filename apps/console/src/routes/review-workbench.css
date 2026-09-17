@@ -1,4 +1,9 @@
 .review-catalog { padding: 24px; min-width: 0; border-bottom: 1px solid var(--border); }
+.review-demo { padding: 20px 24px; border-bottom: 1px solid var(--border); background: var(--muted); display: grid; gap: 12px; }
+.review-demo p, .review-demo label { font-size: 14px; }
+.review-demo label { display: grid; gap: 4px; max-width: 560px; }
+.review-demo input { min-height: 44px; min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; background: var(--background); color: var(--foreground); }
+.review-demo input:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
 .review-catalog-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
 .review-catalog h1 { font-size: 24px; font-weight: 750; line-height: 1.3; }
 .review-catalog-heading p { color: var(--muted-foreground); margin-top: 4px; font-size: 14px; }

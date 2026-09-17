@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button.tsx';
 import { duration } from '../lib/format.ts';
-import type { ReviewCatalog as Catalog, ReviewCatalogItem } from '../lib/api.ts';
+import type { DemoReviewAction, ReviewCatalog as Catalog, ReviewCatalogItem } from '../lib/api.ts';
 import './review-workbench.css';
 
 export const optimizedUrl = (url: string) => `${url}${url.includes('?') ? '&' : '?'}quality=preview`;
@@ -34,7 +34,7 @@ export function ReviewCatalog({ data, pending, error, selected, busy, onSelect, 
     {error ? <div role="alert" className="review-catalog-error"><strong>{t('state.loadFailed.title')}</strong><p>{error.message}</p><Button variant="outline" onClick={onRefresh}>{t('queue.refresh')}</Button></div> : null}
     {pending ? <p role="status">{t('player.loading')}</p> : null}
     {data?.items.length === 0 ? <p className="review-catalog-empty">{t('review.catalog.empty')}</p> : null}
-    {data && data.items.length > 0 ? <details className="review-catalog-list" open={selected === null}>
+    {data && data.items.length > 0 ? <details key={selected ?? 'catalog'} className="review-catalog-list" open={selected === null}>
     <summary>{t(selected ? 'review.catalog.chooseAnother' : 'review.catalog.browse')}</summary>
     <div className="review-recordings" data-selected={selected ? 'true' : 'false'}>
       {data?.items.map(item => <button type="button" className="review-recording" key={item.episode_id}
@@ -51,6 +51,7 @@ export function ReviewCatalog({ data, pending, error, selected, busy, onSelect, 
           <span>{t('meta.recorded')}: {recordingTime(item.recorded_at, i18n.language)}</span>
           <span>{t('review.catalog.uploaded')}: {recordingTime(item.uploaded_at, i18n.language)}</span>
           <span className="review-recording-state">{t(item.queue === 'privacy' ? 'queue.privacy' : item.queue === 'second_review' ? 'queue.secondReview' : 'queue.standard')} · {item.state.replaceAll('_', ' ')}</span>
+          {item.demo_override ? <strong>{t('review.demo.simulation')} · {t(item.demo_override.decision ? `review.demo.${item.demo_override.decision}` : 'review.demo.pending')}</strong> : null}
         </div>
       </button>)}
     </div>
@@ -72,11 +73,31 @@ export function RecordingPreview({ item }: { item: ReviewCatalogItem }) {
     </div>
     <aside><h2>{item.collector_label || item.collector_ref || t('meta.unknown')}</h2>
       <p>{item.filename || item.task_name || item.session_folder || item.episode_id}</p>
-      <strong>{t('review.catalog.viewOnly')}</strong><p>{t('review.catalog.viewOnlyHint')}</p>
+      <strong>{t(item.demo_override ? 'review.demo.simulation' : 'review.catalog.viewOnly')}</strong><p>{t(item.demo_override ? 'review.demo.hint' : 'review.catalog.viewOnlyHint')}</p>
       <dl><dt>{t('meta.recorded')}</dt><dd>{recordingTime(item.recorded_at, i18n.language)}</dd>
         <dt>{t('review.catalog.uploaded')}</dt><dd>{recordingTime(item.uploaded_at, i18n.language)}</dd>
         <dt>{t('review.catalog.duration')}</dt><dd>{item.duration_seconds === null ? t('review.catalog.unmeasured') : duration(item.duration_seconds)}</dd></dl>
       {item.blocker ? <details><summary>{t('meta.flags')}</summary><p>{item.blocker.replaceAll('_', ' ')}</p></details> : null}
     </aside>
+  </section>;
+}
+
+export function DemoReviewControls({ item, busy, error, onAction }: {
+  item: ReviewCatalogItem; busy: boolean; error: Error | null;
+  onAction: (action: DemoReviewAction, reason: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [reason, setReason] = useState('');
+  if (!item.demo_override_allowed) return null;
+  return <section className="review-demo" aria-label={t('review.demo.simulation')}>
+    <strong>{t('review.demo.simulation')}</strong>
+    <p>{t('review.demo.hint')}</p>
+    {item.demo_override ? <p role="status">{t('review.demo.saved')}: {t(item.demo_override.decision ? `review.demo.${item.demo_override.decision}` : 'review.demo.pending')}</p> : null}
+    <label>{t('review.demo.reason')}<input value={reason} maxLength={500} disabled={busy} onChange={event => setReason(event.target.value)} /></label>
+    <div className="flex flex-wrap gap-2">
+      {item.queue !== 'standard' || !item.demo_override ? <Button disabled={busy} onClick={() => onAction('move_standard', reason.trim())}>{t('review.demo.move')}</Button> :
+        (['accept', 'deny', 'flag'] as const).map(action => <Button key={action} variant={action === 'accept' ? 'primary' : 'outline'} disabled={busy} onClick={() => onAction(action, reason.trim())}>{t(`review.demo.${action}`)}</Button>)}
+    </div>
+    {error ? <p role="alert">{error.message}</p> : null}
   </section>;
 }
