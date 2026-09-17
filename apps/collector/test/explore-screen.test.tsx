@@ -386,8 +386,9 @@ it('reports a failed local deletion and lets the same collector retry it', async
 
 it('renders a seeded task title, exact price and type badge in the shared card', async () => {
   const { TaskCard } = await import('../src/ui/TaskCard.tsx');
+  const open = vi.fn();
   const seed = { ...(await api.tasks())[0]!, title: 'Office task', type: 'office', unitPriceVndPerMinute: '1234.5678' };
-  await act(async () => root.render(<ThemeProvider><LocaleProvider><TaskCard task={seed} onPress={() => {}} /></LocaleProvider></ThemeProvider>));
+  await act(async () => root.render(<ThemeProvider><LocaleProvider><TaskCard task={seed} onPress={open} /></LocaleProvider></ThemeProvider>));
   expect(page()).toContain('Office task');
   expect(page()).toContain(vnd('1234.5678'));
   expect(page()).toContain(m['hall.perMinute']);
@@ -397,6 +398,13 @@ it('renders a seeded task title, exact price and type badge in the shared card',
   expect(price.style.textOverflow).not.toBe('ellipsis');
   expect(page()).toContain(m['taskCard.home']);
   expect(page()).toContain(m['hall.imageLabel']);
+  expect(page()).toContain(m['explore.openTask']);
+  const photo = document.body.querySelector<HTMLElement>('[data-testid="task-photo"]')!;
+  expect(photo.style.width).toBe('100%');
+  expect(photo.style.aspectRatio).toBe('2 / 1');
+  expect(document.body.querySelectorAll('[role="button"]')).toHaveLength(1);
+  await act(async () => named(seed.title)!.click());
+  expect(open).toHaveBeenCalledOnce();
 });
 
 it('offers eight distinct demo tasks with original instructions and no imported competitor imagery', async () => {
