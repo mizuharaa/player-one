@@ -564,7 +564,7 @@ export function ReviewScreen() {
           title={t('state.leaseExpired.title')}
           body={t('review.catalog.taken')}
           action={<Button variant="outline" onClick={() => requestClaim()}>{t('queue.refresh')}</Button>}
-        /> : selected ? <RecordingPreview key={selected.episode_id} item={selected} /> : null}
+        /> : selected ? <RecordingPreview key={`${selected.episode_id}:${selected.preview_url}`} item={selected} /> : null}
       </AppShell>
     );
   }

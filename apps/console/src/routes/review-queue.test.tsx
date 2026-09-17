@@ -92,10 +92,13 @@ it('moves an admin phone preview into a persistent demo lane and only uses audit
     demo_override: null as null | { decision: string | null; original_queue: string } };
   const calls: { path: string; body?: string }[] = [];
   let fail = true;
+  let resumeCatalog = () => {};
+  let catalogGate = Promise.resolve();
   vi.stubGlobal('fetch', vi.fn(async (path: string, init?: RequestInit) => {
     calls.push({ path, body: init?.body as string | undefined });
     if (path.endsWith('/reasons')) return response({ reasons: [] });
     if (path.includes('/catalog?')) {
+      if (row.queue === 'standard') await catalogGate;
       const items = path.endsWith(`queue=${row.queue}`) ? [row] : [];
       return response({ items, counts: { total: items.length, claimable: 0, phone: items.length, blocked: items.length } });
     }
@@ -122,8 +125,14 @@ it('moves an admin phone preview into a persistent demo lane and only uses audit
     expect(host.textContent).toContain(MESSAGES.en['review.demo.hint']);
     await act(async () => button(MESSAGES.en['review.demo.move']).click());
     await vi.waitFor(async () => { await flush(); expect(host.textContent).toContain('Demo permission denied'); });
+    catalogGate = new Promise<void>(resolve => { resumeCatalog = resolve; });
     await act(async () => button(MESSAGES.en['review.demo.move']).click());
     await vi.waitFor(async () => { await flush(); expect(button('Accept')).toBeDefined(); });
+    // The old Privacy URL can fail after the move but before Standard metadata returns.
+    await act(async () => host.querySelector<HTMLVideoElement>('.review-preview-only video')!.dispatchEvent(new Event('error')));
+    expect(host.textContent).toContain(MESSAGES.en['state.mediaFailed.title']);
+    resumeCatalog();
+    await vi.waitFor(async () => { await flush(); expect(host.querySelector('.review-preview-only video')?.getAttribute('src')).toBe('/phone.mp4?queue=standard'); });
     expect(host.querySelector('.review-preview-only video')?.getAttribute('src')).toBe('/phone.mp4?queue=standard');
     expect([...host.querySelectorAll('button[aria-pressed=true]')].some(node => node.textContent?.startsWith('Standard'))).toBe(true);
     const field = host.querySelector<HTMLInputElement>('.review-demo input')!;
@@ -143,7 +152,7 @@ it('moves an admin phone preview into a persistent demo lane and only uses audit
     expect(host.querySelector('.review-demo [role=status]')?.textContent).toContain('Flagged');
     expect(host.querySelector('[role=radio]')).toBeNull();
   } finally {
-    await act(async () => root.unmount()); client.clear(); host.remove(); vi.unstubAllGlobals();
+    resumeCatalog(); await act(async () => root.unmount()); client.clear(); host.remove(); vi.unstubAllGlobals();
   }
 });
 
