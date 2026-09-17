@@ -9,6 +9,7 @@ import { mutate } from './audit.ts';
 import { notify } from './notifications.ts';
 import { phonePreview, previewDuration, registerPhonePreview, reviewPoster } from './review-phone-preview.ts';
 import { roleOf, type Actor } from './actor.ts';
+import { episodeAtCentre } from './episodes.ts';
 import { REFUSALS, constraintOf } from './backoffice.ts';
 import {
   REVIEW_STATE,
@@ -1035,8 +1036,9 @@ export function registerReview(
       const source = row.session_folder.startsWith('library_') ? 'phone' : 'ego';
       const file = source === 'phone' && mayWatch(req) ? await phonePreview(db, row.episode_id, options.mediaRoot) : null;
       const preview = file && (!req.actor?.operator || file.centre_id === req.actor.operator.uploadCentreId);
-      const demoEgo = source === 'ego' && row.demo_override_allowed && row.verification_state === 'verified';
-      const poster = mayWatch(req) && (preview || demoEgo || (source === 'ego' && row.claimable))
+      const demoEgo = source === 'ego' && row.demo_override_allowed && row.verification_state === 'verified'
+        && req.actor?.operator && await episodeAtCentre(db, row.episode_id, req.actor.operator.uploadCentreId);
+      const poster = mayWatch(req) && (preview || demoEgo || (source === 'ego' && row.claimable && !row.demo_override_allowed))
         ? await reviewPoster(options.mediaRoot, row.session_folder) : null;
       items.push({ ...row, source,
         filename: file?.filename ?? null,
@@ -1066,7 +1068,8 @@ export function registerReview(
     if (!row) return reply.code(404).send({ error: 'thumbnail unavailable' });
     const phone = row.session_folder.startsWith('library_');
     const allowed = phone ? await phonePreview(db, row.episode_id, options.mediaRoot)
-      : row.claimable || (row.demo_override_allowed && row.verification_state === 'verified');
+      : row.demo_override_allowed ? row.verification_state === 'verified' && req.actor?.operator
+        && await episodeAtCentre(db, row.episode_id, req.actor.operator.uploadCentreId) : row.claimable;
     const poster = allowed ? await reviewPoster(options.mediaRoot, row.session_folder) : null;
     if (!poster) return reply.code(404).send({ error: 'thumbnail unavailable' });
     await mutate(db, req.actor!, { action: 'review.thumbnail', targetTable: 'episodes', targetId: row.episode_id,

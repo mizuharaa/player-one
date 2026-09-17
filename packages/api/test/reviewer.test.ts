@@ -285,6 +285,13 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
       expect((await h.d.execute(sql`select count(*)::int n from episode_reviews`))[0]!.n).toBe(0);
       expect((await h.d.execute(sql`select count(*)::int n from settlements`))[0]!.n).toBe(0);
       expect((await h.d.execute(sql`select count(*)::int n from audit_events where action='review.demo_override' and target_id=${ep!.episode_id}`))[0]!.n).toBe(4);
+      // Declared-session scope alone cannot advertise Ego media that the
+      // existing batch-scoped media endpoint would refuse (unlike phone media).
+      await h.d.execute(sql`update episodes set upload_path='A',upload_batch_id=null,verification_state='verified' where episode_id=${ep!.episode_id}`);
+      const pathA = (await h.send('GET','/api/review/catalog?queue=standard')).json().items[0];
+      expect(pathA.preview_url).toBe(null);
+      expect(pathA.thumbnail_url).toBe(null);
+      expect((await h.send('GET',`/api/review/thumbnail/${ep!.episode_id}?queue=standard`)).statusCode).toBe(404);
       await h.d.execute(sql`update operators set role='centre_operator' where id=${h.ids.operatorA}`);
       expect((await h.send('POST',url,{action:'accept'})).statusCode).toBe(403);
       expect((await h.send('GET','/api/review/catalog?queue=privacy')).json().items[0].demo_override).toBe(null);
