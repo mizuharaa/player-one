@@ -42,6 +42,29 @@ export const browseEpisodes = (search: string) =>
 export type Verdict = 'good' | 'partial' | 'bad';
 export type ReviewQueue = 'standard' | 'privacy' | 'second_review';
 
+export interface ReviewCatalogItem {
+  episode_id: string;
+  session_folder: string;
+  task_name?: string | null;
+  filename?: string | null;
+  thumbnail_url?: string | null;
+  collector_label: string | null;
+  collector_ref: string | null;
+  recorded_at: string | null;
+  uploaded_at: string | null;
+  duration_seconds: number | string | null;
+  source: 'ego' | 'phone';
+  state: string;
+  queue: ReviewQueue;
+  claimable: boolean;
+  preview_url: string | null;
+  blocker: string | null;
+}
+export interface ReviewCatalog {
+  items: ReviewCatalogItem[];
+  counts: { total: number; claimable: number; phone: number; blocked: number };
+}
+
 export interface Flag {
   code: string;
   severity: string;
@@ -581,7 +604,11 @@ export const counter = {
 
 export const api = {
   /** Claims the next episode, or null when there is nothing to review. */
-  claimNext: (queue: ReviewQueue = 'standard') => call<Claim>(`/api/review/claim?queue=${queue}`, { method: 'POST' }),
+  claimNext: (queue: ReviewQueue = 'standard', episodeId?: string) => call<Claim>(`/api/review/claim?queue=${queue}`, {
+    method: 'POST', ...(episodeId ? { body: JSON.stringify({ episode_id: episodeId }) } : {}),
+  }),
+
+  reviewCatalog: (queue: ReviewQueue) => call<ReviewCatalog>(`/api/review/catalog?queue=${queue}`),
 
   /** Metadata without claiming — this is what warms the next video element. */
   episode: (id: string) => call<Episode>(`/api/review/episode/${id}`),

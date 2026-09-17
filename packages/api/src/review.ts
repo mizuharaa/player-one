@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { and, asc, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -6,6 +7,7 @@ import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from './audit.ts';
 import { notify } from './notifications.ts';
+import { phonePreview, previewDuration, registerPhonePreview, reviewPoster } from './review-phone-preview.ts';
 import { type Actor } from './actor.ts';
 import { REFUSALS, constraintOf } from './backoffice.ts';
 import {
@@ -581,6 +583,7 @@ export function registerReview(
     reviewer: string,
     lane: Lane,
     tx: Pick<Db, 'execute'>,
+    episodeId?: string,
   ): Promise<{ reviewId: string; episodeId: string } | null> {
     for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
       const takeover = (await tx.execute(sql`
@@ -593,9 +596,11 @@ export function registerReview(
            select r.id
              from episode_reviews r
             where r.review_state = 'pending'
+              and ${episodeId ? sql`r.episode_id = ${episodeId}` : sql`true`}
               and r.queue = ${lane}
               and (r.assignee_ref is null or r.assignee_ref = ${reviewer})
-              and (r.reviewer_ref is null or r.lease_expires_at < now())
+              and (r.reviewer_ref is null or r.lease_expires_at < now()
+                or ${episodeId ? sql`r.reviewer_ref = ${reviewer}` : sql`false`})
               and ${stillEligible(sql`r.episode_id`, sql`r.ingest_id`)}
               and ${notOwnSecondReview(sql`r.dispute_id`, reviewer)}
             order by r.priority desc, r.created_at
@@ -616,6 +621,7 @@ export function registerReview(
           from episodes
           join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
          where ${eligible}
+           and ${episodeId ? sql`episodes.episode_id = ${episodeId}` : sql`true`}
            and ${derivedLane} = ${lane}
            and not exists (
              select 1 from episode_reviews r
@@ -637,6 +643,7 @@ export function registerReview(
           from episodes
           join episode_ingests on episode_ingests.ingest_id = episodes.latest_ingest_id
          where ${eligible}
+           and ${episodeId ? sql`episodes.episode_id = ${episodeId}` : sql`true`}
            and ${derivedLane} = ${lane}
            and not exists (
              select 1 from episode_reviews r
@@ -933,11 +940,115 @@ export function registerReview(
    * answerable — which footage did they open — and only an append-only row can
    * answer it.
    */
+  // Both card and phone uploads inherit the declared session's centre. A
+  // phone upload does not invent a counter batch just to become browseable.
+  const catalogScope = (req: FastifyRequest) => req.actor?.operator
+    ? sql`exists (
+        select 1 from collection_sessions scope_session
+        join handovers scope_handover on scope_handover.id=scope_session.handover_id
+        where scope_session.id=episodes.collection_session_id
+          and scope_handover.upload_centre_id=${req.actor.operator.uploadCentreId}
+      )`
+    : sql`true`;
+
+  async function catalogRows(req: FastifyRequest, lane: Lane, episodeId?: string) {
+    const reviewer = reviewerOf(req.actor!);
+    return await db.execute(sql`
+      select episodes.episode_id, coalesce(c.name,c.external_ref,'Unassigned') as collector_label,
+             c.external_ref as collector_ref, t.name as task_name,
+             episode_ingests.source_basename as session_folder,
+             episodes.session_started_at as recorded_at, episodes.first_seen_at as uploaded_at,
+             episode_ingests.measured_duration_s as duration_seconds,
+             episode_ingests.state as ingest_state, episodes.verification_state,
+             coalesce(r.review_state,episode_ingests.state) as state,
+             coalesce(r.queue,${derivedLane}) as queue,
+             (${eligible} and (r.id is null or (r.review_state='pending'
+               and (r.reviewer_ref is null or r.lease_expires_at<now() or r.reviewer_ref=${reviewer})))
+               and ${notOwnSecondReview(sql`r.dispute_id`, reviewer)}) as claimable
+        from episodes
+        join episode_ingests on episode_ingests.ingest_id=episodes.latest_ingest_id
+        left join collection_sessions s on s.id=episodes.collection_session_id
+        left join collectors c on c.id=s.collector_id
+        left join tasks t on t.id=s.task_id
+        left join lateral (select * from episode_reviews candidate
+          where candidate.episode_id=episodes.episode_id and candidate.ingest_id=episodes.latest_ingest_id
+          order by candidate.created_at desc limit 1) r on true
+       where ${catalogScope(req)} and coalesce(r.queue,${derivedLane})=${lane}
+         and ${episodeId ? sql`episodes.episode_id=${episodeId}` : sql`true`}
+         and (r.assignee_ref is null or r.assignee_ref=${reviewer})
+         and ${notOwnSecondReview(sql`r.dispute_id`, reviewer)}
+       order by episodes.first_seen_at desc limit 200
+    `) as unknown as {
+      episode_id: string; collector_label: string; collector_ref: string | null; task_name: string | null;
+      session_folder: string; recorded_at: string; uploaded_at: string; duration_seconds: string;
+      ingest_state: string; verification_state: string; state: string; queue: string; claimable: boolean;
+    }[];
+  }
+
+  registerPhonePreview(app, db, requireActor, options, async (req, episodeId) => {
+    const lane = laneOf(req);
+    return lane !== null && (await catalogRows(req, lane, episodeId)).length > 0;
+  });
+
+  app.get('/api/review/catalog', opts, async (req, reply) => {
+    const lane = laneOf(req);
+    if (lane === null) return badLane(reply);
+    const rows = await catalogRows(req, lane);
+    const items = [];
+    // ponytail: one bounded local probe per phone row; persist preview metadata
+    // at ingest when the catalogue grows beyond this small demo corpus.
+    for (const row of rows) {
+      const source = row.session_folder.startsWith('library_') ? 'phone' : 'ego';
+      const file = source === 'phone' && mayWatch(req) ? await phonePreview(db, row.episode_id, options.mediaRoot) : null;
+      const preview = file && (!req.actor?.operator || file.centre_id === req.actor.operator.uploadCentreId);
+      const poster = mayWatch(req) && (preview || (source === 'ego' && row.claimable))
+        ? await reviewPoster(options.mediaRoot, row.session_folder) : null;
+      items.push({ ...row, source,
+        filename: file?.filename ?? null,
+        duration_seconds: preview ? await previewDuration(file.path) : Number(row.duration_seconds) || null,
+        claimable: source === 'phone' ? false : row.claimable && mayWatch(req),
+        preview_url: preview ? `/api/review/phone-preview/${row.episode_id}?queue=${lane}` : null,
+        thumbnail_url: poster ? `/api/review/thumbnail/${row.episode_id}?queue=${lane}` : null,
+        blocker: source === 'phone' ? 'Phone preview only — not an Ego recording; not eligible for payment.'
+          : !mayWatch(req) ? 'Reviewer playback is not enabled.'
+          : row.ingest_state === 'quarantined' ? 'Ingest quarantined — source needs attention.'
+          : row.verification_state !== 'verified' && cloudGate ? 'Awaiting cloud verification.'
+          : !row.claimable ? 'Already reviewed, held, assigned, or awaiting review prerequisites.' : null,
+      });
+    }
+    return reply.send({ items, counts: { total: items.length, claimable: items.filter(i => i.claimable).length,
+      phone: items.filter(i => i.source === 'phone').length, blocked: items.filter(i => !i.claimable).length }, limit: 200 });
+  });
+
+  app.get('/api/review/thumbnail/:id', opts, async (req, reply) => {
+    if (!mayWatch(req)) return withheld(reply);
+    const lane = laneOf(req);
+    if (lane === null) return badLane(reply);
+    const id = z.string().uuid().safeParse((req.params as { id: string }).id);
+    if (!id.success) return reply.code(400).send({ error: 'bad episode id' });
+    const [row] = await catalogRows(req, lane, id.data);
+    if (!row) return reply.code(404).send({ error: 'thumbnail unavailable' });
+    const phone = row.session_folder.startsWith('library_');
+    const allowed = phone ? await phonePreview(db, row.episode_id, options.mediaRoot) : row.claimable;
+    const poster = allowed ? await reviewPoster(options.mediaRoot, row.session_folder) : null;
+    if (!poster) return reply.code(404).send({ error: 'thumbnail unavailable' });
+    await mutate(db, req.actor!, { action: 'review.thumbnail', targetTable: 'episodes', targetId: row.episode_id,
+      after: { preview_only: true, source: phone ? 'phone' : 'ego' } }, async () => true);
+    return reply.headers({ 'content-type': 'image/jpeg', 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' }).send(createReadStream(poster));
+  });
+
   app.post('/api/review/claim', opts, async (req, reply) => {
     if (!mayWatch(req)) return withheld(reply);
     const reviewer = reviewerOf(req.actor!);
     const lane = laneOf(req);
     if (lane === null) return badLane(reply);
+    const selection = z.object({ episode_id: z.string().uuid().optional() }).safeParse(req.body ?? {});
+    if (!selection.success) return reply.code(400).send({ error: 'bad episode selection' });
+    const selected = selection.data.episode_id;
+    if (selected && req.actor?.operator) {
+      const scoped = await db.execute(sql`select 1 from episodes where episodes.episode_id=${selected} and ${catalogScope(req)}`);
+      if (scoped.length === 0) return reply.code(404).send({ error: 'episode unavailable' });
+    }
     const claim = await mutate(
       db,
       req.actor!,
@@ -948,7 +1059,7 @@ export function registerReview(
         targetId: c.reviewId,
         after: { episode_id: c.episodeId, reviewer_ref: reviewer, queue: lane },
       }),
-      async (tx) => (await claimNext(reviewer, lane, tx)) ?? undefined,
+      async (tx) => (await claimNext(reviewer, lane, tx, selected)) ?? undefined,
     );
     if (claim === undefined) {
       return reply.code(204).send();

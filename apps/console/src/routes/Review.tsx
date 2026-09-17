@@ -26,14 +26,15 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppShell } from '../components/shell/AppShell.tsx';
 import { Button, Key } from '../components/ui/button.tsx';
 import { Field, FlagRow, Problem, Skeleton } from '../components/ui/primitives.tsx';
 import { guideBlocksKeys } from '../components/guide/useGuide.ts';
-import { IconKeyboard, IconPartial, IconPass, IconReject, IconRefresh } from '../components/icons.tsx';
+import { IconKeyboard, IconPartial, IconPass, IconReject } from '../components/icons.tsx';
 import { MESSAGES } from '@playerone/api/i18n';
-import { api, ApiError, type Claim, type ReasonCode, type ReviewQueue, type Verdict } from '../lib/api.ts';
+import { api, ApiError, type Claim, type ReasonCode, type ReviewQueue, type ReviewCatalogItem, type Verdict } from '../lib/api.ts';
+import { ReviewCatalog, RecordingPreview, optimizedUrl } from './ReviewCatalog.tsx';
 import { commitFailure, type CommitFailure } from './refusal.ts';
 import { duration, money, signedPercent, signedSeconds } from '../lib/format.ts';
 import { cn } from '../lib/cn.ts';
@@ -57,6 +58,10 @@ export function ReviewScreen() {
   const mounted = useRef(false);
 
   const [episode, setEpisode] = useState<Claim | null>(null);
+  const [selected, setSelected] = useState<ReviewCatalogItem | null>(null);
+  const queues: ReviewQueue[] = ['standard', 'privacy', 'second_review'];
+  const catalogs = useQueries({ queries: queues.map(lane => ({ queryKey: ['review', 'catalog', lane], queryFn: () => api.reviewCatalog(lane), retry: false })) });
+  const catalog = catalogs[queues.indexOf(queue)]!;
   const [verdictId, setVerdictId] = useState<string>(() => uuid());
   const [spans, setSpans] = useState<Span[]>([]);
   const [decision, setDecision] = useState<Verdict | null>(null);
@@ -66,6 +71,7 @@ export function ReviewScreen() {
   const [playing, setPlaying] = useState(false);
   const [rate, setRate] = useState(1);
   const [partIndex, setPartIndex] = useState(0);
+  const [originalQuality, setOriginalQuality] = useState(false);
   const [lost, setLost] = useState<'lease' | 'media' | null>(null);
   /**
    * A refusal the server named, and whether it has been parked.
@@ -101,6 +107,7 @@ export function ReviewScreen() {
     setNote('');
     setPosition(0);
     setPartIndex(0);
+    setOriginalQuality(false);
     setPlaying(false);
     setLost(null);
     setLeaseError(null);
@@ -131,39 +138,42 @@ export function ReviewScreen() {
    * mutation is built once instead of on every episode.
    */
   const claim = useMutation({
-    mutationFn: async (nextQueue: ReviewQueue) => {
+    mutationFn: async ({ nextQueue, item }: { nextQueue: ReviewQueue; item?: ReviewCatalogItem }) => {
       const held = episodeRef.current;
       if (held !== null) await api.release(held);
       adopt(null);
+      setSelected(item ?? null);
       if (!mounted.current) return null;
-      return api.claimNext(nextQueue);
+      return item?.claimable ? api.claimNext(nextQueue, item.episode_id) : null;
     },
     onSuccess: (next) => {
       if (mounted.current) adopt(next);
       else if (next) api.releaseOnUnload(next.episode_id);
     },
-    onSettled: () => { claiming.current = false; },
+    onSettled: () => { claiming.current = false; void queryClient.invalidateQueries({ queryKey: ['review', 'catalog'] }); },
   });
 
   const claimMutate = claim.mutate;
-  const requestClaim = useCallback((nextQueue = queueRef.current) => {
+  useEffect(() => {
+    if (selected && !claim.isPending) document.querySelector('.review-workbench, .review-preview-only')?.scrollIntoView?.({ block: 'start' });
+  }, [selected, episode, claim.isPending]);
+  const requestClaim = useCallback((nextQueue = queueRef.current, item?: ReviewCatalogItem) => {
     // Guard synchronously: double clicks and StrictMode effects precede the pending render.
     if (claiming.current || !mounted.current) return;
     claiming.current = true;
     queueRef.current = nextQueue;
     setQueue(nextQueue);
-    claimMutate(nextQueue);
+    claimMutate({ nextQueue, item });
   }, [claimMutate]);
 
-  /** Claim the first episode when the screen opens. */
+  /** Browsing does not take a lease. Claim only the recording the reviewer selects. */
   useEffect(() => {
     mounted.current = true;
-    requestClaim();
     return () => {
       mounted.current = false;
       if (episodeRef.current) api.releaseOnUnload(episodeRef.current);
     };
-  }, [requestClaim]);
+  }, []);
 
   /* ---------------------------------------------------------------------
      The lease: a heartbeat while working, a beacon on the way out.
@@ -211,7 +221,10 @@ export function ReviewScreen() {
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) void v.play().catch(() => setLost('media'));
+    if (v.paused) void v.play().catch((error: unknown) => {
+      if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'NotAllowedError')) return;
+      setLost('media');
+    });
     else v.pause();
   }, []);
 
@@ -310,6 +323,7 @@ export function ReviewScreen() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['shift'] });
+      void queryClient.invalidateQueries({ queryKey: ['review', 'catalog'] });
       requestClaim();
     },
     /**
@@ -388,9 +402,10 @@ export function ReviewScreen() {
        * is judging. The lease is untouched by any of it.
        */
       if (guideBlocksKeys(event)) return;
+      if (episode === null) return;
       const target = event.target as HTMLElement | null;
       /** Never steal a key from a text field. */
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) return;
+      if (target?.closest('input, textarea, select, button, a')) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
       switch (event.key) {
@@ -453,7 +468,7 @@ export function ReviewScreen() {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [togglePlay, nudge, stepFrame, changeRate, markIn, markOut, clearAtPlayhead, canCommit, commit]);
+  }, [episode, togglePlay, nudge, stepFrame, changeRate, markIn, markOut, clearAtPlayhead, canCommit, commit]);
 
   /* ------------------------------------------------------------------ */
 
@@ -463,24 +478,18 @@ export function ReviewScreen() {
   };
   const queueSelector = (
     <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border)] bg-[var(--background)] px-4 py-3">
-      <label htmlFor="review-queue" className="text-sm font-semibold">{t('queue.select')}</label>
-      <select
-        id="review-queue"
-        value={queue}
-        disabled={claim.isPending || commit.isPending || hold.isPending}
-        onChange={(event) => {
-          commit.reset();
-          hold.reset();
-          requestClaim(event.currentTarget.value as ReviewQueue);
-        }}
-        className="min-h-11 max-w-full rounded-[var(--radius-base)] border border-[var(--border-strong)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)] disabled:cursor-wait disabled:opacity-60"
-      >
-        <option value="standard">{t('queue.standard')}</option>
-        <option value="privacy">{t('queue.privacy')}</option>
-        <option value="second_review">{t('queue.secondReview')}</option>
-      </select>
+      <span className="text-sm font-semibold">{t('queue.select')}</span>
+      {queues.map((lane, index) => <Button key={lane} variant={queue === lane ? 'primary' : 'outline'}
+        aria-pressed={queue === lane} disabled={claim.isPending || commit.isPending || hold.isPending}
+        onClick={() => { commit.reset(); hold.reset(); requestClaim(lane); }}>
+        {t(lane === 'second_review' ? 'queue.secondReview' : `queue.${lane}`)} · {catalogs[index]?.data?.counts.total ?? '—'}
+      </Button>)}
     </div>
   );
+  const catalogView = <ReviewCatalog data={catalog.data ?? undefined} pending={catalog.isPending} error={catalog.error}
+    selected={selected?.episode_id ?? null} busy={claim.isPending || commit.isPending || hold.isPending}
+    onSelect={item => { commit.reset(); hold.reset(); requestClaim(item.queue, item); }}
+    onRefresh={() => { void catalog.refetch(); }} />;
 
   /**
    * Playback is not authorised for this session, so there is no review to do.
@@ -494,6 +503,7 @@ export function ReviewScreen() {
     return (
       <AppShell {...shellProps} bleed>
         {queueSelector}
+        {catalogView}
         <Nothing
           title={t('state.playbackWithheld.title')}
           body={t('state.playbackWithheld.body')}
@@ -507,10 +517,11 @@ export function ReviewScreen() {
     return (
       <AppShell {...shellProps} bleed>
         {queueSelector}
+        {catalogView}
         <Nothing
           title={t('state.loadFailed.title')}
           body={claim.error.message}
-          action={<Button variant="outline" onClick={() => requestClaim()}>{t('queue.refresh')}</Button>}
+          action={<Button variant="outline" onClick={() => requestClaim(queue, selected ?? undefined)}>{t('queue.refresh')}</Button>}
         />
       </AppShell>
     );
@@ -521,16 +532,12 @@ export function ReviewScreen() {
     return (
       <AppShell {...shellProps} bleed>
         {queueSelector}
-        <Nothing
-          title={t('queue.empty.title')}
-          body={t('queue.empty.body')}
-          action={
-            <Button variant="outline" onClick={() => requestClaim()}>
-              <IconRefresh size={17} />
-              {t('queue.refresh')}
-            </Button>
-          }
-        />
+        {catalogView}
+        {selected?.claimable ? <Nothing
+          title={t('state.leaseExpired.title')}
+          body={t('review.catalog.taken')}
+          action={<Button variant="outline" onClick={() => requestClaim()}>{t('queue.refresh')}</Button>}
+        /> : selected ? <RecordingPreview key={selected.episode_id} item={selected} /> : null}
       </AppShell>
     );
   }
@@ -538,10 +545,11 @@ export function ReviewScreen() {
   return (
     <AppShell {...shellProps} bleed>
       {queueSelector}
-      <div className="grid min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[minmax(0,1fr)_360px]">
+      {catalogView}
+      <div className="review-workbench">
         {/* ---------------- The theatre ---------------- */}
         <section className="on-stage flex min-w-0 flex-col">
-          <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+          <div className="review-video-wrap flex min-h-0 flex-1 items-center justify-center p-4">
             {claim.isPending ? (
               <Skeleton className="aspect-video w-full max-w-[1100px] rounded-[var(--radius-lg)] bg-[var(--stage-panel)]" />
             ) : lost === 'media' ? (
@@ -551,20 +559,22 @@ export function ReviewScreen() {
                   title={t('state.mediaFailed.title')}
                   body={t('state.mediaFailed.body')}
                   action={
-                    <Button variant="stage" onClick={() => requestClaim()}>
-                      {t('state.mediaFailed.action')}
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="stage" onClick={() => setLost(null)}>{t('queue.refresh')}</Button>
+                      <Button variant="stage" onClick={() => requestClaim()}>{t('state.mediaFailed.action')}</Button>
+                    </div>
                   }
                 />
               </div>
             ) : currentPart ? (
               <video
                 ref={videoRef}
-                key={currentPart.url}
+                key={`${currentPart.url}:${originalQuality}`}
                 data-guide="review.player"
-                src={currentPart.url}
+                src={originalQuality ? currentPart.url : optimizedUrl(currentPart.url)}
                 className="max-h-full w-full max-w-[1100px] bg-[var(--stage)] ring-1 ring-[var(--stage-line)]"
                 preload="auto"
+                playsInline
                 onTimeUpdate={(e) => setPosition(e.currentTarget.currentTime)}
                 onPlay={() => setPlaying(true)}
                 onPause={() => setPlaying(false)}
@@ -589,6 +599,12 @@ export function ReviewScreen() {
             />
 
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <label className="text-[0.75rem] text-[var(--stage-mid)]">{t('review.catalog.quality')}
+                <select value={originalQuality ? 'original' : 'preview'} onChange={event => { setOriginalQuality(event.currentTarget.value === 'original'); setLost(null); }}
+                  className="ml-2 min-h-11 rounded border border-[var(--stage-line)] bg-[var(--stage)] px-2 text-[var(--stage-fg)]">
+                  <option value="preview">{t('review.catalog.optimized')}</option><option value="original">{t('review.catalog.original')}</option>
+                </select>
+              </label>
               <Button variant="stage" size="sm" onClick={togglePlay}>
                 {playing ? t('player.pause') : t('player.play')}
                 <Key onStage>Space</Key>
@@ -739,10 +755,8 @@ export function ReviewScreen() {
                 ) : null}
 
                 {episode.flags.length > 0 ? (
-                  <div className="mt-5">
-                    <p className="border-b border-[var(--border-strong)] pb-1 text-[0.8125rem] font-semibold text-[var(--foreground)]">
-                      {t('meta.flags')}
-                    </p>
+                  <details className="mt-5">
+                    <summary>{t('meta.flags')} · {episode.flags.length}</summary>
                     <div className="divide-y divide-[var(--border)]">
                       {episode.flags.map((f) => (
                         <FlagRow
@@ -754,7 +768,7 @@ export function ReviewScreen() {
                         />
                       ))}
                     </div>
-                  </div>
+                  </details>
                 ) : null}
               </>
             )}
@@ -1093,7 +1107,7 @@ function WithheldQueue({ queue }: { queue: ReviewQueue }) {
 
 function Nothing({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) {
   return (
-    <div className="mx-auto flex min-h-[calc(100dvh-3.5rem)] items-center justify-center p-6">
+    <div className="mx-auto flex min-h-[240px] items-center justify-center p-6">
       <div className="hatch w-full max-w-[46ch] rounded-[var(--radius-lg)] border border-[var(--border)] px-8 py-12">
         <h2 className="text-[1.625rem] font-extrabold leading-[1.15] tracking-[-0.03em]">{title}</h2>
         <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">{body}</p>

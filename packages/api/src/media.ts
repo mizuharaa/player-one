@@ -1,6 +1,8 @@
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import { extname, join, relative, resolve, sep } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { EpisodeRecord } from '@playerone/contracts';
@@ -82,6 +84,60 @@ export function safeJoin(root: string, ...parts: string[]): string | null {
   const rel = relative(base, target);
   if (rel === '' || rel.startsWith('..') || rel.startsWith(`..${sep}`)) return null;
   return target;
+}
+
+type VideoTimeline = { start_time?: string; duration?: string; nb_read_frames?: string; r_frame_rate?: string };
+const probeVideo = promisify(execFile);
+const playbackChecks = new Map<string, Promise<boolean>>();
+
+export function matchingPlaybackTimeline(original: VideoTimeline, preview: VideoTimeline): boolean {
+  const rate = (value?: string) => {
+    const parts = value?.split('/').map(Number);
+    return parts?.length === 2 && parts[1]! > 0 ? parts[0]! / parts[1]! : NaN;
+  };
+  const fps = rate(original.r_frame_rate), otherFps = rate(preview.r_frame_rate);
+  const values = [original.start_time, preview.start_time, original.duration, preview.duration, original.nb_read_frames, preview.nb_read_frames];
+  if (values.some(v => v === undefined || v.trim() === '' || !Number.isFinite(Number(v)))) return false;
+  const frames = Number(original.nb_read_frames);
+  // A scale-only encode may quantise the last frame's end by one source frame.
+  // Starts and decoded frame counts must still agree; no trim or retiming.
+  return fps > 0 && Math.abs(fps - otherFps) < 0.000001
+    && Number.isInteger(frames) && frames > 0 && frames === Number(preview.nb_read_frames)
+    && Number(original.duration) > 0 && Number(preview.duration) > 0
+    && Math.abs(Number(original.start_time) - Number(preview.start_time)) <= 0.000001
+    && Math.abs(Number(original.duration) - Number(preview.duration)) <= 1 / fps + 0.000001;
+}
+
+async function playbackTimeline(path: string): Promise<VideoTimeline> {
+  const { stdout } = await probeVideo('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-count_frames', '-show_entries', 'stream=start_time,duration,nb_read_frames,r_frame_rate', '-of', 'json', path], { timeout: 15000, maxBuffer: 16384 });
+  return JSON.parse(stdout).streams?.[0] ?? {};
+}
+
+/** Optional display copy, never part of ingestion or the payable measurement. */
+export async function playbackPath(root: string, folder: string, file: string, optimized: boolean): Promise<string | null> {
+  const original = safeJoin(root, folder, file);
+  if (!original || !optimized) return original;
+  const candidate = safeJoin(root, '.previews', folder, `${file}.mp4`);
+  if (!candidate) return original;
+  try {
+    const actual = await realpath(candidate);
+    const base = await realpath(root);
+    const inside = relative(base, actual);
+    if (inside.startsWith('..') || resolve(base, inside) !== actual) return original;
+    const [info, source] = await Promise.all([stat(actual), stat(original)]);
+    if (!info.isFile() || info.size === 0 || !source.isFile()) return original;
+    const key = JSON.stringify([original,source.size,source.mtimeMs,source.ctimeMs,actual,info.size,info.mtimeMs,info.ctimeMs]);
+    let checked = playbackChecks.get(key);
+    if (!checked) {
+      // Range requests share one check. The bounded cache invalidates when
+      // either file changes, and a failed/missing probe falls back to original.
+      if (playbackChecks.size >= 128) playbackChecks.delete(playbackChecks.keys().next().value!);
+      checked = Promise.all([playbackTimeline(original),playbackTimeline(actual)])
+        .then(([a,b]) => matchingPlaybackTimeline(a,b)).catch(() => false);
+      playbackChecks.set(key, checked);
+    }
+    return await checked ? actual : original;
+  } catch { return original; }
 }
 
 export function registerMedia(
@@ -174,7 +230,7 @@ export function registerMedia(
     const file = stream?.parts[part]?.file;
     if (file === undefined) return reply.code(404).send({ error: 'no such part' });
 
-    const path = safeJoin(mediaRoot, row.sourceBasename, file);
+    const path = await playbackPath(mediaRoot, row.sourceBasename, file, (req.query as { quality?: string }).quality === 'preview');
     if (path === null) return reply.code(400).send({ error: 'bad media path' });
 
     let size: number;
@@ -192,7 +248,7 @@ export function registerMedia(
       return reply.code(404).send({ error: 'media is not on this machine', detail: file });
     }
 
-    const contentType = CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream';
+    const contentType = CONTENT_TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream';
     const range = parseRange(req.headers['range'], size);
 
     if (range === 'unsatisfiable') {

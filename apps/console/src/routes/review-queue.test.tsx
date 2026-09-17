@@ -13,105 +13,73 @@ vi.mock('../components/shell/AppShell.tsx', () => ({
   AppShell: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));
 
-it('keeps queue selection available and releases before switching without duplicate claims or stale decisions', async () => {
+it('browses without claiming, claims only the selection, releases before switching, and previews phones without a verdict', async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   const response = (body: unknown, status = 200) => new Response(status === 204 ? null : JSON.stringify(body), { status });
-  const episode = (id: string) => ({
-    episode_id: id, session_folder: id, measured_duration_seconds: '20', claimed_duration_seconds: null,
-    task: null, collector: null, declared: null, device: { serial: 'Ego' }, flags: [],
-    media: { parts: [{ url: '/test.mp4', index: 0 }] }, queue_depth: 1,
-  });
-  let finishInitial!: (value: Response) => void;
-  let finishRelease!: (value: Response) => void;
+  const rows = [
+    { episode_id: 'ego-1', session_folder: 'Ego recording', collector_label: 'Mai', collector_ref: 'col-1', recorded_at: '20260916_142300', uploaded_at: '2026-09-16T08:00:00Z', duration_seconds: 20, source: 'ego', state: 'pending', queue: 'standard', claimable: true, preview_url: null, blocker: null },
+    { episode_id: 'phone-1', session_folder: 'Phone recording', collector_label: 'Linh', collector_ref: 'col-2', recorded_at: null, uploaded_at: '2026-09-16T08:00:00Z', duration_seconds: 8, source: 'phone', state: 'quarantined', queue: 'privacy', claimable: false, preview_url: '/phone.mp4', blocker: 'requires_camera_metadata' },
+  ];
+  const episode = { episode_id: 'ego-1', session_folder: 'Ego recording', measured_duration_seconds: '20', claimed_duration_seconds: null,
+    task: null, collector: null, declared: null, device: { serial: 'Ego' }, flags: [{ code: 'TEST', detail: 'Diagnostic', blocks_review: false }],
+    media: { parts: [{ url: '/test.mp4', index: 0 }] }, queue_depth: 1 };
+  const calls: { path: string; body?: string }[] = [];
   let releaseFails = true;
-  let withheld = false;
-  const calls: string[] = [];
-  const fetcher = vi.fn(async (path: string) => {
-    calls.push(path);
+  let claimTaken = false;
+  vi.stubGlobal('fetch', vi.fn(async (path: string, init?: RequestInit) => {
+    calls.push({ path, body: init?.body as string | undefined });
     if (path.endsWith('/reasons')) return response({ reasons: [] });
+    if (path.includes('/catalog?')) return response({ items: rows, counts: { total: 2, claimable: 1, phone: 1, blocked: 1 } });
+    if (path.includes('/claim?')) return claimTaken ? response(null, 204) : response(episode);
     if (path.includes('/release/')) {
       if (releaseFails) { releaseFails = false; return response({ error: 'Release failed' }, 503); }
-      return new Promise<Response>(resolve => { finishRelease = resolve; });
+      return response({ released: true });
     }
-    if (path.includes('/claim?queue=standard')) return new Promise<Response>(resolve => { finishInitial = resolve; });
-    if (path.includes('/claim?queue=')) {
-      if (withheld) return response({ error: 'withheld' }, 451);
-      return response(episode(path.endsWith('privacy') ? 'privacy-episode' : 'second-episode'));
-    }
-    if (path.includes('/next?queue=')) return response(null, 204);
     throw new Error(`Unexpected request: ${path}`);
-  });
-  vi.stubGlobal('fetch', fetcher);
-  const beacon = vi.fn(() => true);
-  Object.defineProperty(navigator, 'sendBeacon', { configurable: true, value: beacon });
-  const host = document.createElement('div');
-  document.body.append(host);
+  }));
+  Object.defineProperty(navigator, 'sendBeacon', { configurable: true, value: vi.fn(() => true) });
+  const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockRejectedValue(new DOMException('Playback interrupted', 'AbortError'));
+  const host = document.createElement('div'); document.body.append(host);
   const root = createRoot(host);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const select = () => host.querySelector<HTMLSelectElement>('#review-queue')!;
-  const change = async (queue: string) => act(async () => {
-    select().value = queue;
-    select().dispatchEvent(new Event('change', { bubbles: true }));
-  });
-  const settled = async () => {
-    await vi.waitFor(async () => {
-      await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
-      expect(select().disabled).toBe(false);
-    });
-  };
+  const flush = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+  const cards = () => host.querySelectorAll<HTMLButtonElement>('.review-recording');
   try {
     await act(async () => root.render(<StrictMode><QueryClientProvider client={client}><ReviewScreen /></QueryClientProvider></StrictMode>));
-    expect(select().disabled).toBe(true);
-    expect(calls.filter(path => path.includes('/claim'))).toEqual(['/api/review/claim?queue=standard']);
-    await act(async () => finishInitial(response(null, 204)));
-    await settled();
-    expect(host.textContent).toContain(MESSAGES.en['queue.empty.title']);
-    expect(select().labels?.[0]?.textContent).toBe(MESSAGES.en['queue.select']);
-
-    await change('privacy');
-    await settled();
-    expect(host.textContent).toContain('privacy-episode');
+    await vi.waitFor(async () => { await flush(); expect(cards().length).toBe(2); });
+    expect(calls.some(c => c.path.includes('/claim'))).toBe(false);
+    expect(host.textContent).toContain('Mai'); expect(host.textContent).toContain('2026-09-16 14:23:00');
+    await act(async () => cards()[0]!.click());
+    await vi.waitFor(async () => { await flush(); expect(host.querySelector('[data-guide="review.player"]')).not.toBeNull(); });
+    expect(calls.filter(c => c.path.includes('/claim'))).toEqual([{ path: '/api/review/claim?queue=standard', body: JSON.stringify({ episode_id: 'ego-1' }) }]);
+    expect(host.querySelector('details')?.open).toBe(false);
     await act(async () => host.querySelector<HTMLButtonElement>('[role=radio]')!.click());
     expect(host.querySelector('[aria-checked=true]')).not.toBeNull();
-    await act(async () => {
-      const note = host.querySelector('textarea')!;
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(note, 'Old episode note');
-      note.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    expect(host.querySelector('textarea')?.value).toBe('Old episode note');
-    await act(async () => select().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
-    expect(calls.some(path => path.includes('/verdict'))).toBe(false);
-
-    await change('second_review');
-    await settled();
-    expect(host.textContent).toContain('Release failed');
-    expect(select().value).toBe('second_review');
-    expect(calls.some(path => path.endsWith('/claim?queue=second_review'))).toBe(false);
-    await act(async () => host.querySelector<HTMLButtonElement>('button')!.click());
-    expect(select().disabled).toBe(true);
-    expect(calls.filter(path => path.includes('/release/'))).toEqual([
-      '/api/review/release/privacy-episode', '/api/review/release/privacy-episode',
-    ]);
-    await act(async () => finishRelease(response({ released: true })));
-    await settled();
-    expect(host.textContent).toContain('second-episode');
-    expect(host.querySelector('[aria-checked=true]')).toBeNull();
-    expect(host.querySelector('textarea')?.value).toBe('');
-    expect(calls.filter(path => path.includes('/claim'))).toEqual([
-      '/api/review/claim?queue=standard', '/api/review/claim?queue=privacy', '/api/review/claim?queue=second_review',
-    ]);
-
-    withheld = true;
-    await change('privacy');
-    await act(async () => finishRelease(response({ released: true })));
-    await settled();
-    await vi.waitFor(() => expect(calls).toContain('/api/review/next?queue=privacy'));
-    expect(host.textContent).toContain(MESSAGES.en['state.playbackWithheld.title']);
-    expect(select().value).toBe('privacy');
+    const playButton = [...host.querySelectorAll('button')].find(b => b.textContent?.startsWith('Play'))!;
+    await act(async () => playButton.click()); await flush();
+    expect(play).toHaveBeenCalled(); expect(host.querySelector('[data-guide="review.player"]')).not.toBeNull();
+    await act(async () => cards()[1]!.click());
+    await vi.waitFor(async () => { await flush(); expect(host.textContent).toContain('Release failed'); });
+    expect(calls.filter(c => c.path.includes('/claim'))).toHaveLength(1);
+    await act(async () => cards()[1]!.click());
+    await vi.waitFor(async () => { await flush(); expect(host.querySelector('.review-preview-only video')).not.toBeNull(); });
+    expect(host.querySelector('[role=radio]')).toBeNull(); expect(host.querySelector('textarea')).toBeNull();
+    expect(host.querySelector('.review-preview-only select')).toBeNull();
+    expect(host.querySelector('.review-preview-only video')?.getAttribute('src')).toBe('/phone.mp4');
+    expect(calls.filter(c => c.path.includes('/release/'))).toHaveLength(2);
+    expect(calls.filter(c => c.path.includes('/claim'))).toHaveLength(1);
+    expect(host.textContent).toContain(MESSAGES.en['review.catalog.viewOnlyHint']);
+    claimTaken = true;
+    await act(async () => cards()[0]!.click());
+    await vi.waitFor(async () => { await flush(); expect(calls.filter(c => c.path.includes('/claim'))).toHaveLength(2); });
+    expect(host.querySelector('.review-preview-only')).toBeNull();
+    expect(host.textContent).toContain(MESSAGES.en['state.leaseExpired.title']);
+    expect(host.textContent).not.toContain(MESSAGES.en['review.catalog.viewOnlyHint']);
+    const retry = [...host.querySelectorAll('button')].filter(button => button.textContent === MESSAGES.en['queue.refresh']).at(-1)!;
+    await act(async () => retry.click()); await flush();
+    expect(host.textContent).not.toContain(MESSAGES.en['state.leaseExpired.title']);
+    expect(calls.filter(c => c.path.includes('/claim'))).toHaveLength(2);
   } finally {
-    await act(async () => root.unmount());
-    client.clear();
-    host.remove();
-    vi.unstubAllGlobals();
+    await act(async () => root.unmount()); client.clear(); host.remove(); play.mockRestore(); vi.unstubAllGlobals();
   }
 });

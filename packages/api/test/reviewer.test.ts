@@ -254,6 +254,111 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
    */
   const lane = () => harness({ reviewerMediaEnabled: true });
 
+  it('catalog scopes centres and selected claim never substitutes another recording', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'review-posters-'));
+    const h = await harness({ reviewerMediaEnabled: true, mediaRoot: root });
+    try {
+      const catalogue = await h.send('GET', '/api/review/catalog');
+      expect(catalogue.statusCode, catalogue.body).toBe(200);
+      expect(catalogue.json().items).toHaveLength(1);
+      const selected = catalogue.json().items[0].episode_id;
+      const folder = catalogue.json().items[0].session_folder;
+      await mkdir(join(root,'.previews',folder),{recursive:true});
+      await writeFile(join(root,'.previews',folder,'poster.jpg'),Buffer.from('jpeg-poster'));
+      const withPoster = await h.send('GET','/api/review/catalog');
+      const thumbnail = withPoster.json().items[0].thumbnail_url;
+      expect(thumbnail).toContain(`/api/review/thumbnail/${selected}`);
+      expect((await h.send('GET',thumbnail)).statusCode).toBe(200);
+      expect((await h.send('GET',thumbnail,undefined,h.headersB)).statusCode).toBe(404);
+      expect((await h.app.inject({method:'GET',url:thumbnail})).statusCode).toBe(401);
+      expect((await h.send('GET',thumbnail,undefined,h.reviewerHeaders)).body).toBe('jpeg-poster');
+      const other = await h.send('GET', '/api/review/catalog', undefined, h.headersB);
+      const otherId = other.json().items[0].episode_id;
+      expect((await h.send('POST', '/api/review/claim', { episode_id: otherId })).statusCode).toBe(404);
+      const claim = await h.send('POST', '/api/review/claim', { episode_id: selected });
+      expect(claim.statusCode, claim.body).toBe(200);
+      expect(claim.json().episode_id).toBe(selected);
+      // Reloading resumes our own lease, never steals it for another reviewer.
+      const resumed = await h.send('POST', '/api/review/claim', { episode_id: selected });
+      expect(resumed.statusCode, resumed.body).toBe(200);
+      expect(resumed.json().review_id).toBe(claim.json().review_id);
+      const afterReload = await h.send('GET', '/api/review/catalog');
+      expect(afterReload.json().items[0].claimable).toBe(true);
+      expect((await h.send('POST', '/api/review/claim', { episode_id: selected }, h.reviewerHeaders)).statusCode).toBe(204);
+      const rowCount = await h.d.execute(sql`select count(*)::int as n from episode_reviews where episode_id=${selected}`);
+      expect(rowCount[0]!.n).toBe(1);
+      expect((await h.send('POST', '/api/review/claim', { episode_id: 'bad' })).statusCode).toBe(400);
+      const anonymous = await h.app.inject({ method: 'GET', url: '/api/review/catalog' });
+      expect(anonymous.statusCode).toBe(401);
+    } finally { await h.app.close(); await rm(root,{recursive:true,force:true}); }
+  });
+
+  it('verified phone previews are private, centre-scoped, audited, and never create a review', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'phone-preview-'));
+    const folder = 'library_phone-preview';
+    await mkdir(join(root, folder));
+    const bytes = Buffer.from('phone-preview-bytes');
+    const imageBytes = Buffer.from('earlier-image');
+    await writeFile(join(root, folder, 'clip.mp4'), bytes);
+    await writeFile(join(root, folder, '00-first.png'), imageBytes);
+    await mkdir(join(root,'.previews',folder),{recursive:true});
+    await writeFile(join(root,'.previews',folder,'poster.jpg'),Buffer.from('phone-jpeg'));
+    const h = await harness({ reviewerMediaEnabled: true, mediaRoot: root });
+    try {
+      const rows = await h.d.execute(sql`select episode_id,latest_ingest_id from episodes where collection_session_id=${h.cards[0]!.session}`);
+      const ep = rows[0]!;
+      const upload = uid();
+      const digest = 'a'.repeat(64);
+      await h.d.execute(sql`update episode_ingests set source_basename=${folder},state='quarantined',measured_duration_s=0 where ingest_id=${ep.latest_ingest_id}`);
+      await h.d.execute(sql`update episodes set upload_path='A',upload_batch_id=null,verification_state='verified' where episode_id=${ep.episode_id}`);
+      await h.d.execute(sql`update collection_sessions set others_in_frame=true where id=${h.cards[0]!.session}`);
+      await h.d.execute(sql`insert into collector_uploads(id,collector_id,collection_session_id,device_serial,measured,episode_id,ingest_id,source_basename,file_count,total_bytes,declared_files,state,completed_at)
+        values(${upload},${h.ids.collectorA},${h.cards[0]!.session},'AZER76400FE',false,${ep.episode_id},${ep.latest_ingest_id},${folder},2,${bytes.length+imageBytes.length},${JSON.stringify([{relative_path:'00-first.png',bytes:imageBytes.length,sha256:'b'.repeat(64)},{relative_path:'clip.mp4',bytes:bytes.length,sha256:digest}])}::jsonb,'ingested',now())`);
+      await h.d.execute(sql`insert into cloud_verifications(object_key,episode_id,ingest_id,sha256) values(${`episodes/${ep.episode_id}/${upload}/clip.mp4`},${ep.episode_id},${ep.latest_ingest_id},${digest})`);
+      await h.d.execute(sql`insert into cloud_verifications(object_key,episode_id,ingest_id,sha256) values(${`episodes/${ep.episode_id}/${upload}/00-first.png`},${ep.episode_id},${ep.latest_ingest_id},${'b'.repeat(64)})`);
+      const catalog = await h.send('GET', '/api/review/catalog?queue=privacy');
+      expect(catalog.statusCode, catalog.body).toBe(200);
+      const item = catalog.json().items.find((i: {episode_id:string}) => i.episode_id === ep.episode_id);
+      expect(item).toMatchObject({ source: 'phone', claimable: false, state: 'quarantined' });
+      expect(item.preview_url).toContain('/api/review/phone-preview/');
+      expect(item.filename).toBe('clip.mp4');
+      expect((await h.send('GET',item.thumbnail_url,undefined,h.reviewerHeaders)).body).toBe('phone-jpeg');
+      expect((await h.send('GET',item.thumbnail_url,undefined,h.headersB)).statusCode).toBe(404);
+      expect((await h.send('GET',item.thumbnail_url.replace('privacy','standard'))).statusCode).toBe(404);
+      expect((await h.send('GET', item.preview_url, undefined, h.headersB)).statusCode).toBe(404);
+      expect((await h.send('GET', item.preview_url.replace('privacy','standard'))).statusCode).toBe(404);
+      const preview = await h.send('GET', item.preview_url, undefined, h.reviewerHeaders);
+      expect(preview.statusCode, preview.body).toBe(200);
+      expect(preview.body).toBe(bytes.toString());
+      const partial = await h.app.inject({ method:'GET', url:item.preview_url, headers:{...h.headersA,range:'bytes=0-4'} });
+      expect(partial.statusCode).toBe(206);
+      expect(partial.body).toBe('phone');
+      expect((await h.send('POST', '/api/review/claim?queue=privacy', {episode_id:ep.episode_id}, h.reviewerHeaders)).statusCode).toBe(204);
+      const reviews = await h.d.execute(sql`select count(*)::int as n from episode_reviews where episode_id=${ep.episode_id}`);
+      expect(reviews[0]!.n).toBe(0);
+      const audit = await h.d.execute(sql`select actor_role from audit_events where action='review.phone_preview' and target_id=${ep.episode_id}`);
+      expect(audit.map(a=>a.actor_role).sort()).toEqual(['operator','reviewer']);
+      await h.d.execute(sql`insert into episode_reviews(id,episode_id,ingest_id,measured_duration_s,review_state,queue,assignee_ref)
+        values(${uid()},${ep.episode_id},${ep.latest_ingest_id},0,'pending','privacy',${h.ids.reviewerB})`);
+      const assignedCatalog = await h.send('GET','/api/review/catalog?queue=privacy',undefined,h.reviewerHeaders);
+      expect(assignedCatalog.json().items.some((i:{episode_id:string})=>i.episode_id===ep.episode_id)).toBe(false);
+      expect((await h.send('GET',item.preview_url,undefined,h.reviewerHeaders)).statusCode).toBe(404);
+      expect((await h.send('GET',item.thumbnail_url,undefined,h.reviewerHeaders)).statusCode).toBe(404);
+      expect((await h.send('GET',item.preview_url,undefined,h.reviewerHeadersB)).statusCode).toBe(200);
+      await h.d.execute(sql`update episodes set verification_state='pending' where episode_id=${ep.episode_id}`);
+      expect((await h.send('GET', item.preview_url, undefined, h.reviewerHeaders)).statusCode).toBe(404);
+      expect((await h.send('GET', item.thumbnail_url, undefined, h.reviewerHeaders)).statusCode).toBe(404);
+    } finally { await h.app.close(); await rm(root,{recursive:true,force:true}); }
+  });
+
+  it('reviewer phone preview obeys the remote-playback gate', async () => {
+    const h = await harness();
+    try {
+      expect((await h.send('GET', `/api/review/phone-preview/${uid()}?queue=privacy`, undefined, h.reviewerHeaders)).statusCode).toBe(451);
+      expect((await h.send('GET', `/api/review/thumbnail/${uid()}?queue=privacy`, undefined, h.reviewerHeaders)).statusCode).toBe(451);
+    } finally { await h.app.close(); }
+  });
+
   // -------------------------------------------------------------------------
   // A reviewer is an actor
 
