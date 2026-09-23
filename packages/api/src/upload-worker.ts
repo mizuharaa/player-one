@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs';
 import type { Readable } from 'node:stream';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
@@ -480,15 +481,17 @@ export const UPLOAD_ATTEMPTS = 3;
  * own default shape. A jittered or configurable policy is the upgrade path if a
  * real link ever wants one.
  */
-async function withRetry<T>(open: () => Promise<T>): Promise<T> {
+async function withRetry<T>(open: () => Promise<T>, signal: AbortSignal): Promise<T> {
   let last: unknown;
   for (let attempt = 1; attempt <= UPLOAD_ATTEMPTS; attempt += 1) {
     try {
+      signal.throwIfAborted();
       return await open();
     } catch (err) {
       last = err;
-      if (!retryableTransport(err) || attempt === UPLOAD_ATTEMPTS) throw err;
-      await new Promise((r) => setTimeout(r, 200 * 2 ** (attempt - 1)));
+      if (signal.aborted || !retryableTransport(err) || attempt === UPLOAD_ATTEMPTS) throw err;
+      await delay(200 * 2 ** (attempt - 1), undefined, { signal });
+      signal.throwIfAborted();
     }
   }
   throw last;
@@ -588,6 +591,31 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
     });
   }
 
+  // Race the abort as well as passing it to the SDK: its retry delay can ignore
+  // cancellation. A put passes one object deadline through every part/retry.
+  private async request<T>(
+    open: (options: { abortSignal: AbortSignal }) => Promise<T>,
+    parent?: AbortSignal,
+    deadlineMs = 10_000,
+  ): Promise<T> {
+    const timeout = AbortSignal.timeout(deadlineMs);
+    const signal = parent ? AbortSignal.any([parent, timeout]) : timeout;
+    const error = Object.assign(new Error('Object store operation deadline reached'), {
+      name: 'TimeoutError', $metadata: {},
+    });
+    if (signal.aborted) throw error;
+    let abort!: () => void;
+    const expired = new Promise<never>((_, reject) => {
+      abort = () => reject(error);
+      signal.addEventListener('abort', abort, { once: true });
+    });
+    try {
+      return await Promise.race([open({ abortSignal: signal }), expired]);
+    } finally {
+      signal.removeEventListener('abort', abort);
+    }
+  }
+
   async tag(key: string, tags: Record<string, string>): Promise<void> {
     // The SDK's retry back-off ignores aborts; the race also bounds that wait.
     await withTagDeadline(this.client.send(
@@ -600,9 +628,11 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
     ));
   }
 
-  async head(key: string): Promise<{ bytes: number; sha256: string | null } | null> {
+  async head(key: string, signal?: AbortSignal): Promise<{ bytes: number; sha256: string | null } | null> {
     try {
-      const r = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      const r = await this.request((options) => this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: key }), options,
+      ), signal);
       return { bytes: r.ContentLength ?? -1, sha256: r.Metadata?.['sha256'] ?? null };
     } catch (err) {
       if (notFound(err)) return null;
@@ -611,9 +641,10 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
   }
 
   async put(key: string, localPath: string, sha256: string, force = false): Promise<PutResult> {
+    const signal = objectBudget().signal;
     const size = (await stat(localPath)).size;
     if (!force) {
-      const existing = await this.head(key);
+      const existing = await this.head(key, signal);
       if (existing !== null && existing.sha256 === sha256 && existing.bytes === size) {
         return 'kept';
       }
@@ -623,17 +654,19 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
       // The stream is opened inside the closure: each attempt needs its own,
       // because a consumed one cannot be replayed. That is the whole reason
       // the SDK refuses to retry these at all.
-      await withRetry(() =>
-        this.client.send(
-          new PutObjectCommand({
-            Bucket: this.bucket,
-            Key: key,
-            Body: size === 0 ? new Uint8Array(0) : createReadStream(localPath),
-            ContentLength: size,
-            Metadata: { sha256 },
-          }),
-        ),
-      );
+      await withRetry(async () => {
+        const body = size === 0 ? new Uint8Array(0) : createReadStream(localPath);
+        try {
+          await this.request((options) => this.client.send(
+            new PutObjectCommand({
+              Bucket: this.bucket, Key: key, Body: body,
+              ContentLength: size, Metadata: { sha256 },
+            }), options,
+          ), signal, OBJECT_DEADLINE_MS);
+        } finally {
+          if (!(body instanceof Uint8Array)) body.destroy();
+        }
+      }, signal);
       return 'uploaded';
     }
 
@@ -641,13 +674,13 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
     // this key rather than starting a second, and re-send only the parts the
     // cloud does not already hold at the planned size.
     const done = new Map<number, { etag: string; size: number }>();
-    let uploadId = await this.findOpenUpload(key);
+    let uploadId = await this.findOpenUpload(key, signal);
     if (uploadId !== null) {
-      for (const p of await this.listParts(key, uploadId)) done.set(p.partNumber, p);
+      for (const p of await this.listParts(key, uploadId, signal)) done.set(p.partNumber, p);
     } else {
-      const created = await this.client.send(
-        new CreateMultipartUploadCommand({ Bucket: this.bucket, Key: key, Metadata: { sha256 } }),
-      );
+      const created = await this.request((options) => this.client.send(
+        new CreateMultipartUploadCommand({ Bucket: this.bucket, Key: key, Metadata: { sha256 } }), options,
+      ), signal);
       uploadId = created.UploadId!;
     }
 
@@ -661,28 +694,30 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
       // Same reason as the simple put above, and cheaper here: the offsets to
       // re-open at are already planned, so a retried part costs one part, not
       // the whole file.
-      const r = await withRetry(() =>
-        this.client.send(
-          new UploadPartCommand({
-            Bucket: this.bucket,
-            Key: key,
-            UploadId: uploadId,
-            PartNumber: part.partNumber,
-            Body: createReadStream(localPath, { start: part.start, end: part.end - 1 }),
-            ContentLength: part.end - part.start,
-          }),
-        ),
-      );
+      const r = await withRetry(async () => {
+        const body = createReadStream(localPath, { start: part.start, end: part.end - 1 });
+        try {
+          return await this.request((options) => this.client.send(
+            new UploadPartCommand({
+              Bucket: this.bucket, Key: key, UploadId: uploadId,
+              PartNumber: part.partNumber, Body: body,
+              ContentLength: part.end - part.start,
+            }), options,
+          ), signal, OBJECT_DEADLINE_MS);
+        } finally {
+          body.destroy();
+        }
+      }, signal);
       completed.push({ PartNumber: part.partNumber, ETag: r.ETag! });
     }
-    await this.client.send(
+    await this.request((options) => this.client.send(
       new CompleteMultipartUploadCommand({
         Bucket: this.bucket,
         Key: key,
         UploadId: uploadId,
         MultipartUpload: { Parts: completed.sort((a, b) => a.PartNumber - b.PartNumber) },
-      }),
-    );
+      }), options,
+    ), signal, OBJECT_DEADLINE_MS);
     return 'uploaded';
   }
 
@@ -740,11 +775,12 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
   }
 
   async beginMultipart(key: string, sha256: string): Promise<string> {
-    const open = await this.openMultipart(key);
+    const signal = AbortSignal.timeout(10_000);
+    const open = await this.findOpenUpload(key, signal);
     if (open !== null) return open;
-    const created = await this.client.send(
-      new CreateMultipartUploadCommand({ Bucket: this.bucket, Key: key, Metadata: { sha256 } }),
-    );
+    const created = await this.request((options) => this.client.send(
+      new CreateMultipartUploadCommand({ Bucket: this.bucket, Key: key, Metadata: { sha256 } }), options,
+    ), signal);
     return created.UploadId!;
   }
 
@@ -774,8 +810,9 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
   }
 
   async finishMultipart(key: string, uploadId: string): Promise<void> {
-    const parts = await this.listParts(key, uploadId);
-    await this.client.send(
+    const signal = objectBudget().signal;
+    const parts = await this.listParts(key, uploadId, signal);
+    await this.request((options) => this.client.send(
       new CompleteMultipartUploadCommand({
         Bucket: this.bucket,
         Key: key,
@@ -785,14 +822,14 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
             .sort((a, b) => a.partNumber - b.partNumber)
             .map((p) => ({ PartNumber: p.partNumber, ETag: p.etag })),
         },
-      }),
-    );
+      }), options,
+    ), signal, OBJECT_DEADLINE_MS);
   }
 
-  private async findOpenUpload(key: string): Promise<string | null> {
-    const r = await this.client.send(
-      new ListMultipartUploadsCommand({ Bucket: this.bucket, Prefix: key }),
-    );
+  private async findOpenUpload(key: string, signal = AbortSignal.timeout(10_000)): Promise<string | null> {
+    const r = await this.request((options) => this.client.send(
+      new ListMultipartUploadsCommand({ Bucket: this.bucket, Prefix: key }), options,
+    ), signal);
     const mine = (r.Uploads ?? [])
       .filter((u) => u.Key === key && u.UploadId !== undefined)
       .map((u) => ({ uploadId: u.UploadId!, initiated: u.Initiated ?? null }));
@@ -805,10 +842,11 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
        * for a delivery that does not arrive. The lifecycle rule is the backstop.
        */
       try {
-        await this.client.send(
-          new AbortMultipartUploadCommand({ Bucket: this.bucket, Key: key, UploadId: uploadId }),
-        );
+        await this.request((options) => this.client.send(
+          new AbortMultipartUploadCommand({ Bucket: this.bucket, Key: key, UploadId: uploadId }), options,
+        ), signal);
       } catch {
+        if (signal.aborted) break;
         /* ignored on purpose; see above */
       }
     }
@@ -818,18 +856,19 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
   private async listParts(
     key: string,
     uploadId: string,
+    signal = AbortSignal.timeout(10_000),
   ): Promise<{ partNumber: number; etag: string; size: number }[]> {
     const parts: { partNumber: number; etag: string; size: number }[] = [];
     let marker: string | undefined;
     do {
-      const r = await this.client.send(
+      const r = await this.request((options) => this.client.send(
         new ListPartsCommand({
           Bucket: this.bucket,
           Key: key,
           UploadId: uploadId,
           PartNumberMarker: marker,
-        }),
-      );
+        }), options,
+      ), signal);
       for (const p of r.Parts ?? []) {
         if (p.PartNumber !== undefined && p.ETag !== undefined && p.Size !== undefined) {
           parts.push({ partNumber: p.PartNumber, etag: p.ETag, size: p.Size });
