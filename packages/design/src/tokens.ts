@@ -56,7 +56,7 @@
 
 /** Collector v3 only; the console keeps its existing tokens. */
 export const collector = {
-  night: '#202827', nightSurface: '#34423F', paper: '#F5F6F3', surface: '#FFFFFF',
+  night: '#1F2726', nightSurface: '#34423F', paper: '#F5F6F3', surface: '#FFFFFF',
   ink: '#202827', muted: '#445048', line: '#B8C2B9', plum: '#286454', glow: '#C3DDD1',
   sun: '#D1E5DA', green: '#12A150', greenBg: '#DCF5E6', amber: '#D98E04', amberBg: '#FFF1D6',
   red: '#D92D20', redBg: '#FEE4E2', tech: '#1B6EF3',
