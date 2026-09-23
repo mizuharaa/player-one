@@ -211,6 +211,14 @@ export function registerCounter(
         return row;
       },
     );
+    if (written === undefined) {
+      const [existing] = await db.select().from(schema.handovers).where(eq(schema.handovers.id, b.id));
+      if (existing?.uploadCentreId !== actor.operator.uploadCentreId ||
+          existing.collectorId !== b.collector_id || existing.deviceId !== b.device_id ||
+          existing.tfCardId !== b.tf_card_id) {
+        return reply.code(409).send({ error: 'idempotency_conflict' });
+      }
+    }
     return reply.code(written === undefined ? 200 : 201).send({ id: b.id, replayed: written === undefined });
   });
 
@@ -233,6 +241,19 @@ export function registerCounter(
         ),
       );
     if (handover === undefined) return reply.code(404).send({ error: 'no such handover here' });
+
+    const matches = (existing: typeof schema.collectionSessions.$inferSelect | undefined) =>
+      existing?.handoverId === handoverId && existing.collectorId === handover.collectorId &&
+      existing.taskId === b.task_id && existing.scenarioId === b.scenario_id &&
+      existing.collectionPointId === (b.collection_point_id ?? null) &&
+      existing.othersInFrame === b.others_in_frame &&
+      existing.sensitiveInfoPresent === b.sensitive_info_present;
+    const [existing] = await db.select().from(schema.collectionSessions).where(eq(schema.collectionSessions.id, b.id));
+    // Existing accepted intent survives a later released claim or closed task.
+    // Retry timestamps/client versions do not rewrite the original declaration.
+    if (existing) return matches(existing)
+      ? reply.code(200).send({ id: b.id, replayed: true })
+      : reply.code(409).send({ error: 'idempotency_conflict' });
 
     /**
      * The claim this session is recorded under. See `claimForSession` above,
@@ -299,6 +320,10 @@ export function registerCounter(
         return row;
       },
     );
+    if (written === undefined) {
+      const [raced] = await db.select().from(schema.collectionSessions).where(eq(schema.collectionSessions.id, b.id));
+      if (!matches(raced)) return reply.code(409).send({ error: 'idempotency_conflict' });
+    }
     return reply
       .code(written === undefined ? 200 : 201)
       .send({ id: b.id, replayed: written === undefined });
@@ -342,6 +367,12 @@ export function registerCounter(
         return row;
       },
     );
+    if (written === undefined) {
+      const [existing] = await db.select().from(schema.uploadBatches).where(eq(schema.uploadBatches.id, b.id));
+      if (existing?.handoverId !== b.handover_id || existing.uploadDeviceId !== actor.machine.uploadDeviceId) {
+        return reply.code(409).send({ error: 'idempotency_conflict' });
+      }
+    }
     return reply
       .code(written === undefined ? 200 : 201)
       .send({ id: b.id, replayed: written === undefined });

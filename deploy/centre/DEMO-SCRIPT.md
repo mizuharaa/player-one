@@ -32,6 +32,7 @@ have a card already handed in, or the real handset for step 1.
 ```bash
 node packages/api/scripts/card-intake.mjs "$CARD/$SESSION" \
   --card <tf card id> --collector <collector's phone> \
+  --session <recording-group> --task <task> --scenario <scenario> \
   --others-in-frame yes|no --sensitive no
 ```
 
@@ -43,9 +44,9 @@ APP-17b answers the collector gave at the counter and have no default. Given a
 path on the card, the command copies the session into `PLAYERONE_MEDIA_ROOT`
 and compares every file's sha256 across the two before importing the copy; it
 never imports in place and never writes to the card. Then it opens or reuses
-today's handover, batch and declared session for this card, imports the
-session, submits the episode and uploads it with cloud read-back. `--task` is
-not needed: it defaults to the task the collector holds a live claim on.
+the handover, batch and declared session for this explicit recording group, imports the
+session, submits the episode and uploads it with cloud read-back. The named task
+must be one the collector holds a live claim on.
 
 **Evidence:** one table on stdout. Read the `batch` and `episode` rows aloud:
 
@@ -63,14 +64,14 @@ reuse         handover opened, batch opened, session opened
 ```
 
 `attribution automatic_single` is the row to watch on a card holding more than
-one recording. **Every recording intaken for this card today joins the same
+one recording. **Every recording intaken for this explicit group joins the same
 declared session**, so each one resolves by itself; the `reuse` row says
 `session reused` from the second onwards. It used to declare a session per
 recording, and then the resolver refused to choose between them — correctly,
 because time matching is for app-declared sessions only — and every recording
 after the first came back `unresolved -> session none (quarantined)` for an
 operator to fix by hand. If you see that row, stop and say so: it means
-something declared a second session for this card today.
+something declared a second session inside this recording group.
 
 `verification  verified` is the byte read-back verdict, and there is one
 `cloud_verifications` row per file with its own `sha256` behind it — not an
@@ -79,8 +80,8 @@ per-file verdict.
 
 **The retry, on purpose.** Run the identical command a second time in the
 room. It is the same batch, the same handover, the same episode and no second
-bill line — the ids are derived from the centre, the card, the collector and
-today's date, so a retry replays instead of importing again:
+bill line — the ids are derived from the centre, the card and
+the explicit recording-group reference, so a retry replays instead of importing again:
 
 ```
 copy          10 files, sha256 matched
@@ -315,11 +316,13 @@ drive, decline.
    method, not a second one.
 
 3. Import the copy (steps 1-2 above). Once per recording on the card; they all
-   join the one declared session for this card today:
+   join the explicit recording group only when their declarations match:
 
    ```bash
    node packages/api/scripts/card-intake.mjs "$INBOX/$SESSION" \
-     --card <tf card id> --collector <phone> --others-in-frame yes|no --sensitive no
+     --card <tf card id> --collector <phone> \
+     --session <recording-group> --task <task> --scenario <scenario> \
+     --others-in-frame yes|no --sensitive no
    ```
 
    The command also accepts the path **on the card** — `"$CARD/$SESSION"` —

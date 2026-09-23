@@ -1,51 +1,11 @@
 /**
- * One command for the counter: a session already copied off a TF card becomes
- * a verified episode on today's batch, and running it again changes nothing.
+ * Copy one recording off a card, measure it and submit it under an explicit
+ * operator-declared recording group. Repeat the same --session for recordings
+ * with the same task, scenario, collector, device and privacy declarations.
+ * A new task or declarations need a new group. Retries keep the same reference,
+ * including across midnight. The server refuses conflicting reuse.
  *
- *   node packages/api/scripts/card-intake.mjs <session-dir> \
- *     --card <tf card id> --collector <phone | external_ref | uuid> \
- *     --others-in-frame yes|no --sensitive yes|no
- *
- * Orchestration only. Every decision below is made by a route that already
- * exists — `POST /handovers`, `POST /upload-batches`,
- * `POST /handovers/:id/sessions`, `POST /upload-batches/:id/episodes` and
- * `POST /upload-batches/:id/upload` — and the measurement is the same
- * `ingest()` the counter command runs. It needs no `DATABASE_URL`, exactly as
- * `bin/counter.ts` does not, because the counter has to work with the link to
- * the office down.
- *
- * What it adds over `counter.ts import`, and the only reason it exists: that
- * command mints a fresh handover, batch and session id on every run, so an
- * operator who ran it twice on one directory got a second batch and a second
- * declared session for one card. Here all three ids are DERIVED from the same
- * four facts — the centre, the collector, the card and the machine's own
- * calendar day — so a second run replays into the same rows.
- * `POST /handovers`, `/upload-batches` and `/handovers/:id/sessions` are all
- * `on conflict do nothing` and answer `{ replayed: true }`, and `storeEpisode`
- * already answers `duplicate`, so the retry rule is the server's and not this
- * script's.
- *
- * ONE declared session per card per day, and that is the load-bearing part.
- * The id deliberately does NOT include the session directory's name. It did,
- * and the end-to-end smoke found what that costs: three recordings off one
- * card became three handover-origin sessions on one handover, and the resolver
- * then refused to choose between them and quarantined every episode after the
- * first — correctly, because CLAUDE.md gives time matching to `app`-origin
- * sessions only. With one candidate every episode on the card resolves
- * `automatic_single` and no operator has to call `POST /episodes/:id/resolve`.
- *
- * The cost, stated: the APP-17b declarations belong to that one session, so
- * the first intake of the day sets them and a later intake's flags do not
- * move them. The command says `session reused` when that happens. Two
- * recordings needing different declarations are two cards or an operator
- * correction, not one intake.
- *
- * A path on the mounted card is accepted and is never imported in place: the
- * directory is copied into `PLAYERONE_MEDIA_ROOT` first and every file's
- * sha256 is compared across the two, which is the same proof
- * `deploy/centre/hardware-check/card-check.sh` produces with a manifest pair.
- * Reads from the card, writes only to the destination. Nothing here moves or
- * deletes source media and no card is ever cleared.
+ * No card is cleared and source files are never moved or deleted.
  */
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -59,12 +19,12 @@ const usage = `Usage: node packages/api/scripts/card-intake.mjs <session-dir>
   --card <tf card id>
   --collector <phone | external_ref | uuid>
   --others-in-frame yes|no --sensitive yes|no
-  [--task <uuid | name>]        default: the collector's live claim
-  [--scenario <uuid | code>]    default: the only scenario
+  --session <recording-group reference>
+  --task <uuid | name>
+  --scenario <uuid | code>
   [--device <uuid | serial>]    default: the device bound to this collector
   [--prepare-time <ISO>]        default: now
-  [--day YYYY-MM-DD]            default: this machine's local date
-  [--api http://127.0.0.1:8080]
+  [--api http://127.0.0.1:8080] [--direct-upload]
 
 Credentials, the same four bin/counter.ts reads:
 PLAYERONE_MACHINE_IDENTIFIER, PLAYERONE_MACHINE_SECRET,
@@ -79,27 +39,26 @@ PLAYERONE_MEDIA_ROOT and every file's sha256 is compared across the two before
 anything is imported. A directory already inside PLAYERONE_MEDIA_ROOT is taken
 as the copy and is not copied again. The card is only ever read.
 
-Submitting the ingest record moves no bytes: the API must independently hold
+--direct-upload sends the copied files from this PC to signed cloud URLs.
+It requires PLAYERONE_MEDIA_ROOT for the durable local copy. Re-run the exact
+command to resume; neither the source card nor the local copy is deleted.
+
+Without --direct-upload, submitting the ingest record moves no bytes: the API must independently hold
 the same session at <its media root>/<basename>, which is what the copy above
 arranges when the API runs on this machine.
 
---day names the operator's shift, which is what groups a card's recordings
-into one declared session. It defaults to this machine's LOCAL date, not UTC: a
-UTC boundary cuts a Vietnamese afternoon in half. Pass it for a card imported
-after midnight for the shift that has just ended, and pass it with care —
-naming yesterday puts today's recordings on yesterday's session.
-
-Idempotent. A second run on the same directory, card, collector and day prints
-duplicate and writes no second episode, ingest or bill line. Every recording
-intaken for one card on one day joins ONE declared session, so each resolves
-automatically; the declarations are that session's and the first intake of the
-day sets them.`;
+Idempotent for the same centre, card and --session reference. Every recording
+in that explicit group shares one declared session. Conflicting collector,
+device, task, scenario or privacy declarations are refused, never overwritten.`;
 
 class UsageError extends Error {}
 class StepError extends Error {}
 
+// Allow roughly 1 Mbps for a chunk, with a two-hour ceiling for stalled requests.
+export const directPartTimeoutMs = (bytes) => Math.min(2 * 60 * 60 * 1000, Math.max(120_000, Math.ceil(bytes / 125)));
+
 /**
- * A v5-shaped uuid over a name, so the same card on the same day at the same
+ * A v5-shaped uuid over a name, so the same card and explicit recording group at the same
  * centre always addresses the same handover, batch and session rows.
  *
  * Node has no uuidv5 and a dependency for sixteen bytes would be the opposite
@@ -117,14 +76,6 @@ function derivedId(name) {
   const x = h.subarray(0, 16).toString('hex');
   return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20, 32)}`;
 }
-
-/**
- * The machine's LOCAL calendar day, not UTC. The operator's shift is local and
- * a UTC day boundary cuts a Vietnamese afternoon in half (UTC+7), which would
- * open a second batch mid-shift for no reason a person in the room could see.
- */
-const localDay = (d = new Date()) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 /**
  * Every regular file under a session directory, relative and sorted.
@@ -195,14 +146,15 @@ export function parseIntakeArgs(args) {
       allowPositionals: true,
       options: {
         card: { type: 'string' },
+        session: { type: 'string' },
         collector: { type: 'string' },
         'others-in-frame': { type: 'string' },
         sensitive: { type: 'string' },
         task: { type: 'string' },
         scenario: { type: 'string' },
+        'direct-upload': { type: 'boolean', default: false },
         device: { type: 'string' },
         'prepare-time': { type: 'string' },
-        day: { type: 'string' },
         api: { type: 'string', default: 'http://127.0.0.1:8080' },
       },
     });
@@ -231,19 +183,17 @@ export function parseIntakeArgs(args) {
   }
   const prepare = new Date(v['prepare-time'] ?? new Date().toISOString());
   if (Number.isNaN(prepare.getTime())) throw new UsageError('--prepare-time must be an ISO datetime');
-  const day = v.day ?? localDay();
-  // Strict, because a mistyped day silently merges two shifts into one session.
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new UsageError('--day must be YYYY-MM-DD');
   return {
     sessionDir: resolve(parsed.positionals[0]),
     card: required('card'),
     collector: required('collector'),
     othersInFrame: yesNo('others-in-frame'),
     sensitive: yesNo('sensitive'),
-    task: v.task,
-    scenario: v.scenario,
+    directUpload: v['direct-upload'],
+    session: required('session'),
+    task: required('task'),
+    scenario: required('scenario'),
     device: v.device,
-    day,
     prepareTime: prepare.toISOString(),
     api: v.api,
   };
@@ -311,6 +261,7 @@ async function main() {
      */
     const mediaRoot = process.env['PLAYERONE_MEDIA_ROOT'];
     let sessionDir = o.sessionDir;
+    if (o.directUpload && !mediaRoot) throw new UsageError('PLAYERONE_MEDIA_ROOT is required for direct upload');
     if (mediaRoot === undefined || mediaRoot === '') {
       note('PLAYERONE_MEDIA_ROOT is unset; nothing can be copied off a card and server-side media availability is not verified');
       out.copy = 'skipped (PLAYERONE_MEDIA_ROOT unset)';
@@ -328,6 +279,7 @@ async function main() {
       const response = await fetch(`${base}${path}`, {
         method,
         redirect: 'manual',
+        signal: AbortSignal.timeout(/\/upload(?:\?|$)/.test(path) ? 2 * 60 * 60 * 1000 : 120_000),
         headers: body === undefined ? headers : { ...headers, 'content-type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
@@ -371,36 +323,16 @@ async function main() {
             'device',
           )
         : pick(reference.devices, o.device, ['id', 'hardwareSerial'], 'device');
-    /**
-     * The task the COLLECTOR holds a live claim on, not the first published
-     * one. `POST /handovers/:id/sessions` refuses `session_claim_missing`
-     * unless the claim exists, and the smoke run was refused on its very first
-     * command because the demo database's first published task was not the
-     * demo collector's claim. `task_claims_live_key` allows one live claim per
-     * collector per task, so a pilot collector has exactly one and there is
-     * nothing to choose between.
-     */
     const claims = (reference.task_claims ?? []).filter(
       (c) => c.collectorId === collector.id && c.releasedAt === null,
     );
     const claimed = reference.tasks.filter((t) => claims.some((c) => c.taskId === t.id));
-    const task =
-      o.task === undefined
-        ? pick(claimed, claimed[0]?.id ?? '', ['id'], 'task')
-        : pick(reference.tasks, o.task, ['id', 'name'], 'task');
-    const scenario =
-      o.scenario === undefined
-        ? pick(reference.scenarios, reference.scenarios[0]?.id ?? '', ['id'], 'scenario')
-        : pick(reference.scenarios, o.scenario, ['id', 'code'], 'scenario');
+    const task = pick(reference.tasks, o.task, ['id', 'name'], 'task');
+    const scenario = pick(reference.scenarios, o.scenario, ['id', 'code'], 'scenario');
 
-    const key = `${signedIn.upload_centre_id}/${collector.id}/${o.card}/${o.day}`;
+    const key = JSON.stringify([signedIn.upload_centre_id, o.card, o.session]);
     const handoverId = derivedId(`playerone/card-intake/handover/${key}`);
     const batchId = derivedId(`playerone/card-intake/batch/${handoverId}`);
-    /**
-     * The same key as the handover: one declared session per card per day, and
-     * not one per directory. See the header — one candidate is what lets the
-     * resolver answer `automatic_single` for every recording on the card.
-     */
     const sessionId = derivedId(`playerone/card-intake/session/${key}`);
 
     step = 'handover';
@@ -452,7 +384,7 @@ async function main() {
       `, batch ${batch.replayed ? 'reused' : 'opened'}` +
       `, session ${declared.replayed ? 'reused' : 'opened'}`;
     if (declared.replayed === true) {
-      note('session reused: the APP-17b declarations recorded by the first intake of the day stand');
+      note('session reused: collector, device, task, scenario and privacy declarations matched');
     }
 
     step = 'ingest';
@@ -470,12 +402,58 @@ async function main() {
       `${episode.attribution_kept ?? episode.resolution_method ?? 'unresolved'}` +
       ` -> session ${episode.collection_session_id ?? 'none'} (${episode.resolution_state})`;
 
-    step = 'upload';
-    const uploaded = await post(`/upload-batches/${batchId}/upload`);
+    let uploaded;
+    if (o.directUpload) {
+      step = 'upload-plan';
+      const files = [];
+      for (const name of await inventory(sessionDir)) {
+        if (name.includes('/')) throw new StepError('nested recording folders are unsupported; choose one flat session directory');
+        const path = join(sessionDir, name);
+        files.push({ relative_path: name, bytes: (await stat(path)).size, sha256: await sha256(path) });
+      }
+      const identity = { episode_id: record.episode_id, ingest_id: episode.ingest_id };
+      if (!identity.ingest_id) throw new StepError('API does not support direct card delivery; missing ingest_id');
+      const declared = new Map(files.map((f) => [f.relative_path, f]));
+      const plan = await post(`/upload-batches/${batchId}/upload-plan`, { ...identity, files });
+      step = 'upload-bytes';
+      for (const file of plan.files) {
+        const local = declared.get(file.relative_path);
+        if (!local || file.sha256 !== local.sha256 || file.bytes !== local.bytes) throw new StepError('server upload plan differs from local inventory');
+        if (file.done) continue;
+        const parts = file.put_url ? [{ url: file.put_url, start: 0, end: file.bytes, bytes: file.bytes }] : file.parts;
+        if (!Array.isArray(parts)) throw new StepError('server returned no upload parts');
+        for (const part of parts) {
+          if (!Number.isSafeInteger(part.start) || !Number.isSafeInteger(part.end) ||
+              part.start < 0 || part.end < part.start || part.end > file.bytes || part.bytes !== part.end - part.start) {
+            throw new StepError('server returned an invalid byte range');
+          }
+          const url = new URL(part.url);
+          if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname))) {
+            throw new StepError('direct upload requires HTTPS (except loopback tests)');
+          }
+          const stream = part.bytes === 0 ? null : createReadStream(join(sessionDir, file.relative_path), { start: part.start, end: part.end - 1 });
+          try {
+            const response = await fetch(url, { method: 'PUT', redirect: 'error',
+              body: stream ?? Buffer.alloc(0), duplex: 'half',
+              headers: { 'content-length': String(part.bytes) },
+              signal: AbortSignal.timeout(directPartTimeoutMs(part.bytes)) });
+            await response.arrayBuffer();
+            if (!response.ok) throw new StepError(`upload failed HTTP ${response.status}; re-run the same command to resume`);
+          } finally { stream?.destroy(); }
+          note(`uploaded ${file.relative_path}: ${part.end}/${file.bytes} bytes`);
+        }
+      }
+      step = 'cloud-readback';
+      uploaded = await post(`/upload-batches/${batchId}/upload?source=direct`, identity);
+    } else {
+      step = 'upload';
+      uploaded = await post(`/upload-batches/${batchId}/upload`);
+    }
     out.verification =
       uploaded.episodes?.find((e) => e.episode_id === record.episode_id)?.verification_state ??
       (uploaded.cloud_verified === true ? 'verified' : 'unverified');
-    if (uploaded.cloud_verified !== true) throw new StepError('the batch was not cloud verified');
+    if (out.verification !== 'verified') throw new StepError('the episode was not cloud verified');
+    if (!o.directUpload && uploaded.cloud_verified !== true) throw new StepError('the batch was not cloud verified');
     process.exitCode = 0;
   } catch (error) {
     note(error instanceof StepError ? error.message : inspect(error));

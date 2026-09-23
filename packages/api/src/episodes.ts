@@ -390,6 +390,7 @@ export function registerEpisodes(
 
       results.push({
         episode_id: stored.episodeId,
+        ingest_id: stored.ingestId,
         outcome: stored.outcome,
         /**
          * The attribution the platform now holds — which, when a phone got

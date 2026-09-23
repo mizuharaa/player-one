@@ -237,6 +237,63 @@ describe.skipIf(!hasDb())('the counter workflow', () => {
 
   // -- §10.10 --------------------------------------------------------------
 
+  it('rejects conflicting replay without changing the original attribution', async () => {
+    const ids = await seed();
+    const c = await client();
+    const d = await db();
+    const collector2 = uid(), device2 = uid(), task2 = uid(), scenario2 = uid();
+    await d.execute(sql`insert into collectors (id, external_ref, status) values (${collector2}, 'c-2', 'qualified')`);
+    await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status) values (${device2}, ${ids.deviceType}, 'OTHER', 'active')`);
+    await d.execute(sql`insert into tasks (id, name, unit_price, max_concurrent_claimants, status) values (${task2}, 'other', 1200, 5, 'published')`);
+    await d.execute(sql`insert into scenarios (id, code, privacy_risk_level) values (${scenario2}, 'other', 'low')`);
+    await liveClaim(d, task2, ids.collector);
+    const handover = { id: uid(), collector_id: ids.collector, device_id: ids.egoDevice,
+      tf_card_id: 'CARD-1', handover_time: '2026-09-23T09:00:00.000Z' };
+    expect((await c.post('/handovers', handover)).statusCode).toBe(201);
+    for (const patch of [{ collector_id: collector2 }, { device_id: device2 }, { tf_card_id: 'CARD-2' }]) {
+      const result = await c.post('/handovers', { ...handover, ...patch });
+      expect(result.statusCode, result.body).toBe(409);
+      expect(result.json().error).toBe('idempotency_conflict');
+    }
+    const session = { id: uid(), task_id: ids.task, scenario_id: ids.scenario,
+      others_in_frame: false, sensitive_info_present: false, prepare_time: '2026-09-23T08:00:00.000Z' };
+    const sessionUrl = `/handovers/${handover.id}/sessions`;
+    expect((await c.post(sessionUrl, session)).statusCode).toBe(201);
+    for (const patch of [{ task_id: task2 }, { scenario_id: scenario2 },
+      { others_in_frame: true }, { sensitive_info_present: true }]) {
+      const result = await c.post(sessionUrl, { ...session, ...patch });
+      expect(result.statusCode, result.body).toBe(409);
+      expect(result.json().error).toBe('idempotency_conflict');
+    }
+    const otherHandover = { ...handover, id: uid() };
+    expect((await c.post('/handovers', otherHandover)).statusCode).toBe(201);
+    const batch = { id: uid(), handover_id: handover.id, import_started_at: handover.handover_time };
+    expect((await c.post('/upload-batches', batch)).statusCode).toBe(201);
+    expect((await c.post('/upload-batches', { ...batch, handover_id: otherHandover.id })).json().error).toBe('idempotency_conflict');
+    for (const [url, payload] of [['/handovers', handover], [sessionUrl, session], ['/upload-batches', batch]] as const) {
+      const result = await c.post(url, payload);
+      expect(result.statusCode, result.body).toBe(200);
+      expect(result.json().replayed).toBe(true);
+    }
+    expect(await count('handovers')).toBe(2);
+    expect(await count('collection_sessions')).toBe(1);
+    expect(await count('upload_batches')).toBe(1);
+
+    // A valid machine/operator pair in another centre cannot reuse this id.
+    const centre2 = uid(), machine2 = uid(), operator2 = uid(), hash = await hashCredential('pw');
+    await d.execute(sql`insert into upload_centres (id, region, name, status) values (${centre2}, 'HN', 'other', 'active')`);
+    await d.execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash) values (${machine2}, ${centre2}, 'OTHER', 'active', ${hash})`);
+    await d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role, credential_hash) values (${operator2}, ${centre2}, 'other-op', 'centre_operator', ${hash})`);
+    const machine = await c.app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: 'OTHER', secret: 'pw' } });
+    const operator = await c.app.inject({ method: 'POST', url: '/auth/operator', payload: { external_ref: 'other-op', secret: 'pw' } });
+    const foreign = await c.app.inject({ method: 'POST', url: '/handovers', payload: handover,
+      headers: { 'x-machine-token': `Bearer ${machine.json().token}`, authorization: `Bearer ${operator.json().token}` } });
+    expect(foreign.statusCode).toBe(409);
+    expect(foreign.json().error).toBe('idempotency_conflict');
+    expect(await count('handovers')).toBe(2);
+    await c.app.close();
+  });
+
   describe('APP-17b: a session cannot exist without both declarations', () => {
     it('is refused by the database', async () => {
       const ids = await seed();
@@ -473,6 +530,28 @@ describe.skipIf(!hasDb())('the counter workflow', () => {
         sql`select task_claim_id, unit_price, currency from collection_sessions where id = ${sessionA}`,
       )) as unknown as Record<string, string>[];
       expect(row).toEqual({ task_claim_id: ids.claim, unit_price: '1200.0000', currency: 'VND' });
+    });
+
+    it('replays accepted intent after claim release or task closure without admitting a new session', async () => {
+      const ids = await seed();
+      const c = await client();
+      const { handover } = await fullRun(c, ids);
+      const body = sessionBody(ids);
+      const url = `/handovers/${handover}/sessions`;
+      expect((await c.post(url, body)).statusCode).toBe(201);
+      const before = await count('collection_sessions');
+      await (await db()).execute(sql`update tasks set status = 'taken_down' where id = ${ids.task}`);
+      expect((await c.post(url, body)).json().replayed).toBe(true);
+      expect((await c.post(url, { ...body, id: uid() })).json().constraint).toBe('session_task_not_published');
+      await (await db()).execute(sql`update task_claims set released_at = now() where id = ${ids.claim}`);
+      const replay = await c.post(url, body);
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json().replayed).toBe(true);
+      expect((await c.post(url, { ...body, id: uid() })).json().constraint).toBe('session_claim_released');
+      expect((await c.post(url, { ...body, task_id: uid() })).json().error).toBe('idempotency_conflict');
+      expect((await c.post(url, { ...body, sensitive_info_present: true })).json().error).toBe('idempotency_conflict');
+      expect(await count('collection_sessions')).toBe(before);
+      await c.app.close();
     });
 
     it('refuses a session for a collector with no claim on the task', async () => {

@@ -201,46 +201,48 @@ and a second declared session behind. For a card at the counter use
 node packages/api/scripts/card-intake.mjs <session-dir> \
   --card <tf card id> --collector <phone | external_ref | uuid> \
   --others-in-frame yes|no --sensitive yes|no \
-  [--task <uuid|name>] [--scenario <uuid|code>] [--device <uuid|serial>] \
-  [--prepare-time <ISO>] [--day YYYY-MM-DD] [--api http://127.0.0.1:8080]
+  --session <recording-group> --task <uuid|name> --scenario <uuid|code> [--device <uuid|serial>] \
+  [--prepare-time <ISO>] [--api http://127.0.0.1:8080]
 ```
 
 which reads the same four credentials, needs no `DATABASE_URL`, and does the
 whole counter step: copy the session off the mounted card into
 `PLAYERONE_MEDIA_ROOT` comparing every file's sha256 across the two, open or
-reuse today's handover, batch and declared session for this card, import,
+reuse the handover, batch and declared session for this recording group, import,
 submit the episode, and upload with cloud read-back. A `<session-dir>` already inside `PLAYERONE_MEDIA_ROOT` is
 taken as the copy and is not copied again; the card is only ever read.
 
-Task, scenario and device default to **the task this collector holds a live
-claim on**, the only scenario, and the device bound to this collector, all
-resolved through `GET /reference/sync`. The task default is the claim and not
-the first published task because `POST /handovers/:id/sessions` refuses
-`session_claim_missing` without one, and on a database with two published
-tasks the first one is a coin toss; the refusal path prints the collector's
-live claims and the `--task` to pass. The collector may be named by phone,
-which is why the lookup is that route: `GET /api/collectors` carries no phone.
-The two APP-17b declarations are required and have no default.
+The operator must name `--session`, `--task`, and `--scenario`. Reuse the same
+session reference for recordings with the same collector, device, task, scenario
+and privacy declarations. A different task or declaration needs a new reference.
+The device defaults only when exactly one device is bound to the collector.
 
-**One declared session per card per day.** The handover, batch and session ids
-are all derived from the centre, the collector, the card and `--day` (default:
-this machine's local date, never UTC), so every recording intaken off one card
-on one day joins one session and each resolves `automatic_single`. Declaring a
-session per recording is what made the resolver quarantine everything after
-the first: several handover-origin candidates and no rule to choose between
-them, because time matching belongs to app-origin sessions. The cost is that
-the APP-17b declarations are the session's — the first intake of the day sets
-them, later intakes print `session reused` and do not move them.
+The centre, card and session reference derive stable handover/batch/session ids,
+including across midnight. A conflicting replay is refused instead of keeping
+silently different declarations. The API still requires a live task claim.
 
 It prints one table on stdout — session, copy, episode, ingest outcome
 (`new`/`duplicate`), verification state, attribution, batch, and which of the
 handover, batch and session were reused — and exits 0 only when the batch came
 back cloud verified. **Running it twice on the same
-directory, card, collector and day is safe**: the handover, batch and session
-ids are derived from those four, all three routes are `on conflict do nothing`,
-and the second run prints `duplicate` with no second episode, ingest or bill
+directory, card and recording-group reference is safe**: exact retries reuse the
+rows and conflicting attribution is refused. The second run prints `duplicate`
+with no second episode, ingest or bill
 line. `counter.ts upload --batch <id>` still resumes the cloud leg alone from
 the batch id in the table.
+
+For a centre PC whose files are not on the API server, add `--direct-upload`
+and `--api https://<deployed-api>`. The same command copies into the local
+`PLAYERONE_MEDIA_ROOT`, sends file bytes to signed storage URLs, and asks the
+API to assemble and read back that exact episode/ingest. The API needs migration
+`0037_transport_extras` and a configured presigning object store. It does not
+need a copy of the centre disk to verify a direct delivery. Playback is a
+separate server capability.
+
+An interrupted command exits nonzero. Re-run it with the same card, group and
+declarations: completed cloud parts are reused and the source card and local
+copy remain. A changed manifest on the same ingest is refused as
+`transport_inventory_conflict`; preserve both copies for operator resolution.
 
 ## Running it
 

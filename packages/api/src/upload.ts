@@ -1,10 +1,13 @@
+import { classify } from '../../ingest/src/discover.ts';
 import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
+import { assemble, signedPlan, DeclaredFile } from './direct-upload.ts';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from './audit.ts';
 import type { CounterActor } from './actor.ts';
-import { uploadEpisode, type ObjectStore, type UploadProgress } from './upload-worker.ts';
+import { uploadEpisode, verifyUploadedEpisode, objectKey, storageUnreachable, type DirectUploadStore, type ObjectStore, type UploadProgress } from './upload-worker.ts';
 
 /**
  * Path C's cloud leg, server half: UPL-03/04/05/06, UPL-15/16.
@@ -150,6 +153,74 @@ export function registerUpload(
     return batch;
   };
 
+  const directStore = (): (ObjectStore & DirectUploadStore) | undefined =>
+    options.objectStore && typeof (options.objectStore as Partial<DirectUploadStore>).presignPut === 'function'
+      ? options.objectStore as ObjectStore & DirectUploadStore : undefined;
+  const directFiles = z.array(DeclaredFile.extend({
+    bytes: z.number().int().nonnegative().safe(),
+    relative_path: DeclaredFile.shape.relative_path.refine((name) =>
+      name.length <= 240 && !/[<>:"|?*\x00-\x1f]/.test(name)),
+  })).min(1).max(10000);
+  const directIdentity = z.object({ episode_id: z.string().uuid(), ingest_id: z.string().uuid() });
+  const planBody = directIdentity.extend({ files: directFiles });
+  const canonical = (files: z.infer<typeof directFiles>) =>
+    [...files].sort((a, b) => a.relative_path < b.relative_path ? -1 : a.relative_path > b.relative_path ? 1 : 0);
+
+  app.post('/upload-batches/:id/upload-plan', opts, async (req, reply) => {
+    const body = planBody.safeParse(req.body);
+    const batchId = (req.params as { id: string }).id;
+    if (!body.success || !z.string().uuid().safeParse(batchId).success) return reply.code(400).send({ error: 'invalid direct upload plan' });
+    const actor = req.actor as CounterActor;
+    if (!await batchOf(batchId, actor)) return reply.code(404).send({ error: 'no such batch on this machine' });
+    const store = directStore();
+    if (!store) return reply.code(503).send({ error: 'direct upload storage is not configured' });
+    const [row] = await db.select({ record: schema.episodeIngests.recordJson,
+      ingestId: schema.episodes.latestIngestId, state: schema.episodes.verificationState,
+      manifestPresent: schema.episodeIngests.manifestPresent })
+      .from(schema.episodes).innerJoin(schema.episodeIngests, eq(schema.episodeIngests.ingestId, schema.episodes.latestIngestId))
+      .where(and(eq(schema.episodes.episodeId, body.data.episode_id), eq(schema.episodes.uploadBatchId, batchId)));
+    if (!row) return reply.code(404).send({ error: 'no such episode on this batch' });
+    if (row.ingestId !== body.data.ingest_id) return reply.code(409).send({ error: 'stale_ingest' });
+    const record = EpisodeRecord.parse(row.record);
+    const files = canonical(body.data.files);
+    const byPath = new Map(files.map((f) => [f.relative_path, f]));
+    if (byPath.size !== files.length || files.reduce((n, f) => n + f.bytes, 0) > 64 * 1024 ** 3) {
+      return reply.code(400).send({ error: 'duplicate paths or delivery exceeds 64 GiB' });
+    }
+    if (record.source_files.some((f) => {
+      const delivered = byPath.get(f.relative_path);
+      return !delivered || delivered.sha256 !== f.sha256 || delivered.bytes !== f.bytes;
+    })) return reply.code(409).send({ error: 'source_inventory_mismatch' });
+    const known = new Set(record.source_files.map((f) => f.relative_path));
+    const extras = files.filter((f) => !known.has(f.relative_path));
+    if (row.manifestPresent && !extras.some((f) => classify(f.relative_path)?.kind === 'manifest')) {
+      return reply.code(400).send({ error: 'manifest_missing' });
+    }
+    await mutate(db, actor, { action: 'upload.transport_inventory', targetTable: 'episode_ingests',
+      targetId: row.ingestId, after: { extra_files: extras } }, async (tx) => {
+      const [written] = await tx.update(schema.episodeIngests).set({ transportExtraFiles: extras })
+        .where(and(eq(schema.episodeIngests.ingestId, row.ingestId!), isNull(schema.episodeIngests.transportExtraFiles))).returning();
+      return written;
+    });
+    const [held] = await db.select({ extras: schema.episodeIngests.transportExtraFiles }).from(schema.episodeIngests)
+      .where(eq(schema.episodeIngests.ingestId, row.ingestId));
+    const storedExtras = z.array(DeclaredFile).parse(held?.extras);
+    if (JSON.stringify(storedExtras) !== JSON.stringify(extras)) return reply.code(409).send({
+      error: 'transport_inventory_conflict', stored_extra_files: storedExtras, requested_extra_files: extras,
+    });
+    try {
+      // Never mint fresh write URLs for an already verified delivery. Completion
+      // can detect missing/corrupt bytes and mark failed before a repair plan.
+      const plan = row.state === 'verified'
+        ? files.map((f) => ({ ...f, key: objectKey(body.data.episode_id, row.ingestId!, f.relative_path), done: true }))
+        : await signedPlan(store, body.data.episode_id, row.ingestId, files, new Map(files.map((f) => [f.relative_path, f.bytes])), row.state === 'failed');
+      return reply.send({ ...body.data, files: plan });
+    } catch (error) {
+      if (storageUnreachable(error)) return reply.code(503).send({ error: 'storage_unavailable' });
+      throw error;
+    }
+  });
+
   /**
    * UPL-04/05: push every episode of the batch to the cloud, then verify each
    * by read-back and record the verdict. Safe to re-run at any point, and a
@@ -166,14 +237,19 @@ export function registerUpload(
   app.post('/upload-batches/:id/upload', opts, async (req, reply) => {
     const actor = req.actor as CounterActor;
     const batchId = (req.params as { id: string }).id;
+    const source = (req.query as Record<string, string>)['source'];
+    if (source !== undefined && source !== 'direct') return reply.code(400).send({ error: 'invalid upload source' });
+    const direct = source === 'direct' ? directIdentity.safeParse(req.body) : undefined;
+    if (direct && (!direct.success || !z.string().uuid().safeParse(batchId).success)) return reply.code(400).send({ error: 'invalid direct completion' });
+    if (direct && !directStore()) return reply.code(503).send({ error: 'direct upload storage is not configured' });
     if (options.objectStore === undefined) {
       return reply.code(503).send({ error: 'no object store is configured on this machine' });
     }
-    if (options.mediaRoot === undefined || options.mediaRoot === '') {
+    if (!direct && (options.mediaRoot === undefined || options.mediaRoot === '')) {
       return reply.code(503).send({ error: 'no media root is configured on this machine' });
     }
     const store = options.objectStore;
-    const mediaRoot = options.mediaRoot;
+    const mediaRoot = options.mediaRoot ?? '';
 
     const batch = await batchOf(batchId, actor);
     if (batch === undefined) return reply.code(404).send({ error: 'no such batch on this machine' });
@@ -240,13 +316,15 @@ export function registerUpload(
         verificationState: schema.episodes.verificationState,
         sourceBasename: schema.episodeIngests.sourceBasename,
         recordJson: schema.episodeIngests.recordJson,
+        extraFiles: schema.episodeIngests.transportExtraFiles,
       })
       .from(schema.episodes)
       .innerJoin(
         schema.episodeIngests,
         eq(schema.episodeIngests.ingestId, schema.episodes.latestIngestId),
       )
-      .where(eq(schema.episodes.uploadBatchId, batchId));
+      .where(and(eq(schema.episodes.uploadBatchId, batchId), ...(direct?.success ? [eq(schema.episodes.episodeId, direct.data.episode_id)] : [])));
+    if (direct?.success && (rows.length !== 1 || rows[0]!.ingestId !== direct.data.ingest_id)) return reply.code(409).send({ error: 'stale_ingest' });
 
     const results: Record<string, unknown>[] = [];
     for (const row of rows) {
@@ -269,7 +347,15 @@ export function registerUpload(
       );
       let outcome;
       try {
-        outcome = await uploadEpisode(
+        if (direct) {
+          const extras = z.array(DeclaredFile).safeParse(row.extraFiles);
+          if (!extras.success) return reply.code(409).send({ error: 'transport_inventory_missing' });
+          const files = [...parsed.data.source_files, ...extras.data];
+          await assemble(directStore()!, files, new Map(files.map((f) => [f.relative_path, f.bytes])),
+            (path) => objectKey(row.episodeId, row.ingestId, path));
+          outcome = await verifyUploadedEpisode(store, { episodeId: row.episodeId, ingestId: row.ingestId },
+            files, options.uploadProgress ?? verificationReceipts(db, row.ingestId));
+        } else outcome = await uploadEpisode(
           store,
           {
             episodeId: row.episodeId,
@@ -340,6 +426,7 @@ export function registerUpload(
               and(
                 eq(schema.episodes.episodeId, row.episodeId),
                 eq(schema.episodes.latestIngestId, row.ingestId),
+                eq(schema.episodes.uploadBatchId, batchId),
               ),
             )
             .returning();
@@ -450,10 +537,12 @@ export function registerUpload(
      * asking about the present. Every episode on the batch is in `results`,
      * so the current answer is already in hand and costs no query.
      */
+    const [currentBatch] = await db.select({ clear: noneUnverified(batchId) }).from(schema.uploadBatches).where(eq(schema.uploadBatches.id, batchId));
     return reply.send({
       batch_id: batchId,
       episodes: results,
       cloud_verified:
+        currentBatch?.clear === true &&
         results.length > 0 && results.every((r) => r['verification_state'] === 'verified'),
     });
   });

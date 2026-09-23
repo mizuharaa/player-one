@@ -46,7 +46,7 @@ elif [[ ${1:-} == --session && $# -ge 3 ]]; then
   check 'real Ego session card-intake.mjs' dc run --rm --no-deps -T \
     -v "$session:/card/$(basename "$session"):ro" ops \
     node packages/api/scripts/card-intake.mjs "/card/$(basename "$session")" "$@"
-else echo 'FAIL usage: verify.sh [--session /absolute/ego_* --card ID --collector REF --others-in-frame yes|no --sensitive yes|no ...]'; failed=1
+else echo 'FAIL usage: verify.sh [--session /absolute/ego_* --card ID --collector REF --session GROUP --task TASK --scenario SCENARIO --others-in-frame yes|no --sensitive yes|no ...]'; failed=1
 fi
 echo 'SKIPPED remote reviewer network: repeat the console sign-in from the reviewer location'
 echo "Report: deploy/cloud/$report"

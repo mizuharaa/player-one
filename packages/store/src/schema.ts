@@ -237,8 +237,11 @@ export const episodeIngests = pgTable(
     /** The full EpisodeRecord, verbatim. The typed columns above are for
      * querying; this is the source of truth and is never reshaped. */
     recordJson: jsonb('record_json').notNull(),
+    /** Immutable raw extras (including manifest) declared by a remote upload centre. */
+    transportExtraFiles: jsonb('transport_extra_files'),
   },
   (t) => [
+    check('episode_ingests_transport_extras_array', sql`${t.transportExtraFiles} is null or jsonb_typeof(${t.transportExtraFiles}) = 'array'`),
     index('episode_ingests_episode_idx').on(t.episodeId, t.ingestedAt.desc()),
     index('episode_ingests_fingerprint_idx').on(t.contentFingerprint),
     /**

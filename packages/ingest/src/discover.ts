@@ -66,7 +66,7 @@ const REST =
 const DIR_NAME = /^(?<device>Orbbec_Ego|[A-Za-z0-9]+)_(?<serial>[^_]+)_(?<date>\d{8})_(?<time>\d{6})$/;
 const PAXINI_EPISODE = /^episode_\d+_\d{6}_\d+_\d+(_[a-z0-9]+)?\.hdf5$/;
 
-function classify(name: string): Omit<FileEntry, 'path' | 'bytes' | 'mtimeMs'> | null {
+export function classify(name: string): Omit<FileEntry, 'path' | 'bytes' | 'mtimeMs'> | null {
   const meta = MANIFEST.exec(name);
   if (meta) {
     return { file: name, kind: 'manifest', role: null, partNumber: null, serial: meta.groups!['serial']! };

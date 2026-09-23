@@ -196,6 +196,7 @@ node packages/api/scripts/card-intake.mjs \
   "/media/<user>/PlayerOne/Orbbec_Ego_AZER76400HV_<stamp>" \
   --card TF-DEMO-0001 \
   --collector +84900000001 \
+  --session DEMO-GROUP-0001 --scenario <scenario-code> \
   --task "Demo housework" \
   --others-in-frame no --sensitive no
 ```
@@ -205,7 +206,7 @@ purpose: they are the APP-17b answers the collector gave at the counter, and a
 default would be filing a consent answer nobody made. `bin/counter.ts import`
 is the older path and takes **uuids** for `--task`, `--collector`, `--device`
 and `--scenario`; `card-intake.mjs` derives the handover, batch and session ids
-from the centre, the card, the collector and the day, so running it twice
+from the centre, the card and the explicit recording-group reference, so running it twice
 replays into the same rows instead of opening a second batch.
 
 **Expected:** the intake command finishes both the upload and the cloud
@@ -219,13 +220,9 @@ batch id aloud from the `batch` line.
 idempotent (measured: the second run prints `duplicate`, reuses the handover,
 batch and session, and creates nothing). `counter.ts import` is not a
 substitute: it wants five uuids, not a phone and a card.
-**`operator_confirmation_required` cannot fire on this path**:
-`card-intake.mjs` derives the session id from centre + collector + card + day,
-so there is only ever one handover-origin session to resolve into, and every
-intake on that card and day answers `automatic_single` (measured 2026-09-15,
-five intakes in a row). The refusal is real only for `session_origin = 'app'`,
-where auto time-matching against a microsecond PTS start can find two
-candidates — that belongs to the phone-upload recovery, not this one.
+Each explicit recording group has one handover-origin session. Reuse that group
+only while task, scenario, collector, device and privacy declarations match;
+the API refuses conflicting reuse. A new group needs a new `--session` reference.
 
 ### 0:08 — upload and cloud verify · operator
 

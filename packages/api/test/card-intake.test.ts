@@ -2,9 +2,11 @@ import { spawn } from 'node:child_process';
 import { randomUUID as uid } from 'node:crypto';
 import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { basename, join } from 'node:path';
 import { Readable } from 'node:stream';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -17,6 +19,7 @@ import {
   mul,
   quantise,
   type ObjectStore,
+  type DirectUploadStore,
 } from '../src/index.ts';
 import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 import { hasSession, session } from '../../ingest/test/sessions.ts';
@@ -35,7 +38,7 @@ useDatabase('card_intake');
  * fresh handover, batch and session id every time, so a retry always looked
  * fine and always left a second batch and a second declared session behind.
  *
- * And one declared session per card per day. The session id used to include
+ * And one declared session per explicit recording group. The session id used to include
  * the directory name, so three recordings off one card became three
  * handover-origin sessions on one handover and the resolver refused to choose
  * between them — every episode after the first quarantined and an operator had
@@ -56,14 +59,19 @@ useDatabase('card_intake');
  */
 const FIRST = '072310';
 /** Two more real recordings off the same card. Not 072415: it is the empty one. */
-const MORE = ['072516', '072538'] as const;
+const MORE = ['072516', '073055'] as const;
 const CARD = 'CARD-INTAKE-0001';
 const PHONE = '+84900000042';
-const DAY = '2026-09-14';
-const NEXT_DAY = '2026-09-15';
 /** Published, and deliberately NOT claimed by this collector. */
 const UNCLAIMED_TASK = 'Một buổi làm việc';
 const SCRIPT = fileURLToPath(new URL('../scripts/card-intake.mjs', import.meta.url));
+
+it('budgets direct PUTs by chunk bytes, permitting slow links with a finite ceiling', async () => {
+  const { directPartTimeoutMs } = await import(pathToFileURL(SCRIPT).href);
+  expect(directPartTimeoutMs(0)).toBe(120_000);
+  expect(directPartTimeoutMs(64 * 1024 ** 2)).toBe(536_871);
+  expect(directPartTimeoutMs(64 * 1024 ** 3)).toBe(7_200_000);
+});
 
 type Table = Record<string, string>;
 type Run = { code: number | null; stdout: string; stderr: string; table: Table };
@@ -103,6 +111,12 @@ describe.skipIf(!hasDb() || !hasSession(FIRST) || MORE.some((id) => !hasSession(
     const objects = new Map<string, { sha256: string; bytes: Buffer }>();
     let app: FastifyInstance;
     let api: string;
+    let storageServer: Server;
+    let storageOrigin: string;
+    let rejectSecondPart = true;
+    let interruptedPart: string | undefined;
+    const partWrites = new Map<string, number>();
+    const multiparts = new Map<string, { sha256: string; parts: Map<number, Buffer> }>();
     let inbox: string;
     let counter: Record<string, string>;
     let onCard: Record<string, number>;
@@ -127,7 +141,10 @@ describe.skipIf(!hasDb() || !hasSession(FIRST) || MORE.some((id) => !hasSession(
         '--collector', PHONE,
         '--others-in-frame', 'yes',
         '--sensitive', 'no',
-        '--day', DAY,
+        '--session', 'shift-1',
+        '--task', ids.task,
+        '--scenario', ids.scenario,
+        '--direct-upload',
         '--api', api,
         ...extra,
       ];
@@ -212,23 +229,59 @@ describe.skipIf(!hasDb() || !hasSession(FIRST) || MORE.some((id) => !hasSession(
       inbox = await mkdtemp(join(tmpdir(), 'po-card-inbox-'));
       onCard = await sizes(session(FIRST));
 
-      const objectStore: ObjectStore = {
-        async put(key, localPath, sha256, force = false) {
-          const held = objects.get(key);
-          if (!force && held?.sha256 === sha256) return 'kept';
-          objects.set(key, { sha256, bytes: await readFile(localPath) });
-          return 'uploaded';
-        },
+      storageServer = createServer(async (req, res) => {
+        try {
+          const url = new URL(req.url!, storageOrigin);
+          const key = url.searchParams.get('key')!;
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(Buffer.from(chunk));
+          const bytes = Buffer.concat(chunks);
+          const part = Number(url.searchParams.get('part'));
+          if (part) {
+            if (part === 2 && rejectSecondPart) {
+              rejectSecondPart = false;
+              interruptedPart = key;
+              res.writeHead(503).end();
+              return;
+            }
+            multiparts.get(key)!.parts.set(part, bytes);
+            partWrites.set(`${key}/${part}`, (partWrites.get(`${key}/${part}`) ?? 0) + 1);
+          } else objects.set(key, { sha256: url.searchParams.get('sha')!, bytes });
+          res.writeHead(200).end();
+        } catch { res.writeHead(500).end(); }
+      });
+      await new Promise<void>((resolve) => storageServer.listen(0, '127.0.0.1', resolve));
+      storageOrigin = `http://127.0.0.1:${(storageServer.address() as AddressInfo).port}`;
+      const objectStore: ObjectStore & DirectUploadStore = {
+        async put() { throw new Error('remote API cannot read the centre disk'); },
         async read(key, from = 0) {
           const held = objects.get(key);
           return held === undefined ? null : Readable.from(held.bytes.subarray(from));
         },
         async tag() {},
+        async head(key) {
+          const held = objects.get(key);
+          return held ? { bytes: held.bytes.length, sha256: held.sha256 } : null;
+        },
+        async presignPut(key, sha256) { return `${storageOrigin}/?key=${encodeURIComponent(key)}&sha=${sha256}`; },
+        async beginMultipart(key, sha256) {
+          if (!multiparts.has(key)) multiparts.set(key, { sha256, parts: new Map() });
+          return key;
+        },
+        async openMultipart(key) { return multiparts.has(key) ? key : null; },
+        async heldParts(key) { return [...multiparts.get(key)!.parts].map(([partNumber, body]) => ({ partNumber, size: body.length })); },
+        async presignPart(key, _id, part) { return `${storageOrigin}/?key=${encodeURIComponent(key)}&part=${part}`; },
+        async finishMultipart(key) {
+          const upload = multiparts.get(key)!;
+          objects.set(key, { sha256: upload.sha256, bytes: Buffer.concat([...upload.parts].sort(([a], [b]) => a - b).map(([, bytes]) => bytes)) });
+          multiparts.delete(key);
+        },
       };
       app = buildApi({
         db: await appDb(),
         tokenSecret: 'card-intake-test',
-        mediaRoot: inbox,
+        // Remote API deliberately has no local recording directory.
+        mediaRoot: undefined,
         objectStore,
       });
       api = await app.listen({ host: '127.0.0.1', port: 0 });
@@ -242,6 +295,7 @@ describe.skipIf(!hasDb() || !hasSession(FIRST) || MORE.some((id) => !hasSession(
 
     afterAll(async () => {
       await app?.close();
+      if (storageServer) await new Promise<void>((resolve, reject) => storageServer.close((error) => error ? reject(error) : resolve()));
       await closeDb();
       if (inbox !== undefined) await rm(inbox, { recursive: true, force: true });
     });
@@ -265,6 +319,44 @@ describe.skipIf(!hasDb() || !hasSession(FIRST) || MORE.some((id) => !hasSession(
       expect(objects.size).toBeGreaterThan(0);
     }, 600_000);
 
+    it('pins immutable inventory and rejects stale, unsafe or foreign-machine plans', async () => {
+      const [row] = await (await db()).execute(sql`
+        select e.upload_batch_id as batch, e.latest_ingest_id as ingest,
+               i.record_json as record, i.transport_extra_files as extras
+          from episodes e join episode_ingests i on i.ingest_id = e.latest_ingest_id
+         where e.episode_id = ${episodeId}`) as unknown as {
+           batch: string; ingest: string; record: { source_files: { relative_path: string; bytes: number; sha256: string }[] };
+           extras: { relative_path: string; bytes: number; sha256: string }[];
+         }[];
+      const payload = { episode_id: episodeId, ingest_id: row!.ingest, files: [...row!.record.source_files, ...row!.extras] };
+      const request = (body: unknown, headers = counter) => app.inject({ method: 'POST', url: `/upload-batches/${row!.batch}/upload-plan`, headers, payload: body as object });
+      expect((await request({ ...payload, files: [...payload.files].reverse() })).statusCode).toBe(200);
+      expect((await request({ ...payload, ingest_id: uid() })).statusCode).toBe(409);
+      expect((await request({ ...payload, files: payload.files.slice(1) })).json().error).toBe('source_inventory_mismatch');
+      expect((await request({ ...payload, files: row!.record.source_files })).json().error).toBe('manifest_missing');
+      const changed = payload.files.map((f) => row!.extras.some((x) => x.relative_path === f.relative_path) ? { ...f, sha256: 'a'.repeat(64) } : f);
+      const conflict = await request({ ...payload, files: changed });
+      expect(conflict.statusCode).toBe(409);
+      expect(conflict.json()).toEqual({
+        error: 'transport_inventory_conflict', stored_extra_files: row!.extras,
+        requested_extra_files: row!.extras.map((f) => ({ ...f, sha256: 'a'.repeat(64) })),
+      });
+      // A refused retry cannot replace the original inventory; restoring it works.
+      expect((await request(payload)).statusCode).toBe(200);
+      expect((await request({ ...payload, files: [...payload.files, payload.files[0]] })).statusCode).toBe(400);
+      expect((await request({ ...payload, files: [{ ...payload.files[0], relative_path: '../escape' }] })).statusCode).toBe(400);
+      const hash = await hashCredential('pw');
+      await (await db()).execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status, credential_hash)
+        values (${uid()}, ${ids.centre}, 'CARD-OTHER', 'active', ${hash})`);
+      const machine = await app.inject({ method: 'POST', url: '/auth/machine', payload: { machine_identifier: 'CARD-OTHER', secret: 'pw' } });
+      const foreign = { ...counter, 'x-machine-token': `Bearer ${machine.json().token}` };
+      expect((await request(payload, foreign)).statusCode).toBe(404);
+      expect((await app.inject({ method: 'POST', url: `/upload-batches/${row!.batch}/upload?source=direct`, headers: foreign,
+        payload: { episode_id: episodeId, ingest_id: row!.ingest } })).statusCode).toBe(404);
+      expect((await app.inject({ method: 'POST', url: `/upload-batches/${row!.batch}/upload?source=direct`, headers: counter,
+        payload: { episode_id: episodeId, ingest_id: uid() } })).json().error).toBe('stale_ingest');
+    });
+
     it('prints duplicate on a second run and counts nothing twice', async () => {
       const before = await counts();
       const run = await intake(session(FIRST));
@@ -276,9 +368,16 @@ describe.skipIf(!hasDb() || !hasSession(FIRST) || MORE.some((id) => !hasSession(
 
     it('puts three recordings off one card on ONE session, each resolved automatically', async () => {
       for (const id of MORE) {
-        const run = await intake(session(id));
+        let run = await intake(session(id));
+        if (id === '073055') {
+          expect(run.code, run.stderr).toBe(1);
+          expect(run.stderr).toContain('upload failed HTTP 503');
+          expect(interruptedPart).toBeDefined();
+          run = await intake(session(id));
+          expect(partWrites.get(`${interruptedPart}/1`)).toBe(1);
+        }
         expect(run.code, run.stderr).toBe(0);
-        expect(run.table).toMatchObject({ ingest: 'new', verification: 'verified' });
+        expect(run.table).toMatchObject({ ingest: id === '073055' ? 'duplicate' : 'new', verification: 'verified' });
         expect(run.table.reuse).toBe('handover reused, batch reused, session reused');
       }
       expect(await counts()).toMatchObject({
@@ -300,11 +399,14 @@ describe.skipIf(!hasDb() || !hasSession(FIRST) || MORE.some((id) => !hasSession(
       expect(rows[0]!.collection_session_id).not.toBeNull();
     }, 900_000);
 
-    it('opens a second handover, batch and session on the next day', async () => {
-      const run = await intake(join(inbox, basename(session(FIRST))), ['--day', NEXT_DAY]);
+    it('keeps the explicit group across different preparation dates and splits a newly declared group', async () => {
+      const retried = await intake(join(inbox, basename(session(FIRST))), ['--prepare-time', '2026-09-25T08:00:00.000Z']);
+      expect(retried.code, retried.stderr).toBe(0);
+      expect(retried.table.reuse).toBe('handover reused, batch reused, session reused');
+      const run = await intake(join(inbox, basename(session(FIRST))), ['--session', 'shift-2']);
       expect(run.code, run.stderr).toBe(0);
       expect(run.table.reuse).toBe('handover opened, batch opened, session opened');
-      // A shift is a day, so the day is part of all three derived ids.
+      // The operator explicitly chose another group; the clock cannot choose one.
       expect(await counts()).toMatchObject({
         episodes: 3, ingests: 3, handovers: 2, batches: 2, sessions: 2,
       });
@@ -312,14 +414,14 @@ describe.skipIf(!hasDb() || !hasSession(FIRST) || MORE.some((id) => !hasSession(
 
     it('names the collector live claims when the task is not one of them', async () => {
       const before = await counts();
-      const run = await intake(join(inbox, basename(session(FIRST))), ['--task', UNCLAIMED_TASK]);
+      const run = await intake(join(inbox, basename(session(FIRST))), ['--session', 'unclaimed-group', '--task', UNCLAIMED_TASK]);
       expect(run.code).toBe(1);
       expect(run.stderr).toContain('session_claim_missing');
       expect(run.stderr).toContain('--task "housework"');
       expect(run.stderr).toContain(ids.task);
       expect(run.stderr).toContain('failed_step: session');
-      // Refused before anything was written, so nothing moved.
-      expect(await counts()).toEqual(before);
+      // The unclaimed attempt retains a handover/batch for retry, but no session or episode.
+      expect(await counts()).toEqual({ ...before, handovers: before.handovers! + 1, batches: before.batches! + 1 });
     }, 300_000);
 
     it('turns one verdict into one bill line whose minutes reproduce its amount', async () => {

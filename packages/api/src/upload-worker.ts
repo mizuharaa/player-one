@@ -1075,6 +1075,18 @@ export async function uploadEpisode(
     else kept += 1;
   }
 
+  return { ...await verifyUploadedEpisode(store, args, files, progress), uploaded, kept };
+}
+
+/** Verify a centre delivery whose bytes were sent directly by its own PC. */
+export async function verifyUploadedEpisode(
+  store: ObjectStore,
+  args: { episodeId: string; ingestId: string },
+  files: readonly TransportFile[],
+  progress: UploadProgress = noProgress,
+): Promise<EpisodeUploadResult> {
+  const receipts = await progress.done(args.episodeId);
+  const proven = (key: string, sha256: string): boolean => receipts.get(key) === sha256;
   /**
    * Read back only what this run has not already proved. A file with a receipt
    * naming exactly these bytes was verified on an earlier run, and re-reading
@@ -1114,7 +1126,7 @@ export async function uploadEpisode(
     }
   }
 
-  return { uploaded, kept, transported: files.length, mismatches,
+  return { uploaded: 0, kept: files.length, transported: files.length, mismatches,
     ...(transportError !== undefined ? { transportError } : {}) };
 }
 
