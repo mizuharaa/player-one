@@ -114,16 +114,32 @@ test('a failed native command exits without relabelling an older artifact as a f
   const expo = join(repoRoot, 'node_modules', 'expo', 'bin');
   mkdirSync(expo, { recursive: true });
   // Execute the real wrapper; only Expo is replaced with a failing child process.
-  writeFileSync(join(expo, 'cli'), 'process.exit(19);');
+  writeFileSync(join(expo, 'cli'), `
+    const assert = require('node:assert/strict');
+    assert.equal(process.env.PLAYERONE_BUILD_PROFILE, 'demo');
+    assert.equal(process.env.EXPO_PUBLIC_BUILD_PROFILE, 'demo');
+    process.exit(19);
+  `);
   const output = join(collector, 'android', 'app', 'build', 'outputs', 'apk', 'release');
   mkdirSync(output, { recursive: true });
   const manifestPath = join(output, 'app-release.apk.manifest.json');
   writeFileSync(join(output, 'app-release.apk'), 'older artifact');
   writeFileSync(manifestPath, 'older proof');
   const result = spawnSync(process.execPath, [join(scripts, 'build-android.mjs'), 'demo'], {
-    env: { ...process.env, EXPO_PUBLIC_API_URL: 'http://192.168.1.10:8080' }, encoding: 'utf8', windowsHide: true,
+    env: { ...process.env, EXPO_PUBLIC_API_URL: 'http://192.168.1.10:8080', EXPO_PUBLIC_BUILD_PROFILE: 'play' }, encoding: 'utf8', windowsHide: true,
   });
   assert.equal(result.status, 19, result.stderr);
   assert.equal(result.stdout.includes('build complete'), false);
   assert.equal(readFileSync(manifestPath, 'utf8'), 'older proof');
+  if (process.platform === 'win32') {
+    // Hardened Windows does not resolve a bare gradlew.bat from cwd.
+    writeFileSync(join(expo, 'cli'), '');
+    writeFileSync(join(collector, 'android', 'gradlew.bat'), '@exit /b 23\r\n');
+    const gradle = spawnSync(process.execPath, [join(scripts, 'build-android.mjs'), 'demo'], {
+      env: { ...process.env, EXPO_PUBLIC_API_URL: 'http://192.168.1.10:8080', NoDefaultCurrentDirectoryInExePath: '1' },
+      encoding: 'utf8', windowsHide: true,
+    });
+    assert.equal(gradle.status, 23, gradle.stderr);
+    assert.equal(readFileSync(manifestPath, 'utf8'), 'older proof');
+  }
 });

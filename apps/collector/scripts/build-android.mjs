@@ -9,6 +9,7 @@ const profile = process.argv[2];
 if (!['demo', 'play'].includes(profile)) throw new Error('Choose demo (APK) or play (AAB)');
 const root = fileURLToPath(new URL('../', import.meta.url));
 process.env.PLAYERONE_BUILD_PROFILE = profile;
+process.env.EXPO_PUBLIC_BUILD_PROFILE = profile;
 const configure = require('../app.config.cjs');
 const config = configure({ config: require('../app.json').expo }); // Fail before cleaning or building native files.
 const repoRoot = resolve(root, '../..');
@@ -28,7 +29,7 @@ function run(command, args, cwd) {
 run(process.execPath, [require.resolve('expo/bin/cli'), 'prebuild', '--platform', 'android', '--clean', '--no-install'], root);
 const task = profile === 'play' ? 'bundleRelease' : 'assembleRelease';
 const android = fileURLToPath(new URL('../android/', import.meta.url));
-if (process.platform === 'win32') run('cmd.exe', ['/d', '/c', 'gradlew.bat', task], android);
+if (process.platform === 'win32') run('cmd.exe', ['/d', '/c', '.\\gradlew.bat', task], android);
 else run('./gradlew', [task], android);
 const artifactPath = join(android, 'app/build/outputs', profile === 'play' ? 'bundle/release/app-release.aab' : 'apk/release/app-release.apk');
 const manifestPath = writeReleaseManifest({ repoRoot, source, artifactPath, profile, apiOrigin: process.env.EXPO_PUBLIC_API_URL, config });
