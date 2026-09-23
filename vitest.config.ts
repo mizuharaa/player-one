@@ -1,5 +1,5 @@
 import { configDefaults, defineConfig } from 'vitest/config';
-import { fileURLToPath } from 'node:url';
+import collector from './apps/collector/vitest.config';
 
 /**
  * Agent worktrees live under `.claude/worktrees/` inside this checkout while
@@ -8,12 +8,14 @@ import { fileURLToPath } from 'node:url';
  */
 export default defineConfig({
   /**
-   * The collector's tests run against the reanimated stub in
-   * `apps/collector/test/reanimated.tsx` (its own vitest.config carries the
-   * same alias). Without it here, the root runner loads the real ESM package
-   * and every collector file fails on a directory import before any test runs.
+   * The collector's tests run against the stubs its own vitest.config aliases
+   * (reanimated, expo-blur, lucide-react-native under `apps/collector/test/`).
+   * The root runner reuses that alias map rather than carrying a copy: when the
+   * copy held only reanimated, every collector file failed at import on the
+   * real expo-blur (`__DEV__ is not defined`) and lucide-react-native
+   * (`Unexpected token 'typeof'`) before any test ran.
    */
-  resolve: { alias: { 'react-native-reanimated': fileURLToPath(new URL('./apps/collector/test/reanimated.tsx', import.meta.url)) } },
+  resolve: { alias: collector.resolve!.alias },
   test: {
     /**
      * Native release checks and the deployment scripts use node:test; run them
