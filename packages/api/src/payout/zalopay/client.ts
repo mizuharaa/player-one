@@ -255,9 +255,9 @@ export class ZaloPayHttpClient implements ZaloPayClient {
 
     const r = await this.post<BankCodesData>('bankCodes', body, this.timeouts.otherMs);
     if (r.return_code !== 1) throw this.businessError('bankCodes', r);
-    const banks = r.data?.banks;
+    const banks = r.data?.bank_list;
     if (!Array.isArray(banks)) {
-      throw new ZaloPayTransportError('bankCodes', 'malformed', 'success without a banks array');
+      throw new ZaloPayTransportError('bankCodes', 'malformed', 'success without a bank_list array');
     }
     return banks.map((b) => {
       if (typeof b?.bank_code !== 'string' || typeof b.name !== 'string') {

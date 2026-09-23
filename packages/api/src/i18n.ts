@@ -903,7 +903,7 @@ const en = {
     'Read before any payment. What the batch would send, what the wallet holds, which accounts are unverified, and who the engine has flagged.',
   'settle.preflight.balance': 'Wallet balance',
   'settle.preflight.balance.none':
-    'Cannot be read: no ZaloPay client is configured on this server. The manual pilot pays from a bank, so this is expected.',
+    'Wallet balance is unavailable. See the reason above.',
   'settle.preflight.total': 'Batch total',
   'settle.preflight.required': 'Required with margin',
   'settle.preflight.required.hint': 'The total plus 5%, the margin the batch worker insists on.',
@@ -2500,7 +2500,7 @@ const zh: Record<MessageKey, string> = {
 
   'settle.preflight.intro': '付款前必读。本批次将发送的内容、钱包余额、哪些账户未验证，以及引擎标记了谁。',
   'settle.preflight.balance': '钱包余额',
-  'settle.preflight.balance.none': '无法读取：本服务端未配置 ZaloPay 客户端。人工试点通过银行付款，这是预期情况。',
+  'settle.preflight.balance.none': '无法读取钱包余额。请查看上方原因。',
   'settle.preflight.total': '批次总额',
   'settle.preflight.required': '含余量的所需金额',
   'settle.preflight.required.hint': '总额加 5%，这是批次程序坚持保留的余量。',
@@ -3889,7 +3889,7 @@ const vi: Record<MessageKey, string> = {
     'Đọc trước mọi khoản chi. Lô này sẽ gửi gì, ví đang có bao nhiêu, tài khoản nào chưa xác minh, và bộ máy rủi ro đã gắn cờ ai.',
   'settle.preflight.balance': 'Số dư ví',
   'settle.preflight.balance.none':
-    'Không đọc được: máy chủ này chưa cấu hình máy khách ZaloPay. Thí điểm thủ công chi từ ngân hàng, nên điều này là bình thường.',
+    'Chưa đọc được số dư ví. Xem lý do ở trên.',
   'settle.preflight.total': 'Tổng của lô',
   'settle.preflight.required': 'Cần có, gồm biên dự phòng',
   'settle.preflight.required.hint': 'Tổng cộng thêm 5%, biên dự phòng mà bộ xử lý lô yêu cầu.',

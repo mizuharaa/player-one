@@ -446,7 +446,7 @@ export interface BalanceData {
 }
 
 export interface BankCodesData {
-  banks?: { bank_code?: string; name?: string }[];
+  bank_list?: { bank_code?: string; name?: string }[];
 }
 
 /**
@@ -468,7 +468,6 @@ export const WIRE_NAMES_TO_CONFIRM = [
   "transfer-fund signature field: the guide's examples send `mac`; the spec page's request table has a row named `sig` (optional) with the HMAC description and no `mac` row. This client sends `mac`.",
   'endpoint URIs (/v2/disbursement/verify-account, transfer-fund, query-txn, balance, get-bank-code) come from Part 0.1; the web pages do not print them',
   'query-txn data.zp_trans_id and data.result_url (Part 0 / PDF) are absent from the current web pages; read when present, never required',
-  'get-bank-code request/response shape (data.banks[].bank_code / .name) is not on any page reached',
   "partner_embed_data / extra_info when empty: spec page default is \"{}\" (as Part 0 says); the guide's examples send \"\". This client sends \"{}\".",
   'receiver_info RSA padding (default PKCS#1 v1.5, see crypto.ts)',
 ] as const;

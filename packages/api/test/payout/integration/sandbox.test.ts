@@ -19,6 +19,7 @@ const CREDENTIALS = ['PLAYERONE_ZALOPAY_APP_ID', 'PLAYERONE_ZALOPAY_PAYMENT_ID',
 const missing = CREDENTIALS.filter((k) => !process.env[k]);
 const env = process.env['PLAYERONE_ZALOPAY_ENV'] ?? 'sandbox';
 const notSandbox = env !== 'sandbox';
+const hasWallet = !!process.env['PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID']?.trim();
 const why =
   missing.length > 0
     ? `skipped: ${missing.join(', ')} not set; set the four PLAYERONE_ZALOPAY_* sandbox credentials to run`
@@ -28,12 +29,12 @@ const why =
 
 describe.skipIf(missing.length > 0 || notSandbox)(`ZaloPay sandbox, sb-openapi.zalopay.vn (${why})`, () => {
   const client = () => {
-    const c = zaloPayClientFromEnv(process.env);
+    const c = zaloPayClientFromEnv(process.env, {}, { verificationOnly: !hasWallet });
     if (c === null) throw new Error('no client from environment');
     return c;
   };
 
-  it('signs a balance request the sandbox accepts, and reads a number', async () => {
+  it.skipIf(!hasWallet)('signs a balance request the sandbox accepts (requires MERCHANT_WALLET_ID)', async () => {
     const { balanceVnd } = await client().balance();
     expect(Number.isFinite(balanceVnd)).toBe(true);
     expect(balanceVnd).toBeGreaterThanOrEqual(0);

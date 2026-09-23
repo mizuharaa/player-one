@@ -485,6 +485,15 @@ describe('balance and get-bank-code', () => {
     expect(fake.requests('bankCodes')[0]?.macValid).toBe(true);
   });
 
+  it('reads the documented bank_list shape observed on the real sandbox', async () => {
+    // ZaloPay-APIs-Disbursement-Integration-Document.pdf, Get bank code list.
+    const fetch: typeof globalThis.fetch = async () => new Response(JSON.stringify({
+      return_code: 1, sub_return_code: 1,
+      data: { bank_list: [{ bank_code: 'VCB', name: 'Vietcombank', short_name: 'VCB', logo_url: 'https://example.test/bank.png' }] },
+    }));
+    expect(await client({ fetch }).bankCodes()).toEqual([{ bankCode: 'VCB', name: 'Vietcombank' }]);
+  });
+
   it('a business refusal on these throws ZaloPayError carrying the sub code, because §2.2 gives them no union', async () => {
     fake.plan('balance', { kind: 'sub', subCode: -503 });
     await expect(client().balance()).rejects.toMatchObject({ name: 'ZaloPayError', subCode: -503, retryable: true });
@@ -497,7 +506,8 @@ describe('balance and get-bank-code', () => {
   it('a success without the field we need is malformed', async () => {
     const fetchFn = (body: object): typeof fetch => async () => new Response(JSON.stringify(body));
     await expect(client({ fetch: fetchFn({ return_code: 1, data: {} }) }).balance()).rejects.toMatchObject({ cause: 'malformed' });
-    await expect(client({ fetch: fetchFn({ return_code: 1, data: { banks: [{ name: 'x' }] } }) }).bankCodes()).rejects.toMatchObject({ cause: 'malformed' });
+    await expect(client({ fetch: fetchFn({ return_code: 1, data: { bank_list: [{ name: 'x' }] } }) }).bankCodes()).rejects.toMatchObject({ cause: 'malformed' });
+    await expect(client({ fetch: fetchFn({ return_code: 1, data: { banks: [{ bank_code: 'VCB', name: 'x' }] } }) }).bankCodes()).rejects.toMatchObject({ cause: 'malformed' });
   });
 });
 

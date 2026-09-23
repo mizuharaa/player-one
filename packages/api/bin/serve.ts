@@ -50,6 +50,7 @@ const mediaRoot = env['PLAYERONE_MEDIA_ROOT'];
 const machineIdentifier = env['PLAYERONE_MACHINE_IDENTIFIER'];
 const machineSecret = env['PLAYERONE_MACHINE_SECRET'];
 const storageQuotaBytes = storageQuotaFromEnv(env);
+const payout = payoutOptionsFromEnv(env);
 
 /**
  * `buildApi` refuses the two together — reviewer media on with the session
@@ -200,7 +201,13 @@ const app = buildApi({
    * no credentials — verification then stores `unverified` and pay refuses
    * `payout_no_client`; production without every credential throws by name.
    */
-  payout: { ...payoutOptionsFromEnv(env), client: zaloPayClientFromEnv(env) ?? undefined },
+  payout: {
+    ...payout,
+    // Manual settlement can verify recipients before Merchant Wallet provisioning.
+    client: zaloPayClientFromEnv(env, {}, {
+      verificationOnly: payout.mode === 'manual' && !env['PLAYERONE_ZALOPAY_MERCHANT_WALLET_ID']?.trim(),
+    }) ?? undefined,
+  },
   risk: riskConfigFromEnv(env),
 });
 

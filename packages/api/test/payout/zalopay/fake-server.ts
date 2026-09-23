@@ -352,7 +352,7 @@ export class FakeZaloPay {
       case 'balance':
         return this.envelope(1, 1, 'SUCCESS', { balance: scenario.balance ?? this.defaultBalance });
       case 'bankCodes':
-        return this.envelope(1, 1, 'SUCCESS', { banks: scenario.banks ?? DEFAULT_BANKS });
+        return this.envelope(1, 1, 'SUCCESS', { bank_list: scenario.banks ?? DEFAULT_BANKS });
     }
   }
 
