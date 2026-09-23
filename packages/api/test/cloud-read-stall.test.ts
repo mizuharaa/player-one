@@ -1,7 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { Readable } from 'node:stream';
+import { getEventListeners, once } from 'node:events';
+import { S3Client } from '@aws-sdk/client-s3';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { S3ObjectStore, sha256OfObject } from '../src/upload-worker.ts';
 
 /**
@@ -40,6 +43,7 @@ type Cloud = { asks: Ask[]; closed: number; endpoint: string };
 let running: Server | null = null;
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   const server = running;
   running = null;
   if (server !== null) {
@@ -111,6 +115,21 @@ const failure = async (p: Promise<unknown>): Promise<Error> => {
 };
 
 describe('a cloud read that stops delivering bytes', () => {
+  it.each([false,true])('destroys a returned body before iteration when cancellation is already signalled: %s', async alreadyAborted => {
+    const body = new Readable({read(){}});
+    const closed = once(body,'close');
+    vi.spyOn(S3Client.prototype,'send').mockResolvedValueOnce({Body:body} as never);
+    const stop = new AbortController();
+    if (alreadyAborted) stop.abort();
+    const store = new S3ObjectStore({endpoint:'http://unused.invalid',bucket:'b',key:'k',secret:'s'});
+    const wrapped = await store.read('obj',0,{signal:stop.signal,idleMs:100});
+    if (!alreadyAborted) stop.abort();
+    expect(body.destroyed).toBe(true);
+    await closed;
+    expect(getEventListeners(stop.signal,'abort')).toHaveLength(0);
+    await expect(wrapped![Symbol.asyncIterator]().next()).rejects.toThrow('deadline');
+  });
+
   it('fails when the body answers with headers and then silence', async () => {
     const { store, state } = await cloud((_req, res) => {
       res.writeHead(200, { 'content-type': 'application/octet-stream' });

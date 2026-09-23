@@ -291,14 +291,16 @@ const RouteBody = z
  * own recent verdicts is reading their own work, and a lease that lapsed
  * mid-review must not make the screen they are looking at go blank.
  */
-export async function holdsReview(db: Db, reviewerId: string, episodeId: string): Promise<boolean> {
+export async function holdsReview(db: Db, reviewerId: string, episodeId: string, ingestId?: string): Promise<boolean> {
   const [held] = await db
     .select({ id: schema.episodeReviews.id })
     .from(schema.episodeReviews)
+    .innerJoin(schema.episodes, eq(schema.episodes.episodeId, schema.episodeReviews.episodeId))
     .where(
       and(
         eq(schema.episodeReviews.episodeId, episodeId),
         eq(schema.episodeReviews.reviewerRef, reviewerId),
+        eq(schema.episodeReviews.ingestId, ingestId ?? schema.episodes.latestIngestId),
       ),
     );
   return held !== undefined;

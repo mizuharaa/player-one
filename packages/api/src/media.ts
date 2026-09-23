@@ -1,14 +1,16 @@
 import { createReadStream } from 'node:fs';
+import { Readable } from 'node:stream';
 import { realpath, stat } from 'node:fs/promises';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
 import { episodeAtCentre } from './episodes.ts';
 import { holdsReview } from './review.ts';
+import { objectBudget, objectKey, type ObjectStore } from './upload-worker.ts';
 
 /**
  * Serving the footage a reviewer is about to judge.
@@ -145,11 +147,12 @@ export function registerMedia(
   db: Db,
   requireActor: (req: FastifyRequest, reply: Reply) => Promise<unknown>,
   mediaRoot?: string,
+  objectStore?: ObjectStore,
 ): void {
   const opts = { preHandler: requireActor };
 
   app.get('/media/episode/:id/part/:index', opts, async (req, reply) => {
-    if (mediaRoot === undefined || mediaRoot === '') {
+    if (!mediaRoot && !objectStore) {
       // A machine that has not been told where the footage lives should say so.
       // A 404 here would read as "this episode has no video", which is a
       // different and much more alarming fact.
@@ -211,6 +214,8 @@ export function registerMedia(
 
     const [row] = await db
       .select({
+        ingestId: schema.episodeIngests.ingestId,
+        verificationState: schema.episodes.verificationState,
         sourceBasename: schema.episodeIngests.sourceBasename,
         recordJson: schema.episodeIngests.recordJson,
       })
@@ -221,41 +226,92 @@ export function registerMedia(
       )
       .where(eq(schema.episodes.episodeId, id));
     if (row === undefined) return reply.code(404).send({ error: 'no such episode' });
+    if (reviewer !== undefined && !(await holdsReview(db, reviewer.reviewerId, id, row.ingestId))) {
+      return reply.code(403).send({ error: 'not an episode you hold' });
+    }
 
     const record = EpisodeRecord.safeParse(row.recordJson);
     if (!record.success) return reply.code(500).send({ error: 'stored record does not parse' });
     const stream =
       record.data.streams.find((s) => s.role === 'camera_left') ??
       record.data.streams.find((s) => s.role === 'camera_right');
-    const file = stream?.parts[part]?.file;
-    if (file === undefined) return reply.code(404).send({ error: 'no such part' });
+    const source = stream?.parts[part];
+    if (source === undefined) return reply.code(404).send({ error: 'no such part' });
+    const file = source.file;
 
-    const path = await playbackPath(mediaRoot, row.sourceBasename, file, (req.query as { quality?: string }).quality === 'preview');
-    if (path === null) return reply.code(400).send({ error: 'bad media path' });
+    const path = mediaRoot ? await playbackPath(mediaRoot, row.sourceBasename, file, (req.query as { quality?: string }).quality === 'preview') : null;
+    if (mediaRoot && path === null) return reply.code(400).send({ error: 'bad media path' });
 
-    let size: number;
-    try {
+    let size: number | undefined;
+    if (path) try {
       const info = await stat(path);
       if (!info.isFile()) return reply.code(404).send({ error: 'media is not a file' });
       size = info.size;
-    } catch {
-      /**
-       * The store knows the file existed at import; the disk says otherwise.
-       * That is a fact about this machine, not about the episode, and it is
-       * worth distinguishing so an operator looks at the mount rather than at
-       * the collector.
-       */
-      return reply.code(404).send({ error: 'media is not on this machine', detail: file });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
 
-    const contentType = CONTENT_TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream';
-    const range = parseRange(req.headers['range'], size);
+    const cloud = size === undefined;
+    const key = objectKey(id, row.ingestId, file);
+    if (cloud) {
+      if (!objectStore) return reply.code(404).send({ error: 'media is not on this machine', detail: file });
+      if (row.verificationState !== 'verified') return reply.code(409).send({ error: 'cloud media is not verified' });
+      const [receipt] = await db.select({ sha256: schema.cloudVerifications.sha256 })
+        .from(schema.cloudVerifications).where(and(
+          eq(schema.cloudVerifications.objectKey, key),
+          eq(schema.cloudVerifications.episodeId, id),
+          eq(schema.cloudVerifications.ingestId, row.ingestId),
+        ));
+      if (receipt?.sha256 !== source.sha256) return reply.code(409).send({ error: 'cloud media has no matching verification receipt' });
+      if (!Number.isSafeInteger(source.bytes) || source.bytes <= 0) return reply.code(500).send({ error: 'invalid stored media size' });
+      size = source.bytes;
+    }
+    const contentType = CONTENT_TYPES[extname(path ?? file).toLowerCase()] ?? 'application/octet-stream';
+    const range = parseRange(req.headers['range'], size!);
 
     if (range === 'unsatisfiable') {
       return reply
         .code(416)
         .headers({ 'content-range': `bytes */${size}`, 'accept-ranges': 'bytes' })
         .send({ error: 'range not satisfiable' });
+    }
+
+    let body: Readable;
+    if (cloud) {
+      const stop = new AbortController();
+      const budget = objectBudget();
+      budget.signal = AbortSignal.any([budget.signal, stop.signal]);
+      const cancel = () => stop.abort();
+      reply.raw.once('close', cancel);
+      let bytes: AsyncIterable<Uint8Array> | null;
+      try { bytes = await objectStore!.read(key, range?.start ?? 0, budget); }
+      catch {
+        reply.raw.off('close', cancel);
+        stop.abort();
+        return reply.code(502).send({ error: 'cloud media unavailable' });
+      }
+      if (!bytes) {
+        reply.raw.off('close', cancel);
+        stop.abort();
+        return reply.code(404).send({ error: 'cloud media is missing' });
+      }
+      // Store reads are open-ended. Returning at the requested end closes the
+      // iterator (and its S3 socket), without buffering the rest of the object.
+      body = Readable.from((async function* () {
+        let remaining = range ? range.end - range.start + 1 : size!;
+        try {
+          for await (const chunk of bytes) {
+            const count = Math.min(chunk.byteLength, remaining);
+            if (count > 0) yield chunk.subarray(0, count);
+            remaining -= count;
+            if (remaining === 0) return;
+          }
+          throw new Error('cloud media ended before the recorded size');
+        } finally { stop.abort(); }
+      })());
+      body.once('close', () => { reply.raw.off('close', cancel); stop.abort(); });
+    } else {
+      body = createReadStream(path!, range === null ? undefined : range);
     }
 
     if (range === null) {
@@ -273,7 +329,7 @@ export function registerMedia(
           'accept-ranges': 'bytes',
           'cache-control': 'private, max-age=3600',
         })
-        .send(createReadStream(path));
+        .send(body);
     }
 
     return reply
@@ -285,6 +341,6 @@ export function registerMedia(
         'accept-ranges': 'bytes',
         'cache-control': 'private, max-age=3600',
       })
-      .send(createReadStream(path, { start: range.start, end: range.end }));
+      .send(body);
   });
 }

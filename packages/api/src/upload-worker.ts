@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
+import type { Readable } from 'node:stream';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -700,8 +701,17 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
         // `tag` races a timer.
         { abortSignal: budget.signal },
       );
-      const body = (r.Body ?? null) as AsyncIterable<Uint8Array> | null;
-      return body === null ? null : idleBounded(body, budget);
+      const body = (r.Body ?? null) as Readable | null;
+      if (body === null) return null;
+      // The consumer may disconnect before idleBounded's first next(), when
+      // its finally block cannot run yet. Own that unconsumed socket too.
+      if (!body.destroyed) {
+        const cancel = () => { body.destroy(); };
+        budget.signal.addEventListener('abort', cancel, { once: true });
+        body.once('close', () => budget.signal.removeEventListener('abort', cancel));
+        if (budget.signal.aborted) cancel();
+      }
+      return idleBounded(body, budget);
     } catch (err) {
       if (notFound(err)) return null;
       // Asked for bytes the object does not have: the caller already holds all

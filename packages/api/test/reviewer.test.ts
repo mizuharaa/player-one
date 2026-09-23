@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { get } from 'node:http';
+import { once } from 'node:events';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,6 +8,7 @@ import { sql } from 'drizzle-orm';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApi, hashCredential } from '../src/index.ts';
+import { objectKey, type ObjectStore } from '../src/upload-worker.ts';
 import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 import { episodeRecord, FIXTURE_T as T } from './fixtures.ts';
 
@@ -42,7 +45,7 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
   afterAll(closeDb);
 
   async function harness(
-    options: { mediaRoot?: string; reviewerMediaEnabled?: boolean; basenameA?: string; demo?: boolean; production?: boolean } = {},
+    options: { mediaRoot?: string; objectStore?: ObjectStore; reviewerMediaEnabled?: boolean; basenameA?: string; demo?: boolean; production?: boolean } = {},
   ) {
     const d = await db();
     const ids = {
@@ -106,6 +109,7 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
       db: await appDb(),
       tokenSecret: SECRET,
       mediaRoot: options.mediaRoot,
+      objectStore: options.objectStore,
       reviewerMediaEnabled: options.reviewerMediaEnabled,
       demoBypassKey: options.demo ? 'test-demo-key-'.repeat(5) : undefined,
       payout: { zaloPayEnv: options.production ? 'production' : 'sandbox',
@@ -256,6 +260,130 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
    * which are the ones that assert the default.
    */
   const lane = () => harness({ reviewerMediaEnabled: true });
+
+  it('streams verified cloud ranges without a local root and cancels the unused upstream bytes', async () => {
+    const bytes = Buffer.from(Array.from({ length: 64 }, (_, i) => i));
+    const returned = vi.fn();
+    const signals: AbortSignal[] = [];
+    const read = vi.fn<ObjectStore['read']>(async (_key, from = 0, budget) => {
+      signals.push(budget!.signal);
+      return (async function* () { try { yield bytes.subarray(from); yield Buffer.alloc(1024); } finally { returned(); } })();
+    });
+    const h = await harness({ reviewerMediaEnabled: true, objectStore: { read, put: async () => 'kept', tag: async () => {} } });
+    try {
+      const claimed = await h.send('POST', '/api/review/claim', undefined, h.reviewerHeaders);
+      expect(claimed.statusCode, claimed.body).toBe(200);
+      const id = claimed.json().episode_id;
+      const [row] = await h.d.execute(sql`select latest_ingest_id from episodes where episode_id=${id}`);
+      const key = objectKey(id, row!.latest_ingest_id as string, 'left_part0001.mp4');
+      await h.d.execute(sql`update episodes set verification_state='verified' where episode_id=${id}`);
+      await h.d.execute(sql`insert into cloud_verifications(object_key,episode_id,ingest_id,sha256) values(${key},${id},${row!.latest_ingest_id},${'b'.repeat(64)})`);
+      const url = `/media/episode/${id}/part/0`;
+      for (const [range, start, end, status] of [[undefined,0,63,200],['bytes=8-15',8,15,206],['bytes=-4',60,63,206],['bytes=60-',60,63,206]] as const) {
+        const res = await h.send('GET', url, undefined, { ...h.reviewerHeaders, ...(range ? {range} : {}) });
+        expect(res.statusCode,res.body).toBe(status);
+        expect(res.rawPayload).toEqual(bytes.subarray(start,end+1));
+        expect(res.headers['content-length']).toBe(String(end-start+1));
+        expect(res.headers['accept-ranges']).toBe('bytes');
+        if (range) expect(res.headers['content-range']).toBe(`bytes ${start}-${end}/64`);
+        expect(read.mock.lastCall?.slice(0,2)).toEqual([key,start]);
+      }
+      // Receiving Content-Length bytes can precede the upstream stream's close.
+      await Promise.all(signals.map(signal => signal.aborted ? undefined
+        : once(signal,'abort',{signal:AbortSignal.timeout(5_000)})));
+      expect(returned).toHaveBeenCalledTimes(4);
+      expect(signals.every(signal => signal.aborted)).toBe(true);
+      expect((await h.send('GET',url,undefined,{...h.reviewerHeaders,range:'bytes=64-'})).statusCode).toBe(416);
+      expect((await h.send('GET',url,undefined,h.reviewerHeadersB)).statusCode).toBe(403);
+      const absent = await h.send('GET',`/media/episode/${uid()}/part/0`,undefined,h.reviewerHeadersB);
+      const unheld = await h.send('GET',url,undefined,h.reviewerHeadersB);
+      expect(absent.statusCode).toBe(unheld.statusCode);
+      expect(absent.json()).toEqual(unheld.json());
+      const [centre] = await h.d.execute(sql`select collection_session_id from episodes where episode_id=${id}`);
+      const other = centre!.collection_session_id === h.cards[0]!.session ? h.headersB : h.headersA;
+      expect((await h.send('GET',url,undefined,other)).statusCode).toBe(403);
+      expect((await h.send('GET',url,undefined,{})).statusCode).toBe(401);
+      expect(read).toHaveBeenCalledTimes(4);
+      read.mockResolvedValueOnce(null);
+      expect((await h.send('GET',url,undefined,h.reviewerHeaders)).statusCode).toBe(404);
+      read.mockRejectedValueOnce(new Error('provider unavailable'));
+      const unavailable = await h.send('GET',url,undefined,h.reviewerHeaders);
+      expect(unavailable.statusCode).toBe(502);
+      expect(unavailable.json()).toEqual({ error:'cloud media unavailable' });
+      const address = await h.app.listen({host:'127.0.0.1',port:0});
+      read.mockImplementationOnce(async () => (async function* () { yield bytes.subarray(0,8); await new Promise(resolve => setTimeout(resolve,20)); })());
+      const short = await new Promise<string>((resolve,reject) => {
+        get(address+url,{headers:h.reviewerHeaders},response => {
+          response.resume();
+          response.on('end',()=>resolve('complete'));
+          response.on('aborted',()=>resolve('aborted'));
+          response.on('error',()=>{});
+        }).on('error',reject);
+      });
+      expect(short).toBe('aborted');
+      let disconnected: AbortSignal | undefined;
+      let released = false;
+      read.mockImplementationOnce(async (_key,_from,budget) => {
+        disconnected = budget!.signal;
+        return (async function* () {
+          try {
+            yield bytes.subarray(0,8);
+            await new Promise<void>(resolve => {
+              if (disconnected!.aborted) resolve();
+              else disconnected!.addEventListener('abort',()=>resolve(),{once:true});
+            });
+          } finally { released = true; }
+        })();
+      });
+      await new Promise<void>((resolve,reject) => {
+        get(address+url,{headers:h.reviewerHeaders},response => {
+          response.once('data',()=>{response.destroy(); resolve();});
+          response.on('error',()=>{});
+        }).on('error',reject);
+      });
+      await vi.waitFor(()=>{expect(disconnected?.aborted).toBe(true); expect(released).toBe(true);});
+      await h.d.execute(sql`delete from cloud_verifications where object_key=${key}`);
+      expect((await h.send('GET',url,undefined,h.reviewerHeaders)).statusCode).toBe(409);
+      await h.d.execute(sql`insert into cloud_verifications(object_key,episode_id,ingest_id,sha256) values(${key},${id},${row!.latest_ingest_id},${'c'.repeat(64)})`);
+      expect((await h.send('GET',url,undefined,h.reviewerHeaders)).statusCode).toBe(409);
+      await h.d.execute(sql`update episodes set verification_state='failed' where episode_id=${id}`);
+      expect((await h.send('GET',url,undefined,h.reviewerHeaders)).statusCode).toBe(409);
+      expect(read).toHaveBeenCalledTimes(8);
+    } finally { await h.app.close(); }
+  });
+
+  it('falls back from absent local media, but never grants a previous-ingest reviewer the new delivery', async () => {
+    const read = vi.fn<ObjectStore['read']>(async () => (async function* () { yield Buffer.alloc(64,7); })());
+    const root = await mkdtemp(join(tmpdir(),'playerone-cloud-missing-'));
+    const h = await harness({ mediaRoot:root, reviewerMediaEnabled:true, objectStore:{read,put:async ()=>'kept',tag:async()=>{}} });
+    try {
+      const claimed = await h.send('POST','/api/review/claim',undefined,h.reviewerHeaders);
+      const id = claimed.json().episode_id;
+      const [row] = await h.d.execute(sql`select latest_ingest_id from episodes where episode_id=${id}`);
+      const key = objectKey(id,row!.latest_ingest_id as string,'left_part0001.mp4');
+      await h.d.execute(sql`update episodes set verification_state='verified' where episode_id=${id}`);
+      await h.d.execute(sql`insert into cloud_verifications(object_key,episode_id,ingest_id,sha256) values(${key},${id},${row!.latest_ingest_id},${'b'.repeat(64)})`);
+      const url = `/media/episode/${id}/part/0`;
+      expect((await h.send('GET',url,undefined,h.reviewerHeaders)).statusCode).toBe(200);
+      const [ingest] = await h.d.execute(sql`select source_basename from episode_ingests where ingest_id=${row!.latest_ingest_id}`);
+      const folder = join(root,ingest!.source_basename as string);
+      await mkdir(folder);
+      await writeFile(join(folder,'left_part0001.mp4'),Buffer.alloc(64,9));
+      expect((await h.send('GET',url,undefined,h.reviewerHeaders)).rawPayload).toEqual(Buffer.alloc(64,9));
+      expect(read).toHaveBeenCalledTimes(1);
+      const next = uid();
+      await h.d.execute(sql`insert into episode_ingests(ingest_id,episode_id,source_basename,content_fingerprint,record_json,state,measured_duration_s,timing_confidence,timing_source,manifest_present,engine_version,ingested_at,host)
+        select ${next},episode_id,source_basename,content_fingerprint,record_json,state,measured_duration_s,timing_confidence,timing_source,manifest_present,engine_version,ingested_at,host from episode_ingests where ingest_id=${row!.latest_ingest_id}`);
+      await h.d.execute(sql`update episodes set latest_ingest_id=${next} where episode_id=${id}`);
+      expect((await h.send('GET',url,undefined,h.reviewerHeaders)).statusCode).toBe(403);
+      expect((await h.send('GET',`/api/review/episode/${id}`,undefined,h.reviewerHeaders)).statusCode).toBe(404);
+      await rm(join(folder,'left_part0001.mp4'));
+      const [episode] = await h.d.execute(sql`select collection_session_id from episodes where episode_id=${id}`);
+      const owner = episode!.collection_session_id === h.cards[0]!.session ? h.headersA : h.headersB;
+      expect((await h.send('GET',url,undefined,owner)).statusCode).toBe(409);
+      expect(read).toHaveBeenCalledTimes(1);
+    } finally { await h.app.close(); await rm(root,{recursive:true,force:true}); }
+  });
 
   it('admin demo overrides persist only in audit and never change reviewer lanes or money', async () => {
     const h = await harness({ demo: true, reviewerMediaEnabled: true });

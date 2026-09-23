@@ -1087,7 +1087,7 @@ export function buildApi({
    */
   registerCollectorApp(app, db, requireActor, currency);
   registerRisk(app, db, requireActor, riskEngine);
-  registerMedia(app, db, requireActor, mediaRoot);
+  registerMedia(app, db, requireActor, mediaRoot, objectStore);
   /**
    * The JSON sign-in the React console uses. One limiter for every sign-in
    * route on the service, so a guesser cannot get a fresh budget by moving
