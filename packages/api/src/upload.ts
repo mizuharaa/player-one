@@ -1,11 +1,12 @@
 import { classify } from '../../ingest/src/discover.ts';
-import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { assemble, signedPlan, DeclaredFile } from './direct-upload.ts';
 import { EpisodeRecord } from '@playerone/contracts';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from './audit.ts';
+import { parkCloudFailure } from './cloud-verification.ts';
 import type { CounterActor } from './actor.ts';
 import { uploadEpisode, verifyUploadedEpisode, objectKey, storageUnreachable, type DirectUploadStore, type ObjectStore, type UploadProgress } from './upload-worker.ts';
 
@@ -71,16 +72,22 @@ function verificationReceipts(db: Db, ingestId: string): UploadProgress {
         ).map((r) => [r.key, r.sha256]),
       ),
     record: async (episodeId, key, sha256) => {
-      await db
+      await db.transaction(async tx => {
+        await tx.execute(sql`select originality_lock()`);
+        await tx
         .insert(schema.cloudVerifications)
         .values({ objectKey: key, episodeId, ingestId, sha256 })
         .onConflictDoUpdate({
           target: schema.cloudVerifications.objectKey,
           set: { ingestId, sha256, verifiedAt: new Date() },
         });
+      });
     },
     forget: async (_episodeId, key) => {
-      await db.delete(schema.cloudVerifications).where(eq(schema.cloudVerifications.objectKey, key));
+      await db.transaction(async tx => {
+        await tx.execute(sql`select originality_lock()`);
+        await tx.delete(schema.cloudVerifications).where(eq(schema.cloudVerifications.objectKey, key));
+      });
     },
   };
 }
@@ -198,6 +205,7 @@ export function registerUpload(
     }
     await mutate(db, actor, { action: 'upload.transport_inventory', targetTable: 'episode_ingests',
       targetId: row.ingestId, after: { extra_files: extras } }, async (tx) => {
+      await tx.execute(sql`select originality_lock()`);
       const [written] = await tx.update(schema.episodeIngests).set({ transportExtraFiles: extras })
         .where(and(eq(schema.episodeIngests.ingestId, row.ingestId!), isNull(schema.episodeIngests.transportExtraFiles))).returning();
       return written;
@@ -289,6 +297,7 @@ export function registerUpload(
           after: { receipts_cleared: cleared },
         }),
         async (tx) => {
+          await tx.execute(sql`select originality_lock()`);
           const dropped = (await tx.execute(
             sql`delete from cloud_verifications
                  where episode_id in (select episode_id from episodes
@@ -317,6 +326,7 @@ export function registerUpload(
         sourceBasename: schema.episodeIngests.sourceBasename,
         recordJson: schema.episodeIngests.recordJson,
         extraFiles: schema.episodeIngests.transportExtraFiles,
+        manifestPresent: schema.episodeIngests.manifestPresent,
       })
       .from(schema.episodes)
       .innerJoin(
@@ -351,8 +361,10 @@ export function registerUpload(
           const extras = z.array(DeclaredFile).safeParse(row.extraFiles);
           if (!extras.success) return reply.code(409).send({ error: 'transport_inventory_missing' });
           const files = [...parsed.data.source_files, ...extras.data];
-          await assemble(directStore()!, files, new Map(files.map((f) => [f.relative_path, f.bytes])),
-            (path) => objectKey(row.episodeId, row.ingestId, path));
+          if (row.verificationState !== 'verified') {
+            await assemble(directStore()!, files, new Map(files.map((f) => [f.relative_path, f.bytes])),
+              (path) => objectKey(row.episodeId, row.ingestId, path));
+          }
           outcome = await verifyUploadedEpisode(store, { episodeId: row.episodeId, ingestId: row.ingestId },
             files, options.uploadProgress ?? verificationReceipts(db, row.ingestId));
         } else outcome = await uploadEpisode(
@@ -395,7 +407,13 @@ export function registerUpload(
       // the existing failed-copy transaction (including settlement exceptions).
       if (outcome.transportError !== undefined) await recordTransportFailure(outcome.transportError);
       const state = outcome.mismatches.length === 0 ? 'verified' : 'failed';
-      const written = await mutate(
+      const extras = 'files' in outcome ? canonical(z.array(DeclaredFile).parse(outcome.files).filter(f => !parsed.data.source_files.some(s => s.relative_path === f.relative_path))) : null;
+      if (extras !== null && row.manifestPresent && !extras.some(f => classify(f.relative_path)?.kind === 'manifest')) {
+        return reply.code(409).send({ error: 'manifest_missing', episode_id: row.episodeId });
+      }
+      let written;
+      try {
+        written = await mutate(
         db,
         actor,
         {
@@ -407,10 +425,12 @@ export function registerUpload(
             verification_state: state,
             ingest_id: row.ingestId,
             files: outcome.transported,
+            ...(extras === null ? {} : { transport_extra_files: extras }),
             mismatches: outcome.mismatches,
           },
         },
         async (tx) => {
+          await tx.execute(sql`select originality_lock()`);
           /**
            * `latest_ingest_id` is in the WHERE because the verdict belongs to
            * the ingest that was transported. If a redelivery landed while these
@@ -430,50 +450,26 @@ export function registerUpload(
               ),
             )
             .returning();
+          if (updated !== undefined && extras !== null) {
+            // Re-running the normal batch upload/reverify also recovers legacy
+            // card inventories from retained source bytes. Never infer extras from receipts.
+            const written = await tx.execute(sql`update episode_ingests set transport_extra_files=${JSON.stringify(extras)}::jsonb
+              where ingest_id=${row.ingestId}::uuid and (transport_extra_files is null or transport_extra_files=${JSON.stringify(extras)}::jsonb)
+              returning ingest_id`);
+            if (!written.length) throw new Error('transport_inventory_conflict');
+          }
           if (updated !== undefined && state === 'failed') {
-            // Policy B: park the debt and audit it atomically with the failed copy; payment stands.
-            const settlements = await tx
-              .select({ id: schema.settlements.id, state: schema.settlements.settlementState })
-              .from(schema.settlements)
-              .innerJoin(schema.episodeReviews, eq(schema.episodeReviews.id, schema.settlements.episodeReviewId))
-              .where(and(
-                eq(schema.episodeReviews.episodeId, row.episodeId),
-                inArray(schema.settlements.settlementState, ['pending_settlement', 'bill_generated', 'manually_paid']),
-              ))
-              .orderBy(schema.settlements.id)
-              .for('update', { of: schema.settlements });
-            for (const settlement of settlements) {
-              await mutate(tx, actor, {
-                action: 'settlement.exception',
-                targetTable: 'settlements',
-                targetId: settlement.id,
-                before: { settlement_state: settlement.state },
-                after: {
-                  settlement_state: 'exception',
-                  exception_from_state: settlement.state,
-                  exception_reason: 'cloud_verification_failed',
-                  exception_note: null,
-                },
-                reason: 'cloud_verification_failed',
-              }, async (settlementTx) => {
-                const [parked] = await settlementTx
-                  .update(schema.settlements)
-                  .set({
-                    settlementState: 'exception',
-                    exceptionFromState: settlement.state,
-                    exceptionReason: 'cloud_verification_failed',
-                    exceptionNote: null,
-                    updatedAt: new Date(),
-                  })
-                  .where(and(eq(schema.settlements.id, settlement.id), eq(schema.settlements.settlementState, settlement.state)))
-                  .returning({ id: schema.settlements.id });
-                return parked;
-              });
-            }
+            await parkCloudFailure(tx, actor, row.episodeId);
           }
           return updated;
         },
       );
+      } catch (error) {
+        if (error instanceof Error && error.message === 'transport_inventory_conflict') {
+          return reply.code(409).send({ error: 'transport_inventory_conflict', episode_id: row.episodeId });
+        }
+        throw error;
+      }
       if (written === undefined) {
         // The WHERE above found nothing, so a redelivery landed while these
         // bytes were moving. Reporting the verdict anyway would name a state

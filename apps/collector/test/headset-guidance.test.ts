@@ -26,10 +26,10 @@ describe('PXCap source coverage', () => {
       const items = HEADSET_GUIDANCE.flatMap((section) => [...section.items]);
       const text = (id: string) => items.find((item) => item.id === id)!.text[locale];
       expect(text('sequence').match(/3/g)).toHaveLength(2);
-      expect(text('sequence')).toMatch({ vi: /Trình tự khuyến nghị: giữ yên 3 giây/, en: /Recommended pattern: hold still for 3 seconds/, zh: /建议流程：静止 3 秒/ }[locale]);
+      expect(text('sequence')).toMatch({ vi: /Trình tự nên làm: giữ yên 3 giây/, en: /Recommended pattern: hold still for 3 seconds/, zh: /建议流程：静止 3 秒/ }[locale]);
       expect(text('periodic')).toContain('30');
-      expect(HEADSET_COPY.external[locale]).toMatch({ vi: /bên ngoài ứng dụng/, en: /external host software/, zh: /本应用以外/ }[locale]);
-      expect(text('storage')).toMatch({ vi: /không xóa tệp hay dọn thẻ/, en: /do not delete files or clear the card/, zh: /不删除文件、不清空卡/ }[locale]);
+      expect(HEADSET_COPY.external[locale]).toMatch({ vi: /phần mềm trên máy tính/, en: /external host software/, zh: /本应用以外/ }[locale]);
+      expect(text('storage')).toMatch({ vi: /Không xóa tệp hoặc dọn thẻ/, en: /do not delete files or clear the card/, zh: /不删除文件、不清空卡/ }[locale]);
     });
   }
 

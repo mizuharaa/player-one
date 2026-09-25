@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import type { Db } from '@playerone/store';
 import { hashCredential } from '../../../src/credentials.ts';
 import { liveClaim } from '../../../../store/test/db.ts';
+import { readOriginalityInventory, recordOriginalityAssessment, ORIGINALITY_POLICY_VERSION } from '../../../src/originality.ts';
 
 /**
  * The payout fixture, in raw SQL, the way `spine.test.ts` seeds a settlement.
@@ -36,6 +37,7 @@ export async function seedPayout(d: Db) {
     opA: uid(),
     finA: uid(),
     finB: uid(),
+    identityAdmin: uid(),
     collector1: uid(),
     collector2: uid(),
     task: uid(),
@@ -54,6 +56,8 @@ export async function seedPayout(d: Db) {
       (${ids.finA}, ${ids.centreA}, 'fin-hcm', 'finance', ${hash}),
       (${ids.finB}, ${ids.centreB}, 'fin-han', 'finance', ${hash})
   `);
+  await d.execute(sql`insert into operators(id,upload_centre_id,external_ref,role,credential_hash)
+    values(${ids.identityAdmin},${ids.centreA},'identity-admin','administrator',${hash})`);
   await d.execute(sql`insert into collectors (id, external_ref, status) values (${ids.collector1}, 'c-0001', 'qualified'), (${ids.collector2}, 'c-0002', 'qualified')`);
   await d.execute(sql`insert into tasks (id, name, unit_price, max_concurrent_claimants, status) values (${ids.task}, 'housework', 1200.0000, 5, 'published')`);
   await d.execute(sql`insert into device_types (id, code, generation) values (${ids.deviceType}, 'ego_headset', 'gen1')`);
@@ -80,7 +84,19 @@ export async function seedPayout(d: Db) {
   // The batch ids are returned so a test can push episodes through the real
   // ingest route instead of writing settlements in SQL; `round-down.test.ts`
   // needs a bill that a reviewer actually produced.
-  return { ...ids, claim1: one.claim, claim2: two.claim, batch1: one.batch, batch2: two.batch };
+  const result = { ...ids, claim1: one.claim, claim2: two.claim, batch1: one.batch, batch2: two.batch };
+  await seedIdentity(d, result, ids.finA);
+  await seedIdentity(d, result, ids.finB);
+  return result;
+}
+
+export async function seedIdentity(d: Db, ids: Pick<Ids, 'identityAdmin' | 'machineA' | 'centreA'>, operatorId: string, collectorId: string | null = null): Promise<void> {
+  await d.transaction(async tx => {
+    await tx.execute(sql`update operators set collector_id=${collectorId},collector_identity_verified=true where id=${operatorId}`);
+    await tx.execute(sql`insert into audit_events(action,target_table,target_id,actor_role,operator_id,upload_device_id,upload_centre_id,reason,after)
+      values('originality.identity_attest','operators',${operatorId},'operator',${ids.identityAdmin},${ids.machineA},${ids.centreA},
+        'Fixture administrator checked collector identity.',${JSON.stringify({ collector_id: collectorId, collector_identity_verified: true })}::jsonb)`);
+  });
 }
 
 /** A reviewed episode with a settlement worth `amount`, already billed (`bill_generated`). */
@@ -90,6 +106,7 @@ export async function seedSettlement(
   which: 1 | 2,
   amount: string,
   minutes = '1.000000',
+  options: { originality?: boolean } = {},
 ): Promise<{ settlementId: string; reviewId: string; episodeId: string }> {
   const episodeId = uid();
   const ingestId = uid();
@@ -117,7 +134,29 @@ export async function seedSettlement(
       values (${settlementId}, ${reviewId}, ${ids.task}, ${which === 1 ? ids.claim1 : ids.claim2}, '1200.0000', ${minutes}, ${amount}, 'pending_settlement')
   `);
   await d.execute(sql`update settlements set settlement_state = 'bill_generated', updated_at = now() where id = ${settlementId}`);
+  if (options.originality !== false) await seedOriginality(d, ids, ingestId);
   return { settlementId, reviewId, episodeId };
+}
+
+/** Explicit verified-media and independent human decision for payable fixtures. */
+export async function seedOriginality(d: Db, ids: Pick<Ids, 'finB' | 'machineA' | 'machineB' | 'centreA' | 'centreB'>, ingestId: string,
+  options: { existingFiles?: boolean } = {}): Promise<string> {
+  await d.execute(sql`update episode_ingests set transport_extra_files = '[]'::jsonb where ingest_id = ${ingestId}`);
+  if (!options.existingFiles) await d.execute(sql`insert into episode_files(ingest_id, relative_path, size_bytes, sha256)
+    values (${ingestId}, 'video.mp4', 100, repeat('b',64)) on conflict do nothing`);
+  await d.execute(sql`insert into cloud_verifications(object_key, episode_id, ingest_id, sha256)
+    select 'episodes/'||i.episode_id::text||'/'||i.ingest_id::text||'/'||f.relative_path, i.episode_id, i.ingest_id, f.sha256
+    from episode_ingests i join episode_files f using(ingest_id) where i.ingest_id = ${ingestId} on conflict do nothing`);
+  const assessment = await recordOriginalityAssessment(d, { ingestId,
+    inventory: (await readOriginalityInventory(d, ingestId))!, policyVersion: ORIGINALITY_POLICY_VERSION,
+    status: 'complete', evidence: { fixture: true, candidates: [] } });
+  const id = uid(), reason = 'Independent fixture footage reviewed.';
+  await d.transaction(async (tx) => {
+    await tx.execute(sql`insert into originality_decisions(id, assessment_id, decision, operator_id, reason)
+      values (${id}, ${assessment.id}, 'cleared', ${ids.finB}, ${reason})`);
+    await auditRow(tx, ids, { action: 'originality.decide', targetTable: 'originality_decisions', targetId: id, operatorId: ids.finB, reason });
+  });
+  return assessment.id;
 }
 
 /** A bill for a collector over a period, with one line per amount, totalling their sum as given. */
@@ -128,12 +167,13 @@ export async function seedBill(
   period: { start: Date; end: Date },
   amounts: string[],
   total: string,
+  options: { originality?: boolean } = {},
 ): Promise<string> {
   const billId = uid();
   const collector = which === 1 ? ids.collector1 : ids.collector2;
   const lines: string[] = [];
   for (const amount of amounts) {
-    lines.push((await seedSettlement(d, ids, which, amount)).settlementId);
+    lines.push((await seedSettlement(d, ids, which, amount, undefined, options)).settlementId);
   }
   // The bill and its lines go in one transaction, which is what the generator
   // does (`settle.ts`). `bills_total_matches_lines` is deferred to commit, and
@@ -156,9 +196,9 @@ export async function seedBill(
 }
 
 /** The two bills most tests need: c-0001 for 2,400 VND (two lines) and c-0002 for 1,200 VND. */
-export async function seedBills(d: Db, ids: Ids): Promise<{ bill1: string; bill2: string }> {
-  const bill1 = await seedBill(d, ids, 1, P1, ['1200.0000', '1200.0000'], '2400.0000');
-  const bill2 = await seedBill(d, ids, 2, P1, ['1200.0000'], '1200.0000');
+export async function seedBills(d: Db, ids: Ids, options: { originality?: boolean } = {}): Promise<{ bill1: string; bill2: string }> {
+  const bill1 = await seedBill(d, ids, 1, P1, ['1200.0000', '1200.0000'], '2400.0000', options);
+  const bill2 = await seedBill(d, ids, 2, P1, ['1200.0000'], '1200.0000', options);
   return { bill1, bill2 };
 }
 
@@ -200,7 +240,7 @@ export async function seedAccount(
 /** An attributed audit row, as `mutate` would write it. Operator actor: device and centre set. */
 export async function auditRow(
   d: Db | Parameters<Parameters<Db['transaction']>[0]>[0],
-  ids: Ids,
+  ids: Pick<Ids, 'finB' | 'machineA' | 'machineB' | 'centreA' | 'centreB'>,
   row: { action: string; targetTable: string; targetId: string; operatorId: string; reason?: string },
 ): Promise<void> {
   const centre = row.operatorId === ids.finB ? ids.centreB : ids.centreA;

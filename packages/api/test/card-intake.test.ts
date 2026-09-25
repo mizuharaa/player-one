@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { randomUUID as uid } from 'node:crypto';
+import { createHash, randomUUID as uid } from 'node:crypto';
 import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createServer, type Server } from 'node:http';
@@ -204,7 +204,7 @@ describe.skipIf(!hasDb() || !hasSession(FIRST) || MORE.some((id) => !hasSession(
        * The phone is seeded directly, for the reason `e2e-loop.mjs` records at
        * length: BO-03 enrols a collector by `external_ref` and no back-office
        * route carries a phone at all. The command resolves the number through
-       * `GET /reference/sync`, which returns whole collector rows.
+       * `GET /reference/sync`, whose operational projection includes phone.
        */
       await d.execute(sql`insert into collectors (id, external_ref, status, phone)
         values (${ids.collector}, 'card-c-1', 'qualified', ${PHONE})`);
@@ -275,6 +275,12 @@ describe.skipIf(!hasDb() || !hasSession(FIRST) || MORE.some((id) => !hasSession(
           const upload = multiparts.get(key)!;
           objects.set(key, { sha256: upload.sha256, bytes: Buffer.concat([...upload.parts].sort(([a], [b]) => a - b).map(([, bytes]) => bytes)) });
           multiparts.delete(key);
+        },
+        async publish(sourceKey, key, sha256, bytes) {
+          const held = objects.get(sourceKey);
+          if (!held || held.bytes.length !== bytes || createHash('sha256').update(held.bytes).digest('hex') !== sha256) return false;
+          objects.set(key, { sha256, bytes: Buffer.from(held.bytes) });
+          return true;
         },
       };
       app = buildApi({

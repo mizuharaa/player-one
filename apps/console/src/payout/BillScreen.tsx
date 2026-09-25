@@ -46,6 +46,7 @@ import { gateReasonKey, type GateState } from './gate.ts';
 import { useGate } from './PreflightScreen.tsx';
 import { settlementStateKey } from './refusals.ts';
 import { canReadFinance, readOnlyReason, useFinanceRole } from './role.ts';
+import { OriginalityReview } from './OriginalityReview.tsx';
 
 export function BillScreen() {
   const { t, i18n } = useTranslation();
@@ -175,6 +176,10 @@ export function BillScreen() {
                         })}
                       </tbody>
                     </Table>
+                    <div className="mt-5 space-y-6">
+                      {[...new Set(detail.data.lines.map(l => l.ingest_id).filter(Boolean))].map(ingestId =>
+                        <OriginalityReview key={ingestId} ingestId={ingestId} billId={bill.id} period={period} />)}
+                    </div>
                     <div className="mt-3 space-y-2 text-[0.8125rem] leading-relaxed text-[var(--muted-foreground)]">
                       {detail.data.exceptions > 0 ? (
                         <p>{t('settle.bill.lines.exceptions', { n: count(detail.data.exceptions, locale) })}</p>

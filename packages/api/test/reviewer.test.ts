@@ -5,11 +5,12 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
+import { open } from '@playerone/store';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApi, hashCredential } from '../src/index.ts';
 import { objectKey, type ObjectStore } from '../src/upload-worker.ts';
-import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { appDb, closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 import { episodeRecord, FIXTURE_T as T } from './fixtures.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -260,6 +261,140 @@ describe.skipIf(!hasDb())('the reviewer role', () => {
    * which are the ones that assert the default.
    */
   const lane = () => harness({ reviewerMediaEnabled: true });
+
+  it('limits confirmation to the delivery centre while keeping outcome visibility global', async () => {
+    const h = await lane();
+    const [episode] = await h.d.execute(sql`
+      select episode_id, resolution_confirmed_at from episodes where upload_batch_id = ${h.cards[1]!.batch}
+    `);
+    const id = episode!.episode_id as string;
+    expect(episode!.resolution_confirmed_at).toBeNull();
+    expect((await h.send('GET', `/api/episodes/${id}/outcome`, undefined, h.headersA)).statusCode).toBe(200);
+    const foreign = await h.send('POST', `/episodes/${id}/confirm`, undefined, h.headersA);
+    expect(foreign.statusCode, foreign.body).toBe(404);
+    const [unchanged] = await h.d.execute(sql`select resolution_confirmed_at from episodes where episode_id = ${id}`);
+    expect(unchanged!.resolution_confirmed_at).toBeNull();
+    const own = await h.send('POST', `/episodes/${id}/confirm`, undefined, h.headersB);
+    expect(own.statusCode, own.body).toBe(200);
+    expect(own.json().already_confirmed).toBe(false);
+    expect((await h.send('POST', `/episodes/${id}/confirm`, undefined, h.headersB)).json().already_confirmed).toBe(true);
+    expect((await h.send('POST', `/episodes/${id}/confirm`, undefined, h.headersA)).statusCode).toBe(404);
+    const events = await h.d.execute(sql`select id from audit_events where action = 'episode.resolve_confirm' and target_id = ${id}`);
+    expect(events).toHaveLength(1);
+  });
+
+  it('scopes queue management and hold release without restricting global review flags', async () => {
+    const h = await lane();
+    const [episode] = await h.d.execute(sql`select episode_id from episodes where upload_batch_id = ${h.cards[1]!.batch}`);
+    const id = episode!.episode_id as string;
+    const route = `/api/review/route/${id}`;
+    const hold = `/api/review/hold/${id}`;
+    for (const payload of [{ priority: 5 }, { assignee_ref: null }, { queue: 'standard' }, { queue: 'privacy', priority: 5 }]) {
+      expect((await h.send('POST', route, payload, h.headersA)).statusCode).toBe(404);
+    }
+    expect(await h.d.execute(sql`select id from episode_reviews where episode_id = ${id}`)).toHaveLength(0);
+    for (const who of [h.headersA, h.reviewerHeaders]) {
+      const flag = await h.send('POST', route, { queue: 'privacy' }, who);
+      expect(flag.statusCode, flag.body).toBe(200);
+    }
+    const prioritised = await h.send('POST', route, { priority: 3 }, h.headersB);
+    expect(prioritised.statusCode, prioritised.body).toBe(200);
+    for (const who of [h.reviewerHeaders, h.headersA]) {
+      const held = await h.send('POST', hold, { reason: 'needs investigation' }, who);
+      expect(held.statusCode, held.body).toBe(200);
+    }
+    const release = { queue: 'privacy', reason: 'investigation completed' };
+    for (const who of [h.headersA, h.headersB, h.reviewerHeaders]) {
+      const bypass = await h.send('POST', route, { queue: 'privacy' }, who);
+      expect(bypass.statusCode, bypass.body).toBe(409);
+    }
+    expect((await h.send('POST', hold, release, h.headersA)).statusCode).toBe(404);
+    expect((await h.send('POST', hold, release, h.reviewerHeaders)).statusCode).toBe(403);
+    const [stillHeld] = await h.d.execute(sql`select queue, priority from episode_reviews where episode_id = ${id}`);
+    expect(stillHeld).toMatchObject({ queue: 'held', priority: 3 });
+    const released = await h.send('POST', hold, release, h.headersB);
+    expect(released.statusCode, released.body).toBe(200);
+    expect(released.json().queue).toBe('privacy');
+  });
+
+  it.each([false, true])('keeps phone review recovery reachable (centreless=%s)', async (centreless) => {
+    const h = await lane();
+    const [episode] = await h.d.execute(sql`select episode_id from episodes where upload_batch_id = ${h.cards[1]!.batch}`);
+    const id = episode!.episode_id as string;
+    await h.d.execute(sql`update episodes set upload_path='A', upload_batch_id=null, verification_state='verified' where episode_id=${id}`);
+    if (centreless) {
+      await h.d.execute(sql`update collection_sessions set handover_id=null, session_origin='app' where id=${h.cards[1]!.session}`);
+    }
+    const foreignConfirm = await h.send('POST', `/episodes/${id}/confirm`, undefined, h.headersA);
+    expect(foreignConfirm.statusCode, foreignConfirm.body).toBe(centreless ? 200 : 404);
+    expect((await h.send('POST', `/episodes/${id}/confirm`, undefined, h.headersB)).statusCode).toBe(200);
+    const route = `/api/review/route/${id}`;
+    const hold = `/api/review/hold/${id}`;
+    const foreignRoute = await h.send('POST', route, { priority: 2 }, h.headersA);
+    expect(foreignRoute.statusCode, foreignRoute.body).toBe(centreless ? 200 : 404);
+    const ownRoute = await h.send('POST', route, { priority: 3 }, h.headersB);
+    expect(ownRoute.statusCode, ownRoute.body).toBe(200);
+    const held = await h.send('POST', hold, { reason: 'check phone delivery' }, h.reviewerHeaders);
+    expect(held.statusCode, held.body).toBe(200);
+    const release = { queue: 'standard', reason: 'phone delivery checked' };
+    expect((await h.send('POST', hold, release, h.reviewerHeaders)).statusCode).toBe(403);
+    const foreignRelease = await h.send('POST', hold, release, h.headersA);
+    expect(foreignRelease.statusCode, foreignRelease.body).toBe(centreless ? 200 : 404);
+    if (!centreless) {
+      const ownRelease = await h.send('POST', hold, release, h.headersB);
+      expect(ownRelease.statusCode, ownRelease.body).toBe(200);
+    }
+    const [review] = await h.d.execute(sql`select queue from episode_reviews where episode_id=${id}`);
+    expect(review!.queue).toBe('standard');
+    // A card delivery without a batch must never inherit the global phone pool.
+    await h.d.execute(sql`update episodes set upload_path='C' where episode_id=${id}`);
+    expect((await h.send('POST', route, { priority: 4 }, h.headersA)).statusCode).toBe(404);
+    expect((await h.send('POST', route, { priority: 4 }, h.headersB)).statusCode).toBe(404);
+    expect((await h.send('POST', `/episodes/${id}/confirm`, undefined, h.headersB)).statusCode).toBe(404);
+  });
+
+  it.each(['route', 'hold', 'confirm'] as const)('rechecks %s ownership after waiting for an episode lock', async (operation) => {
+    const h = await lane();
+    const [episode] = await h.d.execute(sql`select episode_id from episodes where upload_batch_id=${h.cards[0]!.batch}`);
+    const id = episode!.episode_id as string;
+    await h.d.execute(sql`update episodes set upload_path='A',upload_batch_id=null,verification_state='verified' where episode_id=${id}`);
+    expect((await h.send('POST', `/api/review/route/${id}`, { priority: 1 })).statusCode).toBe(200);
+    // Routing only locks eligible episodes; a held review is intentionally ineligible.
+    if (operation !== 'route') {
+      expect((await h.send('POST', `/api/review/hold/${id}`, { reason: 'investigate' })).statusCode).toBe(200);
+    }
+    const before = await h.d.execute(sql`select id from audit_events order by id`);
+    const blocker = await open(dbUrl());
+    let pending: Promise<LightMyRequestResponse> | undefined;
+    try {
+      await blocker.transaction(async (tx) => {
+        await tx.execute(sql`select episode_id from episodes where episode_id=${id} for update`);
+        const [blockerPid] = await tx.execute<{ pid: number }>(sql`select pg_backend_pid() as pid`);
+        pending = operation === 'confirm'
+          ? h.send('POST', `/episodes/${id}/confirm`)
+          : h.send('POST', `/api/review/${operation}/${id}`, operation === 'route'
+            ? { priority: 4 } : { queue: 'standard', reason: 'finished' });
+        await expect.poll(async () => {
+          await tx.execute(sql`select pg_stat_clear_snapshot()`);
+          const [row] = await tx.execute<{ n: number }>(sql`
+            select count(*)::int as n from pg_stat_activity a
+            where datname=current_database() and ${blockerPid!.pid}=any(pg_blocking_pids(a.pid))
+          `);
+          return row!.n;
+        }, { timeout: 15_000 }).toBe(1);
+        await tx.execute(sql`update episodes set collection_session_id=${h.cards[1]!.session} where episode_id=${id}`);
+      });
+      const response = await pending!;
+      expect(response.statusCode, response.body).toBe(404);
+      const [row] = await h.d.execute(sql`select r.queue,r.priority,e.resolution_confirmed_at
+        from episode_reviews r join episodes e on e.episode_id=r.episode_id where e.episode_id=${id}`);
+      expect(row).toMatchObject({ queue: operation === 'route' ? 'standard' : 'held', priority: 1, resolution_confirmed_at: null });
+      expect(await h.d.execute(sql`select id from audit_events order by id`)).toEqual(before);
+    } finally {
+      await pending;
+      await blocker.close();
+    }
+  });
 
   it('streams verified cloud ranges without a local root and cancels the unused upstream bytes', async () => {
     const bytes = Buffer.from(Array.from({ length: 64 }, (_, i) => i));

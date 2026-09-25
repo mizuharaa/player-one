@@ -173,6 +173,7 @@ export const PROSPECT_MUST_BE_EMPTY_IN = [
   ['device_assignments', 'collector_id'],
   ['devices', 'bound_collector_id'],
   ['handovers', 'collector_id'],
+  ['operators', 'collector_id'],
   ['payout_accounts', 'collector_id'],
   ['payout_events', 'collector_id'],
   ['task_claims', 'collector_id'],
@@ -256,6 +257,11 @@ export function constraintOf(err: unknown): string | undefined {
  * should read like one.
  */
 export const REFUSALS = new Set([
+  'originality_assessment_not_current',
+  'originality_reviewer_forbidden',
+  'originality_identity_unverified_or_self',
+  'originality_reuse_confirmed',
+  'settlements_episode_already_payable',
   'task_claims_capacity',
   'task_claims_exam_gate',
   'task_claims_qualified_gate',
@@ -1649,6 +1655,7 @@ export function registerBackOffice(
         },
       }),
       async (tx) => {
+        await tx.execute(sql`select originality_lock()`);
         const [held] = await tx
           .select({ heldReason: schema.collectorUploads.heldReason })
           .from(schema.collectorUploads)

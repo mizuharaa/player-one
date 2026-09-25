@@ -91,6 +91,10 @@ export async function storeEpisode(
   const files = input.source_files;
 
   return db.transaction(async (tx) => {
+    // Lock before the first read, including when no episode row exists yet.
+    // A row lock alone cannot serialize two first deliveries of the same id.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${'episode:' + episodeId}, 0))`);
+    await tx.execute(sql`select originality_lock()`);
     const [existing] = await tx.select().from(episodes).where(eq(episodes.episodeId, episodeId));
 
     if (existing === undefined) {
@@ -177,7 +181,7 @@ export async function storeEpisode(
       .where(eq(episodes.episodeId, episodeId));
 
     return { outcome: 'mismatch', episodeId, ingestId, record, mismatch };
-  });
+  }, { isolationLevel: 'read committed' });
 }
 
 /**

@@ -393,6 +393,27 @@
       "when": 1789070090000,
       "tag": "0037_transport_extras",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1789070100000,
+      "tag": "0038_security_payout_hold",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1789070110000,
+      "tag": "0039_originality_gate",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1789070120000,
+      "tag": "0040_originality_fingerprints",
+      "breakpoints": true
     }
   ]
 }

@@ -9,7 +9,7 @@ import { mutate } from './audit.ts';
 import { notify } from './notifications.ts';
 import { phonePreview, previewDuration, registerPhonePreview, reviewPoster } from './review-phone-preview.ts';
 import { roleOf, type Actor } from './actor.ts';
-import { episodeAtCentre } from './episodes.ts';
+import { episodeAtCentre, mayManageEpisode } from './episodes.ts';
 import { REFUSALS, constraintOf } from './backoffice.ts';
 import {
   REVIEW_STATE,
@@ -1214,9 +1214,8 @@ export function registerReview(
    * declaration is not a reviewer's to overrule, and QR-07 is the requirement
    * that says so.
    *
-   * ponytail: any authenticated operator may call this. "Specialist review"
-   * (BO-15) needs a reviewer role to be a real gate, and roles are the
-   * reviewer-auth slice - this endpoint is the queue half and stays that way.
+   * Privacy flags remain global review actions. Queue management belongs to
+   * the delivery centre, except for the centreless phone review pool.
    */
   app.post('/api/review/route/:id', opts, async (req, reply) => {
     const parsed = RouteBody.safeParse(req.body ?? {});
@@ -1235,13 +1234,15 @@ export function registerReview(
      * refused a verdict on is `POST /api/review/hold/:id` below; that one is a
      * reviewer's to do, and it addresses a different row.
      */
-    if (
-      actor.reviewer !== undefined &&
-      (body.queue !== 'privacy' || body.priority !== undefined || body.assignee_ref !== undefined)
-    ) {
+    const managing = body.queue !== 'privacy' || body.priority !== undefined || body.assignee_ref !== undefined;
+    if (actor.reviewer !== undefined && managing) {
       return reply
         .code(403)
         .send({ error: 'a reviewer may quarantine an episode; routing it is an operator decision' });
+    }
+    if (managing && actor.operator !== undefined &&
+      !(await mayManageEpisode(db, episodeId, actor.operator.uploadCentreId))) {
+      return reply.code(404).send({ error: 'no such episode' });
     }
 
     /**
@@ -1264,6 +1265,7 @@ export function registerReview(
     };
 
     let refusal: string | null = null;
+    let outOfScope = false;
     const written = await mutate(db, actor, event, async (tx) => {
       /**
        * The delivery this episode is currently waiting on, and the review row
@@ -1302,6 +1304,12 @@ export function registerReview(
         derived_lane: Lane;
       }[];
       const ep = episode[0];
+      // Recheck after acquiring the episode lock: redelivery may have changed ownership while we waited.
+      if (managing && actor.operator !== undefined &&
+        !(await mayManageEpisode(tx, episodeId, actor.operator.uploadCentreId))) {
+        outOfScope = true;
+        return undefined;
+      }
       if (ep === undefined) {
         // Not reviewable at all: no owner, a quarantined ingest, a blocking
         // defect, or no such episode. Materialising a row here would put
@@ -1333,7 +1341,7 @@ export function registerReview(
            for update
       `)) as unknown as {
         id: string;
-        queue: Lane;
+        queue: RoutableLane;
         priority: number;
         assignee_ref: string | null;
         reviewer_ref: string | null;
@@ -1344,6 +1352,11 @@ export function registerReview(
         // A decided review is a payment. Re-queueing one is the dispute path,
         // which is P2 and is a supersedes column, not an UPDATE.
         refusal = 'this episode has already been reviewed';
+        return undefined;
+      }
+      // A global privacy flag must not become an alternate hold-release path.
+      if (held?.queue === 'held' && body.queue !== undefined) {
+        refusal = 'release the held episode before changing its queue';
         return undefined;
       }
       if (body.queue === 'standard' && ep.declared_privacy) {
@@ -1433,6 +1446,7 @@ export function registerReview(
       return row;
     });
 
+    if (outOfScope) return reply.code(404).send({ error: 'no such episode' });
     if (written === undefined) {
       const error: string = refusal ?? 'no reviewable episode to route';
       // A missing reason is the caller's to fix; everything else here is a
@@ -1571,12 +1585,8 @@ export function registerReview(
    * words, what the counter is being asked to fix; and the person who decides
    * it is fixed has to say what they fixed.
    *
-   * ponytail: not scoped to the caller's own centre, exactly as `/route` is
-   * not. Both take an episode out of a queue and neither knows which centre the
-   * card arrived at; `/api/review/dispute` shows the join that would do it
-   * (episode -> upload_batch -> handover -> upload_centre). It is one `where`
-   * on the locked read below, and it belongs in the same change that scopes
-   * `/route`, not in a fix that would leave the two disagreeing.
+   * Raising a hold remains a global review action. Release uses the same
+   * delivery-centre/centreless-phone scope as queue management in `/route`.
    */
   app.post('/api/review/hold/:id', opts, async (req, reply) => {
     const parsed = HoldBody.safeParse(req.body ?? {});
@@ -1591,6 +1601,10 @@ export function registerReview(
         .code(403)
         .send({ error: 'a reviewer may hold an episode; releasing one is an upload-centre decision' });
     }
+    if (body.queue !== 'held' && actor.operator !== undefined &&
+      !(await mayManageEpisode(db, episodeId, actor.operator.uploadCentreId))) {
+      return reply.code(404).send({ error: 'no such episode' });
+    }
 
     const event = {
       action: 'review.hold',
@@ -1601,9 +1615,18 @@ export function registerReview(
       reason: body.reason,
     };
     let refusal: string | null = null;
+    let outOfScope = false;
     /** A retry of a park that already happened. 200, and no second audit row. */
     let already: { id: string; queue: RoutableLane } | null = null;
     const written = await mutate(db, actor, event, async (tx) => {
+      if (body.queue !== 'held' && actor.operator !== undefined) {
+        // Match route/resolve lock order: episode first, then its review.
+        await tx.execute(sql`select episode_id from episodes where episode_id=${episodeId} for update`);
+        if (!(await mayManageEpisode(tx, episodeId, actor.operator.uploadCentreId))) {
+          outOfScope = true;
+          return undefined;
+        }
+      }
       /**
        * The pending review to move, locked before it is read again.
        *
@@ -1681,6 +1704,7 @@ export function registerReview(
       return { id: after.id, queue: after.queue };
     });
 
+    if (outOfScope) return reply.code(404).send({ error: 'no such episode' });
     const settled: { id: string; queue: RoutableLane } | null = written ?? already;
     if (settled === null) {
       const error: string = refusal ?? 'no pending review on this episode';

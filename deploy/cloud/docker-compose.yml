@@ -76,6 +76,25 @@ services:
       start_period: 30s
       retries: 3
 
+  originality-worker:
+    image: ${PLAYERONE_IMAGE:-playerone-api:local}
+    restart: unless-stopped
+    env_file: [cloud.env]
+    environment:
+      OWNER_DATABASE_URL: ""
+      POSTGRES_PASSWORD: ""
+      PLAYERONE_APP_PASSWORD: ""
+      PLAYERONE_DEMO_MACHINE_SECRET: ""
+      PLAYERONE_DEMO_ADMIN_SECRET: ""
+      PLAYERONE_DEMO_FINANCE_SECRET: ""
+      PLAYERONE_DEMO_REVIEWER_SECRET: ""
+    command: ["node", "packages/api/bin/originality-worker.ts"]
+    volumes:
+      - media:/data/media:ro
+    # No HTTP listener. Scratch uses the container's disk, not RAM.
+    healthcheck:
+      disable: true
+
   # One-off tools, never started by compose up.
   ops:
     profiles: ["tools"]

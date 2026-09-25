@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildExport,
   canonicalRow,
+  csvRow,
   EXPORT_COLUMNS,
   PIT_COMMENT,
   rowHash,
@@ -31,6 +32,18 @@ const row = (over: Partial<ExportRow> = {}): ExportRow => ({
 });
 
 describe('the payout export', () => {
+  it('keeps spreadsheet formulas literal without changing decimal amounts or dates', () => {
+    for (const value of ['=1+1', '  =1', '\t=1', '\r=1', '\n=1', '\0=1', '@x', '+SUM(1,2)', '-cmd', '\tplain']) {
+      expect(csvRow([value]), value).toBe(`"'${value}"`);
+    }
+    expect(csvRow(['-12.5', '+12', '640.0008', '2026-09-23', 'Nguyễn Văn A'])).toBe(
+      '"-12.5","+12","640.0008","2026-09-23","Nguyễn Văn A"',
+    );
+    const built = buildExport([row({ collector_name: '=1+1' })]);
+    expect(built.body).toContain('"\'=1+1"');
+    expect(verifyExport(built.body).ok).toBe(true);
+  });
+
   it('is byte-identical for the same rows, twice', () => {
     const a = buildExport([row(), row({ bill_id: '0f3b2f0e-1111-4000-8000-000000000002' })]);
     const b = buildExport([row(), row({ bill_id: '0f3b2f0e-1111-4000-8000-000000000002' })]);

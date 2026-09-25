@@ -45,7 +45,7 @@ it.each(['en', 'vi', 'zh'] as const)('finance bill shows awaiting, paid and simu
       const text = node.textContent ?? '';
       expect(text, c.name).toContain('Nguyen Van A');
       expect(text, c.name).toContain('•••• 5678');
-      const awaiting = { en: 'Awaiting payment — destination unverified', vi: 'Chờ thanh toán. Nơi nhận tiền chưa xác minh.', zh: '待付款，收款账户尚未验证。' }[locale];
+      const awaiting = { en: 'Awaiting payment — destination unverified', vi: 'Chờ thanh toán. Tài khoản nhận tiền chưa được xác minh.', zh: '待付款，收款账户尚未验证。' }[locale];
       const paid = MESSAGES[locale]['settle.paidReference'].replace('{{reference}}', c.reference ?? '');
       for (const [flag, sentence] of [['awaiting', awaiting], ['paid', paid], ['simulation', MESSAGES[locale]['settle.simulation']]] as const) {
         if ((c.shows as readonly string[]).includes(flag)) expect(text, `${c.name} shows ${flag}`).toContain(sentence);

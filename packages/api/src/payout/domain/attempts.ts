@@ -126,10 +126,13 @@ export async function insertAttempt(
     payoutAccountId: string;
     amountVnd: number;
     mode: 'manual' | 'api';
+    /** Server configuration, never a request field; scoped to this transaction. */
+    holdsEnabled: boolean;
     manualReference?: string;
     settledAt?: Date;
   },
 ): Promise<AttemptRow> {
+  await tx.execute(sql`select set_config('app.payout_holds_enabled', ${String(input.holdsEnabled)}, true)`);
   const status = input.mode === 'manual' ? 'succeeded' : 'created';
   const rows = (await tx.execute(sql`
     insert into payout_attempts

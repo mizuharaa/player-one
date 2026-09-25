@@ -206,7 +206,7 @@ describe.skipIf(!hasDb())('the review lane', () => {
       privacyIds = (flagged.json().episodes as { episode_id: string }[]).map((e) => e.episode_id);
     }
 
-    return { d, app, ids, claim, headers, headers2, send, handover, batch, session, episodeIds, privacyIds };
+    return { d, app, ids, claim, headers, headers2, send, login, handover, batch, session, episodeIds, privacyIds };
   }
 
   const claim = async (h: Awaited<ReturnType<typeof harness>>, who?: Record<string, string>) =>
@@ -637,16 +637,17 @@ describe.skipIf(!hasDb())('the review lane', () => {
         privacy: [record({ basename: `ego_${SERIAL_2}_20260813_135100`, serial: SERIAL_2 })],
       });
       const [flagged] = h.privacyIds;
+      const deliveryCentre = await h.login('op3', 'M2');
 
       // The collector declared others in frame. That is a floor, not a default:
       // a reviewer's own PRV-04 flag sits above it and could be lifted, but
       // nobody overrules what was declared before the recording was made.
-      const forced = await h.send('POST', `/api/review/route/${flagged}`, { queue: 'standard' });
+      const forced = await h.send('POST', `/api/review/route/${flagged}`, { queue: 'standard' }, deliveryCentre);
       expect(forced.statusCode, forced.body).toBe(409);
       expect((await claim(h)).json().episode_id).not.toBe(flagged);
 
       // Priority still moves, and does not drag the lane with it.
-      const prioritised = await h.send('POST', `/api/review/route/${flagged}`, { priority: 5 });
+      const prioritised = await h.send('POST', `/api/review/route/${flagged}`, { priority: 5 }, deliveryCentre);
       expect(prioritised.statusCode, prioritised.body).toBe(200);
       expect(prioritised.json().queue).toBe('privacy');
     });

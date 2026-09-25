@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { DISCREPANCY_CODES } from '@playerone/contracts';
 import { DEFECT_CATALOGUE, REVIEW_REASON_CATALOGUE, seedCatalogues } from '../src/catalogue.ts';
 import { closeDb, db, hasDb, liveClaim, truncate, violates, useDatabase } from './db.ts';
+import { seedIdentity, seedOriginality } from '../../api/test/payout/domain/fixture.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('spine');
@@ -393,8 +394,17 @@ describe.skipIf(!hasDb())('the identity spine', () => {
                                  amount, settlement_state)
           values (${settlementId}, ${reviewId}, ${ids.task}, ${ids.claim}, '1200.0000', '0.141667', '170.0000', ${state});
       `);
-      return { ...ids, settlementId };
+      return { ...ids, settlementId, ingestId };
     }
+
+    const readyForPayment = async (ids: Awaited<ReturnType<typeof seedSettlement>>) => {
+      const d = await db(), identityAdmin = uid();
+      await d.execute(sql`insert into operators(id,upload_centre_id,external_ref,role)
+        values(${identityAdmin},${ids.centre},'identity-admin','administrator')`);
+      await seedIdentity(d, { identityAdmin, machineA: ids.uploadDevice, centreA: ids.centre }, ids.finance);
+      await seedOriginality(d, { finB: ids.finance, machineA: ids.uploadDevice, machineB: ids.uploadDevice,
+        centreA: ids.centre, centreB: ids.centre }, ids.ingestId);
+    };
 
     const move = async (settlementId: string, to: string): Promise<unknown> => {
       const d = await db();
@@ -413,6 +423,7 @@ describe.skipIf(!hasDb())('the identity spine', () => {
      */
     const pay = async (ids: Awaited<ReturnType<typeof seedSettlement>>): Promise<void> => {
       const d = await db();
+      await readyForPayment(ids);
       const billId = uid();
       // One transaction, the way the generator writes a bill: since 0022 a bill
       // that COMMITS with a positive total and no lines is refused.
@@ -673,6 +684,7 @@ describe.skipIf(!hasDb())('the identity spine', () => {
         await move(ids.settlementId, 'bill_generated');
         // Then paid the way 0013 requires, on THIS bill (a second bill for the
         // same collector and period has nowhere to go).
+        await readyForPayment(ids);
         await d.transaction(async (tx) => {
           await tx.execute(sql`update settlements set settlement_state = 'manually_paid', updated_at = now() where id = ${ids.settlementId};`);
           await tx.execute(sql`

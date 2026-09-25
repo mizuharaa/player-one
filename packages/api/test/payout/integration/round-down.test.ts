@@ -5,7 +5,7 @@ import type { EpisodeRecord } from '@playerone/contracts';
 import { runBatch } from '../../../src/payout/worker/batch.ts';
 import { closeDb, hasDb, truncate, useDatabase } from '../../../../store/test/db.ts';
 import { episodeRecord } from '../../fixtures.ts';
-import { P0, rows, seedAccount, seedBill } from '../domain/fixture.ts';
+import { P0, rows, seedAccount, seedBill, seedOriginality } from '../domain/fixture.ts';
 import { attempt, attemptCount, harness, transfers, type Harness } from './harness.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
@@ -46,8 +46,13 @@ useDatabase('round_down');
 /** Seventeen seconds is `0.283333` minutes and `339.9996` — a fractional part just under a whole dong. */
 const SEVENTEEN_SECONDS = 17;
 
-const record = (seconds: number): EpisodeRecord =>
-  episodeRecord({ measured: seconds, serial: 'AZER76400FE' });
+const record = (seconds: number): EpisodeRecord => {
+  const episode = episodeRecord({ measured: seconds, serial: 'AZER76400FE' });
+  episode.source_files = episode.streams.flatMap(stream => stream.parts.map(part => ({
+    relative_path: part.file, bytes: part.bytes, sha256: part.sha256,
+  })));
+  return episode;
+};
 
 /**
  * `count` episodes of `seconds` each, ingested on collector 1's card, reviewed
@@ -88,6 +93,10 @@ async function reviewedBill(
   const bills = cycle.json().bills as { id: string; collector_ref: string; total: string; lines: number }[];
   const bill = bills.find((b) => b.collector_ref === 'c-0001')!;
   expect(bill.lines).toBe(count);
+  const reviewed = await rows<{ ingest_id: string }>(h.d, sql`select r.ingest_id from bill_lines l
+    join settlements s on s.id=l.settlement_id join episode_reviews r on r.id=s.episode_review_id
+    where l.bill_id=${bill.id}`);
+  for (const row of reviewed) await seedOriginality(h.d, h.ids, row.ingest_id, { existingFiles: true });
   // The cycle's own window, not one recomputed from the clock: a batch period
   // that starts a millisecond later than the bill's does not contain the bill.
   const period = { start: new Date(cycle.json().period_start as string), end: new Date(cycle.json().period_end as string) };

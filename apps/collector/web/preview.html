@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PlayerOne mobile preview</title>
+<style>
+  body { margin: 0; padding: 20px; color: #252525; background: #efeff3; font: 14px system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  form { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+  label { display: grid; gap: 4px; }
+  select { font: inherit; padding: 8px; }
+  iframe { display: block; border: 1px solid #777; background: white; }
+  main { overflow: auto; padding: 2px; }
+  a { color: #244ba4; }
+</style>
+<h1>PlayerOne mobile preview</h1>
+<p>Live app components with sample data. Native layout, gestures, Bluetooth and uploads still need a device.</p>
+<form id="controls">
+  <label>Screen<select aria-label="Screen" name="screen">
+    <option value="home">Home</option><option value="landing">Landing</option><option value="signin">Sign in</option>
+    <option value="register">Register</option><option value="agreements">Agreements</option><option value="training">Training</option>
+    <option value="exam">Exam</option><option value="taskHall">Tasks</option><option value="myTasks">My tasks</option>
+    <option value="devices">Devices</option><option value="uploads">Uploads</option><option value="income">Income</option>
+    <option value="profile">Profile</option><option value="notifications">Notifications</option>
+  </select></label>
+  <label>Viewport<select aria-label="Viewport" name="size"><option>360x800</option><option>390x844</option><option>412x915</option><option>320x640</option></select></label>
+  <label>Language<select aria-label="Language" name="lang"><option value="vi">Vietnamese</option><option value="en">English</option><option value="zh">Chinese</option></select></label>
+  <label>Data state<select aria-label="Data state" name="state"><option value="">Ready</option><option>loading</option><option>empty</option><option>offline</option><option>error</option></select></label>
+</form>
+<p>Save a file under <code>apps/collector/src</code> to refresh. <a id="direct" target="_blank" rel="noopener">Open screen separately</a></p>
+<main><iframe title="Collector app layout preview" id="phone"></iframe></main>
+<script>
+  const controls = document.querySelector('form');
+  const phone = document.querySelector('iframe');
+  // Fixed Vite origin also works when this HTML is opened inside VS Code Live Preview.
+  function update() {
+    const fields = new FormData(controls);
+    const [width, height] = fields.get('size').split('x');
+    phone.width = width; phone.height = height;
+    const target = new URL('http://127.0.0.1:5177/');
+    for (const name of ['screen', 'lang', 'state']) target.searchParams.set(name, fields.get(name));
+    target.searchParams.set('ready', '1');
+    phone.src = target.href;
+    document.querySelector('#direct').href = target.href;
+  }
+  controls.addEventListener('change', update);
+  controls.addEventListener('submit', event => event.preventDefault());
+  update();
+</script>
+</html>

@@ -121,7 +121,10 @@ describe.skipIf(!hasDb())('own operator profile API', () => {
       { ...headers, authorization: 'Bearer invalid' }]) {
       expect((await app.inject({ url: PATH, headers: h })).statusCode).toBe(401);
     }
-    const otherMachine = signToken(SECRET, { kind: 'machine', uploadDeviceId: randomUUID(), uploadCentreId: ids.otherCentre });
+    const otherMachineId = randomUUID();
+    await (await db()).execute(sql`insert into upload_devices (id, upload_centre_id, machine_identifier, status)
+      values (${otherMachineId}, ${ids.otherCentre}, 'PROFILE-OTHER', 'active')`);
+    const otherMachine = signToken(SECRET, { kind: 'machine', uploadDeviceId: otherMachineId, uploadCentreId: ids.otherCentre });
     expect((await app.inject({ url: PATH, headers: { ...headers, 'x-machine-token': `Bearer ${otherMachine}` } })).statusCode).toBe(403);
   });
 

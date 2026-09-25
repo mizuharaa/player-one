@@ -222,6 +222,7 @@ const ISSUE_STATE: Record<Issue, CollectorState> = {
   already_paid: 'paid',
   line_in_exception: 'on_hold',
   risk_hold: 'on_hold',
+  originality_pending: 'on_hold',
   // A bill worth less than one dong floors to nothing, so no transfer can
   // carry it. There is nothing the collector can do about that and nothing
   // they did wrong, and what the platform does with such a bill — carry it or

@@ -8,6 +8,7 @@ import { objectKey, type ObjectStore } from '../src/upload-worker.ts';
 import { ZERO, add, fromDecimal, mul, quantise } from '../src/money.ts';
 import { open, schema } from '@playerone/store';
 import { appDb, closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { seedIdentity, seedOriginality } from './payout/domain/fixture.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('settle');
@@ -74,7 +75,7 @@ const record = (): EpisodeRecord => {
       max_stream_skew_ms: 0,
     },
     calibration: { present: true, files: [] },
-    source_files: [],
+    source_files: [{ relative_path: 'left_part0001.mp4', bytes: 64, sha256: 'b'.repeat(64) }],
     discrepancies: [],
     unclassified_files: [],
   };
@@ -270,8 +271,17 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
      * enforces at the moment the bill is paid.
      */
     const read = (url: string) => send('GET', url, undefined, headersF);
-
-    return { d, app, ids, headersA, headersB, headersF, headersR, send, read, expected };
+    const clearOriginality = async () => {
+      const identityAdmin = uid();
+      await d.execute(sql`insert into operators(id,upload_centre_id,external_ref,role,credential_hash)
+        values(${identityAdmin},${ids.centreA},${'identity-' + identityAdmin},'administrator',${hash})`);
+      await seedIdentity(d, { ...ids, identityAdmin }, ids.financeA);
+      const ingests = await d.execute<{ ingest_id: string }>(sql`select distinct r.ingest_id from episode_reviews r
+        join settlements s on s.episode_review_id=r.id where s.amount>0`);
+      for (const row of ingests) await seedOriginality(d, { ...ids, finB: ids.financeA,
+        machineB: ids.machineA, centreB: ids.centreA }, row.ingest_id, { existingFiles: true });
+    };
+    return { d, app, ids, headersA, headersB, headersF, headersR, send, read, expected, clearOriginality };
   }
 
   /**
@@ -426,6 +436,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
             id: uid(), reviewId: settlement!.episodeReviewId, raisedBy: h.ids.operatorA, reason: 'after billing',
           }));
           if (reason === 'cloud_verification_failed') {
+            await h.clearOriginality();
             await h.d.transaction(async (tx) => {
               await tx.execute(sql`update settlements set settlement_state = 'manually_paid', updated_at = now() where id = ${reviewed.settlement_id}`);
               await tx.execute(sql`insert into audit_events (action, target_table, target_id, actor_role, operator_id, upload_device_id, upload_centre_id)
@@ -837,6 +848,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
      */
     it('refuses the bills, one bill and the export to an operator who is not finance', async () => {
       const h = await harness({ each: 1 });
+      await h.clearOriginality();
       expect((await h.send('POST', '/api/settle/bills', period())).statusCode).toBe(200);
       const [bill] = (await h.read(`/api/settle/bills?period_start=${encodeURIComponent(period().period_start)}`)).json().bills as { id: string }[];
 
@@ -902,12 +914,15 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
   describe('SET-06: the export finance checks', () => {
     it('exports every line of every bill, with its arithmetic intact', async () => {
       const h = await harness();
+      await h.clearOriginality();
+      await h.d.execute(sql`update tasks set name = '=1+1' where id = ${h.ids.taskHousework}`);
       await h.send('POST', '/api/settle/bills', period());
 
       const res = await h.read(`/api/settle/export.csv?period_start=${encodeURIComponent(period().period_start)}`);
       expect(res.statusCode, res.body).toBe(200);
       expect(res.headers['content-type']).toContain('text/csv');
       expect(res.headers['content-disposition']).toContain('attachment');
+      expect(res.body).toContain('"\'=1+1"');
       // Excel reads a BOM-less UTF-8 CSV as the local code page, and task names
       // are Chinese in production.
       expect(res.body.startsWith('﻿')).toBe(true);
@@ -1092,6 +1107,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
 
     it('parks a billed line: the bill keeps it, shows it, and cannot be paid until it is released', async () => {
       const h = await harness({ each: 1 });
+      await h.clearOriginality();
       const generated = await h.send('POST', '/api/settle/bills', period());
       const bill = (generated.json().bills as { id: string; collector_ref: string; total: string }[]).find((b) => b.collector_ref === 'c-0001')!;
       const [line] = (await h.read(`/api/settle/bills/${bill.id}`)).json().lines as { settlement_id: string }[];
@@ -1269,6 +1285,7 @@ describe.skipIf(!hasDb())('the settlement lifecycle', () => {
 
     it('refuses to park a paid settlement, because paid is final', async () => {
       const h = await harness({ each: 1 });
+      await h.clearOriginality();
       const [first] = await settlements(h);
       // Paid the way 0013 requires: a finance operator who did not issue the
       // bill, in the same transaction as the move. Straight SQL, so the row is

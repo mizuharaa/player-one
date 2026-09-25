@@ -6,6 +6,7 @@ import { sql } from 'drizzle-orm';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { deriveEpisodeId, type EpisodeRecord } from '@playerone/contracts';
+import { open, storeEpisode, type Db } from '@playerone/store';
 import {
   buildApi,
   hashCredential,
@@ -23,7 +24,9 @@ import {
   type PutResult,
 } from '../src/index.ts';
 import { MESSAGES, LOCALES } from '../src/i18n.ts';
-import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
+import { stagingKey, verifyReadBack } from '../src/upload-worker.ts';
+import { assemble } from '../src/direct-upload.ts';
+import { appDb, closeDb, db, dbUrl, hasDb, liveClaim, truncate, useDatabase, violates } from '../../store/test/db.ts';
 /**
  * The engine itself, and the real corpus. An unmeasured delivery is measured by
  * this service, so the proofs for it have to run the same engine the route
@@ -173,6 +176,14 @@ class MemoryStore implements ObjectStore, DirectUploadStore {
     this.open.delete(key);
   }
 
+  async publish(sourceKey: string, key: string, sha256: string, bytes: number): Promise<boolean> {
+    const body = this.objects.get(sourceKey);
+    if (!body || body.length !== bytes || sha(body) !== sha256) return false;
+    this.objects.set(key, Buffer.from(body));
+    this.meta.set(key, sha256);
+    return true;
+  }
+
   // -- what the "phone" does with a signed URL --------------------------------
 
   putDirect(url: string, body: Buffer): void {
@@ -311,6 +322,28 @@ function delivery(opts: { serial?: string; basename?: string; big?: number } = {
   };
 }
 
+/** Historical measured registrations are fixtures, never created through the API.
+ * These tests retain coverage for already-issued upload ids and their cloud objects.
+ */
+async function seedLegacyUpload(
+  ids: { collector: string }, delivery: Delivery, session: string, id: string,
+): Promise<void> {
+  const d = await db();
+  const existing = await d.execute(sql`select id from collector_uploads where id = ${id}`);
+  if (existing.length > 0) return;
+  const stored = await storeEpisode(d, delivery.record);
+  await d.execute(sql`update episodes set collection_session_id = ${session},
+    resolution_state = 'resolved', resolution_method = 'app_declared', upload_path = 'A'
+    where episode_id = ${stored.episodeId} and upload_path is null`);
+  const files = [...delivery.record.source_files, ...delivery.extras];
+  await d.execute(sql`insert into collector_uploads
+    (id, collector_id, collection_session_id, device_serial, episode_id, ingest_id,
+     source_basename, file_count, total_bytes, extra_files, measured)
+    values (${id}, ${ids.collector}, ${session}, ${delivery.record.device.serial},
+      ${stored.episodeId}, ${stored.ingestId}, ${delivery.record.source.path},
+      ${files.length}, ${files.reduce((n, f) => n + f.bytes, 0)}, ${JSON.stringify(delivery.extras)}::jsonb, true)`);
+}
+
 // ---------------------------------------------------------------------------
 
 describe.skipIf(!hasDb())('Path A, the collector upload', () => {
@@ -334,7 +367,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
    */
   async function harness(
     store: MemoryStore = new MemoryStore(),
-    options: { mediaRoot?: string; reviewerMedia?: boolean } = {},
+    options: { mediaRoot?: string; reviewerMedia?: boolean; db?: Db } = {},
   ) {
     const d = await db();
     const ids = {
@@ -381,7 +414,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     }
 
     const app = buildApi({
-      db: await appDb(),
+      db: options.db ?? await appDb(),
       tokenSecret: SECRET,
       objectStore: store,
       mediaRoot: options.mediaRoot,
@@ -448,6 +481,11 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
       extra_files: d.extras,
     });
 
+  const resumeLegacy = async (h: Harness, d: Delivery, session: string, id = uid()) => {
+    await seedLegacyUpload(h.ids, d, session, id);
+    return register(h, d, session, id);
+  };
+
   /** Send every file the plan still wants, through the "signed" URLs it named. */
   function sendPlan(h: Harness, d: { blobs: Map<string, Buffer> }, files: { relative_path: string; put_url?: string; parts?: { part_number: number; start: number; end: number; url: string }[] }[]): void {
     for (const f of files) {
@@ -459,91 +497,52 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
 
   // -------------------------------------------------------------------------
 
-  it('registers a delivery and plans it onto Path C’s own object keys', async () => {
+  it('refuses new measured registrations without storing client payment measurements', async () => {
     const h = await harness();
     const d = delivery();
-    const res = await register(h, d, h.ids.session);
-    expect(res.statusCode).toBe(200);
-    const body = res.json();
-
-    expect(body.upload_path).toBe('A');
-    expect(body.outcome).toBe('new');
-    expect(body.attributed).toBe(true);
-    expect(body.episode_id).toBe(deriveEpisodeId(d.record.source.path));
-
-    // Every file of the DELIVERY, not only the fingerprinted ones: the manifest
-    // has to reach the cloud even though ING-02 keeps it out of the digest.
-    expect(body.files.map((f: { relative_path: string }) => f.relative_path).sort()).toEqual(
-      [...d.blobs.keys()].sort(),
-    );
-    // The same key function Path C uses, so a session that arrives twice by two
-    // routes lands on one object set.
-    for (const f of body.files) {
-      expect(f.key).toBe(objectKey(body.episode_id, body.ingest_id, f.relative_path));
-      expect(f.done).toBe(false);
-      expect(f.put_url).toBeTruthy();
+    const id = uid();
+    const res = await register(h, d, h.ids.session, id);
+    expect(res.statusCode, res.body).toBe(422);
+    expect(res.json()).toMatchObject({
+      error: 'server_measurement_required',
+      required_fields: ['id', 'collection_session_id', 'session_basename', 'files'],
+    });
+    expect(res.json().detail).toMatch(/omit episode/);
+    const store = await db();
+    for (const table of ['episodes', 'episode_ingests', 'collector_uploads', 'audit_events']) {
+      // Sign-in audits exist; this assertion is only for the rejected upload.
+      const rows = await store.execute(table === 'audit_events'
+        ? sql`select id from audit_events where target_id = ${id}`
+        : sql.raw(`select * from ${table}`));
+      expect(rows).toHaveLength(0);
     }
+    expect(h.store.signed).toHaveLength(0);
   });
 
-  it('puts the episode on the session the collector named, as its own kind of attribution', async () => {
+  it('registers only an inventory and audits it without making an episode', async () => {
     const h = await harness();
-    const res = await register(h, delivery(), h.ids.session);
-    const d = await db();
-    const rows = (await d.execute(sql`
-      select collection_session_id, resolution_state, resolution_method, upload_path
-        from episodes where episode_id = ${res.json().episode_id}
-    `)) as unknown as Record<string, string>[];
-    expect(rows[0]).toMatchObject({
-      collection_session_id: h.ids.session,
-      resolution_state: 'resolved',
-      // Not 'manual': an operator's override at a counter and a collector's
-      // declaration before recording are different evidence, and this column is
-      // the only place that difference is recorded.
-      resolution_method: 'app_declared',
-      upload_path: 'A',
-    });
-  });
-
-  it('traces the delivery to the collector, the session and the device (UPL-07)', async () => {
-    const h = await harness();
+    const d = delivery();
     const id = uid();
-    const res = await register(h, delivery(), h.ids.session, id);
-    const d = await db();
-    const rows = (await d.execute(sql`
-      select collector_id, collection_session_id, device_id, device_serial, episode_id, ingest_id, state, file_count
-        from collector_uploads where id = ${id}
-    `)) as unknown as Record<string, unknown>[];
-    expect(rows[0]).toMatchObject({
-      collector_id: h.ids.collector,
-      collection_session_id: h.ids.session,
-      device_id: h.ids.device,
-      device_serial: 'AZER76400FE',
-      episode_id: res.json().episode_id,
-      ingest_id: res.json().ingest_id,
-      state: 'registered',
-      file_count: 4,
+    const res = await h.post('/api/me/uploads', {
+      id, collection_session_id: h.ids.session, session_basename: d.record.source.path,
+      files: [...d.record.source_files, ...d.extras],
+      raw_duration_s: 999999, state: 'ok',
     });
-  });
-
-  it('records the registration as a collector’s own act in the audit trail', async () => {
-    const h = await harness();
-    const id = uid();
-    await register(h, delivery(), h.ids.session, id);
-    const d = await db();
-    const rows = (await d.execute(sql`
-      select actor_role, collector_id, operator_id, upload_device_id, upload_centre_id
-        from audit_events where action = 'upload.register' and target_id = ${id}
-    `)) as unknown as Record<string, unknown>[];
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toEqual({
-      actor_role: 'collector',
-      collector_id: h.ids.collector,
-      // A collector has no operator row, no machine and no centre, and a row
-      // claiming otherwise would be evidence of something that did not happen.
-      operator_id: null,
-      upload_device_id: null,
-      upload_centre_id: null,
-    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({ measured: false, ingest_id: null });
+    expect(res.json().files).toHaveLength(d.blobs.size);
+    const store = await db();
+    expect(await store.execute(sql`select * from episodes`)).toHaveLength(0);
+    const rows = await store.execute(sql`select measured, collector_id, collection_session_id,
+      device_id, episode_id, ingest_id from collector_uploads where id = ${id}`);
+    expect(rows[0]).toMatchObject({ measured: false, collector_id: h.ids.collector,
+      collection_session_id: h.ids.session, device_id: h.ids.device, episode_id: null, ingest_id: null });
+    const audit = await store.execute(sql`select actor_role, collector_id, operator_id,
+      upload_device_id, upload_centre_id from audit_events
+      where action = 'upload.register' and target_id = ${id}`);
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toEqual({ actor_role: 'collector', collector_id: h.ids.collector,
+      operator_id: null, upload_device_id: null, upload_centre_id: null });
   });
 
   // -- the refusals ---------------------------------------------------------
@@ -597,7 +596,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
    */
   it('names a storage outage rather than answering an unnamed 500', async () => {
     const h = await harness(new DeadStore());
-    const res = await register(h, delivery(), h.ids.session);
+    const res = await resumeLegacy(h, delivery(), h.ids.session);
 
     expect(res.statusCode, res.body).toBe(503);
     expect(res.json()).toMatchObject({ error: 'refused', constraint: 'storage_unavailable' });
@@ -619,7 +618,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     store.down = false;
     const h = await harness(store);
     const id = uid();
-    expect((await register(h, delivery(), h.ids.session, id)).statusCode).toBe(200);
+    expect((await resumeLegacy(h, delivery(), h.ids.session, id)).statusCode).toBe(200);
 
     store.down = true;
     const res = await h.get(`/api/me/uploads/${id}`);
@@ -631,7 +630,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     const h = await harness();
     const d = delivery();
     const id = uid();
-    const plan = (await register(h, d, h.ids.session, id)).json();
+    const plan = (await resumeLegacy(h, d, h.ids.session, id)).json();
     sendPlan(h, d, plan.files);
     expect((await h.post(`/api/me/uploads/${id}/complete`)).statusCode).toBe(200);
 
@@ -639,7 +638,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     expect(again.statusCode).toBe(409);
     expect(again.json().constraint).toBe('upload_already_complete');
 
-    const reRegister = await register(h, d, h.ids.session, id);
+    const reRegister = await resumeLegacy(h, d, h.ids.session, id);
     expect(reRegister.statusCode).toBe(409);
     expect(reRegister.json().constraint).toBe('upload_already_complete');
   });
@@ -648,12 +647,12 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     const h = await harness();
     const d = delivery();
     const id = uid();
-    const plan = (await register(h, d, h.ids.session, id)).json();
+    const plan = (await resumeLegacy(h, d, h.ids.session, id)).json();
     sendPlan(h, d, plan.files);
     // A store that wrote the object and got the bytes wrong. Its recorded
     // sha256 still reads clean, which is exactly why the verdict is a read-back
     // and never metadata.
-    h.store.corrupt(plan.files[0].key);
+    h.store.corrupt(stagingKey(plan.files[0].key));
 
     const res = await h.post(`/api/me/uploads/${id}/complete`);
     expect(res.statusCode).toBe(409);
@@ -676,9 +675,9 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     const h = await harness();
     const d = delivery();
     const id = uid();
-    const plan = (await register(h, d, h.ids.session, id)).json();
+    const plan = (await resumeLegacy(h, d, h.ids.session, id)).json();
     sendPlan(h, d, plan.files);
-    h.store.corrupt(plan.files[0].key);
+    h.store.corrupt(stagingKey(plan.files[0].key));
     expect((await h.post(`/api/me/uploads/${id}/complete`)).statusCode).toBe(409);
 
     /**
@@ -718,7 +717,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     const d = delivery();
     d.record.source_files[0]!.bytes = 2 * PART_SIZE + 7;
 
-    const plan = (await register(h, d, h.ids.session)).json();
+    const plan = (await resumeLegacy(h, d, h.ids.session)).json();
     const big = plan.files.find((f: { bytes: number }) => f.bytes > PART_SIZE);
     expect(big.upload_id).toBeTruthy();
     expect(big.parts.map((p: { part_number: number; bytes: number }) => [p.part_number, p.bytes])).toEqual([
@@ -739,7 +738,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     // hashes what actually arrived.
     const bigName = [...d.blobs.keys()].find((n) => d.blobs.get(n)!.length > PART_SIZE)!;
     const id = uid();
-    const plan = (await register(h, d, h.ids.session, id)).json();
+    const plan = (await resumeLegacy(h, d, h.ids.session, id)).json();
     const big = plan.files.find((f: { relative_path: string }) => f.relative_path === bigName);
     expect(big.parts).toHaveLength(3);
 
@@ -766,15 +765,15 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     const h = await harness();
     const d = delivery();
     const id = uid();
-    const first = (await register(h, d, h.ids.session, id)).json();
+    const first = (await resumeLegacy(h, d, h.ids.session, id)).json();
     sendPlan(h, d, first.files);
     expect((await h.post(`/api/me/uploads/${id}/complete`)).statusCode).toBe(200);
 
     // A second delivery of the same session, under a new upload id. It resolves
     // to the same episode and the same ingest, so it lands on the same keys —
     // and every one of them is already there.
-    const second = (await register(h, d, h.ids.session, uid())).json();
-    expect(second.outcome).toBe('duplicate');
+    const second = (await resumeLegacy(h, d, h.ids.session, uid())).json();
+    expect(second.replayed).toBe(true);
     expect(second.ingest_id).toBe(first.ingest_id);
     expect(second.files.every((f: { done: boolean }) => f.done)).toBe(true);
     expect(second.files.every((f: { put_url?: string }) => f.put_url === undefined)).toBe(true);
@@ -784,8 +783,8 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     const h = await harness();
     const d = delivery();
     const id = uid();
-    const first = (await register(h, d, h.ids.session, id)).json();
-    const replay = (await register(h, d, h.ids.session, id)).json();
+    const first = (await resumeLegacy(h, d, h.ids.session, id)).json();
+    const replay = (await resumeLegacy(h, d, h.ids.session, id)).json();
 
     expect(replay.replayed).toBe(true);
     expect(replay.episode_id).toBe(first.episode_id);
@@ -804,12 +803,12 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     const d = delivery();
     const store = await db();
     // The card reached an upload centre first and an operator resolved it.
-    await register(h, d, h.ids.session);
+    await resumeLegacy(h, d, h.ids.session);
     const episodeId = deriveEpisodeId(d.record.source.path);
     await store.execute(sql`update episodes set upload_path = 'C' where episode_id = ${episodeId}`);
 
-    const second = (await register(h, d, h.ids.session, uid())).json();
-    expect(second.attributed).toBe(false);
+    const second = (await resumeLegacy(h, d, h.ids.session, uid())).json();
+    expect(second.replayed).toBe(true);
     const rows = (await store.execute(sql`
       select upload_path from episodes where episode_id = ${episodeId}
     `)) as unknown as { upload_path: string }[];
@@ -822,7 +821,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     const h = await harness();
     const d = delivery();
     const id = uid();
-    const plan = (await register(h, d, h.ids.session, id)).json();
+    const plan = (await resumeLegacy(h, d, h.ids.session, id)).json();
 
     /**
      * Registered, nothing sent. Under the default 'local' gate a Path C
@@ -1234,7 +1233,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     // A store that wrote the object and got the bytes wrong. Its metadata still
     // reads clean, which is why the verdict has to be a read-back.
     const damaged = plan.json().files.find((f: { bytes: number }) => f.bytes > 0);
-    h.store.corrupt(damaged.key);
+    h.store.corrupt(stagingKey(damaged.key));
 
     const res = await h.post(`/api/me/uploads/${id}/complete`);
     expect(res.statusCode, res.body).toBe(409);
@@ -1485,13 +1484,71 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     const id = uid();
     const plan = await registerUnmeasured(h, c, h.ids.session, id);
     sendPlan(h, c, plan.json().files);
+    // A real verified crash has already published and read canonical bytes;
+    // uploading to incoming alone is not evidence for the verified state.
+    const files = plan.json().files as { relative_path: string; key: string; bytes: number; sha256: string }[];
+    const keyOf = (path: string) => files.find((file) => file.relative_path === path)!.key;
+    await assemble(h.store, files, new Map(files.map((file) => [file.relative_path, file.bytes])), keyOf);
+    expect(await verifyReadBack(h.store, files, keyOf)).toEqual([]);
     const d = await db();
     await d.execute(sql`
       update collector_uploads set state = 'verified', completed_at = now() where id = ${id}`);
 
+    // The old URL can still change incoming data; verified recovery must use
+    // the already-published canonical copy instead of publishing it again.
+    const nonempty = files.find((file) => file.bytes > 0)!;
+    h.store.corrupt(stagingKey(nonempty.key));
+
     const res = await h.post(`/api/me/uploads/${id}/complete`);
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json().state).toBe('ingested');
+  }, 60_000);
+
+  it('serializes phone attribution against a card retry without reversing the global/episode row locks', async () => {
+    const d = await db(), pool = await open(dbUrl(), { max: 8 });
+    const h = await harness(new MemoryStore(), { mediaRoot: await newMediaRoot(), db: pool });
+    const c = await declaredFrom(SYNTH), id = uid(), record = await ingest(SYNTH);
+    const registered = await registerUnmeasured(h, c, h.ids.session, id);
+    expect(registered.statusCode, registered.body).toBe(200);
+    sendPlan(h, c, registered.json().files);
+    await d.execute(sql`create function test_phone_attribution_pause() returns trigger language plpgsql as $$
+      begin perform pg_advisory_xact_lock(hashtext('test_phone_attribution')); return new; end $$`);
+    await d.execute(sql`create trigger test_phone_attribution_pause before update on episodes for each row
+      when(old.collection_session_id is null and new.collection_session_id is not null)
+      execute function test_phone_attribution_pause()`);
+    let phone: ReturnType<typeof h.post> | undefined, card: ReturnType<typeof storeEpisode> | undefined;
+    try {
+      await d.transaction(async tx => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('test_phone_attribution'))`);
+        phone = h.post(`/api/me/uploads/${id}/complete`);
+        const waitFor = async (predicate: ReturnType<typeof sql>) => {
+          for (let i = 0; i < 500; i++) {
+            const [row] = await tx.execute(predicate);
+            if (row!.ready === true) return;
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+          throw new Error('expected concurrent PostgreSQL lock wait did not occur');
+        };
+        await waitFor(sql`select exists(select 1 from pg_locks where locktype='advisory' and not granted
+          and objid=hashtext('test_phone_attribution')::oid) as ready`);
+        card = storeEpisode(pool, record);
+        await waitFor(sql`select count(*)>=2 as ready from pg_locks where not granted
+          and locktype in ('advisory','transactionid')`);
+        // Committing releases the fixture barrier. Old lock order deadlocks here:
+        // phone owns episode row and wants global; card owns global and wants row.
+      });
+      const [sent, retried] = await Promise.all([phone!, card!]);
+      expect(sent.statusCode, sent.body).toBe(200);
+      expect(retried.outcome).toBe('duplicate');
+      const [episode] = await d.execute(sql`select ingest_count from episodes where episode_id=${record.episode_id}`);
+      expect(episode!.ingest_count).toBe(1);
+    } finally {
+      await Promise.allSettled([phone, card]);
+      await h.app.close();
+      await pool.close();
+      await d.execute(sql`drop trigger test_phone_attribution_pause on episodes`);
+      await d.execute(sql`drop function test_phone_attribution_pause()`);
+    }
   }, 60_000);
 
   it('survives two completes racing on one delivery, and measures the whole session', async () => {
@@ -1685,7 +1742,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
   it('will not let an unmeasured delivery reuse a measured delivery’s id, or the reverse', async () => {
     const h = await harness(new MemoryStore(), { mediaRoot: await newMediaRoot() });
     const id = uid();
-    await register(h, delivery(), h.ids.session, id);
+    await resumeLegacy(h, delivery(), h.ids.session, id);
     const crossed = await registerUnmeasured(h, await declaredFrom(SYNTH), h.ids.session, id);
     expect(crossed.statusCode, crossed.body).toBe(400);
     expect(crossed.json().error).toMatch(/measured delivery/);
@@ -1715,7 +1772,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
 
   it('refuses a staff session on the collector’s own scope', async () => {
     const h = await harness();
-    const res = await register(h, delivery(), h.ids.session, uid());
+    const res = await resumeLegacy(h, delivery(), h.ids.session, uid());
     expect(res.statusCode).toBe(200);
     const staff = await h.post('/api/me/uploads', { id: uid(), collection_session_id: h.ids.session, episode: delivery().record }, h.staffHeaders);
     expect(staff.statusCode).toBe(403);
@@ -1724,7 +1781,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
   it('does not hand one collector another’s upload', async () => {
     const h = await harness();
     const id = uid();
-    await register(h, delivery(), h.ids.session, id);
+    await resumeLegacy(h, delivery(), h.ids.session, id);
     expect((await h.get(`/api/me/uploads/${id}`, h.otherHeaders)).statusCode).toBe(404);
     expect((await h.post(`/api/me/uploads/${id}/complete`, undefined, h.otherHeaders)).statusCode).toBe(404);
   });
@@ -1772,7 +1829,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     const h = await harness();
     const d = delivery();
     const first = uid();
-    const plan = (await register(h, d, h.ids.session, first)).json();
+    const plan = (await resumeLegacy(h, d, h.ids.session, first)).json();
     sendPlan(h, d, plan.files);
     expect((await h.post(`/api/me/uploads/${first}/complete`)).statusCode).toBe(200);
 
@@ -1782,7 +1839,7 @@ describe.skipIf(!hasDb())('Path A, the collector upload', () => {
     // as two. Refused by name before a byte is downloaded, and by
     // `collector_uploads_verified_key` if it ever got past that.
     const second = uid();
-    expect((await register(h, d, h.ids.session, second)).statusCode).toBe(200);
+    expect((await resumeLegacy(h, d, h.ids.session, second)).statusCode).toBe(200);
     const done = await h.post(`/api/me/uploads/${second}/complete`);
     expect(done.statusCode).toBe(409);
     expect(done.json().constraint).toBe('upload_already_complete');
@@ -2132,6 +2189,7 @@ describe.skipIf(!hasDb() || !hasStore())('Path A against a real S3 endpoint', ()
     // listed and assembled by the store — not by anything in this repo.
     const d = delivery({ big: PART_SIZE + 1024 });
     const id = uid();
+    await seedLegacyUpload(h.ids, d, h.ids.session, id);
     const res = await h.app.inject({
       method: 'POST',
       url: '/api/me/uploads',
@@ -2169,6 +2227,7 @@ describe.skipIf(!hasDb() || !hasStore())('Path A against a real S3 endpoint', ()
     const d = delivery({ big: 2 * PART_SIZE + 1024 });
     const bigName = [...d.blobs.keys()].find((n) => d.blobs.get(n)!.length > PART_SIZE)!;
     const id = uid();
+    await seedLegacyUpload(h.ids, d, h.ids.session, id);
     const plan = (
       await h.app.inject({
         method: 'POST',
@@ -2217,8 +2276,9 @@ describe.skipIf(!hasDb() || !hasStore())('Path A against a real S3 endpoint', ()
      */
     const h = await harness();
     const d = delivery({ big: PART_SIZE + 1024 });
-    const register = async (id: string) =>
-      (
+    const register = async (id: string) => {
+      await seedLegacyUpload(h.ids, d, h.ids.session, id);
+      return (
         await h.app.inject({
           method: 'POST',
           url: '/api/me/uploads',
@@ -2226,6 +2286,7 @@ describe.skipIf(!hasDb() || !hasStore())('Path A against a real S3 endpoint', ()
           headers: h.headers,
         })
       ).json();
+    };
 
     const id = uid();
     const plan = await register(id);
@@ -2253,6 +2314,7 @@ describe.skipIf(!hasDb() || !hasStore())('Path A against a real S3 endpoint', ()
     const h = await harness();
     const d = delivery();
     const id = uid();
+    await seedLegacyUpload(h.ids, d, h.ids.session, id);
     const plan = (
       await h.app.inject({
         method: 'POST',

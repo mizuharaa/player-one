@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Db } from '@playerone/store';
 import { mutate } from '../../audit.ts';
+import { constraintOf } from '../../backoffice.ts';
+import { billOriginalityBlocker } from '../../originality.ts';
 import type { Actor } from '../../actor.ts';
 import type { TransferReceiver, ZaloPayClient } from '../domain/client-contract.ts';
 import {
@@ -64,6 +66,7 @@ export type Issue =
   | 'under_one_dong'
   | 'over_cap'
   | 'risk_hold'
+  | 'originality_pending'
   | 'attempt_open'
   | 'already_paid'
   /** A line parked in `exception` (0016). The bill waits until it is released. */
@@ -86,6 +89,7 @@ export type BatchBill = {
   paid: boolean;
   /** Any settlement on the bill is in `exception`. */
   inException: boolean;
+  originalityBlocked?: boolean;
   account: {
     simulation?: boolean;
     id: string;
@@ -116,6 +120,7 @@ export function issuesOf(
   const issues: Issue[] = [];
   if (bill.paid) issues.push('already_paid');
   if (bill.inException) issues.push('line_in_exception');
+  if (bill.originalityBlocked === true) issues.push('originality_pending');
   if (bill.latestAttempt !== null && !['succeeded', 'failed'].includes(bill.latestAttempt.status)) {
     issues.push('attempt_open');
   }
@@ -201,6 +206,7 @@ export async function loadBatch(
       lineCount: r.line_count,
       paid: (r.all_paid ?? false) || latestAttempt?.status === 'succeeded',
       inException: r.any_exception ?? false,
+      originalityBlocked: (await billOriginalityBlocker(db, r.id)) !== null,
       account:
         r.account_id === null
           ? null
@@ -259,7 +265,7 @@ export async function preflight(
 ): Promise<Preflight & { billsDetail: BatchBill[] }> {
   const bills = await loadBatch(db, period, options);
   const counts = Object.fromEntries(
-    (['no_account', 'account_unverified', 'over_bank_ceiling', 'under_bank_minimum', 'under_one_dong', 'over_cap', 'risk_hold', 'attempt_open', 'already_paid', 'line_in_exception'] as Issue[]).map((i) => [i, 0]),
+    (['no_account', 'account_unverified', 'over_bank_ceiling', 'under_bank_minimum', 'under_one_dong', 'over_cap', 'risk_hold', 'originality_pending', 'attempt_open', 'already_paid', 'line_in_exception'] as Issue[]).map((i) => [i, 0]),
   ) as Record<Issue, number>;
   const bands: Record<RiskSummary['band'], number> = { clear: 0, notice: 0, review: 0, hold: 0 };
   let payable = 0;
@@ -327,6 +333,7 @@ export type PayRefusal =
   | 'payout_attempts_amount_positive_check'
   | 'payout_cap_exceeded'
   | 'payout_risk_hold'
+  | 'payout_originality_pending'
   | 'payout_already_paid'
   | 'payout_attempts_previous_not_failed'
   | 'payout_settlement_exception';
@@ -394,6 +401,8 @@ export async function refusalFor(
         return 'payout_attempts_amount_positive_check';
       case 'risk_hold':
         return 'payout_risk_hold';
+      case 'originality_pending':
+        return 'payout_originality_pending';
       case 'over_cap':
         // Loudly: a ticket, and no attempt. Never silently the cap.
         await emitEvent(db, {
@@ -425,9 +434,9 @@ export async function payBill(
   // Live, not the caller's snapshot. A batch preflights every bill once and
   // then sends for minutes; a hold raised, a payment recorded or an attempt
   // opened on this bill since then is only seen if it is read again here,
-  // right before the attempt is created (bridge finding batch.ts:389). The
-  // paid and open-attempt halves are also SQL (payout_attempts_previous_not_failed);
-  // the hold half is only this read until the risk tables are in this schema.
+  // right before the attempt is created (bridge finding batch.ts:389).
+  // Database guards repeat paid/open-attempt and hold admission checks. The
+  // latter shares the hold-chain lock, so a concurrent hold cannot miss admission.
   const live = await loadBill(db, bill.id, options);
   if (live === undefined) throw new Error(`bill ${bill.id} vanished before it could be paid`);
   bill = live;
@@ -441,6 +450,7 @@ export async function payBill(
   const attemptId = randomUUID();
 
   // 1. The attempt exists, or the database has said why not.
+  let admissionRefusal: 'payout_risk_hold' | 'payout_originality_pending' = 'payout_risk_hold';
   const created = await mutate(
     db,
     actor,
@@ -457,14 +467,28 @@ export async function payBill(
         payoutAccountId: bill.account!.id,
         amountVnd,
         mode: 'api',
+        holdsEnabled: options.holdsEnabled === true,
       }),
-  );
+  ).catch((error: unknown) => {
+    const constraint = constraintOf(error);
+    if (constraint === 'payout_risk_hold' || constraint === 'payout_originality_pending') {
+      admissionRefusal = constraint;
+      return null;
+    }
+    throw error;
+  });
+  if (created === null) return { kind: 'refused', constraint: admissionRefusal };
   if (created === undefined) throw new Error('the attempt insert returned nothing');
 
   // 2. Committed as sent before the request leaves, so a crash mid-request
   //    leaves a row the poller owns.
   const mUId = await mUIdOf(db, bill.account!.id);
-  const submitted = await db.transaction((tx) => applyEvent(tx, created, { type: 'SUBMIT' }));
+  const submitted = await db.transaction((tx) => applyEvent(tx, created, { type: 'SUBMIT' })).catch((error: unknown) => {
+    if (constraintOf(error) === 'payout_originality_pending') return 'payout_originality_pending' as const;
+    throw error;
+  });
+  // The created attempt stays visible for explicit operator resolution; no provider call occurred.
+  if (submitted === 'payout_originality_pending') return { kind: 'refused', constraint: submitted };
   if (submitted === null || !('attempt' in submitted)) throw new Error('the attempt could not be marked submitted');
 
   const result = await client.transferFund({
@@ -551,6 +575,8 @@ export function constraintForIssues(issues: readonly Issue[]): PayRefusal | null
         return 'payout_cap_exceeded';
       case 'risk_hold':
         return 'payout_risk_hold';
+      case 'originality_pending':
+        return 'payout_originality_pending';
     }
   }
   return null;

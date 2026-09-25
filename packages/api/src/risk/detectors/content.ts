@@ -1,4 +1,5 @@
-import { hamming, type FrameStats } from '../../../../../tools/analysers/frames.ts';
+import type { FrameStats } from '../../../../../tools/analysers/frames.ts';
+import { matchFrameSegments, SEGMENT_MATCH_VERSION, type FrameSegment } from '../frame-segments.ts';
 import type { CorpusSession } from '../../../../../tools/analysers/corpus-check.ts';
 import type { EncoderProbe } from '../../../../../tools/analysers/encoder.ts';
 import type { MoovVerdict } from '../../../../../tools/analysers/moov.ts';
@@ -73,33 +74,16 @@ export const EMPTY_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca49
 const r2 = (n: number): number => Math.round(n * 100) / 100;
 const r3 = (n: number): number => Math.round(n * 1000) / 1000;
 
-/**
- * Aligned frame-hash comparison at a few offsets, so a clip trimmed by a few
- * seconds still matches. The share is over the shorter sequence.
- */
+/** Legacy summary; payment readiness must inspect matchFrameSegments.complete. */
 export function frameMatch(
   a: readonly string[],
   b: readonly string[],
   maxHamming: number,
-  maxOffset = 10,
-): { matching: number; share: number; offset: number } {
-  let best = { matching: 0, share: 0, offset: 0 };
-  const shorter = Math.min(a.length, b.length);
-  if (shorter === 0) return best;
-  for (let off = -maxOffset; off <= maxOffset; off++) {
-    let matching = 0;
-    let compared = 0;
-    for (let i = 0; i < a.length; i++) {
-      const j = i + off;
-      if (j < 0 || j >= b.length) continue;
-      compared++;
-      if (hamming(a[i]!, b[j]!) <= maxHamming) matching++;
-    }
-    if (compared === 0) continue;
-    const share = matching / shorter;
-    if (matching > best.matching) best = { matching, share, offset: off };
-  }
-  return best;
+): { matching: number; share: number; offset: number; complete: boolean } {
+  const result = matchFrameSegments(a, b, { maxHamming });
+  const best = result.segments.reduce<FrameSegment | null>((best, s) => !best || s.matchingFrames > best.matchingFrames ? s : best, null);
+  return { matching: best?.matchingFrames ?? 0, share: best ? best.matchingFrames / Math.min(a.length, b.length) : 0,
+    offset: best ? best.cStart - best.qStart : 0, complete: result.complete };
 }
 
 export function contentSignals(
@@ -141,8 +125,7 @@ export function contentSignals(
   if (dup) {
     const maxHamming = numParam(dup, 'max_hamming_per_frame', 6);
     const minFrames = numParam(dup, 'min_matching_frames', 20);
-    const minShare = numParam(dup, 'min_match_share', 0.9);
-    let best: { peer: DuplicatePeer; share: number; matching: number } | null = null;
+    let best: { peer: DuplicatePeer; share: number; matching: number; segments?: FrameSegment[]; complete?: boolean } | null = null;
     for (const p of peers) {
       if (p.method === 'content_fingerprint') {
         if (facts.contentFingerprint === EMPTY_SHA256) continue;
@@ -154,9 +137,11 @@ export function contentSignals(
         continue;
       }
       if (p.method === 'frame_fingerprint' && media?.frames && p.ahash) {
-        const m = frameMatch(media.frames.ahash, p.ahash, maxHamming);
-        if (m.matching >= minFrames && m.share >= minShare && (best === null || m.share > best.share)) {
-          best = { peer: p, share: m.share, matching: m.matching };
+        const m = matchFrameSegments(media.frames.ahash, p.ahash, { maxHamming });
+        const matching = Math.max(0, ...m.segments.map((s) => s.matchingFrames));
+        const share = matching / Math.min(media.frames.ahash.length, p.ahash.length);
+        if (matching >= minFrames && (best === null || share > best.share)) {
+          best = { peer: p, share, matching, segments: m.segments, complete: m.complete };
         }
       }
     }
@@ -169,6 +154,7 @@ export function contentSignals(
           method: best.peer.method,
           match_share: r2(best.share),
           matching_frames: best.matching,
+          ...(best.segments ? { algorithm_version: SEGMENT_MATCH_VERSION, segments: best.segments, comparison_complete: best.complete } : {}),
           ...(best.peer.file ? { file: best.peer.file } : {}),
         },
       });
@@ -307,7 +293,7 @@ export function contentSignals(
       }
     }
     if (t('CONT.FINGERPRINT') && f.count > 0) {
-      out.push({ signalId: 'CONT.FINGERPRINT', evidence: { frames: f.count, ahash: f.ahash.join('') } });
+      out.push({ signalId: 'CONT.FINGERPRINT', evidence: { frames: f.count, ahash: f.ahash.join(''), fps: f.fps ?? 1, algorithm_version: SEGMENT_MATCH_VERSION } });
     }
   }
 

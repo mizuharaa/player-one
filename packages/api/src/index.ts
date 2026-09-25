@@ -48,6 +48,7 @@ import { seedRiskSignals } from './risk/catalogue.ts';
 import { riskConfigFromEnv, type RiskConfig } from './risk/config.ts';
 import { RiskEngine } from './risk/engine.ts';
 import { registerRisk } from './risk/routes.ts';
+import { registerOriginality } from './originality.ts';
 import { rateLimited, signInAttempt, signInLimiter } from './ratelimit.ts';
 import { DEFAULT_TOLERANCE_MS } from './resolve.ts';
 import { registerReview } from './review.ts';
@@ -714,7 +715,7 @@ export function buildApi({
   }
 
   /**
-   * Nothing under `/api` is cacheable.
+   * Nothing under `/api` or in the authenticated reference snapshot is cacheable.
    *
    * Every one of these answers is scoped to the token that asked for it: a
    * collector's own income, a reviewer's queue, an operator's centre. A shared
@@ -731,11 +732,14 @@ export function buildApi({
    * prefix test and the existing-header test are two independent reasons this
    * hook cannot touch it, and both are deliberate.
    *
-   * ponytail: one hook, one prefix, no options. A route that wants something
+   * ponytail: one hook, no options. A route that wants something
    * else sets it and this stays out of the way.
    */
   app.addHook('onSend', async (req, reply, payload) => {
-    if (req.url.startsWith('/api/') && reply.getHeader('cache-control') === undefined) {
+    if (
+      (req.url.startsWith('/api/') || req.routeOptions.url === '/reference/sync') &&
+      reply.getHeader('cache-control') === undefined
+    ) {
       reply.header('cache-control', 'private, no-store');
     }
     return payload;
@@ -870,6 +874,14 @@ export function buildApi({
 
     const machine = verifyToken(tokenSecret, bearer(req, 'x-machine-token', MACHINE_COOKIE));
     if (machine?.kind !== 'machine') return reply.code(401).send({ error: 'machine token required' });
+    // Retirement or reassignment revokes tokens already issued, including heartbeats.
+    const [device] = await db
+      .select({ status: schema.uploadDevices.status, uploadCentreId: schema.uploadDevices.uploadCentreId })
+      .from(schema.uploadDevices)
+      .where(eq(schema.uploadDevices.id, machine.uploadDeviceId));
+    if (device?.status !== 'active' || device.uploadCentreId !== machine.uploadCentreId) {
+      return reply.code(401).send({ error: 'machine token required' });
+    }
     /**
      * PRD §11.3.2 rule 8 is the one fact a machine reports about itself, and
      * the only route an unattended centre process has to reach. Requiring an
@@ -970,7 +982,13 @@ export function buildApi({
       return reply.code(403).send({ error: 'not your centre' });
     }
     const [collectors, devices, tasks, scenarios, taskClaims] = await Promise.all([
-      db.select().from(schema.collectors),
+      db.select({
+        id: schema.collectors.id,
+        externalRef: schema.collectors.externalRef,
+        status: schema.collectors.status,
+        examResult: schema.collectors.examResult,
+        phone: schema.collectors.phone,
+      }).from(schema.collectors),
       db.select().from(schema.devices),
       db.select().from(schema.tasks),
       db.select().from(schema.scenarios),
@@ -1087,6 +1105,7 @@ export function buildApi({
    */
   registerCollectorApp(app, db, requireActor, currency);
   registerRisk(app, db, requireActor, riskEngine);
+  registerOriginality(app, db, requireActor);
   registerMedia(app, db, requireActor, mediaRoot, objectStore);
   /**
    * The JSON sign-in the React console uses. One limiter for every sign-in

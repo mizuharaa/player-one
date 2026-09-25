@@ -22,6 +22,8 @@ export type DecodeOptions = {
   fps?: number;
   /** Stop after this many sampled frames. Unset decodes the whole file. */
   maxFrames?: number;
+  /** Whole decode deadline; decodeParts shares it across all files. */
+  timeoutMs?: number;
   ffmpeg?: string;
 };
 
@@ -31,13 +33,13 @@ export class ToolMissing extends Error {}
 export function runTool(
   cmd: string,
   args: string[],
-  opts: { maxBuffer?: number; input?: Buffer } = {},
+  opts: { maxBuffer?: number; input?: Buffer; timeoutMs?: number } = {},
 ): Promise<{ stdout: Buffer; stderr: string; code: number }> {
   return new Promise((resolve, reject) => {
     const child = execFile(
       cmd,
       args,
-      { encoding: 'buffer', maxBuffer: opts.maxBuffer ?? 512 * 1024 * 1024, windowsHide: true },
+      { encoding: 'buffer', maxBuffer: opts.maxBuffer ?? 512 * 1024 * 1024, windowsHide: true, timeout: opts.timeoutMs },
       (err, stdout, stderr) => {
         const e = err as (Error & { code?: number | string }) | null;
         if (e && e.code === 'ENOENT') {
@@ -59,12 +61,20 @@ export async function decodeFrames(file: string, o: DecodeOptions = {}): Promise
   const width = o.width ?? 64;
   const height = o.height ?? 64;
   const fps = o.fps ?? 1;
-  const args = ['-v', 'error', '-nostdin', '-i', file, '-vf', `fps=${fps},scale=${width}:${height}:flags=area,format=gray`];
+  const timeoutMs = o.timeoutMs ?? 15 * 60_000;
+  if (![width, height].every((v) => Number.isSafeInteger(v) && v > 0 && v <= 4096) ||
+      !Number.isFinite(fps) || fps <= 0 ||
+      !Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 15 * 60_000 ||
+      (o.maxFrames !== undefined && (!Number.isSafeInteger(o.maxFrames) || o.maxFrames < 0))) {
+    throw new Error('invalid frame decode options');
+  }
+  const args = ['-v', 'error', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', file, '-vf', `fps=${fps},scale=${width}:${height}:flags=area,format=gray`];
   if (o.maxFrames !== undefined) args.push('-frames:v', String(o.maxFrames));
-  args.push('-f', 'rawvideo', '-pix_fmt', 'gray', '-');
-  const { stdout, code, stderr } = await runTool(o.ffmpeg ?? 'ffmpeg', args);
-  if (code !== 0 && stdout.length === 0) throw new Error(`ffmpeg could not decode ${file}: ${stderr.trim()}`);
+  args.push('-threads', '1', '-f', 'rawvideo', '-pix_fmt', 'gray', '-');
+  const { stdout, code, stderr } = await runTool(o.ffmpeg ?? 'ffmpeg', args, { timeoutMs });
+  if (code !== 0) throw new Error(code > 0 ? 'frame_decode_failed' : 'frame_decode_unavailable', { cause: stderr.trim() });
   const n = width * height;
+  if (stdout.length % n !== 0) throw new Error('partial_decoded_frame');
   const frames: Uint8Array[] = [];
   for (let at = 0; at + n <= stdout.length; at += n) frames.push(new Uint8Array(stdout.subarray(at, at + n)));
   return { width, height, fps, frames };
@@ -73,7 +83,16 @@ export async function decodeFrames(file: string, o: DecodeOptions = {}): Promise
 /** Several parts of one stream, in order, as one frame set. */
 export async function decodeParts(files: readonly string[], o: DecodeOptions = {}): Promise<FrameSet> {
   const sets = [];
-  for (const f of files) sets.push(await decodeFrames(f, o));
+  let remaining = o.maxFrames;
+  const deadline = Date.now() + (o.timeoutMs ?? 15 * 60_000);
+  for (const f of files) {
+    if (remaining === 0) break;
+    const timeoutMs = deadline - Date.now();
+    if (timeoutMs <= 0) throw new Error('frame_decode_deadline');
+    const set = await decodeFrames(f, { ...o, maxFrames: remaining, timeoutMs });
+    sets.push(set);
+    if (remaining !== undefined) remaining -= set.frames.length;
+  }
   const first = sets[0] ?? { width: o.width ?? 64, height: o.height ?? 64, fps: o.fps ?? 1, frames: [] };
   return { ...first, frames: sets.flatMap((s) => s.frames) };
 }
@@ -185,6 +204,8 @@ export function hamming(a: string, b: string): number {
 
 export type FrameStats = {
   count: number;
+  /** Sampling rate; absent only on legacy stored fingerprints/test fixtures. */
+  fps?: number;
   width: number;
   height: number;
   /** Mean grey level per frame, 0–255. */
@@ -216,5 +237,5 @@ export function frameStats(set: FrameSet): FrameStats {
     if (prev !== null) motion.push(motionBetween(blurred, prev));
     prev = blurred;
   }
-  return { count: set.frames.length, width: w, height: h, meanLuma, std, motion, noiseFloor, ahash };
+  return { count: set.frames.length, fps: set.fps, width: w, height: h, meanLuma, std, motion, noiseFloor, ahash };
 }

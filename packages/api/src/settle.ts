@@ -7,6 +7,8 @@ import { adminGuard, financeGuard, financeReadGuard, roleOf } from './actor.ts';
 import { mutate } from './audit.ts';
 import { MONEY_SCALE, ZERO, add, fromDecimal, quantise } from './money.ts';
 import { notify } from './notifications.ts';
+import { csvRow } from './payout/domain/export.ts';
+import { billOriginalityBlocker } from './originality.ts';
 import { withTagDeadline, type ObjectStore } from './upload-worker.ts';
 
 /**
@@ -141,16 +143,6 @@ const ArchiveRetryQuery = z.object({
  * same fact lives.
  */
 class BilledElsewhere extends Error {}
-
-/**
- * RFC 4180, quoting everything.
- *
- * Deciding per field which ones need quotes is a rule with edge cases — a task
- * named `Housework, kitchen`, a collector reference with a newline pasted into
- * it — and quoting unconditionally has none. Excel reads it identically.
- */
-const csvRow = (cells: readonly string[]): string =>
-  cells.map((c) => `"${c.replaceAll('"', '""')}"`).join(',');
 
 /**
  * The other half of "this bill is paid", and the reason it is written once.
@@ -432,6 +424,7 @@ export function registerSettle(
       .select({
         settlementId: schema.settlements.id,
         episodeId: schema.episodeReviews.episodeId,
+        ingestId: schema.episodeReviews.ingestId,
         reviewId: schema.episodeReviews.id,
         taskName: schema.tasks.name,
         unitPrice: schema.settlements.unitPrice,
@@ -946,6 +939,7 @@ export function registerSettle(
         settlement_id: l.settlementId,
         /** SET-04: the line names the episode it was paid for. */
         episode_id: l.episodeId,
+        ingest_id: l.ingestId,
         review_id: l.reviewId,
         task: l.taskName,
         unit_price: l.unitPrice,
@@ -965,6 +959,11 @@ export function registerSettle(
     if (typeof period === 'string') return reply.code(422).send({ error: period });
 
     const bills = await billsIn(period.start, period.end);
+    const blocked: string[] = [];
+    for (const bill of bills) {
+      if (!bill.paid && await billOriginalityBlocker(db, bill.id)) blocked.push(bill.id);
+    }
+    if (blocked.length) return reply.code(409).send({ error: 'refused', constraint: 'payout_originality_pending', bills: blocked });
 
     const rows: string[] = [
       csvRow([
@@ -1062,6 +1061,13 @@ export function registerSettle(
       }
     }
 
+    // Recheck after constructing the rows; downloaded CSVs are snapshots, not
+    // payment authorizations. The attempt path checks again before money moves.
+    for (const bill of bills) {
+      if (!bill.paid && await billOriginalityBlocker(db, bill.id)) {
+        return reply.code(409).send({ error: 'refused', constraint: 'payout_originality_pending', bills: [bill.id] });
+      }
+    }
     return reply
       .header('content-type', 'text/csv; charset=utf-8')
       .header(

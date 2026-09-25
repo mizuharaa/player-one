@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
  * there never will be: a CSV that can be re-imported is a CSV an operator can
  * edit in Excel, and every amount on it was frozen on `bill_lines` at
  * generation (0005, 0011). Nothing here computes money; the cells arrive as
- * the strings Postgres stored and are written out verbatim.
+ * the strings Postgres stored. Formula-leading text is escaped for spreadsheets.
  *
  * Two hashes make the file evidence:
  *
@@ -58,9 +58,13 @@ export const PIT_COMMENT =
 export const SNAPSHOT_COMMENT =
   '# amounts are copied from bill_lines as stored at generation and are never recomputed at export time';
 
-/** RFC 4180, quoting everything — the same rule `settle.ts` uses, for the same reason. */
+/** Both finance exports quote CSV syntax and keep formula-leading text literal. */
 export const csvRow = (cells: readonly string[]): string =>
-  cells.map((c) => `"${c.replaceAll('"', '""')}"`).join(',');
+  cells.map((c) => {
+    const literal = !/^[+-]?\d+(\.\d+)?$/.test(c) &&
+      (/^[\s\x00-\x1f]*[=+\-@]/.test(c) || /^[\t\r\n]/.test(c)) ? `'${c}` : c;
+    return `"${literal.replaceAll('"', '""')}"`;
+  }).join(',');
 
 export const sha256Hex = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
 

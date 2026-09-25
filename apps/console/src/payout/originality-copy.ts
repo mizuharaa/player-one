@@ -1,0 +1,36 @@
+const en = {
+  title: 'Footage reuse review', loading: 'Loading originality assessment…', pending: 'Analysis is pending or unavailable. Payment waits for review.',
+  identity: 'A different administrator must verify your collector identity before you can decide. Contact your administrator; identity verification is recorded separately.',
+  assessment: 'Assessment', matches: 'Matching recordings', none: 'No matching recording was reported. This is not proof of originality.',
+  reason: 'Review notes (at least 10 characters)', choose: 'Choose a decision', save: 'Record decision', saved: 'Decision recorded. Run payment preflight again.',
+  cleared: 'Reviewed — no reuse confirmed', reused: 'Confirmed reused footage', accepted_unassessable: 'Accepted despite algorithm limitation',
+  limitation: 'Administrator exception: the files were verified, but the algorithm could not assess originality. Review the full recording before accepting.',
+  review: 'Compare the recordings and matching intervals before deciding. A confirmed reuse stops payment for this recording.',
+  code: 'Analysis result', refresh: 'Refresh assessment', samples: 'sample indices', prior: 'Recorded decision',
+  scale: 'Sample span ratio', reversed: 'Reverse order', mirrored: 'Mirrored',
+};
+export const ORIGINALITY_COPY: Record<'en' | 'vi' | 'zh', Record<keyof typeof en, string>> = {
+  en,
+  vi: {
+    title: 'Kiểm tra video dùng lại', loading: 'Đang tải kết quả kiểm tra…', pending: 'Chưa có kết quả phân tích đầy đủ. Khoản thanh toán đang chờ kiểm tra.',
+    identity: 'Cần một quản trị viên khác xác minh bạn có tài khoản cộng tác viên hay không trước khi bạn được duyệt. Vui lòng liên hệ quản trị viên để xác minh.',
+    assessment: 'Lần kiểm tra', matches: 'Bản ghi có nội dung trùng', none: 'Chưa tìm thấy bản ghi trùng. Kết quả này chưa đủ để xác nhận video chưa từng được dùng.',
+    reason: 'Ghi chú kiểm tra (ít nhất 10 ký tự)', choose: 'Chọn kết luận', save: 'Lưu kết luận', saved: 'Đã lưu kết luận. Vui lòng chạy lại bước kiểm tra trước khi thanh toán.',
+    cleared: 'Đã kiểm tra — chưa xác nhận có dùng lại', reused: 'Xác nhận video đã được dùng lại', accepted_unassessable: 'Chấp nhận ngoại lệ do giới hạn phân tích',
+    limitation: 'Ngoại lệ dành cho quản trị viên: tệp đã được xác minh, nhưng hệ thống chưa thể kiểm tra nội dung trùng. Hãy xem toàn bộ bản ghi trước khi chấp nhận.',
+    review: 'Đối chiếu các bản ghi và đoạn trùng trước khi kết luận. Bản ghi được xác nhận là dùng lại sẽ không được thanh toán.',
+    code: 'Kết quả phân tích', refresh: 'Tải lại kết quả', samples: 'vị trí khung hình mẫu', prior: 'Kết luận đã lưu',
+    scale: 'Tỷ lệ độ dài đoạn mẫu', reversed: 'Đảo thứ tự', mirrored: 'Lật ảnh',
+  },
+  zh: {
+    title: '素材重复使用审核', loading: '正在加载原创性评估…', pending: '分析尚未完成或暂不可用。付款需等待审核。',
+    identity: '作出决定前，须由另一位管理员核实您的采集员身份。请联系管理员完成单独记录的身份核实。',
+    assessment: '评估', matches: '匹配的录像', none: '未报告匹配录像，但这不能证明素材未被使用过。',
+    reason: '审核说明（至少10个字符）', choose: '选择结论', save: '记录结论', saved: '结论已记录。请重新运行付款预检。',
+    cleared: '已审核，未确认重复使用', reused: '已确认重复使用', accepted_unassessable: '因算法限制而例外接受',
+    limitation: '管理员例外：文件已验证，但算法无法评估原创性。接受前请审核完整录像。',
+    review: '请先对比录像及匹配片段。确认重复使用后，该录像不得付款。',
+    code: '分析结果', refresh: '刷新评估', samples: '采样帧索引', prior: '已记录的结论',
+    scale: '采样区间长度比', reversed: '倒序', mirrored: '镜像',
+  },
+};

@@ -112,6 +112,25 @@ export async function episodeAtCentre(
   return episode !== undefined;
 }
 
+// Card deliveries belong to their batch's centre. Phone deliveries use the
+// session's handover when present; app sessions without a handover remain a
+// global review pool. Missing card/session ownership must not become global.
+export async function mayManageEpisode(db: Pick<Db, 'execute'>, episodeId: string, centreId: string): Promise<boolean> {
+  const rows = await db.execute(sql`
+    select e.episode_id from episodes e
+    left join upload_batches b on b.id=e.upload_batch_id
+    left join handovers bh on bh.id=b.handover_id
+    left join collection_sessions s on s.id=e.collection_session_id
+    left join handovers sh on sh.id=s.handover_id
+    where e.episode_id=${episodeId} and (
+      (e.upload_batch_id is not null and bh.upload_centre_id=${centreId})
+      or (e.upload_path='A' and e.upload_batch_id is null and s.id is not null
+        and (sh.upload_centre_id=${centreId} or s.handover_id is null))
+    )
+  `);
+  return rows.length > 0;
+}
+
 export function registerEpisodes(
   app: FastifyInstance,
   db: Db,
@@ -674,32 +693,39 @@ export function registerEpisodes(
   app.post('/episodes/:id/confirm', opts, async (req, reply) => {
     const actor = actorOf(req);
     const episodeId = (req.params as { id: string }).id;
-
-    const [episode] = await db
-      .select()
-      .from(schema.episodes)
-      .where(eq(schema.episodes.episodeId, episodeId));
-    if (episode === undefined) return reply.code(404).send({ error: 'no such episode' });
-    if (episode.resolutionMethod === null || episode.resolutionState !== 'resolved') {
-      return reply.code(409).send({ error: 'nothing to confirm: this episode has no machine proposal' });
-    }
-    if (episode.resolutionConfirmedAt !== null) {
-      return reply.send({ episode_id: episodeId, already_confirmed: true });
+    if (!(await mayManageEpisode(db, episodeId, actor.operator.uploadCentreId))) {
+      return reply.code(404).send({ error: 'no such episode' });
     }
 
+    let refusal: 404 | 409 | undefined;
+    let alreadyConfirmed = false;
+    const event = {
+      action: 'episode.resolve_confirm', targetTable: 'episodes', targetId: episodeId,
+      after: {} as Record<string, unknown>,
+    };
     await mutate(
       db,
       actor,
-      {
-        action: 'episode.resolve_confirm',
-        targetTable: 'episodes',
-        targetId: episodeId,
-        after: {
+      event,
+      async (tx) => {
+        const [episode] = await tx.select().from(schema.episodes)
+          .where(eq(schema.episodes.episodeId, episodeId)).for('update');
+        if (episode === undefined || !(await mayManageEpisode(tx, episodeId, actor.operator.uploadCentreId))) {
+          refusal = 404;
+          return undefined;
+        }
+        if (episode.resolutionMethod !== 'automatic_single' && episode.resolutionMethod !== 'automatic_time_window') {
+          refusal = 409;
+          return undefined;
+        }
+        if (episode.resolutionConfirmedAt !== null) {
+          alreadyConfirmed = true;
+          return undefined;
+        }
+        event.after = {
           collection_session_id: episode.collectionSessionId,
           resolution_method: episode.resolutionMethod,
-        },
-      },
-      async (tx) => {
+        };
         const [row] = await tx
           .update(schema.episodes)
           .set({ resolutionConfirmedAt: new Date() })
@@ -708,7 +734,9 @@ export function registerEpisodes(
         return row;
       },
     );
-    return reply.send({ episode_id: episodeId, already_confirmed: false });
+    if (refusal === 404) return reply.code(404).send({ error: 'no such episode' });
+    if (refusal === 409) return reply.code(409).send({ error: 'nothing to confirm: this episode has no machine proposal' });
+    return reply.send({ episode_id: episodeId, already_confirmed: alreadyConfirmed });
   });
 
   /**

@@ -709,6 +709,7 @@ export interface GenerateResult {
 export interface SettleLine {
   settlement_id: string;
   episode_id: string;
+  ingest_id: string;
   review_id: string;
   task: string;
   unit_price: Decimal;
@@ -730,6 +731,24 @@ export interface SettleBillDetail {
   exceptions: number;
   lines: SettleLine[];
 }
+
+export type OriginalityDecision = 'cleared' | 'reused' | 'accepted_unassessable';
+export interface OriginalityState {
+  ingest_id: string;
+  payable: boolean;
+  disposition: OriginalityDecision | 'pending';
+  identity_verified: boolean;
+  assessments: { id: string; status: string; decision: OriginalityDecision | null; reason: string | null;
+    evidence: { reason?: string; media_verified?: boolean; matching_ingests?: { ingest_id: string; method: string;
+      segments?: { qStart: number; qEnd: number; cStart: number; cEnd: number; scale?: number; reversed?: boolean; mirrored?: boolean }[] }[] } }[];
+}
+export const originality = {
+  ingest: (id: string) => call<OriginalityState>(`/api/originality/ingests/${encodeURIComponent(id)}`),
+  decide: (id: string, decision: OriginalityDecision, reason: string) =>
+    call<{ id: string }>(`/api/originality/assessments/${encodeURIComponent(id)}/decision`, {
+      method: 'POST', body: JSON.stringify({ decision, reason }),
+    }),
+};
 
 export type PayoutMethod = 'WALLET' | 'BANK_ACCOUNT' | 'BANK_CARD';
 export type VerifyStatus =
@@ -759,6 +778,7 @@ export type PayoutIssue =
   | 'under_one_dong'
   | 'over_cap'
   | 'risk_hold'
+  | 'originality_pending'
   | 'attempt_open'
   | 'already_paid'
   | 'line_in_exception';

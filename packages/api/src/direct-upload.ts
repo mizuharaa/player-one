@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { objectKey, planParts, PART_SIZE, PRESIGN_TTL_S, type DirectUploadStore, type TransportFile } from './upload-worker.ts';
+import { objectKey, stagingKey, planParts, PART_SIZE, PRESIGN_TTL_S, type DirectUploadStore, type TransportFile } from './upload-worker.ts';
 
 /**
  * A delivered file is one file in one directory, and its name is all it is.
@@ -68,13 +68,19 @@ export async function signedPlan(
       continue;
     }
 
+    const incoming = stagingKey(key);
+    const staged = force ? null : await s.head(incoming);
+    if (staged !== null && staged.bytes === bytes && staged.sha256 === f.sha256) {
+      plan.push({ ...base, done: true });
+      continue;
+    }
     if (bytes < PART_SIZE) {
-      plan.push({ ...base, done: false, put_url: await s.presignPut(key, f.sha256, PRESIGN_TTL_S) });
+      plan.push({ ...base, done: false, put_url: await s.presignPut(incoming, f.sha256, PRESIGN_TTL_S) });
       continue;
     }
 
-    const uploadId = await s.beginMultipart(key, f.sha256);
-    const held = new Map((await s.heldParts(key, uploadId)).map((p) => [p.partNumber, p.size]));
+    const uploadId = await s.beginMultipart(incoming, f.sha256);
+    const held = new Map((await s.heldParts(incoming, uploadId)).map((p) => [p.partNumber, p.size]));
     const heldNumbers: number[] = [];
     const parts: NonNullable<FilePlan['parts']> = [];
     for (const p of planParts(bytes)) {
@@ -91,7 +97,7 @@ export async function signedPlan(
         start: p.start,
         end: p.end,
         bytes: size,
-        url: await s.presignPart(key, uploadId, p.partNumber, PRESIGN_TTL_S),
+        url: await s.presignPart(incoming, uploadId, p.partNumber, PRESIGN_TTL_S),
       });
     }
     plan.push({ ...base, done: false, upload_id: uploadId, held_parts: heldNumbers, parts });
@@ -100,11 +106,12 @@ export async function signedPlan(
 }
 
 /**
- * Assembly, for the files that were sent in parts. Shared by both delivery
- * shapes: how a multipart is finished has nothing to do with who measured it.
+ * Assemble staged client parts, then publish checked bytes to canonical keys.
+ * Shared by collector phones and operator PCs; neither receives a capability
+ * to write a canonical object. The caller still reads canonical bytes back.
  *
- * `openMultipart` rather than `beginMultipart`: this step must never start an
- * upload. A file with nothing in flight is a file the phone has not sent, or
+ * `openMultipart` rather than `beginMultipart`: never start a CLIENT upload.
+ * A file with nothing in flight is a file the phone has not sent, or
  * one already assembled by an earlier attempt at this delivery, and neither
  * wants an empty multipart left in the bucket.
  *
@@ -126,12 +133,18 @@ export async function assemble(
 ): Promise<void> {
   for (const f of files) {
     const bytes = sizes.get(f.relative_path) ?? 0;
-    if (bytes < PART_SIZE) continue;
     const key = keyOf(f.relative_path);
-    const uploadId = await s.openMultipart(key);
-    if (uploadId === null) continue;
-    const held = await s.heldParts(key, uploadId);
-    if (held.length < planParts(bytes).length) continue;
-    await s.finishMultipart(key, uploadId);
+    const incoming = stagingKey(key);
+    if (bytes >= PART_SIZE) {
+      const uploadId = await s.openMultipart(incoming);
+      if (uploadId !== null) {
+        const held = await s.heldParts(incoming, uploadId);
+        if (held.length < planParts(bytes).length) continue;
+        await s.finishMultipart(incoming, uploadId);
+      }
+    }
+    // Retained URLs can overwrite only incoming objects. A mismatch leaves
+    // canonical bytes unchanged; the caller still performs canonical read-back.
+    await s.publish(incoming, key, f.sha256, bytes);
   }
 }

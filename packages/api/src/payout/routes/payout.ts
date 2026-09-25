@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { schema, type Db } from '@playerone/store';
 import { mutate } from '../../audit.ts';
+import { constraintOf } from '../../backoffice.ts';
 import { notify } from '../../notifications.ts';
 import { financeGuard, financeReadGuard, type Actor, type CounterActor } from '../../actor.ts';
 import { attemptById, applyEvent, insertAttempt, latestAttemptOf } from '../domain/attempts.ts';
@@ -72,15 +73,6 @@ const ResolveBody = z.object({
 
 type Reply = { code: (n: number) => { send: (b: unknown) => unknown } };
 
-/** Same walk as `backoffice.ts` and `violates()`: the constraint on the cause chain. */
-function constraintOf(err: unknown): string | undefined {
-  for (let e: unknown = err; e !== null && e !== undefined; e = (e as { cause?: unknown }).cause) {
-    const name = (e as { constraint_name?: string }).constraint_name;
-    if (name !== undefined && name !== '') return name;
-  }
-  return undefined;
-}
-
 /**
  * The constraints a person can trip on a payout route, which become a 409
  * with a machine-readable reason. Agent D maps each to a sentence
@@ -107,6 +99,8 @@ export const PAYOUT_REFUSALS = new Set([
   'payout_attempts_failed_terminal',
   'payout_attempts_pending_operator_only',
   'payout_attempts_manual_reference_check',
+  'payout_risk_hold',
+  'payout_originality_pending',
   // payout_finance_in_transaction (0013)
   'payout_finance_required',
   'payout_separation_of_duty',
@@ -126,7 +120,6 @@ export const PAYOUT_API_REFUSALS = new Set([
   'payout_account_unverified',
   'payout_bank_details_unavailable',
   'payout_cap_exceeded',
-  'payout_risk_hold',
   'payout_already_paid',
   'payout_settlement_exception',
   'payout_accounts_id_reused',
@@ -1021,6 +1014,7 @@ export function registerPayout(
             payoutAccountId: account.id,
             amountVnd: b.amount_vnd,
             mode: 'manual',
+            holdsEnabled: options.holdsEnabled === true,
             manualReference: b.manual_reference,
             settledAt,
           });
@@ -1177,6 +1171,9 @@ export function registerPayout(
     if (typeof period === 'string') return reply.code(422).send({ error: period });
     const bills = await loadBatch(db, period, batchOptions);
 
+    const blocked = bills.filter((b) => !b.paid && b.originalityBlocked).map((b) => b.id);
+    if (blocked.length) return reply.code(409).send({ error: 'refused', constraint: 'payout_originality_pending', bills: blocked });
+
     const rows: ExportRow[] = [];
     for (const b of bills) {
       /**
@@ -1219,7 +1216,7 @@ export function registerPayout(
     const built = buildExport(rows);
 
     const exportId = randomUUID();
-    await mutate(
+    const saved = await guarded(() => mutate(
       db,
       actorOf(req),
       {
@@ -1247,7 +1244,8 @@ export function registerPayout(
         }
         return row;
       },
-    );
+    ));
+    if (!saved.ok) return refused(reply, saved.constraint);
 
     return reply
       .header('content-type', 'text/csv; charset=utf-8')

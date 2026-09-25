@@ -309,7 +309,7 @@ async function main() {
     /**
      * The counter's own offline reference cache, and the one place a collector
      * is findable by phone at all: `GET /api/collectors` carries no phone
-     * (BO-03 enrols by `external_ref`) and this route returns whole rows.
+     * (BO-03 enrols by `external_ref`). The reference projection includes phone.
      */
     step = 'reference/sync';
     const reference = await call('GET', '/reference/sync');

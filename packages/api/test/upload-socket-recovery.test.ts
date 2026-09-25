@@ -140,7 +140,8 @@ it('UPL-04/05/16: process restart resumes held parts, survives a lost completion
 
   const third = await f.run();
   expect(third.code, third.stdout).toBe(0);
-  expect(JSON.parse(third.stdout)).toEqual({ uploaded: 0, kept: 1, transported: 1, mismatches: [] });
+  expect(JSON.parse(third.stdout)).toEqual({ uploaded: 0, kept: 1, transported: 1, mismatches: [],
+    files: [{ relative_path: 'camera.mp4', sha256: f.sha256 }] });
   expect(f.uploads).toEqual([1, 2, 2, 2, 2]); // No part re-sent after completion.
   expect(f.reads).toEqual([0, 4096]);
   expect(createHash('sha256').update(await readFile(f.sourcePath)).digest('hex')).toBe(f.sha256);

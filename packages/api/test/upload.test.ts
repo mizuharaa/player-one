@@ -11,6 +11,7 @@ import { buildApi, hashCredential, objectKey, planOpenUploads, planParts, PART_S
 import { appDb, closeDb, db, hasDb, liveClaim, truncate, useDatabase } from '../../store/test/db.ts';
 import { signToken } from '../src/credentials.ts';
 import { schema } from '@playerone/store';
+import { seedIdentity, seedOriginality } from './payout/domain/fixture.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('upload');
@@ -131,7 +132,7 @@ describe('the transport inventory', () => {
     const inventory = await transportInventory(dir, fingerprinted);
     expect(inventory).toEqual([
       ...fingerprinted,
-      { relative_path: 'meta_ego_X_20260813_072310.json', sha256: sha(manifest) },
+      { relative_path: 'meta_ego_X_20260813_072310.json', sha256: sha(manifest), bytes: manifest.length },
     ]);
     // The engine's settled digests are copied through untouched, never recomputed.
     expect(inventory[0]).toBe(fingerprinted[0]);
@@ -628,6 +629,36 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
 
   const period = { period_start: new Date(Date.now() - 86_400_000).toISOString() };
 
+  it('recovers missing card transport extras from retained bytes on normal reverify', async () => {
+    const h = await harness();
+    const e = await h.submitEpisode('A');
+    const ingestId = await h.latestIngestOf(e.episodeId);
+    const [before] = await h.d.execute(sql`select source_basename,transport_extra_files from episode_ingests where ingest_id=${ingestId}`);
+    expect(before!.transport_extra_files).toBeNull();
+    const extra = Buffer.from('{"retained":"card metadata"}');
+    await writeFile(join(h.mediaRoot, String(before!.source_basename), 'capture-note.json'), extra);
+    const res = await h.send('POST', `/upload-batches/${h.A.batch}/upload?reverify=1`);
+    expect(res.statusCode, res.body).toBe(200);
+    const [after] = await h.d.execute(sql`select transport_extra_files from episode_ingests where ingest_id=${ingestId}`);
+    expect(after!.transport_extra_files).toContainEqual({ relative_path: 'capture-note.json', bytes: extra.length, sha256: sha(extra) });
+    const [verified] = await h.d.execute(sql`select originality_media_verified(${ingestId}::uuid) as ok`);
+    expect(verified!.ok).toBe(true);
+    const repeated = await h.upload(h.A.batch);
+    expect(repeated.statusCode, repeated.body).toBe(200);
+    const [again] = await h.d.execute(sql`select transport_extra_files from episode_ingests where ingest_id=${ingestId}`);
+    expect(again!.transport_extra_files).toEqual(after!.transport_extra_files);
+    await writeFile(join(h.mediaRoot, String(before!.source_basename), 'capture-note.json'), Buffer.from('{"changed":true}'));
+    const conflict = await h.upload(h.A.batch);
+    expect(conflict.statusCode, conflict.body).toBe(409);
+    expect(conflict.json().error).toBe('transport_inventory_conflict');
+    const [unchanged] = await h.d.execute(sql`select transport_extra_files from episode_ingests where ingest_id=${ingestId}`);
+    expect(unchanged!.transport_extra_files).toEqual(after!.transport_extra_files);
+    await h.d.execute(sql`update episode_ingests set manifest_present=true where ingest_id=${ingestId}`);
+    const missingManifest = await h.upload(h.A.batch);
+    expect(missingManifest.statusCode, missingManifest.body).toBe(409);
+    expect(missingManifest.json().error).toBe('manifest_missing');
+  });
+
   async function reviewedEpisode(h: Awaited<ReturnType<typeof harness>>, which: 'A' | 'B' = 'A') {
     const episode = await h.submitEpisode(which);
     const who = which === 'A' ? h.headersA : h.headersB;
@@ -646,7 +677,8 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
 
   async function mismatch(h: Awaited<ReturnType<typeof harness>>, episode: { episodeId: string; keys: string[] }) {
     h.store.corruptOnPut.add(episode.keys[0]!);
-    const res = await h.upload(h.A.batch);
+    // Paid fixtures have receipts; explicitly recheck bytes instead of trusting them.
+    const res = await h.send('POST', `/upload-batches/${h.A.batch}/upload?reverify=1`);
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json().episodes).toEqual([
       expect.objectContaining({ episode_id: episode.episodeId, verification_state: 'failed', mismatches: [expect.any(Object)] }),
@@ -665,8 +697,12 @@ describe.skipIf(!hasDb())('the cloud leg', () => {
 
       if (state === 'manually_paid') {
         const financeId = uid();
+        const identityAdmin = uid();
         await h.d.execute(sql`insert into operators (id, upload_centre_id, external_ref, role)
-          values (${financeId}, ${h.ids.centreA}, 'fin-cloud', 'finance')`);
+          values (${financeId}, ${h.ids.centreA}, 'fin-cloud', 'finance'),
+            (${identityAdmin}, ${h.ids.centreA}, 'identity-cloud', 'administrator')`);
+        await seedIdentity(h.d, { ...h.ids, identityAdmin }, financeId);
+        await seedOriginality(h.d, { ...h.ids, finB: financeId }, episode.ingestId, { existingFiles: true });
         await h.d.execute(sql`insert into payout_accounts
           (id, collector_id, method, phone, declared_name, verified_name, m_u_id, verify_status, verified_at, is_current, created_by)
           values (${uid()}, ${h.ids.collectorA}, 'WALLET', '0912345678', 'Nguyen Van A', 'NGUYEN VAN A',

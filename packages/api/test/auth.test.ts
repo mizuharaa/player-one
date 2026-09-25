@@ -188,8 +188,9 @@ describe.skipIf(!hasDb())('operator API auth', () => {
       scenario: uid(),
     };
     const d = await db();
-    await d.execute(sql`insert into collectors (id, external_ref, status)
-      values (${refs.collector}, 'c-1', 'qualified')`);
+    await d.execute(sql`insert into collectors
+      (id, external_ref, status, phone, sign_in_code_hash, sign_in_code_expires_at, sign_in_code_attempts, token_epoch)
+      values (${refs.collector}, 'c-1', 'qualified', '+84901234567', 'test-only-challenge', now() + interval '5 minutes', 2, 3)`);
     await d.execute(sql`insert into device_types (id, code, generation)
       values (${refs.deviceType}, 'ego_headset', 'gen1')`);
     await d.execute(sql`insert into devices (id, device_type_id, hardware_serial, status)
@@ -209,6 +210,11 @@ describe.skipIf(!hasDb())('operator API auth', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.reference_scope).toBe('global');
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    // An exact projection catches both current challenge fields and future auth columns.
+    expect(body.collectors).toEqual([{
+      id: refs.collector, externalRef: 'c-1', status: 'qualified', examResult: null, phone: '+84901234567',
+    }]);
     for (const [key, id] of [
       ['collectors', refs.collector],
       ['devices', refs.device],
@@ -225,9 +231,45 @@ describe.skipIf(!hasDb())('operator API auth', () => {
       headers,
     });
     expect(foreign.statusCode).toBe(403);
+    expect(foreign.headers['cache-control']).toBe('private, no-store');
+    const b = await login(app, 'HAN');
+    const otherCentre = await app.inject({ method: 'GET', url: '/reference/sync', headers: {
+      'x-machine-token': `Bearer ${b.machineToken}`, authorization: `Bearer ${b.operatorToken}`,
+    } });
+    expect(otherCentre.statusCode).toBe(200);
+    expect(otherCentre.json().collectors).toEqual(body.collectors);
   });
 
   // -- credentials ---------------------------------------------------------
+
+  it('revokes an issued machine token for paired requests and unattended heartbeats', async () => {
+    const ids = await seedTwoCentres();
+    const d = await db();
+    const app = await api();
+    const a = await login(app, 'HCM');
+    const b = await login(app, 'HAN');
+    const machineHeaders = { 'x-machine-token': `Bearer ${a.machineToken}` };
+    const headers = { ...machineHeaders, authorization: `Bearer ${a.operatorToken}` };
+    const heartbeat = { method: 'POST' as const, url: `/upload-devices/${ids.deviceA}/heartbeat`, headers: machineHeaders };
+    expect((await app.inject({ ...heartbeat, payload: { queue_depth: 1 } })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/whoami', headers })).statusCode).toBe(200);
+
+    await d.execute(sql`update upload_devices set status = 'retired' where id = ${ids.deviceA}`);
+    expect((await app.inject({ ...heartbeat, payload: { queue_depth: 2 } })).statusCode).toBe(401);
+    for (const url of ['/whoami', '/reference/sync']) {
+      expect((await app.inject({ method: 'GET', url, headers })).statusCode).toBe(401);
+    }
+    const [status] = await d.execute(sql`select queue_depth from upload_device_status where upload_device_id = ${ids.deviceA}`);
+    expect(status!.queue_depth).toBe(1);
+    expect((await app.inject({ method: 'GET', url: '/whoami', headers: {
+      'x-machine-token': `Bearer ${b.machineToken}`, authorization: `Bearer ${b.operatorToken}`,
+    } })).statusCode).toBe(200);
+
+    // Reactivating the same device in another centre must not revive its old token.
+    await d.execute(sql`update upload_devices set status = 'active', upload_centre_id = ${ids.centreB} where id = ${ids.deviceA}`);
+    expect((await app.inject({ ...heartbeat, payload: { queue_depth: 2 } })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: '/whoami', headers })).statusCode).toBe(401);
+  });
 
   it('refuses a wrong secret, a retired machine and an unknown identifier alike', async () => {
     const d = await db();

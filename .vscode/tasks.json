@@ -1,0 +1,26 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PlayerOne: mobile preview",
+      "type": "shell",
+      "command": "pnpm",
+      "windows": { "command": "pnpm.cmd" },
+      "args": ["--filter", "@playerone/collector", "web", "--host", "127.0.0.1", "--open", "/preview.html"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "PlayerOne: native Fast Refresh",
+      "detail": "Requires the PlayerOne development build installed on a device or emulator; this starts Metro, not a native build.",
+      "type": "shell",
+      "command": "pnpm",
+      "windows": { "command": "pnpm.cmd" },
+      "args": ["--filter", "@playerone/collector", "start", "--dev-client", "--lan"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    }
+  ]
+}

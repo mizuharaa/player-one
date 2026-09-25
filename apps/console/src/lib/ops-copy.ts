@@ -14,7 +14,7 @@ const en = {
 export const OPS_COPY: Record<'en' | 'vi' | 'zh', Record<keyof typeof en, string>> = {
   en,
   vi: {
-    navigation: 'Điều hướng', menu: 'Mở điều hướng', close: 'Đóng điều hướng',
+    navigation: 'Menu', menu: 'Mở menu', close: 'Đóng menu',
     skip: 'Đến khu vực làm việc', film: 'Việc mỗi ngày. Một góc nhìn khác.',
     filmNote: 'Phim minh họa · góc nhìn bên ngoài, không phải hình ảnh do Ego ghi lại.',
     filmError: 'Không tải được phim. Bạn vẫn có thể đăng nhập.',

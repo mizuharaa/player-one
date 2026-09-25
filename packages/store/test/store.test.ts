@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cp, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { EpisodeRecord } from '@playerone/contracts';
 import { ingestSession } from '../../ingest/src/ingest.ts';
 import {
@@ -18,7 +18,7 @@ import {
   type MismatchPayload,
 } from '../src/index.ts';
 import { episodeIngests, episodes } from '../src/schema.ts';
-import { closeDb, db, hasDb, truncate, useDatabase } from './db.ts';
+import { closeDb, db, dbUrl, hasDb, truncate, useDatabase } from './db.ts';
 
 // One database per test file: vitest runs them in parallel and each truncates.
 useDatabase('store');
@@ -64,6 +64,50 @@ describe.skipIf(!hasDb())('the episode store', () => {
   afterAll(closeDb);
 
   // -- re-ingest ------------------------------------------------------------
+
+  it.each(['first', 'same changed bytes', 'different changed bytes'] as const)(
+    'serializes concurrent deliveries: %s', async (kind) => {
+      const { record } = await withCache(async () => ingestSession(await fixture('delivery-a')));
+      const d = await db();
+      // Slow inserts make the unlocked implementation read the same prior row
+      // on separate connections. This test never depends on one pooled connection.
+      await d.execute(sql`create function test_slow_ingest() returns trigger language plpgsql as $$
+        begin perform pg_sleep(0.05); return new; end $$`);
+      await d.execute(sql`create trigger test_slow_ingest before insert on episode_ingests
+        for each row execute function test_slow_ingest()`);
+      const url = new URL(dbUrl());
+      // The store must override a deployment default that would pin a snapshot
+      // before waiting for the advisory lock.
+      url.searchParams.set('default_transaction_isolation', 'repeatable read');
+      const pool = await open(url.toString(), { max: 8 });
+      try {
+        if (kind !== 'first') await storeEpisode(d, record);
+        const inputs = Array.from({ length: 8 }, (_, i) => {
+          if (kind === 'first') return record;
+          const digest = (kind === 'same changed bytes' ? 'a' : String(i)).repeat(64);
+          return { ...record, content_fingerprint: digest,
+            source_files: record.source_files.map((f, n) => n === 0 ? { ...f, sha256: digest } : f) };
+        });
+        const results = await Promise.all(inputs.map((input) => storeEpisode(pool, input)));
+        const expected = kind === 'first' ? 1 : kind === 'same changed bytes' ? 2 : 9;
+        const [episode] = await d.select().from(episodes).where(eq(episodes.episodeId, record.episode_id));
+        const stored = await ingestsOf(d, record.episode_id);
+        expect(stored).toHaveLength(expected);
+        expect(episode!.ingestCount).toBe(expected);
+        expect(results.filter((r) => r.outcome !== 'duplicate')).toHaveLength(kind === 'different changed bytes' ? 8 : 1);
+        if (kind !== 'different changed bytes') expect(new Set(results.map((r) => r.ingestId)).size).toBe(1);
+        if (kind === 'different changed bytes') {
+          const priors = results.map((r) => r.mismatch!.prior_ingest_id);
+          expect(new Set(priors).size).toBe(8);
+          expect(priors).not.toContain(episode!.latestIngestId);
+        }
+      } finally {
+        await pool.close();
+        await d.execute(sql`drop trigger test_slow_ingest on episode_ingests`);
+        await d.execute(sql`drop function test_slow_ingest()`);
+      }
+    }, 60_000,
+  );
 
   it('a session never seen before is inserted whole', async () => {
     const { record, files } = await withCache(async () => ingestSession(await fixture('delivery-a')));

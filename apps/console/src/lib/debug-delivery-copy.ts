@@ -98,79 +98,79 @@ const vi: Copy = {
   dbg: 'Gỡ lỗi tải lên',
   dbgOpen: 'Mở trang gỡ lỗi tải lên',
   dbgNote:
-    'Đẩy một thư mục phiên từ máy này qua đúng các tuyến tải lên của ứng dụng cộng tác viên. Cùng bước đăng ký, cùng URL đã ký, cùng bước đọc lại, cùng các lý do từ chối. Không có gì được mô phỏng và không có gì được đo trong trình duyệt.',
+    'Tải thư mục phiên ghi hình từ máy tính này qua API của ứng dụng cộng tác viên, với cùng bước đăng ký, URL có chữ ký, bước đọc lại để xác minh và các lý do từ chối. Đây là thao tác thật. Việc đo dữ liệu không diễn ra trong trình duyệt.',
   dbgWhyNote:
-    'Hiện ra vì máy chủ này báo PLAYERONE_DEBUG_DELIVERY=1. Nó không thêm tuyến nào và không cấp thêm quyền: mọi lệnh gọi bên dưới đều là tuyến mà điện thoại đã dùng, với đúng thông tin xác thực tuyến đó vẫn yêu cầu.',
+    'Trang này hiển thị vì máy chủ báo PLAYERONE_DEBUG_DELIVERY=1. Trang dùng các API có sẵn của ứng dụng điện thoại và yêu cầu xác thực như bình thường, không thêm API hay cấp thêm quyền.',
   dbgPrereq: 'Trước khi bắt đầu',
   dbgPrereqCors:
-    'Bucket cần một quy tắc CORS cho nguồn gốc của console này, nếu không trình duyệt sẽ hủy lệnh PUT và fetch thất bại mà không có mã trạng thái: node packages/api/scripts/bucket-cors.mjs {{origin}}',
+    'Cần cấu hình CORS trên bucket để cho phép địa chỉ của trang quản lý này. Nếu chưa cấu hình, trình duyệt sẽ hủy lệnh PUT và fetch không trả về mã trạng thái. Chạy: node packages/api/scripts/bucket-cors.mjs {{origin}}',
   dbgPrereqClip:
-    'Chưa có thư mục phiên? Tạo một thư mục từ video thường: node packages/api/scripts/make-session.mjs <clip.mp4> <outdir> — rồi chọn thư mục đó.',
+    'Nếu chưa có thư mục phiên ghi hình, tạo từ một video có sẵn bằng lệnh: node packages/api/scripts/make-session.mjs <clip.mp4> <outdir> — rồi chọn thư mục vừa tạo.',
 
   dbgSignIn: 'Đăng nhập với tư cách cộng tác viên',
   dbgSignInNote:
-    'Đúng hai tuyến của điện thoại. Token chỉ nằm trong bộ nhớ của thẻ này — không lưu trữ, không cookie — và tách biệt với phiên vận hành của bạn.',
+    'Dùng hai API đăng nhập của ứng dụng điện thoại. Token xác thực chỉ được giữ trong bộ nhớ của thẻ trình duyệt này, không lưu vào bộ nhớ lâu dài hay cookie. Token này tách biệt với phiên đăng nhập nhân viên của bạn.',
   dbgPhone: 'Số điện thoại cộng tác viên',
   dbgRequestCode: 'Gửi mã',
-  dbgCode: 'Mã sáu số',
+  dbgCode: 'Mã xác thực sáu chữ số',
   dbgCodeFilled:
-    'Máy chủ trả về mã của số này, vì đây là số được nêu trong PLAYERONE_DEMO_PHONE. Mọi số khác đều trả 204 và không nói gì.',
+    'Máy chủ trả về mã xác thực vì số điện thoại này được cấu hình trong PLAYERONE_DEMO_PHONE. Các số khác nhận phản hồi 204 không có nội dung.',
   dbgCodeSilent:
-    'Máy chủ trả 204 và không nói gì, đúng như với mọi số. Hãy đọc mã trong log máy chủ, hoặc đặt PLAYERONE_DEMO_PHONE bằng số này.',
-  dbgVerify: 'Xác minh và giữ token',
-  dbgSignedIn: 'Đã đăng nhập với tư cách cộng tác viên. Token nằm trong bộ nhớ và mất khi đóng thẻ.',
-  dbgForget: 'Xóa token',
+    'Máy chủ trả phản hồi 204 không có nội dung, giống như với mọi số điện thoại. Xem mã trong nhật ký máy chủ hoặc đặt PLAYERONE_DEMO_PHONE thành số này.',
+  dbgVerify: 'Xác thực và giữ token',
+  dbgSignedIn: 'Đã đăng nhập tài khoản cộng tác viên. Token chỉ được giữ trong bộ nhớ và sẽ mất khi đóng thẻ trình duyệt.',
+  dbgForget: 'Xóa token khỏi bộ nhớ',
 
-  dbgSession: 'Phiên thu thập',
+  dbgSession: 'Phiên ghi hình',
   dbgSessionNote:
-    'APP-16: một bản ghi thuộc về phiên mà cộng tác viên đã khai báo trước khi mang camera. Gán sai phiên là trả sai tiền, nên phiên được chọn chứ không bao giờ đoán.',
+    'APP-16: bản ghi thuộc về phiên do cộng tác viên khai báo trước khi đeo camera. Bạn cần chọn đúng phiên để tránh thanh toán nhầm. Hệ thống không tự đoán phiên.',
   dbgDeclare: 'Khai báo phiên mới',
   dbgDeclareNote:
-    'Dùng nhiệm vụ đang nhận đầu tiên và thiết bị đã gắn đầu tiên của cộng tác viên, bối cảnh “home”. Cả hai khai báo APP-17b đều gửi là KHÔNG — người vận hành đẩy một thư mục không phải là cộng tác viên trả lời câu hỏi đồng ý.',
+    'Dùng nhiệm vụ đang nhận đầu tiên và thiết bị đã liên kết đầu tiên của cộng tác viên, với bối cảnh “home”. Cả hai khai báo APP-17b đều được gửi là KHÔNG vì nhân viên tải thư mục lên không thể thay cộng tác viên trả lời câu hỏi đồng ý.',
   dbgNoSessions: 'Cộng tác viên này chưa có phiên nào được khai báo. Hãy khai báo một phiên.',
-  dbgNoClaim: 'Cộng tác viên này chưa nhận nhiệm vụ hoặc chưa gắn thiết bị. Hãy chạy seed-demo.mjs.',
+  dbgNoClaim: 'Cộng tác viên này chưa có nhiệm vụ đang nhận hoặc chưa liên kết thiết bị. Chạy seed-demo.mjs.',
 
-  dbgPick: 'Thư mục phiên',
+  dbgPick: 'Thư mục phiên ghi hình',
   dbgPickNote:
-    'Chọn chính thư mục, không phải các tệp bên trong. Tên thư mục trở thành session_basename, và mã tập được suy ra từ đó và chỉ từ đó.',
+    'Chọn cả thư mục thay vì chọn từng tệp bên trong. Tên thư mục được dùng làm session_basename và là căn cứ duy nhất để tạo mã bản ghi.',
   dbgPickButton: 'Chọn thư mục',
   dbgDirectory: 'Thư mục',
   dbgFiles: 'Số tệp',
   dbgBytes: 'Số byte',
 
-  dbgStart: 'Băm và gửi',
-  dbgHashing: 'Đang băm trong trình duyệt',
+  dbgStart: 'Tính mã băm và tải lên',
+  dbgHashing: 'Đang tính mã băm trong trình duyệt',
   dbgSending: 'Đang gửi lên kho đối tượng',
-  dbgHeld: 'Trình duyệt này đang giữ một lượt gửi',
+  dbgHeld: 'Có lượt tải lên đang lưu trong trình duyệt',
   dbgHeldNote:
-    'Được giữ để không phải băm lại, và để lần thử thứ hai vẫn là cùng một lượt gửi chứ không thành lượt gửi thứ hai của một bản ghi. Chọn lại đúng thư mục đó để tiếp tục.',
-  dbgResume: 'Tiếp tục lượt gửi này',
-  dbgDiscard: 'Bỏ lượt gửi này',
+    'Thông tin lượt tải được giữ lại để không phải tính mã băm lần nữa và tránh tạo lượt tải trùng khi thử lại. Chọn lại đúng thư mục để tiếp tục.',
+  dbgResume: 'Tiếp tục tải lên',
+  dbgDiscard: 'Bỏ thông tin lượt tải này',
 
-  dbgVerdict: 'Máy chủ kết luận gì về các byte',
-  dbgUploadId: 'Mã lượt gửi',
+  dbgVerdict: 'Kết quả xử lý trên máy chủ',
+  dbgUploadId: 'Mã lượt tải lên',
   dbgState: 'Trạng thái',
   dbgReason: 'Lý do',
-  dbgEpisodeId: 'Tập',
-  dbgOpenEpisode: 'Mở tập này',
+  dbgEpisodeId: 'Bản ghi',
+  dbgOpenEpisode: 'Mở bản ghi này',
   dbgOpenQueue: 'Mở hàng chờ duyệt',
-  dbgIngested: 'Đã nhập. Máy chủ đã xác minh từng đối tượng, đo phiên và tạo tập.',
+  dbgIngested: 'Đã nhập dữ liệu. Máy chủ đã xác minh từng tệp được lưu, đo dữ liệu phiên ghi hình và tạo bản ghi.',
 
-  dbgReasonPickEmpty: 'Chưa chọn gì.',
-  dbgReasonManyRoots: 'Các tệp đó đến từ nhiều thư mục. Hãy chọn một thư mục phiên.',
+  dbgReasonPickEmpty: 'Bạn chưa chọn thư mục.',
+  dbgReasonManyRoots: 'Các tệp thuộc nhiều thư mục khác nhau. Bạn hãy chọn một thư mục phiên ghi hình.',
   dbgReasonNested:
-    'Thư mục đó có thư mục con. Engine chỉ đọc thư mục phiên phẳng, và tuyến tải lên từ chối tên tệp mang dấu phân cách đường dẫn.',
+    'Thư mục đã chọn có thư mục con. Hệ thống chỉ đọc các tệp nằm trực tiếp trong thư mục phiên ghi hình. API tải lên không chấp nhận tên tệp chứa dấu phân cách đường dẫn.',
   dbgReasonBadName:
-    'Tên thư mục đó không phải tên thư mục phiên. Cần ego_<serial>_YYYYMMDD_HHMMSS — có thể bạn đã chọn thư mục cha của phiên.',
+    'Tên thư mục cần có dạng ego_<serial>_YYYYMMDD_HHMMSS. Có thể bạn đã chọn thư mục cha thay vì thư mục phiên ghi hình.',
   dbgReasonBlocked:
-    'Trình duyệt không gửi được lệnh PUT. Hầu như luôn là bucket chưa có quy tắc CORS cho nguồn gốc này: hãy chạy packages/api/scripts/bucket-cors.mjs rồi thử lại.',
+    'Trình duyệt không gửi được lệnh PUT. Nguyên nhân thường gặp là bucket chưa cấu hình CORS cho địa chỉ trang này. Chạy packages/api/scripts/bucket-cors.mjs rồi thử lại.',
   dbgReasonUnauthorized: 'Token cộng tác viên đã mất hoặc bị từ chối. Hãy đăng nhập lại.',
-  dbgReasonUnknownState: 'Máy chủ trả về một trạng thái lượt gửi mà console này không biết.',
-  dbgReasonStorage: 'Máy chủ này chưa cấu hình kho đối tượng nên không thể lập kế hoạch tải lên.',
+  dbgReasonUnknownState: 'Trang quản lý chưa hỗ trợ trạng thái tải lên mà máy chủ trả về.',
+  dbgReasonStorage: 'Máy chủ chưa cấu hình kho lưu trữ đối tượng nên không thể chuẩn bị tải lên.',
   dbgReasonReadShort:
-    'Lần đọc tệp đó không trả về byte nào. Có thể thư mục đã bị di chuyển hoặc tháo sau khi chọn — hãy chọn lại.',
-  dbgReasonCredentials: 'Số điện thoại và mã đó không được chấp nhận.',
-  dbgReasonRateLimited: 'Quá nhiều lần thử. Hãy đợi rồi yêu cầu mã lại.',
+    'Không đọc được byte nào từ tệp. Thư mục có thể đã bị di chuyển hoặc ổ lưu trữ đã ngắt kết nối. Bạn hãy chọn lại thư mục.',
+  dbgReasonCredentials: 'Số điện thoại hoặc mã xác thực không hợp lệ.',
+  dbgReasonRateLimited: 'Bạn đã thử quá nhiều lần. Vui lòng đợi rồi yêu cầu gửi lại mã.',
 };
 
 const zh: Copy = {

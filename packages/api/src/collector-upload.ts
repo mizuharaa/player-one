@@ -4,7 +4,7 @@ import { mkdir, readdir, rename, rm } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { and, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { deriveEpisodeId, EpisodeRecord, parseSessionBasename } from '@playerone/contracts';
@@ -88,16 +88,9 @@ import {
  * `episodes.verification_state = 'failed'`, which the review queue refuses
  * under either gate.
  *
- * ponytail: a signed URL stays usable for its hour even after the delivery has
- * verified, so a collector holding one could overwrite their own object inside
- * that window and leave `verification_state = 'verified'` standing over bytes
- * nobody checked. No URL is ever issued for a verified delivery again — the
- * resume route answers with an empty plan and a re-registration answers `done`
- * — so the window is one hour, once, and it belongs to the person whose own
- * footage it is. Closing it properly is a bucket that refuses to overwrite an
- * existing key, or object lock; both are storage configuration and neither is
- * something this service can assert on its own. Revisit when the storage
- * contract names what the bucket can be configured to do.
+ * Signed URLs write only incoming objects. Completion hashes the exact bytes
+ * it publishes to server-only canonical keys, then independently reads those
+ * keys back. Replaying an old client URL cannot replace verified media.
  *
  * Two things this file deliberately does NOT do:
  *
@@ -221,9 +214,9 @@ const RegisterBody = z.object({
   id: z.string().uuid(),
   collection_session_id: z.string().uuid(),
   /**
-   * The finished measurement, exactly as Path C's console posts it. The phone
-   * ran the engine over the session it pulled off the device; nothing here
-   * re-measures it, and nothing here reads the state it asserts.
+   * Legacy measured shape, accepted only to resume an existing upload id.
+   * New registrations must use UnmeasuredBody; client measurements are not
+   * evidence of the footage's payable duration.
    */
   episode: EpisodeRecord,
   /**
@@ -762,6 +755,7 @@ export function registerCollectorUpload(
         },
       },
       async (tx) => {
+        await tx.execute(sql`select originality_lock()`);
         const [row] = await tx
           .insert(schema.collectorUploads)
           .values({
@@ -806,12 +800,9 @@ export function registerCollectorUpload(
    * object keys, the part boundaries, one signed URL per part still missing,
    * and which parts the store already holds.
    *
-   * Two body shapes, discriminated on the presence of `episode` — measured, the
-   * original, where the phone ran the engine and posted a finished record; and
-   * unmeasured, where it could not and this service measures instead. The
-   * discriminator is a field's presence rather than a `kind` tag because the
-   * measured shape is already deployed and a tag would have had to be optional,
-   * which is the same test written less directly.
+   * New registrations send an unmeasured inventory. The legacy `episode`
+   * shape remains only for resuming already-registered uploads; it cannot
+   * create a measurement from client assertions.
    */
   app.post('/api/me/uploads', opts, async (req, reply) => {
     const raw = req.body;
@@ -935,119 +926,12 @@ export function registerCollectorUpload(
      */
     if ((await sessionFor(reply, body.collection_session_id, collectorId)) === null) return reply;
 
-    /**
-     * The measurement is stored by the code that owns that job, exactly as
-     * Path C does. It runs its own transaction, handles the three redelivery
-     * cases, and decides the stored state — this route does not, and must not
-     * start: a second place that reads a record's asserted state is a second
-     * place a client can carry a defect and deny the consequence.
-     *
-     * A duplicate delivery returns the EXISTING ingest id, so the object keys
-     * are the keys the first delivery already used and a session that arrives
-     * by phone and by card is one episode and one object set (UPL-15).
-     */
-    const stored = await storeEpisode(db, record);
-    if (stored.ingestId === null) {
-      throw new Error(`storeEpisode returned no ingest for ${stored.episodeId}`);
-    }
-    const ingestId = stored.ingestId;
-
-    /** The platform row this serial names, when the fleet has one. Evidence either way. */
-    const [device] = await db
-      .select({ id: schema.devices.id })
-      .from(schema.devices)
-      .where(eq(schema.devices.hardwareSerial, record.device.serial));
-
-    const written = await mutate(
-      db,
-      actorOf(req),
-      {
-        action: 'upload.register',
-        targetTable: 'collector_uploads',
-        targetId: body.id,
-        after: {
-          episode_id: stored.episodeId,
-          ingest_id: ingestId,
-          collection_session_id: body.collection_session_id,
-          outcome: stored.outcome,
-          source_basename: record.source.path,
-          device_serial: record.device.serial,
-          device_id: device?.id ?? null,
-          file_count: declared.length,
-          total_bytes: totalBytes,
-          client_version: body.client_version ?? null,
-        },
-      },
-      async (tx) => {
-        /**
-         * `upload_path is null` is the whole guard, and it is doing real work.
-         *
-         * An episode already imported at a counter carries `upload_path = 'C'`
-         * and a session an operator resolved it to. A phone uploading the same
-         * session afterwards must not move that attribution: the counter's
-         * answer was made against the card, with a handover behind it, and
-         * settlement has possibly already read it. So the bytes are still
-         * accepted — the keys are the same and the transport is idempotent —
-         * and the attribution is left exactly where it was.
-         */
-        const [attributed] = await tx
-          .update(schema.episodes)
-          .set({
-            collectionSessionId: body.collection_session_id,
-            resolutionState: 'resolved',
-            resolutionMethod: 'app_declared',
-            uploadPath: 'A',
-          })
-          .where(
-            and(
-              eq(schema.episodes.episodeId, stored.episodeId),
-              isNull(schema.episodes.uploadPath),
-            ),
-          )
-          .returning();
-
-        const [row] = await tx
-          .insert(schema.collectorUploads)
-          .values({
-            id: body.id,
-            collectorId,
-            collectionSessionId: body.collection_session_id,
-            deviceSerial: record.device.serial,
-            deviceId: device?.id ?? null,
-            episodeId: stored.episodeId,
-            ingestId,
-            sourceBasename: record.source.path,
-            fileCount: declared.length,
-            totalBytes,
-            extraFiles: body.extra_files,
-            clientVersion: body.client_version ?? null,
-          })
-          .returning();
-        return { row, attributed };
-      },
-    );
-    if (written === undefined) throw new Error('the registration wrote nothing');
-
-    const sizes = new Map(declared.map((f) => [f.relative_path, f.bytes]));
-    const files = inventoryOf(record.source_files, body.extra_files);
-    return reply.send({
-      upload_id: body.id,
-      replayed: false,
-      episode_id: stored.episodeId,
-      ingest_id: ingestId,
-      outcome: stored.outcome,
-      collection_session_id: body.collection_session_id,
-      upload_path: 'A',
-      /**
-       * Whether THIS upload is what put the episode on that session, or whether
-       * it was already attributed — by a counter, or by an earlier attempt. The
-       * phone shows the collector the session the platform actually holds, not
-       * the one it asked for.
-       */
-      attributed: written.attributed !== undefined,
-      part_size: PART_SIZE,
-      expires_in_s: ttl,
-      files: await planFor(s, stored.episodeId, ingestId, files, sizes),
+    // Existing upload ids above retain their resume protocol. New clients must
+    // send the inventory so the server, not a caller's JSON, measures payment time.
+    return reply.code(422).send({
+      error: 'server_measurement_required',
+      detail: 'Register with session_basename and files; omit episode. The server measures verified media.',
+      required_fields: ['id', 'collection_session_id', 'session_basename', 'files'],
     });
   });
 
@@ -1110,16 +994,19 @@ export function registerCollectorUpload(
       state === 'registered' &&
       plan.some((f) => f.done || (f.held_parts?.length ?? 0) > 0)
     ) {
-      const [moved] = await db
-        .update(schema.collectorUploads)
-        .set({ state: 'transferring' })
-        .where(
-          and(
-            eq(schema.collectorUploads.id, row.id),
-            eq(schema.collectorUploads.state, 'registered'),
-          ),
-        )
-        .returning({ state: schema.collectorUploads.state });
+      const [moved] = await db.transaction(async (tx) => {
+        await tx.execute(sql`select originality_lock()`);
+        return tx
+          .update(schema.collectorUploads)
+          .set({ state: 'transferring' })
+          .where(
+            and(
+              eq(schema.collectorUploads.id, row.id),
+              eq(schema.collectorUploads.state, 'registered'),
+            ),
+          )
+          .returning({ state: schema.collectorUploads.state });
+      }, { isolationLevel: 'read committed' });
       state = moved?.state ?? state;
     }
 
@@ -1151,15 +1038,13 @@ export function registerCollectorUpload(
    * dispute reads.
    */
   const note = (id: string, state: string, from: string[]) =>
-    db
-      .update(schema.collectorUploads)
-      .set({ state })
-      .where(
-        and(
-          eq(schema.collectorUploads.id, id),
-          inArray(schema.collectorUploads.state, from),
-        ),
-      );
+    db.transaction(async (tx) => {
+      await tx.execute(sql`select originality_lock()`);
+      return tx.update(schema.collectorUploads).set({ state }).where(and(
+        eq(schema.collectorUploads.id, id),
+        inArray(schema.collectorUploads.state, from),
+      ));
+    }, { isolationLevel: 'read committed' });
 
   /**
    * The terminal answer about an unmeasured delivery that became an episode.
@@ -1422,7 +1307,7 @@ export function registerCollectorUpload(
     const { files, sizes } = await storedInventory(row);
     const keyOf = (relativePath: string) => objectKey(episodeId, row.id, relativePath);
 
-    await assemble(s, files, sizes, keyOf);
+    if (!['verified', 'ingesting'].includes(row.state)) await assemble(s, files, sizes, keyOf);
     const mismatches: Mismatch[] = await verifyReadBack(s, files, keyOf);
 
     if (mismatches.length > 0) {
@@ -1449,6 +1334,7 @@ export function registerCollectorUpload(
           },
         },
         async (tx) => {
+          await tx.execute(sql`select originality_lock()`);
           const [updated] = await tx
             .update(schema.collectorUploads)
             .set({ state: 'failed', failedReason: 'checksum_mismatch', completedAt: new Date() })
@@ -1500,6 +1386,7 @@ export function registerCollectorUpload(
         },
       },
       async (tx) => {
+        await tx.execute(sql`select originality_lock()`);
         const [updated] = await tx
           .update(schema.collectorUploads)
           .set({ state: 'verified', failedReason: null, completedAt: new Date() })
@@ -1580,6 +1467,7 @@ export function registerCollectorUpload(
           },
         },
         async (tx) => {
+          await tx.execute(sql`select originality_lock()`);
           const [updated] = await tx
             .update(schema.collectorUploads)
             .set({ state: 'failed', failedReason: 'ingest_failed' })
@@ -1650,6 +1538,7 @@ export function registerCollectorUpload(
           reason: 'basename_collision',
         },
         async (tx) => {
+          await tx.execute(sql`select originality_lock()`);
           const [updated] = await tx
             .update(schema.collectorUploads)
             .set({ state: 'held', heldReason: 'basename_collision' })
@@ -1750,6 +1639,7 @@ export function registerCollectorUpload(
         },
       },
       async (tx) => {
+        await tx.execute(sql`select originality_lock()`);
         /**
          * APP-16, and the same rule the measured path applies: the collector
          * bound this session before recording, so the attribution is a
@@ -1906,7 +1796,11 @@ export function registerCollectorUpload(
     const at = deliveryOf(row);
     const keyOf = (relativePath: string) => objectKey(at.episodeId, at.deliveryId, relativePath);
 
-    await assemble(s, files, sizes, keyOf);
+    const [episode] = await db.select({ verificationState: schema.episodes.verificationState })
+      .from(schema.episodes)
+      .where(and(eq(schema.episodes.episodeId, at.episodeId), eq(schema.episodes.latestIngestId, at.deliveryId)));
+    // The same delivery may already have been verified by an operator.
+    if (episode?.verificationState !== 'verified') await assemble(s, files, sizes, keyOf);
     const mismatches = await verifyReadBack(s, files, keyOf);
     const ok = mismatches.length === 0;
     const state = ok ? 'verified' : 'failed';
@@ -1929,6 +1823,7 @@ export function registerCollectorUpload(
         },
       },
       async (tx) => {
+        await tx.execute(sql`select originality_lock()`);
         /**
          * `latest_ingest_id` is in the WHERE for the reason Path C states: the
          * verdict belongs to the ingest whose bytes were checked. If a

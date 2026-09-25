@@ -45,13 +45,19 @@ Share of frames below a brightness edge or below a flatness edge.
 statistics so a half-covered lens is caught.
 
 ### CONT.NEAR_DUPLICATE — `frames.ts` `aHash`, `content.ts` `frameMatch`
-Average hash per sampled frame (8×8 block means), stored on every evaluated
-episode as a zero-point CONT.FINGERPRINT row, compared at ±10 s offsets
-against episodes of similar length. Exact `content_fingerprint` and shared
-media-file digests are checked first and need no media.
-*Production:* a perceptual hash robust to crop and re-encode (pHash/DCT or
-a learned embedding), an index rather than a scan, and a comparison across
-the whole store rather than the ±20% length window used here.
+Average hash per sampled frame (8×8 block means). The `segment-v1` helper
+matches bounded monotonic segments, including trim, speed changes, dropped
+frames, reverse and mirror. It requires 20 informative samples and 8 distinct
+hashes; an exhausted budget is incomplete, never evidence of originality.
+The risk engine's legacy candidate selection is separate from the mandatory
+originality worker, which uses a durable per-frame index across ingests, exact
+media digests and same-device time overlap without a duration window.
+
+Synthetic transformed-video checks pass, but two independent takes of the same
+synthetic scene also produced a suspected match. This is evidence for human
+review, not an automatic fraud verdict or a measured field false-positive rate.
+Crop/overlay robustness, real-scene thresholds and index capacity still need
+validation. See [pilot limits and operations](../../docs/originality-pilot.md).
 
 ### PROV.PRNU_MISMATCH — `prnu.ts`
 Sensor pattern noise: mean of `frame − blur3(frame)` over the clip,

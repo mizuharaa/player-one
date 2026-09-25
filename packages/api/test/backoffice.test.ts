@@ -1703,7 +1703,7 @@ describe.skipIf(!hasDb())('the back office', () => {
       .filter((f) => f.endsWith('.sql'))
       .map((f) => readFileSync(join(drizzle, f), 'utf8'))
       .join(' ');
-    const raised = [...migrations.matchAll(/CONSTRAINT = '([a-z0-9_]+)'/g)].map((m) => m[1]!);
+    const raised = [...migrations.matchAll(/CONSTRAINT\s*=\s*'([a-z0-9_]+)'/gi)].map((m) => m[1]!);
     expect(raised.length, 'the migrations raise named refusals').toBeGreaterThan(8);
 
     /**
@@ -1712,6 +1712,16 @@ describe.skipIf(!hasDb())('the back office', () => {
      * Each of them is unreachable from a route for a stated reason.
      */
     const INTERNAL = new Set([
+      // Originality workers use READ COMMITTED, immutable evidence and audited
+      // writes. Tripping these through the API is a worker/transaction bug;
+      // stale human decisions and identity refusals are mapped in REFUSALS.
+      'originality_isolation',
+      'originality_append_only',
+      'originality_inventory_changed',
+      'originality_media_unverified',
+      'originality_decision_unaudited',
+      'originality_identity_attestation_required',
+      'originality_fingerprint_append_only',
       // Guarded by zod before the column ever sees the value.
       'tasks_status_check',
       'tasks_claimants_check',
@@ -1803,6 +1813,9 @@ describe.skipIf(!hasDb())('the back office', () => {
       'payout_attempts_initial_status',
       'payout_export_rows_sealed',
       'payout_exports_complete',
+      // 0038 requires READ COMMITTED for hold admission. A different transaction
+      // isolation level is server misconfiguration, not a user's 409 refusal.
+      'payout_risk_isolation',
       // Raised by 0016's append-only guard on episode_clearings. No route
       // updates or deletes a clearing; raw SQL is the only caller, and
       // clearing.test.ts proves it fires.

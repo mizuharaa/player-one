@@ -460,8 +460,8 @@ describe.skipIf(!hasDb())('the collector app', () => {
       values (${ingestId}, ${episodeId}, repeat('a', 64), 'ok', 'ego_AZER76400FE_20260813_072310', '180.000000',
               'pts_sidecar', 'exact', true, '0.3.1', 'test', now(), '{}'::jsonb)`);
     await d.execute(sql`insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s, effective_duration_s,
-        review_state, reviewed_at, verdict_id)
-      values (${reviewId}, ${episodeId}, ${ingestId}, '180.000000', '150.000000', 'pass', now(), ${uid()})`);
+        review_state, reviewed_at, verdict_id, reviewer_ref, claimed_at, lease_expires_at)
+      values (${reviewId}, ${episodeId}, ${ingestId}, '180.000000', '150.000000', 'pass', now(), ${uid()}, ${h.ids.operator}, now(), now()+interval '10 minutes')`);
     // `settlements_claim_required`: a settlement names the claim that entitled
     // somebody to record it — and here that is the claim the app's own session
     // route snapshotted, which is the point of the join.
@@ -477,9 +477,9 @@ describe.skipIf(!hasDb())('the collector app', () => {
     );
 
     /**
-     * The redelivery. The same episode arrives a second time, a reviewer judges
-     * it again and finds LESS effective time, and the second settlement
-     * supersedes the first.
+     * An authorized dispute: a different reviewer judges the same delivery,
+     * finds LESS effective time, and supersedes the first settlement in the
+     * same transaction. Redelivery alone cannot create another payable row.
      *
      * Without this the `superseded_by is null` filter in `taskRows` is never
      * exercised — one settlement is never superseded, so the clause can be
@@ -487,27 +487,30 @@ describe.skipIf(!hasDb())('the collector app', () => {
      * reports 270 (150 + 120) instead of 120: a task's progress counting the
      * same footage under both of its verdicts.
      */
-    const ingest2 = uid();
+    const disputeId = uid();
+    const secondReviewer = uid();
     const review2 = uid();
     const secondSettlement = uid();
-    await d.execute(sql`update episodes set ingest_count = 2 where episode_id = ${episodeId}`);
-    await d.execute(sql`insert into episode_ingests (ingest_id, episode_id, content_fingerprint, state, source_basename,
-        measured_duration_s, timing_source, timing_confidence, manifest_present, engine_version, host, ingested_at, record_json)
-      values (${ingest2}, ${episodeId}, repeat('b', 64), 'ok', 'ego_AZER76400FE_20260813_072310', '180.000000',
-              'pts_sidecar', 'exact', true, '0.3.1', 'test', now(), '{}'::jsonb)`);
-    await d.execute(sql`insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s, effective_duration_s,
-        review_state, reviewed_at, verdict_id)
-      values (${review2}, ${episodeId}, ${ingest2}, '180.000000', '120.000000', 'pass', now(), ${uid()})`);
-    await d.execute(sql`insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes, amount, settlement_state)
-      values (${secondSettlement}, ${review2}, ${h.ids.task}, ${session!.claim}, '1200.0000', '2.000000', '2400.0000', 'pending_settlement')`);
-    // `settlements_supersede_guard`: a superseded row parks in `exception` and
-    // says where it came from and why, so this is the shape the database allows.
-    await d.execute(sql`update settlements
+    await d.transaction(async tx => {
+      await tx.execute(sql`insert into operators(id,upload_centre_id,external_ref,role,credential_hash)
+        select ${secondReviewer},upload_centre_id,'second-reviewer','centre_operator',credential_hash
+        from operators where id=${h.ids.operator}`);
+      await tx.execute(sql`insert into review_disputes(id,review_id,raised_by,reason)
+        values(${disputeId},${reviewId},${h.ids.operator},'Reassess the effective recording duration')`);
+      await tx.execute(sql`insert into episode_reviews (id, episode_id, ingest_id, measured_duration_s, effective_duration_s,
+          review_state, reviewed_at, verdict_id, queue, dispute_id, reviewer_ref, claimed_at, lease_expires_at)
+        values (${review2}, ${episodeId}, ${ingestId}, '180.000000', '120.000000', 'pass', now(), ${uid()},
+          'second_review', ${disputeId}, ${secondReviewer}, now(), now()+interval '10 minutes')`);
+      await tx.execute(sql`insert into settlements (id, episode_review_id, task_id, task_claim_id, unit_price, effective_minutes, amount, settlement_state)
+        values (${secondSettlement}, ${review2}, ${h.ids.task}, ${session!.claim}, '1200.0000', '2.000000', '2400.0000', 'pending_settlement')`);
+      await tx.execute(sql`update settlements
          set settlement_state = 'exception',
              exception_from_state = 'pending_settlement',
              exception_reason = 'superseded',
              superseded_by = ${secondSettlement}
        where id = ${firstSettlement}`);
+      await tx.execute(sql`update review_disputes set resolved_at=now(),outcome='overturned' where id=${disputeId}`);
+    });
 
     const task = (await h.get(`/api/me/tasks/${h.ids.task}`)).json();
     // The SECOND verdict only: 2.0 reviewed minutes is 120 seconds. Not 150

@@ -139,8 +139,9 @@ export const objectBudget = (limits: ReadLimits = {}): ReadBudget => ({
  * per collector-day, and there are 500 collectors — moving that through Fastify
  * would make the API a file server sized for the whole fleet's video, for no
  * gain, because the object store is on the other side of it either way. So the
- * phone is given a signed URL per part and talks to storage directly, and the
- * API only ever handles the JSON that plans and checks it.
+ * phone is given a signed URL per part and talks to staging storage directly.
+ * Inside the VPC, completion streams and hashes those bytes into a server-only
+ * canonical object, then reads that object back independently.
  *
  * A second interface rather than five more methods on `ObjectStore`: the
  * fs-backed test stub implements that one and cannot sign anything, and
@@ -182,6 +183,8 @@ export interface DirectUploadStore {
    * stored, and buys nothing — the store already knows what it has.
    */
   finishMultipart(key: string, uploadId: string): Promise<void>;
+  /** Publish staged bytes only after hashing the exact bytes sent to the final key. */
+  publish(sourceKey: string, key: string, sha256: string, bytes: number): Promise<boolean>;
 }
 
 /**
@@ -266,6 +269,9 @@ export const objectKey = (episodeId: string, ingestId: string, relativePath: str
  * that, nothing else changes.
  */
 export const PART_SIZE = 64 * 1024 * 1024;
+
+/** Client write capabilities never name the keys used by media or verification receipts. */
+export const stagingKey = (key: string): string => `incoming/${key}`;
 
 export type PlannedPart = { partNumber: number; start: number; end: number };
 
@@ -770,6 +776,84 @@ export class S3ObjectStore implements ObjectStore, DirectUploadStore {
     );
   }
 
+  async publish(sourceKey: string, key: string, sha256: string, bytes: number): Promise<boolean> {
+    const budget = objectBudget();
+    const hash = createHash('sha256');
+    // ponytail: at most 64 MiB per active publish, plus the SDK/read stream buffers.
+    // A worker queue is the upgrade path if concurrent completions exceed VPC memory.
+    const buffer = Buffer.alloc(Math.min(bytes, PART_SIZE));
+    let used = 0;
+    let observed = 0;
+    let uploadId: string | undefined;
+    let published = false;
+    const parts: { PartNumber: number; ETag: string }[] = [];
+    const sendPart = async () => {
+      const body = buffer.subarray(0, used);
+      const result = await withRetry(() => this.request((options) => this.client.send(
+        new UploadPartCommand({
+          Bucket: this.bucket, Key: key, UploadId: uploadId,
+          PartNumber: parts.length + 1, Body: body, ContentLength: body.length,
+        }), options,
+      ), budget.signal, OBJECT_DEADLINE_MS), budget.signal);
+      if (!result.ETag) throw new Error('Published part has no ETag');
+      parts.push({ PartNumber: parts.length + 1, ETag: result.ETag });
+      used = 0;
+    };
+    try {
+      if (bytes >= PART_SIZE) {
+        // Always private and fresh. Never adopt/list another publisher's upload,
+        // and never expose this ID in a client plan.
+        const created = await this.request((options) => this.client.send(
+          new CreateMultipartUploadCommand({ Bucket: this.bucket, Key: key, Metadata: { sha256 } }), options,
+        ), budget.signal);
+        uploadId = created.UploadId;
+        if (!uploadId) throw new Error('Publish multipart has no upload ID');
+      }
+      const body = await this.read(sourceKey, 0, budget);
+      if (body === null) return false;
+      for await (const chunk of body) {
+        if (observed + chunk.length > bytes) return false;
+        let at = 0;
+        while (at < chunk.length) {
+          const count = Math.min(buffer.length - used, chunk.length - at);
+          buffer.set(chunk.subarray(at, at + count), used);
+          // Hash the copied bytes that UploadPart/PutObject will actually send.
+          hash.update(buffer.subarray(used, used + count));
+          used += count;
+          observed += count;
+          at += count;
+          if (uploadId && used === buffer.length) await sendPart();
+        }
+      }
+      if (observed !== bytes || hash.digest('hex') !== sha256) return false;
+      if (uploadId) {
+        if (used > 0) await sendPart();
+        await this.request((options) => this.client.send(
+          new CompleteMultipartUploadCommand({
+            Bucket: this.bucket, Key: key, UploadId: uploadId,
+            MultipartUpload: { Parts: parts },
+          }), options,
+        ), budget.signal, OBJECT_DEADLINE_MS);
+      } else {
+        await withRetry(() => this.request((options) => this.client.send(
+          new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: buffer, ContentLength: bytes, Metadata: { sha256 } }), options,
+        ), budget.signal, OBJECT_DEADLINE_MS), budget.signal);
+      }
+      published = true;
+      return true;
+    } finally {
+      if (uploadId && !published) {
+        // Only this invocation's unfinished upload. Source objects are evidence
+        // and remain for the incoming-prefix lifecycle policy to retain/expire.
+        try {
+          await this.request((options) => this.client.send(
+            new AbortMultipartUploadCommand({ Bucket: this.bucket, Key: key, UploadId: uploadId }), options,
+          ));
+        } catch { /* An incomplete-multipart lifecycle rule is the backstop. */ }
+      }
+    }
+  }
+
   async openMultipart(key: string): Promise<string | null> {
     return this.findOpenUpload(key);
   }
@@ -906,10 +990,13 @@ export function s3StoreFromEnv(
 // ---------------------------------------------------------------------------
 // The transport inventory
 
-export type TransportFile = { relative_path: string; sha256: string };
+export type TransportFile = { relative_path: string; sha256: string; bytes?: number };
 
-async function sha256OfFile(path: string): Promise<string> {
-  return sha256Of(createReadStream(path) as AsyncIterable<Uint8Array>);
+async function sha256OfFile(path: string): Promise<{ sha256: string; bytes: number }> {
+  const h = createHash('sha256');
+  let bytes = 0;
+  for await (const chunk of createReadStream(path)) { h.update(chunk); bytes += chunk.length; }
+  return { sha256: h.digest('hex'), bytes };
 }
 
 async function sha256Of(bytes: AsyncIterable<Uint8Array>): Promise<string> {
@@ -1016,7 +1103,7 @@ export async function transportInventory(
   const extras: TransportFile[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     if (!entry.isFile() || known.has(entry.name)) continue;
-    extras.push({ relative_path: entry.name, sha256: await sha256OfFile(join(dir, entry.name)) });
+    extras.push({ relative_path: entry.name, ...await sha256OfFile(join(dir, entry.name)) });
   }
   extras.sort((a, b) => (a.relative_path < b.relative_path ? -1 : 1));
   return [...fingerprinted, ...extras];
@@ -1091,7 +1178,7 @@ export async function uploadEpisode(
     force: boolean;
   },
   progress: UploadProgress = noProgress,
-): Promise<EpisodeUploadResult> {
+): Promise<EpisodeUploadResult & { files: readonly TransportFile[] }> {
   const dir = safeJoin(args.mediaRoot, args.sourceBasename, '.');
   if (dir === null) throw new Error(`unsafe source path: ${args.sourceBasename}`);
 
@@ -1114,7 +1201,7 @@ export async function uploadEpisode(
     else kept += 1;
   }
 
-  return { ...await verifyUploadedEpisode(store, args, files, progress), uploaded, kept };
+  return { ...await verifyUploadedEpisode(store, args, files, progress), uploaded, kept, files };
 }
 
 /** Verify a centre delivery whose bytes were sent directly by its own PC. */
