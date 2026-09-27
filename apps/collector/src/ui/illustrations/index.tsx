@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import { Text, View } from 'react-native';
+import { Image, View } from 'react-native';
+import portrait from '../../../assets/illustrations/panda-avatar.png';
 import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
-import { face } from '../../ui.tsx';
 import { useTheme } from '../../theme.tsx';
 
 /**
@@ -218,59 +218,6 @@ export function EmptyIncome({ size = 120 }: IllustrationProps) {
 
 /* ── Two marks that are not scenes ──────────────────────────────────────── */
 
-/**
- * The default avatar: initials on plum, inside a sun ring (klarna-316/317).
- *
- * Not a photograph and not a placeholder person. A picker from the gallery is
- * post-demo (work order §1, "Not built"), so this IS the collector's picture
- * everywhere the app shows one, and it has to stay legible at dock size.
- *
- * `initials` is derived by the caller from the name the server sent; an empty
- * name gives an empty circle rather than a guessed letter.
- */
-export function AvatarMark({ initials, size = 72 }: { initials: string; size?: number }) {
-  const theme = useTheme();
-  const { plum, sun, surface } = usePalette();
-  return (
-    <View
-      accessible={false}
-      importantForAccessibility="no-hide-descendants"
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: plum,
-        borderWidth: Math.max(2, size / 24),
-        borderColor: sun,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Text
-        style={{
-          color: surface,
-          fontFamily: face(theme),
-          // Scales with the circle, not with the collector's font setting:
-          // this is a mark at a fixed size, and one that grew would break the
-          // dock.
-          //
-          // Deliberately not a `c.type.*` role: a role is a fixed pair and
-          // this has to hold at 88dp on Profile and at dock size. The ratio is
-          // what the roles guarantee, and 0.48/0.36 is 1.33 — above the 1.3
-          // floor the type scale keeps for diacritics, which 0.46 (1.278) was
-          // under.
-          fontSize: size * 0.36,
-          lineHeight: size * 0.48,
-          fontWeight: theme.fontWeight.display,
-        }}
-        allowFontScaling={false}
-      >
-        {initials}
-      </Text>
-    </View>
-  );
-}
-
 /** Something is broken and the sentence beside it says what. */
 export function ErrorMark({ size = 120 }: IllustrationProps) {
   const { plum, sun, ink } = usePalette();
@@ -285,13 +232,7 @@ export function ErrorMark({ size = 120 }: IllustrationProps) {
   );
 }
 
-/** The collector's initials, for `AvatarMark`. At most two, upper case. */
-export const initialsOf = (name: string): string =>
-  name
-    .trim()
-    .split(/\s+/)
-    .filter((part) => part !== '')
-    .slice(0, 2)
-    .map((part) => [...part][0] ?? '')
-    .join('')
-    .toLocaleUpperCase();
+/** Owner-selected default animal; the profile API has no personal photo field. */
+export function AvatarMark({ size = 48 }: { size?: number }) {
+  return <View accessible={false} importantForAccessibility="no-hide-descendants" style={{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden' }}><Image source={portrait} resizeMode="cover" accessible={false} style={{ width: size, height: size }} /></View>;
+}

@@ -7,12 +7,14 @@ try {
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('http://127.0.0.1:5177/preview.html');
+  const base = process.env.BASE_URL ?? 'http://127.0.0.1:5177';
+  await page.goto(`${base}/preview.html`);
   const phone = page.locator('#phone');
   const app = page.frameLocator('#phone');
   await app.locator('#root > *').waitFor();
   await app.getByText('Nhiệm vụ của tôi', { exact: true }).waitFor();
   assert.equal(await phone.getAttribute('width'), '360');
+  assert.equal(new URL(await phone.getAttribute('src')).origin, new URL(base).origin);
   await page.getByLabel('Viewport').selectOption('320x640');
   assert.equal(await phone.getAttribute('width'), '320');
   assert.equal(await phone.getAttribute('height'), '640');

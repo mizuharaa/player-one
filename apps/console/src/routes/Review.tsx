@@ -1007,15 +1007,6 @@ function VerdictChoice({
 }
 
 /**
- * Nothing to do, on this screen only.
- *
- * The shared empty state carries Trúc, and nothing cartoon goes on the screen
- * where footage is judged — not even when the queue reaches zero. So this is
- * the same drawn hatch and the same measure, with a sentence where the mascot
- * would be. It lives here rather than in `components/ui` because it is the one
- * screen with that rule.
- */
-/**
  * What a reviewer CAN see when raw playback is withheld: the queue's metadata.
  *
  * `GET /api/review/next` is not behind `mayWatch` — only the claim, the
@@ -1049,14 +1040,13 @@ function WithheldQueue({ queue }: { queue: ReviewQueue }) {
   );
 }
 
+/** Keep review recovery copy quiet, with no decorative empty frame. */
 function Nothing({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) {
   return (
-    <div className="mx-auto flex min-h-[240px] items-center justify-center p-6">
-      <div className="hatch w-full max-w-[46ch] rounded-[var(--radius-lg)] border border-[var(--border)] px-8 py-12">
-        <h2 className="text-[1.625rem] font-extrabold leading-[1.15] tracking-[-0.03em]">{title}</h2>
-        <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">{body}</p>
-        {action ? <div className="mt-6">{action}</div> : null}
-      </div>
+    <div className="mx-auto max-w-[46ch] bg-[var(--card)] px-6 py-8">
+      <h2 className="text-[1.625rem] font-extrabold leading-[1.15] tracking-[-0.03em]">{title}</h2>
+      <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">{body}</p>
+      {action ? <div className="mt-6">{action}</div> : null}
     </div>
   );
 }

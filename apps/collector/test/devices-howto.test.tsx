@@ -112,12 +112,8 @@ it('prints a bound serial in the tech ink and says which readings it lacks', asy
   );
   expect(serial?.style.color.replace(/\s/g, '')).toBe(hexToRgb(collector.techInk));
 
-  // Battery and last-used are not on `BoundDevice`. The rows exist and say
-  // "not reported" — never a zero, a dash that could be read as empty, or a
-  // guessed percentage.
-  expect(page()).toContain(m['devices.battery']);
-  expect(page()).toContain(m['devices.lastUsed']);
-  expect(page()).toContain(m['devices.notReported']);
+  // Unavailable telemetry is explained once, without empty property rows.
+  expect(page()).not.toContain(m['devices.notReported']);
   expect(page()).toContain(m['devices.noReadings']);
   // Nothing on the card is a number this app made up: the only figures are the
   // serial and the bound-at timestamp the server sent.
@@ -139,7 +135,8 @@ it('shows a failed device scan and an illustrated empty result after retry', asy
   await act(async () => root.render(<ThemeProvider><LocaleProvider><TransportProvider value={transport}><NavProvider initial={{ name: 'provisioning' }}><Provisioning /></NavProvider></TransportProvider></LocaleProvider></ThemeProvider>));
   const press = async (label: string) => { await act(async () => (document.querySelector(`[aria-label="${label}"]`) as HTMLElement).click()); };
   await press(m['prov.scan']);
-  expect(page()).toContain('Bluetooth unavailable');
+  expect(page()).toContain(m['prov.failed']);
+  expect(page()).not.toContain('Bluetooth unavailable');
   await press(m['common.retry']);
   expect(page()).toContain(m['state.empty']);
   expect(page()).not.toContain('Bluetooth unavailable');
@@ -159,4 +156,77 @@ it('does not let a failed bind retry bypass serial validation', async () => {
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
   await edit(''); await act(async () => button(m['common.retry']).click());
   expect(bind).toHaveBeenCalledTimes(1);
+});
+
+
+it('keeps provisioning results with their device and submitted Wi-Fi settings', async () => {
+  const { Provisioning } = await import('../src/screens/Provisioning.tsx');
+  const { MockDeviceTransport } = await import('../src/device/transport.ts');
+  const { TransportProvider } = await import('../src/device/transport-context.tsx');
+  const transport = new MockDeviceTransport();
+  const scan = vi.spyOn(transport, 'scan');
+  await act(async () => root.render(<ThemeProvider><LocaleProvider><TransportProvider value={transport}><NavProvider initial={{ name: 'provisioning' }}><Provisioning /></NavProvider></TransportProvider></LocaleProvider></ThemeProvider>));
+  const button = (label: string) => [...host.querySelectorAll<HTMLElement>('[role="button"]')].find(n => n.getAttribute('aria-label') === label)!;
+  const press = async (label: string) => act(async () => button(label).click());
+  const edit = async (label: string, value: string) => act(async () => {
+    const input = host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await press(m['prov.scan']);
+  await press('Ego-A1B2C3');
+  await edit(m['prov.ssid'], 'Collector Wi-Fi');
+  let release!: (result: { ok: boolean }) => void;
+  const configure = vi.spyOn(transport, 'configureWifi').mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  await act(async () => { button(m['prov.send']).click(); button(m['prov.send']).click(); });
+  expect(configure).toHaveBeenCalledTimes(1);
+  expect(button(m['prov.scan']).getAttribute('aria-disabled')).toBe('true');
+  expect(button('Ego-9F8E7D').getAttribute('aria-disabled')).toBe('true');
+  expect(button(m['prov.readIp']).getAttribute('aria-disabled')).toBe('true');
+  await act(async () => release({ ok: true }));
+  expect(configure).toHaveBeenCalledWith('Collector Wi-Fi', '');
+  const readIp = vi.spyOn(transport, 'requestIp').mockResolvedValue({ result: 'success', ip: '192.168.1.83' });
+  await press(m['prov.readIp']);
+  expect(page()).toContain('192.168.1.83');
+  await edit(m['prov.password'], 'changed-password');
+  expect(page()).not.toContain('192.168.1.83');
+  expect(button(m['prov.readIp']).getAttribute('aria-disabled')).toBe('true');
+  await press(m['prov.send']);
+  await press(m['prov.readIp']);
+  expect(page()).toContain('192.168.1.83');
+  await press('Ego-9F8E7D');
+  expect(page()).not.toContain('192.168.1.83');
+  expect(button(m['prov.readIp']).getAttribute('aria-disabled')).toBe('true');
+
+  const scansBeforeRetry = scan.mock.calls.length;
+  const sendsBeforeRetry = configure.mock.calls.length;
+  configure.mockResolvedValueOnce({ ok: false, reason: 'PRIVATE_SDK_CONFIG_REASON' }).mockResolvedValueOnce({ ok: true });
+  await press(m['prov.send']);
+  expect(page()).toContain(m['prov.failed']);
+  expect(page()).not.toContain('PRIVATE_SDK_CONFIG_REASON');
+  await press(m['common.retry']);
+  expect(configure).toHaveBeenCalledTimes(sendsBeforeRetry + 2);
+  expect(scan).toHaveBeenCalledTimes(scansBeforeRetry);
+  expect(page()).not.toContain(m['prov.failed']);
+
+  const readsBeforeRetry = readIp.mock.calls.length;
+  readIp.mockResolvedValueOnce({ result: 'configure_failed', reason: 'PRIVATE_SDK_IP_REASON' });
+  await press(m['prov.readIp']);
+  expect(page()).toContain(m['prov.failed']);
+  expect(page()).not.toContain('PRIVATE_SDK_IP_REASON');
+  await press(m['common.retry']);
+  expect(readIp).toHaveBeenCalledTimes(readsBeforeRetry + 2);
+  expect(configure).toHaveBeenCalledTimes(sendsBeforeRetry + 2);
+  expect(scan).toHaveBeenCalledTimes(scansBeforeRetry);
+  expect(page()).toContain('192.168.1.83');
+
+  const connect = vi.spyOn(transport, 'connect').mockRejectedValueOnce(new Error('PRIVATE_CONNECT_ERROR'));
+  await press('Ego-A1B2C3');
+  expect(page()).not.toContain('192.168.1.83');
+  expect(page()).not.toContain('PRIVATE_CONNECT_ERROR');
+  expect(host.querySelector(`input[aria-label="${m['prov.ssid']}"]`)).toBeNull();
+  await press(m['common.retry']);
+  expect(connect).toHaveBeenCalledTimes(2);
+  expect(connect).toHaveBeenLastCalledWith('DC:0D:30:A1:B2:C3');
+  expect(button(m['prov.readIp']).getAttribute('aria-disabled')).toBe('true');
 });

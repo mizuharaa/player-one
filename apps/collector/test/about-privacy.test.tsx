@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import * as Native from 'react-native';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -20,7 +21,7 @@ vi.mock('expo-secure-store', () => ({
 }));
 vi.mock('react-native-svg', () => {
   const Stub = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
-  return { default: Stub, Svg: Stub, Circle: Stub, Rect: Stub, Path: Stub, Line: Stub, G: Stub };
+  return { default: Stub, Svg: Stub, Circle: Stub, Rect: Stub, Path: Stub, Line: Stub, G: Stub, Ellipse: Stub, Defs: Stub, Stop: Stub, LinearGradient: ({ id }: { id: string }) => <span data-gradient-id={id} /> };
 });
 /**
  * The gradient, recorded rather than rendered.
@@ -79,10 +80,9 @@ afterEach(async () => {
   host.remove();
 });
 
-it('About names both companies, what the app is for, and the build', async () => {
+it('About identifies PlayerOne, what the app is for, and the build', async () => {
   await mount(<About />);
 
-  expect(page()).toContain(m['splash.partners']);
   expect(page()).toContain(m['about.whatBody']);
   expect(page()).toContain(m['about.whoBody']);
 
@@ -184,8 +184,32 @@ it('shows the bundled photo authors and licenses in About', async () => {
   expect(document.querySelectorAll('[role="link"]').length).toBeGreaterThanOrEqual(8);
 });
 
-it('Home draws its wash from the three design token stops', async () => {
+it('Home uses the approved material wash with a readable solid fallback', async () => {
   const { HeaderGradient } = await import('../src/ui/HeaderGradient.tsx');
   await mount(<HeaderGradient>Home</HeaderGradient>);
-  expect(document.body.querySelector('[data-colors]')?.getAttribute('data-colors')).toBe(polish.homeGradient.join(','));
+  const header = document.body.querySelector<HTMLElement>('[data-testid=home-header-wash]')!;
+  const swatch = document.createElement('div'); swatch.style.backgroundColor = polish.homeSurface;
+  expect(getComputedStyle(header).backgroundColor).toBe(swatch.style.backgroundColor);
+  expect(header.querySelector('[data-colors]')?.getAttribute('data-colors')).toBe(polish.headerWash.join(','));
+});
+
+
+it('keeps decorative artwork inert, IDs isolated, and space for larger text', async () => {
+  const { SessionArtwork } = await import('../src/ui/illustrations/CollectorArtwork.tsx');
+  const dimensions = vi.spyOn(Native, 'useWindowDimensions');
+  try {
+    for (const fontScale of [1, 1.6]) {
+      dimensions.mockReturnValue({ width: 390, height: 844, scale: 1, fontScale });
+      await mount(<><SessionArtwork /><SessionArtwork /></>);
+      const objects = [...host.querySelectorAll<HTMLElement>('[aria-hidden="true"]')];
+      expect(objects).toHaveLength(2);
+      for (const object of objects) {
+        expect(getComputedStyle(object).pointerEvents).toBe('none');
+        expect(getComputedStyle(object).width).toBe(fontScale > 1 ? '96px' : '132px');
+      }
+      const ids = [...host.querySelectorAll('[data-gradient-id]')].map(node => node.getAttribute('data-gradient-id'));
+      expect(ids).toHaveLength(8);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+  } finally { dimensions.mockRestore(); }
 });

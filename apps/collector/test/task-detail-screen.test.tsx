@@ -107,6 +107,7 @@ it('shows only the rates the server sent, and never a projected total', async ()
   await qualify();
   await mount();
 
+  await act(async () => named(m['detail.beforeStart'])!.click());
   expect(page()).toContain(m['detail.rates']);
   // The rate as sent, and each count as sent.
   expect(page()).toContain(dong('1200'));
@@ -127,7 +128,11 @@ it('offers Accept when the gates are passed and takes the task once', async () =
   const accept = named(m['detail.claim']);
   expect(accept).toBeDefined();
   const claim = vi.spyOn(api, 'claimTask');
-  await act(async () => { accept!.click(); accept!.click(); });
+  await act(async () => { accept!.click(); });
+  expect(claim).not.toHaveBeenCalled();
+  const confirm = named(m['detail.confirmClaim']);
+  expect(confirm).toBeDefined();
+  await act(async () => { confirm!.click(); confirm!.click(); });
   await act(async () => { await Promise.resolve(); });
 
   expect((await api.myClaims()).map((row) => row.taskId)).toEqual(['task-cook']);
@@ -180,13 +185,14 @@ it('shows the server’s onboarding refusal in place of the control', async () =
   const accept = named(m['detail.claim']);
   expect(accept).toBeDefined();
   await act(async () => { accept!.click(); });
+  await act(async () => named(m['detail.confirmClaim'])!.click());
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
 
   expect(page()).toContain(m['detail.needOnboarding']);
   expect(named(m['detail.claim'])).toBeUndefined();
-  expect(named(m['common.retry'])).toBeDefined();
-  expect(host.querySelector('[data-testid="task-detail-footer"]')?.contains(named(m['common.retry'])!)).toBe(false);
+  expect(named(m['common.retry'])).toBeUndefined();
   expect(page().split(m['detail.needOnboarding'])).toHaveLength(2);
+  expect(page()).not.toContain(m['hall.open']);
   expect(host.querySelector('[data-testid="task-detail-footer"]')?.textContent).not.toContain(m['detail.needOnboarding']);
 });
 
@@ -221,6 +227,7 @@ it('does not navigate after an accepted task resolves on a screen the collector 
   vi.spyOn(api, 'claimTask').mockImplementation(async id => { await wait; return claim(id); });
   await mount();
   await act(async () => named(m['detail.claim'])!.click());
+  await act(async () => named(m['detail.confirmClaim'])!.click());
   await act(async () => host.querySelector('button')!.click());
   await act(async () => finish());
   await vi.waitFor(() => expect(host.querySelector('output')?.textContent).toBe('home'));
@@ -228,6 +235,7 @@ it('does not navigate after an accepted task resolves on a screen the collector 
 
 it('formats the detail target with the same hour units as task cards', async () => {
   await qualify(); await mount('task-warehouse');
+  await act(async () => named(m['detail.beforeStart'])!.click());
   expect(page()).toContain(`150 ${m['taskCard.hours']}`);
   expect(page()).not.toContain(`9000 ${m['detail.minutes']}`);
 });
@@ -237,6 +245,7 @@ it('preserves fractional effective minutes while formatting detail hours', async
   const task = await api.task('task-warehouse');
   vi.spyOn(api, 'task').mockResolvedValue({ ...task, claimedMinutes: 121.1 });
   await mount('task-warehouse');
+  await act(async () => named(m['detail.beforeStart'])!.click());
   expect(page()).toContain(`2 ${m['taskCard.hours']} 1.1 ${m['detail.minutes']}`);
   expect(page()).not.toContain('1.099999');
 });
@@ -253,6 +262,7 @@ it.each(['vi', 'en', 'zh'] as const)('labels collected duration and remaining pl
   const task = await api.task('task-warehouse');
   vi.spyOn(api, 'task').mockResolvedValue({ ...task, claimedMinutes: 180, remainingSlots: 2 });
   await mount('task-warehouse', locale);
+  await act(async () => named(MESSAGES[locale]['detail.beforeStart'])!.click());
   const expected = { vi: ['Thời lượng đã thu thập', '2 chỗ'], en: ['Collected duration', '2 places'], zh: ['已采集时长', '2 个名额'] }[locale];
   expect(page()).toContain(expected[0]);
   expect(page()).toContain(`3 ${MESSAGES[locale]['taskCard.hours']}`);
@@ -264,4 +274,81 @@ it('uses a singular unit for one remaining place', async () => {
   vi.spyOn(api, 'task').mockResolvedValue({ ...task, remainingSlots: 1 });
   await mount('task-warehouse', 'en');
   expect(page()).toContain('1 place'); expect(page()).not.toContain('1 places');
+});
+
+it('can dismiss the claim sheet without claiming, and expand the real instructions', async () => {
+  await qualify(); await mount();
+  const claim = vi.spyOn(api, 'claimTask');
+  expect(named(m['detail.instructions'])?.getAttribute('aria-expanded')).toBe('true');
+  await act(async () => named(m['detail.instructions'])!.click());
+  expect(named(m['detail.instructions'])?.getAttribute('aria-expanded')).toBe('false');
+  await act(async () => named(m['detail.instructions'])!.click());
+  expect(named(m['detail.instructions'])?.getAttribute('aria-expanded')).toBe('true');
+  await act(async () => named(m['detail.claim'])!.click());
+  expect(named(m['detail.confirmClaim'])).toBeDefined();
+  const close = [...document.body.querySelectorAll<HTMLElement>('[role="button"]')].find(node => node.getAttribute('aria-label') === m['common.close'] && node.closest('[data-testid="preferences-sheet-surface"]') !== null);
+  await act(async () => close!.click());
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+  expect(named(m['detail.confirmClaim'])).toBeUndefined();
+  expect(claim).not.toHaveBeenCalled();
+});
+
+it('keeps the confirmation visible and disables dismissal while its one claim is pending', async () => {
+  await qualify();
+  let finish!: () => void;
+  const waiting = new Promise<void>(resolve => { finish = resolve; });
+  const original = api.claimTask.bind(api);
+  const claim = vi.spyOn(api, 'claimTask').mockImplementation(async id => { await waiting; return original(id); });
+  await mount();
+  await act(async () => named(m['detail.claim'])!.click());
+  await act(async () => named(m['detail.confirmClaim'])!.click());
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+  const close = [...document.body.querySelectorAll<HTMLElement>('[role="button"]')].find(node => node.getAttribute('aria-label') === m['common.close'] && node.closest('[data-testid="preferences-sheet-surface"]') !== null)!;
+  expect(close.getAttribute('aria-disabled')).toBe('true');
+  await act(async () => close.click());
+  expect(named(m['detail.confirmClaim'])).toBeDefined();
+  expect(claim).toHaveBeenCalledOnce();
+  await act(async () => finish());
+});
+
+it('reopens confirmation for a retryable failure and never retries a claim directly', async () => {
+  await qualify();
+  const original = api.claimTask.bind(api);
+  const claim = vi.spyOn(api, 'claimTask').mockRejectedValueOnce(new Error('server_unreachable')).mockImplementationOnce(original);
+  await mount();
+  await act(async () => named(m['detail.claim'])!.click());
+  await act(async () => named(m['detail.confirmClaim'])!.click());
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
+  expect(claim).toHaveBeenCalledOnce();
+  await act(async () => named(m['common.retry'])!.click());
+  expect(claim).toHaveBeenCalledOnce();
+  const confirm = named(m['detail.confirmClaim'])!;
+  expect(confirm).toBeDefined();
+  expect(confirm.getAttribute('aria-disabled')).not.toBe('true');
+  await act(async () => confirm.click());
+  expect(claim).toHaveBeenCalledTimes(2);
+});
+
+it('confirms labelled task target and places with the no-total disclosure before the action', async () => {
+  await qualify(); await mount('task-warehouse');
+  await act(async () => named(m['detail.claim'])!.click());
+  const sheet = document.querySelector('[data-testid="preferences-sheet-surface"]')!;
+  expect(sheet.textContent).toContain(m['detail.target']);
+  expect(sheet.textContent).toContain(`150 ${m['taskCard.hours']}`);
+  expect(sheet.textContent).toContain(m['detail.slotsLeft']);
+  expect(sheet.textContent).toContain(m['detail.noTotal']);
+  expect(sheet.querySelector('[role="radio"]')).toBeNull();
+  expect(sheet.textContent!.indexOf(m['detail.noTotal'])).toBeLessThan(sheet.textContent!.indexOf(m['detail.confirmClaim']));
+});
+
+it('requires completed training even when the exam is already passed', async () => {
+  await qualify();
+  const profile = (await api.profile())!;
+  vi.spyOn(api, 'profile').mockResolvedValue({ ...profile, trainingDone: false, examPassed: true });
+  const claim = vi.spyOn(api, 'claimTask');
+  await mount();
+  expect(page()).toContain(m['detail.needTraining']);
+  expect(named(m['detail.claim'])).toBeUndefined();
+  expect(named(m['detail.confirmClaim'])).toBeUndefined();
+  expect(claim).not.toHaveBeenCalled();
 });

@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useRef,useState,type SyntheticEvent} from 'react';
 import {useTranslation} from 'react-i18next';
 import {DEMO_EFFECTIVE_SECONDS,DEMO_RATE_VND_PER_MINUTE,demoAmount,demoVnd} from '../../lib/discover-demo-data';
 import {useDemoCursor,type Scene} from '../../lib/use-demo-cursor';
@@ -58,20 +58,16 @@ export function OperatorDemo({motionPaused,reducedMotion}:{motionPaused:boolean;
   useEffect(()=>{const node=video.current;if(!node)return;if(awake&&(step===1||step===2))void node.play().catch(()=>{});else node.pause();},[awake,step]);
   useEffect(()=>{if(step===0)setChecked([false,false,false]);},[step]);
   const restart=()=>{setStep(0);setChecked([false,false,false]);};
+  const takeControl=(event:SyntheticEvent)=>{if(!(event.target as Element).closest('.operator-window-toggle'))setPaused(true);};
   const action=step===0?w.review:step===1?w.verdict:step===2?w.payment:step===3?w.confirm:w.replay;
   const captions=[['Record',IconCamera],['Review',IconReview],['Pay',IconSettle]] as const;
   return <section ref={root} id="introduction" className="operator-hero" data-running={running}>
     <div className="operator-intro">
-      <div className="operator-partners" aria-label="VNG PT Lab × PaXini"><span className="operator-vng"><img src={`${assets}vng.png`} alt="VNG"/></span><span className="operator-partner-cross" aria-hidden="true">×</span><span className="operator-paxini"><img src={`${assets}paxini.png`} alt="PaXini"/></span></div>
-      <h2>{c('introTitle')}</h2><p>{c('introBody')}</p>
+      <h2 data-discover-heading="">{c('humanTitle')}</h2><p>{c('humanBody')}</p>
     </div>
-    {/* The mockup: one window, its own chrome, nothing else moving on the field. */}
-    <div className="operator-window" data-step={step} onPointerDown={()=>setPaused(true)}>
-      <div className="operator-window-bar">
-        <span className="operator-window-dots" aria-hidden="true"><i/><i/><i/></span>
-        <span className="operator-url-pill"><span className="operator-url">playerone.vn/{w.title.toLowerCase().replace(/\s+/g,'-')}</span><span className="operator-url-note">{c('heroUrlNote')}</span></span>
-        <button className="operator-window-toggle" onClick={()=>setPaused(p=>!p)} disabled={motionPaused} aria-label={paused?w.play:w.pause} aria-pressed={paused}><span aria-hidden="true">{paused?'▶':'❙❙'}</span></button>
-      </div>
+    <div className="operator-scenery"><img className="operator-scenery-image" src="/discover-media/setting-terraces.webp" alt="" loading="lazy" decoding="async"/>
+    <div className="operator-window" data-step={step} onPointerDown={takeControl} onFocusCapture={takeControl}>
+      <div className="operator-demo-toolbar"><span>{w.title}</span><span>{c('heroUrlNote')}</span><button className="operator-window-toggle" onClick={()=>setPaused(p=>!p)} disabled={motionPaused} aria-label={paused?w.play:w.pause} aria-pressed={paused}><span aria-hidden="true">{paused?'▶':'❙❙'}</span></button></div>
       <div className="operator-window-content">
         <div className="operator-appbar"><AssemblyLogo title="PlayerOne"/><span className="operator-avatar">PT</span></div>
         <div className="operator-workspace-body">
@@ -106,6 +102,7 @@ export function OperatorDemo({motionPaused,reducedMotion}:{motionPaused:boolean;
         </div>
         <div className="operator-cursor" aria-hidden="true"><svg viewBox="0 0 22 30" width="22" height="30"><path d="M2.5 1.5 2.5 24.6 7.9 19.3 11.6 27.9 15.1 26.3 11.5 17.8 18.6 17.8Z" fill="#0b0d10" stroke="#fff" strokeWidth="1.5" strokeLinejoin="round"/></svg></div>
       </div>
+    </div>
     </div>
     <nav className="operator-step-nav" aria-label={w.title}>{w.steps.map((label,index)=><button key={label} onClick={()=>{setPaused(true);setStep(index);}} aria-current={step===index?'step':undefined}><span>{String(index+1).padStart(2,'0')}</span>{label}</button>)}</nav>
     {/* Daylight's caption row: three short lines, the console's own icons. */}

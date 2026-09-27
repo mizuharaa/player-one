@@ -1,3 +1,6 @@
+import { SessionArtwork } from '../ui/illustrations/CollectorArtwork.tsx';
+import { HeaderGradient } from '../ui/HeaderGradient.tsx';
+import { CollectorMasthead } from '../ui/CollectorMasthead.tsx';
 import { Failure, StatePanel } from '../ui/StatePanel.tsx';
 import { useToast } from '../ui/Toast.tsx';
 import { useEffect, useRef, useState } from 'react';
@@ -331,21 +334,18 @@ export function Uploads() {
     setOpen(false); setPicked(null); setSessionId(null); setStep(null); setHashed(null); setDeliveryStage(-1); setDeliveryMode(null); deliver.reset();
   };
   return <>
-    <ListScreen title={tt('uploads.title')} data={visible} keyOf={episode => episode.episodeId}
-      right={<Button label={tt('session.title')} variant="ghost" onPress={() => nav.push({ name: 'sessionReminder' })} />}
+    <ListScreen ambientHeader title={tt('uploads.title')} data={visible} keyOf={episode => episode.episodeId}
+      masthead={<HeaderGradient><CollectorMasthead /><View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flex: 1, gap: 7 }}><Text style={{ ...c.type.body, fontFamily: face(theme), color: c.ink }}>{tt('uploads.title')}</Text><Text accessibilityRole="header" style={{ ...c.type.h1, fontFamily: face(theme), color: c.ink, fontWeight: '700' }}>{tt('uploads.journeyTitle')}</Text><Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted }}>{tt('uploads.journeyBody')}</Text></View>
+        <SessionArtwork size={124} />
+      </View></HeaderGradient>}
       refresh={{ refreshing: episodes.isFetching || income.isFetching, onRefresh: () => { void episodes.refetch(); void income.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.cardGap }}>
         {failed ? <Failure error={failed.error} text={tt(failed.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} onRetry={() => { void episodes.refetch(); void income.refetch(); }} busy={episodes.isFetching || income.isFetching} /> : null}
-        <View style={{ borderRadius: c.radius.card, overflow: 'hidden', backgroundColor: c.paper }}>
-          <Image source={taskImage({ scenario: 'home' })} accessible={false} style={{ width: '100%', height: 156 }} resizeMode="cover" />
-          <View style={{ padding: c.cardPad, gap: theme.space[2] }}>
-            <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.muted }}>{tt('landing.illustrativeScenes')}</Text>
-            <Title>{tt('uploads.journeyTitle')}</Title>
-            <Body muted>{tt('uploads.journeyBody')}</Body>
-          </View>
-        </View>
         <Button label={tt('uploads.deliverTitle')} onPress={() => setOpen(true)} />
-        <Field label={tt('uploads.search')} value={search} onChangeText={setSearch} />
+        <Button label={tt('session.title')} variant="ghost" onPress={() => nav.push({ name: 'sessionReminder' })} />
+        {income.data?.some(entry => entry.simulation) ? <Body muted>{tt('payout.simulation')}</Body> : null}
+        <Field search labelHidden label={tt('uploads.search')} value={search} onChangeText={setSearch} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: theme.space[2] }}>
           <Chip label={tt('uploads.all')} selected={filter === null} onPress={() => setFilter(null)} />
           {EPISODE_STATES.map(state => <Chip key={state} label={tt(`state.${state}`)} selected={filter === state} onPress={() => setFilter(state)} />)}
@@ -358,18 +358,18 @@ export function Uploads() {
       renderItem={episode => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(episode.episodeId)}. ${tt(`state.${episode.state}`)}. ${amounts.get(episode.episodeId)?.amountVnd == null ? '—' : dong(amounts.get(episode.episodeId)!.amountVnd!)}${amounts.has(episode.episodeId) ? `. ${tt(incomeStatus(amounts.get(episode.episodeId), episode.state === 'review_failed'))}` : ''}${amounts.get(episode.episodeId)?.simulation ? `. ${tt('payout.simulation')}` : ''}`}
         onPress={() => setSelectedEpisode(episode.episodeId)}
         style={({ pressed }) => ({ paddingVertical: c.cardPad, borderBottomWidth: 1, borderBottomColor: c.line,
-          gap: c.cardGap, backgroundColor: c.surface, opacity: pressed ? .85 : 1 })}>
+          gap: 6, opacity: pressed ? .65 : 1 })}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: c.cardGap }}>
         <View style={{ width: 44, height: 44, borderRadius: c.radius.pill, borderWidth: 1, borderColor: c.line, backgroundColor: stateColors(theme, episode.state).bg, alignItems: 'center', justifyContent: 'center' }}>
           <Icon name={stateMarks[episode.state]} color={stateColors(theme, episode.state).fg} size={22} />
         </View>
-        <View style={{ flex: 1, gap: theme.space[1] }}><Body>{shortId(episode.episodeId)}</Body><Body muted>{tt(`state.${episode.state}`)}</Body></View>
+        <View style={{ flex: 1, gap: theme.space[1] }}><Text style={{ ...c.type.body, color: c.ink, fontFamily: face(theme), fontWeight: '600' }}>{tt(`state.${episode.state}`)}</Text><Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{shortId(episode.episodeId)}</Text></View>
         <View style={{ flexShrink: 1, alignItems: 'flex-end' }}>
           <Text style={{ fontFamily: face(theme), ...c.type.body, color: isLivePaid(amounts.get(episode.episodeId), episode.state === 'review_failed') ? c.greenInk : c.muted }}>{amounts.get(episode.episodeId)?.amountVnd == null ? '—' : dong(amounts.get(episode.episodeId)!.amountVnd!)}</Text>
           {amounts.has(episode.episodeId) ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.muted }}>{tt(incomeStatus(amounts.get(episode.episodeId), episode.state === 'review_failed'))}</Text> : null}
         </View>
         </View>
-        {amounts.get(episode.episodeId)?.simulation ? <Body muted>{tt('payout.simulation')}</Body> : null}
+        {amounts.get(episode.episodeId)?.simulation ? <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme), marginLeft: 56 }}>{tt('payout.simulationLabel')}</Text> : null}
       </Pressable>} />
     <Modal visible={open} animationType="none" onRequestClose={close}>
       <Screen title={outcome ? tt(`delivery.${outcome.state}`) : deliver.isError ? tt('uploads.paused') : tt(!running && deliveryStage === 2 ? 'uploads.confirmTitle' : 'uploads.deliverTitle')}

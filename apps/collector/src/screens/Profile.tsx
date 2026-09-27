@@ -9,11 +9,12 @@ import { getApiOrigin, hostOf } from '../api/origin.ts';
 import { useNav } from '../nav.tsx';
 import { useLocale, useT } from '../locale.tsx';
 import { useSignOut } from '../session.tsx';
-import { useTheme } from '../theme.tsx';
+import { polish, useTheme } from '../theme.tsx';
 import { Body, Button, Field, Loading, NavRow, Note, face, useInsets, useTabBarReserve } from '../ui.tsx';
-import { initialsOf } from '../ui/illustrations/index.tsx';
-import { Icon, type IconName } from '../ui/Icon.tsx';
-import { GlassSurface } from '../ui/GlassSurface.tsx';
+import { HeaderGradient } from '../ui/HeaderGradient.tsx';
+import { CollectorPassArtwork } from '../ui/illustrations/CollectorArtwork.tsx';
+import { AvatarMark } from '../ui/illustrations/index.tsx';
+import { Icon, FeatureIcon, type IconName } from '../ui/Icon.tsx';
 // The sheet shell and the preferences sheet live with Explore, which has three
 // sheets to this screen's two. Fable: both want to move into Astra's `ui.tsx`
 // once the kit grows a sheet — they are the shared parts of this lane.
@@ -23,33 +24,12 @@ import { LOCALES, type Locale } from '../i18n.ts';
 import app from '../../app.json';
 
 const ROW_ICONS: Partial<Record<MessageKey, IconName>> = {
-  'explore.prefsTitle': 'settings', 'devices.title': 'camera', 'profile.language': 'chat',
+  'explore.prefsTitle': 'settings', 'devices.title': 'camera', 'profile.language': 'language',
   'profile.notifications': 'bell', 'agreements.title': 'file', 'profile.about': 'info',
   'server.title': 'settings', 'profile.privacy': 'shield', 'profile.help': 'help',
 };
 
-/**
- * Work order §4.10 — the account screen, copying `13-profile-settings`
- * (wise-583..586 for the header and the row groups, klarna-246 for the centred
- * initials mark, klarna-333 for the log-out confirmation).
- *
- * **Paper, not a gradient header.** klarna-246 puts the avatar on a purple
- * wash and SPEC.md spends the gradient on exactly three surfaces — splash,
- * Income, About. A fourth would make the decision meaningless, so the header
- * here is the plum-and-sun mark on paper and the hierarchy is carried by size
- * and weight, which is §2's anti-slop rule anyway.
- *
- * **Rows carry no icon.** wise-585 draws a circled outline glyph per row and
- * `glyphs.tsx` has seven glyphs, none of them a preference, a language or a
- * bell. Seven invented glyphs is seven drawings nobody specified; the group
- * headings and the one-line subtitles do the same sorting job. `NavRow` takes
- * an `icon` when the kit grows them.
- *
- * **A row whose screen is not in this build says so.** Notifications, About,
- * Privacy and Help are Tier B in the work order and have no `Route`. The
- * owner asked for the list, so the list is here and a tap answers with one
- * live-region sentence naming the desk instead of a dead chevron.
- */
+/** Account settings retain their server identity and use the owner-selected default panda. */
 export function Profile() {
   const api = useApi();
   const nav = useNav();
@@ -101,11 +81,12 @@ export function Profile() {
       >
         {tt(title)}
       </Text>
-      <View style={{ backgroundColor: c.surface, borderRadius: 20, paddingHorizontal: 16 }}>
-        {rows.map((row) => (
+      <View style={{ backgroundColor: c.surface, borderRadius: 28, paddingHorizontal: 18 }}>
+        {rows.map((row, index) => (
           <View key={row.key}>
             <NavRow
-              icon={<Icon name={ROW_ICONS[row.key] ?? 'settings'} color={c.muted} size={21} />}
+              separator={index < rows.length - 1}
+              icon={<FeatureIcon name={ROW_ICONS[row.key] ?? 'settings'} />}
               label={tt(row.key)}
               subtitle={row.value ?? (row.sub === undefined ? undefined : tt(row.sub))}
               onPress={row.onPress}
@@ -124,31 +105,21 @@ export function Profile() {
   return (
     <View style={{ flex: 1, backgroundColor: c.paper }}>
       <ProfileScroll reserve={reserve} refresh={{ refreshing: profile.isRefetching || tasks.isRefetching, onRefresh: () => { void profile.refetch(); void tasks.refetch(); } }}>
-        {/* Header: the mark, the name, what the account is. Centred, because a
-            single identity block is the one thing on this screen that is not a
-            list and centring is how the reference separates it from one. */}
-        <Text accessibilityRole="header" style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme), marginBottom: 20 }}>{tt('profile.title')}</Text>
-        <GlassSurface style={{ flexDirection: 'row', alignItems: 'center', gap: 16, padding: 20 }}>
-          <View style={{ width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: c.glow }}>
-            <Text style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme) }}>{initialsOf(name)}</Text>
+        <HeaderGradient>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 8 }}>
+            <Text accessibilityRole="header" style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme), flex: 1 }}>{tt('profile.title')}</Text>
+            <CollectorPassArtwork size={80} />
           </View>
-          <View style={{ flex: 1, gap: 4 }}>
-          <Text
-            accessibilityRole="header"
-            style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme) }}
-          >
-            {name === '' ? tt('profile.title') : name}
-          </Text>
-          <Text
-            numberOfLines={2}
-            style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}
-          >
-            {profile.data === undefined || profile.data === null
-              ? tt('profile.role')
-              : `${tt('profile.role')} · ${profile.data.phone}`}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <AvatarMark size={56} />
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text accessibilityRole="header" style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme) }}>{name === '' ? tt('profile.title') : name}</Text>
+              <Text numberOfLines={2} style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>
+                {profile.data == null ? tt('profile.role') : `${tt('profile.role')} · ${profile.data.phone}`}
+              </Text>
+            </View>
           </View>
-        </GlassSurface>
+        </HeaderGradient>
 
         {profile.isPending ? <Loading /> : null}
         {profile.isError || tasks.isError ? (
@@ -246,10 +217,12 @@ function ProfileScroll({ reserve, children, refresh }: { reserve: number; childr
   const insets = useInsets();
   const c = theme.collector;
   return (
-    <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: reserve }}><ScrollView refreshControl={<RefreshControl {...refresh} />}
+    <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: reserve }}>
+      <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top, backgroundColor: polish.homeSurface }} />
+      <ScrollView refreshControl={<RefreshControl {...refresh} />}
       contentContainerStyle={{
         paddingHorizontal: c.gutter,
-        paddingTop: theme.space[4],
+        paddingTop: 0,
         paddingBottom: theme.space[4],
       }}
     >

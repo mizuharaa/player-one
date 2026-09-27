@@ -1,3 +1,5 @@
+import { Sheet } from '../ui/Sheet.tsx';
+export { Sheet } from '../ui/Sheet.tsx';
 import { TaskCard } from '../ui/TaskCard.tsx';
 import { Icon } from '../ui/Icon.tsx';
 import { Failure } from '../ui/StatePanel.tsx';
@@ -425,6 +427,12 @@ export function TaskHall() {
               onAvailable={() => setAvailableOnly(true)}
               onMine={() => setOnlyMine(true)}
             />
+            {!filtered && visible.length > 0 ? <View style={{ gap: 14, marginTop: 8, marginBottom: 12 }}>
+              <Text accessibilityRole="header" style={{ ...c.type.h1, fontFamily: face(theme), color: c.ink }}>{tt('explore.browse')}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} decelerationRate="fast" snapToInterval={252} snapToAlignment="start" contentContainerStyle={{ gap: 16, paddingRight: 8, paddingBottom: 8 }}>
+                {visible.slice(0, 5).map(task => <TaskCard key={task.id} task={task} variant="tile" onPress={() => nav.push({ name: 'taskDetail', taskId: task.id })} />)}
+              </ScrollView>
+            </View> : null}
             <SectionRow
               title={tt(needle === '' ? 'explore.forYou' : 'explore.results')}
               action={tt(SORT_LABEL[sort])}
@@ -881,72 +889,6 @@ function SearchOverlay({
  * takes the Android back button and the accessibility focus trap with it, and
  * the kit owns motion.
  */
-export function Sheet({
-  open,
-  onClose,
-  title,
-  children,
-}: {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  children: ReactNode;
-}) {
-  const theme = useTheme();
-  const insets = useInsets();
-  const c = theme.collector;
-  const tt = useT();
-  const { width } = useWindowDimensions();
-  const wide = width >= 640;
-  return (
-    <Modal visible={open} transparent animationType="none" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: wide ? 'center' : 'flex-end' }}>
-        {/* The dim behind the sheet is the night ground at 55%, drawn as its
-            own layer so the colour comes from `theme.collector.night` instead
-            of an `rgba()` literal. `theme.collector` has no `scrim` token; one
-            belongs there, and this is the only place in the lane that needs
-            it. `opacity` on a parent would fade the sheet too, so the layer is
-            a sibling behind it. */}
-        <View
-          pointerEvents="none"
-          importantForAccessibility="no-hide-descendants"
-          style={[StyleSheet.absoluteFill, { backgroundColor: c.night, opacity: 0.55 }]}
-        />
-        <Pressable accessibilityRole="button" accessibilityLabel={tt('common.close')} onPress={onClose} style={StyleSheet.absoluteFill} />
-        <View
-          testID="preferences-sheet-surface"
-          style={{
-            width: wide ? Math.min(560, width - 32) : '100%',
-            maxWidth: 560,
-            alignSelf: 'center',
-            backgroundColor: c.paper,
-            borderRadius: wide ? c.radius.card : undefined,
-            borderTopLeftRadius: c.radius.card,
-            borderTopRightRadius: c.radius.card,
-            borderWidth: 1,
-            borderColor: c.line,
-            paddingHorizontal: c.gutter,
-            paddingTop: c.gutter,
-            paddingBottom: c.gutter + Math.max(insets.bottom, theme.space[6]),
-            maxHeight: '88%',
-            gap: theme.space[3],
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[3] }}>
-            <Text accessibilityRole="header" style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme), flex: 1 }}>
-              {title}
-            </Text>
-            <Button label={tt('common.close')} variant="ghost" onPress={onClose} />
-          </View>
-          <ScrollView contentContainerStyle={{ gap: theme.space[3], paddingBottom: theme.space[2] }}>
-            {children}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
 /** Sort radios over a toggle list, then the commit (klarna-143). */
 function FilterBody({
   sort,

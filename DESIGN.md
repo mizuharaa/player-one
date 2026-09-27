@@ -1,5 +1,52 @@
 # Design
 
+## Company identity — 26 September 2026
+
+PlayerOne is its own company. Product screens, localized copy, splash screens and
+landing pages use PlayerOne identity alone, with no co-brand lockup. This owner
+correction supersedes the historical partner-brand directions below. Keep the
+approved opening, PlayerOne shuffle, demo footage and workflow intact.
+
+## Approved A opening — 26 September 2026
+
+The owner approved `outputs/design-drafts/landing-a.png` and asked to keep the
+PlayerOne shuffle and existing demo video. The opening fills the viewport from
+edge to edge: one existing film, a compact floating navigation, white copy and
+visible actions over its lower-left area. No separate tall masthead, inset media
+card or image-width cap. The unchanged logo intro adds no new waiting stage.
+On roomy screens, native scrolling keeps the same film in view while the copy
+leaves and an oversized orange/blue PlayerOne wordmark rises into the frame.
+The next chapter uses larger collector-photo illustrations around concise copy
+and the established Trúc guide. These remain labelled illustrative material;
+the draft's invented named person and location are not product claims.
+Mobile keeps full-width imagery with a static wordmark when height allows.
+Reduced motion intentionally omits the decorative second-phase wordmark and
+removes pinning and reveals, while keeping all copy, actions and video controls.
+This approved composition replaces the 25 September opening and its large blank
+heading area. Existing operator-demo interactions and financial gates remain.
+
+## Reference-driven revamp — 25 September 2026
+
+The owner pins an editorial, image-led public story: oversized offset headings,
+a full-width film, a native sticky collector-photo constellation with scroll text
+reveal, and a centered expanding navigation panel with a dimmed backdrop.
+The working operator demo sits in a credited landscape; fake browser chrome is
+removed. Trúc belongs in welcome, guidance and completion moments. White, ink
+and violet connect this story to the collector app and the lavender console.
+The console remains a fast work surface: receive footage, review with reasons,
+then inspect settlement readiness. Payments and approvals keep their existing
+server gates and all illustrative states remain labelled. Older directions
+below are historical where they conflict with this owner-approved direction.
+
+**Public locale default.** The owner's instruction was: "We can choose a good font
+for english defaults and swap to han grotesk if chosen vietnamese or zh." For
+this revamp, English is the first-visit default on `/discover` and `/privacy`
+only. A valid saved `playerone.locale` selection always takes precedence; the
+operator console keeps its existing browser-language selection. English uses
+Archivo, while selected Vietnamese and Chinese use Hanken Grotesk with Vietnamese
+and system CJK fallbacks. This is the scope applied from the owner's direction,
+not a change to an existing user's language choice.
+
 ## Review editor correction — 16 September 2026
 
 The owner requests a desktop video-review workbench inspired by the supplied

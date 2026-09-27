@@ -16,7 +16,7 @@ export function HeadsetGuidance() {
     <>
       <Note text={HEADSET_COPY.external[locale]} />
       {HEADSET_GUIDANCE.map((section, index) => (
-        <View key={section.id} style={{ gap: theme.space[3], marginTop: theme.space[3], backgroundColor: theme.collector.surface, padding: 16, borderRadius: 20 }}>
+        <View key={section.id} style={{ gap: theme.space[3], paddingVertical: theme.space[4], borderBottomWidth: 1, borderBottomColor: theme.collector.line }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}><Icon name={index === 0 ? 'camera' : index === 1 ? 'check' : 'info'} color={theme.collector.plum} /><View style={{ flex: 1 }}><Title>{section.title[locale]}</Title></View></View>
           {section.items.map((item) => <Body key={item.id}>{item.text[locale]}</Body>)}
         </View>

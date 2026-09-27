@@ -11,12 +11,12 @@ vi.mock('react-native', async () => ({ ...await import('react-native-web'), Plat
 vi.mock('expo-blur', () => ({ BlurView: () => <div data-testid="native-blur" /> }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-it('starts opaque while the setting is unknown and respects live Reduce Transparency changes', async () => {
+it.each([[false, false], [true, false], [true, true]])('respects Reduce Transparency for dark=%s backdrop=%s', async (dark, backdrop) => {
   let resolve!: (value: boolean) => void;
   setting.read.mockReturnValue(new Promise(value => { resolve = value; }));
   const host = document.createElement('div'), root = createRoot(host);
   try {
-    await act(async () => root.render(<GlassSurface><span>Readable content</span></GlassSurface>));
+    await act(async () => root.render(<GlassSurface dark={dark} backdrop={backdrop}><span>Readable content</span></GlassSurface>));
     expect(host.textContent).toBe('Readable content');
     expect(host.querySelector('[data-testid="native-blur"]')).toBeNull();
     await act(async () => resolve(false));

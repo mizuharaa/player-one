@@ -10,7 +10,7 @@ import { ServerSettings } from './ServerSettings.tsx';
 export function StatePanel({ title, text, action, onPress, secondaryAction, onSecondary, error = false, busy = false }: {
   title: string; text?: string; action?: string; onPress?: () => void; error?: boolean; busy?: boolean; secondaryAction?: string; onSecondary?: () => void;
 }) {
-  return <View accessibilityLiveRegion="polite" style={{ ...paperCard, padding: 24, gap: 16, alignItems: 'center' }}>
+  return <View accessibilityLiveRegion="polite" style={{ ...(error ? paperCard : {}), paddingVertical: 24, paddingHorizontal: error ? 24 : 8, gap: 16, alignItems: error ? 'center' : 'flex-start' }}>
     {error ? <ErrorMark size={104} /> : <EmptyTasks size={104} />}
     <Title>{title}</Title>{text ? <Body muted>{text}</Body> : null}
     {action && onPress ? <Button label={action} onPress={onPress} busy={busy} variant={error ? 'primary' : 'secondary'} /> : null}

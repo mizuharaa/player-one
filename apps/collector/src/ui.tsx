@@ -33,7 +33,7 @@ import type { NativeTheme } from '@playerone/design/native';
 import { useNav } from './nav.tsx';
 import { useT } from './locale.tsx';
 import type { MessageKey } from './i18n.ts';
-import { useTheme } from './theme.tsx';
+import { polish, useTheme } from './theme.tsx';
 import { Icon } from './ui/Icon.tsx';
 
 
@@ -105,14 +105,18 @@ export function Header({ title, right, onBack, progress, insetTop = true }: { ti
 /** A screen whose content is bounded: a form, a hub, one record's detail. */
 export function Screen({
   title,
+  header,
   right,
   onBack,
   progress,
   footer,
   refresh,
+  ambientHeader = false,
   children,
 }: {
   title: string;
+  ambientHeader?: boolean;
+  header?: ReactNode;
   right?: ReactNode;
   onBack?: () => void;
   progress?: ReactNode;
@@ -140,6 +144,7 @@ export function Screen({
   return (
     // `background` is the page — the warm paper everything above it stands on.
     <CardScrollContext.Provider value={scroll}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.color.background, paddingTop: insets.top, paddingBottom: nav.isTabRoot ? reserve : 0 }}>
+      {ambientHeader ? <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top, backgroundColor: polish.homeSurface }} /> : null}
       <Animated.ScrollView scrollEventThrottle={16} onScroll={scroll.onScroll}
         refreshControl={refresh ? <RefreshControl {...refresh} /> : undefined}
         keyboardShouldPersistTaps="handled"
@@ -151,7 +156,7 @@ export function Screen({
           gap: theme.space[3],
         }}
       >
-        <Header title={title} right={right} onBack={onBack} progress={progress} insetTop={false} />
+        {header ?? <Header title={title} right={right} onBack={onBack} progress={progress} insetTop={false} />}
         {children}
       </Animated.ScrollView>
       {footer === undefined ? null : (
@@ -191,6 +196,7 @@ export function Screen({
  */
 export function ListScreen<T>({
   title,
+  masthead,
   right,
   data,
   keyOf,
@@ -199,8 +205,11 @@ export function ListScreen<T>({
   footer,
   empty,
   refresh,
+  ambientHeader = false,
 }: {
   title: string;
+  ambientHeader?: boolean;
+  masthead?: ReactNode;
   right?: ReactNode;
   data: readonly T[];
   keyOf: (item: T) => string;
@@ -217,6 +226,7 @@ export function ListScreen<T>({
   const reserve = useTabBarReserve();
   return (
     <CardScrollContext.Provider value={scroll}><View style={{ flex: 1, backgroundColor: theme.color.background, paddingTop: insets.top, paddingBottom: nav.isTabRoot ? reserve : 0 }}>
+      {ambientHeader ? <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top, backgroundColor: polish.homeSurface }} /> : null}
       <Animated.FlatList<T> scrollEventThrottle={16} onScroll={scroll.onScroll}
         refreshing={refresh?.refreshing}
         onRefresh={refresh?.onRefresh}
@@ -227,7 +237,7 @@ export function ListScreen<T>({
         // an `onLayout`, and a fragment cannot take one — which React reports
         // as an invalid-prop error on every render.
         renderItem={({ item }) => <View>{renderItem(item)}</View>}
-        ListHeaderComponent={<View style={{ gap: theme.space[3] }}><Header title={title} right={right} insetTop={false} />{header}</View>}
+        ListHeaderComponent={<View style={{ gap: theme.space[3] }}>{masthead ?? <Header title={title} right={right} insetTop={false} />}{header}</View>}
         ListFooterComponent={footer === undefined ? null : <View>{footer}</View>}
         ListEmptyComponent={empty === undefined ? null : <View>{empty}</View>}
         contentContainerStyle={{
@@ -382,10 +392,10 @@ export function Amount({ value, label }: { value: string; label: string }) {
 }
 
 /** Secondary destinations have a full-width touch region. */
-export function NavRow({ label, subtitle, icon, onPress }: { label: string; subtitle?: string; icon?: ReactNode; onPress: () => void }) {
+export function NavRow({ label, subtitle, icon, onPress, separator = true }: { label: string; subtitle?: string; icon?: ReactNode; onPress: () => void; separator?: boolean }) {
   const theme = useTheme();
   return <Pressable accessibilityRole="button" accessibilityLabel={subtitle ? `${label}. ${subtitle}` : label} onPress={onPress}
-    style={({ pressed }) => ({ minHeight: theme.space[12], paddingVertical: theme.space[4], flexDirection: 'row', alignItems: 'center', gap: theme.space[3], borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: pressed ? theme.collector.surface : undefined })}>
+    style={({ pressed }) => ({ minHeight: theme.space[12], paddingVertical: theme.space[4], flexDirection: 'row', alignItems: 'center', gap: theme.space[3], borderBottomWidth: separator ? 1 : 0, borderBottomColor: theme.color.border, backgroundColor: pressed ? theme.collector.surface : undefined })}>
     {icon}
     <View style={{ flex: 1, gap: theme.space[1] }}>
       <Text style={{ ...theme.collector.type.body, color: theme.color.foreground, fontFamily: face(theme) }}>{label}</Text>
@@ -841,6 +851,7 @@ export function Field({
   secure = false,
   keyboardType,
   editable = true,
+  search = false,
 }: {
   label: string;
   /**
@@ -860,6 +871,7 @@ export function Field({
   secure?: boolean;
   keyboardType?: 'default' | 'phone-pad' | 'number-pad';
   editable?: boolean;
+  search?: boolean;
 }) {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
@@ -886,6 +898,7 @@ export function Field({
         keyboardType={keyboardType}
         editable={editable}
         accessibilityLabel={label}
+        placeholder={search ? label : undefined}
         placeholderTextColor={theme.color.faintForeground}
         style={{
           backgroundColor: theme.color.surface,
@@ -895,7 +908,7 @@ export function Field({
           // reflows.
           borderColor: focused ? theme.collector.plum : theme.color.borderStrong,
           borderWidth: focused ? 2 : 1,
-          borderRadius: theme.radius.sm,
+          borderRadius: search ? theme.collector.radius.pill : theme.collector.radius.card,
           paddingVertical: theme.space[3] - (focused ? 1 : 0),
           paddingHorizontal: theme.space[3] - (focused ? 1 : 0),
           minHeight: theme.space[12],

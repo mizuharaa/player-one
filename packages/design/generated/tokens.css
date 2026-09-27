@@ -35,22 +35,22 @@
   --lime-500: #B8F04A;
   --lime-600: #63851C;
   --lime-700: #566F17;
-  --discover-warm-paper: #F4EFE6;
-  --discover-warm-surface: #FFFCF6;
-  --discover-warm-ink: #35271F;
-  --discover-warm-muted: #705D4D;
-  --discover-warm-line: #D3C5B3;
-  --discover-warm-soft: #E8DFD1;
-  --discover-warm-glass: rgba(53,39,31,.76);
-  --discover-warm-highlight: rgba(255,252,246,.24);
-  --discover-paper: #F7F7F4;
+  --discover-warm-paper: #F8F7FC;
+  --discover-warm-surface: #FFFFFF;
+  --discover-warm-ink: #211B32;
+  --discover-warm-muted: #595365;
+  --discover-warm-line: #CEC9D8;
+  --discover-warm-soft: #EDE5FF;
+  --discover-warm-glass: rgba(33,27,50,.76);
+  --discover-warm-highlight: rgba(255,255,255,.24);
+  --discover-paper: #F8F7FC;
   --discover-surface: #FFFFFF;
-  --discover-ink: #17191B;
-  --discover-muted: #575C5D;
-  --discover-line: #D6D8D4;
-  --discover-soft: #EDEEEA;
-  --discover-light: #DED8F3;
-  --discover-light-ink: #4E4368;
+  --discover-ink: #211B32;
+  --discover-muted: #595365;
+  --discover-line: #CEC9D8;
+  --discover-soft: #EDE5FF;
+  --discover-light: #DED3FA;
+  --discover-light-ink: #6540C8;
   --discover-scrim: linear-gradient(180deg, rgba(12,16,18,0.12) 0%, rgba(12,16,18,0.04) 30%, rgba(12,16,18,0.76) 100%);
   --discover-wash: linear-gradient(130deg, rgba(222,216,243,0) 10%, rgba(222,216,243,0.72) 60%, rgba(247,247,244,0) 95%);
   --discover-shadow: 0 28px 80px rgba(20,24,30,0.16);
@@ -64,13 +64,13 @@
   --discover-hero-field-to: #0E0B14;
   --discover-hero-on-field: #FFFFFF;
   --discover-hero-on-field-muted: #C8BFD6;
-  --discover-hero-chrome: #EEF1F6;
-  --discover-hero-chrome-ink: #4A5567;
-  --discover-hero-chrome-line: #CFD6E2;
-  --discover-hero-accent: #1B52E3;
-  --discover-hero-accent-pressed: #123CAE;
-  --discover-hero-accent-ink: #1F4FB5;
-  --discover-hero-accent-wash: #E8EEFC;
+  --discover-hero-chrome: #F1EDF9;
+  --discover-hero-chrome-ink: #595365;
+  --discover-hero-chrome-line: #CEC9D8;
+  --discover-hero-accent: #6540C8;
+  --discover-hero-accent-pressed: #4E299F;
+  --discover-hero-accent-ink: #5934B5;
+  --discover-hero-accent-wash: #EDE5FF;
 
   /*
    * The action, as a role rather than a colour. It is the ink pill this world

@@ -11,8 +11,8 @@ import { useReducedMotion } from '../ui/motion.ts';
 
 const TABS: { tab: TabName; key: MessageKey; icon: IconName }[] = [
   { tab: 'home', key: 'tab.home', icon: 'home' },
-  { tab: 'taskHall', key: 'tab.tasks', icon: 'grid' },
-  { tab: 'uploads', key: 'tab.uploads', icon: 'camera' },
+  { tab: 'taskHall', key: 'tab.tasks', icon: 'search' },
+  { tab: 'uploads', key: 'tab.uploads', icon: 'video' },
   { tab: 'income', key: 'tab.income', icon: 'wallet' },
   { tab: 'profile', key: 'tab.profile', icon: 'profile' },
 ];
@@ -28,7 +28,7 @@ function TabGlyph({ active, icon }: { active: boolean; icon: IconName }) {
     animation.start();
     return () => animation.stop();
   }, [active, reduced, scale]);
-  return <Animated.View style={{ transform: [{ scale }] }}><Icon name={icon} size={23} color={active ? c.plum : c.muted} strokeWidth={active ? 2.3 : 1.8} /></Animated.View>;
+  return <Animated.View style={{ transform: [{ scale }] }}><Icon name={icon} size={23} color={active ? c.ink : c.muted} fill={active && (icon === 'home' || icon === 'wallet') ? c.ink : 'none'} strokeWidth={active ? 2.3 : 1.8} /></Animated.View>;
 }
 
 export function TabBar() {
@@ -44,7 +44,7 @@ export function TabBar() {
           onPress={() => nav.selectTab(tab)} onFocus={() => setFocused(tab)} onBlur={() => setFocused(null)}
           style={({ pressed }) => ({ flex: 1, minWidth: 0, minHeight: 54, paddingVertical: 5, gap: 3, alignItems: 'center', justifyContent: 'center',
             borderWidth: 2, borderColor: focused === tab ? c.plum : 'transparent', borderRadius: 22,
-            backgroundColor: active ? polish.selection : 'transparent', opacity: pressed ? .65 : 1 })}>
+            backgroundColor: 'transparent', opacity: pressed ? .65 : 1 })}>
           <TabGlyph active={active} icon={icon} />
           <Text style={{ fontFamily: face(theme), fontSize: 11, lineHeight: 15, fontWeight: active ? '600' : '400', color: active ? c.ink : c.muted, textAlign: 'center' }}>{tt(key)}</Text>
         </Pressable>;

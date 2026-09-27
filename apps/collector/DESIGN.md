@@ -1,81 +1,34 @@
 # Collector design direction
 
-Scope: the native collector app. The root design file describes other product surfaces.
-Owner screen-specific Impeccable briefs override this file. Product and server truth always remain binding.
+Owner-approved visual contract: `outputs/design-drafts/mobile-flow-refined.png`, 26 September 2026. Mode: Operate. Android first; iOS and web previews remain supported. The approved four-screen draft supersedes the earlier card-heavy implementation.
 
-## Sources and method
+## Direction
+PlayerOne lets people find suitable recording work, prepare and submit it, then follow review and payment. The first screen should expose a useful task within the first viewport. The owner references define the visual world: Luma's compact thumbnail rows and image-backed detail/sheets; Shop's generous curved image cards, horizontal rails and tactile pills; Klarna's clear earnings hierarchy, short action tiles and plain history.
 
-- Owner Luma images: C:/build/design-ref/owner-refs; img34 gallery, img36-38 detail, img40 Share, img41 composite/map/navbar, img42-49 onboarding, img51 completion.
-- Wise, Klarna and Fiverr: C:/build/design-ref/design-reference.md and its curated/ images. Read its verification corrections before individual clusters. The final master table determines the queue.
-- Measurements in that reference are visual estimates, not extracted source values. Use intended proportions; record direct pixel measurements when a change depends on exact geometry.
-- UI UX Pro Max 2.13.0: glassmorphism style, multilingual typography and dragging-movement searches. The generic purple marketplace design-system result was rejected because it conflicts with the owner references.
-- Hallmark: one coherent app system, truthful copy, no nested decorative cards or fabricated statistics. Its web-only CSS/export and diversification recipes do not apply to this native app.
-- Impeccable: inspect the rendered flow, repair behavior before polish, check long/localized/reduced-motion states. No claim of a full audit passing without its evidence.
+White and pale lavender surfaces, purple accents, near-black text and actions share the console's brand. Semantic review/payment colors remain separate. Use shared collector tokens, with translucent image materials named in theme.tsx. Preserve bundled multilingual typography and all product truth.
 
-## Visual world
+## Composition
+Home: ambient lavender upper field, centered PlayerOne masthead between avatar and notifications, short My tasks / Awaiting review tiles, one featured photograph, then flat compact task rows. Counts come from claims and episodes. Readiness gates stay explicit, but do not replace the work hierarchy with a dashboard.
+Task: the same photograph fills the top edge and fades into ink. Title, rate and actual availability precede an initially expanded What to record accordion and a Before you start disclosure. One white Review task action is anchored below. The claim sheet is smoky neutral translucent material over recognizable dimmed detail: thumbnail/title/rate, three plain facts, shared-target and payment disclosures, one Confirm task claim action and Cancel. It is not another nested card. There is one server claim only after explicit confirmation.
+Income: ambient lavender top with the custom statement/ledger vector to the right of the factual status headline. Estimated and confirmed earnings are unboxed, side-by-side figures. Confirmed earnings are not labeled paid. Activity and utilities are flat rows, followed by a precise explanation of review. Task images/names are used only when episode → session → task relationships exist in API data; otherwise show the episode reference. Sessions, Explore and Profile keep existing functional navigation.
 
-Modern native utility with warm paper, dark readable ink and selective frosted chrome.
-Build-50 correction: the collector world is off-white fog (`#F5F6F3`), charcoal
-(`#202827`) and restrained eucalyptus (`#286454`), not purple/black or beige.
-Secondary text is `#445048`: measured 4.74:1 over the darkest allowed glass
-composite (`#C2C2C2`), and stronger over the opaque paper/card surfaces.
-The five permanent dock labels accompany ISC-licensed Lucide vectors. Native
-iOS blur belongs to chrome; Reduce Transparency starts opaque and stays opaque
-until the system setting is known. Android uses the opaque material fallback.
-Home uses compact photographic task rows; Income uses a borderless statement
-hierarchy and inset transaction rows, with no oversized circular emoji actions.
-Wise supplies money hierarchy and row discipline; Klarna supplies translucent materials;
-Fiverr supplies browsing density and action hierarchy. Luma controls the named flows.
-The gallery is the explicitly requested photographic exception to the restrained app surfaces.
-No competitor imagery, icons or wordmarks are extracted. Use approved bundled images with illustrative labels.
+## Motion and access
+Press down quickly; return with a bounded spring. Sheets enter and settle, follow downward drag on their handle/header, and close by drag, backdrop, close button or Android Back. Reduced motion keeps state changes immediate. Do not delay work for decorative motion. Native momentum scrolling remains native.
+Use at least 48 dp controls, measured dock/footer reserves, safe areas, dark image scrims and explicit labels. No color-only status. Rounded image cards are intentional owner references, not generic card nesting.
 
-## Shared layout target
+## Boundaries
+No fabricated payment, availability, task or collector statistics. Claims, onboarding, upload and finance gates remain server-owned. Illustrative task pictures retain disclosure. IDs remain available when the API does not supply task/date attribution; do not guess links between episodes and sessions.
 
-- 4-point spacing scale: 4, 8, 12, 16, 20, 24, 32, 48.
-- 16-point screen gutter; related rows align to that same edge.
-- Card radius 20; field radius16; pills fully rounded. No screen-specific card radius.
-- Body16/24, caption14/20, section20/28, screen28/36, dominant money40/48.
-- Retain the bundled Be Vietnam Pro family and system glyph fallback; use weight to separate roles, not decorative font changes.
-- Never truncate a money string. Keep the number and currency legible at large text sizes.
-- Native safe areas remain outside scrolling content. Dock and sticky actions reserve measured space.
-- One primary action per decision. Quiet secondary actions remain stable under a finger.
-- Loading placeholders match the eventual structure; empty and failed states share the same grid.
+## Approved illustration and navigation family
+The collector's default avatar is the bundled panda portrait across Home, Income, Sessions and Profile. There is no user-photo field or upload control in the profile API. Sessions uses its own foil film-frame/upload vector in an open color-wash header. Income uses a statement/ledger object and Profile a collector pass. The panda remains the default avatar, rather than repeated hero art. Dock destinations retain their labels and 48 dp targets: Explore uses Search, Sessions uses Video, active Home/Income use ink-filled icons without a lavender selection pill. Compact task rows place the status at the trailing edge on 390 dp and wider screens, reflowing below content on small screens or enlarged type. Photo provenance stays visible.
 
-## Glass construction target
+## Notification icon refinement
+Owner correction: real library SVGs and solid color, no generated notification art or decorative gradients. Notifications use the installed Lucide vectors; category badges use violet for review documents, peach for payments, blue for uploads, mint for devices, amber for tasks. Category icons do not imply a successful verdict or completed payment. The bell uses a solid yellow fill with an ink outline and no surrounding badge or box. The header keeps its invisible 48 dp touch target; no fabricated unread badge. The 27 September owner refinement allows restrained lavender/rose header washes and holographic illustration materials. Notification icons and control labels stay solid; the yellow bell remains unboxed. Existing photo-legibility scrims remain functional.
 
-1. Actual page/scroll content is the backdrop, with a controlled warm/pastel tint where appropriate.
-2. Real native blur belongs behind floating chrome and sheets, above that backdrop.
-3. A translucent neutral overlay controls the worst-case contrast independently of blur.
-4. One subtle outer hairline and a lighter top edge indicate thickness; text stays above every material layer at full opacity.
-5. Monetary statements, dense text and input interiors use denser or opaque fills when translucency would hurt reading.
+## Landing wordmark parity
+The mobile gallery uses the console's shared 2.3-second PLAYER ONE letter schedule, with a larger responsive wordmark and the same orange/blue finish. Reserve each final letter's width, announce the brand once, and render the settled mark immediately for reduced motion. The sequence runs once after the existing intro completes and stops when the app backgrounds. Sign-in and other compact brand slots retain their existing size.
 
-Reference blur amounts are visual guidance, not reverse-engineered private implementation values.
-Expo blur intensity is not a radius in pixels. Verify its rendered result on the device.
-Measure composited contrast: body>=4.5:1, large text/control indicators>=3:1.
-Reduce Transparency must use an opaque fallback; motion settings must not hide content.
+## Material refinement, 27 September 2026
+Direct Mobbin research: Klarna Payments/Wallet/Profile, Revolut feature menus, and Taskrabbit task detail. Use these for hierarchy and material cues; no third-party marks, financial products, paid badges or screenshots become PlayerOne UI.
 
-## Truth and interaction
-
-- English is the default. Home exposes language switching; all three locales remain complete.
-- Green money means a positive explicitly live paid amount. Pending, estimated, zero and simulated amounts stay neutral; simulation sentences remain visible.
-- Never animate intermediate money values, manufacture task totals, or turn upload completion into review/payment success.
-- No fake grabbers. Sheets need working drag behavior or explicit Close, including a single-pointer alternative.
-- Boot runs only once the app is foregrounded; Reduce Motion has a visible static mark. Film has user-initiated Play and bounded Retry recovery.
-- Detail: equal-width Claim / Follow / Help. Follow is an honest not-ready preview until a backend notification capability exists; Help explains the real pipeline.
-- Counter address is not final: its localized where string is the replacement seam.
-- Discover remains a list with an honest map-coming explanation while the API lacks coordinates. No invented hosts, attendees or locations.
-- Tasks are everyday domestic actions recorded from the wearer's perspective. Display live server titles and facts; do not replace them with invented inventory.
-- Completion uses the corrected img51 sheet layout: small status above title, real facts, explicit close and meaningful next action. No map without real data.
-- Demo Skip may navigate only through the existing explicit demo mechanism; it cannot bypass live authorization or claim gates.
-
-## Delivery
-
-Each item gets its own commit and root typecheck, collector tests and release gate.
-Capture affected screens at390/430; browser captures do not prove native playback or blur.
-Reports: one message to w1:p8 and identical new UTC-named file in C:/build/astra-reports.
-Current orchestrator overrides the old terminal handoff: report directly to the
-root agent, run combined QA before release, and do not queue another build until
-the complete requested screen batch is reviewed. Browser previews are mocked
-visual/interaction evidence, never live upload or payout proof.
-No push or emulator. Build49 follows a clean, reviewed batch; report Expo, submission and Apple availability separately.
-B10 footage-examples work remains deferred tonight.
+Decorative object illustrations are authored with react-native-svg: foil film frames for Sessions, folded receipt/ledger for Income, and a collector pass for Profile. They carry no live status, amount or verification claim and are hidden from assistive technology. Color tokens live in theme.tsx. Library feature icons use solid two-tone fills and no extra boxes. Profile's identity is open instead of another filled rounded card. Native press feedback and all task/payment gates remain unchanged.

@@ -5,11 +5,11 @@ import { useState } from 'react';
 import { LanguageChoices, LOCALE_NAME } from './Profile.tsx';
 import { Sheet } from './TaskHall.tsx';
 import { useNav } from '../nav.tsx';
-import { Image, Linking, Platform, Text, View, useWindowDimensions } from 'react-native';
+import { Linking, Platform, Text, View, useWindowDimensions } from 'react-native';
 import { useLocale, useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
 import { Body, Card, NavRow, Screen, face } from '../ui.tsx';
-import wordmark from '../../assets/discover/playerone-wordmark.png';
+import { BrandSlot } from '../shell/BrandSlot.tsx';
 import app from '../../app.json';
 
 /** About keeps a paper header, shared Server settings and bundled photo credits. */
@@ -27,41 +27,15 @@ export function About({ onPrivacy }: { onPrivacy?: () => void } = {}) {
 
   return (
     <Screen title={tt('profile.about')}>
-      {/* The header block. `Screen` draws the page title above it; this is the
-          mark, not a second title. */}
-      <Card>
-        <View style={{ alignItems: 'center', gap: theme.space[3] }}>
-        <Image
-          source={wordmark}
-          accessibilityLabel={tt('app.name')}
-          resizeMode="contain"
-          style={{ width: '70%', height: theme.space[10], tintColor: c.ink }}
-        />
-        <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>
-          {tt('splash.partners')}
-        </Text>
+      <View style={{ alignItems: 'flex-start', paddingVertical: theme.space[4] }}><BrandSlot measure={false} /></View>
+      {([['about.what', 'about.whatBody'], ['about.who', 'about.whoBody']] as const).map(([title, body]) => (
+        <View key={title} style={{ gap: theme.space[2], paddingBottom: theme.space[4] }}>
+          <Text accessibilityRole="header" style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme), letterSpacing: -0.2 }}>
+            {tt(title)}
+          </Text>
+          <Body>{tt(body)}</Body>
         </View>
-      </Card>
-
-      <Card>
-        <Text
-          accessibilityRole="header"
-          style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme), letterSpacing: -0.2 }}
-        >
-          {tt('about.what')}
-        </Text>
-        <Body>{tt('about.whatBody')}</Body>
-      </Card>
-
-      <Card>
-        <Text
-          accessibilityRole="header"
-          style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme), letterSpacing: -0.2 }}
-        >
-          {tt('about.who')}
-        </Text>
-        <Body>{tt('about.whoBody')}</Body>
-      </Card>
+      ))}
 
       {/* The one document this product has a screen for. `legal.dataNotice`
           exists as a name and has no screen, so it is not a row here: a

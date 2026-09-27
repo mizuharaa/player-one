@@ -1,3 +1,5 @@
+import { TransportProvider } from '../src/device/transport-context.tsx';
+import { MockDeviceTransport, UnavailableDeviceTransport } from '../src/device/transport.ts';
 import { RouteTransition } from '../src/shell/RouteTransition.tsx';
 import { BootIntro } from '../src/shell/BootIntro.tsx';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
@@ -26,7 +28,7 @@ import { MockCollectorApi } from '../src/api/mock.ts';
 /**
  * What the browser renders, and why it is not simply `<App />`.
  *
- * `MockCollectorApi` has no sign-in — deliberately, and the mock says so: a
+ * `MockCollectorApi` has no sign-in â€” deliberately, and the mock says so: a
  * code it checked would be a code it invented, and the thing that really
  * decides whether a collector may sign in is the platform's
  * `POST /auth/collector/verify`. So `restoreSession()` is always true and the
@@ -34,14 +36,14 @@ import { MockCollectorApi } from '../src/api/mock.ts';
  * That is correct behaviour and this harness does not "fix" it.
  *
  * It does need pictures of the landing and the sign-in form, though. So those
- * two get their own entry points — `?screen=landing`, `?screen=signin` — which
+ * two get their own entry points â€” `?screen=landing`, `?screen=signin` â€” which
  * render **the real components with the real providers**, not a copy of them.
  * Nothing is stubbed and no state is forced; the only thing the query string
  * changes is which component is mounted at the root, and `?lang=en` which
  * flips the catalogue the way the in-app chip does.
  *
  * With no query string it is the whole app, entered the way the mock enters
- * it: register → agreements → training → exam → home, which is the path
+ * it: register â†’ agreements â†’ training â†’ exam â†’ home, which is the path
  * `shots.mjs` walks.
  */
 
@@ -55,7 +57,9 @@ function Locale({ lang, children }: { lang: LocaleName; children: ReactNode }) {
 
 /** One instance, so the two pre-session screens share the seam the app uses. */
 // Phone-shaped browser proof only; native uses the live SafeAreaProvider.
-const PREVIEW_INSETS = { top: 59, bottom: 34, left: 0, right: 0 }; // the demo handset is an iPhone with a Dynamic Island and home indicator
+const PREVIEW_INSETS = new URLSearchParams(window.location.search).get('viewport') === 'android'
+  ? { top: 24, bottom: 24, left: 0, right: 0 }
+  : { top: 59, bottom: 34, left: 0, right: 0 }; // Geometry only: Platform.OS stays web, not a native-device claim.
 const api = new MockCollectorApi();
 /** `SignIn` sends its two requests through react-query, exactly as in `App`. */
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -71,6 +75,8 @@ export function Harness() {
   const params = new URLSearchParams(window.location.search);
   const screen = params.get('screen');
   const state = params.get('state');
+  const mockTransport = params.get('transport') === 'mock';
+  const transport = useMemo(() => mockTransport ? new MockDeviceTransport() : new UnavailableDeviceTransport(), [mockTransport]);
   const loading = state === 'loading';
   const previewApi = useMemo(() => new Proxy(api, { get(target, key) {
     if (state === 'zalo-refusal' && key === 'startZaloSignIn') return async (options?: { probeOnly?: boolean }) => {
@@ -132,14 +138,14 @@ export function Harness() {
         <Locale lang={lang}>
           <ApiProvider value={previewApi}>
             <QueryClientProvider client={queryClient}>
-              <ToastProvider><NavProvider initial={initial}>
+              <ToastProvider><TransportProvider value={transport}><NavProvider initial={initial}>
                 {screen === 'onboarding' ? <GuideProvider><Onboarding onDone={() => {}} /></GuideProvider> : routed ? <GuideProvider><RoutedScreen /></GuideProvider> : screen === 'signin' ? (
                   <SignIn onSignedIn={() => {}} onBack={() => {}} />
                 ) : (
                   <Landing introDone={!intro} onSignIn={() => {}} onSignedIn={() => {}} />
                 )}
                 {intro ? <BootIntro onDone={() => setIntro(false)} /> : null}
-              </NavProvider></ToastProvider>
+              </NavProvider></TransportProvider></ToastProvider>
             </QueryClientProvider>
           </ApiProvider>
         </Locale>

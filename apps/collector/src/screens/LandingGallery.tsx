@@ -43,7 +43,7 @@ export function LandingGallery({ ready, onContinue }: { ready: boolean; onContin
     </Animated.View>
     <View style={{ alignItems: 'center', paddingHorizontal: 24, gap: theme.space[4], paddingTop: theme.space[4] }}>
       <Text style={{ ...theme.collector.type.caption, fontFamily: face(theme), color: theme.collector.muted, textAlign: 'center' }}>{tt('landing.illustrativeScenes')}</Text>
-      <View><BrandSlot /></View>
+      <BrandSlot hero ready={ready} />
       <Text accessibilityRole="header" style={{ fontFamily: face(theme), fontSize: 38, lineHeight: 48, fontWeight: '700', letterSpacing: -1.2, textAlign: 'center', color: theme.collector.ink }}>{tt('landing.slogan1')}{'\n'}{tt('landing.slogan2')}</Text>
       <Pressable accessibilityRole="button" accessibilityLabel={tt('common.next')} onPress={onContinue} style={{ width: 64, height: 64, borderRadius: 32, overflow: 'hidden' }}>
         <LinearGradient colors={polish.galleryArrow} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>

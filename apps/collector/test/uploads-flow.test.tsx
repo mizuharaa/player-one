@@ -291,7 +291,7 @@ it('prints the session total size and the connection sentence before the deliver
 });
 
 // Native illustration rendering is covered by the web captures.
-vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ AvatarMark: () => null, EmptyTasks: () => null, ErrorMark: () => null, ReviewedThenPaid: () => null, WearCamera: () => null }));
 
 
 it('shows one failure sentence when both upload list queries fail', async () => {
@@ -333,3 +333,6 @@ it.each(['vi', 'en', 'zh'] as const)('labels iOS media as unmeasured, keeps empt
     expect(vi.mocked(pickSessionDirectory).mock.calls.slice(1).every(call => call[0] === 'camera')).toBe(true);
   } finally { await act(async () => root.unmount()); client.clear(); host.remove(); Object.defineProperty(Platform, 'OS', { configurable: true, value: previous }); }
 });
+
+// Decorative SVG material is verified by the browser screen sweep, outside Node native bridges.
+vi.mock('../src/ui/illustrations/CollectorArtwork.tsx', () => ({ SessionArtwork: () => null, EarningsArtwork: () => null, CollectorPassArtwork: () => null }));

@@ -598,17 +598,13 @@ function Recorded({ value }: { value: string }) {
 }
 
 /**
- * A list the server sent back empty.
- *
- * On the hatch, like every other absence in this console: an empty list at a
- * counter can mean "there is nobody to choose" or "the reference sync failed",
- * and white space reads as the second. The sentence says which, and points at
- * the screen that fixes it.
+ * A successfully loaded empty list, with a recovery link to the back office.
+ * A failed reference sync keeps its separate error state.
  */
 function Nothing({ body }: { body: string }) {
   const { t } = useTranslation();
   return (
-    <div className="hatch rounded-[var(--radius-lg)] border border-[var(--border)] px-6 py-8">
+    <div className="py-6">
       <p className="max-w-[54ch] text-[0.9375rem] leading-relaxed">{body}</p>
       <div className="mt-4">
         <Button asChild variant="secondary" size="sm">

@@ -29,7 +29,6 @@ export function Splash({ onDone }: { onDone: () => void }) {
         </View>
         <Text style={{ fontFamily: face(theme), ...c.type.body, color: c.paper, textAlign: 'center' }}>{tt('splash.caption')}</Text>
       </View>
-      <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.glow, textAlign: 'center' }}>{tt('splash.partners')}</Text>
     </Pressable>
   </View>;
 }

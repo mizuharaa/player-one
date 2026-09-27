@@ -47,12 +47,8 @@ describe('the collector message catalogue', () => {
   });
 
   it('has actually been translated, not copied', () => {
-    // `app.name` is the product name, `prov.rssi` a technical initialism and
-    // `splash.partners` two company names joined by a multiplication sign —
-    // the same in all three languages, and SPEC.md §1 prints it that way in
-    // its own copy table. Everything else byte-identical means the English was
-    // pasted in to pass the check above.
-    const sameOnPurpose = new Set<MessageKey>(['app.name', 'prov.rssi', 'splash.partners']);
+    // Product names and technical initialisms stay the same across locales.
+    const sameOnPurpose = new Set<MessageKey>(['app.name', 'prov.rssi']);
     const copied = (Object.keys(MESSAGES.vi) as MessageKey[]).filter(
       (key) => !sameOnPurpose.has(key) && MESSAGES.en[key] === MESSAGES.vi[key],
     );
@@ -86,3 +82,6 @@ vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, 
 
 // Native illustration rendering is covered by the web captures.
 vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));
+
+// Decorative SVG material is verified by the browser screen sweep, outside Node native bridges.
+vi.mock('../src/ui/illustrations/CollectorArtwork.tsx', () => ({ SessionArtwork: () => null, EarningsArtwork: () => null, CollectorPassArtwork: () => null }));

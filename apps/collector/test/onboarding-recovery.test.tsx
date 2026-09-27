@@ -238,4 +238,4 @@ describe('APP-04 exam recovery', () => {
 });
 
 // Native illustration rendering is covered by the web captures.
-vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ AvatarMark: () => null, EmptyTasks: () => null, ErrorMark: () => null }));

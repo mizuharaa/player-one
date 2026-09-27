@@ -240,10 +240,10 @@ export function PipelineScreen() {
         <p className="mt-2 text-[0.875rem] leading-relaxed text-[var(--muted-foreground)]">
           <span className="num font-semibold text-[var(--foreground)]">D1</span> (Wi-Fi protocol)
           and <span className="num font-semibold text-[var(--foreground)]">D5</span> (device SDK and
-          manual) are owed by PaXini and were promised on 13 August 2026.{' '}
+          manual) are pending hardware deliverables.{' '}
           <span className="num font-semibold text-[var(--foreground)]">D11</span> — whether
-          background review needs online playback of raw video — is unresolved on PaXini&rsquo;s
-          side and decides whether video effectively leaves Vietnam.
+          background review needs online playback of raw video — remains unresolved
+          and decides whether video effectively leaves Vietnam.
         </p>
       </section>
     </AppShell>

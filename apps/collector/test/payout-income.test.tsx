@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('expo-image', () => ({ Image: () => null }));
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -68,4 +69,7 @@ it.each(['vi', 'en', 'zh'] as const)('the payout card prints only the server\'s 
 });
 
 // Native illustration rendering is covered by the web captures.
-vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ AvatarMark: () => null, EmptyTasks: () => null, ErrorMark: () => null, ReviewedThenPaid: () => null, WearCamera: () => null }));
+
+// Decorative SVG material is verified by the browser screen sweep, outside Node native bridges.
+vi.mock('../src/ui/illustrations/CollectorArtwork.tsx', () => ({ SessionArtwork: () => null, EarningsArtwork: () => null, CollectorPassArtwork: () => null }));

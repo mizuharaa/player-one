@@ -303,7 +303,7 @@ vi.mock('../src/ui/HeaderGradient.tsx', () => ({ HeaderGradient: ({ children }: 
 vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
 
 // Native illustration rendering is covered by the web captures.
-vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null, ErrorMark: () => null }));
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ AvatarMark: () => null, EmptyTasks: () => null, ErrorMark: () => null }));
 
 it('shows the unreachable state before authentication and opens the shared Server setting', async () => {
   fetchFn.mockRejectedValueOnce(new TypeError('offline'));

@@ -11,7 +11,7 @@ import { Landing } from '../src/screens/Landing.tsx';
 vi.mock('react-native', async () => import('react-native-web'));
 vi.mock('../src/zalo.tsx', () => ({ useZaloSignIn: () => ({}), ZaloSignIn: () => null }));
 vi.mock('../src/shell/BrandSlot.tsx', () => ({ BrandSlot: () => null }));
-vi.mock('../src/ui/illustrations/index.tsx', () => ({ HowHandOver: () => <svg aria-label="handover" /> }));
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ AvatarMark: () => null, HowHandOver: () => <svg aria-label="handover" /> }));
 vi.mock('../src/ui.tsx', () => ({
   Screen: ({ title, children, onBack }: { title: string; children: ReactNode; onBack: () => void }) => <main><h1>{title}</h1><button onClick={onBack}>Back</button>{children}</main>,
   Body: ({ children }: { children: ReactNode }) => <p>{children}</p>,

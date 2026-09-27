@@ -11,7 +11,7 @@ vi.mock('react-native', async () => {
 });
 vi.mock('../src/zalo.tsx', () => ({ useZaloSignIn: () => ({}), ZaloSignIn: () => null }));
 vi.mock('../src/ui.tsx', () => ({ useReducedMotion: () => true, useInsets: () => ({ top: 59, bottom: 34, left: 0, right: 0 }), face: () => 'sans-serif', Film: ({ active }: { active: boolean }) => <output data-testid="film-active">{String(active)}</output>, LegalLine: () => null, Scrim: () => null, Button: ({ label, onPress }: any) => <button aria-label={label} onClick={onPress}>{label}</button>, Screen: ({ onBack }: any) => <main><button onClick={onBack}>Back</button></main>, Body: () => null, Title: () => null, Card: () => null }));
-vi.mock('../src/ui/illustrations/index.tsx', () => ({ HowHandOver: () => null }));
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ AvatarMark: () => null, HowHandOver: () => null }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 it('reveals the existing film and sign-in with the gallery arrow or scrolling, without signing in', async () => {
  const host = document.createElement('div'), root = createRoot(host), signIn = vi.fn();

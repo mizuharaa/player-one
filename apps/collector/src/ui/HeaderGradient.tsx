@@ -1,21 +1,15 @@
-import { polish } from '../theme.tsx';
+import { polish, useTheme } from '../theme.tsx';
 import type { ReactNode } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useTheme } from '../theme.tsx';
-import grain from '../../assets/grain.png';
 
-/** Soft lavender wash for the Home header only. */
+/** A quiet color field behind solid, high-contrast content; never an interactive layer. */
 export function HeaderGradient({ children }: { children: ReactNode }) {
   const theme = useTheme();
-  return <View testID="home-header-wash" style={{ borderRadius: polish.cardRadius, borderWidth: 2, borderColor: polish.homeBorder, overflow: 'hidden' }}>
-    <LinearGradient colors={polish.homeGradient} locations={[0, 0.65, 1]}
-      style={{ padding: theme.space[6], gap: theme.space[4] }}>
-      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <Image source={grain} resizeMode="repeat" accessible={false}
-          style={[StyleSheet.absoluteFill, { opacity: 0.03 }]} />
-      </View>
-      {children}
-    </LinearGradient>
+  return <View testID="home-header-wash" style={{ marginHorizontal: -theme.collector.gutter,
+    paddingHorizontal: theme.collector.gutter, paddingBottom: 24, gap: 18, backgroundColor: polish.homeSurface }}>
+    <LinearGradient pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants"
+      colors={polish.headerWash} locations={[0, .5, .9]} start={{ x: .5, y: 0 }} end={{ x: .5, y: 1 }} style={StyleSheet.absoluteFill} />
+    {children}
   </View>;
 }

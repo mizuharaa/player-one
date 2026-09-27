@@ -276,3 +276,6 @@ it('prints the version that was built', async () => {
 
 vi.mock('expo-battery', () => ({ isLowPowerModeEnabledAsync: async () => false, addLowPowerModeListener: () => ({ remove() {} }) }));
 vi.mock('react-native-safe-area-context', async () => ({ initialWindowMetrics: null, SafeAreaInsetsContext: (await import('react')).createContext(null) }));
+
+// Decorative SVG material is verified by the browser screen sweep, outside Node native bridges.
+vi.mock('../src/ui/illustrations/CollectorArtwork.tsx', () => ({ SessionArtwork: () => null, EarningsArtwork: () => null, CollectorPassArtwork: () => null }));

@@ -4,10 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import { Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { useApi } from '../api/context.tsx';
 import { useT } from '../locale.tsx';
-import { useTheme } from '../theme.tsx';
+import { polish, useTheme } from '../theme.tsx';
 import { dong, quantity, vnd } from '../money.ts';
 import { Body, Button, Loading, Note, Screen, face } from '../ui.tsx';
-import { EmptySessions } from '../ui/illustrations/index.tsx';
+import { Icon, type IconName } from '../ui/Icon.tsx';
+import { sun, tech } from '@playerone/design/tokens';
 import type { MessageKey } from '../i18n.ts';
 import type { CollectorNotificationRow, NotificationKind as ServerKind } from '../api/types.ts';
 
@@ -42,12 +43,8 @@ export interface CollectorNotification {
 
 /* ── The screen ─────────────────────────────────────────────────────────── */
 
-const KIND_GLYPH: Record<NotificationKind, string> = {
-  review: '✓',
-  payment: '₫',
-  session: '▣',
-  device: '⌁',
-  task: '▤',
+const KIND_ICON: Record<NotificationKind, IconName> = {
+  review: 'file', payment: 'wallet', session: 'upload', device: 'camera', task: 'tasks',
 };
 
 /**
@@ -221,11 +218,9 @@ export function Notifications({ previewItems }: { previewItems?: readonly Collec
           accessibilityLabel={tt('notif.settings')}
           onPress={() => setSettings(true)}
           hitSlop={theme.space[2]}
-          style={{ minHeight: theme.space[12], justifyContent: 'center' }}
+          style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Text style={{ ...c.type.caption, color: c.plum, fontFamily: face(theme), fontWeight: theme.fontWeight.medium }}>
-            {tt('notif.settings')}
-          </Text>
+          <Icon name="settings" size={23} color={c.plum} strokeWidth={2} />
         </Pressable>
       }
     >
@@ -255,7 +250,7 @@ export function Notifications({ previewItems }: { previewItems?: readonly Collec
           those is an answer. */}
       {items.length === 0 && !pending && !inbox.isError ? (
         <View style={{ alignItems: 'center', gap: theme.space[3], paddingVertical: theme.space[8] }}>
-          <EmptySessions size={120} />
+          <Icon name="bell" size={64} color={c.ink} fill={polish.notificationYellow} strokeWidth={1.8} />
           <Text
             accessibilityRole="header"
             style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme), textAlign: 'center' }}
@@ -305,6 +300,8 @@ function NotificationRow({ item }: { item: CollectorNotification }) {
   const tt = useT();
   const { fontScale } = useWindowDimensions();
   const stacked = fontScale > 1.2;
+  // Category colors identify the subject, never whether review/payment succeeded.
+  const [ink, fill] = { review: [c.plum, c.sun], payment: [sun[700], sun[100]], session: [tech[700], tech[100]], device: [c.ink, c.greenBg], task: [c.amberInk, c.amberBg] }[item.kind] as [string, string];
   return (
     <View
       accessible
@@ -313,9 +310,9 @@ function NotificationRow({ item }: { item: CollectorNotification }) {
         flexDirection: 'row',
         alignItems: 'flex-start',
         gap: theme.space[3],
-        paddingVertical: theme.space[3],
-        borderBottomWidth: 1,
-        borderBottomColor: c.line,
+        padding: theme.space[3],
+        borderRadius: 16,
+        backgroundColor: c.surface,
       }}
     >
       <View
@@ -323,15 +320,13 @@ function NotificationRow({ item }: { item: CollectorNotification }) {
         style={{
           width: theme.space[10],
           height: theme.space[10],
-          borderRadius: c.radius.pill,
-          borderWidth: 1,
-          borderColor: c.line,
-          backgroundColor: c.paper,
+          borderRadius: 14,
+          backgroundColor: fill,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <Text style={{ ...c.type.body, color: c.plum, fontFamily: face(theme) }}>{KIND_GLYPH[item.kind]}</Text>
+        <Icon name={KIND_ICON[item.kind]} size={23} color={ink} strokeWidth={2.1} />
       </View>
       <View style={{ flex: 1, gap: theme.space[1] }}>
         <View style={{ flexDirection: stacked ? 'column' : 'row', alignItems: stacked ? 'flex-start' : 'center', gap: theme.space[2] }}>
@@ -359,7 +354,7 @@ function NotificationRow({ item }: { item: CollectorNotification }) {
       {item.read ? null : (
         <View
           importantForAccessibility="no"
-          style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: c.plum, marginTop: theme.space[2] }}
+          style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.plum, marginTop: theme.space[2] }}
         />
       )}
     </View>

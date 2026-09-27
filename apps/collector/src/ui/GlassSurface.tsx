@@ -4,7 +4,7 @@ import { BlurView } from 'expo-blur';
 import { polish } from '../theme.tsx';
 
 /** Native material for floating chrome. Android uses the contrast-safe opaque fallback. */
-export function GlassSurface({ children, style, intensity = 48 }: { children?: ReactNode; style?: StyleProp<ViewStyle>; intensity?: number }) {
+export function GlassSurface({ children, style, intensity = 48, dark = false, backdrop = false }: { children?: ReactNode; style?: StyleProp<ViewStyle>; intensity?: number; dark?: boolean; backdrop?: boolean }) {
   const [opaque, setOpaque] = useState(true);
   useEffect(() => {
     let live = true;
@@ -14,8 +14,9 @@ export function GlassSurface({ children, style, intensity = 48 }: { children?: R
     return () => { live = false; subscription?.remove(); };
   }, []);
   const blur = !opaque && Platform.OS !== 'android';
-  return <View style={[{ overflow: 'hidden', borderRadius: 20, backgroundColor: blur ? polish.glass : polish.glassFallback, borderWidth: 1, borderColor: polish.glassEdge }, style]}>
-    {blur ? <><BlurView pointerEvents="none" tint="light" intensity={intensity} style={StyleSheet.absoluteFill} /><View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: polish.glass }]} /></> : null}
+  const fill = dark ? (backdrop ? polish.claimScrim : polish.claimGlass) : polish.glass;
+  return <View style={[{ overflow: 'hidden', borderRadius: 20, backgroundColor: dark ? (blur ? 'transparent' : backdrop ? polish.claimScrim : polish.claimFallback) : (blur ? polish.glass : polish.glassFallback), borderWidth: 1, borderColor: dark ? polish.darkEdge : polish.glassEdge }, style]}>
+    {blur ? <><BlurView pointerEvents="none" tint={dark ? 'dark' : 'light'} intensity={intensity} style={StyleSheet.absoluteFill} /><View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: fill }]} /></> : null}
     {children}
   </View>;
 }

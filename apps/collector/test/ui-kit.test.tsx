@@ -28,8 +28,8 @@ it('shows activity and a visible track while the first file is still sending', a
     const bars = host.querySelectorAll<HTMLElement>('[role="progressbar"]');
     expect(bars.length).toBe(2); // Activity indicator plus the measured-file track.
     const progress = bars[1]!;
-    expect(progress.style.backgroundColor).toBe('rgb(184, 194, 185)');
-    expect((progress.firstElementChild as HTMLElement).style.backgroundColor).toBe('rgb(32, 40, 39)');
+    expect(progress.style.backgroundColor).toBe('rgb(206, 201, 216)');
+    expect((progress.firstElementChild as HTMLElement).style.backgroundColor).toBe('rgb(33, 27, 50)');
     expect((progress.firstElementChild as HTMLElement).style.width).toBe('0%');
     expect(host.textContent).toContain('0/1 files');
   } finally { await act(async () => root.unmount()); }
@@ -188,7 +188,7 @@ it('recovers a rejected reduced-motion query without leaving the film permanentl
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
-vi.mock('../src/ui/illustrations/index.tsx', () => ({ EmptyTasks: () => null }));
+vi.mock('../src/ui/illustrations/index.tsx', () => ({ AvatarMark: () => null, EmptyTasks: () => null }));
 
 it.each(['screen', 'list'])('reserves safe areas outside the %s scrolling viewport', async kind => {
   const host = document.createElement('div'); document.body.append(host);
@@ -220,7 +220,7 @@ it('keeps secondary text readable on paper, white cards and every Home gradient 
   try {
     await act(async () => root.render(<ThemeProvider><Probe /></ThemeProvider>));
     expect(polish.card).toBe(theme.collector.surface);
-    for (const ground of [theme.collector.paper, polish.card, ...polish.homeGradient]) {
+    for (const ground of [theme.collector.paper, polish.card, polish.homeSurface]) {
       for (const ink of [theme.collector.muted, theme.color.mutedForeground]) expect(ratio(ink, ground), `${ink} on ${ground}`).toBeGreaterThanOrEqual(4.5);
     }
     expect(ratio(polish.hairline, theme.collector.paper)).toBeGreaterThanOrEqual(1.5);

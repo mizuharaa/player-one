@@ -1283,7 +1283,7 @@ const en = {
   // The three ZNS codes the current (ZBS) table added, and the ones this
   // deployment meets first — the OA wall above all.
   'bo.refused.zns_oa_not_verified':
-    'Zalo will not send from this Official Account, because it is not verified or is on the free plan. Nobody can receive a sign-in code over Zalo until VNG verifies the Official Account. Sign collectors in with Zalo instead, or switch the channel to SMS.',
+    'Zalo will not send from this Official Account, because it is not verified or is on the free plan. Nobody can receive a sign-in code over Zalo until the Official Account is verified. Sign collectors in with Zalo instead, or switch the channel to SMS.',
   'bo.refused.zns_user_refused':
     'This person has told Zalo not to send them messages of this kind, so no code was sent. Nothing in the back office changes that: they have to sign in with Zalo, or be sent a code by SMS.',
   'bo.refused.zns_development_only':
@@ -1450,14 +1450,14 @@ const en = {
     'Sign in to the console. Upload-centre operators register a handover and import a card; reviewers watch episodes and decide what is payable.',
   'discover.credits': 'Film and stills: credits and licences',
   'discover.partners':
-    'PlayerOne is a joint venture of VNG PT Lab and PaXini. VNG runs the platform and the upload centres; PaXini makes the Ego camera and, in this phase, reviews the footage.',
+    'PlayerOne is an independent company connecting collectors, upload centres and reviewers through one recording platform.',
   /* The thin line under the footer's wordmark. It restates two facts the page
      has already made — a person decides every payment, and footage stays in
      Vietnam — because the bottom of a page is where somebody who skipped the
      middle of it arrives. No figure, and no claim that is not on the page
      above it. */
   'discover.foot.legal':
-    'PlayerOne is a joint venture of VNG PT Lab and PaXini. Every recording is judged by a person before any minute of it is payable, and footage stays resident in Vietnam.',
+    'PlayerOne is an independent company. Every recording is judged by a person before any minute of it is payable, and footage stays resident in Vietnam.',
   /* -----------------------------------------------------------------------
      The two audiences, and the one that had nowhere to go.
 
@@ -1635,7 +1635,7 @@ const en = {
   'ui.a.notBuilt.today': 'How this is done today',
 
   'ui.a.pipeline.track': 'What a recording passes through',
-  'ui.a.pipeline.owed': 'Waiting on PaXini',
+  'ui.a.pipeline.owed': 'Pending hardware deliverables',
 
   'episodes.title': 'Episodes needing attention',
   'episodes.attention.intro':
@@ -1831,7 +1831,7 @@ const en = {
   'assign.q.cameras': 'Does a camera go out with anybody?',
 
   'assign.note.name':
-    'The name is what a collector reads in the task hall. The type follows PaXini own taxonomy and has no fixed list.',
+    'The name is what a collector reads in the task hall. The type describes the activity category and has no fixed list.',
   'assign.note.rate':
     'A decimal, up to eight digits and four decimals, exactly as the column stores it. It multiplies into every payment, so nothing rounds it on the way in, and once the task is published the figure cannot move.',
   'assign.note.capacity':
@@ -1843,7 +1843,7 @@ const en = {
   'assign.note.cameras':
     'A custody period, not a bind: this is what a settlement reads to say who held a camera on a given day. Any period still open on that camera is closed at the same instant.',
 
-  'assign.hint.type': 'PaXini taxonomy. No fixed list.',
+  'assign.hint.type': 'Activity category. No fixed list.',
   'assign.hint.target': 'Optional. Effective seconds.',
 
   'assign.publish.label': 'Publish this task now',
@@ -2813,7 +2813,7 @@ const zh: Record<MessageKey, string> = {
 
   // 现行 ZBS 错误表新增的三个 ZNS 代码，其中 OA 未认证是首先会遇到的那个。
   'bo.refused.zns_oa_not_verified':
-    'Zalo 不允许这个公众号发送消息，因为它未认证或仍在免费套餐。在 VNG 完成公众号认证之前，没有人能通过 Zalo 收到登录验证码。请改用 Zalo 登录，或把发送渠道切换为短信。',
+    'Zalo 不允许这个公众号发送消息，因为它未认证或仍在免费套餐。在公众号完成认证之前，没有人能通过 Zalo 收到登录验证码。请改用 Zalo 登录，或把发送渠道切换为短信。',
   'bo.refused.zns_user_refused':
     '这位用户已在 Zalo 上拒收此类消息，因此没有发送验证码。后台无法改变这一点：他们需要用 Zalo 登录，或改用短信接收验证码。',
   'bo.refused.zns_development_only':
@@ -2892,9 +2892,9 @@ const zh: Record<MessageKey, string> = {
     '请登录控制台。上传中心的工作人员在此登记交接并导入存储卡；审核员在此观看素材并判定哪些可以计酬。',
   'discover.credits': '影片与图片：来源与授权',
   'discover.partners':
-    'PlayerOne 是 VNG PT Lab 与 PaXini 的合资项目。VNG 负责平台与各上传中心；PaXini 制造 Ego 相机，并在本阶段负责素材审核。',
+    'PlayerOne 是一家独立公司，通过统一的录制平台连接采集员、上传中心和审核员。',
   'discover.foot.legal':
-    'PlayerOne 是 VNG PT Lab 与 PaXini 的合资项目。每一段录制都要先由人工判定，才会产生可结算的分钟数；素材始终存放在越南境内。',
+    'PlayerOne 是一家独立公司。每一段录制都要先由人工判定，才会产生可结算的分钟数；素材始终存放在越南境内。',
   'discover.ways.title': '接下来去哪里',
   'discover.take.cta': '下载 APK',
   'discover.take.title': '采集者',
@@ -3005,7 +3005,7 @@ const zh: Record<MessageKey, string> = {
   'ui.a.notBuilt.today': '目前这项工作怎么做',
 
   'ui.a.pipeline.track': '一段录制会经过哪些环节',
-  'ui.a.pipeline.owed': '等待 PaXini 交付',
+  'ui.a.pipeline.owed': '待交付的硬件资料',
 
   'episodes.title': '需要处理的集',
   'episodes.attention.intro':
@@ -3171,7 +3171,7 @@ const zh: Record<MessageKey, string> = {
   'assign.q.cameras': '有人要领走相机吗？',
 
   'assign.note.name':
-    '名称是采集者在任务大厅里看到的文字。类型沿用 PaXini 自己的分类，没有固定清单。',
+    '名称是采集者在任务大厅里看到的文字。类型描述活动分类，没有固定清单。',
   'assign.note.rate':
     '一个小数，最多八位整数、四位小数，与数据库列的存法完全一致。它会乘进每一笔付款，所以录入时不做任何取整；任务一旦发布，这个数字就不能再改。',
   'assign.note.capacity': '名额按当前有效的领取计数。释放一次领取，名额就还给任务。',
@@ -3182,7 +3182,7 @@ const zh: Record<MessageKey, string> = {
   'assign.note.cameras':
     '这是保管期，不是绑定：结算据此判断某一天相机在谁手上。该相机上仍然开着的保管期，会在同一时刻被关闭。',
 
-  'assign.hint.type': 'PaXini 的分类，没有固定清单。',
+  'assign.hint.type': '活动分类，没有固定清单。',
   'assign.hint.target': '可不填。按有效秒数计。',
 
   'assign.publish.label': '现在发布这个任务',
@@ -4278,7 +4278,7 @@ const vi: Record<MessageKey, string> = {
 
   // Ba mã ZNS mới trong bảng ZBS hiện hành; mã OA chưa xác thực là mã sẽ gặp trước nhất.
   'bo.refused.zns_oa_not_verified':
-    'Zalo không cho Official Account này gửi tin vì OA chưa xác thực hoặc vẫn ở gói miễn phí. Chưa ai nhận được mã đăng nhập qua Zalo cho tới khi VNG xác thực OA. Hãy cho cộng tác viên đăng nhập bằng Zalo, hoặc chuyển kênh gửi sang SMS.',
+    'Zalo không cho Official Account này gửi tin vì OA chưa xác thực hoặc vẫn ở gói miễn phí. Chưa ai nhận được mã đăng nhập qua Zalo cho tới khi OA được xác thực. Hãy cho cộng tác viên đăng nhập bằng Zalo, hoặc chuyển kênh gửi sang SMS.',
   'bo.refused.zns_user_refused':
     'Cộng tác viên đã từ chối loại tin nhắn này trên Zalo. Nhân viên không thể thay đổi lựa chọn đó; hãy dùng đăng nhập Zalo hoặc gửi mã qua SMS.',
   'bo.refused.zns_development_only':
@@ -4362,9 +4362,9 @@ const vi: Record<MessageKey, string> = {
     'Hãy đăng nhập vào console. Nhân viên trung tâm tải lên ghi nhận việc bàn giao và nhập thẻ nhớ; người kiểm duyệt xem tư liệu và quyết định phần nào được trả.',
   'discover.credits': 'Phim và ảnh: nguồn và giấy phép',
   'discover.partners':
-    'PlayerOne là liên doanh giữa VNG PT Lab và PaXini. VNG vận hành nền tảng và các trung tâm tải lên; PaXini sản xuất camera Ego và, trong giai đoạn này, kiểm duyệt tư liệu.',
+    'PlayerOne là một công ty độc lập, kết nối người thu thập, điểm tải lên và người duyệt trên cùng một nền tảng ghi hình.',
   'discover.foot.legal':
-    'PlayerOne là liên doanh giữa VNG PT Lab và PaXini. Mọi bản ghi đều do một người duyệt trước khi có phút nào được thanh toán, và tư liệu được lưu trữ trong lãnh thổ Việt Nam.',
+    'PlayerOne là một công ty độc lập. Mọi bản ghi đều do một người duyệt trước khi có phút nào được thanh toán, và tư liệu được lưu trữ trong lãnh thổ Việt Nam.',
   'discover.ways.title': 'Đi tiếp từ đây',
   'discover.take.cta': 'Tải APK',
   'discover.take.title': 'Người thu thập',
@@ -4483,7 +4483,7 @@ const vi: Record<MessageKey, string> = {
   'ui.a.notBuilt.today': 'Hiện nay việc này được làm thế nào',
 
   'ui.a.pipeline.track': 'Một bản ghi đi qua những bước nào',
-  'ui.a.pipeline.owed': 'Đang chờ PaXini',
+  'ui.a.pipeline.owed': 'Đang chờ tài liệu phần cứng',
 
   'episodes.title': 'Bản ghi cần xử lý',
   'episodes.attention.intro':
@@ -4663,7 +4663,7 @@ const vi: Record<MessageKey, string> = {
   'assign.q.cameras': 'Có ai mang máy quay về không?',
 
   'assign.note.name':
-    'Tên hiển thị trong danh sách nhiệm vụ của cộng tác viên. Nhập loại theo cách phân loại của PaXini; chưa có danh sách cố định.',
+    'Tên hiển thị trong danh sách nhiệm vụ của cộng tác viên. Nhập loại hoạt động; chưa có danh sách cố định.',
   'assign.note.rate':
     'Nhập đơn giá với tối đa tám chữ số phần nguyên và bốn chữ số thập phân. Hệ thống lưu nguyên giá trị để tính công, không làm tròn khi nhập. Không thể sửa đơn giá sau khi đăng nhiệm vụ.',
   'assign.note.capacity':
@@ -4675,7 +4675,7 @@ const vi: Record<MessageKey, string> = {
   'assign.note.cameras':
     'Ghi nhận thời gian cộng tác viên giữ máy để đối chiếu khi tính công. Đây là lịch sử bàn giao, khác với liên kết thiết bị hiện tại. Lượt giữ máy trước đó được kết thúc đúng thời điểm giao mới.',
 
-  'assign.hint.type': 'Cách phân loại của PaXini. Không có danh sách cố định.',
+  'assign.hint.type': 'Loại hoạt động. Không có danh sách cố định.',
   'assign.hint.target': 'Không bắt buộc. Tính bằng giây ghi hình hợp lệ.',
 
   'assign.publish.label': 'Đăng nhiệm vụ này ngay',

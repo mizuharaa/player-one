@@ -8,7 +8,7 @@ import type { MessageKey } from '../i18n.ts';
 import { useNav } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { useTheme } from '../theme.tsx';
-import { Body, Button, Card, Field, Hatch, Loading, Note, Row, Screen, Title, face } from '../ui.tsx';
+import { Body, Button, Field, Loading, Row, Screen, Title, face } from '../ui.tsx';
 import { HowCharge, HowHandOver, HowPressDevice, HowWear } from '../ui/illustrations/index.tsx';
 
 /**
@@ -31,6 +31,7 @@ export function Devices() {
   const nav = useNav();
   const tt = useT();
   const theme = useTheme();
+  const c = theme.collector;
   const queryClient = useQueryClient();
   const [serial, setSerial] = useState('');
 
@@ -53,55 +54,41 @@ export function Devices() {
     <Screen title={tt('devices.title')}>
       {devices.isError ? <Failure error={devices.error} text={tt(devices.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} onRetry={() => void devices.refetch()} busy={devices.isFetching} /> : null}
       {devices.isPending ? <Loading /> : null}
-      {!devices.isError && devices.data !== undefined && devices.data.length === 0 ? (
-        <Hatch action={tt('common.retry')} onPress={() => void devices.refetch()} text={tt('devices.empty')} />
-      ) : null}
       {(devices.data ?? []).map((d) => (
-        <Card key={d.serial}>
-          {/* The serial in tech blue, which §2 reserves for a device serial,
-              a session id and nothing else. Tabular figures, because a
-              collector reads this off the camera character by character. */}
-          <Text
-            style={{
-              ...theme.collector.type.h2,
-              color: theme.collector.techInk,
-              fontFamily: face(theme),
-              fontVariant: ['tabular-nums'],
-            }}
-          >
+        <View key={d.serial} style={{ gap: theme.space[3], paddingVertical: theme.space[3], borderBottomWidth: 1, borderBottomColor: c.line }}>
+          <Text style={{ ...c.type.h2, color: c.techInk, fontFamily: face(theme), fontVariant: ['tabular-nums'] }}>
             {d.serial}
           </Text>
-          <Row label={tt('devices.boundAt')} value={new Date(d.boundAt).toLocaleString()} />
           <Row label={tt('devices.status')} value={tt(DEVICE_STATES[d.status ?? ''] ?? 'devices.unknown')} />
-          {/* Battery and last-used are what a collector wants on this card and
-              `BoundDevice` carries neither — it is `{ serial, boundAt, status }`
-              and nothing else. So the rows exist and say "not reported": the
-              field is a real property of the camera, the server does not send
-              it, and an empty gauge or a guessed percentage would be this app
-              inventing a reading. When the device record grows the columns,
-              these two rows read them and the sentence below goes. */}
-          <Row label={tt('devices.battery')} value={tt('devices.notReported')} />
-          <Row label={tt('devices.lastUsed')} value={tt('devices.notReported')} />
-          <Body muted>{tt('devices.noReadings')}</Body>
-        </Card>
+          <Row label={tt('devices.boundAt')} value={new Date(d.boundAt).toLocaleString()} />
+        </View>
       ))}
-      <Card>
-        <Title>{tt('devices.bind')}</Title>
-        {USE_MOCK_API ? <><Button label={tt('devices.scanQr')} variant="secondary" onPress={() => setSerial(MOCK_QR_SERIAL)} /><Body muted>{tt('devices.qrMock')}</Body></> : <Note text={tt('devices.unavailable')} />}
-        <Field label={tt('devices.typed')} value={serial} onChangeText={(value) => { if (!bind.isPending) setSerial(value); }} />
+      {(devices.data ?? []).length > 0 ? <>
+        <Body muted>{tt('devices.noReadings')}</Body>
+        <Button
+          label={tt('devices.provision')}
+          variant="secondary"
+          disabled={!USE_MOCK_API || devices.isError}
+          onPress={() => nav.push({ name: 'provisioning' })}
+        />
+      </> : null}
+      <View style={{ gap: theme.space[3], paddingTop: theme.space[4] }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space[3] }}>
+          <HowPressDevice size={64} />
+          <View style={{ flex: 1, gap: theme.space[1] }}>
+            <Title>{tt('devices.bind')}</Title>
+            {!devices.isError && devices.data?.length === 0 ? <Body muted>{tt('devices.empty')}</Body> : null}
+          </View>
+        </View>
+        <Field label={tt('devices.typed')} value={serial} editable={!bind.isPending} onChangeText={(value) => { if (!bind.isPending) setSerial(value); }} />
         <Button
           label={tt(bind.isPending ? 'common.saving' : 'devices.bind')}
           disabled={serial.trim() === '' || bind.isPending || devices.isPending || devices.isError}
           onPress={bindSerial}
         />
+        {USE_MOCK_API ? <><Button label={tt('devices.scanQr')} variant="ghost" disabled={bind.isPending} onPress={() => setSerial(MOCK_QR_SERIAL)} /><Body muted>{tt('devices.qrMock')}</Body></> : <Body muted>{tt('devices.unavailable')}</Body>}
         {bind.isError ? <Failure onRetry={bindSerial} busy={bind.isPending} error={bind.error} text={tt(BIND_ERRORS[bind.error.message] ?? 'devices.bindFailed')} /> : null}
-      </Card>
-      <Button
-        label={tt('devices.provision')}
-        variant="secondary"
-        disabled={!USE_MOCK_API || devices.isError || (devices.data ?? []).length === 0}
-        onPress={() => nav.push({ name: 'provisioning' })}
-      />
+      </View>
 
       <HowToRecord />
     </Screen>

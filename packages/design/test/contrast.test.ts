@@ -559,6 +559,8 @@ describe('the public story stands on daylight paper in both schemes', () => {
 
   it('and the lavender panel the walkthrough sits on carries its own ink', () => {
     atLeast(TEXT_AA, discover.lightInk, discover.light, 'light ink on the lavender panel');
+    atLeast(TEXT_AA, discover.heroChromeInk, discover.heroChrome, 'hero chrome copy');
+    atLeast(TEXT_AA, discover.heroAccentInk, discover.heroAccentWash, 'hero accent copy');
     atLeast(TEXT_AA, discover.warmInk, discover.light, 'warm ink on the lavender panel');
   });
 

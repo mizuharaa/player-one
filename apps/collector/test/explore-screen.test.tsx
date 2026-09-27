@@ -384,15 +384,15 @@ it('reports a failed local deletion and lets the same collector retry it', async
   } finally { remove.mockRestore(); }
 });
 
-it('renders a seeded task title, exact price and type badge in the shared card', async () => {
+it('renders a seeded task title, exact price, type and photo disclosure in a browsing tile', async () => {
   const { TaskCard } = await import('../src/ui/TaskCard.tsx');
   const seed = { ...(await api.tasks())[0]!, title: 'Office task', type: 'office', unitPriceVndPerMinute: '1234.5678' };
-  await act(async () => root.render(<ThemeProvider><LocaleProvider><TaskCard task={seed} onPress={() => {}} /></LocaleProvider></ThemeProvider>));
+  await act(async () => root.render(<ThemeProvider><LocaleProvider><TaskCard task={seed} variant="tile" onPress={() => {}} /></LocaleProvider></ThemeProvider>));
   expect(page()).toContain('Office task');
   expect(page()).toContain(vnd('1234.5678'));
   expect(page()).toContain(m['hall.perMinute']);
   const price = document.body.querySelector<HTMLElement>('[data-testid="task-price"]')!;
-  expect(price.style.fontSize).toBe('20px');
+  expect(price.style.fontSize).toBe('16px');
   expect(price.style.whiteSpace).not.toBe('nowrap');
   expect(price.style.textOverflow).not.toBe('ellipsis');
   expect(page()).toContain(m['taskCard.home']);
@@ -438,6 +438,17 @@ it('dismisses unsaved preferences with the visible Close and keeps the saved pre
   const close = controls().find(node => node.getAttribute('aria-label') === m['common.close'] && node.textContent?.trim() === m['common.close']);
   expect(close).toBeDefined();
   await act(async () => close!.click());
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
   expect(named(m['explore.savePrefs'])).toBeUndefined();
   expect([...store.keys()].some(key => key.startsWith('playerone.collector.prefs.'))).toBe(false);
+});
+
+it('keeps visible illustration disclosures in filtered Explore rows', async () => {
+  await mount();
+  await act(async () => named(m['explore.searchOpen'])!.click());
+  await type('Fold');
+  await act(async () => named(m['common.cancel'])!.click());
+  expect(page()).toContain('Fold Clothes');
+  expect(page()).toContain(m['hall.aiImageLabel']);
+  expect(host.querySelector('[data-testid="task-photo-label"]')).toBeNull();
 });
