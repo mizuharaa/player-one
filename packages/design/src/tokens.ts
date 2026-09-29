@@ -641,24 +641,24 @@ export const duration = {
   slow: '320ms',
 } as const;
 
-/** Public story only. Stable daylight material, independent of operator theme. */
+/** Public story: white, ink and violet. Legacy warm names remain stable CSS hooks. */
 export const discover = {
-  warmPaper: '#F4EFE6',
-  warmSurface: '#FFFCF6',
-  warmInk: '#35271F',
-  warmMuted: '#705D4D',
-  warmLine: '#D3C5B3',
-  warmSoft: '#E8DFD1',
-  warmGlass: 'rgba(53,39,31,.76)',
-  warmHighlight: 'rgba(255,252,246,.24)',
-  paper: '#F7F7F4',
+  warmPaper: '#F8F7FC',
+  warmSurface: '#FFFFFF',
+  warmInk: '#211B32',
+  warmMuted: '#595365',
+  warmLine: '#CEC9D8',
+  warmSoft: '#EDE5FF',
+  warmGlass: 'rgba(33,27,50,.76)',
+  warmHighlight: 'rgba(255,255,255,.24)',
+  paper: '#F8F7FC',
   surface: '#FFFFFF',
-  ink: '#17191B',
-  muted: '#575C5D',
-  line: '#D6D8D4',
-  soft: '#EDEEEA',
-  light: '#DED8F3',
-  lightInk: '#4E4368',
+  ink: '#211B32',
+  muted: '#595365',
+  line: '#CEC9D8',
+  soft: '#EDE5FF',
+  light: '#DED3FA',
+  lightInk: '#6540C8',
   scrim: 'linear-gradient(180deg, rgba(12,16,18,0.12) 0%, rgba(12,16,18,0.04) 30%, rgba(12,16,18,0.76) 100%)',
   wash: 'linear-gradient(130deg, rgba(222,216,243,0) 10%, rgba(222,216,243,0.72) 60%, rgba(247,247,244,0) 95%)',
   shadow: '0 28px 80px rgba(20,24,30,0.16)',
@@ -668,45 +668,22 @@ export const discover = {
   reveal: '720ms',
   opening: '1100ms',
   ambient: '14000ms',
-  /**
-   * The hero field, 2026-09-14. A deep plum falling to ink, behind the browser
-   * window that holds the review workspace.
-   *
-   * It replaces a cobalt stage whose light end (`#4d8bf2`) could not host the
-   * small white text sitting on it — the window title read 4.17:1 and the
-   * caption row had to be given its own dark tray to survive. The field is
-   * dark at BOTH ends here, so anything set on it clears AA wherever it lands
-   * rather than only over the dark corner: white on `heroFieldTo` is 19.51:1
-   * and on `heroFieldFrom`, the lightest point, 16.86:1.
-   *
-   * Plum rather than another blue because the window's own chrome is blue and
-   * a blue window on a blue ground has no edge; the hue separation is what
-   * makes the mockup read as an object sitting on a surface.
-   */
+  /** Dark scenery surround keeps demo controls legible across photographs. */
   heroFieldFrom: '#241733',
   heroFieldTo: '#0E0B14',
   /** Type on the field. `heroOnField` is 16.86:1 at the field's lightest. */
   heroOnField: '#FFFFFF',
   /** The caption row and the URL pill's text: 9.54:1 at the field's lightest. */
   heroOnFieldMuted: '#C8BFD6',
-  /**
-   * The window's own surfaces. The title bar was `#e8ecf2` with `#6a7688` type
-   * on it — the one body failure in the demo at 4.17:1. The bar is lighter and
-   * the type is darker now: `heroChromeInk` on `heroChrome` is 6.66:1.
-   */
-  heroChrome: '#EEF1F6',
-  heroChromeInk: '#4A5567',
-  heroChromeLine: '#CFD6E2',
-  /**
-   * The demo's blue, one ramp rather than the nine hand-mixed hexes the
-   * stylesheet carried. `heroAccent` is the fill under white (6.24:1);
-   * `heroAccentInk` is blue type on white (7.38:1) and on the pale tint
-   * `heroAccentWash` (6.35:1) — the "Ready for review" tier reads on that pair.
-   */
-  heroAccent: '#1B52E3',
-  heroAccentPressed: '#123CAE',
-  heroAccentInk: '#1F4FB5',
-  heroAccentWash: '#E8EEFC',
+  /** Lavender app toolbar; the content remains a distinct white surface. */
+  heroChrome: '#F1EDF9',
+  heroChromeInk: '#595365',
+  heroChromeLine: '#CEC9D8',
+  /** Violet actions match the collector app. Semantic verdict hues stay separate. */
+  heroAccent: '#6540C8',
+  heroAccentPressed: '#4E299F',
+  heroAccentInk: '#5934B5',
+  heroAccentWash: '#EDE5FF',
 } as const;
 
 /**

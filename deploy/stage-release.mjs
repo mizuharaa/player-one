@@ -10,13 +10,16 @@ import { fileURLToPath } from 'node:url';
 const source = fileURLToPath(new URL('../', import.meta.url));
 const exactFiles = [
   'Dockerfile', '.dockerignore', 'railway.toml', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
-  'packages/api/package.json', 'packages/api/bin/serve.ts',
+  'packages/api/package.json', 'packages/api/bin/serve.ts', 'packages/api/bin/bootstrap.ts',
+  'packages/api/scripts/moov.ts', 'patches/expo-file-system@57.0.7.patch',
+  'packages/ingest/package.json', 'packages/delivery/package.json',
   'packages/contracts/package.json', 'packages/store/package.json', 'packages/store/drizzle.config.ts',
   'packages/design/package.json', 'apps/console/package.json', 'apps/console/index.html',
   'apps/console/tsconfig.json', 'apps/console/vite.config.ts',
 ];
 const trees = [
   'packages/api/src', 'packages/contracts/src', 'packages/store/src', 'packages/store/drizzle',
+  'packages/ingest/src', 'packages/delivery/src',
   'packages/design/src', 'packages/design/scripts', 'packages/design/generated',
   'apps/console/src', 'apps/console/public', 'tools/analysers',
 ];

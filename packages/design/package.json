@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./tokens": "./src/tokens.ts",
     "./native": "./src/native.ts",
+    "./hero-shuffle": "./src/hero-shuffle.ts",
     "./tokens.css": "./generated/tokens.css"
   },
   "scripts": {

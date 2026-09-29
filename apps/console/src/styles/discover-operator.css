@@ -51,16 +51,6 @@
    and only the last of those is a number the system owns. Four gaps in this
    file were fluid and all four were findings. */
 .operator-intro{width:min(100%,900px);text-align:center;display:flex;flex-direction:column;align-items:center;margin-bottom:40px}
-.operator-partners{--cap:26px;display:flex;align-items:center;gap:18px;margin-bottom:24px}
-/* The negative margins below crop the PNGs' transparent padding to
-   cap-top..baseline, which means the image is deliberately larger than its box.
-   `overflow:clip` is what makes that a crop rather than an overflow. */
-.operator-vng,.operator-paxini{display:flex;align-items:center;flex-shrink:0;overflow:clip;filter:brightness(0) invert(1);opacity:.85}
-.operator-vng img,.operator-paxini img{display:block;width:auto;max-width:none}
-/* The PNGs carry transparent padding; these margins crop to cap-top..baseline. */
-.operator-vng img{height:calc(var(--cap)*2.7586);margin:calc(var(--cap)*-.6983) calc(var(--cap)*-.1379) calc(var(--cap)*-1.069)}
-.operator-paxini img{height:calc(var(--cap)*2.9735);margin:calc(var(--cap)*-.8938) calc(var(--cap)*-.3805) calc(var(--cap)*-1.0796)}
-.operator-partner-cross{font:300 1.25rem/1 var(--discover-font);color:#ffffff5c}
 .discover-page .operator-intro h2{font-size:clamp(2.5rem,5.2vw,4.5rem);line-height:.96;letter-spacing:-.04em;font-weight:800;color:var(--op-on-field);margin:0 0 16px;text-wrap:balance}
 .operator-intro>p{font-size:clamp(1rem,1.15vw,1.125rem);line-height:1.55;color:var(--op-on-field-muted);max-width:56ch;margin:0;text-wrap:pretty}
 
@@ -244,7 +234,6 @@
 }
 @media(max-width:600px){
   .operator-hero{padding:40px 16px 48px}
-  .operator-partners{--cap:22px;gap:14px}
   .discover-page .operator-intro h2{font-size:clamp(2rem,9vw,3rem)}
   .operator-window{border-radius:12px}
   /* The toggle needs clearance from the window's rounded corner. At 10px of

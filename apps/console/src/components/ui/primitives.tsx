@@ -184,13 +184,8 @@ export function FlagRow({
 }
 
 /**
- * An empty state that teaches rather than apologises.
- *
- * Trúc carries these, on a hatched ground. The hatch is the point: an empty
- * table on this console can mean "nothing to do" or it can mean "the query is
- * wrong and somebody is not being paid", and white space reads as the second.
- * A drawn surface says the screen rendered and is empty on purpose. The panda
- * marks the queue reaching zero without a congratulation nobody asked for.
+ * An empty state that teaches. Truc, the explanation and any recovery action
+ * provide the hierarchy without an extra box inside the working surface.
  */
 export function EmptyState({
   title,
@@ -202,7 +197,7 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="hatch mx-auto flex max-w-[42ch] flex-col items-center rounded-[var(--radius-lg)] border border-[var(--border)] px-8 py-16 text-center">
+    <div className="mx-auto flex max-w-[42ch] flex-col items-center px-6 py-12 text-center">
       <Panda size={104} />
       <h2 className="mt-5 text-[1.3125rem] font-bold tracking-[-0.02em]">{title}</h2>
       <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted-foreground)]">{body}</p>

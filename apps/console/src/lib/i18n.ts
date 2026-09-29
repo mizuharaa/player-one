@@ -29,9 +29,9 @@ const STORAGE_KEY = 'playerone.locale';
 function initialLocale(): Locale {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored && (LOCALES as readonly string[]).includes(stored)) return stored as Locale;
-  // The public collector home is Vietnamese from its first render. Console
-  // routes retain browser-language selection; an explicit saved choice wins.
-  if (['/discover', '/privacy'].includes(window.location.pathname.replace(/\/$/, ''))) return 'vi';
+  // The owner requests English on the public story. Explicit saved choices
+  // still win; authenticated console routes retain browser-language selection.
+  if (['/discover', '/privacy'].includes(window.location.pathname.replace(/\/$/, ''))) return 'en';
 
   /**
    * A reviewer in Shenzhen should not have to find the switch on their first

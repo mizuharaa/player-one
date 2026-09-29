@@ -258,3 +258,39 @@
   .workspace-home-empty { flex-direction: column; align-items: flex-start; }
 }
 @media (prefers-reduced-motion: reduce) { .workspace-home .workspace-metric { animation: none; } .workspace-home .workspace-metric:hover, .workspace-home .workspace-work-row:hover { transform: none; } }
+
+/* 25 September reference refresh: lavender rail, white work surface, actionable sequence. */
+.workspace-sidebar {border-right:0;padding-inline:20px;}
+.workspace-shell .ops-shell-nav a,.workspace-navigation-dialog .ops-shell-nav a {min-height:48px;border-radius:var(--radius-lg);padding-inline:14px;}
+.workspace-shell .ops-shell-nav a[aria-current='page'],.workspace-navigation-dialog .ops-shell-nav a[aria-current='page'] {background:var(--lavender-200);color:var(--foreground);}
+.workspace-body {border-radius:28px 0 0 0;}
+.workspace-home .workspace-page-header {margin:0 0 36px;padding:36px;border:0;border-radius:var(--radius-lg);background:var(--surface);}
+.workspace-home .workspace-page-header::after {display:none;}
+.workspace-home-mascot {margin:0;order:2;filter:none;}
+.workspace-home .workspace-actions {order:3;}
+.workspace-home .workspace-page-header h1 {font-weight:600;}
+.workspace-workpath {padding-bottom:8px;margin-bottom:36px;}
+.workspace-workpath ol {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px;margin:8px 0 0;padding:24px 0;border-block:1px solid var(--border);list-style:none;}
+.workspace-workpath li {display:flex;gap:16px;min-width:0;}
+.workspace-workpath li>div {min-width:0;}
+.workspace-workpath-icon {display:grid;place-items:center;flex:none;width:48px;height:48px;border-radius:var(--radius-lg);background:var(--surface);color:var(--action);}
+.workspace-workpath-step {color:var(--muted-foreground);font-size:.6875rem;font-variant-numeric:tabular-nums;}
+.workspace-workpath h3 {font-size:1rem;font-weight:650;margin:4px 0 8px;line-height:1.4;}
+.workspace-workpath p {color:var(--muted-foreground);font-size:.8125rem;line-height:1.6;max-width:30ch;}
+.workspace-workpath a {display:inline-flex;gap:12px;align-items:center;min-height:44px;margin-top:12px;font-size:.8125rem;font-weight:600;text-decoration:underline;text-underline-offset:4px;}
+.workspace-home .workspace-metric {box-shadow:none;animation:none;border:0;background:var(--surface);padding:24px;border-radius:var(--radius-lg);}
+.workspace-home .workspace-metric:hover {transform:none;box-shadow:none;}
+.workspace-home .workspace-metric[data-tone='lime'] {background:var(--surface);color:var(--foreground);}
+.workspace-home .workspace-metric[data-tone='lime'] dt,.workspace-home .workspace-metric[data-tone='lime'] .workspace-metric-note {color:var(--muted-foreground);}
+.workspace-home .workspace-metric dd>.num {font-weight:600;letter-spacing:-.035em;}
+.workspace-home .workspace-work-rows {gap:0;border-top:1px solid var(--border);}
+.workspace-home .workspace-work-row {border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none;padding:24px 0;}
+.workspace-home .workspace-work-row:hover {transform:none;box-shadow:none;background:var(--surface);}
+.workspace-home .workspace-table-scroll {border:0;border-top:1px solid var(--border);border-radius:0;}
+.workspace-home .workspace-table th {background:var(--card);}
+.workspace-button {border-radius:var(--radius-pill);min-height:44px;}
+.workspace-home .workspace-button-primary {background:var(--foreground);color:var(--card);border-color:var(--foreground);}
+@media(max-width:1199px){.workspace-workpath ol{gap:20px}.workspace-workpath li{display:block}.workspace-workpath-icon{margin-bottom:12px}.workspace-home .workspace-page-header{margin:0 0 32px;padding:28px;}}
+@media(max-width:767px){.workspace-workpath ol{grid-template-columns:minmax(0,1fr);gap:24px}.workspace-workpath li{display:flex}.workspace-workpath-icon{margin:0}.workspace-workpath p{max-width:48ch}.workspace-workpath a{margin-top:4px}.workspace-home .workspace-page-header{padding:24px;gap:20px}.workspace-home .workspace-page-header .workspace-actions{flex-basis:100%}.workspace-home .workspace-metric{padding:20px}.workspace-body{border-radius:0}.workspace-home .workspace-work-row{padding:20px 0}.workspace-home-mascot{align-self:center;}}
+
+html:lang(vi) .workspace-shell,html:lang(zh) .workspace-shell,html:lang(zh-CN) .workspace-shell {--discover-font:"Hanken Grotesk Variable", "Be Vietnam Pro", "Noto Sans SC", "Microsoft YaHei", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;--font-sans:var(--discover-font);}

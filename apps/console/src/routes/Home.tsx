@@ -1,18 +1,12 @@
-/** THESIS: a working ledger with one stable reading edge.
- * OWN-WORLD: Archivo, lavender navigation, paper surfaces, ink actions.
- * STORY: see measured work, open the right queue, inspect recent decisions.
- * FIRST VIEWPORT: a lavender hero band with the heading and Truc, four toned
- * evidence tiles, two operational rows with icon tiles.
- * FORM: the owner's 2026-09-10 request — light visual effects, contrast, punched
- * type, illustration — on top of the pinned workspace direction.
- * Every number remains API evidence; no sample metrics or stock media. The only
- * illustration is the existing Truc mark. */
+/** A lavender navigation rail and white working ledger. The visible sequence
+ * opens intake, human review and settlement checks without changing their gates.
+ * All measures remain API evidence; Trúc accompanies welcome and help only. */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '../components/shell/AppShell.tsx';
 import { Problem, Skeleton, VerdictPill } from '../components/ui/primitives.tsx';
-import { IconArrow, IconBackOffice, IconReview, IconAlert } from '../components/icons.tsx';
+import { IconArrow, IconBackOffice, IconReview, IconAlert, IconEpisodes, IconSettle } from '../components/icons.tsx';
 import { Panda } from '../components/identity/Panda.tsx';
 import { api, backOffice, ApiError } from '../lib/api.ts';
 import { durationShort, money, pace, stampLocal } from '../lib/format.ts';
@@ -41,6 +35,15 @@ export function HomeScreen() {
           <Link to="/counter" className="workspace-button workspace-button-primary">{t('workspace.handover')}<IconArrow size={15} /></Link>
         </div>
       </header>
+
+      <section className="workspace-workpath" aria-labelledby="workpath-title">
+        <div className="workspace-section-heading"><div><h2 id="workpath-title">{t('workspace.workpathTitle')}</h2><p>{t('workspace.workpathNote')}</p></div></div>
+        <ol>
+          <li><span className="workspace-workpath-icon"><IconEpisodes size={24}/></span><div><span className="workspace-workpath-step">01</span><h3>{t('workspace.workpathIntake')}</h3><p>{t('workspace.workpathIntakeNote')}</p><Link to="/pipeline">{t('nav.pipeline')} <IconArrow size={16}/></Link></div></li>
+          <li><span className="workspace-workpath-icon"><IconReview size={24}/></span><div><span className="workspace-workpath-step">02</span><h3>{t('workspace.workpathReview')}</h3><p>{t('workspace.workpathReviewNote')}</p><Link to="/review">{t('workspace.reviewAction')} <IconArrow size={16}/></Link></div></li>
+          <li><span className="workspace-workpath-icon"><IconSettle size={24}/></span><div><span className="workspace-workpath-step">03</span><h3>{t('workspace.workpathSettle')}</h3><p>{t('workspace.workpathSettleNote')}</p><Link to="/settle" search={{period:defaultPeriod()}}>{t('workspace.settlement')} <IconArrow size={16}/></Link></div></li>
+        </ol>
+      </section>
 
       <section className="workspace-section" aria-labelledby="shift-title" data-guide="home.figures">
         <div className="workspace-section-heading"><div><h2 id="shift-title">{t('workspace.shift')}</h2><p>{t('workspace.shiftScope')}</p></div>

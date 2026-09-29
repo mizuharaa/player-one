@@ -6,7 +6,7 @@ export function useDiscoverKinetics(root:RefObject<HTMLElement|null>){
     const page=root.current;if(!page)return;
     const reduced=matchMedia('(prefers-reduced-motion: reduce)');
     const active=new Set<Animation>();const seen=new WeakSet<Element>();
-    const entries=[...page.querySelectorAll<HTMLElement>('[data-kinetic-entry],.discover-coverage-figure,.discover-collector-wall>figure,.discover-settings-gallery>figure')];
+    const entries=[...page.querySelectorAll<HTMLElement>('[data-kinetic-entry],[data-discover-heading],.discover-coverage-figure,.discover-collector-wall>figure,.discover-settings-gallery>figure')];
     const optics=[...page.querySelectorAll<HTMLElement>('[data-kinetic-pan]')];
     const perspective=page.querySelector<HTMLElement>('[data-perspective-scroll]');
     let frame=0;
@@ -23,7 +23,7 @@ export function useDiscoverKinetics(root:RefObject<HTMLElement|null>){
     const schedule=()=>{if(!frame)frame=requestAnimationFrame(pan);};
     const observer=new IntersectionObserver(list=>{for(const entry of list){if(!entry.isIntersecting||seen.has(entry.target))continue;seen.add(entry.target);observer.unobserve(entry.target);if(reduced.matches)continue;
       const node=entry.target as HTMLElement;const horizontal=node.dataset.kineticEntry==='side';
-      const animation=node.animate([{transform:`translate3d(${horizontal?24:0}px,${horizontal?0:20}px,0)`,opacity:.65},{transform:'translate3d(0,0,0)',opacity:1}],{duration:640,easing:'cubic-bezier(.16,1,.3,1)'});
+      const animation=node.animate([{transform:`translate3d(${horizontal?36:0}px,${horizontal?0:32}px,0)`,opacity:.35,clipPath:'inset(0 0 16% 0)'},{transform:'translate3d(0,0,0)',opacity:1,clipPath:'inset(0 0 0% 0)'}],{duration:780,easing:'cubic-bezier(.16,1,.3,1)'});
       active.add(animation);animation.onfinish=()=>active.delete(animation);
     }},{threshold:.08});
     entries.forEach(node=>observer.observe(node));

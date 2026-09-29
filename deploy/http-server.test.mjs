@@ -53,7 +53,17 @@ test('showcase routing, session transport and static media boundaries', async (t
     assert.equal(page.status, 200);
     assert.match(page.body, /PlayerOne SPA/);
     assert.equal(page.headers['cache-control'], 'no-store');
-    for (const path of ['/episodes/stuck', '/api/tasks', '/auth/login', '/media/video', '/reference/sync', '/handovers', '/upload-batches']) {
+    for (const path of ['/episodes/attention', '/episodes/attention/']) {
+      const attention = await fetchRaw(port, `${path}?scope=stuck`);
+      assert.equal(attention.status, 200);
+      assert.match(attention.headers['content-type'], /text\/html/);
+      assert.match(attention.body, /PlayerOne SPA/);
+      const head = await fetchRaw(port, path, { method: 'HEAD' });
+      assert.equal(head.status, 200);
+      assert.match(head.headers['content-type'], /text\/html/);
+      assert.equal(head.body, '');
+    }
+    for (const path of ['/episodes/stuck', ...['resolve', 'confirm', 'clear', 'park', 'unpark'].map((action) => `/episodes/example/${action}`), '/api/tasks', '/auth/login', '/media/video', '/reference/sync', '/handovers', '/upload-batches']) {
       const response = await fetchRaw(port, `${path}?page=2`);
       assert.equal(JSON.parse(response.body).url, `${path}?page=2`);
     }

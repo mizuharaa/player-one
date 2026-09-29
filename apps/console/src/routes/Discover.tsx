@@ -1,13 +1,12 @@
 /**
- * THESIS: everyday work becomes first-person material, then a human decision.
- * OWN-WORLD: warm paper, espresso Archivo, lavender interaction, real settings.
- * STORY: recognise the activity, try preparation, understand review and payment.
- * FIRST VIEWPORT: one slogan, then a rising full-width film with a lower title;
- * the action opens the working illustrative collector flow.
- * FORM: user-pinned Fixa takeover, Serus navigation, Flim image scale, Klarna close.
- * No generated image or demo state represents an actual enrolled collector.
+ * THESIS: everyday activity fills the screen before the interface explains it.
+ * OWN-WORLD: existing film, white copy, violet controls and orange/blue wordmark.
+ * STORY: enter the work, meet the collector perspective, try the real demo.
+ * FIRST VIEWPORT: edge-to-edge 100svh film; compact dock and lower-left actions.
+ * FORM: owner-approved A, 26 September; same film continues into a wide wordmark.
+ * Preserve the exact shuffle, product truth and visible illustrative disclosures.
  */
-import {Fragment,useEffect,useRef,useState,type ReactNode,type RefObject} from 'react';
+import {Fragment,useEffect,useRef,useState,type CSSProperties,type ReactNode,type RefObject} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Link} from '@tanstack/react-router';
 import {LocaleSwitch} from '../components/shell/LocaleSwitch.tsx';
@@ -23,9 +22,9 @@ import {DiscoverHelp} from '../components/discover/DiscoverHelp.tsx';
 import {DiscoverPrivacy} from '../components/discover/DiscoverPrivacy.tsx';
 import {DISCOVER_MEDIA,DiscoverVideo} from '../components/discover/DiscoverMedia.tsx';
 import {AssemblyLogo} from '../components/logo-animation/AssemblyLogo.tsx';
-import {HeroLetterShuffle} from '../components/logo-animation/HeroLetterShuffle.tsx';
 import {WhiteLogoIntro} from '../components/logo-animation/WhiteLogoIntro.tsx';
-import {useDiscoverAmbient,useDiscoverMotion} from '../lib/discover-motion.ts';
+import {useDiscoverAmbient} from '../lib/discover-motion.ts';
+import {Panda} from '../components/identity/Panda.tsx';
 import {useDiscoverIllustrationMotion} from '../lib/discover-illustration-motion.ts';
 import '../styles/discover.css';
 import '../styles/discover-warm.css';
@@ -35,6 +34,7 @@ import '../styles/discover-nav-motion.css';
 import '../styles/discover-walkthrough.css';
 import '../styles/discover-download.css';
 import '../styles/discover-faq-color.css';
+import '../styles/discover-editorial.css';
 import {useDiscoverKinetics} from '../lib/discover-kinetics.ts';
 
 const destinations=['demo','work','camera','review','questions'] as const;
@@ -44,29 +44,16 @@ export function DiscoverScreen(){
   const {t}=useTranslation();const c=(key:string)=>t(`discoverV2.${key}`);
   const root=useRef<HTMLDivElement>(null);
   const navLogo=useRef<SVGSVGElement>(null);
-  useDiscoverMotion(root);useDiscoverAmbient(root);useDiscoverKinetics(root);
+  useDiscoverAmbient(root);useDiscoverKinetics(root);
   const {paused,reduced,toggle}=useDiscoverIllustrationMotion(root);
   const motionControl=<button type="button" className="discover-illustration-toggle" aria-pressed={paused||reduced} disabled={reduced} onClick={toggle}>{c(reduced?'illustrationsReduced':paused?'resumeIllustrations':'pauseIllustrations')}<span aria-hidden="true">{paused||reduced?'▷':'Ⅱ'}</span></button>;
   return <div ref={root} className="discover-page" data-film-revealed="true" data-logo-complete="true" data-logo-played="false">
     <DiscoverNav logoRef={navLogo}/>
     <WhiteLogoIntro skipLabel={c('skip')}/>
     <main>
-      <section className="discover-opening" data-opening="" id="top">
-        <div className="discover-opening-stage">
-          <div className="discover-opening-slogan" data-opening-slogan=""><p>{c('slogan')}</p></div>
-          <div className="discover-opening-film" data-opening-film="">
-            <DiscoverVideo opening src={`${DISCOVER_MEDIA}opening.mp4`} poster={`${DISCOVER_MEDIA}opening-poster.webp`} label={c('filmLabel')}/>
-            <div className="discover-opening-copy discover-shell" data-opening-copy="">
-              <HeroLetterShuffle animate={false}/>
-              <p>{c('heroBody')}</p>
-              <div className="discover-actions"><a className="discover-button discover-button-light" href="#demo">{c('explore')} <span aria-hidden="true">↗</span></a><a className="discover-opening-skip" href="#introduction">{c('scroll')} <span aria-hidden="true">↓</span></a></div>
-            </div>
-            <p className="discover-film-label">{c('filmLabel')}</p>
-          </div>
-          <a className="discover-skip-story" href="#introduction">{c('skip')} ↓</a>
-          <p className="discover-mobile-scroll-cue"><span>{c('scroll')}</span><span aria-hidden="true">↓</span></p>
-        </div>
-      </section>
+      <CinematicOpening/>
+
+      <CollectorStory/>
 
       <OperatorDemo motionPaused={paused||reduced} reducedMotion={reduced}/>
 
@@ -82,7 +69,7 @@ export function DiscoverScreen(){
       </section>
 
       <SettingsStory/>
-      <section className="discover-camera-section discover-shell" id="camera"><div className="discover-centered-heading"><p className="discover-eyebrow">Ego · PaXini</p><h2 className="discover-heading" data-discover-heading=""><TitleInk>{c('cameraTitle')}</TitleInk></h2><p className="discover-lead">{c('cameraBody')}</p></div></section>
+      <section className="discover-camera-section discover-shell" id="camera"><div className="discover-centered-heading"><p className="discover-eyebrow">Ego</p><h2 className="discover-heading" data-discover-heading=""><TitleInk>{c('cameraTitle')}</TitleInk></h2><p className="discover-lead">{c('cameraBody')}</p></div><figure className="discover-ego-portrait" data-kinetic-entry="side"><img src={`${DISCOVER_MEDIA}work-portrait.webp`} alt={c('imagePortrait')} width={1000} height={1000} loading="lazy" decoding="async"/><figcaption>{c('imageLabel')}</figcaption></figure></section>
       <ReviewStory/>
 
       <section className="discover-coverage" id="payment">
@@ -106,11 +93,46 @@ export function DiscoverScreen(){
       <DownloadApp/>
     </main>
     <footer className="discover-footer">
-      <div className="discover-footer-top discover-shell"><div className="discover-footer-identity"><a href="#top" className="discover-brand" aria-label="PlayerOne"><AssemblyLogo className="discover-assembly-logo" surface="dark" title="PlayerOne"/></a><p>{c('partners')}</p></div><nav aria-label={c('footerExplore')}><h3>{c('footerExplore')}</h3>{destinations.map(destination=><a href={`#${destination}`} key={destination}>{c(destination)}</a>)}</nav><nav aria-label={c('footerStart')}><h3>{c('footerStart')}</h3><a href="#demo">{c('explore')}</a><Link to="/login">{c('console')}</Link><Link to="/privacy">{c('footerPrivacy')}</Link></nav></div>
+      <div className="discover-footer-top discover-shell"><div className="discover-footer-identity"><a href="#top" className="discover-brand" aria-label="PlayerOne"><AssemblyLogo className="discover-assembly-logo" surface="dark" title="PlayerOne"/></a><p>{c('introBody')}</p></div><nav aria-label={c('footerExplore')}><h3>{c('footerExplore')}</h3>{destinations.map(destination=><a href={`#${destination}`} key={destination}>{c(destination)}</a>)}</nav><nav aria-label={c('footerStart')}><h3>{c('footerStart')}</h3><a href="#demo">{c('explore')}</a><Link to="/login">{c('console')}</Link><Link to="/privacy">{c('footerPrivacy')}</Link></nav></div>
       <div className="discover-wordmark discover-shell" aria-hidden="true"><AssemblyLogo monochrome/></div>
       <div className="discover-footer-bottom discover-shell"><p>{c('footerNote')}</p><DiscoverPrivacy/><Link to="/login">{c('console')} ↗</Link></div>
     </footer>
   </div>;
+}
+
+/** One film spans both the opening and its scroll-led wordmark; no duplicate media. */
+export function CinematicOpening(){
+  const {t}=useTranslation();const c=(key:string)=>t(`discoverV2.${key}`);
+  const root=useRef<HTMLElement>(null);const {pinned,step}=useScrollScene(root);
+  return <section ref={root} className="discover-opening discover-cinema" id="top" data-copy-hidden={pinned&&step>0} aria-labelledby="discover-cinema-title">
+    <div className="discover-cinema-stage">
+      <DiscoverVideo opening src={`${DISCOVER_MEDIA}opening.mp4`} poster={`${DISCOVER_MEDIA}opening-poster.webp`} label={c('filmLabel')}/>
+      <div className="discover-cinema-transition" aria-hidden="true"><p>{c('introTitle')}</p><div className="discover-cinema-wordmark"><span>Player</span><span>One</span></div></div>
+      <p className="discover-film-label">{c('filmLabel')}</p>
+    </div>
+    <div className="discover-cinema-copy">
+      <h1 id="discover-cinema-title"><span>{c('heroA')}</span><span>{c('heroB')}</span></h1>
+      <p>{c('heroBody')}</p>
+      <div className="discover-actions"><a className="discover-button discover-button-light" href="#demo">{c('explore')} <span aria-hidden="true">↗</span></a><Link className="discover-cinema-console" to="/login">{c('forOperators')}</Link></div>
+    </div>
+    <a className="discover-cinema-scroll" href="#story">{c('scroll')} <span aria-hidden="true">↓</span></a>
+  </section>;
+}
+
+/** A native sticky chapter: natural page scrolling, with a complete static fallback. */
+export function CollectorStory(){
+  const {t,i18n}=useTranslation();const c=(key:string)=>t(`discoverV2.${key}`);
+  const root=useRef<HTMLElement>(null);useScrollScene(root);
+  const body=c('workBody');
+  const words=i18n.language.startsWith('zh')?Array.from(body):body.match(/\S+\s*/g)??[];
+  const photos=['work-portrait.webp','pov-landscape.webp','work-detail.webp','work-wide.webp'];
+  return <section ref={root} id="story" className="discover-constellation" aria-labelledby="collector-story-title">
+    <div className="discover-constellation-stage">
+      <div className="discover-constellation-photos" aria-hidden="true">{photos.map((file,index)=><img key={file} className={`discover-story-photo discover-story-photo-${index}`} src={`${DISCOVER_MEDIA}${file}`} alt="" loading="lazy" decoding="async"/>)}</div>
+      <div className="discover-constellation-copy"><h2 id="collector-story-title" className="discover-heading" data-discover-heading="">{c('introTitle')}</h2><p className="discover-story-reveal"><span className="sr-only">{body}</span><span aria-hidden="true">{words.map((word,index)=><span key={index} className="discover-story-word" style={{'--word-progress':index/Math.max(1,words.length)} as CSSProperties}>{word}</span>)}</span></p><a className="discover-collector-guide" href="#questions"><Panda size={100} state="dayShift"/><span><strong>{c('humanTitle')}</strong><span>{c('trucTitle')} ↗</span></span></a></div>
+      <p className="discover-constellation-caption">{c('imageLabel')}</p>
+    </div>
+  </section>;
 }
 
 /** Real inline word boxes, not a block hitbox. Native pointer and accessible text remain. */
@@ -130,16 +152,17 @@ function DiscoverNav({logoRef}:{logoRef:RefObject<SVGSVGElement|null>}){
   return <header ref={navRoot} className="discover-nav-wrap" data-discover-nav="" data-solid={solid} data-collapsed={collapsed}>
     <nav className="discover-nav" aria-label={c('navigation')}><a href="#top" className="discover-brand" aria-label="PlayerOne"><AssemblyLogo ref={logoRef} className="discover-assembly-logo" surface="dark" aria-hidden="true"/></a>
       <div className="discover-nav-expanded" id="discover-nav-expanded" inert={collapsed} aria-hidden={collapsed}>
-        <div className="discover-nav-destinations">{destinations.slice(0,4).map(destination=><a key={destination} href={`#${destination}`}>{c(destination)}</a>)}</div>
-        <div className="discover-nav-tools"><LocaleSwitch/><Link className="discover-nav-login" to="/login">{c('console')} ↗</Link></div>
+        <div className="discover-nav-destinations">{destinations.slice(0,2).map(destination=><a key={destination} href={`#${destination}`}>{c(destination)}</a>)}</div>
+        <div className="discover-nav-tools"><Link className="discover-nav-login" to="/login">{c('forOperators')} ↗</Link></div>
         <button ref={button} className="discover-menu-button" onClick={()=>setOpen(true)} aria-label={c('menu')} aria-expanded={open} aria-controls="discover-menu"><span/><span/></button>
       </div>
       <button className="discover-nav-reveal" type="button" onClick={expand} tabIndex={collapsed?0:-1} aria-hidden={!collapsed} aria-label={c('menu')} aria-expanded={!collapsed} aria-controls="discover-nav-expanded"><span/><span/></button>
     </nav>
     <dialog id="discover-menu" className="discover-menu" ref={dialog} onCancel={()=>setOpen(false)} onClose={()=>setOpen(false)} onClick={event=>{if(event.target===dialog.current)close();}} aria-label={c('navigation')}>
       <div className="discover-menu-panel"><div className="discover-menu-top"><span className="discover-brand"><AssemblyLogo className="discover-assembly-logo" title="PlayerOne"/></span><button onClick={close} aria-label={c('close')}>×</button></div>
-        <div className="discover-menu-links">{destinations.map(destination=><a key={destination} href={`#${destination}`} onClick={close}>{c(destination)} <span aria-hidden="true">↗</span></a>)}</div>
-        <LocaleSwitch/><Link to="/login" className="discover-button" onClick={close}>{c('console')} ↗</Link>
+        <div className="discover-menu-body"><div className="discover-menu-links">{destinations.map(destination=><a key={destination} href={`#${destination}`} onClick={close}>{c(destination)} <span aria-hidden="true">↗</span></a>)}</div>
+        <a className="discover-menu-story" href="#story" onClick={close}><img src={`${DISCOVER_MEDIA}work-wide.webp`} alt=""/><span>{c('introTitle')} <b aria-hidden="true">↗</b></span><small>{c('aiLabel')}</small></a></div>
+        <div className="discover-menu-bottom"><LocaleSwitch/><Link to="/login" className="discover-button" onClick={close}>{c('console')} ↗</Link></div>
       </div>
     </dialog>
   </header>;
@@ -168,6 +191,5 @@ function SettingsStory(){
   return <section className="discover-settings discover-shell">
     <div className="discover-centered-heading"><h2 className="discover-heading" data-discover-heading=""><TitleInk>{c('settingsTitle')}</TitleInk></h2><p className="discover-lead">{c('settingsBody')}</p><p className="discover-settings-disclosure">{c('stockLabel')}</p></div>
     <div className="discover-settings-gallery">{settings.map(item=><figure key={item.file}><img src={`/discover-media/${item.file}`} alt={c(item.label)} loading="lazy" decoding="async"/><figcaption><strong>{c(item.label)}</strong><a href={item.href} target="_blank" rel="noreferrer">{item.author} ↗</a></figcaption></figure>)}</div>
-    <details className="discover-stories-placeholder"><summary>{c('storiesSoon')}<span aria-hidden="true">+</span></summary><p>{c('storiesBody')}</p></details>
   </section>;
 }

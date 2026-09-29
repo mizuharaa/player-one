@@ -126,7 +126,7 @@ export const holdKey = (r: Pick<StuckEpisode, 'park' | 'held'>): string =>
  * column is what keeps them apart, and `defects` is why the unusable case says
  * something an operator can repeat rather than just "quarantined".
  */
-export type AttentionRow = BatchExceptions['blocking'][number] & {
+export type AttentionRow = Omit<BatchExceptions['blocking'][number], 'needs'> & {
   needs: 'assignment' | 'confirmation' | 'unusable';
   defects?: string[];
 };
@@ -138,7 +138,7 @@ export type AttentionRow = BatchExceptions['blocking'][number] & {
  * the screen used to read one, so what has to stay true is that an unusable
  * episode becomes a row with its own `needs` and its own defect codes.
  */
-export const attentionRows = (data: BatchExceptions | undefined): AttentionRow[] => [
+export const attentionRows = (data: BatchExceptions | null | undefined): AttentionRow[] => [
   ...(data?.blocking ?? []),
   ...(data?.unusable ?? []).map((u) => ({
     episode_id: u.episode_id,
@@ -370,37 +370,11 @@ function Tally({ label, value }: { label: string; value: number | string }) {
   );
 }
 
-/**
- * The empty state.
- *
- * Both scopes reach this on a clean centre, and on this console that has to be
- * distinguishable from a query that returned nothing because it was wrong: an
- * empty attention list means somebody IS being paid, an empty broken one means
- * somebody is not. So it is a drawn ground rather than a blank one, and the
- * sentence names the scope.
- *
- * No mascot in here, deliberately. Both scopes are empty on a clean centre and
- * both reach this state at once, so drawing Trúc inside it puts him on the
- * screen three times — twice here and once in the header — and a character
- * repeated down a page stops being a character. He stays in the header, where
- * he is on the screen whether the tables are empty or full.
- */
+/** Scope-specific empty copy; keep the card ground for muted-text contrast. */
 function NoRows() {
   const { t } = useTranslation();
   return (
-    /*
-     * The sentence sits on a card ground, not on the page ground.
-     *
-     * The hatch is drawn from `--border`, and on the dark scheme a hairline
-     * pattern over `--background` left the sentence reading against a field
-     * that is nearly the same value as the type: the detector measured 3.9:1
-     * here, under the 4.5:1 body floor. Adding `--card` under it puts
-     * `--muted-foreground` on the surface that token was measured against and
-     * takes the pair to 6.70:1 in dark and 5.94:1 in light, with the hatch
-     * still drawn on top so an empty scope still reads as a surface somebody
-     * meant rather than as a render that failed.
-     */
-    <div className="hatch flex flex-col items-center rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] px-6 py-11 text-center">
+    <div className="bg-[var(--card)] py-6">
       <p className="max-w-[72ch] text-[0.9375rem] text-[var(--muted-foreground)]">
         {t('episodes.attention.empty')}
       </p>
