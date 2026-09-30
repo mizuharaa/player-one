@@ -13,7 +13,6 @@ import { Icon } from '../ui/Icon.tsx';
 import { taskImage, taskImageLabel } from '../ui/taskImage.ts';
 import { taskDuration } from '../duration.ts';
 import { Failure } from '../ui/StatePanel.tsx';
-import { useToast } from '../ui/Toast.tsx';
 import { Sheet } from '../ui/Sheet.tsx';
 import { dong } from '../money.ts';
 import type { MessageKey } from '../i18n.ts';
@@ -29,7 +28,7 @@ const claimErrorKey = (error: unknown): MessageKey =>
 
 /** The photograph remains the context from browse through explicit claim confirmation. */
 export function TaskDetail() {
-  const api = useApi(), toast = useToast(), nav = useNav(), tt = useT(), theme = useTheme();
+  const api = useApi(), nav = useNav(), tt = useT(), theme = useTheme();
   const insets = useInsets(), c = theme.collector, reduced = useReducedMotion();
   const { taskId } = useRoute('taskDetail');
   const queryClient = useQueryClient();
@@ -52,7 +51,7 @@ export function TaskDetail() {
     onError: () => { if (mounted.current) { setConfirming(false); content.current?.scrollTo({ y: 0, animated: !reduced }); } },
     onSuccess: async () => {
       await queryClient.invalidateQueries();
-      if (mounted.current) { setConfirming(false); toast(tt('detail.claimed')); nav.push({ name: 'sessionReminder' }); }
+      if (mounted.current) { setConfirming(false); nav.push({ name: 'sessionReminder', claimedTaskId: taskId }); }
     },
   });
   const submit = () => { if (submitting.current) return; submitting.current = true; claim.mutate(); };
@@ -77,7 +76,7 @@ export function TaskDetail() {
   const image = taskImage(data) as unknown as ImageSource;
   const bodyStyle = { ...c.type.body, fontFamily: face(theme), color: polish.darkMuted };
   const headingStyle = { ...c.type.h2, fontFamily: face(theme), color: c.surface };
-  const sectionStyle = { backgroundColor: polish.darkGlass, borderRadius: 18, padding: 16, gap: 12 };
+  const sectionStyle = { borderTopWidth: 1, borderColor: polish.darkEdge, paddingVertical: 12, gap: 12 };
   const rows: [MessageKey, string][] = [
     ['hall.perMinute', dong(data.unitPriceVndPerMinute)],
     ['detail.target', taskDuration(data.targetMinutes, tt)],

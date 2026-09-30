@@ -1,3 +1,4 @@
+import { Panda } from '../identity/Panda.tsx';
 import { Failure } from '../ui/StatePanel.tsx';
 import { useRef, useState } from 'react';
 import { Modal, Pressable, Text, View, useWindowDimensions } from 'react-native';
@@ -9,9 +10,7 @@ import { polish, useTheme } from '../theme.tsx';
 import { Icon, FeatureIcon } from '../ui/Icon.tsx';
 import { Image, type ImageSource } from 'expo-image';
 import { HeaderGradient } from '../ui/HeaderGradient.tsx';
-import { CollectorMasthead } from '../ui/CollectorMasthead.tsx';
 import { taskImage, taskImageLabel } from '../ui/taskImage.ts';
-import { EarningsArtwork } from '../ui/illustrations/CollectorArtwork.tsx';
 import { Sheet } from '../ui/Sheet.tsx';
 import { useGuideTarget } from '../guide/Guide.tsx';
 import { Body, face, Chip, Hatch, NavRow, ListScreen, Loading, Note, Row, Screen, Tag, Timeline } from '../ui.tsx';
@@ -148,21 +147,16 @@ export function Income() {
     <ListScreen ambientHeader title={tt('income.title')} data={income.data ?? []} keyOf={entry => entry.episodeId}
       refresh={{ refreshing: income.isFetching || cycle.isFetching || payout.isFetching, onRefresh: () => { for (const q of [...queries, episodes, sessions, tasks]) void q.refetch(); } }}
       masthead={<HeaderGradient>
-        <CollectorMasthead />
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <View style={{ flex: 1, gap: 7 }}>
-            <Text style={{ ...c.type.body, fontFamily: face(theme), color: c.ink }}>{tt('income.title')}</Text>
-            <Text accessibilityRole="header" style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme), fontWeight: '700', letterSpacing: -.6 }}>{tt(awaitingReview ? 'income.awaitingTitle' : 'income.overview')}</Text>
-          </View>
-          <EarningsArtwork size={118} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}><Text accessibilityRole="header" style={{ ...c.type.h1, fontFamily: face(theme), color: c.ink, flex: 1 }}>{tt('income.title')}</Text><Panda size={64} pose="review" /></View>
+        <View style={{ gap: 8, paddingTop: 18, paddingBottom: 20 }}>
+          <Text style={{ ...c.type.body, fontFamily: face(theme), color: c.muted }}>{tt('income.confirmedEarnings')}</Text>
+          {cycle.isPending ? <Loading kind="number" /> : <Text testID="income-headline-amount" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ ...c.type.money, fontFamily: face(theme), color: c.plum, fontVariant: ['tabular-nums'] }}>{cycleData ? dong(cycleData.confirmedVnd) : NOTHING}</Text>}
+          <Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted }}>{tt(cycleData ? 'income.reviewedCaption' : 'income.notAvailable')}</Text>
+          {cycleData ? <Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted }}>{cycleData.label}</Text> : null}
         </View>
-        <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{tt(awaitingReview ? 'income.awaitingBody' : 'income.overviewBody')}</Text>
-        <View style={{ flexDirection: stackFigures ? 'column' : 'row', gap: stackFigures ? 16 : 0, paddingTop: 12, paddingBottom: 8 }}>
-          {(['income.estimated', 'income.confirmed'] as const).map((label, index) => <View key={label} style={{ flex: 1, gap: 10, paddingLeft: index && !stackFigures ? 16 : 0, paddingRight: index || stackFigures ? 0 : 16, borderLeftWidth: index && !stackFigures ? 1 : 0, borderColor: c.line }}>
-            <Text style={{ ...c.type.caption, color: c.ink, fontFamily: face(theme) }}>{tt(label)}</Text>
-            {cycle.isPending ? <Loading kind="number" /> : <Text testID="income-headline-amount" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ ...c.type.h1, fontFamily: face(theme), fontWeight: '700', color: c.ink, fontVariant: ['tabular-nums'] }}>{cycleData ? dong(index ? cycleData.confirmedVnd : cycleData.estimatedVnd) : NOTHING}</Text>}
-            <Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted }}>{cycleData ? index ? tt('income.reviewedCaption') : cycleData.label : tt('income.notAvailable')}</Text>
-          </View>)}
+        <View style={{ flexDirection: stackFigures ? 'column' : 'row', justifyContent: 'space-between', gap: 8, paddingVertical: 20, borderTopWidth: 1, borderBottomWidth: 1, borderColor: c.line }}>
+          <View style={{ flex: 1, gap: 5 }}><Text style={{ ...c.type.body, fontWeight: '600', color: c.ink, fontFamily: face(theme) }}>{tt(awaitingReview ? 'income.awaitingTitle' : 'income.estimated')}</Text><Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{tt('income.estimated')}</Text></View>
+          {cycle.isPending ? <Loading kind="number" /> : <Text testID="income-headline-amount" style={{ ...c.type.h2, fontFamily: face(theme), color: c.ink, fontVariant: ['tabular-nums'] }}>{cycleData ? dong(cycleData.estimatedVnd) : NOTHING}</Text>}
         </View>
         {cycleData?.simulation ? <Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted }}>{tt('payout.simulation')}</Text> : null}
       </HeaderGradient>}
@@ -186,18 +180,20 @@ export function Income() {
         // Only an explicit API relationship may attach a task's title/photo to money.
         const episode = episodes.data?.find(row => row.episodeId === entry.episodeId);
         const session = sessions.data?.find(row => row.id === episode?.sessionId);
-        const task = tasks.data?.find(row => row.id === session?.taskId);
-        return <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(entry.episodeId)}. ${tt(incomeStatus(entry))}${entry.simulation ? `. ${tt('payout.simulation')}` : ''}`}
+        const task = tasks.data?.find(row => row.id === (episode?.taskId ?? session?.taskId));
+        const title = entry.taskTitle ?? episode?.taskTitle ?? task?.title ?? shortId(entry.episodeId);
+        return <Pressable accessibilityRole="button" accessibilityLabel={`${title}. ${tt(incomeStatus(entry))}${entry.simulation ? `. ${tt('payout.simulation')}` : ''}`}
           onPress={() => { setSelectedId(entry.episodeId); setDetails(false); }}
           style={({ pressed }) => ({ paddingVertical: 12, gap: 6, borderBottomWidth: 1, borderBottomColor: c.line, opacity: pressed ? .65 : 1 })}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            {task ? <Image source={taskImage(task) as unknown as ImageSource} contentFit="cover" accessible={false} style={{ width: 60, height: 64, borderRadius: 14 }} /> : <View style={{ width: 42, height: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: polish.selection, borderRadius: 12 }}><Icon name={entry.kind === 'confirmed' ? 'file' : 'clock'} color={c.ink} size={22} /></View>}
+            {task ? <Image source={taskImage(task) as unknown as ImageSource} contentFit="cover" accessible={false} style={{ width: 56, height: 64, borderRadius: 14 }} /> : <View style={{ width: 28, height: 48, alignItems: 'center', justifyContent: 'center' }}><Icon name={entry.kind === 'confirmed' ? 'file' : 'clock'} color={c.ink} size={24} /></View>}
             <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-              <Text style={{ ...c.type.body, fontFamily: face(theme), color: c.ink, fontWeight: '700' }}>{task?.title ?? shortId(entry.episodeId)}</Text>
+              <Text style={{ ...c.type.body, fontFamily: face(theme), color: c.ink, fontWeight: '600' }}>{title}</Text>
               <Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted }}>{entry.settlementState ? settlementLabel(tt, entry.settlementState) : tt(incomeStatus(entry))}</Text>
               {task ? <Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted }}>{tt(taskImageLabel(task))}</Text> : null}
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}><Text style={{ ...c.type.caption, fontFamily: face(theme), color: isLivePaid(entry) ? c.greenInk : c.muted, fontVariant: ['tabular-nums'] }}>{entry.amountVnd === null ? NOTHING : dong(entry.amountVnd)}</Text><Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted }}>· {tt(incomeStatus(entry))}</Text></View>
+              {stackFigures ? <><Text style={{ ...c.type.body, fontFamily: face(theme), color: isLivePaid(entry) ? c.greenInk : c.muted, fontVariant: ['tabular-nums'] }}>{entry.amountVnd === null ? NOTHING : dong(entry.amountVnd)}</Text><Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{tt(incomeStatus(entry))}</Text></> : null}
             </View>
+            {!stackFigures ? <View style={{ maxWidth: '34%', alignItems: 'flex-end', gap: 4 }}><Text style={{ ...c.type.caption, fontWeight: '600', fontFamily: face(theme), color: isLivePaid(entry) ? c.greenInk : c.muted, fontVariant: ['tabular-nums'] }}>{entry.amountVnd === null ? NOTHING : dong(entry.amountVnd)}</Text><Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme), textAlign: 'right' }}>{tt(incomeStatus(entry))}</Text></View> : null}
             <Icon name="chevronRight" size={19} color={c.ink} />
           </View>
           {entry.simulation ? <Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted, marginLeft: task ? 72 : 54 }}>{tt('payout.simulationLabel')}</Text> : null}

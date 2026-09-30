@@ -12,7 +12,6 @@ import { useSignOut } from '../session.tsx';
 import { polish, useTheme } from '../theme.tsx';
 import { Body, Button, Field, Loading, NavRow, Note, face, useInsets, useTabBarReserve } from '../ui.tsx';
 import { HeaderGradient } from '../ui/HeaderGradient.tsx';
-import { CollectorPassArtwork } from '../ui/illustrations/CollectorArtwork.tsx';
 import { AvatarMark } from '../ui/illustrations/index.tsx';
 import { Icon, FeatureIcon, type IconName } from '../ui/Icon.tsx';
 // The sheet shell and the preferences sheet live with Explore, which has three
@@ -81,7 +80,7 @@ export function Profile() {
       >
         {tt(title)}
       </Text>
-      <View style={{ backgroundColor: c.surface, borderRadius: 28, paddingHorizontal: 18 }}>
+      <View>
         {rows.map((row, index) => (
           <View key={row.key}>
             <NavRow
@@ -108,9 +107,8 @@ export function Profile() {
         <HeaderGradient>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 8 }}>
             <Text accessibilityRole="header" style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme), flex: 1 }}>{tt('profile.title')}</Text>
-            <CollectorPassArtwork size={80} />
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 20 }}>
             <AvatarMark size={56} />
             <View style={{ flex: 1, gap: 4 }}>
               <Text accessibilityRole="header" style={{ ...c.type.h2, color: c.ink, fontFamily: face(theme) }}>{name === '' ? tt('profile.title') : name}</Text>

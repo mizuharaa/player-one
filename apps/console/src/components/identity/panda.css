@@ -1,0 +1,8 @@
+.panda-stage { display: inline-block; flex-shrink: 0; border: 0; padding: 0; background: transparent; }
+button.panda-stage { cursor: pointer; border-radius: 24px; }
+button.panda-stage:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+button.panda-stage img { transition: transform 280ms cubic-bezier(.2,.8,.2,1); }
+button.panda-stage:hover img { transform: translateY(-3px) rotate(-3deg); }
+button.panda-stage:active img { transform: scale(.94); }
+.panda-stage[data-paused="true"] img { transform: none; transition: none; }
+@media (prefers-reduced-motion: reduce) { .panda-stage img { transform: none !important; transition: none; } }

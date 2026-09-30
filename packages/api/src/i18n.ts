@@ -143,11 +143,11 @@ const en = {
   'login.fieldIdentifier': 'Identifier',
   'login.fieldReference': 'Reference',
   'login.fieldSecret': 'Secret',
-  /* Trúc's launcher and the placeholder behind it. No model is wired up. */
-  'login.trucOpen': 'Ask Trúc',
-  'login.trucTitle': 'Trúc',
+  /* PlayerOne's launcher and the placeholder behind it. No model is wired up. */
+  'login.trucOpen': 'Ask PlayerOne',
+  'login.trucTitle': 'PlayerOne',
   'login.trucBody':
-    'Trúc cannot answer yet. When he can, this is where you will ask him what a verdict means, why a card was refused, or where a payment went.',
+    'PlayerOne cannot answer yet. When he can, this is where you will ask him what a verdict means, why a card was refused, or where a payment went.',
   'login.trucSoon': 'Not connected yet',
   'login.trucClose': 'Close',
   'login.groupOperator': 'Operator',
@@ -1600,7 +1600,7 @@ const en = {
     'Not connected. This screen cannot say what needs attention.',
 
   /*
-   * Trúc's own strings, and the rule they exist under: a greeting is authored,
+   * PlayerOne's own strings, and the rule they exist under: a greeting is authored,
    * an operational statement is evidence. `truc.greet` is the authored half.
    * `truc.offline` is what he says instead of a figure when the request
    * failed, and `truc.source` is where the one figure he does report came
@@ -1608,12 +1608,12 @@ const en = {
    */
   'ui.a.home.insights': 'Optional insights',
   'ui.a.home.truc.lede':
-    'Trúc is an extra channel. Everything he says is written on this page as well, so nothing depends on him.',
+    'PlayerOne is an extra channel. Everything he says is written on this page as well, so nothing depends on him.',
   'ui.a.home.truc.greet': 'Hello. {{shift}}.',
   'ui.a.home.truc.offline': 'Not connected. I have nothing measured to tell you.',
   'ui.a.home.truc.source': 'Source: your shift figures.',
-  'ui.a.home.truc.pause': 'Pause Trúc',
-  'ui.a.home.truc.resume': 'Resume Trúc',
+  'ui.a.home.truc.pause': 'Pause PlayerOne',
+  'ui.a.home.truc.resume': 'Resume PlayerOne',
 
   /*
    * The preview: numerical demonstrations, entered by hand and labelled at
@@ -1939,9 +1939,9 @@ const zh: Record<MessageKey, string> = {
   'login.fieldIdentifier': '标识',
   'login.fieldReference': '编号',
   'login.fieldSecret': '密钥',
-  'login.trucOpen': '询问小竹',
-  'login.trucTitle': '小竹',
-  'login.trucBody': '小竹暂时还不能回答。接通后，你可以在这里询问某个判定的含义、存储卡为何被拒，或某笔付款去了哪里。',
+  'login.trucOpen': '询问PlayerOne',
+  'login.trucTitle': 'PlayerOne',
+  'login.trucBody': 'PlayerOne暂时还不能回答。接通后，你可以在这里询问某个判定的含义、存储卡为何被拒，或某笔付款去了哪里。',
   'login.trucSoon': '尚未接通',
   'login.trucClose': '关闭',
   'login.groupOperator': '操作员',
@@ -2984,12 +2984,12 @@ const zh: Record<MessageKey, string> = {
 
   'ui.a.home.insights': '可选洞察',
   'ui.a.home.truc.lede':
-    'Trúc 只是一个额外渠道。他说的每一句，本页面都另有写明，任何事都不依赖他。',
+    'PlayerOne 只是一个额外渠道。他说的每一句，本页面都另有写明，任何事都不依赖他。',
   'ui.a.home.truc.greet': '你好。{{shift}}。',
   'ui.a.home.truc.offline': '未连接。我没有可以告诉你的实测数据。',
   'ui.a.home.truc.source': '来源：你的本班次数据。',
-  'ui.a.home.truc.pause': '暂停 Trúc',
-  'ui.a.home.truc.resume': '恢复 Trúc',
+  'ui.a.home.truc.pause': '暂停 PlayerOne',
+  'ui.a.home.truc.resume': '恢复 PlayerOne',
 
   'ui.a.home.preview.show': '显示示例洞察',
   'ui.a.home.preview.hide': '隐藏示例洞察',
@@ -3274,10 +3274,10 @@ const vi: Record<MessageKey, string> = {
   'login.fieldIdentifier': 'Mã',
   'login.fieldReference': 'Mã số',
   'login.fieldSecret': 'Khóa',
-  'login.trucOpen': 'Hỏi Trúc',
-  'login.trucTitle': 'Trúc',
+  'login.trucOpen': 'Hỏi PlayerOne',
+  'login.trucTitle': 'PlayerOne',
   'login.trucBody':
-    'Trúc chưa được kết nối nên chưa thể trả lời câu hỏi về kết quả duyệt, thẻ bị từ chối hoặc tình trạng thanh toán.',
+    'PlayerOne chưa được kết nối nên chưa thể trả lời câu hỏi về kết quả duyệt, thẻ bị từ chối hoặc tình trạng thanh toán.',
   'login.trucSoon': 'Chưa kết nối',
   'login.trucClose': 'Đóng',
   'login.groupOperator': 'Nhân viên',
@@ -3767,7 +3767,7 @@ const vi: Record<MessageKey, string> = {
   'guide.next': 'Tiếp',
   'guide.done': 'Xong',
   'guide.close': 'Đóng hướng dẫn',
-  'guide.panda': 'Trúc đang chỉ vào mục được hướng dẫn',
+  'guide.panda': 'PlayerOne đang chỉ vào mục được hướng dẫn',
   'guide.offscreen': 'Mục này hiện không có trên màn hình. Hãy sang bước tiếp theo.',
   'guide.offer':
     'Lần đầu sử dụng? Xem hướng dẫn nhanh để biết cách dùng từng phần trên màn hình.',
@@ -4461,12 +4461,12 @@ const vi: Record<MessageKey, string> = {
 
   'ui.a.home.insights': 'Thông tin thêm (tuỳ chọn)',
   'ui.a.home.truc.lede':
-    'Trúc tóm tắt thông tin đã có trên trang. Bạn vẫn xem được đầy đủ thông tin khi không dùng Trúc.',
+    'PlayerOne tóm tắt thông tin đã có trên trang. Bạn vẫn xem được đầy đủ thông tin khi không dùng PlayerOne.',
   'ui.a.home.truc.greet': 'Xin chào. {{shift}}.',
   'ui.a.home.truc.offline': 'Chưa kết nối nên chưa có số liệu để hiển thị.',
   'ui.a.home.truc.source': 'Nguồn: số liệu ca làm việc của bạn.',
-  'ui.a.home.truc.pause': 'Tạm dừng Trúc',
-  'ui.a.home.truc.resume': 'Chạy lại Trúc',
+  'ui.a.home.truc.pause': 'Tạm dừng PlayerOne',
+  'ui.a.home.truc.resume': 'Chạy lại PlayerOne',
 
   'ui.a.home.preview.show': 'Hiện ví dụ minh hoạ',
   'ui.a.home.preview.hide': 'Ẩn ví dụ minh hoạ',

@@ -22,7 +22,7 @@ export type Route =
   | { name: 'myTasks' }
   | { name: 'devices' }
   | { name: 'provisioning' }
-  | { name: 'sessionReminder' }
+  | { name: 'sessionReminder'; claimedTaskId?: string }
   | { name: 'sessionCreate' }
   | { name: 'uploads'; openDelivery?: boolean }
   | { name: 'income' }

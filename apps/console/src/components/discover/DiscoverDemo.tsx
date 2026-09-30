@@ -2,6 +2,9 @@ import {useEffect,useRef,useState,type ReactNode,type CSSProperties} from 'react
 import {ScanMotif} from './ScanMotif.tsx';
 import {useTranslation} from 'react-i18next';
 import {AssemblyLogo} from '../logo-animation/AssemblyLogo.tsx';
+import {Panda} from '../identity/Panda.tsx';
+import {IconBell as Bell,IconHome as House,IconSearch as Search,IconEpisodes as Video,IconCard as Wallet,IconPerson as UserRound} from '../icons.tsx';
+import './discover-demo-refined.css';
 
 const tasks=[{key:'taskKitchen',scenario:'home',image:'20260909/pov-landscape.webp',generated:true},{key:'taskDesk',scenario:'office',image:'setting-workspace.webp',generated:false},{key:'taskShelf',scenario:'shop',image:'setting-warehouse.webp',generated:false}] as const;
 type Step='browse'|'details'|'prepare'|'ready';
@@ -12,7 +15,8 @@ const stages:Step[]=['browse','details','prepare','ready'];
 
 /** TaskHall/TaskDetail/SessionCreate anatomy, with local illustrative state only. */
 export function DiscoverDemo({motionControl,guidedStage}:{motionControl?:ReactNode;guidedStage?:Step}={}){
-  const {t}=useTranslation();const c=(key:string)=>t(`discoverV2.${key}`);
+  const {t,i18n}=useTranslation();const c=(key:string)=>t(`discoverV2.${key}`);
+  const dockLabels=i18n.language.startsWith('vi')?['Trang chủ','Khám phá','Phiên','Thu nhập','Hồ sơ']:i18n.language.startsWith('zh')?['首页','发现','采集','收入','我的']:['Home','Explore','Sessions','Income','Profile'];
   const [manualStep,setStep]=useState<Step>('browse');const activeStep=guidedStage??manualStep;const [selected,setSelected]=useState(0);
   const [search,setSearch]=useState('');const [filter,setFilter]=useState('all');
   const [others,setOthers]=useState('');const [sensitive,setSensitive]=useState('');
@@ -31,7 +35,7 @@ export function DiscoverDemo({motionControl,guidedStage}:{motionControl?:ReactNo
         <svg viewBox="0 0 20 16" width="16" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 5a12 12 0 0 1 16 0M5 8a7.5 7.5 0 0 1 10 0M8 11a3 3 0 0 1 4 0"/><circle cx="10" cy="14" r="1" fill="currentColor" stroke="none"/></svg>
         <svg viewBox="0 0 27 14" width="24" height="13" fill="none"><rect x="1" y="1" width="22" height="12" rx="3" stroke="currentColor" strokeWidth="1.5"/><rect x="3.5" y="3.5" width="17" height="7" rx="1" fill="currentColor"/><path d="M25 5v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
       </span></div>
-      <div className="discover-demo-top"><AssemblyLogo className="discover-assembly-logo" title="PlayerOne"/><span className="discover-demo-badge">{c('preview')}</span></div>
+      <div className="discover-demo-top"><Panda size={32} pose="avatar"/><AssemblyLogo className="discover-assembly-logo" title="PlayerOne"/><Bell className="discover-demo-bell" size={20} fill="#F4CB58" aria-hidden="true"/></div>
       <div className="discover-phone-screens">
       {(guidedStage?stages:[activeStep]).map(step=>{const active=step===activeStep;return <div className="discover-demo-content" key={step} data-phone-screen={step} data-screen-active={active} aria-hidden={!active} inert={!active} style={guidedStage?{'--screen-index':stages.indexOf(step),'--selected-screen':stages.indexOf(guidedStage)} as CSSProperties:undefined}>
         {step!=='browse'&&<button className="discover-demo-back" onClick={()=>go(step==='details'?'browse':step==='prepare'?'details':'prepare')}>&larr; {c('back')}</button>}
@@ -44,10 +48,11 @@ export function DiscoverDemo({motionControl,guidedStage}:{motionControl?:ReactNo
         </>}
         {step==='details'&&<><p className="discover-demo-task-name">{c(task.key)}</p><p>{c('taskDescription')}</p><ul className="discover-demo-instructions"><li>{c('natural')}</li><li>{c('hands')}</li><li>{c('boundaries')}</li></ul><p className="discover-demo-notice">{c('prerequisites')}</p><button className="discover-button" onClick={()=>go('prepare')}>{c('claim')} <span aria-hidden="true">&rarr;</span>{guidedStage&&<DemoCursor/>}</button></>}
         {step==='prepare'&&<><p className="discover-demo-confirmation">{c('claimed')}</p><div className="discover-demo-device"><small>{c('device')}</small><strong>{c('deviceExample')}</strong></div><p className="discover-demo-scenario">{c('scenario')}: <strong>{c(task.scenario)}</strong></p>{guidedStage?<div className="discover-guided-checks"><p><span>✓</span>{c('natural')}</p><p><span>✓</span>{c('boundaries')}</p></div>:[{key:'others',value:others,set:setOthers},{key:'sensitive',value:sensitive,set:setSensitive}].map(choice=><fieldset className="discover-demo-choice" key={choice.key}><legend>{c(choice.key)}</legend><div>{['yes','no'].map(answer=><label key={answer}><input type="radio" name={`demo-${choice.key}`} checked={choice.value===answer} onChange={()=>choice.set(answer)}/>{c(answer)}</label>)}</div></fieldset>)}<button className="discover-button" disabled={!guidedStage&&(!others||!sensitive)} onClick={()=>go('ready')}>{c('prepareAction')} <span aria-hidden="true">&rarr;</span>{guidedStage&&<DemoCursor/>}</button></>}
-        {step==='ready'&&<><p className="discover-demo-task-name">{c('physical')}</p><p>{c('physicalBody')}</p>{guidedStage&&<><div className="discover-demo-device"><small>{c('device')}</small><strong>{c('deviceExample')}</strong></div><p className="discover-demo-scenario">{c('scenario')}: <strong>{c(task.scenario)}</strong></p></>}<button className="discover-button" onClick={reset}>{c('restart')} <span aria-hidden="true">&larr;</span></button></>}
+        {step==='ready'&&<><Panda size={88} pose="camera"/><p className="discover-demo-task-name">{c('physical')}</p><p>{c('physicalBody')}</p>{guidedStage&&<><div className="discover-demo-device"><small>{c('device')}</small><strong>{c('deviceExample')}</strong></div><p className="discover-demo-scenario">{c('scenario')}: <strong>{c(task.scenario)}</strong></p></>}<button className="discover-button" onClick={reset}>{c('restart')} <span aria-hidden="true">&larr;</span></button></>}
         <p className="discover-demo-footnote">{c('exampleNote')}</p>
       </div>;})}
       </div>
+      {guidedStage&&<div className="discover-demo-dock" aria-hidden="true">{[House,Search,Video,Wallet,UserRound].map((Glyph,index)=><span key={index} data-active={index===(activeStep==='browse'||activeStep==='details'?0:2)}><Glyph size={19} strokeWidth={1.8}/><small>{dockLabels[index]}</small></span>)}</div>}
     </div></div>
   </div>;
 }

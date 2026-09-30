@@ -210,14 +210,14 @@ it('keeps the selected amount and title intact while the sheet animates closed',
 });
 
 
-it('attributes an income activity to a task only through the explicit episode and session relationship', async () => {
+it.each(['session', 'episode'] as const)('attributes income only through an explicit %s relationship', async source => {
   const api = new MockCollectorApi();
   const task = await api.task('task-cook');
   vi.spyOn(api, 'income').mockResolvedValue([
     { episodeId: 'linked', kind: 'estimated', amountVnd: null, effectiveMinutes: null, settlementState: 'uploaded' },
     { episodeId: 'unlinked', kind: 'estimated', amountVnd: null, effectiveMinutes: null, settlementState: 'uploaded' },
   ]);
-  vi.spyOn(api, 'episodes').mockResolvedValue([{ episodeId: 'linked', sessionId: 'session-linked', sizeBytes: 10, state: 'uploaded' }]);
+  vi.spyOn(api, 'episodes').mockResolvedValue([{ episodeId: 'linked', sessionId: source === 'session' ? 'session-linked' : '', taskId: source === 'episode' ? task.id : undefined, sizeBytes: 10, state: 'uploaded' }]);
   vi.spyOn(api, 'sessions').mockResolvedValue([{ id: 'session-linked', collectorId: 'collector', createdAt: '2026-09-26', taskId: task.id, deviceSerial: 'device', scenario: 'home', othersInFrame: false, sensitiveInfo: false }]);
   vi.spyOn(api, 'tasks').mockResolvedValue([task]);
   const host = document.createElement('div'), root = createRoot(host);
@@ -226,7 +226,7 @@ it('attributes an income activity to a task only through the explicit episode an
     await act(async () => root.render(<QueryClientProvider client={client}><ApiProvider value={api}><LocaleProvider><NavProvider initial={{ name: 'income' }}><Income /></NavProvider></LocaleProvider></ApiProvider></QueryClientProvider>));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
     const rows = [...host.querySelectorAll<HTMLElement>('[role="button"]')];
-    expect(rows.find(row => row.getAttribute('aria-label')?.startsWith('linked.'))?.textContent).toContain(task.title);
+    expect(rows.find(row => row.getAttribute('aria-label')?.startsWith(task.title + '.'))?.textContent).toContain(task.title);
     expect(rows.find(row => row.getAttribute('aria-label')?.startsWith('unlinked.'))?.textContent).not.toContain(task.title);
     expect(rows.find(row => row.getAttribute('aria-label')?.startsWith('unlinked.'))?.textContent).toContain('unlinked');
   } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }

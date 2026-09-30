@@ -151,6 +151,9 @@ export type EpisodeState = (typeof EPISODE_STATES)[number];
 
 export interface EpisodeUpload {
   episodeId: string;
+  /** Explicit server attribution; absent on older API deployments. */
+  taskId?: string;
+  taskTitle?: string;
   sessionId: string;
   /** Missing or invalid server size is unknown, never a measured zero. */
   sizeBytes: number | null;
@@ -162,6 +165,7 @@ export interface EpisodeUpload {
 export interface IncomeEntry {
   simulation?: boolean;
   episodeId: string;
+  taskTitle?: string;
   /** Server-computed. `null` until the server has anything to say. */
   effectiveMinutes: string | null;
   amountVnd: string | null;

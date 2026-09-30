@@ -396,7 +396,7 @@ export function NavRow({ label, subtitle, icon, onPress, separator = true }: { l
   const theme = useTheme();
   return <Pressable accessibilityRole="button" accessibilityLabel={subtitle ? `${label}. ${subtitle}` : label} onPress={onPress}
     style={({ pressed }) => ({ minHeight: theme.space[12], paddingVertical: theme.space[4], flexDirection: 'row', alignItems: 'center', gap: theme.space[3], borderBottomWidth: separator ? 1 : 0, borderBottomColor: theme.color.border, backgroundColor: pressed ? theme.collector.surface : undefined })}>
-    {icon}
+    {icon ? <View style={{ width: 28, alignItems: 'center', justifyContent: 'center' }}>{icon}</View> : null}
     <View style={{ flex: 1, gap: theme.space[1] }}>
       <Text style={{ ...theme.collector.type.body, color: theme.color.foreground, fontFamily: face(theme) }}>{label}</Text>
       {subtitle ? <Text style={{ ...theme.collector.type.caption, color: theme.color.mutedForeground, fontFamily: face(theme) }}>{subtitle}</Text> : null}

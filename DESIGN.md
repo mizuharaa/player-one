@@ -1,5 +1,19 @@
 # Design
 
+## Approved panda family and mobile flow — 30 September 2026
+
+The owner approved a cream/plum/tangerine illustrated panda to replace the older
+Trúc drawing and 3D model across console and collector. Shared components use
+camera, wave, clipboard and rest poses; portraits serve small avatars. Operator
+footage review stays free of mascot art. The helper retains its prepared answers
+and accessible controls, with reduced-motion press/hover feedback. No WebGL
+renderer is required for this mascot.
+
+Collector composition follows `apps/collector/DESIGN.md`: open lists, consistent
+outline icons, solid oat headers and a floating labelled dock. Keep dark task
+and claim surfaces, truthful payment states and recording gates. These owner
+corrections supersede earlier foil/header-wash/3D mascot guidance.
+
 ## Mobile refinement — 30 September 2026
 
 The owner rejected the gradient-heavy mobile adaptation. Collector headers and

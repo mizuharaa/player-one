@@ -1,29 +1,11 @@
+import { Panda } from '../../identity/Panda.tsx';
 import type { ReactNode } from 'react';
 import { Image, View } from 'react-native';
-import portrait from '../../../assets/illustrations/panda-avatar.png';
+import portrait from '../../../assets/illustrations/panda-avatar-flat.png';
 import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 import { useTheme } from '../../theme.tsx';
 
-/**
- * The app's drawings, as one family.
- *
- * Work order §5: two-colour flat — plum fills, one sun accent, ink line at one
- * stroke weight — geometric and simple. The family rule is the whole point:
- * thirteen pictures drawn by thirteen different hands read as clip art, and
- * §2's anti-slop law names illustrations sharing one stroke weight as a
- * requirement rather than a preference. So there is one `Frame`, one `STROKE`,
- * and every drawing below is shapes inside that frame.
- *
- * **They are decorative and they say so.** Each one sits beside a headline
- * that carries the meaning in words, so `Frame` hides the whole subtree from
- * TalkBack. A drawing that announced "illustration" would add a stop to the
- * focus order and no information.
- *
- * ponytail: `react-native-svg` (already a dependency, DEVICE_DEPS.md) and no
- * PNGs. A flat two-colour shape at any size is what a vector is for, and an
- * exported raster would need three densities per drawing and would still be
- * the wrong ink in a future theme.
- */
+/** Decorative illustrations share the approved oat, plum and tangerine family. */
 
 /** One weight, every drawing. 64-unit viewBox, so 2 is a 3% line. */
 const STROKE = 2;
@@ -162,17 +144,7 @@ export function HowHandOver({ size = 120 }: IllustrationProps) {
 
 /** No task matches the filters, or the hall itself is empty. */
 export function EmptyTasks({ size = 120 }: IllustrationProps) {
-  const { plum, sun, ink } = usePalette();
-  return (
-    <Frame size={size}>
-      <Rect x={8} y={14} width={22} height={18} rx={3} fill={plum} />
-      <Rect x={8} y={14} width={22} height={18} rx={3} stroke={ink} strokeWidth={STROKE} fill="none" />
-      <Rect x={34} y={14} width={22} height={18} rx={3} stroke={ink} strokeWidth={STROKE} fill="none" />
-      <Rect x={8} y={38} width={22} height={18} rx={3} stroke={ink} strokeWidth={STROKE} fill="none" />
-      <Circle cx={45} cy={47} r={9} fill={sun} />
-      <Circle cx={45} cy={47} r={9} stroke={ink} strokeWidth={STROKE} fill="none" />
-    </Frame>
-  );
+  return <Panda size={size} pose="rest" />;
 }
 
 /** No session yet. */

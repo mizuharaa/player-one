@@ -333,6 +333,9 @@ describe.skipIf(!hasDb())('GET /api/me/income and /api/me/episodes', () => {
         expect(mine.episodes.length).toBe(1);
         expect(theirs.episodes.length).toBe(0);
         expect(theirs.periods.length).toBe(0);
+        const recordings = await h.episodes(h.ids.collector1);
+        expect(recordings.episodes[0]).toMatchObject({ task_id: expect.any(String), task_name: 'housework' });
+        expect((await h.episodes(h.ids.collector2)).episodes).toEqual([]);
 
         const paths = h.app.printRoutes({ commonPrefix: false });
         /**

@@ -573,10 +573,12 @@ export class HttpCollectorApi implements CollectorApi {
     const res = (await this.req('GET', '/api/me/episodes')) as { episodes?: RawEpisode[] };
     return (res.episodes ?? []).map((e) => ({
       episodeId: e.episode_id,
+      ...(typeof e.task_id === 'string' ? { taskId: e.task_id } : {}),
+      ...(typeof e.task_name === 'string' && e.task_name.trim() ? { taskTitle: e.task_name } : {}),
       /**
        * ponytail: empty. `/api/me/episodes` carries no collection session id —
        * an episode is tied to a session through the counter's ingest, and the
-       * collector's own view of it never needed one. No screen reads it.
+       * collector task attribution uses the explicit task id/name instead.
        */
       sessionId: '',
       sizeBytes: toSizeBytes(e.size_bytes),
@@ -663,6 +665,7 @@ export class HttpCollectorApi implements CollectorApi {
     const res = (await this.req('GET', '/api/me/income')) as { episodes?: RawIncome[]; simulation?: boolean };
     return (res.episodes ?? []).map((e) => ({
       episodeId: e.episode_id,
+      ...(typeof e.task_name === 'string' && e.task_name.trim() ? { taskTitle: e.task_name } : {}),
       // Server strings, unchanged. Nothing here adds, divides or rounds money.
       effectiveMinutes: e.effective_minutes,
       amountVnd: e.amount,
@@ -793,6 +796,8 @@ interface RawNotification {
 
 interface RawEpisode {
   episode_id: string;
+  task_id?: string;
+  task_name?: string;
   state: string;
   size_bytes?: number | string | null;
   reasons?: { code: string; label: string }[];
@@ -800,6 +805,7 @@ interface RawEpisode {
 
 interface RawIncome {
   episode_id: string;
+  task_name?: string;
   effective_minutes: string | null;
   amount: string | null;
   confirmed: boolean;

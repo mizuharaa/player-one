@@ -10,11 +10,7 @@ export function Icon({ name, size = 22, color, strokeWidth = 1.8, fill = 'none' 
   return <Glyph size={size} color={color} strokeWidth={strokeWidth} fill={fill} accessible={false} />;
 }
 
-/** Colored library vectors, kept unboxed so every row does not acquire another container. */
-export function FeatureIcon({ name, size = 26 }: { name: IconName; size?: number }) {
-  const fill = name === 'bell' ? polish.notificationYellow
-    : ['camera', 'wallet', 'help'].includes(name) ? polish.feature.peach
-    : ['shield', 'tasks'].includes(name) ? polish.feature.mint
-    : ['file', 'video'].includes(name) ? polish.feature.blue : polish.feature.lilac;
-  return <Icon name={name} size={size} color={name === 'language' ? polish.art.violet : polish.ink} fill={name === 'language' ? 'none' : fill} strokeWidth={1.65} />;
+/** One optical weight for functional icons; yellow is reserved for the bell. */
+export function FeatureIcon({ name, size = 24 }: { name: IconName; size?: number }) {
+  return <Icon name={name} size={size} color={polish.ink} fill={name === 'bell' ? polish.notificationYellow : 'none'} strokeWidth={1.8} />;
 }

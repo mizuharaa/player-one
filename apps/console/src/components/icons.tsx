@@ -43,6 +43,14 @@ export const IconHome = (p: IconProps) => (
   </Icon>
 );
 
+export const IconSearch = (p: IconProps) => (
+  <Icon {...p}><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4 4" /></Icon>
+);
+
+export const IconBell = (p: IconProps) => (
+  <Icon {...p}><path d="M4 14c1-2 1-3 1-5a5 5 0 0 1 10 0c0 2 0 3 1 5H4Z" /><path d="M8 17h4" /></Icon>
+);
+
 /** The counter: a card crossing a desk. */
 export const IconCounter = (p: IconProps) => (
   <Icon {...p}>

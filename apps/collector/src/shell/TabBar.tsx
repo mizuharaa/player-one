@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, Text, View } from 'react-native';
 import { useNav, type TabName } from '../nav.tsx';
 import { useT } from '../locale.tsx';
 import { polish, useTheme } from '../theme.tsx';
@@ -34,10 +34,25 @@ function TabGlyph({ active, icon }: { active: boolean; icon: IconName }) {
 export function TabBar() {
   const theme = useTheme(), c = theme.collector, tt = useT(), nav = useNav(), insets = useInsets();
   const [focused, setFocused] = useState<TabName | null>(null);
+  const [width, setWidth] = useState(0);
+  const reduced = useReducedMotion();
+  const x = useRef(new Animated.Value(0)).current;
+  const activeIndex = TABS.findIndex(({ tab }) => tab === nav.route.name);
+  const tabWidth = Math.max(0, width - 10) / TABS.length;
+  useEffect(() => {
+    x.stopAnimation();
+    const toValue = Math.max(0, activeIndex) * tabWidth;
+    if (reduced || !tabWidth) { x.setValue(toValue); return; }
+    const animation = Animated.spring(x, { toValue, damping: 25, stiffness: 320, mass: .8, useNativeDriver: Platform.OS !== 'web' });
+    animation.start();
+    return () => animation.stop();
+  }, [activeIndex, tabWidth, reduced, x]);
   return <View accessibilityRole="tablist" onLayout={event => measureTabBar(event.nativeEvent.layout.height)}
     style={{ position: 'absolute', left: c.gutter + insets.left, right: c.gutter + insets.right, bottom: insets.bottom + 8,
-      borderRadius: c.radius.dock, shadowColor: polish.shadow, shadowOffset: { width: 0, height: 6 }, shadowOpacity: .12, shadowRadius: 16, elevation: 6 }}>
-    <GlassSurface style={{ borderRadius: c.radius.dock, padding: 5, flexDirection: 'row' }}>
+      borderRadius: c.radius.pill, shadowColor: polish.shadow, shadowOffset: { width: 0, height: 6 }, shadowOpacity: .10, shadowRadius: 14, elevation: 6 }}>
+    <GlassSurface style={{ borderRadius: c.radius.pill, borderWidth: 0 }}>
+      <View onLayout={event => setWidth(event.nativeEvent.layout.width)} style={{ padding: 5, flexDirection: 'row' }}>
+      <Animated.View testID="tab-selection" pointerEvents="none" style={{ position: 'absolute', top: 5, bottom: 5, left: 5, width: tabWidth, borderRadius: c.radius.pill, backgroundColor: polish.selection, transform: [{ translateX: x }] }} />
       {TABS.map(({ tab, key, icon }) => {
         const active = nav.route.name === tab;
         return <Pressable key={tab} accessibilityRole="tab" accessibilityLabel={tt(key)} accessibilityState={{ selected: active }} aria-selected={active}
@@ -46,9 +61,10 @@ export function TabBar() {
             borderWidth: 2, borderColor: focused === tab ? c.plum : 'transparent', borderRadius: 22,
             backgroundColor: 'transparent', opacity: pressed ? .65 : 1 })}>
           <TabGlyph active={active} icon={icon} />
-          <Text style={{ fontFamily: face(theme), fontSize: 11, lineHeight: 15, fontWeight: active ? '600' : '400', color: active ? c.ink : c.muted, textAlign: 'center' }}>{tt(key)}</Text>
+          <Text style={{ fontFamily: face(theme), fontSize: 11, lineHeight: 16, fontWeight: active ? '600' : '400', color: active ? c.ink : c.muted, textAlign: 'center' }}>{tt(key)}</Text>
         </Pressable>;
       })}
+      </View>
     </GlassSurface>
   </View>;
 }

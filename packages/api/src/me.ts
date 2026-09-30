@@ -368,6 +368,8 @@ export type IncomeRow = {
  */
 export type EpisodeRow = {
   episode_id: string;
+  task_id: string;
+  task_name: string;
   recorded_at: string;
   state: CollectorState;
   state_text: { en: string; vi: string };
@@ -412,6 +414,7 @@ export type PayoutDestination = {
 
 type RawRow = {
   episode_id: string;
+  task_id: string;
   task_name: string;
   recorded_at: string;
   measured_s: string | null;
@@ -444,6 +447,7 @@ type RawRow = {
 async function rawRows(db: Db, collectorId: string): Promise<RawRow[]> {
   return (await db.execute(sql`
     select e.episode_id,
+           cs.task_id,
            t.name as task_name,
            e.session_started_at as recorded_at,
            coalesce(r.measured_duration_s, i.measured_duration_s) as measured_s,
@@ -870,6 +874,8 @@ export function registerMe(
       const state = stateOf(row, row.bill_id === null ? undefined : bills.get(row.bill_id));
       return {
         episode_id: row.episode_id,
+        task_id: row.task_id,
+        task_name: row.task_name,
         recorded_at: row.recorded_at,
         state,
         state_text: STATE_SENTENCES[state],

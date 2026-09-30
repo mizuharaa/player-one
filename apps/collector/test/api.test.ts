@@ -760,6 +760,8 @@ describe('a cold start after the app was killed (NFR-03, NFR-04)', () => {
             {
               episode_id: 'ego1-20260819-1120',
               recorded_at: '2026-08-19T04:20:00.000Z',
+              task_id: 't-1',
+              task_name: 'Bếp',
               state: 'not_paid',
               size_bytes: 2684354560,
               reasons: [{ code: 'blurred', label: 'Hình bị mờ' }],
@@ -776,6 +778,7 @@ describe('a cold start after the app was killed (NFR-03, NFR-04)', () => {
               episode_id: 'ego1-20260819-1120',
               effective_minutes: '41.5000',
               amount: '49800.0000',
+              task_name: 'Bếp',
               confirmed: true,
               state: 'on_a_bill',
             },
@@ -800,6 +803,7 @@ describe('a cold start after the app was killed (NFR-03, NFR-04)', () => {
     const episodes = await api.episodes();
     // The server's money vocabulary, reduced to APP-23's six states.
     expect(episodes[0]?.state).toBe('review_failed');
+    expect(episodes[0]).toMatchObject({ taskId: 't-1', taskTitle: 'Bếp' });
     // APP-27: the refusal reason, in the collector's language, from the
     // review standard's own catalogue.
     expect(episodes[0]?.rejectReason).toBe('Hình bị mờ');
@@ -810,6 +814,7 @@ describe('a cold start after the app was killed (NFR-03, NFR-04)', () => {
       episodeId: 'ego1-20260819-1120',
       effectiveMinutes: '41.5000',
       amountVnd: '49800.0000',
+      taskTitle: 'Bếp',
       kind: 'confirmed',
       settlementState: 'on_a_bill',
     });

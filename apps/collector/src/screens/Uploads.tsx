@@ -1,6 +1,5 @@
-import { SessionArtwork } from '../ui/illustrations/CollectorArtwork.tsx';
+import { Panda } from '../identity/Panda.tsx';
 import { HeaderGradient } from '../ui/HeaderGradient.tsx';
-import { CollectorMasthead } from '../ui/CollectorMasthead.tsx';
 import { Failure, StatePanel } from '../ui/StatePanel.tsx';
 import { useToast } from '../ui/Toast.tsx';
 import { useEffect, useRef, useState } from 'react';
@@ -161,6 +160,7 @@ export function Uploads() {
   const [deliveryMode, setDeliveryMode] = useState<'phone' | 'card' | null>(null);
   const { locale } = useLocale();
   const [search, setSearch] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
   const [filter, setFilter] = useState<EpisodeState | null>(null);
   const [selectedEpisode, setSelectedEpisode] = useState<string | null>(null);
   const tt = useT();
@@ -192,6 +192,7 @@ export function Uploads() {
 
   const episodes = useQuery({ queryKey: ['episodes'], queryFn: () => api.episodes() });
   const income = useQuery({ queryKey: ['income'], queryFn: () => api.income() });
+  const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => api.tasks() });
   const failed = [episodes, income].find(q => q.isError && q.data === undefined) ?? [episodes, income].find(q => q.isError);
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: () => api.sessions(), enabled: open });
   useEffect(() => {
@@ -294,22 +295,12 @@ export function Uploads() {
    */
   const totalBytes = (picked?.files ?? []).reduce((sum, file) => sum + file.bytes, 0);
 
-  /**
-   * SPEC §13 asks for a section list, one section per `CollectionSession`.
-   * **It is not buildable against the API as it stands, so it is not faked.**
-   * `GET /api/me/episodes` carries no collection session id — `api/http.ts`
-   * sets `sessionId: ''` on every row and says why — so the only way to draw
-   * those headings would be to guess which session an episode belongs to, and
-   * a wrong attribution on an upload screen is a wrong attribution of work.
-   * The rows are therefore one flat list in the server's own order. The
-   * heading needs `collection_session_id` on that endpoint; nothing else here
-   * changes when it arrives.
-   */
+  // Server order and explicit task attribution; older deployments retain the episode reference.
   const c = theme.collector;
   const amounts = new Map((income.data ?? []).map(entry => [entry.episodeId, entry]));
   const needle = search.trim().toLocaleLowerCase(locale);
   const visible = (episodes.data ?? []).filter(episode => (filter === null || episode.state === filter) &&
-    `${episode.episodeId} ${tt(`state.${episode.state}`)}`.toLocaleLowerCase(locale).includes(needle));
+    `${episode.episodeId} ${episode.taskTitle ?? amounts.get(episode.episodeId)?.taskTitle ?? ''} ${tt(`state.${episode.state}`)}`.toLocaleLowerCase(locale).includes(needle));
   const selected = episodes.data?.find(episode => episode.episodeId === selectedEpisode);
   const selectedSession = sessions.data?.find(session => session.id === sessionId);
   const sessionLabel = selectedSession ? `${tt(`scenario.${selectedSession.scenario}`)} · ${selectedSession.createdAt.slice(0, 10)}` : sessionId ?? '';
@@ -335,42 +326,46 @@ export function Uploads() {
   };
   return <>
     <ListScreen ambientHeader title={tt('uploads.title')} data={visible} keyOf={episode => episode.episodeId}
-      masthead={<HeaderGradient><CollectorMasthead /><View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <View style={{ flex: 1, gap: 7 }}><Text style={{ ...c.type.body, fontFamily: face(theme), color: c.ink }}>{tt('uploads.title')}</Text><Text accessibilityRole="header" style={{ ...c.type.h1, fontFamily: face(theme), color: c.ink, fontWeight: '700' }}>{tt('uploads.journeyTitle')}</Text></View>
-        <SessionArtwork size={124} />
-      </View><Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted }}>{tt('uploads.journeyBody')}</Text></HeaderGradient>}
+      masthead={<HeaderGradient>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8 }}>
+          <Text accessibilityRole="header" style={{ ...c.type.h2, fontFamily: face(theme), color: c.ink }}>{tt('uploads.title')}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={tt('uploads.search')} accessibilityState={{ expanded: showSearch }} onPress={() => { setShowSearch(value => !value); setSearch(''); }} style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}><Icon name={showSearch ? 'close' : 'search'} color={c.ink} size={24} /></Pressable>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}><Text accessibilityRole="header" style={{ ...c.type.h1, fontFamily: face(theme), color: c.ink, flex: 1 }}>{tt('uploads.journeyTitle')}</Text><Panda size={76} pose="camera" /></View>
+        <Text style={{ ...c.type.body, fontFamily: face(theme), color: c.muted }}>{tt('uploads.journeyBody')}</Text>
+      </HeaderGradient>}
       refresh={{ refreshing: episodes.isFetching || income.isFetching, onRefresh: () => { void episodes.refetch(); void income.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.cardGap }}>
         {failed ? <Failure error={failed.error} text={tt(failed.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} onRetry={() => { void episodes.refetch(); void income.refetch(); }} busy={episodes.isFetching || income.isFetching} /> : null}
         <Button label={tt('uploads.deliverTitle')} onPress={() => setOpen(true)} />
         <Button label={tt('session.title')} variant="ghost" onPress={() => nav.push({ name: 'sessionReminder' })} />
         {income.data?.some(entry => entry.simulation) ? <Body muted>{tt('payout.simulation')}</Body> : null}
-        <Field search labelHidden label={tt('uploads.search')} value={search} onChangeText={setSearch} />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: theme.space[2] }}>
-          <Chip label={tt('uploads.all')} selected={filter === null} onPress={() => setFilter(null)} />
-          {EPISODE_STATES.map(state => <Chip key={state} label={tt(`state.${state}`)} selected={filter === state} onPress={() => setFilter(state)} />)}
+        {showSearch ? <Field search labelHidden label={tt('uploads.search')} value={search} onChangeText={setSearch} /> : null}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 20, borderBottomWidth: 1, borderColor: c.line }}>
+          {[null, ...EPISODE_STATES].map(state => <Pressable key={state ?? 'all'} accessibilityRole="tab" accessibilityState={{ selected: filter === state }} onPress={() => setFilter(state)} style={{ minHeight: 48, justifyContent: 'center', paddingHorizontal: 4, borderBottomWidth: 2, borderColor: filter === state ? c.plum : 'transparent' }}><Text style={{ ...c.type.caption, fontFamily: face(theme), color: filter === state ? c.ink : c.muted, fontWeight: filter === state ? '600' : '400' }}>{tt(state === null ? 'uploads.all' : `state.${state}`)}</Text></Pressable>)}
         </ScrollView>
         {income.isError && income.data === undefined ? <Body muted>{tt('income.title')} —</Body> : null}
         {episodes.isError && episodes.data === undefined ? <Body muted>{tt('uploads.title')} —</Body> : null}
         {episodes.isPending ? <Loading /> : null}
       </View>}
       empty={episodes.isPending || episodes.isError ? null : <Hatch action={tt('common.retry')} onPress={() => { setSearch(''); setFilter(null); void episodes.refetch(); }} text={tt(search.trim() || filter ? 'uploads.noMatches' : 'uploads.empty')} />}
-      renderItem={episode => <Pressable accessibilityRole="button" accessibilityLabel={`${shortId(episode.episodeId)}. ${tt(`state.${episode.state}`)}. ${amounts.get(episode.episodeId)?.amountVnd == null ? '—' : dong(amounts.get(episode.episodeId)!.amountVnd!)}${amounts.has(episode.episodeId) ? `. ${tt(incomeStatus(amounts.get(episode.episodeId), episode.state === 'review_failed'))}` : ''}${amounts.get(episode.episodeId)?.simulation ? `. ${tt('payout.simulation')}` : ''}`}
+      renderItem={episode => {
+        const task = tasks.data?.find(task => task.id === episode.taskId);
+        const title = episode.taskTitle ?? amounts.get(episode.episodeId)?.taskTitle ?? task?.title ?? shortId(episode.episodeId);
+        return <Pressable accessibilityRole="button" accessibilityLabel={`${title}. ${tt(`state.${episode.state}`)}. ${amounts.get(episode.episodeId)?.amountVnd == null ? '—' : dong(amounts.get(episode.episodeId)!.amountVnd!)}${amounts.has(episode.episodeId) ? `. ${tt(incomeStatus(amounts.get(episode.episodeId), episode.state === 'review_failed'))}` : ''}${amounts.get(episode.episodeId)?.simulation ? `. ${tt('payout.simulation')}` : ''}`}
         onPress={() => setSelectedEpisode(episode.episodeId)}
         style={({ pressed }) => ({ paddingVertical: c.cardPad, borderBottomWidth: 1, borderBottomColor: c.line,
           gap: 6, opacity: pressed ? .65 : 1 })}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: c.cardGap }}>
-        <View style={{ width: 44, height: 44, borderRadius: c.radius.pill, borderWidth: 1, borderColor: c.line, backgroundColor: stateColors(theme, episode.state).bg, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name={stateMarks[episode.state]} color={stateColors(theme, episode.state).fg} size={22} />
-        </View>
-        <View style={{ flex: 1, gap: theme.space[1] }}><Text style={{ ...c.type.body, color: c.ink, fontFamily: face(theme), fontWeight: '600' }}>{tt(`state.${episode.state}`)}</Text><Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{shortId(episode.episodeId)}</Text></View>
+        {task ? <Image source={taskImage(task)} accessible={false} style={{ width: 64, height: 72, borderRadius: 14 }} /> : <View style={{ width: 28, height: 48, alignItems: 'center', justifyContent: 'center' }}><Icon name={stateMarks[episode.state]} color={c.ink} size={24} /></View>}
+        <View style={{ flex: 1, gap: 6 }}><Text style={{ ...c.type.body, color: c.ink, fontFamily: face(theme), fontWeight: '600' }}>{title}</Text><Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{tt(`state.${episode.state}`)}</Text></View>
         <View style={{ flexShrink: 1, alignItems: 'flex-end' }}>
           <Text style={{ fontFamily: face(theme), ...c.type.body, color: isLivePaid(amounts.get(episode.episodeId), episode.state === 'review_failed') ? c.greenInk : c.muted }}>{amounts.get(episode.episodeId)?.amountVnd == null ? '—' : dong(amounts.get(episode.episodeId)!.amountVnd!)}</Text>
           {amounts.has(episode.episodeId) ? <Text style={{ fontFamily: face(theme), ...c.type.caption, color: c.muted }}>{tt(incomeStatus(amounts.get(episode.episodeId), episode.state === 'review_failed'))}</Text> : null}
         </View>
         </View>
         {amounts.get(episode.episodeId)?.simulation ? <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme), marginLeft: 56 }}>{tt('payout.simulationLabel')}</Text> : null}
-      </Pressable>} />
+      </Pressable>}} />
     <Modal visible={open} animationType="none" onRequestClose={close}>
       <Screen title={outcome ? tt(`delivery.${outcome.state}`) : deliver.isError ? tt('uploads.paused') : tt(!running && deliveryStage === 2 ? 'uploads.confirmTitle' : 'uploads.deliverTitle')}
         onBack={() => { if (!running) { pickerRequest.current?.abort(); pick.reset(); } if (!running && !outcome && !deliver.isError && deliveryStage > -1) { deliver.reset(); setDeliveryStage(deliveryStage - 1); } else close(); }}

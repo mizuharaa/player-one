@@ -166,13 +166,14 @@ export class MockCollectorApi implements CollectorApi {
     ];
     // Two sessions' worth of episodes, spread over the six APP-23 states.
     this.episodeRows = [
-      { episodeId: 'ego1-20260821-0715', sessionId: 'ses-0001', sizeBytes: 2_147_483_648, state: 'pending_upload' },
-      { episodeId: 'ego1-20260821-0902', sessionId: 'ses-0001', sizeBytes: 1_610_612_736, state: 'pending_upload' },
-      { episodeId: 'ego1-20260820-1830', sessionId: 'ses-0002', sizeBytes: 3_221_225_472, state: 'under_review' },
-      { episodeId: 'ego1-20260819-1120', sessionId: 'ses-0002', sizeBytes: 2_684_354_560, state: 'review_passed' },
+        { episodeId: 'ego1-20260821-0715', sessionId: 'ses-0001', taskId: 'task-set-table', taskTitle: 'Set a table', sizeBytes: 2_147_483_648, state: 'pending_upload' },
+        { episodeId: 'ego1-20260821-0902', sessionId: 'ses-0001', taskId: 'task-set-table', taskTitle: 'Set a table', sizeBytes: 1_610_612_736, state: 'pending_upload' },
+        { episodeId: 'ego1-20260820-1830', sessionId: 'ses-0002', taskId: 'task-cook', taskTitle: 'Nấu ăn tại nhà', sizeBytes: 3_221_225_472, state: 'under_review' },
+        { episodeId: 'ego1-20260819-1120', sessionId: 'ses-0002', taskId: 'task-cook', taskTitle: 'Nấu ăn tại nhà', sizeBytes: 2_684_354_560, state: 'review_passed' },
       {
         episodeId: 'ego1-20260819-0640',
-        sessionId: 'ses-0002',
+          sessionId: 'ses-0002',
+          taskId: 'task-cook', taskTitle: 'Nấu ăn tại nhà',
         sizeBytes: 1_073_741_824,
         state: 'review_failed',
         rejectReason: 'Ống kính bị che trong phần lớn thời lượng.',

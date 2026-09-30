@@ -1,10 +1,10 @@
-import { Icon, FeatureIcon } from '../ui/Icon.tsx';
+import { Icon } from '../ui/Icon.tsx';
 import { PhantomPressable } from '../ui/PhantomPressable.tsx';
 import { TaskCard } from '../ui/TaskCard.tsx';
 import { CollectorMasthead } from '../ui/CollectorMasthead.tsx';
 import { HeaderGradient } from '../ui/HeaderGradient.tsx';
 import { Failure } from '../ui/StatePanel.tsx';
-import { Text, View, useWindowDimensions } from 'react-native';
+import { Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { mascotStateAt } from '@playerone/design/tokens';
 import { useApi } from '../api/context.tsx';
@@ -19,8 +19,6 @@ import { dong, shortId } from '../money.ts';
 /** Identity, task status, featured photograph, then compact task rows. */
 export function Home() {
   const api = useApi(), nav = useNav(), tt = useT(), theme = useTheme(), c = theme.collector;
-  const { width, fontScale } = useWindowDimensions();
-  const compact = width < 360 || fontScale > 1.2;
   const { locale, setLocale } = useLocale();
   const guide = useGuide();
   const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile() });
@@ -44,7 +42,7 @@ export function Home() {
   const featured = claimable[0];
   const taskRows = [...(tasks.data ?? []).filter(task => claimedIds.has(task.id)), ...claimable.filter(task => !claimedIds.has(task.id))].slice(0, 3);
   const waitingEpisodes = episodes.data?.filter(episode => episode.state === 'uploaded' || episode.state === 'under_review');
-  const awaitingTaskIds = new Set(waitingEpisodes?.map(episode => sessions.data?.find(session => session.id === episode.sessionId)?.taskId).filter(Boolean));
+  const awaitingTaskIds = new Set(waitingEpisodes?.map(episode => episode.taskId ?? sessions.data?.find(session => session.id === episode.sessionId)?.taskId).filter(Boolean));
   const caption = { ...c.type.caption, color: c.muted, fontFamily: face(theme) };
   const statusTiles = [
     { label: tt('home.myTasks'), hint: tt('home.claimedTasks'), value: claims.data ? String(claimedIds.size) : '—', icon: 'camera' as const, onPress: () => nav.push({ name: 'myTasks' }), query: claims },
@@ -57,16 +55,11 @@ export function Home() {
         <Text style={{ ...c.type.body, color: c.ink, fontFamily: face(theme) }}>{tt(`greeting.${mascotStateAt()}`)}{profile.data?.name ? `, ${profile.data.name}` : ''}</Text>
         <Text style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme), fontWeight: '700', letterSpacing: -.6 }}>{tt('home.readyTitle')}</Text>
       </View>
-      <View ref={nextTarget} collapsable={false} style={{ flexDirection: 'row', gap: 10 }}>
+      <View ref={nextTarget} collapsable={false} style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 16 }}>
         {statusTiles.map(tile => <PhantomPressable key={tile.label} accessibilityRole="button" accessibilityHint={tile.hint} onPress={tile.onPress}
-          style={{ flex: 1, padding: 12, borderRadius: 18, backgroundColor: tile.icon === 'camera' ? c.glow : c.surface, gap: 8 }}>
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
-            <View style={{ width: 38, height: 42, alignItems: 'center', justifyContent: 'center' }}><FeatureIcon name={tile.icon} size={30} /></View>
-            <View style={{ flex: 1, gap: 4 }}><Text style={{ ...caption, fontSize: 12, lineHeight: 18, minHeight: compact ? 36 : 18, color: c.ink }}>{tile.label}</Text>
-              {tile.query.isPending ? <Loading kind="number" /> : <Text style={{ ...c.type.h1, fontWeight: '700', fontFamily: face(theme), color: c.ink }}>{tile.value}</Text>}
-            </View>
-          </View>
-          {!compact || tile.query.isError ? <Text style={{ ...caption, fontSize: 12, lineHeight: 18 }}>{tile.query.isError ? failureText(tile.query) : tile.hint}</Text> : null}
+          style={{ minHeight: 48, justifyContent: 'center', gap: 4 }}>
+          <Text style={caption}><Text style={{ color: c.ink, fontWeight: '600' }}>{tile.query.isPending ? '—' : tile.value}</Text> {tile.label}</Text>
+          {tile.query.isError ? <Text style={caption}>{failureText(tile.query)}</Text> : null}
         </PhantomPressable>)}
       </View>
     </HeaderGradient>}>
