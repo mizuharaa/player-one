@@ -1,4 +1,4 @@
-/* Hallmark · macrostructure: viewport film → wide wordmark → collector collage · tone: human, immersive · anchor hue: violet
+/* Hallmark · macrostructure: viewport film → wide wordmark → collector collage · tone: human, immersive · anchor hues: oat, plum, tangerine
  * studied-DNA: owner-approved A, 26 September; Sunday / Creative Intelligence / Giga references.
  * Tokens remain shared; imagery and copy belong to PlayerOne.
  * Pre-emit critique: P4 H4 E4 S5 R4 V5; browser verification recorded separately. */
@@ -59,7 +59,7 @@
 .discover-cinema-transition>p {max-width:18ch;margin:0 3vw 32px auto;font:550 clamp(1.5rem,2.8vw,3rem)/1.1 var(--discover-font);letter-spacing:-.025em;}
 .discover-cinema-wordmark {display:flex;justify-content:center;align-items:baseline;font:850 18.4vw/.86 var(--cinema-brand-font);letter-spacing:-.04em;white-space:nowrap;}
 .discover-cinema-wordmark>span:first-child {color:var(--sun-500);}
-.discover-cinema-wordmark>span:last-child {color:var(--tech-500);}
+.discover-cinema-wordmark>span:last-child {color:var(--discover-light);}
 .discover-cinema .discover-film-label {left:var(--editorial-space);bottom:24px;max-width:70ch;}
 .discover-cinema .discover-video-control {right:var(--editorial-space);bottom:24px;}
 .discover-cinema-scroll {position:absolute;z-index:2;top:calc(100svh - 80px);right:calc(var(--editorial-space) + 60px);display:flex;align-items:center;gap:16px;min-height:44px;font-size:.8125rem;}

@@ -1,5 +1,22 @@
 # Design
 
+## Approved palette — 29 September 2026
+
+The owner selected oat, deep plum and tangerine for the collector app, operator
+console and public website. This supersedes earlier lavender, lime and blue brand
+directions below. The Pantone references are print inspiration, not an exact sRGB
+match. Shared screen colors are oat `#E7D2A9`, plum `#3F1E46` and tangerine
+`#F4762D`: pale oat `#F8F5EF` grounds, warm-white working surfaces, plum actions
+and navigation, with tangerine reserved for identity and illustration accents.
+Dark surfaces use plum-tinted neutrals and lighter readable labels. The neutral
+video theatre, review verdicts, warning meanings and yellow notification bell stay
+distinct. Existing token names remain compatibility hooks for both renderers.
+
+Preserve the approved full-width opening, wordmark shuffle, films, task sheets,
+imagery, typography, responsive layouts and real workflows. This is a palette
+change, not another layout redesign. Check text, controls, focus and semantic
+states across web light/dark themes and the mobile preview before release.
+
 ## Company identity — 26 September 2026
 
 PlayerOne is its own company. Product screens, localized copy, splash screens and

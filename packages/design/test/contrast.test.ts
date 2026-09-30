@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ambient, bamboo, dark, darkBrandTints, discover, glass, lavender, light, lime, ring, stage, sun, tech, toCss, truc, verdict } from '../src/tokens.ts';
+import { ambient, bamboo, brand, dark, darkBrandTints, discover, glass, lavender, light, lime, ring, stage, sun, tech, toCss, truc, verdict } from '../src/tokens.ts';
 import { nativeTheme } from '../src/native.ts';
 import { collector } from '../src/tokens.ts';
 
@@ -102,8 +102,8 @@ describe('the formula itself', () => {
     expect(ratio('#7C5CFC', '#F0EDFF')).toBe(3.81);
     expect(ratio('#E5484D', '#FDECEC')).toBe(3.43);
     // The collector app's Note, and its upload pills, in dark mode.
-    expect(ratio('#0B3F99', darkBrandTints.tech50)).toBe(1.8);
-    expect(ratio('#0B3F99', darkBrandTints.tech100)).toBe(1.35);
+    expect(ratio('#0B3F99', '#0C1A33')).toBe(1.8);
+    expect(ratio('#0B3F99', '#123061')).toBe(1.35);
     // The focus ring on the light shell.
     /*
      * Measured on the page as it was: `#FFFFFF`. The page is `lavender-100`
@@ -111,7 +111,7 @@ describe('the formula itself', () => {
      * token that has since moved — a historical record that drifts with the
      * palette is not a record.
      */
-    expect(ratio(sun[500], '#FFFFFF')).toBe(2.61);
+    expect(ratio('#FF7A1A', '#FFFFFF')).toBe(2.61);
   });
 });
 
@@ -198,12 +198,12 @@ const hue = (hex: string): number => {
  * are kept as a historical record with the ground written out, because a record
  * that drifts with the palette records nothing.
  */
-describe('sun and tech are the partner mark now', () => {
+describe('the tangerine and plum identity', () => {
   it('keeps the ratios measured before the ink fix, on the grounds they were measured on', () => {
-    expect(ratio(tech[700], darkBrandTints.tech50)).toBe(1.8);
-    expect(ratio(sun[700], darkBrandTints.sun50)).toBe(3.32);
+    expect(ratio('#0B3F99', '#0C1A33')).toBe(1.8);
+    expect(ratio('#B94A05', '#2A1608')).toBe(3.32);
     /* The dark card as it was, before the neutrals turned violet. */
-    expect(ratio(tech[600], '#181B1F')).toBe(2.63);
+    expect(ratio('#0F55CC', '#181B1F')).toBe(2.63);
   });
 
   it("the mark's two discs read against each other and against both pages", () => {
@@ -219,14 +219,16 @@ describe('sun and tech are the partner mark now', () => {
     atLeast(CONTROL_AA, tech[500], dark.background, 'the mark on the dark page');
   });
 
-  it('and sun is not asked to carry text on the lavender page, which it cannot', () => {
+  it('tangerine fills use dark labels and have a separate accessible text ink', () => {
     /*
      * Pinned as a refusal. `sun-700` reads 4.49:1 on the new page — under the
      * floor by a hundredth, which is the `faintForeground` trap this file
      * exists to catch. Sun has no text job left, so the ramp was not retuned
      * and this stops it drifting back into one.
      */
-    expect(contrast(sun[700], light.background)).toBeLessThan(TEXT_AA);
+    expect(contrast(sun[500], light.background)).toBeLessThan(TEXT_AA);
+    atLeast(TEXT_AA, sun[700], light.background, 'tangerine text ink');
+    atLeast(TEXT_AA, collector.ink, brand.tangerine, 'ink on tangerine');
   });
 
   it('is what `toCss` emits, per scheme, so the console reads these numbers', () => {
@@ -252,20 +254,21 @@ describe('the primary action', () => {
     ['dark', dark],
   ] as const) {
     it(`${scheme}: the label reads on the ink pill, and the pill reads on every shell ground`, () => {
-      atLeast(TEXT_AA, n.background, n.foreground, `${scheme} action label on the pill`);
+      const { action, actionInk } = nativeTheme(scheme).color;
+      atLeast(TEXT_AA, actionInk, action, `${scheme} action label on the pill`);
       for (const g of [n.background, n.surface, n.card, n.muted])
-        atLeast(CONTROL_AA, n.foreground, g, `${scheme} action pill against the shell`);
+        atLeast(CONTROL_AA, action, g, `${scheme} action pill against the shell`);
     });
   }
 
-  it('and the ramp that used to be the action is no longer emitted as one', () => {
+  it('web and native emit the same accessible plum action roles', () => {
     /*
      * `--action` exists and resolves to the neutral ink, not to a sun step. If
      * somebody wires the primary back to sun, this is what says so.
      */
     const css = toCss();
-    expect(css).toContain(`--action: ${light.foreground}`);
-    expect(css).toContain(`--action: ${dark.foreground}`);
+    expect(css).toContain(`--action: ${nativeTheme('light').color.action}`);
+    expect(css).toContain(`--action: ${nativeTheme('dark').color.action}`);
   });
 });
 
@@ -277,9 +280,8 @@ describe('the ink top bar', () => {
     expect(ratio('#BCBDBD', stage.ground)).toBe(9.96);
   });
 
-  it('the active pill is sun-500 with ink on it, at 7.19:1', () => {
+  it('the active pill uses tangerine with an accessible ink label', () => {
     atLeast(TEXT_AA, stage.ground, sun[500], 'active pill label');
-    expect(ratio(stage.ground, sun[500])).toBe(7.19);
     // And the pill itself is tellable from the bar it sits on.
     atLeast(CONTROL_AA, sun[500], stage.ground, 'active pill boundary');
   });
@@ -625,7 +627,7 @@ describe('a field edge is a control boundary, not a separator', () => {
  * mistake this guards is the one bamboo made on the old page: a step that works
  * as a fill quietly being used as type.
  */
-describe('lime carries progress, emphasis and the ring', () => {
+describe('the legacy progress ramp and plum focus ring', () => {
   it('500 is a fill under ink text, and is never text itself', () => {
     atLeast(TEXT_AA, light.foreground, lime[500], 'ink on the lime fill');
     expect(contrast(lime[500], light.background)).toBeLessThan(CONTROL_AA);
@@ -698,5 +700,20 @@ describe('the glass surfaces cost no contrast', () => {
   it('and the page really is the wash, so there is something behind the glass', () => {
     expect(light.background).toBe(lavender[100]);
     expect(light.surface).toBe(lavender[50]);
+  });
+});
+
+// The same brand reaches the landing page, native collector and operator shell.
+describe('PlayerOne oat, plum and tangerine palette', () => {
+  it('keeps brand roles consistent and text readable on the stronger oat field', () => {
+    expect(collector.paper).toBe(light.background);
+    expect(discover.paper).toBe(collector.paper);
+    expect(collector.plum).toBe(brand.plum);
+    expect(discover.heroAccent).toBe(brand.plum);
+    expect(nativeTheme('light').color.action).toBe(brand.plum);
+    expect(sun[500]).toBe(brand.tangerine);
+    for (const ink of [collector.ink, collector.muted, brand.plum])
+      atLeast(TEXT_AA, ink, brand.oat, 'type on oat');
+    atLeast(TEXT_AA, collector.surface, collector.plum, 'mobile primary action');
   });
 });

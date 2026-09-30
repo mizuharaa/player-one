@@ -1,68 +1,20 @@
 /**
- * PlayerOne's design tokens, and the only place their values exist.
- *
- * These are consumed by three codebases that cannot share a rendering model:
- * the back-office console (React 19, CSS custom properties), the Path C
- * upload-centre client (Electron, the same CSS), and the collector app
- * (React Native 0.82, plain JS objects — no CSS engine, no `var()`). So the
- * values live here as data and each surface derives its own form:
- * `toCss()` for the web, the exported objects themselves for React Native.
- *
- * Five constraints, each one a decision rather than taste:
- *
- * **Three flat fields, one job each.** VNG's sun and PaXini's tech blue are
- * not interchangeable accents. Sun means *action* — a button that does
- * something, the focus ring, the active destination. Tech means *data and
- * system* — links, references, anything the machine is telling you. Bamboo,
- * added with Trúc, means *the mascot and progress* — the shift gauge's ring, a
- * fill moving toward a target, the panda's own prop. Progress moved off sun so
- * that "this is doing something" and "this is how far along you are" stop
- * sharing a colour. Nothing decorative uses any of the three, and none of them
- * is ever a gradient: each field is flat. The product owner stated the two
- * brand worlds; the hex values are this system's own choice, because no formal
- * VNG or PaXini brand guideline exists (confirmed, not assumed — do not go
- * hunting for an official palette).
- *
- * **Bamboo is never a verdict and never money.** In the wrong hands it is one
- * hue away from the pass green, so it is barred from a verdict pill, a verdict
- * glyph, a payment-status label and any money figure — measured, its hue sits
- * 67° from `verdict.pass.fg`, and `contrast.test.ts` holds that gap. Progress
- * drawn in bamboo always carries a text label, a unit and geometry of its own
- * (a ring with a gap, plus a caption), so an arc can never be read as "passed"
- * or "paid".
- *
- * **The three verdicts are never orange.** `pass`, `partial` and `reject`
- * decide whether a collector is paid, so they own their own hues and are used
- * for nothing else. Partial is violet rather than the obvious amber precisely
- * because amber sits next to the sun ramp and a reviewer must never read a
- * verdict as a brand colour. Every verdict also carries a *shape* at the
- * component level, because red/green colour blindness is common and this axis
- * decides money.
- *
- * **The stage is not the dark theme.** `stage.*` is the near-black surround
- * the review player sits in, and it exists in *both* themes. Reviewers judge
- * `VQ-DARK` and `VQ-OVEREXPOSED`, so pixels adjacent to footage must not
- * shift that judgement — but that argument applies to the region around the
- * video, not to the whole back office. Light shell, dark theatre.
- *
- * **Both faces are self-hosted.** Upload centres sit on a LAN and the counter
- * workflow has to keep working with the link down. A webfont from a CDN would
- * make typography depend on the internet being up, which is the dependency the
- * rest of the system refuses. Both are bundled by Vite and never fetched: Be
- * Vietnam Pro as static per-weight subsets from `@fontsource/be-vietnam-pro`
- * (no variable package of it exists), JetBrains Mono from
- * `@fontsource-variable/jetbrains-mono`.
+ * Shared PlayerOne tokens for web and React Native.
+ * Oat grounds, plum actions, tangerine identity. Semantic verdicts and the
+ * neutral video theatre retain their own colors. Legacy ramp names remain
+ * compatibility hooks so every consumer receives the same palette.
  */
+export const brand = { oat: '#E7D2A9', plum: '#3F1E46', tangerine: '#F4762D' } as const;
 
-/** Collector: white/lavender surfaces and violet actions; verdict colors retain their meaning. */
+/** Collector: oat surfaces and plum actions; verdict colors retain their meaning. */
 export const collector = {
-  night: '#211B32', nightSurface: '#383047', paper: '#F8F7FC', surface: '#FFFFFF',
-  ink: '#211B32', muted: '#595365', line: '#CEC9D8', plum: '#6540C8', glow: '#DED3FA',
-  sun: '#EDE5FF', green: '#12A150', greenBg: '#DCF5E6', amber: '#D98E04', amberBg: '#FFF1D6',
-  red: '#D92D20', redBg: '#FEE4E2', tech: '#1B6EF3',
+  night: '#2B2130', nightSurface: '#403046', paper: '#F8F5EF', surface: '#FFFDFA',
+  ink: '#2B2130', muted: '#625266', line: '#CFC3B4', plum: brand.plum, glow: '#E7D2A9',
+  sun: '#F1E4CE', green: '#12A150', greenBg: '#DCF5E6', amber: '#D98E04', amberBg: '#FFF1D6',
+  red: '#D92D20', redBg: '#FEE4E2', tech: '#86578E',
   // The specified semantic fills do not pass AA as small text on paper.
-  greenInk: '#087A38', amberInk: '#885700', redInk: '#B42318', techInk: '#1558C0',
-  gradient: ['#211B32', '#383047', '#6540C8'],
+  greenInk: '#087A38', amberInk: '#885700', redInk: '#B42318', techInk: brand.plum,
+  gradient: ['#2B2130', '#403046', brand.plum],
   type: {
     display: { fontSize: 34, lineHeight: 45, fontWeight: '800' },
     h1: { fontSize: 28, lineHeight: 37, fontWeight: '700' },
@@ -75,28 +27,28 @@ export const collector = {
   radius: { card: 20, pill: 999, dock: 28 },
 } as const;
 
-/** VNG's sun. Action and brand. Never progress, never a verdict, never a surface. */
+/** Tangerine identity and illustration accents. Darker ink is available for small labels. */
 export const sun = {
   50: '#FFF4EC',
   100: '#FFE4D1',
   200: '#FFC9A5',
   300: '#FFAD78',
   400: '#FF9450',
-  500: '#FF7A1A',
+  500: brand.tangerine,
   600: '#E8620A',
-  700: '#B94A05',
+  700: '#A64110',
 } as const;
 
-/** PaXini's tech blue. Data, links, system, anything the machine reports. */
+/** Plum: navigation, links and actions. Historical tech name is retained for consumers. */
 export const tech = {
-  50: '#EBF2FF',
-  100: '#D6E4FF',
-  200: '#A9C6FF',
-  300: '#7BA6FD',
-  400: '#4A85F8',
-  500: '#1B6EF3',
-  600: '#0F55CC',
-  700: '#0B3F99',
+  50: '#F4EDF3',
+  100: '#E9DCE8',
+  200: '#DFC4DF',
+  300: '#C7A1CB',
+  400: '#B58ABC',
+  500: '#86578E',
+  600: '#572A61',
+  700: brand.plum,
 } as const;
 
 /**
@@ -150,53 +102,21 @@ export const bamboo = {
  * — and differ only in lightness. A green pill still means paid in a dark
  * room; it is only light enough to read there.
  */
-/**
- * Lavender: the ground the whole product now stands on.
- *
- * This is not an accent ramp with a job, it is the *page*. Daniel pinned the
- * world on 2026-09-07 from a reference screen — a soft periwinkle wash under
- * frosted cards — and replaced a warm white shell that had been neutral by
- * default rather than by decision. A tinted ground is the one change that
- * makes every surface above it read as glass, because glass is only legible
- * when what is behind it varies.
- *
- * The steps are the wash, not a scale of accents: 50 is where the page is
- * lightest, 200 is where it is deepest, and 300 and 400 exist for a border and
- * a hairline that have to survive on top of both.
- */
+/** Oat surface ramp. The legacy lavender name keeps existing CSS/native consumers aligned. */
 export const lavender = {
-  50: '#F5F6FC',
-  100: '#EDEEF7',
-  200: '#DFE2F2',
-  300: '#C9CEE8',
-  400: '#A8AFD4',
+  50: '#FFFDFA',
+  100: '#F8F5EF',
+  200: '#EEE7DD',
+  300: '#DAD0C4',
+  400: '#C7B8A5',
 } as const;
 
-/**
- * Lime: the one accent, and the only saturated colour left outside the
- * verdicts and the two partner marks.
- *
- * It replaces sun as *progress and emphasis* and it does not replace sun as
- * action — action is ink now, a near-black pill, which is what the reference
- * world does and what a lavender ground wants. Sun and tech survive only in
- * the partner mark, where they are VNG's and PaXini's colours rather than the
- * product's.
- *
- * Three steps, three jobs, each measured:
- *
- * | Step | Job | Measured |
- * |---|---|---|
- * | `500` | a **fill** under ink text; never text | ink on it 13.54:1, and 1.16:1 on the page, which is what a fill should be |
- * | `600` | the **stroke** — a ring, a graphic edge | 3.71:1 on the page, 3.44:1 on muted |
- * | `700` | **ink** on the light page | 4.94 / 5.70 / 4.59 on page, card and muted |
- *
- * `200` is the dark scheme's ink, 16.12:1 on the dark page.
- */
+/** Warm progress fills and plum strokes. Legacy lime names are retained; never verdicts. */
 export const lime = {
-  200: '#DFF7A6',
-  500: '#B8F04A',
-  600: '#63851C',
-  700: '#566F17',
+  200: brand.oat,
+  500: '#F6C294',
+  600: '#87506C',
+  700: brand.plum,
 } as const;
 
 /**
@@ -299,12 +219,12 @@ export const light = {
    * `lavender-50` the raised surface, so a card lifts by getting *lighter*
    * toward white rather than by growing a shadow.
    */
-  background: '#EDEEF7',
-  surface: '#F5F6FC',
+  background: lavender[100],
+  surface: lavender[50],
   card: '#FFFFFF',
-  muted: '#E4E6F1',
-  border: '#D5D8EA',
-  borderStrong: '#BFC4DC',
+  muted: lavender[200],
+  border: '#DED5CB',
+  borderStrong: '#C8BCAF',
   /**
    * The boundary of a control a person types into, and the only border in the
    * system held to a ratio.
@@ -319,9 +239,9 @@ export const light = {
    * secrets, with no reveal and no caps-lock hint, so the edge is all a person
    * has.
    */
-  fieldBorder: '#767DA0',
-  foreground: '#14151A',
-  mutedForeground: '#4F5468',
+  fieldBorder: '#907D8F',
+  foreground: '#2B2130',
+  mutedForeground: '#615365',
   /**
    * The hairline. A border, a divider, a control's hover edge — not a text ink.
    *
@@ -337,7 +257,7 @@ export const light = {
    * text floor anyway, because a border token that fell under it would also
    * be a border nobody could see.
    */
-  faintForeground: '#5E6275',
+  faintForeground: '#6E606C',
 } as const;
 
 /**
@@ -354,25 +274,25 @@ export const dark = {
    * the lights off; these are the same hue at the other end of the lightness
    * range, so glass over them still bends something.
    */
-  background: '#101119',
-  surface: '#161824',
-  card: '#1C1F2C',
-  muted: '#242838',
-  border: '#2E3346',
-  borderStrong: '#3D4358',
+  background: '#18131C',
+  surface: '#211A27',
+  card: '#2A2230',
+  muted: '#322838',
+  border: '#48394E',
+  borderStrong: '#594860',
   /** 4.24:1 on the dark page and 3.69:1 on the card. */
-  fieldBorder: '#6E7794',
-  foreground: '#ECEDF5',
-  mutedForeground: '#A2A8BE',
-  faintForeground: '#8E94AC',
+  fieldBorder: '#95819F',
+  foreground: '#F8F2E9',
+  mutedForeground: '#BEB0C5',
+  faintForeground: '#AF9CB5',
 } as const;
 
 /** The two brand steps that must invert, or a tint becomes a glare. */
 export const darkBrandTints = {
   sun50: '#2A1608',
   sun100: '#3D2009',
-  tech50: '#0C1A33',
-  tech100: '#123061',
+  tech50: '#26192D',
+  tech100: '#392441',
   bamboo50: '#1B2408',
   bamboo100: '#2C3D0C',
 } as const;
@@ -398,7 +318,7 @@ export const darkBrandTints = {
  * 3.44:1 on the muted fill, both over SC 1.4.11's 3:1 for a control boundary;
  * `lime-500` on the dark page is far past it.
  */
-export const ring = { light: lime[600], dark: lime[500] } as const;
+export const ring = { light: brand.plum, dark: brand.oat } as const;
 
 /**
  * Glass: the material this world is made of, as two numbers rather than a look.
@@ -641,26 +561,26 @@ export const duration = {
   slow: '320ms',
 } as const;
 
-/** Public story: white, ink and violet. Legacy warm names remain stable CSS hooks. */
+/** Public story: oat, plum and tangerine; preserve the established cinematic composition. */
 export const discover = {
-  warmPaper: '#F8F7FC',
-  warmSurface: '#FFFFFF',
-  warmInk: '#211B32',
-  warmMuted: '#595365',
-  warmLine: '#CEC9D8',
-  warmSoft: '#EDE5FF',
-  warmGlass: 'rgba(33,27,50,.76)',
+  warmPaper: collector.paper,
+  warmSurface: '#FFFDFA',
+  warmInk: collector.ink,
+  warmMuted: collector.muted,
+  warmLine: collector.line,
+  warmSoft: '#F1E4CE',
+  warmGlass: 'rgba(43,33,48,.76)',
   warmHighlight: 'rgba(255,255,255,.24)',
-  paper: '#F8F7FC',
-  surface: '#FFFFFF',
-  ink: '#211B32',
-  muted: '#595365',
-  line: '#CEC9D8',
-  soft: '#EDE5FF',
-  light: '#DED3FA',
-  lightInk: '#6540C8',
+  paper: collector.paper,
+  surface: '#FFFDFA',
+  ink: collector.ink,
+  muted: collector.muted,
+  line: collector.line,
+  soft: '#F1E4CE',
+  light: brand.oat,
+  lightInk: brand.plum,
   scrim: 'linear-gradient(180deg, rgba(12,16,18,0.12) 0%, rgba(12,16,18,0.04) 30%, rgba(12,16,18,0.76) 100%)',
-  wash: 'linear-gradient(130deg, rgba(222,216,243,0) 10%, rgba(222,216,243,0.72) 60%, rgba(247,247,244,0) 95%)',
+  wash: 'linear-gradient(130deg, rgba(231,210,169,0) 10%, rgba(231,210,169,0.72) 60%, rgba(247,247,244,0) 95%)',
   shadow: '0 28px 80px rgba(20,24,30,0.16)',
   panelRadius: '28px',
   frameRadius: '18px',
@@ -669,21 +589,21 @@ export const discover = {
   opening: '1100ms',
   ambient: '14000ms',
   /** Dark scenery surround keeps demo controls legible across photographs. */
-  heroFieldFrom: '#241733',
-  heroFieldTo: '#0E0B14',
+  heroFieldFrom: '#2B1831',
+  heroFieldTo: '#18131C',
   /** Type on the field. `heroOnField` is 16.86:1 at the field's lightest. */
-  heroOnField: '#FFFFFF',
+  heroOnField: '#FFFDFA',
   /** The caption row and the URL pill's text: 9.54:1 at the field's lightest. */
-  heroOnFieldMuted: '#C8BFD6',
-  /** Lavender app toolbar; the content remains a distinct white surface. */
-  heroChrome: '#F1EDF9',
-  heroChromeInk: '#595365',
-  heroChromeLine: '#CEC9D8',
-  /** Violet actions match the collector app. Semantic verdict hues stay separate. */
-  heroAccent: '#6540C8',
-  heroAccentPressed: '#4E299F',
-  heroAccentInk: '#5934B5',
-  heroAccentWash: '#EDE5FF',
+  heroOnFieldMuted: '#DCCCD9',
+  /** Oat toolbar; the working content remains a white surface. */
+  heroChrome: collector.paper,
+  heroChromeInk: collector.muted,
+  heroChromeLine: collector.line,
+  /** Plum actions match the collector app. Semantic verdict hues stay separate. */
+  heroAccent: brand.plum,
+  heroAccentPressed: '#2B1831',
+  heroAccentInk: brand.plum,
+  heroAccentWash: '#F1E4CE',
 } as const;
 
 /**
@@ -753,7 +673,8 @@ export function toCss(): string {
   --shadow-lg: ${s.lg};
   --shadow-sun: ${s.sun};`;
 
-  const darkBlock = `${neutrals(dark)}
+  const darkBlock = `  color-scheme: dark;
+${neutrals(dark)}
   --sun-50: ${darkBrandTints.sun50};
   --sun-100: ${darkBrandTints.sun100};
   --tech-50: ${darkBrandTints.tech50};
@@ -770,7 +691,7 @@ export function toCss(): string {
   --reject: ${verdict.reject.fgDark};
   --reject-bg: ${verdict.reject.bgDark};
   --ring: ${ring.dark};
-  --action: ${dark.foreground};
+  --action: ${tech[200]};
   --action-ink: ${dark.background};
   --lavender-100: ${dark.surface};
   --lavender-200: ${dark.muted};
@@ -780,6 +701,7 @@ export function toCss(): string {
 ${shadows(shadowDark)}`;
 
   return `:root {
+  color-scheme: light;
 ${ramp('sun', sun)}
 ${ramp('tech', tech)}
 ${ramp('bamboo', bamboo)}
@@ -792,8 +714,8 @@ ${Object.entries(discover).map(([key, value]) => `  --discover-${key.replace(/[A
    * uses for a primary control, and it is a token so the one place that
    * decides changes once. Sun was this until 2026-09-07.
    */
-  --action: ${light.foreground};
-  --action-ink: ${light.background};
+  --action: ${brand.plum};
+  --action-ink: ${light.card};
 
   --glass-card: ${glass.card.fill};
   --glass-card-blur: ${glass.card.blur};

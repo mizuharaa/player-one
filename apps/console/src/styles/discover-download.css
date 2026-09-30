@@ -1,10 +1,10 @@
 /* Reference: Luma mobile access section supplied by the owner and found on Mobbin. */
 .discover-download {
-  --download-paper:#f7f8fa;--download-white:#fff;--download-ink:#131517;
-  --download-muted:#606367;--download-rule:#e6e8eb;--download-link:#edeef0;
-  --download-blue:#287cff;--download-green:#32ae61;--download-yellow:#ffc400;
-  --download-red:#f34140;--download-orange:#f7a157;--download-pink:#ff6487;
-  --download-purple:#7953ff;--download-cyan:#21b6ee;
+  --download-paper:var(--discover-paper);--download-white:#fff;--download-ink:var(--discover-ink);
+  --download-muted:var(--discover-muted);--download-rule:var(--discover-line);--download-link:var(--discover-soft);
+  --download-blue:var(--discover-light-ink);--download-green:#32ae61;--download-yellow:#ffc400;
+  --download-red:#f34140;--download-orange:var(--sun-500);--download-pink:var(--tech-300);
+  --download-purple:var(--tech-500);--download-cyan:var(--sun-300);
   background:var(--download-paper);color:var(--download-ink);padding:112px 24px 144px;
   font-family:var(--discover-font);scroll-margin-top:88px;
 }

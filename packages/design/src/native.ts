@@ -187,8 +187,8 @@ export function nativeTheme(scheme: ColorScheme) {
         light: discover.light,
         lightInk: discover.lightInk,
       },
-      action: (isDark ? dark.foreground : light.foreground) as string,
-      actionInk: (isDark ? dark.background : light.background) as string,
+      action: (isDark ? tech[200] : tech[700]) as string,
+      actionInk: (isDark ? dark.background : light.card) as string,
       stage,
     },
     /**

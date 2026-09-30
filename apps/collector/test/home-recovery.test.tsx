@@ -78,7 +78,7 @@ it.each([false, true])('keeps confirmed cycle and awaiting money neutral and dis
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
     for (const value of ['9001', '1234']) {
       const amount = [...host.querySelectorAll<HTMLElement>('*')].find(node => !node.children.length && node.textContent === dong(value))!;
-      expect(amount.style.color).toBe('rgb(33, 27, 50)');
+      expect(amount.style.color).toBe('rgb(43, 33, 48)');
     }
     expect(host.textContent?.includes(MESSAGES[DEFAULT_LOCALE]['payout.simulation'])).toBe(simulation);
   } finally { await act(async () => root.unmount()); client.clear(); vi.restoreAllMocks(); }

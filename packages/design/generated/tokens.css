@@ -2,22 +2,23 @@
    Change packages/design/src/tokens.ts and run `pnpm -F @playerone/design build:css`. */
 
 :root {
+  color-scheme: light;
   --sun-50: #FFF4EC;
   --sun-100: #FFE4D1;
   --sun-200: #FFC9A5;
   --sun-300: #FFAD78;
   --sun-400: #FF9450;
-  --sun-500: #FF7A1A;
+  --sun-500: #F4762D;
   --sun-600: #E8620A;
-  --sun-700: #B94A05;
-  --tech-50: #EBF2FF;
-  --tech-100: #D6E4FF;
-  --tech-200: #A9C6FF;
-  --tech-300: #7BA6FD;
-  --tech-400: #4A85F8;
-  --tech-500: #1B6EF3;
-  --tech-600: #0F55CC;
-  --tech-700: #0B3F99;
+  --sun-700: #A64110;
+  --tech-50: #F4EDF3;
+  --tech-100: #E9DCE8;
+  --tech-200: #DFC4DF;
+  --tech-300: #C7A1CB;
+  --tech-400: #B58ABC;
+  --tech-500: #86578E;
+  --tech-600: #572A61;
+  --tech-700: #3F1E46;
   --bamboo-50: #F5FCE3;
   --bamboo-100: #E9F8BF;
   --bamboo-200: #D6F28A;
@@ -26,33 +27,33 @@
   --bamboo-500: #9BD11C;
   --bamboo-600: #6E9A0F;
   --bamboo-700: #4C6C0A;
-  --lavender-50: #F5F6FC;
-  --lavender-100: #EDEEF7;
-  --lavender-200: #DFE2F2;
-  --lavender-300: #C9CEE8;
-  --lavender-400: #A8AFD4;
-  --lime-200: #DFF7A6;
-  --lime-500: #B8F04A;
-  --lime-600: #63851C;
-  --lime-700: #566F17;
-  --discover-warm-paper: #F8F7FC;
-  --discover-warm-surface: #FFFFFF;
-  --discover-warm-ink: #211B32;
-  --discover-warm-muted: #595365;
-  --discover-warm-line: #CEC9D8;
-  --discover-warm-soft: #EDE5FF;
-  --discover-warm-glass: rgba(33,27,50,.76);
+  --lavender-50: #FFFDFA;
+  --lavender-100: #F8F5EF;
+  --lavender-200: #EEE7DD;
+  --lavender-300: #DAD0C4;
+  --lavender-400: #C7B8A5;
+  --lime-200: #E7D2A9;
+  --lime-500: #F6C294;
+  --lime-600: #87506C;
+  --lime-700: #3F1E46;
+  --discover-warm-paper: #F8F5EF;
+  --discover-warm-surface: #FFFDFA;
+  --discover-warm-ink: #2B2130;
+  --discover-warm-muted: #625266;
+  --discover-warm-line: #CFC3B4;
+  --discover-warm-soft: #F1E4CE;
+  --discover-warm-glass: rgba(43,33,48,.76);
   --discover-warm-highlight: rgba(255,255,255,.24);
-  --discover-paper: #F8F7FC;
-  --discover-surface: #FFFFFF;
-  --discover-ink: #211B32;
-  --discover-muted: #595365;
-  --discover-line: #CEC9D8;
-  --discover-soft: #EDE5FF;
-  --discover-light: #DED3FA;
-  --discover-light-ink: #6540C8;
+  --discover-paper: #F8F5EF;
+  --discover-surface: #FFFDFA;
+  --discover-ink: #2B2130;
+  --discover-muted: #625266;
+  --discover-line: #CFC3B4;
+  --discover-soft: #F1E4CE;
+  --discover-light: #E7D2A9;
+  --discover-light-ink: #3F1E46;
   --discover-scrim: linear-gradient(180deg, rgba(12,16,18,0.12) 0%, rgba(12,16,18,0.04) 30%, rgba(12,16,18,0.76) 100%);
-  --discover-wash: linear-gradient(130deg, rgba(222,216,243,0) 10%, rgba(222,216,243,0.72) 60%, rgba(247,247,244,0) 95%);
+  --discover-wash: linear-gradient(130deg, rgba(231,210,169,0) 10%, rgba(231,210,169,0.72) 60%, rgba(247,247,244,0) 95%);
   --discover-shadow: 0 28px 80px rgba(20,24,30,0.16);
   --discover-panel-radius: 28px;
   --discover-frame-radius: 18px;
@@ -60,25 +61,25 @@
   --discover-reveal: 720ms;
   --discover-opening: 1100ms;
   --discover-ambient: 14000ms;
-  --discover-hero-field-from: #241733;
-  --discover-hero-field-to: #0E0B14;
-  --discover-hero-on-field: #FFFFFF;
-  --discover-hero-on-field-muted: #C8BFD6;
-  --discover-hero-chrome: #F1EDF9;
-  --discover-hero-chrome-ink: #595365;
-  --discover-hero-chrome-line: #CEC9D8;
-  --discover-hero-accent: #6540C8;
-  --discover-hero-accent-pressed: #4E299F;
-  --discover-hero-accent-ink: #5934B5;
-  --discover-hero-accent-wash: #EDE5FF;
+  --discover-hero-field-from: #2B1831;
+  --discover-hero-field-to: #18131C;
+  --discover-hero-on-field: #FFFDFA;
+  --discover-hero-on-field-muted: #DCCCD9;
+  --discover-hero-chrome: #F8F5EF;
+  --discover-hero-chrome-ink: #625266;
+  --discover-hero-chrome-line: #CFC3B4;
+  --discover-hero-accent: #3F1E46;
+  --discover-hero-accent-pressed: #2B1831;
+  --discover-hero-accent-ink: #3F1E46;
+  --discover-hero-accent-wash: #F1E4CE;
 
   /*
    * The action, as a role rather than a colour. It is the ink pill this world
    * uses for a primary control, and it is a token so the one place that
    * decides changes once. Sun was this until 2026-09-07.
    */
-  --action: #14151A;
-  --action-ink: #EDEEF7;
+  --action: #3F1E46;
+  --action-ink: #FFFFFF;
 
   --glass-card: 0.62;
   --glass-card-blur: 18px;
@@ -109,8 +110,8 @@
      sun-ink is not allowed on sun-100 in the light scheme: 4.27:1, the one
      pair on these two ramps that does not clear AA. Nothing sets that fill
      under text. */
-  --sun-ink: #B94A05;
-  --tech-ink: #0B3F99;
+  --sun-ink: #A64110;
+  --tech-ink: #3F1E46;
 
   --pass: #0D763B;
   --pass-bg: #E8F8EE;
@@ -118,21 +119,21 @@
   --partial-bg: #F0EDFF;
   --reject: #C41C21;
   --reject-bg: #FDECEC;
-  --ring: #63851C;
-  --lime-ink: #566F17;
+  --ring: #3F1E46;
+  --lime-ink: #3F1E46;
   --warn: #7E5200;
   --warn-bg: #FFF4E0;
 
-  --background: #EDEEF7;
-  --surface: #F5F6FC;
+  --background: #F8F5EF;
+  --surface: #FFFDFA;
   --card: #FFFFFF;
-  --muted: #E4E6F1;
-  --border: #D5D8EA;
-  --border-strong: #BFC4DC;
-  --field-border: #767DA0;
-  --foreground: #14151A;
-  --muted-foreground: #4F5468;
-  --faint-foreground: #5E6275;
+  --muted: #EEE7DD;
+  --border: #DED5CB;
+  --border-strong: #C8BCAF;
+  --field-border: #907D8F;
+  --foreground: #2B2130;
+  --muted-foreground: #615365;
+  --faint-foreground: #6E606C;
 
   --stage: #101215;
   --stage-panel: #191C21;
@@ -166,37 +167,38 @@
 /* System preference, unless the operator has explicitly chosen light. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-  --background: #101119;
-  --surface: #161824;
-  --card: #1C1F2C;
-  --muted: #242838;
-  --border: #2E3346;
-  --border-strong: #3D4358;
-  --field-border: #6E7794;
-  --foreground: #ECEDF5;
-  --muted-foreground: #A2A8BE;
-  --faint-foreground: #8E94AC;
+  color-scheme: dark;
+  --background: #18131C;
+  --surface: #211A27;
+  --card: #2A2230;
+  --muted: #322838;
+  --border: #48394E;
+  --border-strong: #594860;
+  --field-border: #95819F;
+  --foreground: #F8F2E9;
+  --muted-foreground: #BEB0C5;
+  --faint-foreground: #AF9CB5;
   --sun-50: #2A1608;
   --sun-100: #3D2009;
-  --tech-50: #0C1A33;
-  --tech-100: #123061;
+  --tech-50: #26192D;
+  --tech-100: #392441;
   --bamboo-50: #1B2408;
   --bamboo-100: #2C3D0C;
   --bamboo-ink: #D6F28A;
   --sun-ink: #FFC9A5;
-  --tech-ink: #A9C6FF;
+  --tech-ink: #DFC4DF;
   --pass: #14B459;
   --pass-bg: #0D2A1A;
   --partial: #9B83FD;
   --partial-bg: #1E1840;
   --reject: #EB6F73;
   --reject-bg: #331416;
-  --ring: #B8F04A;
-  --action: #ECEDF5;
-  --action-ink: #101119;
-  --lavender-100: #161824;
-  --lavender-200: #242838;
-  --lime-ink: #DFF7A6;
+  --ring: #E7D2A9;
+  --action: #DFC4DF;
+  --action-ink: #18131C;
+  --lavender-100: #211A27;
+  --lavender-200: #322838;
+  --lime-ink: #E7D2A9;
   --warn: #FFD08A;
   --warn-bg: #3A2A14;
   --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
@@ -208,37 +210,38 @@
 
 /* An explicit choice wins in both directions. */
 :root[data-theme='dark'] {
-  --background: #101119;
-  --surface: #161824;
-  --card: #1C1F2C;
-  --muted: #242838;
-  --border: #2E3346;
-  --border-strong: #3D4358;
-  --field-border: #6E7794;
-  --foreground: #ECEDF5;
-  --muted-foreground: #A2A8BE;
-  --faint-foreground: #8E94AC;
+  color-scheme: dark;
+  --background: #18131C;
+  --surface: #211A27;
+  --card: #2A2230;
+  --muted: #322838;
+  --border: #48394E;
+  --border-strong: #594860;
+  --field-border: #95819F;
+  --foreground: #F8F2E9;
+  --muted-foreground: #BEB0C5;
+  --faint-foreground: #AF9CB5;
   --sun-50: #2A1608;
   --sun-100: #3D2009;
-  --tech-50: #0C1A33;
-  --tech-100: #123061;
+  --tech-50: #26192D;
+  --tech-100: #392441;
   --bamboo-50: #1B2408;
   --bamboo-100: #2C3D0C;
   --bamboo-ink: #D6F28A;
   --sun-ink: #FFC9A5;
-  --tech-ink: #A9C6FF;
+  --tech-ink: #DFC4DF;
   --pass: #14B459;
   --pass-bg: #0D2A1A;
   --partial: #9B83FD;
   --partial-bg: #1E1840;
   --reject: #EB6F73;
   --reject-bg: #331416;
-  --ring: #B8F04A;
-  --action: #ECEDF5;
-  --action-ink: #101119;
-  --lavender-100: #161824;
-  --lavender-200: #242838;
-  --lime-ink: #DFF7A6;
+  --ring: #E7D2A9;
+  --action: #DFC4DF;
+  --action-ink: #18131C;
+  --lavender-100: #211A27;
+  --lavender-200: #322838;
+  --lime-ink: #E7D2A9;
   --warn: #FFD08A;
   --warn-bg: #3A2A14;
   --shadow-sm: 0 1px 2px rgba(0,0,0,.4);

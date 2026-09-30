@@ -150,7 +150,7 @@ function DiscoverNav({logoRef}:{logoRef:RefObject<SVGSVGElement|null>}){
   useEffect(()=>{const el=dialog.current;if(!el)return;if(open&&!el.open)el.showModal();if(!open&&el.open)el.close();},[open]);
   const close=()=>{setOpen(false);button.current?.focus({preventScroll:true});};
   return <header ref={navRoot} className="discover-nav-wrap" data-discover-nav="" data-solid={solid} data-collapsed={collapsed}>
-    <nav className="discover-nav" aria-label={c('navigation')}><a href="#top" className="discover-brand" aria-label="PlayerOne"><AssemblyLogo ref={logoRef} className="discover-assembly-logo" surface="dark" aria-hidden="true"/></a>
+    <nav className="discover-nav" aria-label={c('navigation')}><a href="#top" className="discover-brand" aria-label="PlayerOne"><AssemblyLogo ref={logoRef} className="discover-assembly-logo" surface="light" aria-hidden="true"/></a>
       <div className="discover-nav-expanded" id="discover-nav-expanded" inert={collapsed} aria-hidden={collapsed}>
         <div className="discover-nav-destinations">{destinations.slice(0,2).map(destination=><a key={destination} href={`#${destination}`}>{c(destination)}</a>)}</div>
         <div className="discover-nav-tools"><Link className="discover-nav-login" to="/login">{c('forOperators')} ↗</Link></div>
