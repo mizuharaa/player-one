@@ -336,9 +336,9 @@ export function Uploads() {
   return <>
     <ListScreen ambientHeader title={tt('uploads.title')} data={visible} keyOf={episode => episode.episodeId}
       masthead={<HeaderGradient><CollectorMasthead /><View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <View style={{ flex: 1, gap: 7 }}><Text style={{ ...c.type.body, fontFamily: face(theme), color: c.ink }}>{tt('uploads.title')}</Text><Text accessibilityRole="header" style={{ ...c.type.h1, fontFamily: face(theme), color: c.ink, fontWeight: '700' }}>{tt('uploads.journeyTitle')}</Text><Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted }}>{tt('uploads.journeyBody')}</Text></View>
+        <View style={{ flex: 1, gap: 7 }}><Text style={{ ...c.type.body, fontFamily: face(theme), color: c.ink }}>{tt('uploads.title')}</Text><Text accessibilityRole="header" style={{ ...c.type.h1, fontFamily: face(theme), color: c.ink, fontWeight: '700' }}>{tt('uploads.journeyTitle')}</Text></View>
         <SessionArtwork size={124} />
-      </View></HeaderGradient>}
+      </View><Text style={{ ...c.type.caption, fontFamily: face(theme), color: c.muted }}>{tt('uploads.journeyBody')}</Text></HeaderGradient>}
       refresh={{ refreshing: episodes.isFetching || income.isFetching, onRefresh: () => { void episodes.refetch(); void income.refetch(); } }}
       header={<View ref={listTarget} collapsable={false} style={{ gap: c.cardGap }}>
         {failed ? <Failure error={failed.error} text={tt(failed.data === undefined ? 'common.loadFailed' : 'common.refreshFailed')} onRetry={() => { void episodes.refetch(); void income.refetch(); }} busy={episodes.isFetching || income.isFetching} /> : null}

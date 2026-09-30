@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Animated, Easing, Image, Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { BrandSlot } from '../shell/BrandSlot.tsx';
 import { useT } from '../locale.tsx';
 import { polish, useTheme } from '../theme.tsx';
@@ -32,8 +31,6 @@ export function LandingGallery({ ready, onContinue }: { ready: boolean; onContin
   }, [ready, reduced, zoom]);
   const fieldHeight = Math.min(500, height * .50);
   return <View testID="landing-gallery" style={{ minHeight: height, overflow: 'hidden', backgroundColor: theme.collector.paper, paddingTop: insets.top, paddingBottom: insets.bottom + 24 }}>
-    <LinearGradient pointerEvents="none" colors={polish.galleryWash} start={{ x: 0, y: 0 }} end={{ x: 1, y: .6 }} style={[StyleSheet.absoluteFill, { height: fieldHeight + insets.top + 100 }]} />
-    <LinearGradient pointerEvents="none" colors={polish.galleryFade} style={[StyleSheet.absoluteFill, { top: fieldHeight * .4, height: fieldHeight * .6 + insets.top + 100 }]} />
     <Animated.View style={{ height: fieldHeight + 48, transform: [{ scale: zoom }] }}>
       {photos.map((photo, index) => <View key={index} style={{ position: 'absolute', left: width * photo.x, top: fieldHeight * photo.y, width: width * photo.size, aspectRatio: 1, padding: 7, borderRadius: 20, backgroundColor: polish.galleryFrame, borderWidth: 1, borderColor: theme.collector.surface, transform: [{ rotate: photo.tilt }], shadowColor: theme.collector.ink, shadowOpacity: .14, shadowRadius: 16, shadowOffset: { width: 0, height: 12 }, elevation: 5 }}>
         <View style={{ flex: 1, borderRadius: 13, overflow: 'hidden' }}>
@@ -45,10 +42,8 @@ export function LandingGallery({ ready, onContinue }: { ready: boolean; onContin
       <Text style={{ ...theme.collector.type.caption, fontFamily: face(theme), color: theme.collector.muted, textAlign: 'center' }}>{tt('landing.illustrativeScenes')}</Text>
       <BrandSlot hero ready={ready} />
       <Text accessibilityRole="header" style={{ fontFamily: face(theme), fontSize: 38, lineHeight: 48, fontWeight: '700', letterSpacing: -1.2, textAlign: 'center', color: theme.collector.ink }}>{tt('landing.slogan1')}{'\n'}{tt('landing.slogan2')}</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel={tt('common.next')} onPress={onContinue} style={{ width: 64, height: 64, borderRadius: 32, overflow: 'hidden' }}>
-        <LinearGradient colors={polish.galleryArrow} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text accessible={false} style={{ color: theme.collector.ink, fontSize: 36, lineHeight: 44 }}>{'\u2193'}</Text>
-        </LinearGradient>
+      <Pressable accessibilityRole="button" accessibilityLabel={tt('common.next')} onPress={onContinue} style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: theme.collector.plum, alignItems: 'center', justifyContent: 'center' }}>
+        <Text accessible={false} style={{ color: theme.collector.surface, fontSize: 36, lineHeight: 44 }}>{'\u2193'}</Text>
       </Pressable>
     </View>
   </View>;

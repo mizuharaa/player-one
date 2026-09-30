@@ -1,5 +1,19 @@
 # Design
 
+## Mobile refinement — 30 September 2026
+
+The owner rejected the gradient-heavy mobile adaptation. Collector headers and
+the photo-gallery opening now use uninterrupted pale oat surfaces. Oat can fill
+the task-status tile; plum anchors controls and tangerine remains an accent.
+The film, receipt and collector-pass illustrations use solid vector fills, with
+no foil gradients. Smaller illustrations give phone headings more room, and
+supporting explanations run below the artwork row at full content width.
+
+Keep the accepted letter shuffle, photographs, dark task/claim sheets and yellow
+notification bell. Photo scrims remain only where they make overlaid text legible.
+Showcase boards must use actual app renders with labelled sample data, including
+narrow screens, rather than substitute design mockups for implemented screens.
+
 ## Approved palette — 29 September 2026
 
 The owner selected oat, deep plum and tangerine for the collector app, operator

@@ -153,10 +153,10 @@ export function Income() {
           <View style={{ flex: 1, gap: 7 }}>
             <Text style={{ ...c.type.body, fontFamily: face(theme), color: c.ink }}>{tt('income.title')}</Text>
             <Text accessibilityRole="header" style={{ ...c.type.h1, color: c.ink, fontFamily: face(theme), fontWeight: '700', letterSpacing: -.6 }}>{tt(awaitingReview ? 'income.awaitingTitle' : 'income.overview')}</Text>
-            <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{tt(awaitingReview ? 'income.awaitingBody' : 'income.overviewBody')}</Text>
           </View>
           <EarningsArtwork size={118} />
         </View>
+        <Text style={{ ...c.type.caption, color: c.muted, fontFamily: face(theme) }}>{tt(awaitingReview ? 'income.awaitingBody' : 'income.overviewBody')}</Text>
         <View style={{ flexDirection: stackFigures ? 'column' : 'row', gap: stackFigures ? 16 : 0, paddingTop: 12, paddingBottom: 8 }}>
           {(['income.estimated', 'income.confirmed'] as const).map((label, index) => <View key={label} style={{ flex: 1, gap: 10, paddingLeft: index && !stackFigures ? 16 : 0, paddingRight: index || stackFigures ? 0 : 16, borderLeftWidth: index && !stackFigures ? 1 : 0, borderColor: c.line }}>
             <Text style={{ ...c.type.caption, color: c.ink, fontFamily: face(theme) }}>{tt(label)}</Text>

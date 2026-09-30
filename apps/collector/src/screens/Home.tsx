@@ -16,7 +16,7 @@ import { useGuide, useGuideTarget } from '../guide/Guide.tsx';
 import { Body, Button, Card, Chip, Hatch, Loading, NavRow, Screen, Title, face } from '../ui.tsx';
 import { dong, shortId } from '../money.ts';
 
-/** Approved flow: ambient identity/status field, photograph, then compact task rows. */
+/** Identity, task status, featured photograph, then compact task rows. */
 export function Home() {
   const api = useApi(), nav = useNav(), tt = useT(), theme = useTheme(), c = theme.collector;
   const { width, fontScale } = useWindowDimensions();
@@ -59,10 +59,10 @@ export function Home() {
       </View>
       <View ref={nextTarget} collapsable={false} style={{ flexDirection: 'row', gap: 10 }}>
         {statusTiles.map(tile => <PhantomPressable key={tile.label} accessibilityRole="button" accessibilityHint={tile.hint} onPress={tile.onPress}
-          style={{ flex: 1, padding: 12, borderRadius: 18, backgroundColor: c.surface, gap: 8 }}>
+          style={{ flex: 1, padding: 12, borderRadius: 18, backgroundColor: tile.icon === 'camera' ? c.glow : c.surface, gap: 8 }}>
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
             <View style={{ width: 38, height: 42, alignItems: 'center', justifyContent: 'center' }}><FeatureIcon name={tile.icon} size={30} /></View>
-            <View style={{ flex: 1, gap: 4 }}><Text style={{ ...caption, fontSize: 12, lineHeight: 18, color: c.ink }}>{tile.label}</Text>
+            <View style={{ flex: 1, gap: 4 }}><Text style={{ ...caption, fontSize: 12, lineHeight: 18, minHeight: compact ? 36 : 18, color: c.ink }}>{tile.label}</Text>
               {tile.query.isPending ? <Loading kind="number" /> : <Text style={{ ...c.type.h1, fontWeight: '700', fontFamily: face(theme), color: c.ink }}>{tile.value}</Text>}
             </View>
           </View>

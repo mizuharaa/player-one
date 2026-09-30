@@ -208,7 +208,7 @@ it.each(['screen', 'list'])('reserves safe areas outside the %s scrolling viewpo
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
-it('keeps secondary text readable on paper, white cards and every Home gradient stop', async () => {
+it('keeps secondary text readable on paper, white cards and the oat task tile', async () => {
   const host = document.createElement('div'); const root = createRoot(host);
   let theme!: ReturnType<typeof useTheme>;
   function Probe() { theme = useTheme(); return null; }
@@ -220,7 +220,7 @@ it('keeps secondary text readable on paper, white cards and every Home gradient 
   try {
     await act(async () => root.render(<ThemeProvider><Probe /></ThemeProvider>));
     expect(polish.card).toBe(theme.collector.surface);
-    for (const ground of [theme.collector.paper, polish.card, polish.homeSurface]) {
+    for (const ground of [theme.collector.paper, polish.card, theme.collector.glow]) {
       for (const ink of [theme.collector.muted, theme.color.mutedForeground]) expect(ratio(ink, ground), `${ink} on ${ground}`).toBeGreaterThanOrEqual(4.5);
     }
     expect(ratio(polish.hairline, theme.collector.paper)).toBeGreaterThanOrEqual(1.5);

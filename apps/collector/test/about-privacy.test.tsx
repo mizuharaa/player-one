@@ -184,32 +184,30 @@ it('shows the bundled photo authors and licenses in About', async () => {
   expect(document.querySelectorAll('[role="link"]').length).toBeGreaterThanOrEqual(8);
 });
 
-it('Home uses the approved material wash with a readable solid fallback', async () => {
+it('Home uses a solid readable header without a decorative gradient', async () => {
   const { HeaderGradient } = await import('../src/ui/HeaderGradient.tsx');
   await mount(<HeaderGradient>Home</HeaderGradient>);
   const header = document.body.querySelector<HTMLElement>('[data-testid=home-header-wash]')!;
   const swatch = document.createElement('div'); swatch.style.backgroundColor = polish.homeSurface;
   expect(getComputedStyle(header).backgroundColor).toBe(swatch.style.backgroundColor);
-  expect(header.querySelector('[data-colors]')?.getAttribute('data-colors')).toBe(polish.headerWash.join(','));
+  expect(header.querySelector('[data-colors]')).toBeNull();
 });
 
 
-it('keeps decorative artwork inert, IDs isolated, and space for larger text', async () => {
+it('keeps flat artwork inert and leaves room on narrow screens and with larger text', async () => {
   const { SessionArtwork } = await import('../src/ui/illustrations/CollectorArtwork.tsx');
   const dimensions = vi.spyOn(Native, 'useWindowDimensions');
   try {
-    for (const fontScale of [1, 1.6]) {
-      dimensions.mockReturnValue({ width: 390, height: 844, scale: 1, fontScale });
+    for (const [width, fontScale, side] of [[390, 1, 88], [320, 1, 64], [390, 1.6, 64]]) {
+      dimensions.mockReturnValue({ width, height: 844, scale: 1, fontScale });
       await mount(<><SessionArtwork /><SessionArtwork /></>);
       const objects = [...host.querySelectorAll<HTMLElement>('[aria-hidden="true"]')];
       expect(objects).toHaveLength(2);
       for (const object of objects) {
         expect(getComputedStyle(object).pointerEvents).toBe('none');
-        expect(getComputedStyle(object).width).toBe(fontScale > 1 ? '96px' : '132px');
+        expect(getComputedStyle(object).width).toBe(`${side}px`);
       }
-      const ids = [...host.querySelectorAll('[data-gradient-id]')].map(node => node.getAttribute('data-gradient-id'));
-      expect(ids).toHaveLength(8);
-      expect(new Set(ids).size).toBe(ids.length);
+      expect(host.querySelector('[data-gradient-id]')).toBeNull();
     }
   } finally { dimensions.mockRestore(); }
 });
